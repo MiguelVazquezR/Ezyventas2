@@ -2,23 +2,28 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Jetstream\HasProfilePhoto;
 use Laravel\Sanctum\HasApiTokens;
+use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
     use HasApiTokens;
 
     /** @use HasFactory<\Database\Factories\UserFactory> */
+    use MustVerifyEmail;
     use HasFactory;
     use HasProfilePhoto;
     use Notifiable;
     use TwoFactorAuthenticatable;
+    use HasRoles;
 
     /**
      * The attributes that are mass assignable.
@@ -29,6 +34,8 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'phone',
+        'suscription_id',
     ];
 
     /**
@@ -63,5 +70,37 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * // Obtiene la suscripción a la que pertenece el usuario.
+     */
+    public function subscription(): BelongsTo
+    {
+        return $this->belongsTo(Subscription::class, 'suscription_id');
+    }
+
+    /**
+     * // Obtiene las sucursales que este usuario gestiona.
+     */
+    public function managedBranches(): HasMany
+    {
+        return $this->hasMany(Branch::class, 'manager_id');
+    }
+
+    /**
+     * // Obtiene las transacciones registradas por este usuario.
+     */
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class);
+    }
+
+    /**
+     * // Obtiene los gastos registrados por este usuario.
+     */
+    public function expenses(): HasMany
+    {
+        return $this->hasMany(Expense::class);
     }
 }
