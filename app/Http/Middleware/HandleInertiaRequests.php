@@ -33,11 +33,30 @@ class HandleInertiaRequests extends Middleware
      *
      * @return array<string, mixed>
      */
-    public function share(Request $request): array
+     public function share(Request $request): array
     {
-        return [
-            ...parent::share($request),
-            //
-        ];
+        return array_merge(parent::share($request), [
+            'auth' => function () use ($request) {
+                $user = $request->user();
+
+                return [
+                    'user' => $request->user(),
+                    // Si el usuario está logueado, obtenemos todos sus permisos y los enviamos como un array.
+                    // Si no, enviamos un array vacío.
+                    'permissions' => [],
+                    // 'permissions' => $request->user() ? $request->user()->getAllPermissions()->pluck('name') : [],
+                ];
+            },
+            // Esto crea una propiedad 'flash' en tus props de Vue
+            // que contendrá los mensajes de éxito o error.
+            'flash' => function () use ($request) {
+                return [
+                    'success' => $request->session()->get('success'),
+                    'error' => $request->session()->get('error'),
+                    'warning' => $request->session()->get('warning'),
+                    'info' => $request->session()->get('info'),
+                ];
+            },
+        ]);
     }
 }
