@@ -13,7 +13,7 @@ import ToastService from 'primevue/toastservice';
 import "primeicons/primeicons.css";
 
 import '@/assets/styles.scss';
-import Noir from './presets/noir';
+import Ezyventas from './presets/ezyventas';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -29,7 +29,7 @@ createInertiaApp({
                                 selectionMessage: '{0} elementos seleccionados'
                             },
                             theme: {
-                                preset: Noir,
+                                preset: Ezyventas,
                                 options: {
                                     darkModeSelector: '.app-dark'
                                 }
@@ -40,6 +40,6 @@ createInertiaApp({
             .mount(el);
     },
     progress: {
-        color: '#4B5563',
+        color: '#F68C0F',
     },
 });
