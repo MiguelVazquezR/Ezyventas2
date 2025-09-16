@@ -102,7 +102,7 @@ function isOutsideClicked(event) {
             <main class="layout-main">
                 <slot />
             </main>
-            <app-footer></app-footer>
+            <!-- <app-footer></app-footer> -->
         </div>
         <div class="layout-mask animate-fadein"></div>
     </div>

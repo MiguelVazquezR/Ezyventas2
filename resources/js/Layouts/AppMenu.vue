@@ -7,7 +7,7 @@ const model = ref([
     {
         items: [
             { label: 'Inicio', icon: 'pi pi-fw pi-home', to: route('dashboard'), routeName: 'dashboard' },
-            // { label: 'Usuarios', icon: 'pi pi-fw pi-user', to: route('users.index'), routeName: 'users.*', permission: 'ver_usuarios' },
+            { label: 'Punto de venta', icon: 'pi pi-fw pi-wallet', to: route('pos.index'), routeName: 'pos.*' },
             // { label: 'Sucursales', icon: 'pi pi-fw pi-building', to: route('branches.index'), routeName: 'branches.*', permission: 'ver_sucursales' },
             // { label: 'Incidencias', icon: 'pi pi-fw pi-calendar-times', to: route('incidents.index'), routeName: 'incidents.*', permission: 'ver_incidencias' },
             // { label: 'Bonos', icon: 'pi pi-fw pi-wallet', to: route('bonuses.index'), routeName: 'bonuses.*', permission: 'ver_bonos' },

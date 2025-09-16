@@ -20,13 +20,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 });
 
 Route::middleware('auth')->group(function () {
-    // require __DIR__ . '/web/attendances.php';
-    // require __DIR__ . '/web/bonuses.php';
-    // require __DIR__ . '/web/branches.php';
-    // require __DIR__ . '/web/incidents.php';
-    // require __DIR__ . '/web/settings.php';
-    // require __DIR__ . '/web/users.php';
-    // require __DIR__ . '/web/vacations.php';
+    require __DIR__ . '/web/POS.php';
 });
 
 // Estas rutas NO requieren autenticación.
