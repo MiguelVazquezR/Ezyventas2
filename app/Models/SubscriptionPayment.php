@@ -13,7 +13,7 @@ class SubscriptionPayment extends Model
     
     protected $table = 'subscription_payments';
 
-    protected $fillable = ['suscription_version_id', 'amount', 'payment_method', 'invoiced'];
+    protected $fillable = ['subscription_version_id', 'amount', 'payment_method', 'invoiced'];
 
     protected $casts = [
         'amount' => 'decimal:2',
@@ -22,7 +22,7 @@ class SubscriptionPayment extends Model
     
     public function subscriptionVersion(): BelongsTo
     {
-        return $this->belongsTo(SubscriptionVersion::class, 'suscription_version_id');
+        return $this->belongsTo(SubscriptionVersion::class, 'subscription_version_id');
     }
 
     public function referralUsage(): HasOne

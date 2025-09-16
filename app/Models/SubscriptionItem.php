@@ -13,7 +13,7 @@ class SubscriptionItem extends Model
     protected $table = 'subscription_items';
 
     protected $fillable = [
-        'suscription_version_id',
+        'subscription_version_id',
         'item_key',
         'item_type',
         'name',
@@ -28,6 +28,6 @@ class SubscriptionItem extends Model
 
     public function subscriptionVersion(): BelongsTo
     {
-        return $this->belongsTo(SubscriptionVersion::class, 'suscription_version_id');
+        return $this->belongsTo(SubscriptionVersion::class, 'subscription_version_id');
     }
 }

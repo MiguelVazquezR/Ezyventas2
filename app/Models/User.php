@@ -35,7 +35,7 @@ class User extends Authenticatable
         'email',
         'password',
         'phone',
-        'suscription_id',
+        'subscription_id',
     ];
 
     /**
@@ -77,7 +77,7 @@ class User extends Authenticatable
      */
     public function subscription(): BelongsTo
     {
-        return $this->belongsTo(Subscription::class, 'suscription_id');
+        return $this->belongsTo(Subscription::class, 'subscription_id');
     }
 
     /**

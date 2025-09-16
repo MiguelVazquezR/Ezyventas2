@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('subscription_payments', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('suscription_version_id')->constrained('subscription_versions')->onDelete('cascade');
+            $table->foreignId('subscription_version_id')->constrained('subscription_versions')->onDelete('cascade');
             $table->decimal('amount', 10, 2);
             $table->string('payment_method');
             $table->boolean('invoiced')->default(false);

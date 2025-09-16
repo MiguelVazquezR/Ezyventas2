@@ -20,6 +20,8 @@ return new class extends Migration
             // Relaciones: si se borra una categoría/marca, el producto no se borra, solo se desvincula.
             $table->foreignId('category_id')->nullable()->constrained('categories')->onDelete('set null');
             $table->foreignId('brand_id')->nullable()->constrained('brands')->onDelete('set null');
+            $table->foreignId('branch_id')->nullable()->constrained('branches')->onDelete('set null');
+            $table->foreignId('global_product_id')->nullable()->constrained('global_products')->onDelete('set null');
 
             // Precios y Moneda
             $table->decimal('selling_price', 10, 2)->comment('Precio de venta al público');

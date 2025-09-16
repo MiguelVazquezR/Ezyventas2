@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
 
             // Una sucursal pertenece a una suscripción.
-            $table->foreignId('suscription_id')->constrained('subscriptions')->onDelete('cascade');
+            $table->foreignId('subscription_id')->constrained('subscriptions')->onDelete('cascade');
 
             $table->string('name');
             $table->boolean('is_main')->default(false);

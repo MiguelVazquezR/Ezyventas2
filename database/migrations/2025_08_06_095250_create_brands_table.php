@@ -14,6 +14,7 @@ return new class extends Migration
         Schema::create('brands', function (Blueprint $table) {
             $table->id();
             $table->string('name');
+            $table->string('business_type');
 
             // Permite marcas globales o específicas de un negocio.
             $table->foreignId('subscription_id')->nullable()->constrained('subscriptions')->onDelete('cascade');

@@ -13,7 +13,7 @@ class SubscriptionVersion extends Model
 
     protected $table = 'subscription_versions';
 
-    protected $fillable = ['suscription_id', 'start_date', 'end_date'];
+    protected $fillable = ['subscription_id', 'start_date', 'end_date'];
 
     protected $casts = [
         'start_date' => 'datetime',
@@ -22,16 +22,16 @@ class SubscriptionVersion extends Model
 
     public function subscription(): BelongsTo
     {
-        return $this->belongsTo(Subscription::class, 'suscription_id');
+        return $this->belongsTo(Subscription::class, 'subscription_id');
     }
 
     public function items(): HasMany
     {
-        return $this->hasMany(SubscriptionItem::class, 'suscription_version_id');
+        return $this->hasMany(SubscriptionItem::class, 'subscription_version_id');
     }
 
     public function payments(): HasMany
     {
-        return $this->hasMany(SubscriptionPayment::class, 'suscription_version_id');
+        return $this->hasMany(SubscriptionPayment::class, 'subscription_version_id');
     }
 }

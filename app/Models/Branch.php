@@ -13,7 +13,7 @@ class Branch extends Model
     use HasFactory;
 
     protected $fillable = [
-        'suscription_id',
+        'subscription_id',
         'name',
         'is_main',
         'contact_phone',
@@ -35,7 +35,7 @@ class Branch extends Model
      */
     public function subscription(): BelongsTo
     {
-        return $this->belongsTo(Subscription::class, 'suscription_id');
+        return $this->belongsTo(Subscription::class, 'subscription_id');
     }
 
     /**

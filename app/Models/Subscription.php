@@ -42,7 +42,7 @@ class Subscription extends Model
      */
     public function users(): HasMany
     {
-        return $this->hasMany(User::class, 'suscription_id');
+        return $this->hasMany(User::class, 'subscription_id');
     }
 
     /**
@@ -50,7 +50,7 @@ class Subscription extends Model
      */
     public function branches(): HasMany
     {
-        return $this->hasMany(Branch::class, 'suscription_id');
+        return $this->hasMany(Branch::class, 'subscription_id');
     }
 
     /**
@@ -58,7 +58,7 @@ class Subscription extends Model
      */
     public function versions(): HasMany
     {
-        return $this->hasMany(SubscriptionVersion::class, 'suscription_id');
+        return $this->hasMany(SubscriptionVersion::class, 'subscription_id');
     }
 
     /**
@@ -70,8 +70,8 @@ class Subscription extends Model
         return $this->hasManyThrough(
             SubscriptionPayment::class, 
             SubscriptionVersion::class,
-            'suscription_id', // Foreign key on SubscriptionVersion table...
-            'suscription_version_id' // Foreign key on SubscriptionPayment table... 
+            'subscription_id', // Foreign key on SubscriptionVersion table...
+            'subscription_version_id' // Foreign key on SubscriptionPayment table... 
         );
     }
 }

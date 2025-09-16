@@ -24,7 +24,7 @@ return new class extends Migration
             $table->string('phone')->nullable();
             
             // Un usuario pertenece a una suscripción. Si la suscripción se borra, se borran sus usuarios.
-            $table->foreignId('suscription_id')->constrained('subscriptions')->onDelete('cascade');
+            $table->foreignId('subscription_id')->constrained('subscriptions')->onDelete('cascade');
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {
