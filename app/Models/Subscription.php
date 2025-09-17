@@ -13,6 +13,7 @@ class Subscription extends Model
 
     protected $fillable = [
         'business_name',
+        'business_type_id',
         'commercial_name',
         'status',       
         'contact_phone',

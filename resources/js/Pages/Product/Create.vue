@@ -1,11 +1,15 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, nextTick, markRaw } from 'vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import CreateCategoryModal from './Partials/CreateCategoryModal.vue';
+import CreateBrandModal from './Partials/CreateBrandModal.vue';
+import CreateProviderModal from './Partials/CreateProviderModal.vue';
 
 const props = defineProps({
     categories: Array,
     brands: Array,
+    providers: Array,
     attributeDefinitions: Array,
 });
 
@@ -124,6 +128,40 @@ const onRemoveVariantImage = (optionValue) => {
     delete form.variant_images[optionValue];
 };
 
+// --- Lógica para Modales ---
+const localCategories = ref([...props.categories]);
+const localBrands = ref(props.brands.flatMap(group => group.items));
+const localProviders = ref([...props.providers]);
+
+const showCategoryModal = ref(false);
+const showBrandModal = ref(false);
+const showProviderModal = ref(false);
+
+const handleNewCategory = (newCategory) => {
+    // Usamos markRaw para evitar que Vue intente hacer reactivo este objeto simple
+    localCategories.value.push(markRaw(newCategory));
+    // Usamos nextTick para asegurar que el DOM se actualice antes de seleccionar
+    nextTick(() => {
+        form.category_id = newCategory.id;
+    });
+};
+
+const handleNewBrand = (newBrand) => {
+    const myBrandsGroup = localBrands.value.find(g => g.label === 'Mis Marcas');
+    if (myBrandsGroup) {
+        myBrandsGroup.items.push(markRaw(newBrand));
+    }
+    nextTick(() => {
+        form.brand_id = newBrand.id;
+    });
+};
+
+const handleNewProvider = (newProvider) => {
+    localProviders.value.push(markRaw(newProvider));
+    nextTick(() => {
+        form.provider_id = newProvider.id;
+    });
+};
 </script>
 
 <template>
@@ -166,7 +204,8 @@ const onRemoveVariantImage = (optionValue) => {
                                     <label
                                         class="flex justify-between items-center mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">
                                         <span>Categoría*</span>
-                                        <Button icon="pi pi-plus" label="Nueva" text size="small" />
+                                        <Button @click="showCategoryModal = true" icon="pi pi-plus" label="Nueva" text
+                                            size="small" />
                                     </label>
                                     <Select v-model="form.category_id" size="large" :options="categories"
                                         optionLabel="name" optionValue="id" placeholder="Selecciona una categoría"
@@ -176,10 +215,22 @@ const onRemoveVariantImage = (optionValue) => {
                                     <label
                                         class="flex justify-between items-center mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">
                                         <span>Marca</span>
-                                        <Button icon="pi pi-plus" label="Nueva" text size="small" />
+                                        <Button @click="showBrandModal = true" icon="pi pi-plus" label="Nueva" text
+                                            size="small" />
                                     </label>
-                                    <Select v-model="form.brand_id" size="large" :options="brands" optionLabel="name"
-                                        optionValue="id" placeholder="Selecciona una marca" class="w-full" />
+                                    <Select v-model="form.brand_id" :options="localBrands" optionLabel="name"
+                                        optionValue="id" placeholder="Selecciona una marca" class="w-full"
+                                        size="large">
+                                        <template #optiongroup="{ option }">
+                                            <div
+                                                class="flex items-center font-bold px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                                                {{ option.label }}
+                                            </div>
+                                        </template>
+                                        <template #option="{ option }">
+                                            <div class="px-2 py-1">{{ option.name }}</div>
+                                        </template>
+                                    </Select>
                                 </div>
                             </div>
                         </div>
@@ -201,10 +252,11 @@ const onRemoveVariantImage = (optionValue) => {
                                 <label
                                     class="flex justify-between items-center mb-1 text-sm font-medium text-gray-700 dark:text-gray-300">
                                     <span>Proveedor</span>
-                                    <Button icon="pi pi-plus" label="Nuevo" text size="small" />
+                                    <Button @click="showProviderModal = true" icon="pi pi-plus" label="Nuevo" text
+                                        size="small" />
                                 </label>
-                                <Select v-model="form.provider_id" size="large" :options="[]"
-                                    placeholder="Selecciona un proveedor" class="w-full" />
+                                <Select v-model="form.provider_id" :options="localProviders" optionLabel="name"
+                                    optionValue="id" placeholder="Selecciona un proveedor" class="w-full" size="large" />
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Precio de
@@ -328,9 +380,10 @@ const onRemoveVariantImage = (optionValue) => {
                                             </div>
                                         </div>
                                     </div>
-                                    <div v-else class="text-center text-gray-500 dark:text-gray-400 p-4">
-                                        <p>Ninguna de las variantes seleccionadas requiere una imagen específica.</p>
-                                        <p class="text-sm">Selecciona una categoría y un atributo como "Color" para
+                                    <div v-else class="text-center text-gray-500 dark:text-gray-400 p-4 text-sm">
+                                        <p class="m-0">Ninguna de las variantes seleccionadas requiere una imagen
+                                            específica.</p>
+                                        <p class="m-0">Selecciona una categoría y un atributo como "Color" para
                                             activar esta sección.
                                         </p>
                                     </div>
@@ -399,6 +452,10 @@ const onRemoveVariantImage = (optionValue) => {
                 </form>
             </div>
         </div>
+        <!-- Modales -->
+        <CreateCategoryModal v-model:visible="showCategoryModal" @created="handleNewCategory" />
+        <CreateBrandModal v-model:visible="showBrandModal" @created="handleNewBrand" />
+        <CreateProviderModal v-model:visible="showProviderModal" @created="handleNewProvider" />
     </AppLayout>
 </template>
 

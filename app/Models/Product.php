@@ -45,6 +45,16 @@ class Product extends Model implements HasMedia
         ];
     }
 
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('product-general-images')
+            // ->singleFile() // Descomentar si solo permites una imagen principal
+            ->withResponsiveImages(); // Opcional: genera conversiones para diferentes tamaños
+
+        $this->addMediaCollection('product-variant-images')
+            ->withResponsiveImages(); // Opcional
+    }
+
     /*
     |--------------------------------------------------------------------------
     | RELACIONES

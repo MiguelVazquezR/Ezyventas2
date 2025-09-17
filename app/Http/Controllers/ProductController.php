@@ -6,7 +6,9 @@ use App\Models\AttributeDefinition;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\Provider;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -55,27 +57,37 @@ class ProductController extends Controller
         ]);
     }
 
-    public function create()
+    public function create(): Response
     {
-        $subscriptionId = auth()->user()->subscription_id;
+        $user = Auth::user();
+        $subscriptionId = $user->subscription_id;
+        $subscription = $user->subscription;
 
-        // Cargar datos necesarios para los dropdowns y variantes
+        // --- MARCAS ---
+        $subscriberBrands = Brand::where('subscription_id', $subscriptionId)->get(['id', 'name']);
+        $globalBrands = Brand::whereNull('subscription_id')
+            ->whereHas('businessTypes', function ($query) use ($subscription) {
+                $query->where('business_type_id', $subscription->business_type_id);
+            })
+            ->get(['id', 'name']);
+
+        $formattedBrands = [
+            ['label' => 'Mis Marcas', 'items' => $subscriberBrands],
+            ['label' => 'Marcas del Catálogo', 'items' => $globalBrands],
+        ];
+
+        // --- DATOS ADICIONALES ---
         $categories = Category::where('subscription_id', $subscriptionId)->get(['id', 'name']);
-        $brands = Brand::where('subscription_id', $subscriptionId)->get(['id', 'name']);
-
-        // Suponiendo un modelo Proveedor (Provider)
-        // $providers = Provider::where('subscription_id', $subscriptionId)->get(['id', 'name']);
-        
-        // Cargar las definiciones de atributos con sus opciones
+        $providers = Provider::where('subscription_id', $subscriptionId)->get(['id', 'name']);
         $attributeDefinitions = AttributeDefinition::with('options')
-        ->where('subscription_id', $subscriptionId)
-        ->get();
+            ->where('subscription_id', $subscriptionId)
+            ->get();
 
         return Inertia::render('Product/Create', [
             'categories' => $categories,
-            'brands' => $brands,
+            'brands' => $formattedBrands,
+            'providers' => $providers,
             'attributeDefinitions' => $attributeDefinitions,
-            // 'providers' => $providers, // Descomentar cuando tengas el modelo
         ]);
     }
 

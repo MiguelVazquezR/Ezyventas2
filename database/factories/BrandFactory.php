@@ -12,7 +12,6 @@ class BrandFactory extends Factory
         return [
             'subscription_id' => Subscription::factory(),
             'name' => $this->faker->company(),
-            'business_type' => $this->faker->randomElement(['retail', 'services']),
         ];
     }
 }
