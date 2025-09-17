@@ -7,12 +7,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 
 class Product extends Model implements HasMedia
 {
-    use HasFactory, InteractsWithMedia;
+    use HasFactory, InteractsWithMedia, LogsActivity;
 
     protected $fillable = [
         'name', 'description', 'sku', 'selling_price', 'cost_price',
@@ -43,6 +45,31 @@ class Product extends Model implements HasMedia
             'width' => 'decimal:2',
             'height' => 'decimal:2',
         ];
+    }
+
+    // Método de configuración para el historial de actividad
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly([
+                'name', 'description', 'sku', 'selling_price', 'cost_price',
+                'current_stock', 'min_stock', 'max_stock', 'category_id', 'brand_id', 'provider_id',
+                'show_online', 'online_price'
+            ])
+            ->setDescriptionForEvent(fn(string $eventName) => "El producto ha sido {$this->translateEventName($eventName)}")
+            ->logOnlyDirty() // Solo registrar si los atributos han cambiado
+            ->dontSubmitEmptyLogs(); // No guardar logs si no hay cambios
+    }
+
+    // Helper para traducir el nombre del evento
+    private function translateEventName(string $eventName): string
+    {
+        $translations = [
+            'created' => 'creado',
+            'updated' => 'actualizado',
+            'deleted' => 'eliminado',
+        ];
+        return $translations[$eventName] ?? $eventName;
     }
 
     public function registerMediaCollections(): void

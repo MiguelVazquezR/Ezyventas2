@@ -39,7 +39,14 @@ const menu = ref();
 const selectedProductForMenu = ref(null); // Para guardar el producto del menú activo
 
 const menuItems = ref([
-    { label: 'Ver', icon: 'pi pi-eye' },
+    {
+        label: 'Ver', icon: 'pi pi-eye',
+        command: () => {
+            if (selectedProductForMenu.value) {
+                router.get(route('products.show', selectedProductForMenu.value.id));
+            }
+        }
+    },
     {
         label: 'Editar',
         icon: 'pi pi-pencil',
@@ -72,7 +79,7 @@ const fetchData = (options = {}) => {
         search: searchTerm.value,
         product_type: productType.value,
     };
-    
+
     router.get(route('products.index'), queryParams, {
         preserveState: true,
         replace: true,
@@ -95,6 +102,7 @@ const getStockSeverity = (product) => {
 </script>
 
 <template>
+
     <Head title="Productos" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
@@ -102,41 +110,36 @@ const getStockSeverity = (product) => {
                 <!-- Header con filtros y acciones -->
                 <div class="mb-6">
                     <div class="mb-4">
-                        <SelectButton v-model="productType" :options="productTypeOptions" optionLabel="label" optionValue="value" aria-labelledby="basic" />
+                        <SelectButton v-model="productType" :options="productTypeOptions" optionLabel="label"
+                            optionValue="value" aria-labelledby="basic" />
                     </div>
                     <div class="flex flex-col md:flex-row justify-between items-center gap-4">
                         <IconField iconPosition="left" class="w-full md:w-1/3">
                             <InputIcon class="pi pi-search"></InputIcon>
-                            <InputText v-model="searchTerm" placeholder="Buscar por código o nombre..." class="w-full" />
+                            <InputText v-model="searchTerm" placeholder="Buscar por código o nombre..."
+                                class="w-full" />
                         </IconField>
                         <div class="flex items-center gap-2">
-                            <SplitButton label="Nuevo producto" icon="pi pi-plus" :model="splitButtonItems" severity="warning"></SplitButton>
+                            <SplitButton @click="$inertia.visit(route('products.create'))" label="Nuevo producto"
+                                icon="pi pi-plus" :model="splitButtonItems" severity="warning"></SplitButton>
                         </div>
                     </div>
                 </div>
 
                 <!-- Tabla de Productos -->
-                <DataTable 
-                    :value="products.data" 
-                    v-model:selection="selectedProducts"
-                    lazy paginator
-                    :totalRecords="products.total"
-                    :rows="products.per_page"
-                    :rowsPerPageOptions="[20, 50, 100, 200]"
-                    dataKey="id"
-                    @page="onPage"
-                    @sort="onSort"
-                    removableSort
-                    tableStyle="min-width: 75rem"
+                <DataTable :value="products.data" v-model:selection="selectedProducts" lazy paginator
+                    :totalRecords="products.total" :rows="products.per_page" :rowsPerPageOptions="[20, 50, 100, 200]"
+                    dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 75rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} productos"
-                    class="p-datatable-sm"
-                >
+                    class="p-datatable-sm">
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
                     <Column header="Imagen" style="width: 5rem">
                         <template #body="{ data }">
-                            <img v-if="data.media && data.media.length > 0" :src="data.media[0].original_url" :alt="data.name" class="w-12 h-12 rounded-md object-cover">
-                            <div v-else class="w-12 h-12 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                            <img v-if="data.media && data.media.length > 0" :src="data.media[0].original_url"
+                                :alt="data.name" class="w-12 h-12 rounded-md object-cover">
+                            <div v-else
+                                class="w-12 h-12 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
                                 <i class="pi pi-image text-2xl text-gray-400 dark:text-gray-500"></i>
                             </div>
                         </template>
@@ -150,17 +153,20 @@ const getStockSeverity = (product) => {
                     </Column>
                     <Column field="selling_price" header="Precio" sortable>
                         <template #body="{ data }">
-                            {{ new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(data.selling_price) }}
+                            {{ new Intl.NumberFormat('es-MX', {
+                                style: 'currency', currency: 'MXN'
+                            }).format(data.selling_price) }}
                         </template>
                     </Column>
                     <Column field="min_stock" header="Exist. Mínimas" sortable></Column>
                     <Column headerStyle="width: 5rem; text-align: center">
                         <template #body="{ data }">
-                            <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded severity="secondary" aria-haspopup="true" aria-controls="overlay_menu" />
+                            <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded
+                                severity="secondary" aria-haspopup="true" aria-controls="overlay_menu" />
                         </template>
                     </Column>
                 </DataTable>
-                
+
                 <Menu ref="menu" id="overlay_menu" :model="menuItems" :popup="true" />
             </div>
         </div>

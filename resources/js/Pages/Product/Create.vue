@@ -7,6 +7,7 @@ import CreateBrandModal from './Partials/CreateBrandModal.vue';
 import CreateProviderModal from './Partials/CreateProviderModal.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
+import { PrimeIcons } from '@primevue/core/api';
 
 const props = defineProps({
     categories: Array,
@@ -14,6 +15,13 @@ const props = defineProps({
     providers: Array,
     attributeDefinitions: Array,
 });
+
+// --- Refs and State ---
+const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
+const items = ref([
+    { label: 'Productos', url: route('products.index'), icon: PrimeIcons.USER },
+    { label: 'Crear producto' }
+]);
 
 // --- Estado del Formulario ---
 const form = useForm({
@@ -147,6 +155,7 @@ const handleNewProvider = (newProvider) => {
 
     <Head title="Agregar Nuevo Producto" />
     <AppLayout>
+        <Breadcrumb :home="home" :model="items" class="!bg-transparent" />
         <div class="p-4 md:p-6 lg:p-8">
             <div class="max-w-4xl mx-auto">
                 <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-6">Agregar nuevo producto</h1>

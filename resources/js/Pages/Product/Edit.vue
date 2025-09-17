@@ -7,6 +7,7 @@ import CreateBrandModal from './Partials/CreateBrandModal.vue';
 import CreateProviderModal from './Partials/CreateProviderModal.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
+import { PrimeIcons } from '@primevue/core/api';
 
 const props = defineProps({
     product: Object,
@@ -15,6 +16,13 @@ const props = defineProps({
     providers: Array,
     attributeDefinitions: Array,
 });
+
+// --- Refs and State ---
+const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
+const items = ref([
+    { label: 'Productos', url: route('products.index'), icon: PrimeIcons.USER },
+    { label: 'Editar producto' }
+]);
 
 // --- Estado del Formulario ---
 const form = useForm({
@@ -113,7 +121,6 @@ if (form.product_type === 'variant' && props.product.product_attributes.length >
 
 // Observador para preseleccionar las VARIANTES guardadas en la tabla
 watch(variantCombinations, (newCombinations) => {
-    console.log(newCombinations)
     if (newCombinations.length > 0) {
         selectedVariants.value = newCombinations.filter(combo => savedAttributesMap.value.has(combo.row_id));
     }
@@ -157,6 +164,7 @@ const handleNewProvider = (newProvider) => { localProviders.value.push(markRaw(n
 
     <Head :title="`Editar: ${form.name}`" />
     <AppLayout>
+        <Breadcrumb :home="home" :model="items" class="!bg-transparent" />
         <div class="p-4 md:p-6 lg:p-8">
             <div class="max-w-4xl mx-auto">
                 <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-6">Editar producto</h1>
@@ -223,7 +231,7 @@ const handleNewProvider = (newProvider) => { localProviders.value.push(markRaw(n
                             class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
                             Precios</h2>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
+                            <div class="pt-3">
                                 <InputLabel for="cost_price" value="Precio de compra" />
                                 <InputNumber v-model="form.cost_price" id="cost_price" mode="currency" currency="MXN"
                                     locale="es-MX" class="w-full mt-1" />

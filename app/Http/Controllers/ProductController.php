@@ -214,7 +214,7 @@ class ProductController extends Controller
             }
 
             if ($validatedData['product_type'] === 'variant') {
-                $variantsMatrix = json_decode($validatedData['variants_matrix'], true);
+                $variantsMatrix = $validatedData['variants_matrix'];
                 $validatedData['current_stock'] = collect($variantsMatrix)->where('selected', true)->sum('current_stock');
             }
 
@@ -241,7 +241,7 @@ class ProductController extends Controller
 
             // Sincronizar variantes
             if ($validatedData['product_type'] === 'variant') {
-                $variantsMatrix = json_decode($validatedData['variants_matrix'], true);
+                $variantsMatrix = $validatedData['variants_matrix'];
                 $product->productAttributes()->delete(); // Simple: borrar y recrear
                 foreach ($variantsMatrix as $combination) {
                     if (empty($combination['selected'])) continue;
@@ -259,5 +259,51 @@ class ProductController extends Controller
         });
 
         return redirect()->route('products.index')->with('success', 'Producto actualizado con éxito.');
+    }
+
+    public function show(Product $product): Response
+    {
+        // Cargar relaciones y el historial de actividad
+        $product->load([
+            'category',
+            'brand',
+            'provider',
+            'productAttributes',
+            'media',
+            'activities.causer' // Cargar actividades y el usuario que las causó
+        ]);
+
+        $translations = config('log-translations.Product');
+
+        // Formatear el historial para el frontend
+        $formattedActivities = $product->activities->map(function ($activity) use ($translations) {
+            $changes = ['before' => [], 'after' => []];
+
+            if (isset($activity->properties['old'])) {
+                foreach ($activity->properties['old'] as $key => $value) {
+                    $changes['before'][($translations[$key] ?? $key)] = $value;
+                }
+            }
+
+            if (isset($activity->properties['attributes'])) {
+                foreach ($activity->properties['attributes'] as $key => $value) {
+                    $changes['after'][($translations[$key] ?? $key)] = $value;
+                }
+            }
+
+            return [
+                'id' => $activity->id,
+                'description' => $activity->description,
+                'event' => $activity->event,
+                'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
+                'timestamp' => $activity->created_at->diffForHumans(),
+                'changes' => $changes,
+            ];
+        });
+
+        return Inertia::render('Product/Show', [
+            'product' => $product,
+            'activities' => $formattedActivities,
+        ]);
     }
 }
