@@ -20,8 +20,8 @@ class ProductAttribute extends Model
         'attributes', // La nueva columna JSON
         'selling_price_modifier', // Nombre más claro
         'current_stock',
-        'min_stock', // Añadido para consistencia
-        'max_stock', // Añadido para consistencia
+        'min_stock',
+        'max_stock',
         'sku_suffix',
     ];
 

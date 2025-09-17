@@ -12,7 +12,6 @@ class BranchFactory extends Factory
     {
         return [
             'subscription_id' => Subscription::factory(),
-            'manager_id' => null, // Se puede asignar en el seeder si es necesario
             'name' => 'Sucursal ' . $this->faker->city(),
             'is_main' => false,
             'contact_phone' => $this->faker->phoneNumber(),

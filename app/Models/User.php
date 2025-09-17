@@ -6,6 +6,7 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -35,7 +36,7 @@ class User extends Authenticatable
         'email',
         'password',
         'phone',
-        'subscription_id',
+        'branch_id',
     ];
 
     /**
@@ -75,11 +76,26 @@ class User extends Authenticatable
     /**
      * // Obtiene la suscripción a la que pertenece el usuario.
      */
-    public function subscription(): BelongsTo
+    public function branch(): BelongsTo
     {
-        return $this->belongsTo(Subscription::class, 'subscription_id');
+        return $this->belongsTo(Branch::class, 'branch_id');
     }
 
+    /**
+     * Obtiene la suscripción del usuario a través de su sucursal.
+     */
+    public function subscription(): HasOneThrough
+    {
+        return $this->hasOneThrough(
+            Subscription::class,
+            Branch::class,
+            'id', // Foreign key on branches table...
+            'id', // Foreign key on subscriptions table...
+            'branch_id', // Local key on users table...
+            'subscription_id' // Local key on branches table...
+        );
+    }
+    
     /**
      * // Obtiene las sucursales que este usuario gestiona.
      */

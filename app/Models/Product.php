@@ -124,4 +124,13 @@ class Product extends Model implements HasMedia
     {
         return $this->morphMany(TransactionItem::class, 'itemable');
     }
+
+    /**
+     * Obtiene las combinaciones de atributos (variantes) del producto.
+     * ESTA ES LA RELACIÓN QUE FALTABA.
+     */
+    public function productAttributes(): HasMany
+    {
+        return $this->hasMany(ProductAttribute::class);
+    }
 }

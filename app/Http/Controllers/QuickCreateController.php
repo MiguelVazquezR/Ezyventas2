@@ -15,7 +15,7 @@ class QuickCreateController extends Controller
         $validated = $request->validate(['name' => 'required|string|max:255']);
         $category = Category::create([
             'name' => $validated['name'],
-            'subscription_id' => Auth::user()->subscription_id,
+            'subscription_id' => Auth::user()->subscription->id,
         ]);
         // Devolvemos el modelo recién creado como JSON
         return response()->json($category);
@@ -26,7 +26,7 @@ class QuickCreateController extends Controller
         $validated = $request->validate(['name' => 'required|string|max:255']);
         $brand = Brand::create([
             'name' => $validated['name'],
-            'subscription_id' => Auth::user()->subscription_id,
+            'subscription_id' => Auth::user()->subscription->id,
         ]);
         return response()->json($brand);
     }
@@ -36,7 +36,7 @@ class QuickCreateController extends Controller
         $validated = $request->validate(['name' => 'required|string|max:255']);
         $provider = Provider::create([
             'name' => $validated['name'],
-            'subscription_id' => Auth::user()->subscription_id,
+            'subscription_id' => Auth::user()->subscription->id,
         ]);
         return response()->json($provider);
     }

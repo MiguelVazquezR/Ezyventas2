@@ -9,6 +9,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 
 const props = defineProps({
+    product: Object,
     categories: Array,
     brands: Array,
     providers: Array,
@@ -17,62 +18,73 @@ const props = defineProps({
 
 // --- Estado del Formulario ---
 const form = useForm({
-    name: '',
-    description: '',
-    sku: '',
-    category_id: null,
-    brand_id: null,
-    cost_price: null,
-    provider_id: null,
-    selling_price: null,
-    product_type: 'simple',
-    current_stock: null,
-    min_stock: null,
-    max_stock: null,
-    measure_unit: 'pieza',
+    _method: 'PUT',
+    name: props.product.name,
+    description: props.product.description,
+    sku: props.product.sku,
+    category_id: props.product.category_id,
+    brand_id: props.product.brand_id,
+    cost_price: props.product.cost_price,
+    provider_id: props.product.provider_id,
+    selling_price: props.product.selling_price,
+    product_type: props.product.product_attributes.length > 0 ? 'variant' : 'simple',
+    current_stock: props.product.current_stock,
+    min_stock: props.product.min_stock,
+    max_stock: props.product.max_stock,
+    measure_unit: props.product.measure_unit,
     general_images: [],
     variant_images: {},
     variant_attributes: [],
     variants_matrix: [],
-    show_online: false,
-    online_price: null,
-    requires_shipping: true,
-    weight: null,
-    length: null,
-    width: null,
-    height: null,
-    tags: [],
+    show_online: props.product.show_online,
+    online_price: props.product.online_price,
+    requires_shipping: props.product.requires_shipping,
+    weight: props.product.weight,
+    length: props.product.length,
+    width: props.product.width,
+    height: props.product.height,
+    tags: props.product.tags || [],
+    deleted_media_ids: [],
 });
 
-const productTypeOptions = ref([
-    { label: 'Producto Simple', value: 'simple' },
-    { label: 'Producto con Variantes', value: 'variant' }
-]);
+// --- Lógica de Variantes ---
 
-// Estado para previsualización de imágenes de variantes
-const variantImagePreviews = ref({});
-const selectedVariants = ref([]);
-
-const availableAttributes = computed(() => {
-    if (!form.category_id) return [];
-    return props.attributeDefinitions.filter(attr => attr.category_id === form.category_id);
+// Mapa para buscar rápidamente los datos de las variantes guardadas
+const savedAttributesMap = computed(() => {
+    const map = new Map();
+    props.product.product_attributes.forEach(pa => {
+        const key = Object.entries(pa.attributes).sort().map(entry => entry.join(':')).join('|');
+        map.set(key, pa);
+    });
+    return map;
 });
 
-const imageRequiringAttributes = computed(() => {
-    if (form.product_type !== 'variant') return [];
-    return availableAttributes.value.filter(
-        attr => form.variant_attributes.includes(attr.id) && attr.requires_image
-    );
-});
-
+// Genera las combinaciones y las fusiona con los datos guardados
 const variantCombinations = computed(() => {
     if (form.product_type !== 'variant' || form.variant_attributes.length === 0) return [];
     const selectedAttrs = props.attributeDefinitions.filter(attr => form.variant_attributes.includes(attr.id));
     if (selectedAttrs.length === 0) return [];
+
     const generate = (attrs, index = 0, current = {}) => {
         if (index === attrs.length) {
-            const combination = { ...current, selected: true, sku_suffix: '', current_stock: 0, min_stock: 0, max_stock: 0, selling_price: form.selling_price };
-            combination.row_id = Object.values(combination).join('-');
+            const key = Object.entries(current).sort().map(entry => entry.join(':')).join('|');
+            const savedData = savedAttributesMap.value.get(key);
+            let combination;
+            if (savedData) {
+                // Si encontramos datos guardados, los usamos
+                combination = {
+                    ...current,
+                    sku_suffix: savedData.sku_suffix,
+                    current_stock: savedData.current_stock,
+                    min_stock: savedData.min_stock,
+                    max_stock: savedData.max_stock,
+                    selling_price: parseFloat(props.product.selling_price) + parseFloat(savedData.selling_price_modifier),
+                };
+            } else {
+                // Si no, usamos valores por defecto
+                combination = { ...current, sku_suffix: '', current_stock: 0, min_stock: 0, max_stock: 0, selling_price: form.selling_price };
+            }
+            combination.row_id = key;
             return [combination];
         }
         let results = [];
@@ -87,69 +99,67 @@ const variantCombinations = computed(() => {
     return generate(selectedAttrs);
 });
 
+// --- Estado e Inicialización ---
+const selectedVariants = ref([]);
+
+// Inicializar la selección de ATRIBUTOS en el MultiSelect
+if (form.product_type === 'variant' && props.product.product_attributes.length > 0) {
+    const firstVariantAttributes = props.product.product_attributes[0]?.attributes ?? {};
+    const attributeNames = Object.keys(firstVariantAttributes);
+    form.variant_attributes = props.attributeDefinitions
+        .filter(def => attributeNames.includes(def.name) && def.category_id === form.category_id)
+        .map(def => def.id);
+}
+
+// Observador para preseleccionar las VARIANTES guardadas en la tabla
 watch(variantCombinations, (newCombinations) => {
-    selectedVariants.value = [...newCombinations];
-}, { deep: true });
+    console.log(newCombinations)
+    if (newCombinations.length > 0) {
+        selectedVariants.value = newCombinations.filter(combo => savedAttributesMap.value.has(combo.row_id));
+    }
+}, { deep: true, immediate: true });
+
 
 const submit = () => {
-    // Antes de enviar, construimos la matriz final basándonos en las filas seleccionadas.
     const matrixWithSelection = variantCombinations.value.map(combo => ({
         ...combo,
         selected: selectedVariants.value.some(sel => sel.row_id === combo.row_id)
     }));
     form.variants_matrix = matrixWithSelection;
-
-    form.post(route('products.store'));
+    form.post(route('products.update', props.product.id));
 };
 
-// --- Manejo de Imágenes ---
-const onSelectGeneralImages = (event) => {
-    form.general_images = [...form.general_images, ...event.files];
-};
-const onRemoveGeneralImage = (event) => {
-    form.general_images = form.general_images.filter(img => img.objectURL !== event.file.objectURL);
-};
-const onSelectVariantImage = (event, optionValue) => {
-    const file = event.files[0];
-    form.variant_images[optionValue] = file;
-    variantImagePreviews.value[optionValue] = URL.createObjectURL(file);
-};
-const onRemoveVariantImage = (optionValue) => {
-    delete form.variant_images[optionValue];
-    URL.revokeObjectURL(variantImagePreviews.value[optionValue]);
-    delete variantImagePreviews.value[optionValue];
-};
-
-// --- Lógica para Modales ---
+// ... (El resto del script, incluyendo manejo de imágenes y modales, es idéntico y no necesita cambios) ...
+const existingGeneralImages = ref(props.product.media.filter(m => m.collection_name === 'product-general-images'));
+const existingVariantImages = ref(props.product.media.filter(m => m.collection_name === 'product-variant-images'));
+const variantImagePreviews = ref({});
+existingVariantImages.value.forEach(img => { variantImagePreviews.value[img.custom_properties.variant_option] = img.original_url; });
+const productTypeOptions = ref([{ label: 'Producto Simple', value: 'simple' }, { label: 'Producto con Variantes', value: 'variant' }]);
+const availableAttributes = computed(() => { if (!form.category_id) return []; return props.attributeDefinitions.filter(attr => attr.category_id === form.category_id); });
+const imageRequiringAttributes = computed(() => { if (form.product_type !== 'variant') return []; return availableAttributes.value.filter(attr => form.variant_attributes.includes(attr.id) && attr.requires_image); });
+const deleteExistingImage = (mediaId) => { form.deleted_media_ids.push(mediaId); existingGeneralImages.value = existingGeneralImages.value.filter(img => img.id !== mediaId); };
+const deleteExistingVariantImage = (mediaId, optionValue) => { form.deleted_media_ids.push(mediaId); existingVariantImages.value = existingVariantImages.value.filter(img => img.id !== mediaId); delete variantImagePreviews.value[optionValue]; };
+const onSelectGeneralImages = (event) => { form.general_images = [...form.general_images, ...event.files]; };
+const onRemoveGeneralImage = (event) => { form.general_images = form.general_images.filter(img => img.objectURL !== event.file.objectURL); };
+const onSelectVariantImage = (event, optionValue) => { const file = event.files[0]; form.variant_images[optionValue] = file; variantImagePreviews.value[optionValue] = URL.createObjectURL(file); };
 const localCategories = ref([...props.categories]);
 const localBrands = ref(JSON.parse(JSON.stringify(props.brands)));
 const localProviders = ref([...props.providers]);
 const showCategoryModal = ref(false);
 const showBrandModal = ref(false);
 const showProviderModal = ref(false);
-
-const handleNewCategory = (newCategory) => {
-    localCategories.value.push(markRaw(newCategory));
-    nextTick(() => { form.category_id = newCategory.id; });
-};
-const handleNewBrand = (newBrand) => {
-    const myBrandsGroup = localBrands.value.find(g => g.label === 'Mis Marcas');
-    if (myBrandsGroup) { myBrandsGroup.items.push(markRaw(newBrand)); }
-    nextTick(() => { form.brand_id = newBrand.id; });
-};
-const handleNewProvider = (newProvider) => {
-    localProviders.value.push(markRaw(newProvider));
-    nextTick(() => { form.provider_id = newProvider.id; });
-};
+const handleNewCategory = (newCategory) => { localCategories.value.push(markRaw(newCategory)); nextTick(() => { form.category_id = newCategory.id; }); };
+const handleNewBrand = (newBrand) => { const myBrandsGroup = localBrands.value.find(g => g.label === 'Mis Marcas'); if (myBrandsGroup) { myBrandsGroup.items.push(markRaw(newBrand)); } nextTick(() => { form.brand_id = newBrand.id; }); };
+const handleNewProvider = (newProvider) => { localProviders.value.push(markRaw(newProvider)); nextTick(() => { form.provider_id = newProvider.id; }); };
 </script>
 
 <template>
 
-    <Head title="Agregar Nuevo Producto" />
+    <Head :title="`Editar: ${form.name}`" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8">
             <div class="max-w-4xl mx-auto">
-                <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-6">Agregar nuevo producto</h1>
+                <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-6">Editar producto</h1>
                 <form @submit.prevent="submit">
                     <!-- Sección de Información General -->
                     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
@@ -213,7 +223,7 @@ const handleNewProvider = (newProvider) => {
                             class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
                             Precios</h2>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div class="mt-3">
+                            <div>
                                 <InputLabel for="cost_price" value="Precio de compra" />
                                 <InputNumber v-model="form.cost_price" id="cost_price" mode="currency" currency="MXN"
                                     locale="es-MX" class="w-full mt-1" />
@@ -292,18 +302,23 @@ const handleNewProvider = (newProvider) => {
                                 </DataTable>
                             </div>
                         </div>
-                        <div v-if="form.product_type === 'variant' && !form.category_id"
-                            class="mt-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 rounded-md">
-                            Por favor,
-                            selecciona una categoría para gestionar sus variantes.</div>
                         <div class="mt-6">
                             <Tabs>
                                 <TabPanel header="Imágenes Generales">
+                                    <div v-if="existingGeneralImages.length > 0" class="flex flex-wrap gap-4 mb-4">
+                                        <div v-for="img in existingGeneralImages" :key="img.id" class="relative">
+                                            <img :src="img.original_url"
+                                                class="w-24 h-24 object-cover rounded-md border">
+                                            <Button @click="deleteExistingImage(img.id)" icon="pi pi-times" rounded text
+                                                severity="danger"
+                                                class="!absolute -top-2 -right-2 bg-white/70 dark:bg-gray-800/70" />
+                                        </div>
+                                    </div>
                                     <FileUpload name="general_images[]" @select="onSelectGeneralImages"
                                         @remove="onRemoveGeneralImage" :multiple="true" accept="image/*"
                                         :maxFileSize="5000000">
                                         <template #empty>
-                                            <p>Arrastra y suelta hasta 5 imágenes generales del producto.</p>
+                                            <p>Arrastra y suelta para añadir más imágenes.</p>
                                         </template>
                                     </FileUpload>
                                     <InputError class="mt-2" :message="form.errors.general_images" />
@@ -319,16 +334,23 @@ const handleNewProvider = (newProvider) => {
                                                     class="text-center">
                                                     <InputLabel :value="option.value" class="text-sm" />
                                                     <div class="mt-1 flex flex-col items-center">
-                                                        <img v-if="variantImagePreviews[option.value]"
-                                                            :src="variantImagePreviews[option.value]"
-                                                            class="w-20 h-20 object-cover rounded-md mb-2 border">
-                                                        <div v-else
-                                                            class="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-md mb-2 flex items-center justify-center text-gray-400">
-                                                            <i class="pi pi-image text-2xl"></i>
+                                                        <div class="relative w-20 h-20 mb-2">
+                                                            <img v-if="variantImagePreviews[option.value]"
+                                                                :src="variantImagePreviews[option.value]"
+                                                                class="w-full h-full object-cover rounded-md border">
+                                                            <div v-else
+                                                                class="w-full h-full bg-gray-100 dark:bg-gray-700 rounded-md flex items-center justify-center text-gray-400">
+                                                                <i class="pi pi-image text-2xl"></i>
+                                                            </div>
+                                                            <Button
+                                                                v-if="existingVariantImages.find(i => i.custom_properties.variant_option === option.value)"
+                                                                @click="deleteExistingVariantImage(existingVariantImages.find(i => i.custom_properties.variant_option === option.value).id, option.value)"
+                                                                icon="pi pi-times" rounded text severity="danger"
+                                                                class="!absolute -top-2 -right-2 bg-white/70 dark:bg-gray-800/70" />
                                                         </div>
                                                         <FileUpload mode="basic" name="variant_image[]" accept="image/*"
                                                             :maxFileSize="1000000" :auto="true" :customUpload="true"
-                                                            @uploader="onSelectVariantImage($event, option.value)"
+                                                            @select="onSelectVariantImage($event, option.value)"
                                                             chooseLabel="Elegir" class="w-20" />
                                                     </div>
                                                 </div>
@@ -374,7 +396,7 @@ const handleNewProvider = (newProvider) => {
                                 class="md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
                                 <div>
                                     <InputLabel for="weight" value="Peso (kg)" />
-                                    <InputNumber v-model="form.weight" id="weight" mode="decimal" :minFractionDigits="2"
+                                    <InputNumber v-model="form.weight" id="weight" mode="decimal" :minFractionDigits="0"
                                         :maxFractionDigits="3" class="w-full mt-1" />
                                     <InputError class="mt-2" :message="form.errors.weight" />
                                 </div>
@@ -394,15 +416,15 @@ const handleNewProvider = (newProvider) => {
                         </div>
                     </div>
                     <div class="flex justify-end">
-                        <Button type="submit" label="Crear producto" icon="pi pi-check" severity="warning"
+                        <Button type="submit" label="Actualizar producto" icon="pi pi-check" severity="warning"
                             :loading="form.processing" />
                     </div>
                 </form>
+                <!-- Modales -->
+                <CreateCategoryModal v-model:visible="showCategoryModal" @created="handleNewCategory" />
+                <CreateBrandModal v-model:visible="showBrandModal" @created="handleNewBrand" />
+                <CreateProviderModal v-model:visible="showProviderModal" @created="handleNewProvider" />
             </div>
         </div>
-        <!-- Modales -->
-        <CreateCategoryModal v-model:visible="showCategoryModal" @created="handleNewCategory" />
-        <CreateBrandModal v-model:visible="showBrandModal" @created="handleNewBrand" />
-        <CreateProviderModal v-model:visible="showProviderModal" @created="handleNewProvider" />
     </AppLayout>
 </template>

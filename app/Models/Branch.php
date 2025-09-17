@@ -41,10 +41,10 @@ class Branch extends Model
     /**
      * Get the user who manages the branch.
      */
-    public function manager(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'manager_id');
-    }
+    // public function manager(): BelongsTo
+    // {
+    //     return $this->belongsTo(User::class, 'manager_id');
+    // }
 
     /**
      * Get the transactions for the branch.
