@@ -31,6 +31,7 @@ class StoreProductRequest extends FormRequest
 
             // Precios
             'cost_price' => 'nullable|numeric|min:0',
+            'provider_id' => 'nullable|exists:providers,id',
             'selling_price' => 'required|numeric|min:0',
             
             // Inventario y Variantes
@@ -41,7 +42,7 @@ class StoreProductRequest extends FormRequest
             'measure_unit' => 'required|string|max:50',
 
             // Variantes (la matriz llega como un string JSON)
-            'variants_matrix' => 'required_if:product_type,variant|json',
+            'variants_matrix' => 'required_if:product_type,variant|array',
 
             // Imágenes
             'general_images' => 'nullable|array|max:5',
@@ -57,6 +58,7 @@ class StoreProductRequest extends FormRequest
             'length' => 'nullable|numeric|min:0',
             'width' => 'nullable|numeric|min:0',
             'height' => 'nullable|numeric|min:0',
+            'tags' => 'nullable|array',
         ];
     }
 }

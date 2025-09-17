@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreProductRequest;
 use App\Models\AttributeDefinition;
 use App\Models\Brand;
 use App\Models\Category;
@@ -9,8 +10,10 @@ use App\Models\Product;
 use App\Models\Provider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Support\Str;
 
 class ProductController extends Controller
 {
@@ -94,12 +97,85 @@ class ProductController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(StoreProductRequest $request)
     {
-        // Aquí irá la lógica para validar y guardar el producto.
-        // Incluyendo la creación de los registros en `product_attributes` para las variantes.
+        DB::transaction(function () use ($request) {
+            $user = Auth::user();
+            $subscriptionId = $user->subscription_id;
+            $validatedData = $request->validated();
 
-        // dd($request->all()); // Para depurar lo que llega del formulario
+            // Punto 1: Generar un slug único
+            $baseSlug = Str::slug($validatedData['name']);
+            $slug = $baseSlug;
+            $counter = 1;
+            while (Product::where('subscription_id', $subscriptionId)->where('slug', $slug)->exists()) {
+                $slug = $baseSlug . '-' . $counter++;
+            }
+            $validatedData['slug'] = $slug;
+
+            // Punto 6: Calcular el stock total si es un producto con variantes
+            if ($validatedData['product_type'] === 'variant') {
+                $variantsMatrix = json_decode($validatedData['variants_matrix'], true);
+                $validatedData['current_stock'] = collect($variantsMatrix)
+                    ->where('selected', true)
+                    ->sum('current_stock');
+            }
+
+            // Punto 8 (Solución): Crear el producto excluyendo los campos de archivos
+            $productData = collect($validatedData)->except(['general_images', 'variant_images', 'variants_matrix'])->all();
+
+            $product = Product::create(
+                array_merge(
+                    $productData,
+                    [
+                        'subscription_id' => $subscriptionId,
+                        'branch_id' => $user->subscription->branches()->first()->id,
+                    ]
+                )
+            );
+
+            // 2. Guardar imágenes generales
+            if ($request->hasFile('general_images')) {
+                foreach ($request->file('general_images') as $file) {
+                    $product->addMedia($file)->toMediaCollection('product-general-images');
+                }
+            }
+
+            // 3. Gestionar variantes y sus imágenes
+            if ($validatedData['product_type'] === 'variant') {
+                if ($request->hasFile('variant_images')) {
+                    foreach ($request->file('variant_images') as $optionValue => $file) {
+                        $product->addMedia($file)
+                            ->withCustomProperties(['variant_option' => $optionValue])
+                            ->toMediaCollection('product-variant-images');
+                    }
+                }
+
+                $variantsMatrix = json_decode($validatedData['variants_matrix'], true);
+                foreach ($variantsMatrix as $combination) {
+                    if (empty($combination['selected'])) continue;
+
+                    $attributes = collect($combination)->except([
+                        'selected',
+                        'sku_suffix',
+                        'current_stock',
+                        'min_stock',
+                        'max_stock',
+                        'selling_price',
+                        'row_id'
+                    ])->all();
+
+                    $product->productAttributes()->create([
+                        'attributes' => $attributes,
+                        'sku_suffix' => $combination['sku_suffix'],
+                        'current_stock' => $combination['current_stock'],
+                        'min_stock' => $combination['min_stock'],
+                        'max_stock' => $combination['max_stock'],
+                        'selling_price_modifier' => $combination['selling_price'] - $product->selling_price,
+                    ]);
+                }
+            }
+        });
 
         return redirect()->route('products.index')->with('success', 'Producto creado con éxito.');
     }

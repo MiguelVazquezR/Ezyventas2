@@ -16,7 +16,7 @@ class Product extends Model implements HasMedia
 
     protected $fillable = [
         'name', 'description', 'sku', 'selling_price', 'cost_price',
-        'current_stock', 'min_stock', 'max_stock', 'category_id', 'brand_id', 'branch_id', 'global_product_id',
+        'current_stock', 'min_stock', 'max_stock', 'category_id', 'provider_id', 'brand_id', 'branch_id', 'global_product_id',
         'measure_unit', 'currency', 'show_online', 'online_price', 'slug', 'delivery_days',
         'tags', 'is_featured', 'is_on_sale', 'sale_price', 'sale_start_date',
         'sale_end_date', 'weight', 'length', 'width', 'height',
@@ -75,6 +75,14 @@ class Product extends Model implements HasMedia
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+    
+    /**
+     * Obtiene el proveedor del producto.
+     */
+    public function provider(): BelongsTo
+    {
+        return $this->belongsTo(Provider::class);
     }
 
     /**

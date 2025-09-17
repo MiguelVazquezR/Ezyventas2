@@ -22,6 +22,7 @@ return new class extends Migration
             $table->foreignId('brand_id')->nullable()->constrained('brands')->onDelete('set null');
             $table->foreignId('branch_id')->nullable()->constrained('branches')->onDelete('set null');
             $table->foreignId('global_product_id')->nullable()->constrained('global_products')->onDelete('set null');
+            $table->foreignId('provider_id')->nullable()->constrained('providers')->onDelete('set null');
 
             // Precios y Moneda
             $table->decimal('selling_price', 10, 2)->comment('Precio de venta al público');
@@ -37,7 +38,7 @@ return new class extends Migration
             // Atributos para Tienda en Línea
             $table->boolean('show_online')->default(false);
             $table->decimal('online_price', 10, 2)->nullable()->comment('Precio especial para venta online');
-            $table->string('slug')->unique();
+            $table->string('slug')->nullable()->unique();
             $table->integer('delivery_days')->nullable();
             $table->json('tags')->nullable();
             $table->boolean('is_featured')->default(false)->comment('Producto destacado');
@@ -58,7 +59,7 @@ return new class extends Migration
             $table->unsignedInteger('purchase_count')->default(0);
 
             // Misceláneos
-            $table->string('business_type')->nullable();
+            // $table->string('business_type')->nullable();
             
             $table->timestamps();
         });

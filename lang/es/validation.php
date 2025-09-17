@@ -211,5 +211,6 @@ return [
         'branch_id' => 'sucursal',
         'base_salary' => 'salario base',
         'position' => 'puesto',
+        'product_type' => 'tipo de producto',
     ],
 ];
