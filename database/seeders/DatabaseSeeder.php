@@ -11,6 +11,7 @@ use App\Models\Subscription;
 use App\Models\AttributeDefinition;
 use App\Models\AttributeOption;
 use App\Models\BusinessType;
+use App\Models\GlobalProduct;
 use App\Models\Provider;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +23,7 @@ class DatabaseSeeder extends Seeder
     {
         // 1. Llenar catálogos base
         $this->call(BusinessTypeSeeder::class);
-        $this->seedGlobalBrands();
+        $this->seedGlobalBrandsAndProducts(); // Renombrado para incluir productos
 
         // 2. Crear Suscriptores y sus datos privados
         $businessTypes = BusinessType::all();
@@ -73,18 +74,16 @@ class DatabaseSeeder extends Seeder
     }
 
     /**
-     * Crea marcas globales y las asocia a tipos de negocio.
+     * Crea marcas y productos globales y los asocia a tipos de negocio.
      */
-    private function seedGlobalBrands(): void
+    private function seedGlobalBrandsAndProducts(): void
     {
         $ropaType = BusinessType::where('name', 'Tienda de Ropa y Accesorios')->first();
         $electronicaType = BusinessType::where('name', 'Tienda de Electrónica')->first();
 
-        // Marcas para Ropa
+        // Marcas globales
         $nike = Brand::factory()->create(['name' => 'Nike', 'subscription_id' => null]);
         $zara = Brand::factory()->create(['name' => 'Zara', 'subscription_id' => null]);
-
-        // Marcas para Electrónica
         $samsung = Brand::factory()->create(['name' => 'Samsung', 'subscription_id' => null]);
         $apple = Brand::factory()->create(['name' => 'Apple', 'subscription_id' => null]);
 
@@ -93,6 +92,16 @@ class DatabaseSeeder extends Seeder
         $zara->businessTypes()->attach($ropaType->id);
         $samsung->businessTypes()->attach($electronicaType->id);
         $apple->businessTypes()->attach($electronicaType->id);
+
+        // --- NUEVO: Crear Productos Globales ---
+        GlobalProduct::factory(5)->create([
+            'brand_id' => $nike->id,
+            'business_type_id' => $ropaType->id,
+        ]);
+        GlobalProduct::factory(5)->create([
+            'brand_id' => $samsung->id,
+            'business_type_id' => $electronicaType->id,
+        ]);
     }
 
     /**

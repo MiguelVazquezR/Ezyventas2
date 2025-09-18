@@ -68,11 +68,7 @@ const deleteProduct = () => {
         acceptLabel: 'Sí, eliminar',
         rejectLabel: 'Cancelar',
         accept: () => {
-            router.delete(route('products.destroy', props.product.id), {
-                onSuccess: () => {
-                    toast.add({ severity: 'success', summary: 'Eliminado', detail: 'El producto ha sido eliminado.', life: 3000 });
-                }
-            });
+            router.delete(route('products.destroy', props.product.id));
         }
     });
 };
@@ -218,14 +214,14 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                     <span class="text-gray-500 dark:text-gray-400 w-24">SKU</span>
                                     <span class="font-medium text-gray-800 dark:text-gray-200 mr-2">{{ product.sku ||
                                         'N/A'
-                                    }}</span>
+                                        }}</span>
                                     <Button v-if="product.sku" @click="copyToClipboard(product.sku)" icon="pi pi-copy"
                                         text rounded size="small" v-tooltip.bottom="'Copiar SKU'"></Button>
                                 </li>
                                 <li class="flex"><span class="text-gray-500 dark:text-gray-400 w-24">Categoría</span>
                                     <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.category?.name
                                         || 'N/A'
-                                    }}</span>
+                                        }}</span>
                                 </li>
                                 <li class="flex"><span class="text-gray-500 dark:text-gray-400 w-24">Marca</span> <span
                                         class="font-medium text-gray-800 dark:text-gray-200">{{ product.brand?.name ||
@@ -255,7 +251,7 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                         class="text-gray-500 dark:text-gray-400">Proveedor</span>
                                     <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.provider?.name
                                         || 'N/A'
-                                    }}</span>
+                                        }}</span>
                                 </li>
                                 <li class="flex justify-between"><span
                                         class="text-gray-500 dark:text-gray-400">Impuesto</span>
@@ -285,12 +281,12 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                         <div>
                             <p class="text-sm text-gray-500 dark:text-gray-400">Stock Mínimo</p>
                             <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.min_stock || 'N/A'
-                            }}</p>
+                                }}</p>
                         </div>
                         <div>
                             <p class="text-sm text-gray-500 dark:text-gray-400">Stock Máximo</p>
                             <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.max_stock || 'N/A'
-                            }}</p>
+                                }}</p>
                         </div>
                     </div>
 

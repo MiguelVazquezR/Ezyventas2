@@ -9,5 +9,6 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth')->group(function () {
+    Route::post('products/batch-destroy', [ProductController::class, 'batchDestroy'])->name('products.batchDestroy');
     Route::resource('products', ProductController::class);
 });

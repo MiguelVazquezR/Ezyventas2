@@ -21,9 +21,11 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 
 require __DIR__ . '/web/POS.php';
 require __DIR__ . '/web/products.php';
+require __DIR__ . '/web/products-stock.php';
+require __DIR__ . '/web/products-import-export.php';
 require __DIR__ . '/web/quick-create.php';
 require __DIR__ . '/web/promotions.php';
-require __DIR__ . '/web/product-stock.php';
+require __DIR__ . '/web/base-catalog.php';
 
 
 //artisan commands -------------------

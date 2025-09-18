@@ -59,4 +59,34 @@ class ProductStockController extends Controller
 
         return redirect()->route('products.show', $product->id)->with('success', 'Stock actualizado con éxito.');
     }
+
+    /**
+     * Da entrada de stock a múltiples productos.
+     */
+    public function batchStore(Request $request)
+    {
+        $validated = $request->validate([
+            'products' => 'required|array',
+            'products.*.id' => 'required|exists:products,id',
+            'products.*.quantity' => 'required|integer|min:0',
+        ]);
+
+        DB::transaction(function () use ($validated) {
+            foreach ($validated['products'] as $productData) {
+                if ($productData['quantity'] > 0) {
+                    $product = Product::find($productData['id']);
+                    // Aquí se puede añadir una autorización para asegurar que el producto pertenece al usuario
+
+                    $product->increment('current_stock', $productData['quantity']);
+
+                    activity()
+                        ->performedOn($product)
+                        ->causedBy(auth()->user())
+                        ->log("Se dio entrada masiva de {$productData['quantity']} unidades.");
+                }
+            }
+        });
+
+        return redirect()->route('products.index')->with('success', 'Stock actualizado con éxito.');
+    }
 }

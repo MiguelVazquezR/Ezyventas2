@@ -322,4 +322,33 @@ class ProductController extends Controller
             'activities' => $formattedActivities,
         ]);
     }
+
+    public function destroy(Product $product)
+    {
+        // Opcional: Autorización
+        // $this->authorize('delete', $product);
+
+        $product->delete();
+
+        return redirect()->route('products.index')->with('success', 'Producto eliminado con éxito.');
+    }
+
+    /**
+     * Elimina múltiples productos de la base de datos.
+     */
+    public function batchDestroy(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array',
+            'ids.*' => 'exists:products,id',
+        ]);
+
+        // Opcional: Autorización para asegurar que todos los IDs pertenecen al usuario
+        // $products = Product::whereIn('id', $validated['ids'])->get();
+        // $this->authorize('delete-multiple', $products);
+
+        Product::whereIn('id', $validated['ids'])->delete();
+
+        return redirect()->route('products.index')->with('success', 'Productos seleccionados eliminados con éxito.');
+    }
 }

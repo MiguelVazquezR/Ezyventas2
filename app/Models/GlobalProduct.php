@@ -5,21 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 
-class GlobalProduct extends Model
+class GlobalProduct extends Model implements HasMedia
 {
     use HasFactory, InteractsWithMedia;
 
-    protected $fillable = [
-        'name',
-        'description',
-        'sku',
-        'selling_price',
-        'category_id',
-        'brand_id',
-        'measure_unit',
-    ];
+    protected $guarded = [];
 
     protected function casts(): array
     {
@@ -34,19 +27,18 @@ class GlobalProduct extends Model
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Obtiene la categoría a la que pertenece el producto.
-     */
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
     }
 
-    /**
-     * Obtiene la marca a la que pertenece el producto.
-     */
     public function brand(): BelongsTo
     {
         return $this->belongsTo(Brand::class);
+    }
+
+    public function businessType(): BelongsTo
+    {
+        return $this->belongsTo(BusinessType::class);
     }
 }
