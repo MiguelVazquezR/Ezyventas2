@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('promotions', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('subscription_id');
             $table->string('name');
             $table->text('description')->nullable();
             $table->string('type')->comment('ITEM_DISCOUNT, CART_DISCOUNT, etc.');

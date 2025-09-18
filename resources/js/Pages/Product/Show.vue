@@ -21,7 +21,11 @@ const items = ref([
 const actionItems = ref([
     { label: 'Crear Nuevo', icon: 'pi pi-plus', command: () => router.get(route('products.create')) },
     { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('products.edit', props.product.id)) },
-    { label: 'Agregar Promoción', icon: 'pi pi-tag' },
+    {
+        label: 'Agregar Promoción',
+        icon: 'pi pi-tag',
+        command: () => router.get(route('products.promotions.create', props.product.id))
+    },
     { label: 'Dar Entrada a Producto', icon: 'pi pi-arrow-down' },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500' },
@@ -101,8 +105,9 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                             <span class="font-medium text-gray-800 dark:text-gray-200">{{ new Intl.NumberFormat('es-MX',
                                 {
                                     style:
-                                        'currency', currency: 'MXN' }).format(product.online_price || product.selling_price)
-                                }}</span>
+                                        'currency', currency: 'MXN'
+                                }).format(product.online_price || product.selling_price)
+                            }}</span>
                         </li>
                         <li class="flex justify-between">
                             <span class="text-gray-500 dark:text-gray-400">Requiere envío</span>
@@ -131,17 +136,18 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                     <span class="text-gray-500 dark:text-gray-400 w-24">SKU</span>
                                     <span class="font-medium text-gray-800 dark:text-gray-200 mr-2">{{ product.sku ||
                                         'N/A'
-                                        }}</span>
+                                    }}</span>
                                     <Button v-if="product.sku" @click="copyToClipboard(product.sku)" icon="pi pi-copy"
                                         text rounded size="small" v-tooltip.bottom="'Copiar SKU'"></Button>
                                 </li>
                                 <li class="flex"><span class="text-gray-500 dark:text-gray-400 w-24">Categoría</span>
                                     <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.category?.name
                                         || 'N/A'
-                                        }}</span></li>
+                                    }}</span>
+                                </li>
                                 <li class="flex"><span class="text-gray-500 dark:text-gray-400 w-24">Marca</span> <span
                                         class="font-medium text-gray-800 dark:text-gray-200">{{ product.brand?.name ||
-                                        'N/A'
+                                            'N/A'
                                         }}</span></li>
                             </ul>
                         </div>
@@ -156,18 +162,18 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                         class="font-medium text-lg text-gray-800 dark:text-gray-200">{{ new
                                             Intl.NumberFormat('es-MX', {
                                                 style: 'currency', currency: 'MXN'
-                                        }).format(product.selling_price) }}</span></li>
+                                            }).format(product.selling_price) }}</span></li>
                                 <li class="flex justify-between"><span class="text-gray-500 dark:text-gray-400">Precio
                                         de
                                         Compra</span> <span class="font-medium text-gray-800 dark:text-gray-200">{{ new
                                             Intl.NumberFormat('es-MX', {
                                                 style: 'currency', currency: 'MXN'
-                                        }).format(product.cost_price) }}</span></li>
+                                            }).format(product.cost_price) }}</span></li>
                                 <li class="flex justify-between"><span
                                         class="text-gray-500 dark:text-gray-400">Proveedor</span>
                                     <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.provider?.name
                                         || 'N/A'
-                                        }}</span>
+                                    }}</span>
                                 </li>
                                 <li class="flex justify-between"><span
                                         class="text-gray-500 dark:text-gray-400">Impuesto</span>
@@ -197,12 +203,12 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                         <div>
                             <p class="text-sm text-gray-500 dark:text-gray-400">Stock Mínimo</p>
                             <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.min_stock || 'N/A'
-                                }}</p>
+                            }}</p>
                         </div>
                         <div>
                             <p class="text-sm text-gray-500 dark:text-gray-400">Stock Máximo</p>
                             <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.max_stock || 'N/A'
-                                }}</p>
+                            }}</p>
                         </div>
                     </div>
 
@@ -227,7 +233,7 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                     {{ new Intl.NumberFormat('es-MX', {
                                         style: 'currency', currency: 'MXN'
                                     }).format(parseFloat(product.selling_price) +
-                                    parseFloat(data.selling_price_modifier)) }}
+                                        parseFloat(data.selling_price_modifier)) }}
                                 </template>
                             </Column>
                         </DataTable>
@@ -262,24 +268,25 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                             activity.description }}</h3>
                                         <p class="text-xs text-gray-500 dark:text-gray-400">Por {{ activity.causer }} -
                                             {{
-                                            activity.timestamp }}</p>
+                                                activity.timestamp }}</p>
 
                                         <div v-if="activity.event === 'updated' && Object.keys(activity.changes.after).length > 0"
                                             class="text-sm space-y-4">
                                             <div v-for="(value, key) in activity.changes.after" :key="key">
-                                                <p class="font-medium text-gray-700 dark:text-gray-300 m-0">{{ key }}</p>
+                                                <p class="font-medium text-gray-700 dark:text-gray-300 m-0">{{ key }}
+                                                </p>
                                                 <div v-if="key === 'Descripción'">
-                                                   <DiffViewer :oldValue="activity.changes.before[key]"
-                                                    :newValue="value" />
+                                                    <DiffViewer :oldValue="activity.changes.before[key]"
+                                                        :newValue="value" />
                                                 </div>
                                                 <div v-else class="flex items-center gap-2 text-xs">
                                                     <span
                                                         class="bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 px-2 py-0.5 rounded line-through">{{
-                                                        activity.changes.before[key] || 'Vacío' }}</span>
+                                                            activity.changes.before[key] || 'Vacío' }}</span>
                                                     <i class="pi pi-arrow-right text-gray-400 !text-xs"></i>
                                                     <span
                                                         class="bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 px-2 py-0.5 rounded font-medium">{{
-                                                        value }}</span>
+                                                            value }}</span>
                                                 </div>
                                             </div>
                                         </div>

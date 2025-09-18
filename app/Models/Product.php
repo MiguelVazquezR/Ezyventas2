@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\MediaLibrary\HasMedia;
@@ -17,12 +18,38 @@ class Product extends Model implements HasMedia
     use HasFactory, InteractsWithMedia, LogsActivity;
 
     protected $fillable = [
-        'name', 'description', 'sku', 'selling_price', 'cost_price',
-        'current_stock', 'min_stock', 'max_stock', 'category_id', 'provider_id', 'brand_id', 'branch_id', 'global_product_id',
-        'measure_unit', 'currency', 'show_online', 'online_price', 'slug', 'delivery_days',
-        'tags', 'is_featured', 'is_on_sale', 'sale_price', 'sale_start_date',
-        'sale_end_date', 'weight', 'length', 'width', 'height',
-        'requires_shipping', 'view_count', 'purchase_count',
+        'name',
+        'description',
+        'sku',
+        'selling_price',
+        'cost_price',
+        'current_stock',
+        'min_stock',
+        'max_stock',
+        'category_id',
+        'provider_id',
+        'brand_id',
+        'branch_id',
+        'global_product_id',
+        'measure_unit',
+        'currency',
+        'show_online',
+        'online_price',
+        'slug',
+        'delivery_days',
+        'tags',
+        'is_featured',
+        'is_on_sale',
+        'sale_price',
+        'sale_start_date',
+        'sale_end_date',
+        'weight',
+        'length',
+        'width',
+        'height',
+        'requires_shipping',
+        'view_count',
+        'purchase_count',
     ];
 
     protected function casts(): array
@@ -52,9 +79,19 @@ class Product extends Model implements HasMedia
     {
         return LogOptions::defaults()
             ->logOnly([
-                'name', 'description', 'sku', 'selling_price', 'cost_price',
-                'current_stock', 'min_stock', 'max_stock', 'category_id', 'brand_id', 'provider_id',
-                'show_online', 'online_price'
+                'name',
+                'description',
+                'sku',
+                'selling_price',
+                'cost_price',
+                'current_stock',
+                'min_stock',
+                'max_stock',
+                'category_id',
+                'brand_id',
+                'provider_id',
+                'show_online',
+                'online_price'
             ])
             ->setDescriptionForEvent(fn(string $eventName) => "El producto ha sido {$this->translateEventName($eventName)}")
             ->logOnlyDirty() // Solo registrar si los atributos han cambiado
@@ -87,7 +124,20 @@ class Product extends Model implements HasMedia
     | RELACIONES
     |--------------------------------------------------------------------------
     */
-    
+    /**
+     * Obtiene las promociones asociadas a este producto.
+     * Esto se logra a través de las reglas y efectos polimórficos.
+     */
+    public function promotions(): MorphToMany
+    {
+        // Esta es una forma avanzada de obtener las promociones
+        // donde este producto está involucrado, ya sea como regla o como efecto.
+        return $this->morphToMany(Promotion::class, 'itemable', 'promotion_rules')
+            ->orWhere(function ($query) {
+                $query->morphToMany(Promotion::class, 'itemable', 'promotion_effects');
+            });
+    }
+
     /**
      * Obtiene el producto global relacionado.
      */
@@ -95,7 +145,7 @@ class Product extends Model implements HasMedia
     {
         return $this->belongsTo(GlobalProduct::class);
     }
-    
+
     /**
      * Obtiene la categoría a la que pertenece el producto.
      */
@@ -103,7 +153,7 @@ class Product extends Model implements HasMedia
     {
         return $this->belongsTo(Category::class);
     }
-    
+
     /**
      * Obtiene el proveedor del producto.
      */
@@ -119,7 +169,7 @@ class Product extends Model implements HasMedia
     {
         return $this->belongsTo(Brand::class);
     }
-    
+
     /**
      * Obtiene la sucursal a la que pertenece el producto.
      */
@@ -135,7 +185,7 @@ class Product extends Model implements HasMedia
     {
         return $this->hasMany(ProductAttribute::class);
     }
-    
+
     /**
      * Obtiene las reseñas del producto.
      */
