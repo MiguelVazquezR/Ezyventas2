@@ -71,16 +71,19 @@ class ProductPromotionController extends Controller
 
             switch ($validated['type']) {
                 case PromotionType::ITEM_DISCOUNT->value:
-                    $promotion->rules()->create(['type' => PromotionRuleType::REQUIRES_PRODUCT, 'itemable_id' => $product->id, 'itemable_type' => Product::class]);
+                    // SOLUCIÓN: Añadir 'value' => 1 para indicar que se requiere 1 unidad del producto.
+                    $promotion->rules()->create(['type' => PromotionRuleType::REQUIRES_PRODUCT, 'value' => 1, 'itemable_id' => $product->id, 'itemable_type' => Product::class]);
                     $promotion->effects()->create(['type' => $validated['effect_type'], 'value' => $validated['effect_value'], 'itemable_id' => $product->id, 'itemable_type' => Product::class]);
                     break;
                 case PromotionType::BOGO->value:
+                    // Este caso ya funcionaba correctamente porque 'value' se toma del formulario.
                     $promotion->rules()->create(['type' => PromotionRuleType::REQUIRES_PRODUCT_QUANTITY, 'itemable_id' => $validated['required_product_id'], 'itemable_type' => Product::class, 'value' => $validated['required_quantity']]);
                     $promotion->effects()->create(['type' => PromotionEffectType::FREE_ITEM, 'itemable_id' => $validated['free_product_id'], 'itemable_type' => Product::class, 'value' => $validated['free_quantity']]);
                     break;
                 case PromotionType::BUNDLE_PRICE->value:
                     foreach ($validated['bundle_products'] as $bundleProductId) {
-                        $promotion->rules()->create(['type' => PromotionRuleType::REQUIRES_PRODUCT, 'itemable_id' => $bundleProductId, 'itemable_type' => Product::class]);
+                        // SOLUCIÓN: Añadir 'value' => 1 para indicar que se requiere 1 unidad de cada producto en el paquete.
+                        $promotion->rules()->create(['type' => PromotionRuleType::REQUIRES_PRODUCT, 'value' => 1, 'itemable_id' => $bundleProductId, 'itemable_type' => Product::class]);
                     }
                     $promotion->effects()->create(['type' => PromotionEffectType::SET_PRICE, 'value' => $validated['bundle_price']]);
                     break;

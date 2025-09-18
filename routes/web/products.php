@@ -8,5 +8,6 @@ use Illuminate\Support\Facades\Route;
 | Rutas del Módulo de Productos
 |--------------------------------------------------------------------------
 */
-
-Route::resource('products', ProductController::class);
+Route::middleware('auth')->group(function () {
+    Route::resource('products', ProductController::class);
+});

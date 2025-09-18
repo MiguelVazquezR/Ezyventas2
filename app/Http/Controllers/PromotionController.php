@@ -4,55 +4,24 @@ namespace App\Http\Controllers;
 
 use App\Models\Promotion;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Redirect;
 
 class PromotionController extends Controller
 {
     /**
-     * Display a listing of the resource.
-     */
-    public function index()
-    {
-        //
-    }
-
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        //
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(Promotion $promotion)
-    {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Promotion $promotion)
-    {
-        //
-    }
-
-    /**
      * Update the specified resource in storage.
+     * Toggles the 'is_active' status of a promotion.
      */
     public function update(Request $request, Promotion $promotion)
     {
-        //
+        // Opcional: Verificar que el usuario tiene permiso para modificar esta promoción
+        // $this->authorize('update', $promotion);
+
+        $promotion->update([
+            'is_active' => !$promotion->is_active,
+        ]);
+
+        return Redirect::back()->with('success', 'Estado de la promoción actualizado.');
     }
 
     /**
@@ -60,6 +29,11 @@ class PromotionController extends Controller
      */
     public function destroy(Promotion $promotion)
     {
-        //
+        // Opcional: Verificar que el usuario tiene permiso para eliminar esta promoción
+        // $this->authorize('delete', $promotion);
+        
+        $promotion->delete();
+
+        return Redirect::back()->with('success', 'Promoción eliminada con éxito.');
     }
 }

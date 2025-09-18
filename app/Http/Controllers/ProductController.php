@@ -8,6 +8,7 @@ use App\Models\AttributeDefinition;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\Promotion;
 use App\Models\Provider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -273,6 +274,20 @@ class ProductController extends Controller
             'activities.causer' // Cargar actividades y el usuario que las causó
         ]);
 
+        // Cargar TODAS las promociones asociadas a este producto (activas e inactivas)
+        $promotions = Promotion::query()
+            ->where(function ($query) use ($product) {
+                $query->whereHas('rules', function ($subQuery) use ($product) {
+                    $subQuery->where('itemable_type', Product::class)
+                        ->where('itemable_id', $product->id);
+                })->orWhereHas('effects', function ($subQuery) use ($product) {
+                    $subQuery->where('itemable_type', Product::class)
+                        ->where('itemable_id', $product->id);
+                });
+            })
+            ->with(['rules.itemable', 'effects.itemable'])
+            ->get();
+
         $translations = config('log-translations.Product');
 
         // Formatear el historial para el frontend
@@ -303,6 +318,7 @@ class ProductController extends Controller
 
         return Inertia::render('Product/Show', [
             'product' => $product,
+            'promotions' => $promotions,
             'activities' => $formattedActivities,
         ]);
     }

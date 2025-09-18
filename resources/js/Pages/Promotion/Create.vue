@@ -23,6 +23,10 @@ const promotionTypes = ref([
     { label: 'Compra X, llévate Y (BOGO)', value: 'BOGO' },
     { label: 'Paquete / Combo', value: 'BUNDLE_PRICE' },
 ]);
+const discountTypes = ref([
+    { label: 'Porcentaje (%)', value: 'PERCENTAGE_DISCOUNT' },
+    { label: 'Monto Fijo ($)', value: 'FIXED_DISCOUNT' }
+]);
 
 const form = useForm({
     name: '',
@@ -103,14 +107,12 @@ const submit = () => {
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Tipo de Promoción</h2>
                 <Select v-model="promotionType" :options="promotionTypes" optionLabel="label" optionValue="value"
-                    class="w-full" />
+                    class="w-full" size="large" />
 
                 <!-- Configuración para Descuento -->
                 <div v-if="promotionType === 'ITEM_DISCOUNT'" class="mt-6 space-y-4">
                     <div class="grid grid-cols-2 gap-4">
-                        <Select v-model="form.effect_type"
-                            :options="[{ label: 'Porcentaje (%)', value: 'PERCENTAGE_DISCOUNT' }, { label: 'Monto Fijo ($)', value: 'FIXED_DISCOUNT' }]"
-                            class="w-full" />
+                        <Select v-model="form.effect_type" :options="discountTypes" optionLabel="label" optionValue="value" class="w-full" size="large" />
                         <InputNumber v-model="form.effect_value"
                             :placeholder="form.effect_type === 'PERCENTAGE_DISCOUNT' ? '% Descuento' : '$ Descuento'"
                             class="w-full" />

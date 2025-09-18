@@ -19,14 +19,11 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
 });
 
-Route::middleware('auth')->group(function () {
-    require __DIR__ . '/web/POS.php';
-    require __DIR__ . '/web/products.php';
-    require __DIR__ . '/web/quick-create.php';
-    require __DIR__ . '/web/promotions.php';
-});
-
-// Estas rutas NO requieren autenticación.
+require __DIR__ . '/web/POS.php';
+require __DIR__ . '/web/products.php';
+require __DIR__ . '/web/quick-create.php';
+require __DIR__ . '/web/promotions.php';
+require __DIR__ . '/web/product-stock.php';
 
 
 //artisan commands -------------------

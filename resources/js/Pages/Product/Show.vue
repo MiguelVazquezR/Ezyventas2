@@ -3,38 +3,120 @@ import { ref, computed } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useToast } from "primevue/usetoast";
+import { useConfirm } from "primevue/useconfirm";
 import DiffViewer from '@/Components/DiffViewer.vue';
+import AddStockModal from './Partials/AddStockModal.vue';
 
 const props = defineProps({
     product: Object,
     activities: Array,
+    promotions: Array,
 });
 
 const toast = useToast();
+const confirm = useConfirm();
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const items = ref([
     { label: 'Productos', url: route('products.index') },
     { label: props.product.name }
 ]);
+// Hacemos una copia local para poder modificar la lista sin alterar las props
+const localPromotions = ref([...props.promotions]);
+const promoMenus = ref({});
+const showAddStockModal = ref(false);
 
 const actionItems = ref([
     { label: 'Crear Nuevo', icon: 'pi pi-plus', command: () => router.get(route('products.create')) },
     { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('products.edit', props.product.id)) },
-    {
-        label: 'Agregar Promoción',
-        icon: 'pi pi-tag',
-        command: () => router.get(route('products.promotions.create', props.product.id))
-    },
-    { label: 'Dar Entrada a Producto', icon: 'pi pi-arrow-down' },
+    { label: 'Agregar Promoción', icon: 'pi pi-tag', command: () => router.get(route('products.promotions.create', props.product.id)) },
+    { label: 'Dar Entrada a Producto', icon: 'pi pi-arrow-down', command: () => showAddStockModal.value = true },
     { separator: true },
-    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500' },
+    { label: 'Eliminar Producto', icon: 'pi pi-trash', class: 'text-red-500', command: () => deleteProduct() },
 ]);
 
 const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text).then(() => {
         toast.add({ severity: 'success', summary: 'Copiado', detail: 'SKU copiado al portapapeles', life: 3000 });
     });
+};
+
+const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+};
+
+const togglePromotionStatus = (promo) => {
+    router.patch(route('promotions.update', promo.id), {}, {
+        preserveScroll: true,
+        onSuccess: () => {
+            const updatedPromo = localPromotions.value.find(p => p.id === promo.id);
+            if (updatedPromo) {
+                updatedPromo.is_active = !updatedPromo.is_active;
+            }
+        }
+    });
+};
+
+const deleteProduct = () => {
+    confirm.require({
+        message: `¿Estás seguro de que quieres eliminar "${props.product.name}"? Esta acción no se puede deshacer.`,
+        header: 'Confirmación de Eliminación',
+        icon: 'pi pi-exclamation-triangle',
+        acceptClass: 'p-button-danger',
+        acceptLabel: 'Sí, eliminar',
+        rejectLabel: 'Cancelar',
+        accept: () => {
+            router.delete(route('products.destroy', props.product.id), {
+                onSuccess: () => {
+                    toast.add({ severity: 'success', summary: 'Eliminado', detail: 'El producto ha sido eliminado.', life: 3000 });
+                }
+            });
+        }
+    });
+};
+
+const deletePromotion = (promo) => {
+    confirm.require({
+        message: `¿Estás seguro de que quieres eliminar la promoción "${promo.name}"? Esta acción no se puede deshacer.`,
+        header: 'Confirmación de Eliminación',
+        icon: 'pi pi-exclamation-triangle',
+        acceptClass: 'p-button-danger',
+        acceptLabel: 'Sí, eliminar',
+        rejectLabel: 'Cancelar',
+        accept: () => {
+            router.delete(route('promotions.destroy', promo.id), {
+                preserveScroll: true,
+                onSuccess: () => {
+                    localPromotions.value = localPromotions.value.filter(p => p.id !== promo.id);
+                }
+            });
+        }
+    });
+};
+
+const getPromotionSummary = (promo) => {
+    switch (promo.type) {
+        case 'ITEM_DISCOUNT': {
+            const effect = promo.effects[0];
+            if (effect.type === 'PERCENTAGE_DISCOUNT') return `Aplica un ${effect.value}% de descuento.`;
+            if (effect.type === 'FIXED_DISCOUNT') return `Aplica un descuento de ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(effect.value)}.`;
+            return 'Descuento especial aplicado.';
+        }
+        case 'BOGO': {
+            const rule = promo.rules[0];
+            const effect = promo.effects[0];
+            return `Compra ${rule.value} de "${rule.itemable.name}" y llévate ${effect.value} de "${effect.itemable.name}" gratis.`;
+        }
+        case 'BUNDLE_PRICE': {
+            const effect = promo.effects[0];
+            const productNames = promo.rules.map(rule => rule.itemable.name).join(' + ');
+            return `Paquete (${productNames}) por ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(effect.value)}.`;
+        }
+        default:
+            return promo.description || 'Promoción especial.';
+    }
 };
 
 const generalImages = computed(() =>
@@ -240,6 +322,52 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                     </div>
                 </div>
 
+                <!-- Promociones -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <h2
+                        class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
+                        Promociones</h2>
+                    <div v-if="localPromotions && localPromotions.length > 0" class="space-y-4">
+                        <div v-for="promo in localPromotions" :key="promo.id" class="p-3 rounded-lg transition-colors"
+                            :class="promo.is_active
+                                ? 'border border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20'
+                                : 'border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-700/20 opacity-60'">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="font-bold"
+                                        :class="promo.is_active ? 'text-yellow-800 dark:text-yellow-200' : 'text-gray-600 dark:text-gray-400'">
+                                        {{ promo.name }}</p>
+                                    <p class="text-sm mt-1"
+                                        :class="promo.is_active ? 'text-yellow-700 dark:text-yellow-300' : 'text-gray-500 dark:text-gray-400'">
+                                        {{ getPromotionSummary(promo) }}</p>
+                                    <div class="text-xs mt-2 space-x-4"
+                                        :class="promo.is_active ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-400 dark:text-gray-500'">
+                                        <span v-if="promo.start_date"><i
+                                                class="pi pi-calendar-plus mr-1"></i><strong>Inicio:</strong> {{
+                                                    formatDate(promo.start_date) }}</span>
+                                        <span v-if="promo.end_date"><i
+                                                class="pi pi-calendar-times mr-1"></i><strong>Fin:</strong>
+                                            {{ formatDate(promo.end_date) }}</span>
+                                    </div>
+                                </div>
+                                <div class="flex-shrink-0 ml-4 flex items-center gap-2">
+                                    <Tag :value="promo.is_active ? 'Activa' : 'Inactiva'"
+                                        :severity="promo.is_active ? 'warning' : 'secondary'"></Tag>
+                                    <Button icon="pi pi-ellipsis-v" text rounded severity="secondary"
+                                        @click="promoMenus[promo.id].toggle($event)" />
+                                    <Menu :ref="el => { if (el) promoMenus[promo.id] = el }" :model="[
+                                        { label: promo.is_active ? 'Inactivar' : 'Reactivar', icon: promo.is_active ? 'pi pi-power-off' : 'pi pi-check', command: () => togglePromotionStatus(promo) },
+                                        { label: 'Eliminar', icon: 'pi pi-trash', command: () => deletePromotion(promo) }
+                                    ]" :popup="true" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else class="text-center text-gray-500 dark:text-gray-400 py-4">
+                        Este producto no tiene promociones asignadas.
+                    </div>
+                </div>
+
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2
                         class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-6 text-gray-800 dark:text-gray-200">
@@ -301,5 +429,7 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                 </div>
             </div>
         </div>
+        <AddStockModal v-if="product" :visible="showAddStockModal" :product="product"
+            @update:visible="showAddStockModal = false" />
     </AppLayout>
 </template>

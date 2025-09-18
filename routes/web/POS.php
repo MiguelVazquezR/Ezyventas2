@@ -13,8 +13,9 @@ use App\Http\Controllers\PointOfSaleController;
 | aquí definidas ya cuentan con el middleware de autenticación.
 |
 */
-
-Route::get('/pos', [PointOfSaleController::class, 'index'])->name('pos.index');
+Route::middleware('auth')->group(function () {
+    Route::get('/pos', [PointOfSaleController::class, 'index'])->name('pos.index');
+});
 
 // Aquí se agregarán futuras rutas del POS, como:
 // Route::post('/pos/cart/add', [PointOfSaleController::class, 'addToCart'])->name('pos.cart.add');
