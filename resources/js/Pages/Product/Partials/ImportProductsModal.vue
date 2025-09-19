@@ -17,7 +17,7 @@ const closeModal = () => {
 };
 
 const submit = () => {
-    form.post(route('products.import'), {
+    form.post(route('import-export.products.import'), {
         onSuccess: () => closeModal(),
     });
 };

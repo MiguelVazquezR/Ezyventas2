@@ -29,7 +29,7 @@ const splitButtonItems = ref([
     {
         label: 'Exportar a Excel',
         icon: 'pi pi-download',
-        command: () => window.location.href = route('products.export')
+        command: () => window.location.href = route('import-export.products.export')
     },
 ]);
 

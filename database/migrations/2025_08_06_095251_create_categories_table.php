@@ -14,8 +14,8 @@ return new class extends Migration
         Schema::create('categories', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('business_type')->nullable(); // Como en el PDF original.
-
+            $table->string('type')->default('product'); // 'product' o 'service'
+            $table->string('business_type')->nullable();
             // Permite categorías globales (sin subscription_id) o específicas de un negocio.
             $table->foreignId('subscription_id')->nullable()->constrained('subscriptions')->onDelete('cascade');
 

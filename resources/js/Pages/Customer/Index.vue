@@ -3,6 +3,7 @@ import { ref, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
+import ImportCustomersModal from './Partials/ImportCustomersModal.vue';
 
 const props = defineProps({
     customers: Object,
@@ -14,10 +15,11 @@ const confirm = useConfirm();
 // --- Estado y Lógica ---
 const selectedCustomers = ref([]);
 const searchTerm = ref(props.filters.search || '');
+const showImportModal = ref(false);
 
 const splitButtonItems = ref([
-    { label: 'Importar Clientes', icon: 'pi pi-upload' },
-    { label: 'Exportar Clientes', icon: 'pi pi-download' },
+    { label: 'Importar Clientes', icon: 'pi pi-upload', command: () => showImportModal.value = true },
+    { label: 'Exportar Clientes', icon: 'pi pi-download', command: () => window.location.href = route('import-export.customers.export') },
 ]);
 
 const menu = ref();
@@ -173,5 +175,8 @@ const formatCurrency = (value) => {
                 <Menu ref="menu" :model="menuItems" :popup="true" />
             </div>
         </div>
+
+        <!-- Modal de Importación -->
+        <ImportCustomersModal :visible="showImportModal" @update:visible="showImportModal = false" />
     </AppLayout>
 </template>

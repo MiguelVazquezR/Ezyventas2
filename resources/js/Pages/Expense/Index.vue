@@ -18,7 +18,7 @@ const showImportModal = ref(false);
 
 const splitButtonItems = ref([
     { label: 'Importar Gastos', icon: 'pi pi-upload', command: () => showImportModal.value = true },
-    { label: 'Exportar Gastos', icon: 'pi pi-download', command: () => window.location.href = route('expenses.export') },
+    { label: 'Exportar Gastos', icon: 'pi pi-download', command: () => window.location.href = route('import-export.expenses.export') },
 ]);
 
 const menu = ref();

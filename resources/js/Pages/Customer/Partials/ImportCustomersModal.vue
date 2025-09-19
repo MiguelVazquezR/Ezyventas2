@@ -1,8 +1,7 @@
 <script setup>
 import { useForm } from '@inertiajs/vue3';
-import InputError from '@/Components/InputError.vue';
 
-const props = defineProps({
+defineProps({
     visible: Boolean,
 });
 const emit = defineEmits(['update:visible']);
@@ -17,21 +16,21 @@ const closeModal = () => {
 };
 
 const submit = () => {
-    form.post(route('import-export.expenses.import'), {
+    form.post(route('import-export.customers.import'), {
         onSuccess: () => closeModal(),
     });
 };
 </script>
 
 <template>
-     <Dialog :visible="visible" @update:visible="closeModal" modal header="Importar Gastos desde Excel" :style="{ width: '35rem' }">
+     <Dialog :visible="visible" @update:visible="closeModal" modal header="Importar Clientes desde Excel" :style="{ width: '35rem' }">
         <form @submit.prevent="submit" class="p-2">
             <div class="text-sm text-gray-600 dark:text-gray-400 space-y-2 mb-4">
-                <p>Sube un archivo .xlsx o .xls con las siguientes columnas para importar tus gastos:</p>
+                <p>Sube un archivo .xlsx o .xls con las siguientes columnas para importar tus clientes:</p>
                 <code class="bg-gray-100 dark:bg-gray-700 p-2 rounded-md block text-xs">
-                    folio, fecha, descripcion, monto, categoria, estatus
+                    nombre, empresa, email, telefono, rfc, limite_de_credito
                 </code>
-                <p>La columna 'fecha' debe estar en formato AAAA-MM-DD. El 'estatus' debe ser 'pagado' o 'pendiente'. El sistema debe encontrar la 'categoria' por nombre exacto.</p>
+                <p>Las columnas deben tener exactamente esos nombres. Los campos vacíos serán ignorados.</p>
             </div>
             
             <FileUpload @select="form.file = $event.files[0]" :auto="true" :customUpload="true" accept=".xlsx, .xls">
