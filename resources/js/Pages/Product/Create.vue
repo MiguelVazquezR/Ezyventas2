@@ -2,7 +2,7 @@
 import { ref, computed, nextTick, markRaw, watch } from 'vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import CreateCategoryModal from './Partials/CreateCategoryModal.vue';
+import CreateCategoryModal from '@/Components/CreateCategoryModal.vue';
 import CreateBrandModal from './Partials/CreateBrandModal.vue';
 import CreateProviderModal from './Partials/CreateProviderModal.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -410,7 +410,7 @@ const handleNewProvider = (newProvider) => {
             </div>
         </div>
         <!-- Modales -->
-        <CreateCategoryModal v-model:visible="showCategoryModal" @created="handleNewCategory" />
+        <CreateCategoryModal v-model:visible="showCategoryModal" type="product" @created="handleNewCategory" />
         <CreateBrandModal v-model:visible="showBrandModal" @created="handleNewBrand" />
         <CreateProviderModal v-model:visible="showProviderModal" @created="handleNewProvider" />
     </AppLayout>

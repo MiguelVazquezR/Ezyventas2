@@ -9,4 +9,5 @@ enum ServiceOrderStatus: string
     case WAITING_FOR_PARTS = 'esperando_refaccion';
     case FINISHED = 'terminado';
     case DELIVERED = 'entregado';
+    case CANCELLED = 'cancelado';
 }

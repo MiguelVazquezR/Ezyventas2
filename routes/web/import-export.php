@@ -15,4 +15,8 @@ Route::middleware('auth')->as('import-export.')->group(function () {
     // Rutas de Clientes
     Route::get('export/expenses', [ImportExportController::class, 'exportExpenses'])->name('expenses.export');
     Route::post('import/expenses', [ImportExportController::class, 'importExpenses'])->name('expenses.import');
+   
+    // Rutas de servicios
+    Route::get('export/services', [ImportExportController::class, 'exportServices'])->name('services.export');
+    Route::post('import/services', [ImportExportController::class, 'importServices'])->name('services.import');
 });

@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Exports\CustomersExport;
 use App\Exports\ExpensesExport;
 use App\Exports\ProductsExport;
+use App\Exports\ServicesExport;
 use App\Imports\CustomersImport;
 use App\Imports\ExpensesImport;
 use App\Imports\ProductsImport;
+use App\Imports\ServicesImport;
 use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
 
@@ -54,5 +56,18 @@ class ImportExportController extends Controller
         Excel::import(new ExpensesImport, $request->file('file'));
 
         return redirect()->route('expenses.index')->with('success', 'Gastos importados con éxito.');
+    }
+
+    // --- SERVICIOS ---
+    public function exportServices()
+    {
+        return Excel::download(new ServicesExport, 'servicios.xlsx');
+    }
+
+    public function importServices(Request $request)
+    {
+        $request->validate(['file' => 'required|mimes:xlsx,xls']);
+        Excel::import(new ServicesImport, $request->file('file'));
+        return redirect()->route('services.index')->with('success', 'Servicios importados con éxito.');
     }
 }

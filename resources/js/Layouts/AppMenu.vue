@@ -24,8 +24,8 @@ const model = ref([
                     {
                         label: 'Órdenes de servico',
                         icon: 'pi pi-calendar-plus',
-                        to: route('services.index'),
-                        routeName: 'services.*',
+                        to: route('service-orders.index'),
+                        routeName: 'service-orders.*',
                         // permission: 'ver_festivos'
                     },
                 ]

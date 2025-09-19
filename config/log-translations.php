@@ -24,4 +24,14 @@ return [
         'expense_date' => 'Fecha de gasto',
         'brand_id' => 'Marca',
     ],
+    'services' => [
+        'category_id' => 'Categoría',
+        'branch_id' => 'Sucursal',
+        'name' => 'Nombre',
+        'description' => 'Descripción',
+        'slug' => 'slug',
+        'base_price' => 'Precio base',
+        'duration_estimate' => 'Duración estimada',
+        'show_online' => 'Mostrar en tieda en linea',
+    ],
 ];

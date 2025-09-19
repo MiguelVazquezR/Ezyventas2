@@ -8,17 +8,26 @@ use App\Models\ExpenseCategory;
 use App\Models\Provider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class QuickCreateController extends Controller
 {
+    /**
+     * Almacena una nueva categoría (para Productos o Servicios).
+     */
     public function storeCategory(Request $request)
     {
-        $validated = $request->validate(['name' => 'required|string|max:255']);
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'type' => ['required', Rule::in(['product', 'service'])],
+        ]);
+
         $category = Category::create([
             'name' => $validated['name'],
-            'subscription_id' => Auth::user()->subscription->id,
+            'type' => $validated['type'],
+            'subscription_id' => Auth::user()->branch->subscription_id,
         ]);
-        // Devolvemos el modelo recién creado como JSON
+
         return response()->json($category);
     }
 

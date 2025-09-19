@@ -17,6 +17,7 @@ use App\Models\ExpenseCategory;
 use App\Models\GlobalProduct;
 use App\Models\Provider;
 use App\Models\Service;
+use App\Models\ServiceOrder;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -63,14 +64,6 @@ class DatabaseSeeder extends Seeder
                 'subscription_id' => $subscription->id,
                 'type' => 'service',
             ]);
-            
-            // Crear 15 servicios por cada sucursal
-            $branches->each(function ($branch) use ($serviceCategories) {
-                Service::factory(15)->create([
-                    'branch_id' => $branch->id,
-                    'category_id' => $serviceCategories->random()->id,
-                ]);
-            });
 
             // Crear 1 Usuario admin por Suscriptor y asignarlo a la sucursal principal
             $adminUser = User::factory()->create([
@@ -79,8 +72,17 @@ class DatabaseSeeder extends Seeder
                 'email' => 'admin@' . strtolower(str_replace([' ', ',', '.'], '', $subscription->commercial_name)) . '.com',
             ]);
 
-            $branches->each(function ($branch) {
+            $branches->each(function ($branch) use ($serviceCategories, $adminUser){
                 Customer::factory(15)->create(['branch_id' => $branch->id]);
+                Service::factory(15)->create([
+                    'branch_id' => $branch->id,
+                    'category_id' => $serviceCategories->random()->id,
+                ]);
+
+                ServiceOrder::factory(20)->create([
+                    'branch_id' => $branch->id,
+                    'user_id' => $adminUser->id,
+                ]);
             });
 
             // Crear Categorías de Gastos

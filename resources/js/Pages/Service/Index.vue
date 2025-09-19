@@ -2,27 +2,68 @@
 import { ref, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import { useConfirm } from "primevue/useconfirm";
+import ImportServicesModal from './Partials/ImportServicesModal.vue';
 
 const props = defineProps({
     services: Object,
     filters: Object,
 });
 
+const confirm = useConfirm();
+
 const selectedServices = ref([]);
 const searchTerm = ref(props.filters.search || '');
+const showImportModal = ref(false);
 
 const splitButtonItems = ref([
-    { label: 'Importar Servicios', icon: 'pi pi-upload' },
-    { label: 'Exportar Servicios', icon: 'pi pi-download' },
+    { label: 'Importar Servicios', icon: 'pi pi-upload', command: () => showImportModal.value = true },
+    { label: 'Exportar Servicios', icon: 'pi pi-download', command: () => window.location.href = route('import-export.services.export') },
 ]);
 
 const menu = ref();
 const selectedServiceForMenu = ref(null);
+
+const deleteSingleService = () => {
+    if (!selectedServiceForMenu.value) return;
+    confirm.require({
+        message: `¿Estás seguro de que quieres eliminar "${selectedServiceForMenu.value.name}"?`,
+        header: 'Confirmar Eliminación',
+        icon: 'pi pi-info-circle',
+        acceptClass: 'p-button-danger',
+        accept: () => {
+            router.delete(route('services.destroy', selectedServiceForMenu.value.id), {
+                preserveScroll: true,
+                onSuccess: () => {
+                    selectedServices.value = selectedServices.value.filter(s => s.id !== selectedServiceForMenu.value.id);
+                }
+            });
+        }
+    });
+};
+
+const deleteSelectedServices = () => {
+    confirm.require({
+        message: `¿Estás seguro de que quieres eliminar los ${selectedServices.value.length} servicios seleccionados?`,
+        header: 'Eliminación Masiva',
+        icon: 'pi pi-exclamation-triangle',
+        acceptClass: 'p-button-danger',
+        acceptLabel: 'Sí, eliminar',
+        rejectLabel: 'Cancelar',
+        accept: () => {
+            const idsToDelete = selectedServices.value.map(s => s.id);
+            router.post(route('services.batchDestroy'), { ids: idsToDelete }, {
+                onSuccess: () => selectedServices.value = []
+            });
+        }
+    });
+};
+
 const menuItems = ref([
-    { label: 'Ver Detalle', icon: 'pi pi-eye' },
-    { label: 'Editar Servicio', icon: 'pi pi-pencil' },
+    { label: 'Ver Detalle', icon: 'pi pi-eye', command: () => router.get(route('services.show', selectedServiceForMenu.value.id)) },
+    { label: 'Editar Servicio', icon: 'pi pi-pencil', command: () => router.get(route('services.edit', selectedServiceForMenu.value.id)) },
     { separator: true },
-    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500' },
+    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleService },
 ]);
 
 const toggleMenu = (event, data) => {
@@ -70,7 +111,7 @@ const formatCurrency = (value) => {
                 <!-- Barra de Acciones Masivas -->
                 <div v-if="selectedServices.length > 0" class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-2 mb-4 flex justify-between items-center">
                     <span class="font-semibold text-sm text-blue-800 dark:text-blue-200">{{ selectedServices.length }} servicio(s) seleccionado(s)</span>
-                    <Button label="Eliminar" icon="pi pi-trash" size="small" severity="danger" outlined />
+                    <Button @click="deleteSelectedServices" label="Eliminar" icon="pi pi-trash" size="small" severity="danger" outlined />
                 </div>
 
                 <!-- Tabla de Servicios -->
@@ -100,5 +141,8 @@ const formatCurrency = (value) => {
                 <Menu ref="menu" :model="menuItems" :popup="true" />
             </div>
         </div>
+        
+        <!-- Modal de Importación -->
+        <ImportServicesModal :visible="showImportModal" @update:visible="showImportModal = false" />
     </AppLayout>
 </template>
