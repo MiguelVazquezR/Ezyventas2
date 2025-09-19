@@ -11,6 +11,8 @@ use App\Models\Subscription;
 use App\Models\AttributeDefinition;
 use App\Models\AttributeOption;
 use App\Models\BusinessType;
+use App\Models\Expense;
+use App\Models\ExpenseCategory;
 use App\Models\GlobalProduct;
 use App\Models\Provider;
 use Illuminate\Database\Seeder;
@@ -56,10 +58,20 @@ class DatabaseSeeder extends Seeder
             $mainBranch->update(['is_main' => true]);
 
             // Crear 1 Usuario admin por Suscriptor y asignarlo a la sucursal principal
-            User::factory()->create([
+            $adminUser = User::factory()->create([
                 'branch_id' => $mainBranch->id,
                 'name' => 'Admin ' . $subscription->commercial_name,
                 'email' => 'admin@' . strtolower(str_replace([' ', ',', '.'], '', $subscription->commercial_name)) . '.com',
+            ]);
+
+            // Crear Categorías de Gastos
+            $expenseCategories = ExpenseCategory::factory(5)->create(['subscription_id' => $subscription->id]);
+            
+            // Crear 25 Gastos y asignarlos aleatoriamente a una de las sucursales
+            Expense::factory(25)->create([
+                'user_id' => $adminUser->id,
+                'branch_id' => $branches->random()->id,
+                'expense_category_id' => $expenseCategories->random()->id,
             ]);
 
             // Crear 10 Productos por cada Sucursal

@@ -16,5 +16,12 @@ return [
         'show_online' => 'Mostrar en tienda en línea',
         'online_price' => 'Precio en línea',
     ],
-    // Aquí puedes añadir traducciones para otros modelos en el futuro
+    'expense' => [
+        'user_id' => 'Creador',
+        'description' => 'Descripción',
+        'amount' => 'Monto',
+        'expense_category_id' => 'Categoría',
+        'expense_date' => 'Fecha de gasto',
+        'brand_id' => 'Marca',
+    ],
 ];

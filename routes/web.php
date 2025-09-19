@@ -26,6 +26,8 @@ require __DIR__ . '/web/products-import-export.php';
 require __DIR__ . '/web/quick-create.php';
 require __DIR__ . '/web/promotions.php';
 require __DIR__ . '/web/base-catalog.php';
+require __DIR__ . '/web/expenses.php';
+require __DIR__ . '/web/expenses-import-export.php';
 
 
 //artisan commands -------------------
