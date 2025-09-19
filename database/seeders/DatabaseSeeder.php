@@ -11,6 +11,7 @@ use App\Models\Subscription;
 use App\Models\AttributeDefinition;
 use App\Models\AttributeOption;
 use App\Models\BusinessType;
+use App\Models\Customer;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\GlobalProduct;
@@ -44,7 +45,7 @@ class DatabaseSeeder extends Seeder
             $electronicaCategory = Category::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Electrónica']);
             $this->createAttributeWithOptions($electronicaCategory, 'Color', ['Negro Espacial', 'Plata', 'Oro'], true);
             $this->createAttributeWithOptions($electronicaCategory, 'Almacenamiento', ['128GB', '256GB', '512GB']);
-            
+
             $otherCategories = Category::factory(3)->create(['subscription_id' => $subscription->id]);
             $allCategories = collect([$ropaCategory, $electronicaCategory])->merge($otherCategories);
 
@@ -64,9 +65,13 @@ class DatabaseSeeder extends Seeder
                 'email' => 'admin@' . strtolower(str_replace([' ', ',', '.'], '', $subscription->commercial_name)) . '.com',
             ]);
 
+            $branches->each(function ($branch) {
+                Customer::factory(15)->create(['branch_id' => $branch->id]);
+            });
+
             // Crear Categorías de Gastos
             $expenseCategories = ExpenseCategory::factory(5)->create(['subscription_id' => $subscription->id]);
-            
+
             // Crear 25 Gastos y asignarlos aleatoriamente a una de las sucursales
             Expense::factory(25)->create([
                 'user_id' => $adminUser->id,

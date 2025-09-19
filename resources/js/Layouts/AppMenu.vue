@@ -10,7 +10,7 @@ const model = ref([
             { label: 'Punto de venta', icon: 'pi pi-fw pi-wallet', to: route('pos.index'), routeName: 'pos.*' },
             { label: 'Productos', icon: 'pi pi-fw pi-building', to: route('products.index'), routeName: 'products.*' },
             { label: 'Gastos', icon: 'pi pi-fw pi-calendar-times', to: route('expenses.index'), routeName: 'expenses.*' },
-            // { label: 'Bonos', icon: 'pi pi-fw pi-wallet', to: route('bonuses.index'), routeName: 'bonuses.*', permission: 'ver_bonos' },
+            { label: 'Clientes', icon: 'pi pi-fw pi-user', to: route('customers.index'), routeName: 'customers.*'},
             // {
             //     label: 'Configuraciones', icon: 'pi pi-fw pi-cog',
             //     items: [
