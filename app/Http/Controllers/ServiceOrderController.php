@@ -3,6 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ServiceOrderStatus;
+use App\Http\Requests\StoreServiceOrderRequest;
+use App\Http\Requests\UpdateServiceOrderRequest;
+use App\Models\Customer;
+use App\Models\CustomFieldDefinition;
 use App\Models\ServiceOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -75,6 +79,62 @@ class ServiceOrderController extends Controller
             'serviceOrder' => $serviceOrder,
             'activities' => $formattedActivities,
         ]);
+    }
+
+    public function create(): Response
+    {
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+
+        $customFields = CustomFieldDefinition::where('subscription_id', $subscriptionId)
+            ->where('module', 'service_orders')
+            ->get();
+
+        // Pasar la lista de clientes a la vista
+        $customers = Customer::whereHas('branch.subscription', function ($q) use ($subscriptionId) {
+            $q->where('id', $subscriptionId);
+        })->get(['id', 'name', 'phone']);
+
+        return Inertia::render('ServiceOrder/Create', [
+            'customFieldDefinitions' => $customFields,
+            'customers' => $customers,
+        ]);
+    }
+
+    public function store(StoreServiceOrderRequest $request)
+    {
+        ServiceOrder::create(array_merge($request->validated(), [
+            'user_id' => Auth::id(),
+            'branch_id' => Auth::user()->branch_id,
+            'status' => ServiceOrderStatus::PENDING,
+        ]));
+        return redirect()->route('service-orders.index')->with('success', 'Orden de servicio creada.');
+    }
+
+    public function edit(ServiceOrder $serviceOrder): Response
+    {
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+
+        $customFields = CustomFieldDefinition::where('subscription_id', $subscriptionId)
+            ->where('module', 'service_orders')
+            ->get();
+
+        $customers = Customer::whereHas('branch.subscription', function ($q) use ($subscriptionId) {
+            $q->where('id', $subscriptionId);
+        })->get(['id', 'name', 'phone']);
+
+        return Inertia::render('ServiceOrder/Edit', [
+            'serviceOrder' => $serviceOrder,
+            'customFieldDefinitions' => $customFields,
+            'customers' => $customers,
+        ]);
+    }
+
+    public function update(UpdateServiceOrderRequest $request, ServiceOrder $serviceOrder)
+    {
+        $serviceOrder->update($request->validated());
+        return redirect()->route('service-orders.index')->with('success', 'Orden de servicio actualizada.');
     }
 
     public function updateStatus(Request $request, ServiceOrder $serviceOrder)

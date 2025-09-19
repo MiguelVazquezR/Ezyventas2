@@ -3,6 +3,7 @@ import { ref, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
+import ImportServiceOrdersModal from './Partials/ImportServiceOrdersModal.vue';
 
 const props = defineProps({
     serviceOrders: Object,
@@ -15,6 +16,12 @@ const searchTerm = ref(props.filters.search || '');
 
 const menu = ref();
 const selectedOrderForMenu = ref(null);
+const showImportModal = ref(false);
+
+const splitButtonItems = ref([
+    { label: 'Importar Órdenes', icon: 'pi pi-upload', command: () => showImportModal.value = true },
+    { label: 'Exportar Órdenes', icon: 'pi pi-download', command: () => window.location.href = route('import-export.service-orders.export') },
+]);
 
 const deleteSingleOrder = () => {
     confirm.require({
@@ -105,8 +112,9 @@ const getStatusSeverity = (status) => {
                             <InputText v-model="searchTerm" placeholder="Buscar por cliente o equipo..."
                                 class="w-full" />
                         </IconField>
-                        <Button label="Nueva Orden" icon="pi pi-plus"
-                            @click="router.get(route('service-orders.create'))" severity="warning" />
+                        <SplitButton label="Nueva Orden" icon="pi pi-plus"
+                            @click="router.get(route('service-orders.create'))" :model="splitButtonItems"
+                            severity="warning" />
                     </div>
                 </div>
 
@@ -156,5 +164,8 @@ const getStatusSeverity = (status) => {
                 <Menu ref="menu" :model="menuItems" :popup="true" />
             </div>
         </div>
+
+        <!-- Modal de Importación -->
+        <ImportServiceOrdersModal :visible="showImportModal" @update:visible="showImportModal = false" />
     </AppLayout>
 </template>

@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Exports\CustomersExport;
 use App\Exports\ExpensesExport;
 use App\Exports\ProductsExport;
+use App\Exports\ServiceOrdersExport;
 use App\Exports\ServicesExport;
 use App\Imports\CustomersImport;
 use App\Imports\ExpensesImport;
 use App\Imports\ProductsImport;
+use App\Imports\ServiceOrdersImport;
 use App\Imports\ServicesImport;
 use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
@@ -69,5 +71,18 @@ class ImportExportController extends Controller
         $request->validate(['file' => 'required|mimes:xlsx,xls']);
         Excel::import(new ServicesImport, $request->file('file'));
         return redirect()->route('services.index')->with('success', 'Servicios importados con éxito.');
+    }
+
+     // --- ÓRDENES DE SERVICIO ---
+    public function exportServiceOrders()
+    {
+        return Excel::download(new ServiceOrdersExport, 'ordenes-de-servicio.xlsx');
+    }
+
+    public function importServiceOrders(Request $request)
+    {
+        $request->validate(['file' => 'required|mimes:xlsx,xls']);
+        Excel::import(new ServiceOrdersImport, $request->file('file'));
+        return redirect()->route('service-orders.index')->with('success', 'Órdenes de servicio importadas con éxito.');
     }
 }

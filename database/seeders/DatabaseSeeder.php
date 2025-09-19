@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Branch;
 use App\Models\Brand;
 use App\Models\Category;
+use App\Models\CustomFieldDefinition;
 use App\Models\Product;
 use App\Models\Subscription;
 use App\Models\AttributeDefinition;
@@ -31,84 +32,89 @@ class DatabaseSeeder extends Seeder
         $this->seedGlobalBrandsAndProducts();
 
         // 2. Crear Suscriptores y sus datos privados
-        $businessTypes = BusinessType::all();
+        $ropaType = BusinessType::where('name', 'Tienda de Ropa y Accesorios')->first();
+        $electronicaType = BusinessType::where('name', 'Tienda de Electrónica')->first();
 
-        // Creamos 2 Suscripciones
-        Subscription::factory(2)->create()->each(function ($subscription) use ($businessTypes) {
-            // Asignar un tipo de negocio aleatorio a la suscripción
-            $subscription->business_type_id = $businessTypes->random()->id;
-            $subscription->save();
-
-            // Crear Categorías y Atributos para la suscripción
-            $ropaCategory = Category::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Ropa y Accesorios']);
-            $this->createAttributeWithOptions($ropaCategory, 'Color', ['Rojo', 'Azul', 'Negro', 'Blanco'], true);
-            $this->createAttributeWithOptions($ropaCategory, 'Talla', ['S', 'M', 'L', 'XL']);
-
-            $electronicaCategory = Category::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Electrónica']);
-            $this->createAttributeWithOptions($electronicaCategory, 'Color', ['Negro Espacial', 'Plata', 'Oro'], true);
-            $this->createAttributeWithOptions($electronicaCategory, 'Almacenamiento', ['128GB', '256GB', '512GB']);
-
-            $otherCategories = Category::factory(3)->create(['subscription_id' => $subscription->id]);
-            $allCategories = collect([$ropaCategory, $electronicaCategory])->merge($otherCategories);
-
-            // Crear Marcas y Proveedores para la suscripción
-            $brands = Brand::factory(5)->create(['subscription_id' => $subscription->id]);
-            Provider::factory(3)->create(['subscription_id' => $subscription->id]);
-
-            // Crear 2 Sucursales por Suscriptor
-            $branches = Branch::factory(2)->create(['subscription_id' => $subscription->id]);
-            $mainBranch = $branches->first();
-            $mainBranch->update(['is_main' => true]);
-
-            $serviceCategories = Category::factory(3)->create([
-                'subscription_id' => $subscription->id,
-                'type' => 'service',
-            ]);
-
-            // Crear 1 Usuario admin por Suscriptor y asignarlo a la sucursal principal
-            $adminUser = User::factory()->create([
-                'branch_id' => $mainBranch->id,
-                'name' => 'Admin ' . $subscription->commercial_name,
-                'email' => 'admin@' . strtolower(str_replace([' ', ',', '.'], '', $subscription->commercial_name)) . '.com',
-            ]);
-
-            $branches->each(function ($branch) use ($serviceCategories, $adminUser){
-                Customer::factory(15)->create(['branch_id' => $branch->id]);
-                Service::factory(15)->create([
-                    'branch_id' => $branch->id,
-                    'category_id' => $serviceCategories->random()->id,
-                ]);
-
-                ServiceOrder::factory(20)->create([
-                    'branch_id' => $branch->id,
-                    'user_id' => $adminUser->id,
-                ]);
-            });
-
-            // Crear Categorías de Gastos
-            $expenseCategories = ExpenseCategory::factory(5)->create(['subscription_id' => $subscription->id]);
-
-            // Crear 25 Gastos y asignarlos aleatoriamente a una de las sucursales
-            Expense::factory(25)->create([
-                'user_id' => $adminUser->id,
-                'branch_id' => $branches->random()->id,
-                'expense_category_id' => $expenseCategories->random()->id,
-            ]);
-
-            // Crear 10 Productos por cada Sucursal
-            $branches->each(function ($branch) use ($allCategories, $brands) {
-                Product::factory(10)->create([
-                    'branch_id' => $branch->id,
-                    'category_id' => $allCategories->random()->id,
-                    'brand_id' => $brands->random()->id,
-                ]);
-            });
-        });
+        // Crear una suscripción para cada tipo de negocio para asegurar datos de prueba consistentes
+        $this->createSubscriptionData($ropaType);
+        $this->createSubscriptionData($electronicaType);
     }
 
     /**
-     * Crea marcas y productos globales y los asocia a tipos de negocio.
+     * Crea una suscripción completa con todos sus datos asociados.
      */
+    private function createSubscriptionData(BusinessType $businessType): void
+    {
+        $subscription = Subscription::factory()->create([
+            'business_type_id' => $businessType->id,
+        ]);
+
+        // --- Crear Campos Personalizados para Órdenes de Servicio ---
+        if ($businessType->name === 'Tienda de Electrónica') {
+            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'PIN de Desbloqueo', 'key' => 'pin_desbloqueo', 'type' => 'text']);
+            CustomFieldDefinition::factory()->create([
+                'subscription_id' => $subscription->id,
+                'name' => 'Tipo de Falla',
+                'key' => 'tipo_falla',
+                'type' => 'select',
+                'options' => ['Hardware', 'Software', 'Batería', 'Pantalla']
+            ]);
+            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Garantía Activa', 'key' => 'garantia_activa', 'type' => 'boolean', 'is_required' => true]);
+        }
+
+        if ($businessType->name === 'Tienda de Ropa y Accesorios') {
+            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Tipo de Arreglo', 'key' => 'tipo_de_arreglo', 'type' => 'text', 'is_required' => true]);
+            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Material de la Prenda', 'key' => 'material_prenda', 'type' => 'text']);
+        }
+
+        // Crear Categorías de Productos y Atributos
+        $ropaCategory = Category::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Ropa y Accesorios', 'type' => 'product']);
+        $this->createAttributeWithOptions($ropaCategory, 'Color', ['Rojo', 'Azul', 'Negro', 'Blanco'], true);
+        $this->createAttributeWithOptions($ropaCategory, 'Talla', ['S', 'M', 'L', 'XL']);
+
+        $electronicaCategory = Category::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Electrónica', 'type' => 'product']);
+        $this->createAttributeWithOptions($electronicaCategory, 'Color', ['Negro Espacial', 'Plata', 'Oro'], true);
+        $this->createAttributeWithOptions($electronicaCategory, 'Almacenamiento', ['128GB', '256GB', '512GB']);
+
+        $otherProductCategories = Category::factory(3)->create(['subscription_id' => $subscription->id, 'type' => 'product']);
+        $allProductCategories = collect([$ropaCategory, $electronicaCategory])->merge($otherProductCategories);
+
+        // Crear Marcas y Proveedores
+        $brands = Brand::factory(5)->create(['subscription_id' => $subscription->id]);
+        Provider::factory(3)->create(['subscription_id' => $subscription->id]);
+
+        // Crear 2 Sucursales por Suscriptor
+        $branches = Branch::factory(2)->create(['subscription_id' => $subscription->id]);
+        $mainBranch = $branches->first();
+        $mainBranch->update(['is_main' => true]);
+
+        // Crear Categorías de Servicios
+        $serviceCategories = Category::factory(3)->create(['subscription_id' => $subscription->id, 'type' => 'service']);
+
+        // Crear 1 Usuario admin por Suscriptor y asignarlo a la sucursal principal
+        $adminUser = User::factory()->create([
+            'branch_id' => $mainBranch->id,
+            'name' => 'Admin ' . $subscription->commercial_name,
+            'email' => 'admin@' . strtolower(str_replace([' ', ',', '.'], '', $subscription->commercial_name)) . '.com',
+        ]);
+
+        // Crear datos por cada sucursal
+        $branches->each(function ($branch) use ($serviceCategories, $adminUser, $allProductCategories, $brands) {
+            Customer::factory(15)->create(['branch_id' => $branch->id]);
+            Service::factory(15)->create(['branch_id' => $branch->id, 'category_id' => $serviceCategories->random()->id]);
+            ServiceOrder::factory(20)->create(['branch_id' => $branch->id, 'user_id' => $adminUser->id]);
+            Product::factory(10)->create(['branch_id' => $branch->id, 'category_id' => $allProductCategories->random()->id, 'brand_id' => $brands->random()->id]);
+        });
+
+        // Crear Categorías de Gastos y Gastos
+        $expenseCategories = ExpenseCategory::factory(5)->create(['subscription_id' => $subscription->id]);
+        Expense::factory(25)->create([
+            'user_id' => $adminUser->id,
+            'branch_id' => $branches->random()->id,
+            'expense_category_id' => $expenseCategories->random()->id,
+        ]);
+    }
+
     private function seedGlobalBrandsAndProducts(): void
     {
         $ropaType = BusinessType::where('name', 'Tienda de Ropa y Accesorios')->first();
@@ -120,26 +126,16 @@ class DatabaseSeeder extends Seeder
         $samsung = Brand::factory()->create(['name' => 'Samsung', 'subscription_id' => null]);
         $apple = Brand::factory()->create(['name' => 'Apple', 'subscription_id' => null]);
 
-        // Asociar marcas a tipos de negocio (sigue siendo útil para organización interna)
         $nike->businessTypes()->attach($ropaType->id);
         $zara->businessTypes()->attach($ropaType->id);
         $samsung->businessTypes()->attach($electronicaType->id);
         $apple->businessTypes()->attach($electronicaType->id);
 
-        // Crear Productos Globales
-        GlobalProduct::factory(20)->create([
-            'brand_id' => $nike->id,
-            'business_type_id' => $ropaType->id,
-        ]);
-        GlobalProduct::factory(20)->create([
-            'brand_id' => $samsung->id,
-            'business_type_id' => $electronicaType->id,
-        ]);
+        // Productos Globales
+        GlobalProduct::factory(20)->create(['brand_id' => $nike->id, 'business_type_id' => $ropaType->id]);
+        GlobalProduct::factory(20)->create(['brand_id' => $samsung->id, 'business_type_id' => $electronicaType->id]);
     }
 
-    /**
-     * Helper para crear una definición de atributo con sus opciones.
-     */
     private function createAttributeWithOptions(Category $category, string $attributeName, array $options, bool $requiresImage = false): void
     {
         $attributeDefinition = AttributeDefinition::factory()->create([
