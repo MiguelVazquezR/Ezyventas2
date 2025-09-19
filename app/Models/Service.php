@@ -12,7 +12,7 @@ class Service extends Model
     use HasFactory;
 
     protected $fillable = [
-        'category_id', 'name', 'description', 'slug',
+        'category_id', 'branch_id', 'name', 'description', 'slug',
         'base_price', 'duration_estimate', 'show_online',
     ];
 
@@ -30,6 +30,11 @@ class Service extends Model
         return $this->belongsTo(Category::class);
     }
     
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
     /**
      * Obtiene todas las veces que este servicio ha sido un item en una orden.
      */

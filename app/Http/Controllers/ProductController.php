@@ -69,7 +69,10 @@ class ProductController extends Controller
         ];
 
         // --- DATOS ADICIONALES ---
-        $categories = Category::where('subscription_id', $subscriptionId)->get(['id', 'name']);
+        $categories = Category::where([
+            'subscription_id' => $subscriptionId,
+            'type' => 'product',
+        ])->get(['id', 'name']);
         $providers = Provider::where('subscription_id', $subscriptionId)->get(['id', 'name']);
         $attributeDefinitions = AttributeDefinition::with('options')
             ->where('subscription_id', $subscriptionId)
@@ -177,7 +180,10 @@ class ProductController extends Controller
 
         return Inertia::render('Product/Edit', [
             'product' => $product,
-            'categories' => Category::where('subscription_id', $subscriptionId)->get(['id', 'name']),
+            'categories' => Category::where([
+                'subscription_id' => $subscriptionId,
+                'type' => 'product',
+            ])->get(['id', 'name']),
             'brands' => $formattedBrands,
             'providers' => Provider::where('subscription_id', $subscriptionId)->get(['id', 'name']),
             'attributeDefinitions' => AttributeDefinition::with('options')->where('subscription_id', $subscriptionId)->get(),

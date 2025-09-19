@@ -13,6 +13,7 @@ class Category extends Model
 
     protected $fillable = [
         'name',
+        'type',
         'business_type',
         'subscription_id',
     ];

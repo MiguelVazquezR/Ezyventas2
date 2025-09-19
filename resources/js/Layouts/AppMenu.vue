@@ -11,32 +11,25 @@ const model = ref([
             { label: 'Productos', icon: 'pi pi-fw pi-building', to: route('products.index'), routeName: 'products.*' },
             { label: 'Gastos', icon: 'pi pi-fw pi-calendar-times', to: route('expenses.index'), routeName: 'expenses.*' },
             { label: 'Clientes', icon: 'pi pi-fw pi-user', to: route('customers.index'), routeName: 'customers.*'},
-            // {
-            //     label: 'Configuraciones', icon: 'pi pi-fw pi-cog',
-            //     items: [
-            //         {
-            //             label: 'Roles y permisos',
-            //             icon: 'pi pi-key',
-            //             to: route('settings.roles-permissions.index'),
-            //             routeName: 'settings.roles-permissions.*',
-            //             permission: 'ver_roles_permisos'
-            //         },
-            //         {
-            //             label: 'Días festivos',
-            //             icon: 'pi pi-calendar-plus',
-            //             to: route('settings.holidays.index'),
-            //             routeName: 'settings.holidays.*',
-            //             permission: 'ver_festivos'
-            //         },
-            //         {
-            //             label: 'Horarios del personal',
-            //             icon: 'pi pi-clock',
-            //             to: route('settings.schedules.index'),
-            //             routeName: 'settings.schedules.*',
-            //             permission: 'ver_horarios'
-            //         },
-            //     ]
-            // },
+            {
+                label: 'Servicios', icon: 'pi pi-fw pi-cog',
+                items: [
+                    {
+                        label: 'Catálogo de servicios',
+                        icon: 'pi pi-key',
+                        to: route('services.index'),
+                        routeName: 'services.*',
+                        // permission: 'ver_roles_permisos'
+                    },
+                    {
+                        label: 'Órdenes de servico',
+                        icon: 'pi pi-calendar-plus',
+                        to: route('services.index'),
+                        routeName: 'services.*',
+                        // permission: 'ver_festivos'
+                    },
+                ]
+            },
         ]
     },
 ]);
