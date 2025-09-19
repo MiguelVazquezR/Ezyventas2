@@ -23,7 +23,7 @@ class DatabaseSeeder extends Seeder
     {
         // 1. Llenar catálogos base
         $this->call(BusinessTypeSeeder::class);
-        $this->seedGlobalBrandsAndProducts(); // Renombrado para incluir productos
+        $this->seedGlobalBrandsAndProducts();
 
         // 2. Crear Suscriptores y sus datos privados
         $businessTypes = BusinessType::all();
@@ -87,18 +87,18 @@ class DatabaseSeeder extends Seeder
         $samsung = Brand::factory()->create(['name' => 'Samsung', 'subscription_id' => null]);
         $apple = Brand::factory()->create(['name' => 'Apple', 'subscription_id' => null]);
 
-        // Asociar marcas a tipos de negocio
+        // Asociar marcas a tipos de negocio (sigue siendo útil para organización interna)
         $nike->businessTypes()->attach($ropaType->id);
         $zara->businessTypes()->attach($ropaType->id);
         $samsung->businessTypes()->attach($electronicaType->id);
         $apple->businessTypes()->attach($electronicaType->id);
 
-        // --- NUEVO: Crear Productos Globales ---
-        GlobalProduct::factory(5)->create([
+        // Crear Productos Globales
+        GlobalProduct::factory(20)->create([
             'brand_id' => $nike->id,
             'business_type_id' => $ropaType->id,
         ]);
-        GlobalProduct::factory(5)->create([
+        GlobalProduct::factory(20)->create([
             'brand_id' => $samsung->id,
             'business_type_id' => $electronicaType->id,
         ]);

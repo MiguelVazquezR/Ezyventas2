@@ -14,9 +14,7 @@ class BaseCatalogController extends Controller
     public function index(): Response
     {
         $user = Auth::user();
-        $subscription = $user->branch->subscription;
 
-        // Productos del suscriptor que ya fueron importados del catálogo
         $localCatalogProducts = Product::where('branch_id', $user->branch_id)
             ->whereNotNull('global_product_id')
             ->with('media')
@@ -24,12 +22,11 @@ class BaseCatalogController extends Controller
 
         $importedIds = $localCatalogProducts->pluck('global_product_id');
 
-        // Productos globales disponibles para este suscriptor (que no han sido importados)
-        $availableGlobalProducts = GlobalProduct::where('business_type_id', $subscription->business_type_id)
-            ->whereNotIn('id', $importedIds)
+        // para obtener TODOS los productos globales disponibles.
+        $availableGlobalProducts = GlobalProduct::whereNotIn('id', $importedIds)
             ->with('media')
             ->get();
-        
+
         return Inertia::render('Product/BaseCatalog', [
             'availableProducts' => $availableGlobalProducts,
             'localProducts' => $localCatalogProducts,
@@ -39,7 +36,7 @@ class BaseCatalogController extends Controller
     public function import(Request $request)
     {
         $request->validate(['product_ids' => 'required|array']);
-        
+
         $user = Auth::user();
         $globalProducts = GlobalProduct::find($request->input('product_ids'));
 

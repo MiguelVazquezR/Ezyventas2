@@ -88,6 +88,16 @@ class ProductPromotionController extends Controller
                     $promotion->effects()->create(['type' => PromotionEffectType::SET_PRICE, 'value' => $validated['bundle_price']]);
                     break;
             }
+
+            // Registrar actividad en todos los productos afectados
+            foreach ($promotion->getAffectedProducts() as $affectedProduct) {
+                activity()
+                    ->performedOn($affectedProduct)
+                    ->causedBy(auth()->user())
+                    ->event('promo')
+                    ->withProperties(['promotion_name' => $promotion->name])
+                    ->log("Se agregó la promoción '{$promotion->name}'.");
+            }
         });
 
         return redirect()->route('products.show', $product->id)->with('success', 'Promoción creada con éxito.');

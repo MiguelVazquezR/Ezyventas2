@@ -25,18 +25,13 @@ class ProductController extends Controller
     public function index(Request $request): Response
     {
         $user = Auth::user();
-        // Inicia la consulta base de productos para la sucursal del usuario
+
+        // SOLUCIÓN: La consulta ahora obtiene TODOS los productos de la sucursal del usuario,
+        // sin filtrar por global_product_id.
         $query = Product::query()->where('branch_id', $user->branch_id)
-            ->with('media'); // Carga eficiente de las imágenes
+            ->with('media');
 
-        // Lógica para el filtro de tipo de producto (Mis productos vs Catálogo)
-        if ($request->input('product_type', 'my_products') === 'my_products') {
-            $query->whereNull('global_product_id');
-        } else {
-            $query->whereNotNull('global_product_id');
-        }
-
-        // Lógica para el buscador global
+        // La lógica de búsqueda global se mantiene
         if ($request->has('search')) {
             $searchTerm = $request->input('search');
             $query->where(function ($q) use ($searchTerm) {
@@ -45,18 +40,17 @@ class ProductController extends Controller
             });
         }
 
-        // Aplica el ordenamiento
+        // El ordenamiento se mantiene
         $sortField = $request->input('sortField', 'created_at');
         $sortOrder = $request->input('sortOrder', 'desc');
         $query->orderBy($sortField, $sortOrder);
 
-        // Obtiene los productos paginados
         $products = $query->paginate($request->input('rows', 20))
             ->withQueryString();
 
         return Inertia::render('Product/Index', [
             'products' => $products,
-            'filters' => $request->only(['search', 'product_type', 'sortField', 'sortOrder']),
+            'filters' => $request->only(['search', 'sortField', 'sortOrder']),
         ]);
     }
 
@@ -64,15 +58,10 @@ class ProductController extends Controller
     {
         $user = Auth::user();
         $subscriptionId = $user->subscription->id;
-        $subscription = $user->subscription;
 
         // --- MARCAS ---
-        $subscriberBrands = Brand::where('subscription_id', $subscriptionId)->get(['id', 'name']);
-        $globalBrands = Brand::whereNull('subscription_id')
-            ->whereHas('businessTypes', function ($query) use ($subscription) {
-                $query->where('business_type_id', $subscription->business_type_id);
-            })
-            ->get(['id', 'name']);
+        $subscriberBrands = Brand::where('subscription_id', Auth::user()->branch->subscription_id)->get(['id', 'name']);
+        $globalBrands = Brand::whereNull('subscription_id')->get(['id', 'name']);
 
         $formattedBrands = [
             ['label' => 'Mis Marcas', 'items' => $subscriberBrands],

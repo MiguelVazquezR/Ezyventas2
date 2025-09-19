@@ -5,7 +5,7 @@ import { usePage } from '@inertiajs/vue3';
 const page = usePage();
 
 const currentView = ref(
-    page.component.startsWith('Products/BaseCatalog') ? 'base_catalog' : 'my_products'
+    page.component.startsWith('Product/BaseCatalog') ? 'base_catalog' : 'my_products'
 );
 
 const productTypeOptions = ref([
