@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -10,6 +10,8 @@ const props = defineProps({
     serviceOrder: Object,
     customFieldDefinitions: Array,
     customers: Array,
+    products: Array,
+    services: Array,
 });
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
@@ -27,26 +29,68 @@ const form = useForm({
     promised_at: props.serviceOrder.promised_at ? new Date(props.serviceOrder.promised_at) : null,
     technician_name: props.serviceOrder.technician_name,
     technician_diagnosis: props.serviceOrder.technician_diagnosis,
-    final_total: props.serviceOrder.final_total,
+    final_total: parseFloat(props.serviceOrder.final_total) || 0,
     custom_fields: props.serviceOrder.custom_fields || {},
     initial_evidence_images: [],
     deleted_media_ids: [],
+    items: props.serviceOrder.items.map(item => ({
+        itemable_id: item.itemable_id,
+        itemable_type: item.itemable_type,
+        description: item.description,
+        quantity: parseFloat(item.quantity),
+        unit_price: parseFloat(item.unit_price),
+        line_total: parseFloat(item.line_total),
+    })),
 });
 
-const existingImages = ref(props.serviceOrder.media.filter(m => m.collection_name === 'initial-service-order-evidence'));
+const existingImages = ref(props.serviceOrder.media?.filter(m => m.collection_name === 'initial-service-order-evidence'));
 
-const deleteExistingImage = (mediaId) => {
-    form.deleted_media_ids.push(mediaId);
-    existingImages.value = existingImages.value.filter(img => img.id !== mediaId);
+// --- Lógica para Items (Refacciones / Mano de Obra) ---
+const availableItems = computed(() => [
+    ...props.products.map(p => ({ ...p, type: 'Producto', price: p.selling_price, itemable_type: 'App\\Models\\Product' })),
+    ...props.services.map(s => ({ ...s, type: 'Servicio', price: s.base_price, itemable_type: 'App\\Models\\Service' }))
+]);
+const selectedItem = ref(null);
+const filteredItems = ref([]);
+
+const searchItems = (event) => {
+    if (!event.query.trim().length) {
+        filteredItems.value = [...availableItems.value];
+    } else {
+        filteredItems.value = availableItems.value.filter((item) => {
+            return item.name.toLowerCase().includes(event.query.toLowerCase());
+        });
+    }
 };
 
-const onSelectImages = (event) => {
-    form.initial_evidence_images = [...form.initial_evidence_images, ...event.files];
-};
-const onRemoveImage = (event) => {
-    form.initial_evidence_images = form.initial_evidence_images.filter(img => img.objectURL !== event.file.objectURL);
+const addItem = () => {
+    let itemToAdd = {
+        itemable_id: null, itemable_type: null, description: '',
+        quantity: 1, unit_price: 0, line_total: 0,
+    };
+    if (typeof selectedItem.value === 'object' && selectedItem.value !== null) {
+        itemToAdd.itemable_id = selectedItem.value.id;
+        itemToAdd.itemable_type = selectedItem.value.itemable_type;
+        itemToAdd.description = selectedItem.value.name;
+        itemToAdd.unit_price = selectedItem.value.price;
+    } else if (typeof selectedItem.value === 'string') {
+        itemToAdd.itemable_id = 0;
+        itemToAdd.description = selectedItem.value;
+    } else { return; }
+    form.items.push(itemToAdd);
+    selectedItem.value = null;
 };
 
+const removeItem = (index) => form.items.splice(index, 1);
+
+watch(() => form.items, (newItems) => {
+    let total = 0;
+    newItems.forEach(item => {
+        item.line_total = (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0);
+        total += item.line_total;
+    });
+    form.final_total = total;
+}, { deep: true });
 
 // Lógica para el AutoComplete de clientes
 const filteredCustomers = ref();
@@ -56,7 +100,7 @@ const searchCustomer = (event) => {
             filteredCustomers.value = [...props.customers];
         } else {
             filteredCustomers.value = props.customers.filter((customer) => {
-                return customer.name.toLowerCase().includes(event.query.toLowerCase());
+                return customer.name.toLowerCase().startsWith(event.query.toLowerCase());
             });
         }
     }, 250);
@@ -68,9 +112,23 @@ const onCustomerSelect = (event) => {
 
 const submit = () => {
     form.post(route('service-orders.update', props.serviceOrder.id), {
-        forceFormData: true, // Necesario para enviar archivos
+        forceFormData: true,
     });
 };
+
+// Lógica para manejo de imágenes
+const onSelectImages = (event) => {
+    form.initial_evidence_images = [...form.initial_evidence_images, ...event.files];
+};
+const onRemoveImage = (event) => {
+    form.initial_evidence_images = form.initial_evidence_images.filter(img => img.objectURL !== event.file.objectURL);
+};
+const deleteExistingImage = (mediaId) => {
+    form.deleted_media_ids.push(mediaId);
+    existingImages.value = existingImages.value.filter(img => img.id !== mediaId);
+};
+
+const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 </script>
 
 <template>
@@ -93,10 +151,8 @@ const submit = () => {
                             @complete="searchCustomer" field="name" @item-select="onCustomerSelect" inputClass="w-full"
                             class="w-full mt-1" inputId="customer_name">
                             <template #option="slotProps">
-                                <div class="flex flex-col">
-                                    <span>{{ slotProps.option.name }}</span>
-                                    <small class="text-xs text-gray-500">{{ slotProps.option.phone }}</small>
-                                </div>
+                                <div>{{ slotProps.option.name }}</div>
+                                <div class="text-xs text-gray-500">{{ slotProps.option.phone }}</div>
                             </template>
                         </AutoComplete>
                         <InputError :message="form.errors.customer_name" class="mt-2" />
@@ -143,10 +199,56 @@ const submit = () => {
                 </div>
             </div>
 
+            <!-- Refacciones y Mano de Obra -->
+            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Refacciones y Mano de Obra</h2>
+                <div class="flex gap-2 mb-4">
+                    <AutoComplete v-model="selectedItem" :suggestions="filteredItems" @complete="searchItems"
+                        field="name" placeholder="Busca o escribe un concepto..." class="w-full" dropdown>
+                        <template #option="slotProps">
+                            <div>{{ slotProps.option.name }}
+                                <Tag :value="slotProps.option.type" />
+                            </div>
+                        </template>
+                    </AutoComplete>
+                    <Button @click="addItem" icon="pi pi-plus" label="Agregar" :disabled="!selectedItem" />
+                </div>
+                <DataTable :value="form.items" class="p-datatable-sm">
+                    <Column field="description" header="Descripción"><template #body="{ index }">
+                            <InputText v-model="form.items[index].description" class="w-full" />
+                        </template>
+                    </Column>
+                    <Column field="quantity" header="Cantidad" style="width: 10rem"><template #body="{ index }">
+                            <InputNumber v-model="form.items[index].quantity" class="w-full" showButtons
+                                buttonLayout="horizontal" :step="1" />
+                        </template>
+                    </Column>
+                    <Column field="unit_price" header="Precio Unit." style="width: 12rem"><template #body="{ index }">
+                            <InputNumber v-model="form.items[index].unit_price" mode="currency" currency="MXN"
+                                locale="es-MX" class="w-full" />
+                        </template>
+                    </Column>
+                    <Column field="line_total" header="Total"><template #body="{ data }">{{
+                            formatCurrency(data.line_total) }}</template></Column>
+                    <Column style="width: 4rem"><template #body="{ index }"><Button @click="removeItem(index)"
+                                icon="pi pi-trash" text rounded severity="danger" /></template>
+                    </Column>
+                </DataTable>
+                <InputError :message="form.errors.items" class="mt-2" />
+                <div class="flex justify-end mt-4">
+                    <div class="w-full max-w-xs">
+                        <InputLabel for="final_total" value="Total Final" class="font-bold" />
+                        <InputNumber id="final_total" v-model="form.final_total" mode="currency" currency="MXN"
+                            locale="es-MX" class="w-full mt-1" inputClass="!font-bold" />
+                        <InputError :message="form.errors.final_total" class="mt-2" />
+                    </div>
+                </div>
+            </div>
+
             <!-- Evidencia Inicial -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Fotográfica Inicial (Máx. 5)</h2>
-                <div v-if="existingImages.length > 0" class="flex flex-wrap gap-4 mb-4">
+                <div v-if="existingImages?.length > 0" class="flex flex-wrap gap-4 mb-4">
                     <div v-for="img in existingImages" :key="img.id" class="relative">
                         <img :src="img.original_url" class="w-24 h-24 object-cover rounded-md border">
                         <Button @click="deleteExistingImage(img.id)" icon="pi pi-times" rounded text severity="danger"
@@ -168,7 +270,7 @@ const submit = () => {
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <InputLabel for="promised_at" value="Fecha Promesa de Entrega" />
-                        <Calendar id="promised_at" v-model="form.promised_at" showTime hourFormat="12"
+                        <DatePicker id="promised_at" v-model="form.promised_at" showTime hourFormat="12"
                             class="w-full mt-1" />
                     </div>
                     <div>
@@ -179,11 +281,6 @@ const submit = () => {
                         <InputLabel for="technician_diagnosis" value="Diagnóstico del Técnico" />
                         <Textarea id="technician_diagnosis" v-model="form.technician_diagnosis" rows="3"
                             class="mt-1 w-full" />
-                    </div>
-                    <div>
-                        <InputLabel for="final_total" value="Costo Total Final" />
-                        <InputNumber id="final_total" v-model="form.final_total" mode="currency" currency="MXN"
-                            locale="es-MX" class="w-full mt-1" />
                     </div>
                 </div>
             </div>

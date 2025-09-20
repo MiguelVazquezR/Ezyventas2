@@ -194,36 +194,32 @@ const formatCurrency = (value) => {
                         </div>
                     </div>
                 </div>
-                <!-- Evidencia Inicial -->
+
+                <!-- NUEVA SECCIÓN: Refacciones y Mano de Obra -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Inicial</h2>
-                    <Galleria :value="serviceOrder.media?.filter(m => m.collection_name === 'initial-service-order-evidence')"
-                        :numVisible="4" containerStyle="max-width: 100%" :showThumbnails="false" :showIndicators="true">
-                        <template #item="slotProps">
-                            <img :src="slotProps.item.original_url" :alt="`Evidencia ${slotProps.index}`"
-                                class="w-full max-h-96 object-contain" />
-                        </template>
-                    </Galleria>
-                    <div v-if="!serviceOrder.media || serviceOrder.media?.filter(m => m.collection_name === 'initial-service-order-evidence').length === 0"
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Refacciones y Mano de Obra</h2>
+                    <DataTable :value="serviceOrder.items" class="p-datatable-sm">
+                        <Column field="description" header="Descripción"></Column>
+                        <Column field="quantity" header="Cantidad" style="width: 6rem" class="text-center"></Column>
+                        <Column field="unit_price" header="Precio Unit." style="width: 10rem" class="text-right">
+                            <template #body="{ data }">{{ formatCurrency(data.unit_price) }}</template>
+                        </Column>
+                        <Column field="line_total" header="Total" style="width: 10rem" class="text-right font-semibold">
+                            <template #body="{ data }">{{ formatCurrency(data.line_total) }}</template>
+                        </Column>
+                    </DataTable>
+                    <div v-if="!serviceOrder.items || serviceOrder.items.length === 0"
                         class="text-center text-gray-500 py-4">
-                        No se adjuntaron imágenes de evidencia.
+                        No se han agregado refacciones o mano de obra.
                     </div>
-                </div>
-                <!-- Detalles Adicionales (Campos Personalizados) -->
-                <div v-if="Object.keys(serviceOrder.custom_fields).length > 0"
-                    class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles Adicionales</h2>
-                    <ul class="space-y-4 text-sm">
-                        <li v-for="(value, key) in serviceOrder.custom_fields" :key="key">
-                            <span class="font-semibold capitalize">{{ key.replace('_', ' ') }}</span>
-                            <div v-if="key === 'patron_desbloqueo'" class="mt-2">
-                                <PatternLock :modelValue="value" :edit="false" />
+                    <div class="flex justify-end mt-4">
+                        <div class="w-full max-w-xs text-right space-y-2">
+                            <div class="flex justify-between font-bold text-lg border-t pt-2 mt-2">
+                                <span>Total Final:</span>
+                                <span>{{ formatCurrency(serviceOrder.final_total) }}</span>
                             </div>
-                            <p v-else class="text-gray-700 dark:text-gray-300">{{ value === true ? 'Sí' : value
-                                === false ? 'No' : value
-                            }}</p>
-                        </li>
-                    </ul>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
@@ -246,7 +242,39 @@ const formatCurrency = (value) => {
             </div>
 
             <!-- Columna Derecha -->
-            <div class="lg:col-span-1">
+            <div class="lg:col-span-1 space-y-6">
+                <!-- Evidencia Inicial -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Inicial</h2>
+                    <Galleria
+                        :value="serviceOrder.media?.filter(m => m.collection_name === 'initial-service-order-evidence')"
+                        :numVisible="4" containerStyle="max-width: 100%" :showThumbnails="false" :showIndicators="true">
+                        <template #item="slotProps">
+                            <img :src="slotProps.item.original_url" :alt="`Evidencia ${slotProps.index}`"
+                                class="w-full max-h-96 object-contain" />
+                        </template>
+                    </Galleria>
+                    <div v-if="!serviceOrder.media || serviceOrder.media?.filter(m => m.collection_name === 'initial-service-order-evidence').length === 0"
+                        class="text-center text-gray-500 py-4">
+                        No se adjuntaron imágenes.
+                    </div>
+                </div>
+                <!-- Detalles Adicionales (Campos Personalizados) -->
+                <div v-if="serviceOrder.custom_fields && Object.keys(serviceOrder.custom_fields).length > 0"
+                    class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles Adicionales</h2>
+                    <ul class="space-y-4 text-sm">
+                        <li v-for="(value, key) in serviceOrder.custom_fields" :key="key">
+                            <span class="font-semibold capitalize">{{ key.replace('_', ' ') }}</span>
+                            <div v-if="key === 'patron_desbloqueo'" class="mt-2">
+                                <PatternLock :modelValue="value" :edit="false" />
+                            </div>
+                            <p v-else class="text-gray-700 dark:text-gray-300">{{ value === true ? 'Sí' : value
+                                === false ? 'No' : value
+                            }}</p>
+                        </li>
+                    </ul>
+                </div>
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-6">Historial de Actividad</h2>
                     <div v-if="activities && activities.length > 0" class="relative max-h-[350px] overflow-y-auto pr-2">

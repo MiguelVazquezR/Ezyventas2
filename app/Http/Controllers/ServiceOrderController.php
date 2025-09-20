@@ -7,9 +7,12 @@ use App\Http\Requests\StoreServiceOrderRequest;
 use App\Http\Requests\UpdateServiceOrderRequest;
 use App\Models\Customer;
 use App\Models\CustomFieldDefinition;
+use App\Models\Product;
+use App\Models\Service;
 use App\Models\ServiceOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -83,77 +86,69 @@ class ServiceOrderController extends Controller
 
     public function create(): Response
     {
-        $user = Auth::user();
-        $subscriptionId = $user->branch->subscription_id;
-
-        $customFields = CustomFieldDefinition::where('subscription_id', $subscriptionId)
-            ->where('module', 'service_orders')
-            ->get();
-
-        // Pasar la lista de clientes a la vista
-        $customers = Customer::whereHas('branch.subscription', function ($q) use ($subscriptionId) {
-            $q->where('id', $subscriptionId);
-        })->get(['id', 'name', 'phone']);
-
-        return Inertia::render('ServiceOrder/Create', [
-            'customFieldDefinitions' => $customFields,
-            'customers' => $customers,
-        ]);
+        return Inertia::render('ServiceOrder/Create', $this->getFormData());
     }
 
     public function store(StoreServiceOrderRequest $request)
     {
-        $serviceOrder = ServiceOrder::create(array_merge($request->validated(), [
-            'user_id' => Auth::id(),
-            'branch_id' => Auth::user()->branch_id,
-            'status' => ServiceOrderStatus::PENDING,
-        ]));
+        DB::transaction(function () use ($request) {
+            $serviceOrder = ServiceOrder::create(array_merge($request->validated(), [
+                'user_id' => Auth::id(),
+                'branch_id' => Auth::user()->branch_id,
+                'status' => \App\Enums\ServiceOrderStatus::PENDING,
+            ]));
 
-        // Manejar la subida de imágenes de evidencia
-        if ($request->hasFile('initial_evidence_images')) {
-            foreach ($request->file('initial_evidence_images') as $file) {
-                $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
+            foreach ($request->validated('items', []) as $item) {
+                // Si itemable_id es 0, es un concepto manual y no tiene relación polimórfica
+                if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
+                    unset($item['itemable_id']);
+                    unset($item['itemable_type']);
+                }
+                $serviceOrder->items()->create($item);
             }
-        }
+
+            if ($request->hasFile('initial_evidence_images')) {
+                foreach ($request->file('initial_evidence_images') as $file) {
+                    $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
+                }
+            }
+        });
 
         return redirect()->route('service-orders.index')->with('success', 'Orden de servicio creada.');
     }
 
     public function edit(ServiceOrder $serviceOrder): Response
     {
-        $serviceOrder->load('media');
-        $user = Auth::user();
-        $subscriptionId = $user->branch->subscription_id;
-
-        $customFields = CustomFieldDefinition::where('subscription_id', $subscriptionId)
-            ->where('module', 'service_orders')
-            ->get();
-
-        $customers = Customer::whereHas('branch.subscription', function ($q) use ($subscriptionId) {
-            $q->where('id', $subscriptionId);
-        })->get(['id', 'name', 'phone']);
-
-        return Inertia::render('ServiceOrder/Edit', [
-            'serviceOrder' => $serviceOrder,
-            'customFieldDefinitions' => $customFields,
-            'customers' => $customers,
-        ]);
+        $serviceOrder->load('items.itemable');
+        return Inertia::render('ServiceOrder/Edit', array_merge($this->getFormData(), ['serviceOrder' => $serviceOrder]));
     }
 
     public function update(UpdateServiceOrderRequest $request, ServiceOrder $serviceOrder)
     {
-        $serviceOrder->update($request->validated());
+        DB::transaction(function () use ($request, $serviceOrder) {
+            $validated = $request->validated();
+            $serviceOrder->update($validated);
 
-        if ($request->input('deleted_media_ids')) {
-            $serviceOrder->media()->whereIn('id', $request->input('deleted_media_ids'))->delete();
-        }
-
-        if ($request->hasFile('initial_evidence_images')) {
-            foreach ($request->file('initial_evidence_images') as $file) {
-                $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
+            $serviceOrder->items()->delete();
+            foreach ($validated['items'] as $item) {
+                if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
+                    unset($item['itemable_id']);
+                    unset($item['itemable_type']);
+                }
+                $serviceOrder->items()->create($item);
             }
-        }
-        
+
+            if ($request->input('deleted_media_ids')) {
+                $serviceOrder->media()->whereIn('id', $request->input('deleted_media_ids'))->delete();
+            }
+
+            if ($request->hasFile('initial_evidence_images')) {
+                foreach ($request->file('initial_evidence_images') as $file) {
+                    $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
+                }
+            }
+        });
+
         return redirect()->route('service-orders.index')->with('success', 'Orden de servicio actualizada.');
     }
 
@@ -189,5 +184,18 @@ class ServiceOrderController extends Controller
         $request->validate(['ids' => 'required|array']);
         ServiceOrder::whereIn('id', $request->input('ids'))->delete();
         return redirect()->route('service-orders.index')->with('success', 'Órdenes seleccionadas eliminadas.');
+    }
+
+    private function getFormData(): array
+    {
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+
+        return [
+            'customers' => Customer::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))->get(['id', 'name', 'phone']),
+            'products' => Product::where('branch_id', $user->branch_id)->with('productAttributes')->get(),
+            'services' => Service::where('branch_id', $user->branch_id)->get(['id', 'name', 'base_price']),
+            'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'service_orders')->get(),
+        ];
     }
 }

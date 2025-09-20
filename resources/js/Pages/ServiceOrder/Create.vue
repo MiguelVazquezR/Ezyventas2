@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -9,6 +9,8 @@ import PatternLock from '@/Components/PatternLock.vue';
 const props = defineProps({
     customFieldDefinitions: Array,
     customers: Array,
+    products: Array,
+    services: Array,
 });
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
@@ -24,9 +26,66 @@ const form = useForm({
     reported_problems: '',
     promised_at: null,
     technician_name: '',
+    final_total: 0,
     custom_fields: {},
     initial_evidence_images: [],
+    items: [],
 });
+
+// --- Lógica para Items (Refacciones / Mano de Obra)---
+const availableItems = computed(() => [
+    ...props.products.map(p => ({ ...p, type: 'Producto', price: p.selling_price, itemable_type: 'App\\Models\\Product' })),
+    ...props.services.map(s => ({ ...s, type: 'Servicio', price: s.base_price, itemable_type: 'App\\Models\\Service' }))
+]);
+const selectedItem = ref(null);
+const filteredItems = ref([]);
+
+const searchItems = (event) => {
+    if (!event.query.trim().length) {
+        filteredItems.value = [...availableItems.value];
+    } else {
+        filteredItems.value = availableItems.value.filter((item) => {
+            return item.name.toLowerCase().includes(event.query.toLowerCase());
+        });
+    }
+};
+
+const addItem = () => {
+    let itemToAdd = {
+        itemable_id: null,
+        itemable_type: null,
+        description: '',
+        quantity: 1,
+        unit_price: 0,
+        line_total: 0,
+    };
+    // Si el usuario seleccionó un objeto de la lista
+    if (typeof selectedItem.value === 'object' && selectedItem.value !== null) {
+        itemToAdd.itemable_id = selectedItem.value.id;
+        itemToAdd.itemable_type = selectedItem.value.itemable_type;
+        itemToAdd.description = selectedItem.value.name;
+        itemToAdd.unit_price = selectedItem.value.price;
+    } else if (typeof selectedItem.value === 'string') {
+        // Si el usuario escribió un concepto manual
+        itemToAdd.itemable_id = 0; // Marcar como manual
+        itemToAdd.description = selectedItem.value;
+    } else {
+        return;
+    }
+    form.items.push(itemToAdd);
+    selectedItem.value = null;
+};
+
+const removeItem = (index) => form.items.splice(index, 1);
+
+watch(() => form.items, (newItems) => {
+    let total = 0;
+    newItems.forEach(item => {
+        item.line_total = (item.quantity || 0) * (item.unit_price || 0);
+        total += item.line_total;
+    });
+    form.final_total = total;
+}, { deep: true });
 
 // Lógica para el AutoComplete de clientes
 const filteredCustomers = ref();
@@ -128,6 +187,54 @@ const onRemoveImage = (event) => {
                         <PatternLock v-if="field.type === 'pattern'" :id="field.key"
                             v-model="form.custom_fields[field.key]" class="mt-1" />
                         <InputError :message="form.errors[`custom_fields.${field.key}`]" class="mt-2" />
+                    </div>
+                </div>
+            </div>
+
+            <!-- Refacciones y Mano de Obra -->
+            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Refacciones y Mano de Obra</h2>
+                <div class="flex gap-2 mb-4">
+                    <AutoComplete v-model="selectedItem" :suggestions="filteredItems" @complete="searchItems"
+                        field="name" placeholder="Busca o escribe un concepto..." class="w-full" dropdown>
+                        <template #option="slotProps">
+                            <div>{{ slotProps.option.name }}
+                                <Tag :value="slotProps.option.type" />
+                            </div>
+                        </template>
+                    </AutoComplete>
+                    <Button @click="addItem" icon="pi pi-plus" label="Agregar" :disabled="!selectedItem" />
+                </div>
+                <DataTable :value="form.items" class="p-datatable-sm">
+                    <Column field="description" header="Descripción"><template #body="{ index }">
+                            <InputText v-model="form.items[index].description" class="w-full" />
+                        </template>
+                    </Column>
+                    <Column field="quantity" header="Cantidad" style="width: 10rem"><template #body="{ index }">
+                            <InputNumber v-model="form.items[index].quantity" class="w-full" showButtons
+                                buttonLayout="horizontal" :step="1" />
+                        </template>
+                    </Column>
+                    <Column field="unit_price" header="Precio Unit." style="width: 12rem"><template #body="{ index }">
+                            <InputNumber v-model="form.items[index].unit_price" mode="currency" currency="MXN"
+                                locale="es-MX" class="w-full" />
+                        </template>
+                    </Column>
+                    <Column field="line_total" header="Total"><template #body="{ data }">{{ new
+                        Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(data.line_total)
+                            }}</template>
+                    </Column>
+                    <Column style="width: 4rem"><template #body="{ index }"><Button @click="removeItem(index)"
+                                icon="pi pi-trash" text rounded severity="danger" /></template>
+                    </Column>
+                </DataTable>
+                <InputError :message="form.errors.items" class="mt-2" />
+                <div class="flex justify-end mt-4">
+                    <div class="w-full max-w-xs">
+                        <InputLabel for="final_total" value="Total Final" class="font-bold" />
+                        <InputNumber id="final_total" v-model="form.final_total" mode="currency" currency="MXN"
+                            locale="es-MX" class="w-full mt-1" inputClass="!font-bold" />
+                        <InputError :message="form.errors.final_total" class="mt-2" />
                     </div>
                 </div>
             </div>
