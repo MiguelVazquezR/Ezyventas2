@@ -13,6 +13,7 @@ class Quote extends Model
     use HasFactory;
 
     protected $fillable = [
+        'branch_id',
         'user_id',
         'customer_id',
         'transaction_id',
@@ -49,6 +50,11 @@ class Quote extends Model
             'custom_fields' => 'array',
             'shipping_address' => 'array',
         ];
+    }
+
+     public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
     }
 
     public function user(): BelongsTo

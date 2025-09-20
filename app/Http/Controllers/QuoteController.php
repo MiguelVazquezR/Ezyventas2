@@ -4,62 +4,42 @@ namespace App\Http\Controllers;
 
 use App\Models\Quote;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class QuoteController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    public function index(Request $request): Response
     {
-        //
-    }
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
+        $query = Quote::query()
+            ->join('customers', 'quotes.customer_id', '=', 'customers.id')
+            ->whereHas('branch.subscription', function ($q) use ($subscriptionId) {
+                $q->where('id', $subscriptionId);
+            })
+            ->with('customer:id,name')
+            ->select('quotes.*');
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        //
-    }
+        if ($request->has('search')) {
+            $searchTerm = $request->input('search');
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('folio', 'LIKE', "%{$searchTerm}%")
+                  ->orWhere('customers.name', 'LIKE', "%{$searchTerm}%");
+            });
+        }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Quote $quote)
-    {
-        //
-    }
+        $sortField = $request->input('sortField', 'created_at');
+        $sortOrder = $request->input('sortOrder', 'desc');
+        $query->orderBy($sortField === 'customer.name' ? 'customers.name' : $sortField, $sortOrder);
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Quote $quote)
-    {
-        //
-    }
+        $quotes = $query->paginate($request->input('rows', 20))->withQueryString();
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Quote $quote)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Quote $quote)
-    {
-        //
+        return Inertia::render('Quote/Index', [
+            'quotes' => $quotes,
+            'filters' => $request->only(['search', 'sortField', 'sortOrder']),
+        ]);
     }
 }

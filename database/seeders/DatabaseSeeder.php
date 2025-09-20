@@ -17,6 +17,7 @@ use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\GlobalProduct;
 use App\Models\Provider;
+use App\Models\Quote;
 use App\Models\Service;
 use App\Models\ServiceOrder;
 use Illuminate\Database\Seeder;
@@ -52,13 +53,13 @@ class DatabaseSeeder extends Seeder
         // --- Crear Campos Personalizados para Órdenes de Servicio ---
         if ($businessType->name === 'Tienda de Electrónica') {
             CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'PIN de Desbloqueo', 'key' => 'pin_desbloqueo', 'type' => 'text']);
-            CustomFieldDefinition::factory()->create([
-                'subscription_id' => $subscription->id,
-                'name' => 'Tipo de Falla',
-                'key' => 'tipo_falla',
-                'type' => 'select',
-                'options' => ['Hardware', 'Software', 'Batería', 'Pantalla']
-            ]);
+            // CustomFieldDefinition::factory()->create([
+            //     'subscription_id' => $subscription->id,
+            //     'name' => 'Tipo de Falla',
+            //     'key' => 'tipo_falla',
+            //     'type' => 'select',
+            //     'options' => ['Hardware', 'Software', 'Batería', 'Pantalla']
+            // ]);
             CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Patrón de Desbloqueo', 'key' => 'patron_desbloqueo', 'type' => 'pattern']);
             CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Garantía Activa', 'key' => 'garantia_activa', 'type' => 'boolean', 'is_required' => true]);
         }
@@ -101,7 +102,12 @@ class DatabaseSeeder extends Seeder
 
         // Crear datos por cada sucursal
         $branches->each(function ($branch) use ($serviceCategories, $adminUser, $allProductCategories, $brands) {
-            Customer::factory(15)->create(['branch_id' => $branch->id]);
+            $customers = Customer::factory(15)->create(['branch_id' => $branch->id]);
+            Quote::factory(10)->create([
+                'branch_id' => $branch->id,
+                'user_id' => $adminUser->id,
+                'customer_id' => $customers->random()->id,
+            ]);
             Service::factory(15)->create(['branch_id' => $branch->id, 'category_id' => $serviceCategories->random()->id]);
             ServiceOrder::factory(20)->create(['branch_id' => $branch->id, 'user_id' => $adminUser->id]);
             Product::factory(10)->create(['branch_id' => $branch->id, 'category_id' => $allProductCategories->random()->id, 'brand_id' => $brands->random()->id]);

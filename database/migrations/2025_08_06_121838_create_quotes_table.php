@@ -13,9 +13,11 @@ return new class extends Migration
     {
         Schema::create('quotes', function (Blueprint $table) {
             $table->id();
+            
             $table->string('folio')->unique();
 
             // Relaciones
+            $table->foreignId('branch_id')->constrained()->onDelete('cascade');
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
             $table->foreignId('customer_id')->nullable()->constrained('customers')->onDelete('set null');
             $table->foreignId('transaction_id')->nullable()->constrained('transactions')->onDelete('set null');

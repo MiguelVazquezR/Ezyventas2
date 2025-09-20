@@ -30,6 +30,7 @@ require __DIR__ . '/web/expenses.php';
 require __DIR__ . '/web/customers.php';
 require __DIR__ . '/web/services.php';
 require __DIR__ . '/web/service-orders.php';
+require __DIR__ . '/web/quotes.php';
 
 
 //artisan commands -------------------
