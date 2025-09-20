@@ -20,7 +20,9 @@ class StoreServiceOrderRequest extends FormRequest
             'reported_problems' => 'required|string',
             'promised_at' => 'nullable|date',
             'technician_name' => 'nullable|string|max:255',
-            'custom_fields' => 'nullable|array', // Validar que los campos personalizados sean un array
+            'custom_fields' => 'nullable|array',
+            'initial_evidence_images' => 'nullable|array|max:5',
+            'initial_evidence_images.*' => 'image',
         ];
     }
 }

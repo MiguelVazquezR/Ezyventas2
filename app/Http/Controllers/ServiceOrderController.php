@@ -49,7 +49,7 @@ class ServiceOrderController extends Controller
 
     public function show(ServiceOrder $serviceOrder): Response
     {
-        $serviceOrder->load(['branch', 'user', 'items.itemable', 'activities.causer']);
+        $serviceOrder->load(['branch', 'user', 'items.itemable', 'activities.causer', 'media']);
 
         $translations = config('log_translations.ServiceOrder', []);
 
@@ -103,16 +103,25 @@ class ServiceOrderController extends Controller
 
     public function store(StoreServiceOrderRequest $request)
     {
-        ServiceOrder::create(array_merge($request->validated(), [
+        $serviceOrder = ServiceOrder::create(array_merge($request->validated(), [
             'user_id' => Auth::id(),
             'branch_id' => Auth::user()->branch_id,
             'status' => ServiceOrderStatus::PENDING,
         ]));
+
+        // Manejar la subida de imágenes de evidencia
+        if ($request->hasFile('initial_evidence_images')) {
+            foreach ($request->file('initial_evidence_images') as $file) {
+                $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
+            }
+        }
+
         return redirect()->route('service-orders.index')->with('success', 'Orden de servicio creada.');
     }
 
     public function edit(ServiceOrder $serviceOrder): Response
     {
+        $serviceOrder->load('media');
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
 
@@ -134,6 +143,17 @@ class ServiceOrderController extends Controller
     public function update(UpdateServiceOrderRequest $request, ServiceOrder $serviceOrder)
     {
         $serviceOrder->update($request->validated());
+
+        if ($request->input('deleted_media_ids')) {
+            $serviceOrder->media()->whereIn('id', $request->input('deleted_media_ids'))->delete();
+        }
+
+        if ($request->hasFile('initial_evidence_images')) {
+            foreach ($request->file('initial_evidence_images') as $file) {
+                $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
+            }
+        }
+        
         return redirect()->route('service-orders.index')->with('success', 'Orden de servicio actualizada.');
     }
 

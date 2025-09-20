@@ -4,6 +4,7 @@ import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import DiffViewer from '@/Components/DiffViewer.vue';
+import PatternLock from '@/Components/PatternLock.vue';
 
 const props = defineProps({
     serviceOrder: Object,
@@ -192,6 +193,37 @@ const formatCurrency = (value) => {
                             </ul>
                         </div>
                     </div>
+                </div>
+                <!-- Evidencia Inicial -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Inicial</h2>
+                    <Galleria :value="serviceOrder.media?.filter(m => m.collection_name === 'initial-service-order-evidence')"
+                        :numVisible="4" containerStyle="max-width: 100%" :showThumbnails="false" :showIndicators="true">
+                        <template #item="slotProps">
+                            <img :src="slotProps.item.original_url" :alt="`Evidencia ${slotProps.index}`"
+                                class="w-full max-h-96 object-contain" />
+                        </template>
+                    </Galleria>
+                    <div v-if="!serviceOrder.media || serviceOrder.media?.filter(m => m.collection_name === 'initial-service-order-evidence').length === 0"
+                        class="text-center text-gray-500 py-4">
+                        No se adjuntaron imágenes de evidencia.
+                    </div>
+                </div>
+                <!-- Detalles Adicionales (Campos Personalizados) -->
+                <div v-if="Object.keys(serviceOrder.custom_fields).length > 0"
+                    class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles Adicionales</h2>
+                    <ul class="space-y-4 text-sm">
+                        <li v-for="(value, key) in serviceOrder.custom_fields" :key="key">
+                            <span class="font-semibold capitalize">{{ key.replace('_', ' ') }}</span>
+                            <div v-if="key === 'patron_desbloqueo'" class="mt-2">
+                                <PatternLock :modelValue="value" :edit="false" />
+                            </div>
+                            <p v-else class="text-gray-700 dark:text-gray-300">{{ value === true ? 'Sí' : value
+                                === false ? 'No' : value
+                            }}</p>
+                        </li>
+                    </ul>
                 </div>
 
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">

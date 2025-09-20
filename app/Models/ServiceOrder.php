@@ -9,10 +9,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
-class ServiceOrder extends Model
+class ServiceOrder extends Model implements HasMedia
 {
-    use HasFactory, LogsActivity;
+    use HasFactory, LogsActivity, InteractsWithMedia;
 
     protected $table = 'service_orders';
 
@@ -45,6 +47,16 @@ class ServiceOrder extends Model
             'custom_fields' => 'array',
             'customer_address' => 'array',
         ];
+    }
+
+    // Registrar la nueva colección de medios para las imágenes de evidencia
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('initial-service-order-evidence')
+            ->withResponsiveImages();
+
+        $this->addMediaCollection('closing-service-order-evidence')
+            ->withResponsiveImages();
     }
 
     public function getActivitylogOptions(): LogOptions

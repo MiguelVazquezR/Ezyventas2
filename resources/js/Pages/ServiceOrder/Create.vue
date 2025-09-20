@@ -4,6 +4,7 @@ import { Head, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
+import PatternLock from '@/Components/PatternLock.vue';
 
 const props = defineProps({
     customFieldDefinitions: Array,
@@ -24,6 +25,7 @@ const form = useForm({
     promised_at: null,
     technician_name: '',
     custom_fields: {},
+    initial_evidence_images: [],
 });
 
 // Lógica para el AutoComplete de clientes
@@ -47,11 +49,18 @@ const onCustomerSelect = (event) => {
 
 // Inicializar el objeto de custom_fields en el formulario
 props.customFieldDefinitions.forEach(field => {
-    form.custom_fields[field.key] = null;
+    form.custom_fields[field.key] = field.type === 'boolean' ? false : (field.type === 'pattern' ? [] : null);
 });
 
 const submit = () => {
     form.post(route('service-orders.store'));
+};
+
+const onSelectImages = (event) => {
+    form.initial_evidence_images = [...form.initial_evidence_images, ...event.files];
+};
+const onRemoveImage = (event) => {
+    form.initial_evidence_images = form.initial_evidence_images.filter(img => img.objectURL !== event.file.objectURL);
 };
 </script>
 
@@ -116,9 +125,23 @@ const submit = () => {
                             v-model="form.custom_fields[field.key]" class="mt-1" />
                         <Select v-if="field.type === 'select'" :id="field.key" v-model="form.custom_fields[field.key]"
                             :options="field.options" class="mt-1 w-full" placeholder="Selecciona una opción" />
+                        <PatternLock v-if="field.type === 'pattern'" :id="field.key"
+                            v-model="form.custom_fields[field.key]" class="mt-1" />
                         <InputError :message="form.errors[`custom_fields.${field.key}`]" class="mt-2" />
                     </div>
                 </div>
+            </div>
+
+            <!-- Evidencia Inicial -->
+            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Fotográfica Inicial (Máx. 5)</h2>
+                <FileUpload name="initial_evidence_images[]" @select="onSelectImages" @remove="onRemoveImage"
+                    :multiple="true" accept="image/*" :maxFileSize="2000000">
+                    <template #empty>
+                        <p>Arrastra y suelta las imágenes del equipo al recibirlo.</p>
+                    </template>
+                </FileUpload>
+                <InputError :message="form.errors.initial_evidence_images" class="mt-2" />
             </div>
 
             <div class="flex justify-end">

@@ -23,6 +23,10 @@ class UpdateServiceOrderRequest extends FormRequest
             'technician_diagnosis' => 'nullable|string',
             'final_total' => 'nullable|numeric|min:0',
             'custom_fields' => 'nullable|array',
+            'initial_evidence_images' => 'nullable|array|max:5',
+            'initial_evidence_images.*' => 'image',
+            'deleted_media_ids' => 'nullable|array',
+            'deleted_media_ids.*' => 'integer|exists:media,id',
         ];
     }
 }

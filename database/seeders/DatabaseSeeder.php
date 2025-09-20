@@ -59,6 +59,7 @@ class DatabaseSeeder extends Seeder
                 'type' => 'select',
                 'options' => ['Hardware', 'Software', 'Batería', 'Pantalla']
             ]);
+            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Patrón de Desbloqueo', 'key' => 'patron_desbloqueo', 'type' => 'pattern']);
             CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Garantía Activa', 'key' => 'garantia_activa', 'type' => 'boolean', 'is_required' => true]);
         }
 
