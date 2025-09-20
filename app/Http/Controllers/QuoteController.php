@@ -13,6 +13,7 @@ use App\Models\Service;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -35,7 +36,7 @@ class QuoteController extends Controller
             $searchTerm = $request->input('search');
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('folio', 'LIKE', "%{$searchTerm}%")
-                  ->orWhere('customers.name', 'LIKE', "%{$searchTerm}%");
+                    ->orWhere('customers.name', 'LIKE', "%{$searchTerm}%");
             });
         }
 
@@ -51,7 +52,7 @@ class QuoteController extends Controller
         ]);
     }
 
-   public function create(): Response
+    public function create(): Response
     {
         return Inertia::render('Quote/Create', $this->getFormData());
     }
@@ -61,7 +62,7 @@ class QuoteController extends Controller
         DB::transaction(function () use ($request) {
             $user = Auth::user();
             $validated = $request->validated();
-            
+
             $lastQuote = Quote::where('branch_id', $user->branch_id)->latest('id')->first();
             $nextFolioNumber = $lastQuote ? (int) substr($lastQuote->folio, 4) + 1 : 1;
             $folio = 'COT-' . $nextFolioNumber;
@@ -101,6 +102,97 @@ class QuoteController extends Controller
         });
 
         return redirect()->route('quotes.index')->with('success', 'Cotización actualizada con éxito.');
+    }
+
+    public function show(Quote $quote): Response
+    {
+        // Cargar todas las relaciones necesarias para la vista
+        $quote->load(['customer', 'user', 'items.itemable', 'parent.versions', 'versions', 'activities.causer']);
+
+        $translations = config('log_translations.Quote', []);
+        $formattedActivities = $quote->activities->map(function ($activity) use ($translations) {
+            $changes = ['before' => [], 'after' => []];
+            if (isset($activity->properties['old'])) {
+                foreach ($activity->properties['old'] as $key => $value) {
+                    $changes['before'][($translations[$key] ?? $key)] = $value;
+                }
+            }
+            if (isset($activity->properties['attributes'])) {
+                foreach ($activity->properties['attributes'] as $key => $value) {
+                    $changes['after'][($translations[$key] ?? $key)] = $value;
+                }
+            }
+            return [
+                'id' => $activity->id,
+                'description' => $activity->description,
+                'event' => $activity->event,
+                'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
+                'timestamp' => $activity->created_at->diffForHumans(),
+                'changes' => $changes,
+            ];
+        });
+
+        return Inertia::render('Quote/Show', [
+            'quote' => $quote,
+            'activities' => $formattedActivities,
+        ]);
+    }
+
+    public function updateStatus(Request $request, Quote $quote)
+    {
+        $validated = $request->validate([
+            'status' => ['required', Rule::enum(QuoteStatus::class)],
+        ]);
+        $quote->update(['status' => $validated['status']]);
+        return redirect()->back()->with('success', 'Estatus de la cotización actualizado.');
+    }
+
+    public function newVersion(Quote $quote)
+    {
+        $newQuote = DB::transaction(function () use ($quote) {
+            $newVersionNumber = ($quote->versions()->max('version_number') ?? $quote->version_number) + 1;
+
+            $replicatedQuote = $quote->replicate()->fill([
+                'parent_quote_id' => $quote->parent_quote_id ?? $quote->id,
+                'version_number' => $newVersionNumber,
+                'status' => QuoteStatus::DRAFT,
+                'folio' => $quote->folio . '-V' . $newVersionNumber,
+            ]);
+            $replicatedQuote->save();
+
+            foreach ($quote->items as $item) {
+                $replicatedQuote->items()->create($item->toArray());
+            }
+            return $replicatedQuote;
+        });
+
+        return redirect()->route('quotes.edit', $newQuote->id);
+    }
+
+    public function destroy(Quote $quote)
+    {
+        $quote->delete();
+        return redirect()->route('quotes.index')->with('success', 'Cotización eliminada con éxito.');
+    }
+
+    public function batchDestroy(Request $request)
+    {
+        $request->validate(['ids' => 'required|array']);
+        Quote::whereIn('id', $request->input('ids'))->delete();
+        return redirect()->route('quotes.index')->with('success', 'Cotizaciones seleccionadas eliminadas.');
+    }
+
+    /**
+     * Muestra una versión imprimible de la cotización.
+     */
+    public function print(Quote $quote): Response
+    {
+        // Cargar todas las relaciones necesarias para la plantilla
+        $quote->load(['customer', 'items.itemable', 'branch.subscription']);
+
+        return Inertia::render('Quote/Print', [
+            'quote' => $quote,
+        ]);
     }
 
     private function getFormData()

@@ -5,6 +5,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import CreateCustomerModal from '@/Components/CreateCustomerModal.vue';
+import SelectVariantModal from '@/Components/SelectVariantModal.vue';
 
 const props = defineProps({
     quote: Object,
@@ -34,89 +35,109 @@ const form = useForm({
         itemable_id: item.itemable_id,
         itemable_type: item.itemable_type,
         description: item.description,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        line_total: item.line_total,
+        quantity: parseFloat(item.quantity),
+        unit_price: parseFloat(item.unit_price),
+        line_total: parseFloat(item.line_total),
+        variant_details: item.variant_details || null,
     })),
     custom_fields: props.quote.custom_fields || {},
     recipient_name: props.quote.recipient_name,
     recipient_email: props.quote.recipient_email,
     recipient_phone: props.quote.recipient_phone,
     shipping_address: props.quote.shipping_address,
+    tax_type: props.quote.tax_type,
+    tax_rate: props.quote.tax_rate,
 });
 
-// --- Lógica para Items de la Cotización ---
+// --- Lógica de Impuestos y Totales (CORREGIDA) ---
+const includeTax = ref(props.quote.total_tax > 0);
+const taxType = ref(props.quote.tax_type || 'added');
+const taxOptions = [{ label: 'Precio + IVA', value: 'added' }, { label: 'Precio con IVA incluido', value: 'included' }];
+const taxRate = 0.16;
+
+watch([() => form.items, () => form.total_discount, () => form.shipping_cost, includeTax, taxType], () => {
+    let grossSubtotal = 0;
+    form.items.forEach(item => {
+        item.line_total = (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0);
+        grossSubtotal += item.line_total;
+    });
+
+    const discount = parseFloat(form.total_discount) || 0;
+    const shipping = parseFloat(form.shipping_cost) || 0;
+    let baseSubtotal = grossSubtotal;
+    let finalTax = 0;
+
+    if (includeTax.value) {
+        form.tax_rate = taxRate * 100;
+        form.tax_type = taxType.value;
+        const subtotalAfterDiscount = grossSubtotal - discount;
+
+        if (taxType.value === 'added') {
+            baseSubtotal = grossSubtotal;
+            finalTax = subtotalAfterDiscount * taxRate;
+        } else { // included
+            baseSubtotal = subtotalAfterDiscount / (1 + taxRate);
+            finalTax = subtotalAfterDiscount - baseSubtotal;
+        }
+    } else {
+        form.tax_type = null;
+        form.tax_rate = null;
+    }
+    
+    form.subtotal = baseSubtotal;
+    form.total_tax = finalTax;
+    form.total_amount = baseSubtotal - discount + finalTax + shipping;
+
+}, { deep: true, immediate: true });
+
+
+// --- Lógica para Variantes y Items ---
+const showVariantModal = ref(false);
+const productForVariantSelection = ref(null);
+const itemIndexForVariantSelection = ref(null);
 const availableItems = computed(() => [
     ...props.products.map(p => ({ ...p, type: 'Producto', price: p.selling_price, itemable_type: 'App\\Models\\Product' })),
     ...props.services.map(s => ({ ...s, type: 'Servicio', price: s.base_price, itemable_type: 'App\\Models\\Service' }))
 ]);
-
 const selectedItem = ref(null);
-
 const addItem = () => {
     if (!selectedItem.value) return;
-    form.items.push({
-        itemable_id: selectedItem.value.id,
-        itemable_type: selectedItem.value.itemable_type,
-        description: selectedItem.value.name,
-        quantity: 1,
-        unit_price: selectedItem.value.price,
-        line_total: selectedItem.value.price,
-    });
+    const product = selectedItem.value;
+    const newItem = {
+        itemable_id: product.id, itemable_type: product.itemable_type, description: product.name,
+        quantity: 1, unit_price: product.price, line_total: product.price, variant_details: null,
+    };
+    form.items.push(newItem);
+    if (product.product_attributes && product.product_attributes.length > 0) {
+        productForVariantSelection.value = product;
+        itemIndexForVariantSelection.value = form.items.length - 1;
+        showVariantModal.value = true;
+    }
     selectedItem.value = null;
 };
-
+const openVariantSelector = (index) => {
+    const item = form.items[index];
+    productForVariantSelection.value = props.products.find(p => p.id === item.itemable_id);
+    itemIndexForVariantSelection.value = index;
+    showVariantModal.value = true;
+};
+const handleVariantSelected = (variant) => {
+    if (itemIndexForVariantSelection.value === null) return;
+    const item = form.items[itemIndexForVariantSelection.value];
+    const product = productForVariantSelection.value;
+    item.variant_details = variant.attributes;
+    item.description = `${product.name} (${Object.values(variant.attributes).join(', ')})`;
+    item.unit_price = parseFloat(product.selling_price) + parseFloat(variant.selling_price_modifier);
+};
 const removeItem = (index) => form.items.splice(index, 1);
 
-// --- Lógica de Impuestos y Totales ---
-const includeTax = ref(props.quote.total_tax > 0);
-const taxType = ref('added'); // 'added' o 'included'
-const taxOptions = [{ label: 'Precio + IVA', value: 'added' }, { label: 'Precio con IVA incluido', value: 'included' }];
-const taxRate = 0.16;
-
-// Inferir el tipo de impuesto al cargar
-if (includeTax.value) {
-    const subtotalAfterDiscount = props.quote.subtotal; // El subtotal guardado ya tiene el descuento aplicado si es IVA incluido
-    const calculatedAddedTax = subtotalAfterDiscount * taxRate;
-    if (Math.abs(calculatedAddedTax - props.quote.total_tax) > 0.01) { // Pequeña tolerancia para errores de punto flotante
-        taxType.value = 'included';
-    }
-}
-
-watch([() => form.items, () => form.total_discount, () => form.shipping_cost, includeTax, taxType], () => {
-    let subtotal = 0;
-    let tax = 0;
-    form.items.forEach(item => {
-        item.line_total = (item.quantity || 0) * (item.unit_price || 0);
-        subtotal += item.line_total;
-    });
-
-    const subtotalAfterDiscount = subtotal - (form.total_discount || 0);
-    if (includeTax.value) {
-        if (taxType.value === 'added') {
-            form.subtotal = subtotal;
-            tax = subtotalAfterDiscount * taxRate;
-        } else { // included
-            const baseAmount = subtotalAfterDiscount / (1 + taxRate);
-            tax = subtotalAfterDiscount - baseAmount;
-            form.subtotal = subtotal - tax;
-        }
-    } else {
-        form.subtotal = subtotal;
-    }
-    form.total_tax = tax;
-    form.total_amount = (form.subtotal - (form.total_discount || 0)) + tax + (form.shipping_cost || 0);
-}, { deep: true, immediate: true });
-
-// --- Lógica para Creación Rápida de Cliente ---
+// --- Lógica para Cliente ---
 const localCustomers = ref([...props.customers]);
 const showCustomerModal = ref(false);
 const handleNewCustomer = (newCustomer) => {
     localCustomers.value.push(newCustomer);
     form.customer_id = newCustomer.id;
 };
-
-// Autocompletar datos de envío al seleccionar un cliente
 watch(() => form.customer_id, (newCustomerId) => {
     if (newCustomerId) {
         const selected = localCustomers.value.find(c => c.id === newCustomerId);
@@ -157,11 +178,10 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     </div>
                     <div>
                         <InputLabel for="expiry_date" value="Fecha de Expiración" />
-                        <Calendar id="expiry_date" v-model="form.expiry_date" class="w-full mt-1" />
+                        <DatePicker id="expiry_date" v-model="form.expiry_date" class="w-full mt-1" />
                     </div>
                 </div>
             </div>
-
             <!-- Items de la Cotización -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Conceptos</h2>
@@ -172,14 +192,20 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     <Button @click="addItem" icon="pi pi-plus" label="Agregar" :disabled="!selectedItem" />
                 </div>
                 <DataTable :value="form.items" class="p-datatable-sm">
-                    <Column field="description" header="Descripción"><template #body="{ index }"><InputText v-model="form.items[index].description" class="w-full" /></template></Column>
+                    <Column field="description" header="Descripción">
+                        <template #body="{ data, index }">
+                            <InputText v-model="form.items[index].description" class="w-full" />
+                            <div v-if="data.itemable_type === 'App\\Models\\Product' && products.find(p => p.id === data.itemable_id)?.product_attributes.length > 0" class="text-xs text-gray-500 mt-1">
+                                <Button @click="openVariantSelector(index)" label="Seleccionar variante" text size="small" class="!p-0" />
+                            </div>
+                        </template>
+                    </Column>
                     <Column field="quantity" header="Cantidad" style="width: 10rem"><template #body="{ index }"><InputNumber v-model="form.items[index].quantity" class="w-full" showButtons buttonLayout="horizontal" :step="1" decrementButtonClass="p-button-secondary" incrementButtonClass="p-button-secondary" incrementButtonIcon="pi pi-plus" decrementButtonIcon="pi pi-minus" /></template></Column>
                     <Column field="unit_price" header="Precio Unit." style="width: 12rem"><template #body="{ index }"><InputNumber v-model="form.items[index].unit_price" mode="currency" currency="MXN" locale="es-MX" class="w-full" /></template></Column>
                     <Column field="line_total" header="Total"><template #body="{ data }">{{ formatCurrency(data.line_total) }}</template></Column>
                     <Column style="width: 4rem"><template #body="{ index }"><Button @click="removeItem(index)" icon="pi pi-trash" text rounded severity="danger" /></template></Column>
                 </DataTable>
                 <InputError :message="form.errors.items" class="mt-2" />
-
                 <!-- Totales y Impuestos -->
                 <div class="mt-4 space-y-4">
                     <div class="flex items-center gap-4">
@@ -212,10 +238,9 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     <div class="md:col-span-2"><InputLabel for="notes" value="Notas Adicionales" /><Textarea id="notes" v-model="form.notes" rows="3" class="mt-1 w-full" /></div>
                 </div>
             </div>
-            
             <!-- Campos Personalizados -->
             <div v-if="customFieldDefinitions.length > 0" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles Adicionales</h2>
+                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles Adicionales</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div v-for="field in customFieldDefinitions" :key="field.id">
                         <InputLabel :for="field.key" :value="field.name" />
@@ -228,11 +253,12 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     </div>
                 </div>
             </div>
-
             <div class="flex justify-end">
                 <Button type="submit" label="Actualizar Cotización" :loading="form.processing" severity="warning" />
             </div>
         </form>
         <CreateCustomerModal v-model:visible="showCustomerModal" @created="handleNewCustomer" />
+        <SelectVariantModal v-model:visible="showVariantModal" :product="productForVariantSelection" @variant-selected="handleVariantSelected" />
     </AppLayout>
 </template>
+

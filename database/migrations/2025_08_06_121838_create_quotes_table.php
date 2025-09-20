@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('quotes', function (Blueprint $table) {
             $table->id();
-            
+
             $table->string('folio')->unique();
 
             // Relaciones
@@ -21,7 +21,7 @@ return new class extends Migration
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
             $table->foreignId('customer_id')->nullable()->constrained('customers')->onDelete('set null');
             $table->foreignId('transaction_id')->nullable()->constrained('transactions')->onDelete('set null');
-            
+
             // Para versionado de cotizaciones
             $table->foreignId('parent_quote_id')->nullable()->constrained('quotes')->onDelete('cascade');
             $table->integer('version_number')->default(1);
@@ -35,6 +35,8 @@ return new class extends Migration
             $table->decimal('subtotal', 10, 2)->default(0);
             $table->decimal('total_discount', 10, 2)->default(0);
             $table->decimal('total_tax', 10, 2)->default(0);
+            $table->string('tax_type')->nullable();
+            $table->decimal('tax_rate', 5, 2)->nullable();
             $table->decimal('shipping_cost', 10, 2)->default(0);
             $table->decimal('total_amount', 10, 2)->default(0);
 
@@ -43,10 +45,10 @@ return new class extends Migration
             $table->string('recipient_email')->nullable();
             $table->string('recipient_phone')->nullable();
             $table->json('shipping_address')->nullable();
-            
+
             $table->text('notes')->nullable();
             $table->json('custom_fields')->nullable();
-            
+
             $table->timestamps();
         });
     }

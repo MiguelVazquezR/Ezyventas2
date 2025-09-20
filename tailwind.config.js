@@ -44,5 +44,15 @@ export default {
             },
         },
     },
+    variants: {
+        extend: {
+            display: ['print'],
+            padding: ['print'],
+            margin: ['print'],
+            backgroundColor: ['print'],
+            textColor: ['print'],
+            boxShadow: ['print'],
+        },
+    },
     plugins: [forms, typography, PrimeUI],
 };

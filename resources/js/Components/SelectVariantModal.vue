@@ -29,13 +29,16 @@ watch(() => props.product, (newProduct) => {
             options: Array.from(values)
         }));
         
-        // Reset selection
         selectedOptions.value = {};
     }
 });
 
+const allOptionsSelected = computed(() => {
+    return props.product && Object.keys(selectedOptions.value).length === availableAttributes.value.length;
+});
+
 const selectedVariant = computed(() => {
-    if (!props.product || Object.keys(selectedOptions.value).length !== availableAttributes.value.length) {
+    if (!allOptionsSelected.value) {
         return null;
     }
     return props.product.product_attributes.find(pa => {
@@ -43,6 +46,11 @@ const selectedVariant = computed(() => {
             ([key, value]) => pa.attributes[key] === value
         );
     });
+});
+
+// SOLUCIÓN: Computed property para mostrar el mensaje de error
+const showUnavailableMessage = computed(() => {
+    return allOptionsSelected.value && !selectedVariant.value;
 });
 
 const closeModal = () => {
@@ -62,12 +70,22 @@ const confirmSelection = () => {
         <div v-if="product" class="p-2 space-y-4">
             <div v-for="attr in availableAttributes" :key="attr.name">
                 <InputLabel :value="attr.name" />
-                <Select v-model="selectedOptions[attr.name]" :options="attr.options" class="w-full mt-1" />
+                <Select v-model="selectedOptions[attr.name]" :options="attr.options" class="w-full mt-1" :placeholder="`Selecciona ${attr.name}`" />
             </div>
 
-            <div v-if="selectedVariant" class="mt-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+            <!-- Información de la variante si existe -->
+            <div v-if="selectedVariant" class="mt-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg transition-all duration-300">
                 <p class="font-semibold">Precio de la variante: {{ new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(parseFloat(product.selling_price) + parseFloat(selectedVariant.selling_price_modifier)) }}</p>
                 <p class="text-sm text-gray-500">Stock disponible: {{ selectedVariant.current_stock }}</p>
+            </div>
+
+            <!-- Mensaje de retroalimentación si la variante no existe -->
+            <div v-if="showUnavailableMessage" class="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 rounded-lg text-sm flex items-start gap-3 transition-all duration-300">
+                <i class="pi pi-exclamation-triangle mt-1"></i>
+                <div>
+                    <p class="font-semibold">Combinación no disponible</p>
+                    <p class="mt-1">Para usar esta variante, primero edita el producto y actívala en la sección de "Gestión de variantes".</p>
+                </div>
             </div>
         </div>
         <div class="flex justify-end gap-2 mt-6">

@@ -20,6 +20,8 @@ class StoreQuoteRequest extends FormRequest
             'subtotal' => 'required|numeric',
             'total_discount' => 'required|numeric',
             'total_tax' => 'required|numeric',
+            'tax_type' => 'nullable|string|in:added,included',
+            'tax_rate' => 'nullable|numeric',
             'shipping_cost' => 'required|numeric',
             'total_amount' => 'required|numeric',
             'recipient_name' => 'nullable|string|max:255',
@@ -33,6 +35,7 @@ class StoreQuoteRequest extends FormRequest
             'items.*.quantity' => 'required|numeric|min:1',
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.line_total' => 'required|numeric|min:0',
+            'items.*.variant_details' => 'nullable|array',
             'custom_fields' => 'nullable|array',
         ];
     }

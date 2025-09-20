@@ -21,11 +21,13 @@ class QuoteItem extends Model
         'quantity',
         'unit_price',
         'line_total',
+        'variant_details',
     ];
 
     protected function casts(): array
     {
         return [
+            'variant_details' => 'array',
             'quantity' => 'decimal:2',
             'unit_price' => 'decimal:2',
             'line_total' => 'decimal:2',

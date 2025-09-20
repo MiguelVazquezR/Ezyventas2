@@ -19,6 +19,7 @@ return new class extends Migration
             $table->decimal('quantity', 10, 2);
             $table->decimal('unit_price', 10, 2);
             $table->decimal('line_total', 10, 2);
+            $table->json('variant_details')->nullable();
             $table->timestamps();
         });
     }

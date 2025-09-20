@@ -7,10 +7,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Quote extends Model
 {
-    use HasFactory;
+    use HasFactory, LogsActivity;
 
     protected $fillable = [
         'branch_id',
@@ -23,6 +25,8 @@ class Quote extends Model
         'subtotal',
         'total_discount',
         'total_tax',
+        'tax_type',
+        'tax_rate',
         'shipping_cost',
         'total_amount',
         'notes',
@@ -52,7 +56,20 @@ class Quote extends Model
         ];
     }
 
-     public function branch(): BelongsTo
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['status', 'total_amount', 'expiry_date'])
+            ->setDescriptionForEvent(fn(string $eventName) => "La cotización ha sido {$this->translateEventName($eventName)}")
+            ->logOnlyDirty()->dontSubmitEmptyLogs();
+    }
+
+    private function translateEventName(string $eventName): string
+    {
+        return ['created' => 'creada', 'updated' => 'actualizada', 'deleted' => 'eliminada'][$eventName] ?? $eventName;
+    }
+
+    public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
     }
