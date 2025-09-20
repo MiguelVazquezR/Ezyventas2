@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Brand;
 use App\Models\Category;
+use App\Models\Customer;
 use App\Models\ExpenseCategory;
 use App\Models\Provider;
 use Illuminate\Http\Request;
@@ -61,5 +62,19 @@ class QuickCreateController extends Controller
         ]);
 
         return response()->json($expenseCategory);
+    }
+
+    public function storeCustomer(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'phone' => 'nullable|string|max:255',
+        ]);
+
+        $customer = Customer::create(array_merge($validated, [
+            'branch_id' => Auth::user()->branch_id,
+        ]));
+
+        return response()->json($customer);
     }
 }

@@ -8,4 +8,5 @@ Route::middleware('auth')->prefix('quick-create')->as('quick-create.')->group(fu
     Route::post('brands', [QuickCreateController::class, 'storeBrand'])->name('brands.store');
     Route::post('providers', [QuickCreateController::class, 'storeProvider'])->name('providers.store');
     Route::post('expense_categories', [QuickCreateController::class, 'storeExpenseCategory'])->name('expense_categories.store');
+    Route::post('customers', [QuickCreateController::class, 'storeCustomer'])->name('customers.store');
 });
