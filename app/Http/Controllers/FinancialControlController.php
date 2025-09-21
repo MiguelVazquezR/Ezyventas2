@@ -24,23 +24,21 @@ class FinancialControlController extends Controller
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
 
-        // Punto 1 y 2: Manejar el rango de fechas, con el día de hoy como valor por defecto
         $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date')) : Carbon::today();
         $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date')) : Carbon::today();
-        
-        $endDate->endOfDay(); // Asegurarse de que incluya todo el día final
+        $endDate->endOfDay();
 
-        // Obtener KPIs para el rango de fechas seleccionado (basados en Pagos)
+        // 1. KPIs principales
         $totalIncome = Payment::where('status', 'completado')
             ->whereBetween('payment_date', [$startDate, $endDate])
             ->whereHas('transaction.branch.subscription', fn($q) => $q->where('id', $subscriptionId))
             ->sum('amount');
-            
+
         $totalExpenses = Expense::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))
             ->whereBetween('expense_date', [$startDate, $endDate])
             ->sum('amount');
 
-        // Datos para la gráfica, adaptados al rango de fechas
+        // 2. Datos para la gráfica de líneas
         $incomeByDay = Payment::where('status', 'completado')
             ->whereBetween('payment_date', [$startDate, $endDate])
             ->whereHas('transaction.branch.subscription', fn($q) => $q->where('id', $subscriptionId))
@@ -51,7 +49,7 @@ class FinancialControlController extends Controller
             ->whereBetween('expense_date', [$startDate, $endDate])
             ->select(DB::raw('DATE(expense_date) as date'), DB::raw('sum(amount) as total'))
             ->groupBy('date')->pluck('total', 'date');
-        
+
         $period = CarbonPeriod::create($startDate, $endDate);
         $chartData = ['labels' => [], 'income' => [], 'expenses' => []];
 
@@ -62,18 +60,45 @@ class FinancialControlController extends Controller
             $chartData['expenses'][] = $expensesByDay[$formattedDate] ?? 0;
         }
 
-        // Desglose de ingresos por método de pago
+        // 3. Desglose de ingresos por método de pago (SOLUCIÓN)
         $incomeByMethod = Payment::where('status', 'completado')
             ->whereBetween('payment_date', [$startDate, $endDate])
             ->whereHas('transaction.branch.subscription', fn($q) => $q->where('id', $subscriptionId))
             ->groupBy('payment_method')
             ->select('payment_method', DB::raw('SUM(amount) as total'))
-            ->get()->pluck('total', 'payment_method');
-            
+            ->get()
+            // Transformar la colección para usar el valor del Enum como clave
+            ->keyBy(fn($payment) => $payment->payment_method->value)
+            ->map(fn($payment) => $payment->total);
+
         $formattedIncomeByMethod = [
             'labels' => $incomeByMethod->keys()->map(fn($method) => ucfirst($method))->toArray(),
             'data' => $incomeByMethod->values()->toArray(),
         ];
+
+        $cashRegisters = CashRegister::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))
+            ->with(['sessions' => function ($query) {
+                $query->where('status', 'abierta')->with(['user:id,name', 'cashMovements', 'transactions.payments']);
+            }])
+            ->get();
+
+        // Calcular el balance actual para las cajas abiertas
+        $cashRegisters->each(function ($register) {
+            $activeSession = $register->sessions->first();
+            if ($activeSession) {
+                $cashSales = $activeSession->transactions
+                    ->flatMap->payments
+                    ->where('payment_method', PaymentMethod::CASH)
+                    ->where('status', 'completado')
+                    ->sum('amount');
+
+                $inflows = $activeSession->cashMovements->where('type', 'ingreso')->sum('amount');
+                $outflows = $activeSession->cashMovements->where('type', 'egreso')->sum('amount');
+
+                $register->current_balance = $activeSession->opening_cash_balance + $cashSales + $inflows - $outflows;
+                $register->active_session_user = $activeSession->user->name; // Añadir el nombre del usuario
+            }
+        });
 
         return Inertia::render('FinancialControl/Index', [
             'kpis' => [
@@ -83,7 +108,7 @@ class FinancialControlController extends Controller
             ],
             'chartData' => $chartData,
             'incomeByMethod' => $formattedIncomeByMethod,
-            'cashRegisters' => CashRegister::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))->with('sessions')->get(),
+            'cashRegisters' => $cashRegisters, // Enviar los datos enriquecidos a la vista
             'bankAccounts' => BankAccount::where('subscription_id', $subscriptionId)->get(),
             'recentSessions' => CashRegisterSession::whereHas('cashRegister.branch.subscription', fn($q) => $q->where('id', $subscriptionId))
                 ->where('status', 'cerrada')->latest()->take(5)->get(),

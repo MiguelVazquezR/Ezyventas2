@@ -2,64 +2,24 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\SessionCashMovement;
+use App\Http\Requests\StoreSessionCashMovementRequest;
+use App\Models\CashRegisterSession;
 use Illuminate\Http\Request;
 
 class SessionCashMovementController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Almacena un nuevo movimiento de efectivo (ingreso/egreso) para una sesión de caja.
      */
-    public function index()
+    public function store(StoreSessionCashMovementRequest $request, CashRegisterSession $session)
     {
-        //
-    }
+        // Autorización para asegurar que la sesión esté abierta
+        if ($session->status !== \App\Enums\CashRegisterSessionStatus::OPEN) {
+            return back()->withErrors(['error' => 'No se pueden agregar movimientos a una sesión cerrada.']);
+        }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
+        $session->cashMovements()->create($request->validated());
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        //
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(SessionCashMovement $sessionCashMovement)
-    {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(SessionCashMovement $sessionCashMovement)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, SessionCashMovement $sessionCashMovement)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(SessionCashMovement $sessionCashMovement)
-    {
-        //
+        return redirect()->back()->with('success', 'Movimiento de efectivo registrado con éxito.');
     }
 }

@@ -99,10 +99,10 @@ class User extends Authenticatable
     /**
      * // Obtiene las sucursales que este usuario gestiona.
      */
-    public function managedBranches(): HasMany
-    {
-        return $this->hasMany(Branch::class, 'manager_id');
-    }
+    // public function managedBranches(): HasMany
+    // {
+    //     return $this->hasMany(Branch::class, 'manager_id');
+    // }
 
     /**
      * // Obtiene las transacciones registradas por este usuario.
@@ -118,5 +118,13 @@ class User extends Authenticatable
     public function expenses(): HasMany
     {
         return $this->hasMany(Expense::class);
+    }
+
+    /**
+     * Obtiene todas las sesiones de caja asociadas a este usuario.
+     */
+    public function cashRegisterSessions(): HasMany
+    {
+        return $this->hasMany(CashRegisterSession::class);
     }
 }

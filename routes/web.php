@@ -32,6 +32,9 @@ require __DIR__ . '/web/services.php';
 require __DIR__ . '/web/service-orders.php';
 require __DIR__ . '/web/quotes.php';
 require __DIR__ . '/web/financial-control.php';
+require __DIR__ . '/web/cash-registers.php';
+require __DIR__ . '/web/cash-register-sessions.php';
+require __DIR__ . '/web/cash-register-session-movements.php';
 
 
 //artisan commands -------------------

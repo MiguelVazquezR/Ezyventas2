@@ -37,6 +37,11 @@ class Branch extends Model
     {
         return $this->belongsTo(Subscription::class, 'subscription_id');
     }
+    
+    public function users(): HasMany
+    {
+        return $this->hasMany(User::class);
+    }
 
     /**
      * Get the user who manages the branch.

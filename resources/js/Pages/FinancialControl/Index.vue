@@ -17,11 +17,11 @@ const props = defineProps({
 const dates = ref();
 const lineChartOptions = ref();
 const pieChartOptions = ref();
+const menu = ref();
 
 onMounted(() => {
     dates.value = [new Date(props.filters.startDate), new Date(props.filters.endDate)];
     
-    // Configuración de la gráfica de líneas
     lineChartOptions.value = {
         maintainAspectRatio: false, aspectRatio: 0.6,
         plugins: { legend: { labels: { color: '#4B5563' } } },
@@ -31,7 +31,6 @@ onMounted(() => {
         }
     };
     
-    // Configuración de la gráfica de dona
     pieChartOptions.value = {
         plugins: {
             legend: {
@@ -58,8 +57,15 @@ const incomeByMethodChartData = computed(() => ({
     }]
 }));
 
+const hasLineChartData = computed(() => 
+    props.chartData.income.some(val => val > 0) || props.chartData.expenses.some(val => val > 0)
+);
+
+const hasPieChartData = computed(() => 
+    props.incomeByMethod.data.length > 0
+);
+
 const fetchData = () => {
-    // Asegurarse de que ambas fechas están seleccionadas para evitar errores
     if (dates.value && dates.value[0] && dates.value[1]) {
         router.get(route('financial-control.index'), {
             start_date: dates.value[0].toISOString().split('T')[0],
@@ -71,10 +77,8 @@ const fetchData = () => {
     }
 };
 
-// Observar cambios en el DatePicker para recargar los datos
 watch(dates, fetchData);
 
-// --- Funciones para botones de rango rápido ---
 const setDateRange = (period) => {
     const today = new Date();
     let startDate, endDate;
@@ -138,7 +142,15 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                 <div class="lg:col-span-2">
                     <Card class="h-full">
                          <template #title>Resumen de Ingresos vs. Gastos</template>
-                         <template #content><Chart type="line" :data="lineChartData" :options="lineChartOptions" class="h-96" /></template>
+                         <template #content>
+                            <Chart v-if="hasLineChartData" type="line" :data="lineChartData" :options="lineChartOptions" class="h-[400px]" />
+                            <div v-else class="h-[400px] flex items-center justify-center text-center text-gray-500">
+                                <div>
+                                    <i class="pi pi-chart-line text-4xl"></i>
+                                    <p class="mt-2">No hay datos suficientes para mostrar la gráfica en este período.</p>
+                                </div>
+                            </div>
+                         </template>
                     </Card>
                 </div>
                 
@@ -149,22 +161,25 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         <template #title>Ingresos por Método de Pago</template>
                         <template #content>
                             <div class="h-64 flex items-center justify-center">
-                                <Chart type="doughnut" :data="incomeByMethodChartData" :options="pieChartOptions" />
+                                <Chart v-if="hasPieChartData" type="doughnut" :data="incomeByMethodChartData" :options="pieChartOptions" class="h-full" />
+                                <div v-else class="text-center text-gray-500">
+                                     <i class="pi pi-chart-pie text-4xl"></i>
+                                    <p class="mt-2">No hay ingresos registrados en este período.</p>
+                                </div>
                             </div>
-                            {{ incomeByMethodChartData }} <br>
-                            {{ pieChartOptions }}
                         </template>
                     </Card>
                     <!-- Cuentas Bancarias -->
                     <Card>
                         <template #title>Cuentas Bancarias</template>
                         <template #content>
-                            <ul class="space-y-3">
+                            <ul v-if="bankAccounts.length > 0" class="space-y-3">
                                 <li v-for="account in bankAccounts" :key="account.id" class="flex justify-between items-center">
                                     <div><p class="font-semibold">{{ account.account_name }}</p><p class="text-sm text-gray-500">{{ account.bank_name }}</p></div>
                                     <span class="font-mono font-bold">{{ formatCurrency(account.balance) }}</span>
                                 </li>
                             </ul>
+                            <p v-else class="text-sm text-gray-500 text-center py-4">No hay cuentas bancarias registradas.</p>
                         </template>
                     </Card>
                 </div>
@@ -175,19 +190,35 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                 <Card>
                     <template #title>Cajas Registradas</template>
                     <template #content>
-                        <ul class="space-y-3">
-                            <li v-for="register in cashRegisters" :key="register.id" class="flex justify-between items-center">
-                                <p class="font-semibold">{{ register.name }}</p>
-                                <Tag :value="register.in_use ? 'En Uso' : 'Libre'" :severity="register.in_use ? 'warning' : 'success'" />
+                        <ul v-if="cashRegisters.length > 0" class="space-y-3">
+                            <li v-for="register in cashRegisters" :key="register.id">
+                                <div v-if="register.in_use" class="p-3 rounded-md bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700">
+                                    <div class="flex justify-between items-center">
+                                        <p class="font-semibold text-green-800 dark:text-green-200">{{ register.name }}</p>
+                                        <Tag value="En Uso" severity="success" />
+                                    </div>
+                                    <div class="mt-2 text-sm text-green-700 dark:text-green-300">
+                                        <p>Usuario: <span class="font-medium">{{ register.active_session_user }}</span></p>
+                                        <p>Balance Actual: <span class="font-semibold font-mono">{{ formatCurrency(register.current_balance) }}</span></p>
+                                    </div>
+                                </div>
+                                <div v-else class="flex justify-between items-center">
+                                    <p class="font-semibold">{{ register.name }}</p>
+                                    <Tag value="Libre" severity="secondary" />
+                                </div>
                             </li>
                         </ul>
+                         <p v-else class="text-sm text-gray-500 text-center py-4">No hay cajas registradoras configuradas.</p>
                     </template>
-                    <template #footer><Button label="Gestionar Cajas" severity="secondary" text class="w-full" /></template>
+                    <template #footer><Button label="Gestionar Cajas" severity="secondary" text class="w-full" @click="router.get(route('cash-registers.index'))" /></template>
                 </Card>
                 <Card>
                     <template #title>Últimos Cortes de Caja</template>
                     <template #content>
                         <DataTable :value="recentSessions" class="p-datatable-sm">
+                            <template #empty>
+                                <div class="text-center py-4">No hay cortes de caja recientes.</div>
+                            </template>
                             <Column field="id" header="ID Sesión"></Column>
                             <Column field="closed_at" header="Fecha de Cierre"></Column>
                             <Column field="opening_cash_balance" header="Fondo Inicial"><template #body="{data}">{{ formatCurrency(data.opening_cash_balance) }}</template></Column>

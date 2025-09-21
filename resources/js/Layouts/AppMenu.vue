@@ -31,7 +31,25 @@ const model = ref([
                 ]
             },
             { label: 'Cotizaciones', icon: 'pi pi-fw pi-user', to: route('quotes.index'), routeName: 'quotes.*' },
-            { label: 'Control financiero', icon: 'pi pi-fw pi-sun', to: route('financial-control.index'), routeName: 'financial-control.*' },
+            {
+                label: 'Control financiero', icon: 'pi pi-fw pi-sun',
+                items: [
+                    {
+                        label: 'Resumen',
+                        icon: 'pi pi-key',
+                        to: route('financial-control.index'),
+                        routeName: 'financial-control.*',
+                        // permission: 'ver_roles_permisos'
+                    },
+                    {
+                        label: 'Cajas registradoras',
+                        icon: 'pi pi-calendar-plus',
+                        to: route('cash-registers.index'),
+                        routeName: 'cash-registers.*',
+                        // permission: 'ver_festivos'
+                    },
+                ]
+            },
         ]
     },
 ]);

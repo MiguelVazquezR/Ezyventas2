@@ -24,6 +24,7 @@ use App\Models\Provider;
 use App\Models\Quote;
 use App\Models\Service;
 use App\Models\ServiceOrder;
+use App\Models\SessionCashMovement;
 use App\Models\Transaction;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
@@ -95,7 +96,7 @@ class DatabaseSeeder extends Seeder
 
         // Crear Categorías de Servicios
         $serviceCategories = Category::factory(3)->create(['subscription_id' => $subscription->id, 'type' => 'service']);
-        
+
         // Crear 1 Usuario admin por Suscriptor y asignarlo a la sucursal principal
         $adminUser = User::factory()->create([
             'branch_id' => $mainBranch->id,
@@ -106,7 +107,7 @@ class DatabaseSeeder extends Seeder
         // Crear datos por cada sucursal
         $branches->each(function ($branch) use ($serviceCategories, $adminUser, $allProductCategories, $brands, $cashRegisters) {
             $customers = Customer::factory(15)->create(['branch_id' => $branch->id]);
-            
+
             // Crear 5 cortes de caja cerrados por sucursal
             CashRegisterSession::factory(5)->create([
                 'cash_register_id' => $cashRegisters->random()->id,
@@ -128,7 +129,18 @@ class DatabaseSeeder extends Seeder
                         'amount' => $transaction->subtotal - $transaction->total_discount,
                         'payment_date' => $transaction->created_at,
                     ]);
+
                 });
+
+                // Crear movimientos de efectivo por cada sesión ---
+                SessionCashMovement::factory(rand(1, 3))->create([
+                    'cash_register_session_id' => $session->id,
+                    'type' => 'ingreso'
+                ]);
+                SessionCashMovement::factory(rand(1, 3))->create([
+                    'cash_register_session_id' => $session->id,
+                    'type' => 'egreso'
+                ]);
 
                 // Actualizar los totales del corte de caja
                 $calculatedTotal = $session->opening_cash_balance + $transactions->sum(fn($t) => $t->subtotal - $t->total_discount);
@@ -137,7 +149,7 @@ class DatabaseSeeder extends Seeder
                     'closing_cash_balance' => $calculatedTotal + $session->cash_difference,
                 ]);
             });
-            
+
             Quote::factory(10)->create(['branch_id' => $branch->id, 'user_id' => $adminUser->id, 'customer_id' => $customers->random()->id]);
             Service::factory(15)->create(['branch_id' => $branch->id, 'category_id' => $serviceCategories->random()->id]);
             ServiceOrder::factory(20)->create(['branch_id' => $branch->id, 'user_id' => $adminUser->id]);
