@@ -14,14 +14,17 @@ use App\Models\AttributeOption;
 use App\Models\BankAccount;
 use App\Models\BusinessType;
 use App\Models\CashRegister;
+use App\Models\CashRegisterSession;
 use App\Models\Customer;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\GlobalProduct;
+use App\Models\Payment; // <-- Importar el modelo Payment
 use App\Models\Provider;
 use App\Models\Quote;
 use App\Models\Service;
 use App\Models\ServiceOrder;
+use App\Models\Transaction;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -54,21 +57,15 @@ class DatabaseSeeder extends Seeder
 
         // --- Crear Campos Personalizados para Órdenes de Servicio ---
         if ($businessType->name === 'Tienda de Electrónica') {
-            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'PIN de Desbloqueo', 'key' => 'pin_desbloqueo', 'type' => 'text']);
-            // CustomFieldDefinition::factory()->create([
-            //     'subscription_id' => $subscription->id,
-            //     'name' => 'Tipo de Falla',
-            //     'key' => 'tipo_falla',
-            //     'type' => 'select',
-            //     'options' => ['Hardware', 'Software', 'Batería', 'Pantalla']
-            // ]);
-            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Patrón de Desbloqueo', 'key' => 'patron_desbloqueo', 'type' => 'pattern']);
-            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Garantía Activa', 'key' => 'garantia_activa', 'type' => 'boolean', 'is_required' => true]);
+            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'module' => 'service_orders', 'name' => 'PIN de Desbloqueo', 'key' => 'pin_desbloqueo', 'type' => 'text']);
+            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'module' => 'service_orders', 'name' => 'Patrón de Desbloqueo', 'key' => 'patron_desbloqueo', 'type' => 'pattern']);
+            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'module' => 'service_orders', 'name' => 'Accesorios Incluidos', 'key' => 'accesorios_incluidos', 'type' => 'textarea']);
+            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'module' => 'service_orders', 'name' => 'Garantía Activa', 'key' => 'garantia_activa', 'type' => 'boolean', 'is_required' => true]);
         }
 
         if ($businessType->name === 'Tienda de Ropa y Accesorios') {
-            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Tipo de Arreglo', 'key' => 'tipo_de_arreglo', 'type' => 'text', 'is_required' => true]);
-            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Material de la Prenda', 'key' => 'material_prenda', 'type' => 'text']);
+            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'module' => 'service_orders', 'name' => 'Tipo de Arreglo', 'key' => 'tipo_de_arreglo', 'type' => 'text', 'is_required' => true]);
+            CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'module' => 'service_orders', 'name' => 'Material de la Prenda', 'key' => 'material_prenda', 'type' => 'text']);
         }
 
         // Crear Categorías de Productos y Atributos
@@ -92,13 +89,13 @@ class DatabaseSeeder extends Seeder
         $mainBranch = $branches->first();
         $mainBranch->update(['is_main' => true]);
 
-        // --- Crear Cajas Registradas y Cuentas Bancarias ---
-        CashRegister::factory(2)->create(['branch_id' => $mainBranch->id]);
+        // Crear Cajas Registradas y Cuentas Bancarias
+        $cashRegisters = CashRegister::factory(2)->create(['branch_id' => $mainBranch->id]);
         BankAccount::factory(2)->create(['subscription_id' => $subscription->id]);
 
         // Crear Categorías de Servicios
         $serviceCategories = Category::factory(3)->create(['subscription_id' => $subscription->id, 'type' => 'service']);
-
+        
         // Crear 1 Usuario admin por Suscriptor y asignarlo a la sucursal principal
         $adminUser = User::factory()->create([
             'branch_id' => $mainBranch->id,
@@ -107,13 +104,41 @@ class DatabaseSeeder extends Seeder
         ]);
 
         // Crear datos por cada sucursal
-        $branches->each(function ($branch) use ($serviceCategories, $adminUser, $allProductCategories, $brands) {
+        $branches->each(function ($branch) use ($serviceCategories, $adminUser, $allProductCategories, $brands, $cashRegisters) {
             $customers = Customer::factory(15)->create(['branch_id' => $branch->id]);
-            Quote::factory(10)->create([
-                'branch_id' => $branch->id,
+            
+            // Crear 5 cortes de caja cerrados por sucursal
+            CashRegisterSession::factory(5)->create([
+                'cash_register_id' => $cashRegisters->random()->id,
                 'user_id' => $adminUser->id,
-                'customer_id' => $customers->random()->id,
-            ]);
+            ])->each(function ($session) use ($branch, $adminUser, $customers) {
+                // Crear entre 10 y 30 transacciones por cada corte de caja
+                $transactions = Transaction::factory(rand(10, 30))->create([
+                    'branch_id' => $branch->id,
+                    'user_id' => $adminUser->id,
+                    'customer_id' => $customers->random()->id,
+                    'cash_register_session_id' => $session->id,
+                    'created_at' => $session->closed_at,
+                ]);
+
+                // --- SOLUCIÓN: Crear un pago por cada transacción completada ---
+                $transactions->where('status', 'completado')->each(function ($transaction) {
+                    Payment::factory()->create([
+                        'transaction_id' => $transaction->id,
+                        'amount' => $transaction->subtotal - $transaction->total_discount,
+                        'payment_date' => $transaction->created_at,
+                    ]);
+                });
+
+                // Actualizar los totales del corte de caja
+                $calculatedTotal = $session->opening_cash_balance + $transactions->sum(fn($t) => $t->subtotal - $t->total_discount);
+                $session->update([
+                    'calculated_cash_total' => $calculatedTotal,
+                    'closing_cash_balance' => $calculatedTotal + $session->cash_difference,
+                ]);
+            });
+            
+            Quote::factory(10)->create(['branch_id' => $branch->id, 'user_id' => $adminUser->id, 'customer_id' => $customers->random()->id]);
             Service::factory(15)->create(['branch_id' => $branch->id, 'category_id' => $serviceCategories->random()->id]);
             ServiceOrder::factory(20)->create(['branch_id' => $branch->id, 'user_id' => $adminUser->id]);
             Product::factory(10)->create(['branch_id' => $branch->id, 'category_id' => $allProductCategories->random()->id, 'brand_id' => $brands->random()->id]);

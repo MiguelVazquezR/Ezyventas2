@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\PaymentMethod;
 use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
 use App\Models\Expense;
+use App\Models\Payment;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -28,20 +30,21 @@ class FinancialControlController extends Controller
         
         $endDate->endOfDay(); // Asegurarse de que incluya todo el día final
 
-        // Obtener KPIs para el rango de fechas seleccionado
-        $totalIncome = Transaction::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))
-            ->where('status', 'completado')
-            ->whereBetween('created_at', [$startDate, $endDate])
-            ->sum(DB::raw('subtotal - total_discount'));
+        // Obtener KPIs para el rango de fechas seleccionado (basados en Pagos)
+        $totalIncome = Payment::where('status', 'completado')
+            ->whereBetween('payment_date', [$startDate, $endDate])
+            ->whereHas('transaction.branch.subscription', fn($q) => $q->where('id', $subscriptionId))
+            ->sum('amount');
             
         $totalExpenses = Expense::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))
             ->whereBetween('expense_date', [$startDate, $endDate])
             ->sum('amount');
 
         // Datos para la gráfica, adaptados al rango de fechas
-        $incomeByDay = Transaction::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))
-            ->where('status', 'completado')->whereBetween('created_at', [$startDate, $endDate])
-            ->select(DB::raw('DATE(created_at) as date'), DB::raw('sum(subtotal - total_discount) as total'))
+        $incomeByDay = Payment::where('status', 'completado')
+            ->whereBetween('payment_date', [$startDate, $endDate])
+            ->whereHas('transaction.branch.subscription', fn($q) => $q->where('id', $subscriptionId))
+            ->select(DB::raw('DATE(payment_date) as date'), DB::raw('sum(amount) as total'))
             ->groupBy('date')->pluck('total', 'date');
 
         $expensesByDay = Expense::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))
@@ -54,10 +57,23 @@ class FinancialControlController extends Controller
 
         foreach ($period as $date) {
             $formattedDate = $date->format('Y-m-d');
-            $chartData['labels'][] = $date->format('d M');
+            $chartData['labels'][] = $period->count() > 31 ? $date->format('M Y') : $date->format('d M');
             $chartData['income'][] = $incomeByDay[$formattedDate] ?? 0;
             $chartData['expenses'][] = $expensesByDay[$formattedDate] ?? 0;
         }
+
+        // Desglose de ingresos por método de pago
+        $incomeByMethod = Payment::where('status', 'completado')
+            ->whereBetween('payment_date', [$startDate, $endDate])
+            ->whereHas('transaction.branch.subscription', fn($q) => $q->where('id', $subscriptionId))
+            ->groupBy('payment_method')
+            ->select('payment_method', DB::raw('SUM(amount) as total'))
+            ->get()->pluck('total', 'payment_method');
+            
+        $formattedIncomeByMethod = [
+            'labels' => $incomeByMethod->keys()->map(fn($method) => ucfirst($method))->toArray(),
+            'data' => $incomeByMethod->values()->toArray(),
+        ];
 
         return Inertia::render('FinancialControl/Index', [
             'kpis' => [
@@ -66,6 +82,7 @@ class FinancialControlController extends Controller
                 'netProfit' => $totalIncome - $totalExpenses,
             ],
             'chartData' => $chartData,
+            'incomeByMethod' => $formattedIncomeByMethod,
             'cashRegisters' => CashRegister::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))->with('sessions')->get(),
             'bankAccounts' => BankAccount::where('subscription_id', $subscriptionId)->get(),
             'recentSessions' => CashRegisterSession::whereHas('cashRegister.branch.subscription', fn($q) => $q->where('id', $subscriptionId))
