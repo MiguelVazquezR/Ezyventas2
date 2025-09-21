@@ -11,7 +11,9 @@ use App\Models\Product;
 use App\Models\Subscription;
 use App\Models\AttributeDefinition;
 use App\Models\AttributeOption;
+use App\Models\BankAccount;
 use App\Models\BusinessType;
+use App\Models\CashRegister;
 use App\Models\Customer;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
@@ -89,6 +91,10 @@ class DatabaseSeeder extends Seeder
         $branches = Branch::factory(2)->create(['subscription_id' => $subscription->id]);
         $mainBranch = $branches->first();
         $mainBranch->update(['is_main' => true]);
+
+        // --- Crear Cajas Registradas y Cuentas Bancarias ---
+        CashRegister::factory(2)->create(['branch_id' => $mainBranch->id]);
+        BankAccount::factory(2)->create(['subscription_id' => $subscription->id]);
 
         // Crear Categorías de Servicios
         $serviceCategories = Category::factory(3)->create(['subscription_id' => $subscription->id, 'type' => 'service']);

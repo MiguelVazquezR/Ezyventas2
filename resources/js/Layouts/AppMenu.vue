@@ -31,6 +31,7 @@ const model = ref([
                 ]
             },
             { label: 'Cotizaciones', icon: 'pi pi-fw pi-user', to: route('quotes.index'), routeName: 'quotes.*' },
+            { label: 'Control financiero', icon: 'pi pi-fw pi-sun', to: route('financial-control.index'), routeName: 'financial-control.*' },
         ]
     },
 ]);
