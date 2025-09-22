@@ -8,6 +8,7 @@ const model = ref([
         items: [
             { label: 'Inicio', icon: 'pi pi-fw pi-home', to: route('dashboard'), routeName: 'dashboard' },
             { label: 'Punto de venta', icon: 'pi pi-fw pi-wallet', to: route('pos.index'), routeName: 'pos.*' },
+            { label: 'Historial de ventas', icon: 'pi pi-fw pi-moon', to: route('transactions.index'), routeName: 'transactions.*' },
             { label: 'Productos', icon: 'pi pi-fw pi-building', to: route('products.index'), routeName: 'products.*' },
             { label: 'Gastos', icon: 'pi pi-fw pi-calendar-times', to: route('expenses.index'), routeName: 'expenses.*' },
             { label: 'Clientes', icon: 'pi pi-fw pi-user', to: route('customers.index'), routeName: 'customers.*' },

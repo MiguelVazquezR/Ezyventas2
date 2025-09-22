@@ -1,0 +1,147 @@
+<script setup>
+import { ref, computed } from 'vue';
+import { Head, router, Link } from '@inertiajs/vue3';
+import AppLayout from '@/Layouts/AppLayout.vue';
+import { useConfirm } from "primevue/useconfirm";
+import AddPaymentModal from '@/Components/AddPaymentModal.vue';
+
+const props = defineProps({
+    transaction: Object,
+});
+
+const confirm = useConfirm();
+const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
+const breadcrumbItems = ref([
+    { label: 'Historial de Ventas', url: route('transactions.index') },
+    { label: `Venta #${props.transaction.folio}` }
+]);
+const showAddPaymentModal = ref(false);
+
+const localTransaction = ref(props.transaction);
+
+const totalAmount = computed(() => parseFloat(localTransaction.value.subtotal) - parseFloat(localTransaction.value.total_discount));
+const totalPaid = computed(() => localTransaction.value.payments.reduce((sum, p) => sum + parseFloat(p.amount), 0));
+const pendingAmount = computed(() => totalAmount.value - totalPaid.value);
+
+const canCancel = computed(() => ['completado', 'pendiente'].includes(localTransaction.value.status));
+const canRefund = computed(() => localTransaction.value.status === 'completado');
+const canAddPayment = computed(() => pendingAmount.value > 0.01 && localTransaction.value.status !== 'completado');
+
+const cancelSale = () => {
+    confirm.require({
+        message: `¿Estás seguro de que quieres cancelar la venta #${localTransaction.value.folio}? Esta acción repondrá el stock.`,
+        header: 'Confirmar Cancelación',
+        accept: () => {
+            router.patch(route('transactions.cancel', localTransaction.value.id), {}, {
+                preserveScroll: true,
+                onSuccess: () => { localTransaction.value.status = 'cancelado'; }
+            });
+        }
+    });
+};
+
+const generateReturn = () => {
+    confirm.require({
+        message: `¿Estás seguro de que quieres generar una devolución para la venta #${localTransaction.value.folio}? El stock será repuesto.`,
+        header: 'Confirmar Devolución',
+        accept: () => {
+            router.patch(route('transactions.refund', localTransaction.value.id), {}, {
+                preserveScroll: true,
+                onSuccess: () => { localTransaction.value.status = 'reembolsado'; }
+            });
+        }
+    });
+};
+
+const actionItems = computed(() => [
+    { label: 'Imprimir Ticket', icon: 'pi pi-print' },
+    { separator: true },
+    { label: 'Generar Devolución', icon: 'pi pi-replay', command: generateReturn, disabled: !canRefund.value },
+    { label: 'Cancelar Venta', icon: 'pi pi-times-circle', class: 'text-red-500', command: cancelSale, disabled: !canCancel.value },
+]);
+
+const getStatusSeverity = (status) => {
+    const map = { completado: 'success', pendiente: 'info', cancelado: 'danger', reembolsado: 'warning' };
+    return map[status] || 'secondary';
+};
+const formatDate = (dateString) => new Date(dateString).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-green-500' }, tarjeta: { icon: 'pi pi-credit-card', color: 'text-blue-500' }, transferencia: { icon: 'pi pi-globe', color: 'text-purple-500' } };
+</script>
+
+<template>
+    <Head :title="`Venta #${transaction.folio}`" />
+    <AppLayout>
+        <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
+        
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Venta #{{ transaction.folio }}</h1>
+                <p class="text-gray-500 dark:text-gray-400 mt-1">Realizada el {{ formatDate(transaction.created_at) }}</p>
+            </div>
+            <div class="flex items-center gap-2 mt-4 sm:mt-0">
+                <Button v-if="canAddPayment" @click="showAddPaymentModal = true" label="Registrar Abono" icon="pi pi-plus" severity="success" />
+                <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined />
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Columna Principal -->
+            <div class="lg:col-span-2 space-y-6">
+                <Card>
+                    <template #title>Detalles de los Conceptos</template>
+                    <template #content>
+                        <DataTable :value="transaction.items" class="p-datatable-sm">
+                            <Column field="description" header="Descripción"></Column>
+                            <Column field="quantity" header="Cantidad"></Column>
+                            <Column field="unit_price" header="P. Unitario"><template #body="{data}">{{ formatCurrency(data.unit_price) }}</template></Column>
+                            <Column field="line_total" header="Total"><template #body="{data}">{{ formatCurrency(data.line_total) }}</template></Column>
+                        </DataTable>
+                    </template>
+                </Card>
+            </div>
+            <!-- Columna Derecha -->
+            <div class="lg:col-span-1 space-y-6">
+                <Card>
+                    <template #title>Resumen Financiero</template>
+                    <template #content>
+                         <ul class="space-y-3 text-sm">
+                            <li class="flex justify-between"><span>Subtotal:</span><span>{{ formatCurrency(transaction.subtotal) }}</span></li>
+                            <li class="flex justify-between"><span>Descuento:</span><span class="text-red-500">- {{ formatCurrency(transaction.total_discount) }}</span></li>
+                            <li class="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>Total de la Venta:</span><span>{{ formatCurrency(totalAmount) }}</span></li>
+                             <li class="flex justify-between"><span>Total Pagado:</span><span class="font-semibold">{{ formatCurrency(totalPaid) }}</span></li>
+                             <li v-if="pendingAmount > 0.01" class="flex justify-between font-bold text-red-600"><span>Saldo Pendiente:</span><span>{{ formatCurrency(pendingAmount) }}</span></li>
+                        </ul>
+                    </template>
+                </Card>
+                <Card>
+                    <template #title>Información de la Venta</template>
+                    <template #content>
+                        <ul class="space-y-3 text-sm">
+                            <li class="flex justify-between"><span>Estatus:</span><Tag :value="localTransaction.status" :severity="getStatusSeverity(localTransaction.status)" class="capitalize" /></li>
+                            <li class="flex justify-between"><span>Cliente:</span><span class="font-medium">{{ transaction.customer.name }}</span></li>
+                            <li class="flex justify-between"><span>Cajero:</span><span class="font-medium">{{ transaction.user.name }}</span></li>
+                            <li class="flex justify-between"><span>Sucursal:</span><span class="font-medium">{{ transaction.branch.name }}</span></li>
+                            <li class="flex justify-between"><span>Canal:</span><span class="font-medium capitalize">{{ transaction.channel.replace('_', ' ') }}</span></li>
+                        </ul>
+                    </template>
+                </Card>
+                <Card>
+                    <template #title>Pagos Realizados</template>
+                    <template #content>
+                        <ul class="space-y-3">
+                            <li v-for="payment in localTransaction.payments" :key="payment.id" class="text-sm">
+                                <div class="flex justify-between items-center">
+                                    <span class="flex items-center gap-2"><i class="pi" :class="paymentMethodIcons[payment.payment_method].icon + ' ' + paymentMethodIcons[payment.payment_method].color"></i> <span class="capitalize font-medium">{{ payment.payment_method }}</span></span>
+                                    <span class="font-mono font-semibold">{{ formatCurrency(payment.amount) }}</span>
+                                </div>
+                                <p class="text-xs text-gray-500 ml-6">{{ formatDate(payment.payment_date) }}</p>
+                            </li>
+                        </ul>
+                    </template>
+                </Card>
+            </div>
+        </div>
+        <AddPaymentModal :visible="showAddPaymentModal" :transaction="transaction" :pending-amount="pendingAmount" @update:visible="showAddPaymentModal = false" />
+    </AppLayout>
+</template>

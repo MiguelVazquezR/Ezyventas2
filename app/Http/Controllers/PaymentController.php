@@ -2,64 +2,57 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Payment;
+use App\Enums\TransactionStatus;
+use App\Http\Requests\StorePaymentRequest;
+use App\Models\Transaction;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class PaymentController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Almacena un nuevo pago (abono) para una transacción.
      */
-    public function index()
+    public function store(StorePaymentRequest $request, Transaction $transaction)
     {
-        //
-    }
+        DB::transaction(function () use ($request, $transaction) {
+            $validated = $request->validated();
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
+            // SOLUCIÓN 3: Corregir el desfase de zona horaria.
+            // Se asume que la zona horaria del usuario es la central de México.
+            // En una app más compleja, esto vendría de la configuración del usuario o sucursal.
+            $validated['payment_date'] = Carbon::parse($validated['payment_date'], 'America/Mexico_City')->setTimezone('UTC');
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        //
-    }
+            $payment = $transaction->payments()->create($validated);
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Payment $payment)
-    {
-        //
-    }
+            // SOLUCIÓN 2: Lógica de pago completo y excedente.
+            $totalAmount = $transaction->subtotal - $transaction->total_discount;
+            $totalPaid = $transaction->payments()->where('status', 'completado')->sum('amount');
+            
+            if ($totalPaid >= $totalAmount) {
+                // Marcar la transacción como completada si no lo estaba
+                if ($transaction->status !== TransactionStatus::COMPLETED) {
+                    $transaction->update(['status' => TransactionStatus::COMPLETED]);
+                }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Payment $payment)
-    {
-        //
-    }
+                // Calcular el excedente y añadirlo al saldo a favor del cliente
+                $surplus = $totalPaid - $totalAmount;
+                if ($surplus > 0.01 && $transaction->customer) {
+                    $transaction->customer->increment('balance', $surplus);
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Payment $payment)
-    {
-        //
-    }
+                    // Opcional: Registrar el movimiento de saldo para auditoría
+                    $transaction->customer->balanceMovements()->create([
+                        'type' => 'ajuste_manual', // Podrías crear un Enum 'excedente_pago'
+                        'amount' => $surplus,
+                        'balance_after' => $transaction->customer->fresh()->balance,
+                        'notes' => "Excedente del pago para la venta #{$transaction->folio}",
+                    ]);
+                }
+            }
+        });
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Payment $payment)
-    {
-        //
+        // Inertia recargará la página Show.vue con los datos actualizados.
+        return redirect()->back()->with('success', 'Abono registrado con éxito.');
     }
 }
