@@ -1,8 +1,8 @@
 <script setup>
 import { useForm } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
-import InputLabel from './InputLabel.vue';
 import InputError from './InputError.vue';
+import InputLabel from './InputLabel.vue';
 
 const props = defineProps({
     visible: Boolean,
@@ -61,7 +61,7 @@ const submit = () => {
             </div>
              <div>
                 <InputLabel for="payment_date" value="Fecha del Abono *" />
-                <DatePicker id="payment_date" v-model="form.payment_date" showTime hourFormat="12" class="w-full mt-1" />
+                <DatePicker id="payment_date" v-model="form.payment_date" dateFormat="dd/mm/yy" showTime hourFormat="12" class="w-full mt-1" />
              </div>
             <div>
                 <InputLabel for="notes" value="Notas (Opcional)" />

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
@@ -17,7 +17,11 @@ const breadcrumbItems = ref([
 ]);
 const showAddPaymentModal = ref(false);
 
+// SOLUCIÓN 1: La variable reactiva local es clave para la reactividad
 const localTransaction = ref(props.transaction);
+watch(() => props.transaction, (newTransaction) => {
+    localTransaction.value = newTransaction;
+}, { deep: true });
 
 const totalAmount = computed(() => parseFloat(localTransaction.value.subtotal) - parseFloat(localTransaction.value.total_discount));
 const totalPaid = computed(() => localTransaction.value.payments.reduce((sum, p) => sum + parseFloat(p.amount), 0));
@@ -25,7 +29,7 @@ const pendingAmount = computed(() => totalAmount.value - totalPaid.value);
 
 const canCancel = computed(() => ['completado', 'pendiente'].includes(localTransaction.value.status));
 const canRefund = computed(() => localTransaction.value.status === 'completado');
-const canAddPayment = computed(() => pendingAmount.value > 0.01 && localTransaction.value.status !== 'completado');
+const canAddPayment = computed(() => pendingAmount.value > 0.01 && ['completado', 'pendiente'].includes(localTransaction.value.status));
 
 const cancelSale = () => {
     confirm.require({

@@ -1,151 +1,138 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
-import { Head, router, Link } from '@inertiajs/vue3';
+import { ref, watch, computed } from 'vue';
+import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
-import AddPaymentModal from '@/Components/AddPaymentModal.vue';
 
 const props = defineProps({
-    transaction: Object,
+    transactions: Object,
+    filters: Object,
 });
 
 const confirm = useConfirm();
-const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
-const breadcrumbItems = ref([
-    { label: 'Historial de Ventas', url: route('transactions.index') },
-    { label: `Venta #${props.transaction.folio}` }
-]);
-const showAddPaymentModal = ref(false);
 
-// SOLUCIÓN 1: La variable reactiva local es clave para la reactividad
-const localTransaction = ref(props.transaction);
-watch(() => props.transaction, (newTransaction) => {
-    localTransaction.value = newTransaction;
-}, { deep: true });
+const selectedTransactions = ref([]);
+const searchTerm = ref(props.filters.search || '');
+const menu = ref();
+const selectedTransactionForMenu = ref(null);
 
-const totalAmount = computed(() => parseFloat(localTransaction.value.subtotal) - parseFloat(localTransaction.value.total_discount));
-const totalPaid = computed(() => localTransaction.value.payments.reduce((sum, p) => sum + parseFloat(p.amount), 0));
-const pendingAmount = computed(() => totalAmount.value - totalPaid.value);
+// Menú de acciones ahora es una propiedad computada para ser dinámico
+const menuItems = computed(() => {
+    const transaction = selectedTransactionForMenu.value;
+    if (!transaction) return [];
 
-const canCancel = computed(() => ['completado', 'pendiente'].includes(localTransaction.value.status));
-const canRefund = computed(() => localTransaction.value.status === 'completado');
-const canAddPayment = computed(() => pendingAmount.value > 0.01 && ['completado', 'pendiente'].includes(localTransaction.value.status));
+    const canCancel = ['pendiente', 'completado'].includes(transaction.status);
+    const canRefund = transaction.status === 'completado';
+
+    return [
+        { label: 'Ver Detalle de Venta', icon: 'pi pi-eye', command: () => router.get(route('transactions.show', selectedTransactionForMenu.value.id)) },
+        { label: 'Generar Devolución', icon: 'pi pi-replay', disabled: !canRefund, command: generateReturn },
+        { label: 'Imprimir Ticket', icon: 'pi pi-print' },
+        { separator: true },
+        { label: 'Cancelar Venta', icon: 'pi pi-times-circle', class: 'text-red-500', disabled: !canCancel, command: cancelSale },
+    ];
+});
+
+const toggleMenu = (event, data) => {
+    selectedTransactionForMenu.value = data;
+    menu.value.toggle(event);
+};
 
 const cancelSale = () => {
     confirm.require({
-        message: `¿Estás seguro de que quieres cancelar la venta #${localTransaction.value.folio}? Esta acción repondrá el stock.`,
+        message: `¿Estás seguro de que quieres cancelar la venta #${selectedTransactionForMenu.value.folio}? Esta acción repondrá el stock de los productos.`,
         header: 'Confirmar Cancelación',
+        icon: 'pi pi-exclamation-triangle',
         accept: () => {
-            router.patch(route('transactions.cancel', localTransaction.value.id), {}, {
-                preserveScroll: true,
-                onSuccess: () => { localTransaction.value.status = 'cancelado'; }
-            });
+            router.patch(route('transactions.cancel', selectedTransactionForMenu.value.id), {}, { preserveScroll: true });
         }
     });
 };
 
 const generateReturn = () => {
     confirm.require({
-        message: `¿Estás seguro de que quieres generar una devolución para la venta #${localTransaction.value.folio}? El stock será repuesto.`,
+        message: `¿Estás seguro de que quieres generar una devolución para la venta #${selectedTransactionForMenu.value.folio}? Esta acción repondrá el stock de los productos.`,
         header: 'Confirmar Devolución',
+        icon: 'pi pi-replay',
         accept: () => {
-            router.patch(route('transactions.refund', localTransaction.value.id), {}, {
-                preserveScroll: true,
-                onSuccess: () => { localTransaction.value.status = 'reembolsado'; }
-            });
+            router.patch(route('transactions.refund', selectedTransactionForMenu.value.id), {}, { preserveScroll: true });
         }
     });
 };
 
-const actionItems = computed(() => [
-    { label: 'Imprimir Ticket', icon: 'pi pi-print' },
-    { separator: true },
-    { label: 'Generar Devolución', icon: 'pi pi-replay', command: generateReturn, disabled: !canRefund.value },
-    { label: 'Cancelar Venta', icon: 'pi pi-times-circle', class: 'text-red-500', command: cancelSale, disabled: !canCancel.value },
-]);
+const fetchData = (options = {}) => {
+    const queryParams = {
+        page: options.page || 1,
+        rows: options.rows || props.transactions.per_page,
+        sortField: options.sortField || props.filters.sortField,
+        sortOrder: options.sortOrder === 1 ? 'asc' : 'desc',
+        search: searchTerm.value,
+    };
+    router.get(route('transactions.index'), queryParams, { preserveState: true, replace: true });
+};
+
+const onPage = (event) => fetchData({ page: event.page + 1, rows: event.rows });
+const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: event.sortOrder });
+watch(searchTerm, () => fetchData());
 
 const getStatusSeverity = (status) => {
     const map = { completado: 'success', pendiente: 'info', cancelado: 'danger', reembolsado: 'warning' };
     return map[status] || 'secondary';
 };
-const formatDate = (dateString) => new Date(dateString).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+
+const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+};
+
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
-const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-green-500' }, tarjeta: { icon: 'pi pi-credit-card', color: 'text-blue-500' }, transferencia: { icon: 'pi pi-globe', color: 'text-purple-500' } };
 </script>
 
 <template>
-    <Head :title="`Venta #${transaction.folio}`" />
+    <Head title="Historial de Ventas" />
     <AppLayout>
-        <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
-        
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
-            <div>
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Venta #{{ transaction.folio }}</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Realizada el {{ formatDate(transaction.created_at) }}</p>
-            </div>
-            <div class="flex items-center gap-2 mt-4 sm:mt-0">
-                <Button v-if="canAddPayment" @click="showAddPaymentModal = true" label="Registrar Abono" icon="pi pi-plus" severity="success" />
-                <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined />
-            </div>
-        </div>
+        <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
+                <!-- Header -->
+                <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
+                     <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Historial de Ventas</h1>
+                     <IconField iconPosition="left" class="w-full md:w-1/3">
+                        <InputIcon class="pi pi-search"></InputIcon>
+                        <InputText v-model="searchTerm" placeholder="Buscar por folio o cliente..." class="w-full" />
+                    </IconField>
+                </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Columna Principal -->
-            <div class="lg:col-span-2 space-y-6">
-                <Card>
-                    <template #title>Detalles de los Conceptos</template>
-                    <template #content>
-                        <DataTable :value="transaction.items" class="p-datatable-sm">
-                            <Column field="description" header="Descripción"></Column>
-                            <Column field="quantity" header="Cantidad"></Column>
-                            <Column field="unit_price" header="P. Unitario"><template #body="{data}">{{ formatCurrency(data.unit_price) }}</template></Column>
-                            <Column field="line_total" header="Total"><template #body="{data}">{{ formatCurrency(data.line_total) }}</template></Column>
-                        </DataTable>
-                    </template>
-                </Card>
-            </div>
-            <!-- Columna Derecha -->
-            <div class="lg:col-span-1 space-y-6">
-                <Card>
-                    <template #title>Resumen Financiero</template>
-                    <template #content>
-                         <ul class="space-y-3 text-sm">
-                            <li class="flex justify-between"><span>Subtotal:</span><span>{{ formatCurrency(transaction.subtotal) }}</span></li>
-                            <li class="flex justify-between"><span>Descuento:</span><span class="text-red-500">- {{ formatCurrency(transaction.total_discount) }}</span></li>
-                            <li class="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>Total de la Venta:</span><span>{{ formatCurrency(totalAmount) }}</span></li>
-                             <li class="flex justify-between"><span>Total Pagado:</span><span class="font-semibold">{{ formatCurrency(totalPaid) }}</span></li>
-                             <li v-if="pendingAmount > 0.01" class="flex justify-between font-bold text-red-600"><span>Saldo Pendiente:</span><span>{{ formatCurrency(pendingAmount) }}</span></li>
-                        </ul>
-                    </template>
-                </Card>
-                <Card>
-                    <template #title>Información de la Venta</template>
-                    <template #content>
-                        <ul class="space-y-3 text-sm">
-                            <li class="flex justify-between"><span>Estatus:</span><Tag :value="localTransaction.status" :severity="getStatusSeverity(localTransaction.status)" class="capitalize" /></li>
-                            <li class="flex justify-between"><span>Cliente:</span><span class="font-medium">{{ transaction.customer.name }}</span></li>
-                            <li class="flex justify-between"><span>Cajero:</span><span class="font-medium">{{ transaction.user.name }}</span></li>
-                            <li class="flex justify-between"><span>Sucursal:</span><span class="font-medium">{{ transaction.branch.name }}</span></li>
-                            <li class="flex justify-between"><span>Canal:</span><span class="font-medium capitalize">{{ transaction.channel.replace('_', ' ') }}</span></li>
-                        </ul>
-                    </template>
-                </Card>
-                <Card>
-                    <template #title>Pagos Realizados</template>
-                    <template #content>
-                        <ul class="space-y-3">
-                            <li v-for="payment in localTransaction.payments" :key="payment.id" class="text-sm">
-                                <div class="flex justify-between items-center">
-                                    <span class="flex items-center gap-2"><i class="pi" :class="paymentMethodIcons[payment.payment_method].icon + ' ' + paymentMethodIcons[payment.payment_method].color"></i> <span class="capitalize font-medium">{{ payment.payment_method }}</span></span>
-                                    <span class="font-mono font-semibold">{{ formatCurrency(payment.amount) }}</span>
-                                </div>
-                                <p class="text-xs text-gray-500 ml-6">{{ formatDate(payment.payment_date) }}</p>
-                            </li>
-                        </ul>
-                    </template>
-                </Card>
+                <!-- Tabla de Transacciones -->
+                <DataTable :value="transactions.data" v-model:selection="selectedTransactions" lazy paginator
+                    :totalRecords="transactions.total" :rows="transactions.per_page"
+                    :rowsPerPageOptions="[20, 50, 100, 200]" dataKey="id" @page="onPage" @sort="onSort"
+                    removableSort tableStyle="min-width: 60rem"
+                    paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
+                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} ventas">
+                    <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
+                    <Column field="folio" header="Folio" sortable></Column>
+                    <Column field="created_at" header="Fecha y Hora" sortable>
+                        <template #body="{ data }"> {{ formatDate(data.created_at) }} </template>
+                    </Column>
+                    <Column field="customer.name" header="Cliente" sortable></Column>
+                    <Column field="channel" header="Canal" sortable>
+                         <template #body="{ data }">
+                           <span class="capitalize">{{ data.channel.replace(/_/g, ' ') }}</span>
+                        </template>
+                    </Column>
+                     <Column field="total" header="Total" sortable>
+                        <template #body="{ data }"> {{ formatCurrency(data.subtotal - data.total_discount) }} </template>
+                    </Column>
+                    <Column field="status" header="Estatus" sortable>
+                        <template #body="{ data }"> <Tag :value="data.status" :severity="getStatusSeverity(data.status)" class="capitalize" /> </template>
+                    </Column>
+                    <Column field="user.name" header="Cajero" sortable></Column>
+                    <Column headerStyle="width: 5rem; text-align: center">
+                        <template #body="{ data }"> <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded severity="secondary" /> </template>
+                    </Column>
+                </DataTable>
+                
+                <Menu ref="menu" :model="menuItems" :popup="true" />
             </div>
         </div>
-        <AddPaymentModal :visible="showAddPaymentModal" :transaction="transaction" :pending-amount="pendingAmount" @update:visible="showAddPaymentModal = false" />
     </AppLayout>
 </template>

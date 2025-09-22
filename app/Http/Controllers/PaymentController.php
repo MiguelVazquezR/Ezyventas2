@@ -22,7 +22,7 @@ class PaymentController extends Controller
             // SOLUCIÓN 3: Corregir el desfase de zona horaria.
             // Se asume que la zona horaria del usuario es la central de México.
             // En una app más compleja, esto vendría de la configuración del usuario o sucursal.
-            $validated['payment_date'] = Carbon::parse($validated['payment_date'], 'America/Mexico_City')->setTimezone('UTC');
+            $validated['payment_date'] = Carbon::parse($validated['payment_date'])->setTimezone('America/Mexico_City');
 
             $payment = $transaction->payments()->create($validated);
 
