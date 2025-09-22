@@ -48,6 +48,13 @@ const model = ref([
                         routeName: 'cash-registers.*',
                         // permission: 'ver_festivos'
                     },
+                    {
+                        label: 'Historial de cortes',
+                        icon: 'pi pi-calendar-plus',
+                        to: route('cash-register-sessions.index'),
+                        routeName: 'cash-register-sessions.*',
+                        // permission: 'ver_festivos'
+                    },
                 ]
             },
         ]

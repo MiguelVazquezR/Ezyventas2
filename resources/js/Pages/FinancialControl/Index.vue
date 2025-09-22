@@ -21,7 +21,7 @@ const menu = ref();
 
 onMounted(() => {
     dates.value = [new Date(props.filters.startDate), new Date(props.filters.endDate)];
-    
+
     lineChartOptions.value = {
         maintainAspectRatio: false, aspectRatio: 0.6,
         plugins: { legend: { labels: { color: '#4B5563' } } },
@@ -30,7 +30,7 @@ onMounted(() => {
             y: { ticks: { color: '#6B7280' }, grid: { color: '#E5E7EB' } }
         }
     };
-    
+
     pieChartOptions.value = {
         plugins: {
             legend: {
@@ -57,11 +57,11 @@ const incomeByMethodChartData = computed(() => ({
     }]
 }));
 
-const hasLineChartData = computed(() => 
+const hasLineChartData = computed(() =>
     props.chartData.income.some(val => val > 0) || props.chartData.expenses.some(val => val > 0)
 );
 
-const hasPieChartData = computed(() => 
+const hasPieChartData = computed(() =>
     props.incomeByMethod.data.length > 0
 );
 
@@ -108,6 +108,7 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 </script>
 
 <template>
+
     <Head title="Control Financiero" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 space-y-6">
@@ -115,7 +116,8 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Control Financiero</h1>
                 <div class="flex items-center gap-2 flex-wrap">
-                    <DatePicker v-model="dates" selectionMode="range" placeholder="Selecciona un rango" dateFormat="dd/mm/yy" class="w-full md:w-auto" />
+                    <DatePicker v-model="dates" selectionMode="range" placeholder="Selecciona un rango"
+                        dateFormat="dd/mm/yy" class="w-full md:w-auto" />
                     <Button @click="setDateRange('today')" label="Hoy" text size="small" />
                     <Menu ref="menu" :model="[
                         { label: 'Esta Semana', command: () => setDateRange('this_week') },
@@ -125,35 +127,51 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         { label: 'Este Año', command: () => setDateRange('this_year') },
                         { label: 'Año Pasado', command: () => setDateRange('last_year') },
                     ]" :popup="true" />
-                    <Button @click="$refs.menu.toggle($event)" label="Más Rangos" icon="pi pi-calendar" outlined severity="secondary" size="small" />
+                    <Button @click="$refs.menu.toggle($event)" label="Más Rangos" icon="pi pi-calendar" outlined
+                        severity="secondary" size="small" />
                     <Button label="Crear Reporte" icon="pi pi-file-pdf" severity="danger" outlined />
                 </div>
             </div>
 
             <!-- KPIs -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card><template #title>Ingresos</template><template #subtitle>Periodo seleccionado</template><template #content><p class="text-2xl font-bold text-green-600">{{ formatCurrency(kpis.totalIncome) }}</p></template></Card>
-                <Card><template #title>Gastos</template><template #subtitle>Periodo seleccionado</template><template #content><p class="text-2xl font-bold text-red-600">{{ formatCurrency(kpis.totalExpenses) }}</p></template></Card>
-                <Card><template #title>Beneficio Neto</template><template #subtitle>Periodo seleccionado</template><template #content><p class="text-2xl font-bold" :class="kpis.netProfit >= 0 ? 'text-gray-800 dark:text-gray-200' : 'text-red-600'">{{ formatCurrency(kpis.netProfit) }}</p></template></Card>
+                <Card><template #title>Ingresos</template><template #subtitle>Periodo seleccionado</template><template
+                        #content>
+                        <p class="text-2xl font-bold text-green-600">{{ formatCurrency(kpis.totalIncome) }}</p>
+                    </template></Card>
+                <Card><template #title>Gastos</template><template #subtitle>Periodo seleccionado</template><template
+                        #content>
+                        <p class="text-2xl font-bold text-red-600">{{ formatCurrency(kpis.totalExpenses) }}</p>
+                    </template>
+                </Card>
+                <Card><template #title>Beneficio Neto</template><template #subtitle>Periodo
+                        seleccionado</template><template #content>
+                        <p class="text-2xl font-bold"
+                            :class="kpis.netProfit >= 0 ? 'text-gray-800 dark:text-gray-200' : 'text-red-600'">{{
+                            formatCurrency(kpis.netProfit) }}</p>
+                    </template>
+                </Card>
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- Gráfica Principal -->
                 <div class="lg:col-span-2">
                     <Card class="h-full">
-                         <template #title>Resumen de Ingresos vs. Gastos</template>
-                         <template #content>
-                            <Chart v-if="hasLineChartData" type="line" :data="lineChartData" :options="lineChartOptions" class="h-[400px]" />
+                        <template #title>Resumen de Ingresos vs. Gastos</template>
+                        <template #content>
+                            <Chart v-if="hasLineChartData" type="line" :data="lineChartData" :options="lineChartOptions"
+                                class="h-[400px]" />
                             <div v-else class="h-[400px] flex items-center justify-center text-center text-gray-500">
                                 <div>
                                     <i class="pi pi-chart-line text-4xl"></i>
-                                    <p class="mt-2">No hay datos suficientes para mostrar la gráfica en este período.</p>
+                                    <p class="mt-2">No hay datos suficientes para mostrar la gráfica en este período.
+                                    </p>
                                 </div>
                             </div>
-                         </template>
+                        </template>
                     </Card>
                 </div>
-                
+
                 <!-- Columna Derecha -->
                 <div class="space-y-6">
                     <!-- Desglose de Ingresos -->
@@ -161,9 +179,10 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         <template #title>Ingresos por Método de Pago</template>
                         <template #content>
                             <div class="h-64 flex items-center justify-center">
-                                <Chart v-if="hasPieChartData" type="doughnut" :data="incomeByMethodChartData" :options="pieChartOptions" class="h-full" />
+                                <Chart v-if="hasPieChartData" type="doughnut" :data="incomeByMethodChartData"
+                                    :options="pieChartOptions" class="h-full" />
                                 <div v-else class="text-center text-gray-500">
-                                     <i class="pi pi-chart-pie text-4xl"></i>
+                                    <i class="pi pi-chart-pie text-4xl"></i>
                                     <p class="mt-2">No hay ingresos registrados en este período.</p>
                                 </div>
                             </div>
@@ -174,43 +193,54 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         <template #title>Cuentas Bancarias</template>
                         <template #content>
                             <ul v-if="bankAccounts.length > 0" class="space-y-3">
-                                <li v-for="account in bankAccounts" :key="account.id" class="flex justify-between items-center">
-                                    <div><p class="font-semibold">{{ account.account_name }}</p><p class="text-sm text-gray-500">{{ account.bank_name }}</p></div>
+                                <li v-for="account in bankAccounts" :key="account.id"
+                                    class="flex justify-between items-center">
+                                    <div>
+                                        <p class="font-semibold">{{ account.account_name }}</p>
+                                        <p class="text-sm text-gray-500">{{ account.bank_name }}</p>
+                                    </div>
                                     <span class="font-mono font-bold">{{ formatCurrency(account.balance) }}</span>
                                 </li>
                             </ul>
-                            <p v-else class="text-sm text-gray-500 text-center py-4">No hay cuentas bancarias registradas.</p>
+                            <p v-else class="text-sm text-gray-500 text-center py-4">No hay cuentas bancarias
+                                registradas.</p>
                         </template>
                     </Card>
                 </div>
             </div>
 
-             <!-- Historial de Cortes y Cajas -->
+            <!-- Historial de Cortes y Cajas -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <Card>
                     <template #title>Cajas Registradas</template>
                     <template #content>
                         <ul v-if="cashRegisters.length > 0" class="space-y-3">
                             <li v-for="register in cashRegisters" :key="register.id">
-                                <div v-if="register.in_use" class="p-3 rounded-md bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700">
+                                <div v-if="register.in_use"
+                                    class="p-3 rounded-md bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700">
                                     <div class="flex justify-between items-center">
-                                        <p class="font-semibold text-green-800 dark:text-green-200">{{ register.name }}</p>
+                                        <p class="font-semibold text-green-800 dark:text-green-200">{{ register.name }}
+                                        </p>
                                         <Tag value="En Uso" severity="success" />
                                     </div>
                                     <div class="mt-2 text-sm text-green-700 dark:text-green-300">
-                                        <p>Usuario: <span class="font-medium">{{ register.active_session_user }}</span></p>
-                                        <p>Balance Actual: <span class="font-semibold font-mono">{{ formatCurrency(register.current_balance) }}</span></p>
+                                        <p>Usuario: <span class="font-medium">{{ register.active_session_user }}</span>
+                                        </p>
+                                        <p>Balance Actual: <span class="font-semibold font-mono">{{
+                                                formatCurrency(register.current_balance) }}</span></p>
                                     </div>
                                 </div>
-                                <div v-else class="flex justify-between items-center">
+                                <div v-else class="flex justify-between items-center p-3">
                                     <p class="font-semibold">{{ register.name }}</p>
                                     <Tag value="Libre" severity="secondary" />
                                 </div>
                             </li>
                         </ul>
-                         <p v-else class="text-sm text-gray-500 text-center py-4">No hay cajas registradoras configuradas.</p>
+                        <p v-else class="text-sm text-gray-500 text-center py-4">No hay cajas registradoras
+                            configuradas.</p>
                     </template>
-                    <template #footer><Button label="Gestionar Cajas" severity="secondary" text class="w-full" @click="router.get(route('cash-registers.index'))" /></template>
+                    <template #footer><Button label="Gestionar Cajas" severity="secondary" text class="w-full"
+                            @click="router.get(route('cash-registers.index'))" /></template>
                 </Card>
                 <Card>
                     <template #title>Últimos Cortes de Caja</template>
@@ -221,11 +251,18 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                             </template>
                             <Column field="id" header="ID Sesión"></Column>
                             <Column field="closed_at" header="Fecha de Cierre"></Column>
-                            <Column field="opening_cash_balance" header="Fondo Inicial"><template #body="{data}">{{ formatCurrency(data.opening_cash_balance) }}</template></Column>
-                            <Column field="cash_difference" header="Diferencia"><template #body="{data}"><span :class="data.cash_difference < 0 ? 'text-red-500' : 'text-green-500'">{{ formatCurrency(data.cash_difference) }}</span></template></Column>
+                            <Column field="opening_cash_balance" header="Fondo Inicial"><template #body="{ data }">{{
+                                    formatCurrency(data.opening_cash_balance) }}</template></Column>
+                            <Column field="cash_difference" header="Diferencia"><template #body="{ data }"><span
+                                        :class="data.cash_difference < 0 ? 'text-red-500' : 'text-green-500'">{{
+                                        formatCurrency(data.cash_difference) }}</span></template>
+                            </Column>
                         </DataTable>
                     </template>
-                    <template #footer><Button label="Ver Todos los Cortes" severity="secondary" text class="w-full" /></template>
+                    <template #footer>
+                        <Button label="Ver Todos los Cortes" severity="secondary" text class="w-full"
+                            @click="router.get(route('cash-register-sessions.index'))" />
+                    </template>
                 </Card>
             </div>
         </div>
