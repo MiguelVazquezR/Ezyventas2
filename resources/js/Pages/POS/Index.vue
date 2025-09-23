@@ -12,6 +12,7 @@ const props = defineProps({
     categories: Array,
     customers: Array,
     defaultCustomer: Object,
+    filters: Object,
 });
 
 const toast = useToast();
@@ -19,14 +20,48 @@ const toast = useToast();
 const cartItems = ref([]);
 const selectedClient = ref(null);
 
-const addToCart = (product) => {
-    const existingItem = cartItems.value.find(item => item.id === product.id);
+const addToCart = (data) => {
+    const { product, variant } = data;
+
+    const cartItemId = variant 
+        ? `prod-${product.id}-variant-${variant.id}`
+        : `prod-${product.id}`;
+
+    const existingItem = cartItems.value.find(item => item.cartItemId === cartItemId);
+    const stock = variant ? variant.stock : product.stock;
+
     if (existingItem) {
-        if (existingItem.quantity < product.stock) existingItem.quantity++;
-        else toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${product.stock} unidades.`, life: 3000 });
+        if (existingItem.quantity < stock) {
+            existingItem.quantity++;
+        } else {
+            toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
+        }
     } else {
-        if (product.stock > 0) cartItems.value.push({ ...product, cartItemId: uuidv4(), quantity: 1 });
-        else toast.add({ severity: 'warn', summary: 'Sin Stock', detail: 'Este producto no tiene stock disponible.', life: 3000 });
+        if (stock > 0) {
+            const variantDescription = variant 
+                ? ' (' + Object.entries(variant.attributes).map(([key, value]) => `${key}: ${value}`).join(', ') + ')'
+                : '';
+
+            const newItem = {
+                ...product,
+                cartItemId: cartItemId,
+                quantity: 1,
+                original_price: product.promotion ? product.promotion.original_price : product.price,
+                ...(variant && {
+                    price: product.price + variant.price_modifier,
+                    original_price: (product.promotion ? product.promotion.original_price : product.price) + variant.price_modifier,
+                    sku: `${product.sku}-${variant.sku_suffix}`,
+                    stock: variant.stock,
+                    selectedVariant: variant.attributes,
+                    product_attribute_id: variant.id,
+                    name: product.name + variantDescription,
+                    image: variant.image_url || product.image,
+                })
+            };
+            cartItems.value.push(newItem);
+        } else {
+            toast.add({ severity: 'warn', summary: 'Sin Stock', detail: 'Este producto o variante no tiene stock.', life: 3000 });
+        }
     }
 };
 
@@ -94,8 +129,11 @@ const form = useForm({
 
 const handleCheckout = (checkoutData) => {
     form.cartItems = cartItems.value.map(item => ({
-        id: item.id, quantity: item.quantity,
-        unit_price: item.price, description: item.name,
+        id: item.id,
+        product_attribute_id: item.product_attribute_id || null,
+        quantity: item.quantity,
+        unit_price: item.price,
+        description: item.name,
     }));
     form.customerId = selectedClient.value ? selectedClient.value.id : null;
     form.subtotal = checkoutData.subtotal;
@@ -103,7 +141,7 @@ const handleCheckout = (checkoutData) => {
     form.total = checkoutData.total;
     form.payments = checkoutData.payments;
     form.use_balance = checkoutData.use_balance;
-
+    
     form.post(route('pos.checkout'), {
         onSuccess: () => {
             clearCart();
@@ -118,21 +156,37 @@ const handleCheckout = (checkoutData) => {
 </script>
 
 <template>
-
     <Head title="Punto de Venta" />
     <AppLayout>
         <div class="flex flex-col lg:flex-row gap-4 h-[calc(100vh-115px)]">
             <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden">
-                <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
-                    @add-to-cart="addToCart" @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
-                    class="h-full" />
+                <PosLeftPanel 
+                    :products="products" 
+                    :categories="categories" 
+                    :pending-carts="pendingCarts"
+                    :filters="filters"  
+                    @add-to-cart="addToCart" 
+                    @resume-cart="resumePendingCart" 
+                    @delete-cart="deletePendingCart"
+                    class="h-full" 
+                />
             </div>
             <div class="lg:w-1/3 xl:w-1/4 h-full overflow-hidden">
-                <ShoppingCart :items="cartItems" :client="selectedClient" :customers="localCustomers"
-                    :default-customer="defaultCustomer" @update-quantity="updateCartQuantity"
-                    @update-price="updateCartPrice" @remove-item="removeCartItem" @clear-cart="clearCart"
-                    @select-customer="handleSelectCustomer" @customer-created="handleCustomerCreated"
-                    @save-cart="saveCartToPending" @checkout="handleCheckout" class="h-full" />
+                <ShoppingCart 
+                    :items="cartItems" 
+                    :client="selectedClient" 
+                    :customers="localCustomers" 
+                    :default-customer="defaultCustomer"
+                    @update-quantity="updateCartQuantity" 
+                    @update-price="updateCartPrice"
+                    @remove-item="removeCartItem" 
+                    @clear-cart="clearCart"
+                    @select-customer="handleSelectCustomer" 
+                    @customer-created="handleCustomerCreated"
+                    @save-cart="saveCartToPending" 
+                    @checkout="handleCheckout"
+                    class="h-full" 
+                />
             </div>
         </div>
     </AppLayout>

@@ -5,15 +5,6 @@ import CartItem from './CartItem.vue';
 import CreateCustomerModal from '@/Components/CreateCustomerModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
 
-// PrimeVue components
-import Button from 'primevue/button';
-import Avatar from 'primevue/avatar';
-import Dropdown from 'primevue/dropdown';
-import ConfirmPopup from 'primevue/confirmpopup';
-import Checkbox from 'primevue/checkbox';
-import Divider from 'primevue/divider';
-
-
 const props = defineProps({
     items: Array,
     client: Object,
@@ -26,9 +17,12 @@ const emit = defineEmits(['updateQuantity', 'updatePrice', 'removeItem', 'clearC
 const confirm = useConfirm();
 const requireConfirmation = (event) => {
     confirm.require({
-        target: event.currentTarget, group: 'cart-actions',
+        target: event.currentTarget,
+        group: 'cart-actions',
         message: '¿Estás seguro de que quieres limpiar el carrito?',
-        icon: 'pi pi-exclamation-triangle', acceptLabel: 'Sí, limpiar', rejectLabel: 'Cancelar',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Sí, limpiar',
+        rejectLabel: 'Cancelar',
         accept: () => emit('clearCart'),
     });
 };
@@ -39,9 +33,32 @@ const clearCustomer = () => emit('selectCustomer', null);
 const displayedCustomer = computed(() => props.client || props.defaultCustomer);
 const handleCustomerCreated = (newCustomer) => emit('customerCreated', newCustomer);
 
-const subtotal = computed(() => props.items.reduce((total, item) => total + (item.price * item.quantity), 0));
-const discount = ref(0);
-const total = computed(() => subtotal.value - discount.value);
+// --- CÁLCULOS DE TOTALES CON PROMOCIONES ---
+const subtotal = computed(() => {
+    return props.items.reduce((total, item) => {
+        // Usa el precio original si existe, si no, el precio normal.
+        const priceToSum = item.original_price || item.price;
+        return total + (priceToSum * item.quantity);
+    }, 0);
+});
+
+const itemsDiscount = computed(() => {
+    return props.items.reduce((total, item) => {
+        // Solo calcula el descuento si el item tiene un precio original (es decir, está en oferta)
+        if (item.original_price) {
+            const discountPerItem = item.original_price - item.price;
+            return total + (discountPerItem * item.quantity);
+        }
+        return total;
+    }, 0);
+});
+
+const discount = ref(0); // Para descuentos manuales/globales
+const totalDiscount = computed(() => itemsDiscount.value + discount.value);
+const total = computed(() => subtotal.value - totalDiscount.value);
+// --- FIN DE CÁLCULOS ---
+
+
 const isPaymentModalVisible = ref(false);
 
 const useBalance = ref(false);
@@ -64,7 +81,7 @@ const handlePaymentSubmit = (paymentData) => {
         ...paymentData,
         subtotal: subtotal.value,
         total: total.value,
-        discount: discount.value,
+        discount: totalDiscount.value,
         use_balance: useBalance.value,
     });
 };
@@ -120,7 +137,6 @@ const handlePaymentSubmit = (paymentData) => {
                 </div>
             </div>
 
-
             <!-- Lista de Items -->
             <div class="flex-grow py-4 overflow-y-auto space-y-4">
                 <p v-if="items.length === 0" class="text-gray-500 dark:text-gray-400 text-center mt-8">El carrito está vacío</p>
@@ -130,7 +146,7 @@ const handlePaymentSubmit = (paymentData) => {
             <!-- Detalles del Pago -->
             <div class="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
                 <div class="flex justify-between items-center text-gray-600 dark:text-gray-300"><span>Subtotal</span><span class="font-medium">${{ subtotal.toFixed(2) }}</span></div>
-                <div class="flex justify-between items-center text-red-500"><span>Descuento</span><span class="font-medium">-${{ discount.toFixed(2) }}</span></div>
+                <div v-if="totalDiscount > 0" class="flex justify-between items-center text-red-500"><span>Descuento</span><span class="font-medium">-${{ totalDiscount.toFixed(2) }}</span></div>
                 <div v-if="amountFromBalance > 0" class="flex justify-between items-center text-green-600"><span>Saldo Utilizado</span><span class="font-medium">-${{ amountFromBalance.toFixed(2) }}</span></div>
                 <Divider v-if="amountFromBalance > 0" />
                 <div class="flex justify-between items-center font-bold text-lg text-gray-800 dark:text-gray-100"><span>Total</span><span>${{ finalTotalToPay.toFixed(2) }}</span></div>
@@ -140,7 +156,6 @@ const handlePaymentSubmit = (paymentData) => {
         </div>
         
         <CreateCustomerModal v-model:visible="isCreateCustomerModalVisible" @created="handleCustomerCreated"/>
-        <!-- CAMBIO: Se pasa el 'client' como prop -->
         <PaymentModal 
             v-model:visible="isPaymentModalVisible" 
             :total-amount="finalTotalToPay"

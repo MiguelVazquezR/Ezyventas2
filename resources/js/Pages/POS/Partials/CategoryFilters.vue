@@ -1,21 +1,25 @@
 <script setup>
-import Button from 'primevue/button';
-import Badge from 'primevue/badge';
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 
 const props = defineProps({
     categories: Array,
+    activeCategoryId: [Number, String, null],
 });
 
-const selectedCategoryId = ref(props.categories.length > 0 ? props.categories[0].id : null);
+const emit = defineEmits(['filter']);
+
+const selectedCategoryId = ref(props.activeCategoryId);
+
+// Sincroniza el estado si la prop cambia desde el padre
+watch(() => props.activeCategoryId, (newVal) => {
+    selectedCategoryId.value = newVal;
+});
 
 const selectCategory = (categoryId) => {
     selectedCategoryId.value = categoryId;
-    // Aquí puedes emitir un evento para filtrar los productos en el componente padre
-    // emit('filterByCategory', categoryId);
+    emit('filter', categoryId);
 }
 
-// --- Lógica para el scroll con el mouse ---
 const scrollContainer = ref(null);
 const isDown = ref(false);
 const startX = ref(0);
@@ -39,7 +43,7 @@ const onMouseMove = (e) => {
     if (!isDown.value || !scrollContainer.value) return;
     e.preventDefault();
     const x = e.pageX - scrollContainer.value.offsetLeft;
-    const walk = (x - startX.value) * 1.5; // El multiplicador * 1.5 hace el scroll un poco más rápido
+    const walk = (x - startX.value) * 1.5;
     scrollContainer.value.scrollLeft = scrollLeft.value - walk;
 };
 
@@ -57,10 +61,12 @@ const onMouseMove = (e) => {
         <div class="flex gap-2">
             <Button v-for="category in categories" :key="category.id"
                 @click="selectCategory(category.id)"
-                :class="{ '!bg-orange-100 !text-orange-600 !border-orange-200': selectedCategoryId === category.id }"
-                class="p-button-secondary p-button-outlined p-button-sm whitespace-nowrap">
+                :outlined="selectedCategoryId !== category.id"
+                :severity="selectedCategoryId === category.id ? 'warning' : 'secondary'"
+                class="p-button-sm whitespace-nowrap">
                 <span class="mr-2">{{ category.name }}</span>
-                <Badge :value="category.count" 
+                <!-- CAMBIO: Se usa 'products_count' -->
+                <Badge :value="category.products_count" 
                        :severity="selectedCategoryId === category.id ? 'warning' : 'secondary'"></Badge>
             </Button>
         </div>
@@ -71,7 +77,7 @@ const onMouseMove = (e) => {
 .category-scroll-container {
     scrollbar-width: none;
     -ms-overflow-style: none;
-    user-select: none; /* Evita que el texto se seleccione al arrastrar */
+    user-select: none;
 }
 
 .category-scroll-container::-webkit-scrollbar {

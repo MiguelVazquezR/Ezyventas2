@@ -2,11 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\PromotionEffectType;
+use App\Enums\PromotionType;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Product;
+use App\Models\ProductAttribute;
+use App\Models\Promotion;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,13 +22,17 @@ use Carbon\Carbon;
 
 class PointOfSaleController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
+        $search = $request->input('search');
+        $categoryId = $request->input('category');
+
         return Inertia::render('POS/Index', [
-            'products' => $this->getProductsData(),
+            'products' => $this->getProductsData($search, $categoryId),
             'categories' => $this->getCategoriesData(),
             'customers' => $this->getCustomersData(),
             'defaultCustomer' => $this->getDefaultCustomerData(),
+            'filters' => $request->only(['search', 'category']),
         ]);
     }
 
@@ -33,6 +41,7 @@ class PointOfSaleController extends Controller
         $validated = $request->validate([
             'cartItems' => 'required|array|min:1',
             'cartItems.*.id' => 'required|exists:products,id',
+            'cartItems.*.product_attribute_id' => 'nullable|exists:product_attributes,id',
             'cartItems.*.quantity' => 'required|numeric|min:1',
             'cartItems.*.unit_price' => 'required|numeric|min:0',
             'cartItems.*.description' => 'required|string',
@@ -53,27 +62,22 @@ class PointOfSaleController extends Controller
 
         try {
             $transaction = DB::transaction(function () use ($validated, $user, $customer, $totalPaid, $totalSale) {
-
-                // --- Lógica de Saldo y Crédito ---
                 $amountFromBalance = 0;
                 if ($customer && $validated['use_balance'] && $customer->balance > 0) {
                     $amountFromBalance = min($totalSale, $customer->balance);
                 }
-
                 $remainingDue = $totalSale - $totalPaid - $amountFromBalance;
 
-                // --- Validación ---
-                if (!$customer) { // Público en General
-                    if ($remainingDue > 0.01) { // Pequeño margen para errores de redondeo
+                if (!$customer) {
+                    if ($remainingDue > 0.01) {
                         throw new \Exception('El pago debe ser completo para ventas a Público en General.');
                     }
-                } else { // Cliente Registrado
-                    if ($remainingDue > $customer->available_credit) {
+                } else {
+                    if ($remainingDue > 0.01 && $remainingDue > $customer->available_credit) {
                         throw new \Exception('El crédito disponible del cliente no es suficiente para cubrir el monto restante.');
                     }
                 }
 
-                // 1. Crear la Transacción
                 $newTransaction = Transaction::create([
                     'folio' => $this->generateFolio(),
                     'customer_id' => $customer?->id,
@@ -88,30 +92,33 @@ class PointOfSaleController extends Controller
                     'status_changed_at' => now(),
                 ]);
 
-                // 2. Crear Items y Descontar Stock
                 foreach ($validated['cartItems'] as $item) {
+                    $itemableId = $item['id'];
+                    $itemableType = Product::class;
+                    if (!empty($item['product_attribute_id'])) {
+                        $itemableId = $item['product_attribute_id'];
+                        $itemableType = ProductAttribute::class;
+                    }
+
                     $newTransaction->items()->create([
-                        'itemable_id' => $item['id'],
-                        'itemable_type' => Product::class,
-                        'description' => $item['description'],
-                        'quantity' => $item['quantity'],
-                        'unit_price' => $item['unit_price'],
-                        'line_total' => $item['quantity'] * $item['unit_price'],
+                        'itemable_id' => $itemableId, 'itemable_type' => $itemableType,
+                        'description' => $item['description'], 'quantity' => $item['quantity'],
+                        'unit_price' => $item['unit_price'], 'line_total' => $item['quantity'] * $item['unit_price'],
                     ]);
+
+                    if (!empty($item['product_attribute_id'])) {
+                        ProductAttribute::find($item['product_attribute_id'])->decrement('current_stock', $item['quantity']);
+                    }
                     Product::find($item['id'])->decrement('current_stock', $item['quantity']);
                 }
 
-                // 3. Crear Pagos
                 foreach ($validated['payments'] as $payment) {
                     $newTransaction->payments()->create([
-                        'amount' => $payment['amount'],
-                        'payment_method' => $payment['method'],
-                        'payment_date' => now(),
-                        'status' => 'completado',
+                        'amount' => $payment['amount'], 'payment_method' => $payment['method'],
+                        'payment_date' => now(), 'status' => 'completado',
                     ]);
                 }
-
-                // 4. Actualizar Saldo del Cliente si aplica
+                
                 if ($customer) {
                     $totalChargedToBalance = $remainingDue + $amountFromBalance;
                     if ($totalChargedToBalance > 0) {
@@ -122,60 +129,149 @@ class PointOfSaleController extends Controller
                 return $newTransaction;
             });
 
-            return redirect()->back()->with('success', 'Venta registrada con éxito. Folio: ' . $transaction->folio);
+            return redirect()->route('dashboard')->with('success', 'Venta registrada con éxito. Folio: ' . $transaction->folio);
+
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar la venta: ' . $e->getMessage());
         }
     }
 
-    private function getProductsData()
+    private function getProductsData($search = null, $categoryId = null)
     {
         $branchId = Auth::user()->branch_id;
-        return Product::where('branch_id', $branchId)->with('media', 'category:id,name')->get()
-            ->map(fn($product) => [
-                'id' => $product->id,
-                'name' => $product->name,
-                'price' => (float) $product->selling_price,
-                'stock' => $product->current_stock,
-                'category' => $product->category->name ?? 'Sin categoría',
-                'image' => $product->getFirstMediaUrl('product-general-images') ?: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' . urlencode($product->name),
-                'description' => $product->description,
-                'sku' => $product->sku,
-                'variants' => new \stdClass(),
-            ]);
+        $query = Product::where('branch_id', $branchId);
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")->orWhere('sku', 'like', "%{$search}%");
+            });
+        }
+        if ($categoryId) {
+            $query->where('category_id', $categoryId);
+        }
+
+        return $query->with(['media', 'category:id,name', 'productAttributes'])->get()
+            ->map(function ($product) {
+                $promotionData = $this->getAppliedPromotion($product);
+                $variantImages = $product->getMedia('product-variant-images');
+
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'price' => $promotionData['price'],
+                    'stock' => $product->current_stock,
+                    'category' => $product->category->name ?? 'Sin categoría',
+                    'image' => $product->getFirstMediaUrl('product-general-images') ?: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' . urlencode($product->name),
+                    'description' => $product->description,
+                    'sku' => $product->sku,
+                    'variants' => $this->mapVariants($product->productAttributes),
+                    'variant_combinations' => $this->mapVariantCombinations($product, $variantImages),
+                    'promotion' => $promotionData['promotion'],
+                ];
+            });
+    }
+    
+    private function getAppliedPromotion(Product $product): array
+    {
+        $now = Carbon::now();
+        $promotion = Promotion::where('is_active', true)
+            ->where('type', PromotionType::ITEM_DISCOUNT)
+            ->where('start_date', '<=', $now)
+            ->where(fn($q) => $q->where('end_date', '>=', $now)->orWhereNull('end_date'))
+            ->whereHas('effects', function ($query) use ($product) {
+                $query->where('itemable_type', Product::class)
+                      ->where('itemable_id', $product->id);
+            })
+            ->with('effects')
+            ->orderBy('priority', 'desc')->first();
+
+        if (!$promotion) {
+            return ['price' => (float)$product->selling_price, 'promotion' => null];
+        }
+
+        $effect = $promotion->effects->where('itemable_id', $product->id)->first();
+        $originalPrice = (float)$product->selling_price;
+        $newPrice = $originalPrice;
+
+        switch ($effect->type) {
+            case PromotionEffectType::FIXED_DISCOUNT: $newPrice = $originalPrice - $effect->value; break;
+            case PromotionEffectType::PERCENTAGE_DISCOUNT: $newPrice = $originalPrice * (1 - ($effect->value / 100)); break;
+            case PromotionEffectType::SET_PRICE: $newPrice = $effect->value; break;
+        }
+        
+        return [
+            'price' => max(0, (float)$newPrice),
+            'promotion' => ['name' => $promotion->name, 'original_price' => $originalPrice]
+        ];
+    }
+    
+    private function mapVariants($productAttributes)
+    {
+        if ($productAttributes->isEmpty()) return new \stdClass();
+        $variantsGrouped = [];
+        foreach ($productAttributes as $attributeCombination) {
+            foreach ($attributeCombination->attributes as $key => $value) {
+                if (!isset($variantsGrouped[$key])) $variantsGrouped[$key] = [];
+                if (!isset($variantsGrouped[$key][$value])) $variantsGrouped[$key][$value] = ['value' => $value, 'stock' => 0];
+                $variantsGrouped[$key][$value]['stock'] += $attributeCombination->current_stock;
+            }
+        }
+        return array_map('array_values', $variantsGrouped);
     }
 
-    private function getCategoriesData()
+    private function mapVariantCombinations(Product $product, $variantImages)
     {
-        $subscriptionId = Auth::user()->branch->subscription_id;
-        return Category::where('subscription_id', $subscriptionId)->where('type', 'product')->select('id', 'name')->get();
-    }
-
-    private function getCustomersData()
-    {
-        $branchId = Auth::user()->branch_id;
-        $customers = Customer::where('branch_id', $branchId)
-            ->select('id', 'name', 'phone', 'balance', 'credit_limit')
-            ->orderBy('name')->get();
-
-        // --- SOLUCIÓN: Convertir los valores a números antes de enviarlos ---
-        return $customers->map(function ($customer) {
+        return $product->productAttributes->map(function ($attr) use ($variantImages) {
+            $imageUrl = null;
+            if ($variantImages->isNotEmpty()) {
+                foreach ($attr->attributes as $optionValue) {
+                    $foundImage = $variantImages->first(fn ($media) => $media->getCustomProperty('variant_option') === $optionValue);
+                    if ($foundImage) {
+                        $imageUrl = $foundImage->getUrl();
+                        break;
+                    }
+                }
+            }
             return [
-                'id' => $customer->id,
-                'name' => $customer->name,
-                'phone' => $customer->phone,
-                'balance' => (float) $customer->balance,
-                'credit_limit' => (float) $customer->credit_limit,
-                'available_credit' => (float) $customer->available_credit, // Incluimos el accesor
+                'id' => $attr->id,
+                'attributes' => $attr->attributes,
+                'price_modifier' => (float) $attr->selling_price_modifier,
+                'stock' => $attr->current_stock,
+                'sku_suffix' => $attr->sku_suffix,
+                'image_url' => $imageUrl,
             ];
         });
     }
 
-    private function getDefaultCustomerData()
+    private function getCategoriesData()
     {
-        return ['id' => null, 'name' => 'Público en General', 'phone' => '', 'balance' => 0, 'credit_limit' => 0];
+        $branchId = Auth::user()->branch_id;
+        $subscriptionId = Auth::user()->branch->subscription_id;
+        $categories = Category::where('subscription_id', $subscriptionId)
+            ->where('type', 'product')
+            ->withCount(['products' => fn ($q) => $q->where('branch_id', $branchId)])
+            ->get();
+        $totalProducts = Product::where('branch_id', $branchId)->count();
+        $formattedCategories = $categories->map(fn ($cat) => ['id' => $cat->id, 'name' => $cat->name, 'products_count' => $cat->products_count]);
+        return collect([['id' => null, 'name' => 'Todos', 'products_count' => $totalProducts]])->merge($formattedCategories);
+    }
+    
+    private function getCustomersData()
+    {
+        $branchId = Auth::user()->branch_id;
+        return Customer::where('branch_id', $branchId)->select('id', 'name', 'phone', 'balance', 'credit_limit')->orderBy('name')->get()
+            ->map(fn ($c) => [
+                'id' => $c->id, 'name' => $c->name, 'phone' => $c->phone,
+                'balance' => (float) $c->balance, 'credit_limit' => (float) $c->credit_limit,
+                'available_credit' => (float) $c->available_credit,
+            ]);
     }
 
+    private function getDefaultCustomerData()
+    {
+        return ['id' => null, 'name' => 'Público en General', 'phone' => '', 'balance' => 0.0, 'credit_limit' => 0.0, 'available_credit' => 0.0];
+    }
+    
     private function generateFolio(): string
     {
         $prefix = strtoupper(substr(Auth::user()->branch->name, 0, 4));
