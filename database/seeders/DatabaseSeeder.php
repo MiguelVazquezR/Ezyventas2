@@ -19,7 +19,7 @@ use App\Models\Customer;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\GlobalProduct;
-use App\Models\Payment; // <-- Importar el modelo Payment
+use App\Models\Payment;
 use App\Models\Provider;
 use App\Models\Quote;
 use App\Models\Service;
@@ -36,6 +36,7 @@ class DatabaseSeeder extends Seeder
     {
         // 1. Llenar catálogos base
         $this->call(BusinessTypeSeeder::class);
+        $this->call(SettingDefinitionSeeder::class); // <-- Seeder agregado aquí
         $this->seedGlobalBrandsAndProducts();
 
         // 2. Crear Suscriptores y sus datos privados
@@ -129,7 +130,6 @@ class DatabaseSeeder extends Seeder
                         'amount' => $transaction->subtotal - $transaction->total_discount,
                         'payment_date' => $transaction->created_at,
                     ]);
-
                 });
 
                 // Crear movimientos de efectivo por cada sesión ---
@@ -143,7 +143,7 @@ class DatabaseSeeder extends Seeder
                 ]);
 
                 // Actualizar los totales del corte de caja
-                $calculatedTotal = $session->opening_cash_balance + $transactions->sum(fn($t) => $t->subtotal - $t->total_discount);
+                $calculatedTotal = $session->opening_cash_balance + $transactions->sum(fn ($t) => $t->subtotal - $t->total_discount);
                 $session->update([
                     'calculated_cash_total' => $calculatedTotal,
                     'closing_cash_balance' => $calculatedTotal + $session->cash_difference,

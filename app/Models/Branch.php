@@ -37,7 +37,7 @@ class Branch extends Model
     {
         return $this->belongsTo(Subscription::class, 'subscription_id');
     }
-    
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
@@ -58,7 +58,7 @@ class Branch extends Model
     {
         return $this->hasMany(Transaction::class);
     }
-    
+
     /**
      * Get the cash registers for the branch.
      */
@@ -72,7 +72,8 @@ class Branch extends Model
      */
     public function settings(): MorphMany
     {
-        // Esto permite a una sucursal tener configuraciones personalizadas [cite: 521, 523]
-        return $this->morphMany(SettingValue::class, 'settable');
+        // CAMBIO: Se actualiza el nombre de la relación a 'configurable' para que
+        // coincida con el nuevo nombre del método en el modelo SettingValue.
+        return $this->morphMany(SettingValue::class, 'configurable');
     }
 }

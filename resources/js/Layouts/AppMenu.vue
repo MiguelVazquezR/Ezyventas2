@@ -58,6 +58,7 @@ const model = ref([
                     },
                 ]
             },
+            { label: 'Configuraciones', icon: 'pi pi-fw pi-cog', to: route('settings.index'), routeName: 'settings.*' },
         ]
     },
 ]);

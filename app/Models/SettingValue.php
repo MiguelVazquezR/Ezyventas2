@@ -20,8 +20,14 @@ class SettingValue extends Model
         return $this->belongsTo(SettingDefinition::class, 'setting_definition_id');
     }
     
-    public function settable(): MorphTo
+    /**
+     * CAMBIO: Se renombra el método de 'settable' a 'configurable' para evitar
+     * conflictos con el método setTable() del modelo base de Eloquent.
+     * * Se especifican los nombres de las columnas para que Eloquent sepa que
+     * debe seguir usando 'settable_type' y 'settable_id' sin necesidad de una migración.
+     */
+    public function configurable(): MorphTo
     {
-        return $this->morphTo();
+        return $this->morphTo('configurable', 'settable_type', 'settable_id');
     }
 }
