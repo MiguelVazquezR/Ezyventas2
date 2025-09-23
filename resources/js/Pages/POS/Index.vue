@@ -1,48 +1,138 @@
 <script setup>
 import { ref } from 'vue';
+import { Head, useForm } from '@inertiajs/vue3';
+import { useToast } from 'primevue/usetoast';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Head } from '@inertiajs/vue3';
-
 import PosLeftPanel from './Partials/PosLeftPanel.vue';
 import ShoppingCart from './Partials/ShoppingCart.vue';
+import { v4 as uuidv4 } from 'uuid';
 
-// Los datos ahora vienen como props desde el controlador de Laravel
 const props = defineProps({
     products: Array,
     categories: Array,
-    pendingCarts: Array,
-    initialClient: Object,
+    customers: Array,
+    defaultCustomer: Object,
 });
 
-// --- ESTADO LOCAL DEL COMPONENTE (Manejo del carrito, etc.) ---
+const toast = useToast();
 
-// El carrito de compras sí se manejará localmente hasta que se guarde.
-const cartItems = ref([
-    { id: 1, name: 'Vestido de mezclilla con cinturón y líneas de colores', price: 500.00, quantity: 2, image: 'https://placehold.co/100x100/EBF8FF/3182CE?text=Vestido', variants: { Talla: 'S', Color: 'Azul' } },
-    { id: 4, name: 'Tenis deportivos MIKA', price: 1600.00, originalPrice: 1800.00, quantity: 1, image: 'https://placehold.co/100x100/FFF7ED/F97316?text=Tenis', variants: { Talla: '24', Color: 'Rosa' } },
-    { id: 6, name: 'Downy 2.5 L', price: 150.00, quantity: 1, image: 'https://placehold.co/100x100/EFF6FF/3B82F6?text=Suavizante', variants: {} },
-]);
+const cartItems = ref([]);
+const selectedClient = ref(null);
 
-// El cliente seleccionado también es un estado local que puede cambiar.
-const selectedClient = ref(props.initialClient);
+const addToCart = (product) => {
+    const existingItem = cartItems.value.find(item => item.id === product.id);
+    if (existingItem) {
+        if (existingItem.quantity < product.stock) existingItem.quantity++;
+        else toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${product.stock} unidades.`, life: 3000 });
+    } else {
+        if (product.stock > 0) cartItems.value.push({ ...product, cartItemId: uuidv4(), quantity: 1 });
+        else toast.add({ severity: 'warn', summary: 'Sin Stock', detail: 'Este producto no tiene stock disponible.', life: 3000 });
+    }
+};
 
+const updateCartQuantity = ({ itemId, quantity }) => {
+    const item = cartItems.value.find(i => i.cartItemId === itemId);
+    if (item) item.quantity = quantity;
+};
+
+const updateCartPrice = ({ itemId, price }) => {
+    const item = cartItems.value.find(i => i.cartItemId === itemId);
+    if (item) item.price = price;
+};
+
+const removeCartItem = (itemId) => {
+    cartItems.value = cartItems.value.filter(i => i.cartItemId !== itemId);
+};
+
+const clearCart = () => {
+    cartItems.value = [];
+    selectedClient.value = null;
+    toast.add({ severity: 'info', summary: 'Carrito Limpio', detail: 'Se han eliminado todos los productos del carrito.', life: 3000 });
+};
+
+const localCustomers = ref([...props.customers]);
+const handleSelectCustomer = (customer) => selectedClient.value = customer;
+
+const handleCustomerCreated = (newCustomer) => {
+    localCustomers.value = [...localCustomers.value, newCustomer];
+    selectedClient.value = newCustomer;
+    toast.add({ severity: 'success', summary: 'Cliente Creado', detail: 'El nuevo cliente ha sido seleccionado.', life: 3000 });
+};
+
+const pendingCarts = ref([]);
+const saveCartToPending = () => {
+    if (cartItems.value.length === 0) return;
+    pendingCarts.value.push({
+        id: uuidv4(),
+        client: selectedClient.value || props.defaultCustomer,
+        items: JSON.parse(JSON.stringify(cartItems.value)),
+        time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+    });
+    clearCart();
+    toast.add({ severity: 'success', summary: 'Carrito Guardado', detail: 'El carrito actual se movió a la lista de espera.', life: 3000 });
+};
+
+const resumePendingCart = (cartId) => {
+    const cartToResume = pendingCarts.value.find(c => c.id === cartId);
+    if (!cartToResume) return;
+    if (cartItems.value.length > 0) saveCartToPending();
+    cartItems.value = cartToResume.items;
+    selectedClient.value = cartToResume.client.id === props.defaultCustomer.id ? null : cartToResume.client;
+    pendingCarts.value = pendingCarts.value.filter(c => c.id !== cartId);
+};
+
+const deletePendingCart = (cartId) => {
+    pendingCarts.value = pendingCarts.value.filter(c => c.id !== cartId);
+    toast.add({ severity: 'warn', summary: 'Carrito Descartado', detail: 'Se ha eliminado un carrito de la lista de espera.', life: 3000 });
+};
+
+const form = useForm({
+    cartItems: [], customerId: null,
+    subtotal: 0, total_discount: 0, total: 0,
+    payments: [], use_balance: false,
+});
+
+const handleCheckout = (checkoutData) => {
+    form.cartItems = cartItems.value.map(item => ({
+        id: item.id, quantity: item.quantity,
+        unit_price: item.price, description: item.name,
+    }));
+    form.customerId = selectedClient.value ? selectedClient.value.id : null;
+    form.subtotal = checkoutData.subtotal;
+    form.total_discount = checkoutData.discount;
+    form.total = checkoutData.total;
+    form.payments = checkoutData.payments;
+    form.use_balance = checkoutData.use_balance;
+
+    form.post(route('pos.checkout'), {
+        onSuccess: () => {
+            clearCart();
+        },
+        onError: (errors) => {
+            console.error("Error de validación:", errors);
+            const errorMessage = errors.default || Object.values(errors).flat().join(' ');
+            toast.add({ severity: 'error', summary: 'Error al Procesar', detail: errorMessage, life: 7000 });
+        }
+    });
+};
 </script>
 
 <template>
 
     <Head title="Punto de Venta" />
-
     <AppLayout>
         <div class="flex flex-col lg:flex-row gap-4 h-[calc(100vh-115px)]">
-            <!-- Columna Izquierda: Productos -->
             <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden">
                 <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
+                    @add-to-cart="addToCart" @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
                     class="h-full" />
             </div>
-
-            <!-- Columna Derecha: Carrito -->
             <div class="lg:w-1/3 xl:w-1/4 h-full overflow-hidden">
-                <ShoppingCart :items="cartItems" :client="selectedClient" class="h-full" />
+                <ShoppingCart :items="cartItems" :client="selectedClient" :customers="localCustomers"
+                    :default-customer="defaultCustomer" @update-quantity="updateCartQuantity"
+                    @update-price="updateCartPrice" @remove-item="removeCartItem" @clear-cart="clearCart"
+                    @select-customer="handleSelectCustomer" @customer-created="handleCustomerCreated"
+                    @save-cart="saveCartToPending" @checkout="handleCheckout" class="h-full" />
             </div>
         </div>
     </AppLayout>

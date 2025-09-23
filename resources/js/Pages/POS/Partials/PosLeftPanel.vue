@@ -1,9 +1,5 @@
 <script setup>
 import { ref } from 'vue';
-import InputText from 'primevue/inputtext';
-import IconField from 'primevue/iconfield';
-import InputIcon from 'primevue/inputicon';
-
 import ProductCard from './ProductCard.vue';
 import CategoryFilters from './CategoryFilters.vue';
 import PendingCartsPopover from './PendingCartsPopover.vue';
@@ -14,6 +10,8 @@ const props = defineProps({
     categories: Array,
     pendingCarts: Array,
 });
+
+const emit = defineEmits(['addToCart', 'resumeCart', 'deletePendingCart']);
 
 const op = ref();
 const toggleOverlay = (event) => {
@@ -29,9 +27,9 @@ const showProductDetails = (product) => {
     isDetailModalVisible.value = true;
 };
 
+// La lógica de añadir al carrito se emite hacia el padre
 const handleAddToCart = (product) => {
-    // Aquí irá la lógica para agregar el producto al carrito principal
-    console.log('Añadir al carrito:', product.name);
+    emit('addToCart', product);
 };
 
 </script>
@@ -56,7 +54,11 @@ const handleAddToCart = (product) => {
                             class="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2"></Badge>
                     </button>
                     <Popover ref="op">
-                        <PendingCartsPopover :carts="pendingCarts" />
+                        <PendingCartsPopover 
+                            :carts="pendingCarts" 
+                            @resume-cart="$emit('resumeCart', $event)"
+                            @delete-cart="$emit('deletePendingCart', $event)"
+                        />
                     </Popover>
                 </div>
             </div>

@@ -34,6 +34,7 @@
         "primeicons": "^7.0.0",
         "primevue": "^4.3.9",
         "quill": "^2.0.3",
-        "tailwindcss-primeui": "^0.6.1"
+        "tailwindcss-primeui": "^0.6.1",
+        "uuid": "^13.0.0"
     }
 }

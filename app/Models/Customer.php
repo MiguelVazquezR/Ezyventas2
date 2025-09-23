@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -30,6 +31,21 @@ class Customer extends Model
             'balance' => 'decimal:2',
             'credit_limit' => 'decimal:2',
         ];
+    }
+
+    // --- ACCESORS ---
+
+    /**
+     * Calcula el crédito disponible del cliente.
+     * Si el balance es negativo (deuda), se resta del límite de crédito.
+     */
+    protected function availableCredit(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->balance < 0
+                ? $this->credit_limit + $this->balance // balance es negativo, así que se suma
+                : $this->credit_limit,
+        );
     }
 
     /*

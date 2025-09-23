@@ -1,8 +1,4 @@
 <script setup>
-import Dialog from 'primevue/dialog';
-import Button from 'primevue/button';
-import Badge from 'primevue/badge';
-
 const props = defineProps({
     product: Object,
     visible: Boolean,
