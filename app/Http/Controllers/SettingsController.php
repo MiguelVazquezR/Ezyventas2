@@ -18,7 +18,7 @@ class SettingsController extends Controller
         $branch = $user->branch;
         $subscription = $branch->subscription;
 
-        $definitions = SettingDefinition::all();
+        $definitions = SettingDefinition::orderBy('name')->get();
 
         $userValues = $user->settings()->pluck('value', 'setting_definition_id');
         $branchValues = $branch->settings()->pluck('value', 'setting_definition_id');
@@ -38,10 +38,9 @@ class SettingsController extends Controller
                     break;
             }
             
-            // Si el valor no está personalizado, usa el default_value, a menos que sea un 'select' o 'list'.
             if ($value === null) {
                  if ($definition->type === 'list' || $definition->type === 'select') {
-                    $value = '[]'; // Un array vacío como string JSON
+                    $value = '[]'; 
                  } else {
                     $value = $definition->default_value;
                  }
@@ -49,14 +48,12 @@ class SettingsController extends Controller
             
             $definition->value = $value;
 
-            // Procesar el valor final para el frontend
             if ($definition->type === 'boolean') {
                 $definition->value = filter_var($definition->value, FILTER_VALIDATE_BOOLEAN);
             } elseif ($definition->type === 'list') {
                 $decoded = json_decode($definition->value, true);
                 $definition->value = is_array($decoded) ? $decoded : [];
             } elseif ($definition->type === 'select') {
-                 // Para 'select', el default_value contiene las opciones
                 $options = json_decode($definition->default_value, true);
                 $definition->options = is_array($options) ? $options : [];
             }
@@ -83,17 +80,6 @@ class SettingsController extends Controller
             $definition = SettingDefinition::where('key', $key)->first();
             
             if ($definition) {
-                $finalValue = $value;
-
-                if ($definition->type === 'boolean') {
-                    $finalValue = filter_var($value, FILTER_VALIDATE_BOOLEAN) ? 'true' : 'false';
-                } elseif ($definition->type === 'list' && is_array($value)) {
-                    $finalValue = json_encode($value);
-                } elseif ($definition->type === 'file' && $value instanceof \Illuminate\Http\UploadedFile) {
-                    $path = $value->store('settings_files', 'public');
-                    $finalValue = Storage::url($path);
-                }
-
                 $entity = null;
                 switch ($definition->level) {
                     case 'user': $entity = $user; break;
@@ -101,12 +87,31 @@ class SettingsController extends Controller
                     case 'subscription': $entity = $subscription; break;
                 }
 
-                if ($entity) {
-                    $entity->settings()->updateOrCreate(
-                        ['setting_definition_id' => $definition->id],
-                        ['value' => $finalValue]
-                    );
+                if (!$entity) continue;
+
+                $finalValue = $value;
+
+                if ($definition->type === 'file' && $value instanceof \Illuminate\Http\UploadedFile) {
+                    // AÑADIDO: Lógica para eliminar el archivo anterior si existe.
+                    $existingSetting = $entity->settings()->where('setting_definition_id', $definition->id)->first();
+                    if ($existingSetting && $existingSetting->value) {
+                        $oldPath = str_replace(Storage::url(''), '', $existingSetting->value);
+                        Storage::disk('public')->delete($oldPath);
+                    }
+                    
+                    $path = $value->store('settings_files', 'public');
+                    $finalValue = Storage::url($path);
+
+                } elseif ($definition->type === 'boolean') {
+                    $finalValue = filter_var($value, FILTER_VALIDATE_BOOLEAN) ? 'true' : 'false';
+                } elseif ($definition->type === 'list' && is_array($value)) {
+                    $finalValue = json_encode($value);
                 }
+
+                $entity->settings()->updateOrCreate(
+                    ['setting_definition_id' => $definition->id],
+                    ['value' => $finalValue]
+                );
             }
         }
 
@@ -115,7 +120,6 @@ class SettingsController extends Controller
 
     private function handleDefinitionRequestData(array $data): array
     {
-        // Si el tipo es 'select' o 'list' y el valor por defecto es un array, lo convierte a JSON.
         if (in_array($data['type'], ['select', 'list']) && is_array($data['default_value'])) {
             $data['default_value'] = json_encode($data['default_value']);
         } elseif (!isset($data['default_value'])) {
@@ -158,4 +162,3 @@ class SettingsController extends Controller
         return redirect()->back()->with('success', 'Configuración actualizada con éxito.');
     }
 }
-
