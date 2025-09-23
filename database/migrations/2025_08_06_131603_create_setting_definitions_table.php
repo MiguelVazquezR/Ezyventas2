@@ -14,6 +14,7 @@ return new class extends Migration
             $table->string('name');
             $table->text('description')->nullable();
             $table->string('module');
+            $table->string('level')->default('branch');
             $table->string('type'); // boolean, string, integer, text
             $table->string('default_value')->nullable();
             $table->timestamps();

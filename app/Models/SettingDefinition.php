@@ -12,7 +12,7 @@ class SettingDefinition extends Model
     
     protected $table = 'setting_definitions';
 
-    protected $fillable = ['key', 'name', 'description', 'module', 'type', 'default_value'];
+    protected $fillable = ['key', 'name', 'description', 'module', 'level', 'type', 'default_value'];
 
     public function values(): HasMany
     {

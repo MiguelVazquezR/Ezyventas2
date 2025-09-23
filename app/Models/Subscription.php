@@ -6,6 +6,7 @@ use App\Enums\SubscriptionStatus;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class Subscription extends Model
 {
@@ -74,5 +75,13 @@ class Subscription extends Model
             'subscription_id', // Foreign key on SubscriptionVersion table...
             'subscription_version_id' // Foreign key on SubscriptionPayment table... 
         );
+    }
+
+    /**
+     * AÑADIDO: Obtiene todas las configuraciones personalizadas de la suscripción.
+     */
+    public function settings(): MorphMany
+    {
+        return $this->morphMany(SettingValue::class, 'configurable');
     }
 }

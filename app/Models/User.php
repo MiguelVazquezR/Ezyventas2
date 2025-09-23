@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -126,5 +127,13 @@ class User extends Authenticatable
     public function cashRegisterSessions(): HasMany
     {
         return $this->hasMany(CashRegisterSession::class);
+    }
+
+    /**
+     * AÑADIDO: Obtiene todas las configuraciones personalizadas del usuario.
+     */
+    public function settings(): MorphMany
+    {
+        return $this->morphMany(SettingValue::class, 'configurable');
     }
 }

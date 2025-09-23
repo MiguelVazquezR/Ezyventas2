@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('setting_values', function (Blueprint $table) {
             $table->id();
             $table->foreignId('setting_definition_id')->constrained('setting_definitions')->onDelete('cascade');
-            $table->morphs('settable'); // branch_id o user_id
+            $table->morphs('configurable'); // suscription_id, branch_id, user_id
             $table->text('value');
             $table->timestamps();
         });
