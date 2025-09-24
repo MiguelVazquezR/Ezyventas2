@@ -37,7 +37,7 @@ const actionItems = ref([
 
 const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text).then(() => {
-        toast.add({ severity: 'success', summary: 'Copiado', detail: 'SKU copiado al portapapeles', life: 3000 });
+        toast.add({ severity: 'success', summary: 'Copiado', detail: 'SKU copiado al portapapeles', life: 7000 });
     });
 };
 

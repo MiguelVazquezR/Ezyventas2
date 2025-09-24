@@ -33,6 +33,8 @@ class PointOfSaleController extends Controller
             'customers' => $this->getCustomersData(),
             'defaultCustomer' => $this->getDefaultCustomerData(),
             'filters' => $request->only(['search', 'category']),
+            // CAMBIO: Se envían todas las promociones activas al frontend.
+            'activePromotions' => $this->getActivePromotions(),
         ]);
     }
 
@@ -101,9 +103,12 @@ class PointOfSaleController extends Controller
                     }
 
                     $newTransaction->items()->create([
-                        'itemable_id' => $itemableId, 'itemable_type' => $itemableType,
-                        'description' => $item['description'], 'quantity' => $item['quantity'],
-                        'unit_price' => $item['unit_price'], 'line_total' => $item['quantity'] * $item['unit_price'],
+                        'itemable_id' => $itemableId,
+                        'itemable_type' => $itemableType,
+                        'description' => $item['description'],
+                        'quantity' => $item['quantity'],
+                        'unit_price' => $item['unit_price'],
+                        'line_total' => $item['quantity'] * $item['unit_price'],
                     ]);
 
                     if (!empty($item['product_attribute_id'])) {
@@ -114,11 +119,13 @@ class PointOfSaleController extends Controller
 
                 foreach ($validated['payments'] as $payment) {
                     $newTransaction->payments()->create([
-                        'amount' => $payment['amount'], 'payment_method' => $payment['method'],
-                        'payment_date' => now(), 'status' => 'completado',
+                        'amount' => $payment['amount'],
+                        'payment_method' => $payment['method'],
+                        'payment_date' => now(),
+                        'status' => 'completado',
                     ]);
                 }
-                
+
                 if ($customer) {
                     $totalChargedToBalance = $remainingDue + $amountFromBalance;
                     if ($totalChargedToBalance > 0) {
@@ -129,8 +136,7 @@ class PointOfSaleController extends Controller
                 return $newTransaction;
             });
 
-            return redirect()->route('dashboard')->with('success', 'Venta registrada con éxito. Folio: ' . $transaction->folio);
-
+            return redirect()->back()->with('success', 'Venta registrada con éxito. Folio: ' . $transaction->folio);
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar la venta: ' . $e->getMessage());
         }
@@ -152,13 +158,14 @@ class PointOfSaleController extends Controller
 
         return $query->with(['media', 'category:id,name', 'productAttributes'])->get()
             ->map(function ($product) {
-                $promotionData = $this->getAppliedPromotion($product);
+                $promotionData = $this->getPromotionData($product);
                 $variantImages = $product->getMedia('product-variant-images');
 
                 return [
                     'id' => $product->id,
                     'name' => $product->name,
                     'price' => $promotionData['price'],
+                    'original_price' => $promotionData['original_price'],
                     'stock' => $product->current_stock,
                     'category' => $product->category->name ?? 'Sin categoría',
                     'image' => $product->getFirstMediaUrl('product-general-images') ?: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' . urlencode($product->name),
@@ -166,45 +173,83 @@ class PointOfSaleController extends Controller
                     'sku' => $product->sku,
                     'variants' => $this->mapVariants($product->productAttributes),
                     'variant_combinations' => $this->mapVariantCombinations($product, $variantImages),
-                    'promotion' => $promotionData['promotion'],
+                    'promotions' => $promotionData['promotions'],
                 ];
             });
     }
-    
-    private function getAppliedPromotion(Product $product): array
+
+    private function getPromotionData(Product $product): array
     {
         $now = Carbon::now();
-        $promotion = Promotion::where('is_active', true)
-            ->where('type', PromotionType::ITEM_DISCOUNT)
-            ->where('start_date', '<=', $now)
-            ->where(fn($q) => $q->where('end_date', '>=', $now)->orWhereNull('end_date'))
-            ->whereHas('effects', function ($query) use ($product) {
-                $query->where('itemable_type', Product::class)
-                      ->where('itemable_id', $product->id);
-            })
-            ->with('effects')
-            ->orderBy('priority', 'desc')->first();
-
-        if (!$promotion) {
-            return ['price' => (float)$product->selling_price, 'promotion' => null];
-        }
-
-        $effect = $promotion->effects->where('itemable_id', $product->id)->first();
         $originalPrice = (float)$product->selling_price;
-        $newPrice = $originalPrice;
 
-        switch ($effect->type) {
-            case PromotionEffectType::FIXED_DISCOUNT: $newPrice = $originalPrice - $effect->value; break;
-            case PromotionEffectType::PERCENTAGE_DISCOUNT: $newPrice = $originalPrice * (1 - ($effect->value / 100)); break;
-            case PromotionEffectType::SET_PRICE: $newPrice = $effect->value; break;
+        $promotions = Promotion::where('is_active', true)
+            ->where(fn($q) => $q->where('start_date', '<=', $now)->orWhereNull('start_date'))
+            ->where(fn($q) => $q->where('end_date', '>=', $now)->orWhereNull('end_date'))
+            ->where(function ($query) use ($product) {
+                $query->whereHas('rules', function ($q) use ($product) {
+                    $q->where('itemable_type', Product::class)->where('itemable_id', $product->id);
+                })->orWhereHas('effects', function ($q) use ($product) {
+                    $q->where('itemable_type', Product::class)->where('itemable_id', $product->id);
+                });
+            })
+            ->with(['rules.itemable:id,name', 'effects.itemable:id,name'])
+            ->orderBy('priority', 'desc')
+            ->get();
+
+        if ($promotions->isEmpty()) {
+            return ['price' => $originalPrice, 'original_price' => $originalPrice, 'promotions' => []];
         }
-        
+
+        $bestPrice = $originalPrice;
+
+        foreach ($promotions->where('type', PromotionType::ITEM_DISCOUNT) as $promo) {
+            $effect = $promo->effects->where('itemable_id', $product->id)->first();
+            if (!$effect) continue;
+
+            $promoPrice = $originalPrice;
+            switch ($effect->type) {
+                case PromotionEffectType::FIXED_DISCOUNT: $promoPrice = $originalPrice - $effect->value; break;
+                case PromotionEffectType::PERCENTAGE_DISCOUNT: $promoPrice = $originalPrice * (1 - ($effect->value / 100)); break;
+                case PromotionEffectType::SET_PRICE: $promoPrice = $effect->value; break;
+            }
+            $promoPrice = max(0, (float)$promoPrice);
+            if ($promoPrice < $bestPrice) {
+                $bestPrice = $promoPrice;
+            }
+        }
+
+        $formattedPromotions = $promotions->map(function ($p) {
+            return [
+                'name' => $p->name,
+                'description' => $p->description,
+                'type' => $p->type->value,
+                'rules' => $p->rules->map(fn($r) => ['type' => $r->type->value, 'value' => $r->value, 'itemable' => $r->itemable ? ['name' => $r->itemable->name] : null]),
+                'effects' => $p->effects->map(fn($e) => ['type' => $e->type->value, 'value' => $e->value, 'itemable' => $e->itemable ? ['name' => $e->itemable->name] : null]),
+            ];
+        })->values()->all();
+
         return [
-            'price' => max(0, (float)$newPrice),
-            'promotion' => ['name' => $promotion->name, 'original_price' => $originalPrice]
+            'price' => $bestPrice,
+            'original_price' => ($bestPrice < $originalPrice) ? $originalPrice : $bestPrice,
+            'promotions' => $formattedPromotions,
         ];
     }
-    
+
+    private function getActivePromotions()
+    {
+        $now = Carbon::now();
+        $subscriptionId = Auth::user()->branch->subscription_id;
+
+        return Promotion::where('subscription_id', $subscriptionId)
+            ->where('is_active', true)
+            ->where(fn($q) => $q->where('start_date', '<=', $now)->orWhereNull('start_date'))
+            ->where(fn($q) => $q->where('end_date', '>=', $now)->orWhereNull('end_date'))
+            ->where('type', '!=', PromotionType::ITEM_DISCOUNT)
+            ->with(['rules.itemable:id,name', 'effects.itemable:id,name'])
+            ->get();
+    }
+
     private function mapVariants($productAttributes)
     {
         if ($productAttributes->isEmpty()) return new \stdClass();
@@ -225,7 +270,7 @@ class PointOfSaleController extends Controller
             $imageUrl = null;
             if ($variantImages->isNotEmpty()) {
                 foreach ($attr->attributes as $optionValue) {
-                    $foundImage = $variantImages->first(fn ($media) => $media->getCustomProperty('variant_option') === $optionValue);
+                    $foundImage = $variantImages->first(fn($media) => $media->getCustomProperty('variant_option') === $optionValue);
                     if ($foundImage) {
                         $imageUrl = $foundImage->getUrl();
                         break;
@@ -249,20 +294,23 @@ class PointOfSaleController extends Controller
         $subscriptionId = Auth::user()->branch->subscription_id;
         $categories = Category::where('subscription_id', $subscriptionId)
             ->where('type', 'product')
-            ->withCount(['products' => fn ($q) => $q->where('branch_id', $branchId)])
+            ->withCount(['products' => fn($q) => $q->where('branch_id', $branchId)])
             ->get();
         $totalProducts = Product::where('branch_id', $branchId)->count();
-        $formattedCategories = $categories->map(fn ($cat) => ['id' => $cat->id, 'name' => $cat->name, 'products_count' => $cat->products_count]);
+        $formattedCategories = $categories->map(fn($cat) => ['id' => $cat->id, 'name' => $cat->name, 'products_count' => $cat->products_count]);
         return collect([['id' => null, 'name' => 'Todos', 'products_count' => $totalProducts]])->merge($formattedCategories);
     }
-    
+
     private function getCustomersData()
     {
         $branchId = Auth::user()->branch_id;
         return Customer::where('branch_id', $branchId)->select('id', 'name', 'phone', 'balance', 'credit_limit')->orderBy('name')->get()
-            ->map(fn ($c) => [
-                'id' => $c->id, 'name' => $c->name, 'phone' => $c->phone,
-                'balance' => (float) $c->balance, 'credit_limit' => (float) $c->credit_limit,
+            ->map(fn($c) => [
+                'id' => $c->id,
+                'name' => $c->name,
+                'phone' => $c->phone,
+                'balance' => (float) $c->balance,
+                'credit_limit' => (float) $c->credit_limit,
                 'available_credit' => (float) $c->available_credit,
             ]);
     }
@@ -271,7 +319,7 @@ class PointOfSaleController extends Controller
     {
         return ['id' => null, 'name' => 'Público en General', 'phone' => '', 'balance' => 0.0, 'credit_limit' => 0.0, 'available_credit' => 0.0];
     }
-    
+
     private function generateFolio(): string
     {
         $prefix = strtoupper(substr(Auth::user()->branch->name, 0, 4));

@@ -6,6 +6,7 @@ use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\ExpenseCategory;
+use App\Models\Product;
 use App\Models\Provider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -76,5 +77,22 @@ class QuickCreateController extends Controller
         ]));
 
         return response()->json($customer);
+    }
+
+    public function storeProduct(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'selling_price' => 'required|numeric|min:0',
+            'current_stock' => 'required|integer|min:0',
+            'sku' => 'nullable|string|max:255|unique:products,sku',
+        ]);
+
+        $product = Product::create(array_merge($validated, [
+            'branch_id' => Auth::user()->branch_id,
+            // Puedes añadir otros valores por defecto aquí si es necesario
+        ]));
+
+        return response()->json($product);
     }
 }

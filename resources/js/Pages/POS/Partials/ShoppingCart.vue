@@ -10,6 +10,7 @@ const props = defineProps({
     client: Object,
     customers: Array,
     defaultCustomer: Object,
+    activePromotions: Array,
 });
 
 const emit = defineEmits(['updateQuantity', 'updatePrice', 'removeItem', 'clearCart', 'selectCustomer', 'customerCreated', 'saveCart', 'checkout']);
@@ -33,31 +34,69 @@ const clearCustomer = () => emit('selectCustomer', null);
 const displayedCustomer = computed(() => props.client || props.defaultCustomer);
 const handleCustomerCreated = (newCustomer) => emit('customerCreated', newCustomer);
 
-// --- CÁLCULOS DE TOTALES CON PROMOCIONES ---
-const subtotal = computed(() => {
-    return props.items.reduce((total, item) => {
-        // Usa el precio original si existe, si no, el precio normal.
-        const priceToSum = item.original_price || item.price;
-        return total + (priceToSum * item.quantity);
-    }, 0);
-});
 
+// --- LÓGICA DE CÁLCULO DE TOTALES Y PROMOCIONES ---
+
+// Descuentos aplicados a nivel de ítem (ITEM_DISCOUNT)
 const itemsDiscount = computed(() => {
     return props.items.reduce((total, item) => {
-        // Solo calcula el descuento si el item tiene un precio original (es decir, está en oferta)
-        if (item.original_price) {
-            const discountPerItem = item.original_price - item.price;
-            return total + (discountPerItem * item.quantity);
-        }
-        return total;
+        const discountPerItem = (item.original_price || item.price) - item.price;
+        return total + (discountPerItem * item.quantity);
     }, 0);
 });
 
-const discount = ref(0); // Para descuentos manuales/globales
-const totalDiscount = computed(() => itemsDiscount.value + discount.value);
-const total = computed(() => subtotal.value - totalDiscount.value);
-// --- FIN DE CÁLCULOS ---
+// Descuentos dinámicos aplicados a nivel de carrito (BOGO, BUNDLE)
+const cartLevelDiscounts = computed(() => {
+    const applied = [];
+    if (!props.activePromotions || props.items.length === 0) return applied;
 
+    props.activePromotions.forEach(promo => {
+        // Lógica para BOGO (Compre X, lleve Y gratis)
+        if (promo.type === 'BOGO') {
+            const rule = promo.rules.find(r => r.type === 'REQUIRES_PRODUCT_QUANTITY');
+            const effect = promo.effects.find(e => e.type === 'FREE_ITEM');
+            if (!rule || !effect) return;
+
+            const itemInCart = props.items.find(i => i.id === rule.itemable_id);
+            if (itemInCart && itemInCart.quantity >= parseInt(rule.value, 10)) {
+                const freeItemInCart = props.items.find(i => i.id === effect.itemable_id);
+                if (freeItemInCart) {
+                    const timesApplied = Math.floor(itemInCart.quantity / parseInt(rule.value, 10));
+                    const actualFreeQty = Math.min(timesApplied * parseInt(effect.value, 10), freeItemInCart.quantity);
+                    if (actualFreeQty > 0) {
+                        applied.push({ name: promo.name, amount: freeItemInCart.price * actualFreeQty });
+                    }
+                }
+            }
+        }
+
+        // Lógica para BUNDLE_PRICE (Paquete por precio fijo)
+        if (promo.type === 'BUNDLE_PRICE') {
+            const rules = promo.rules.filter(r => r.type === 'REQUIRES_PRODUCT');
+            const effect = promo.effects.find(e => e.type === 'SET_PRICE');
+            if (rules.length === 0 || !effect) return;
+
+            const requiredItemIds = rules.map(r => r.itemable_id);
+            if (requiredItemIds.every(id => props.items.some(cartItem => cartItem.id === id))) {
+                const originalBundlePrice = requiredItemIds.reduce((sum, id) => {
+                    const item = props.items.find(cartItem => cartItem.id === id);
+                    return sum + (item.original_price || item.price);
+                }, 0);
+                const discountAmount = originalBundlePrice - parseFloat(effect.value);
+                if (discountAmount > 0) {
+                    applied.push({ name: promo.name, amount: discountAmount });
+                }
+            }
+        }
+    });
+    return applied;
+});
+
+const cartDiscountAmount = computed(() => cartLevelDiscounts.value.reduce((sum, promo) => sum + promo.amount, 0));
+const subtotal = computed(() => props.items.reduce((total, item) => total + ((item.original_price || item.price) * item.quantity), 0));
+const manualDiscount = ref(0); // Mantenemos descuento manual por si se necesita
+const totalDiscount = computed(() => itemsDiscount.value + cartDiscountAmount.value + manualDiscount.value);
+const total = computed(() => subtotal.value - totalDiscount.value);
 
 const isPaymentModalVisible = ref(false);
 
@@ -85,7 +124,6 @@ const handlePaymentSubmit = (paymentData) => {
         use_balance: useBalance.value,
     });
 };
-
 </script>
 
 <template>
@@ -96,7 +134,7 @@ const handlePaymentSubmit = (paymentData) => {
             <div class="flex justify-between items-center pb-4 border-b border-gray-200 dark:border-gray-700">
                 <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200">Carrito</h2>
                 <div class="flex items-center gap-2">
-                    <Button @click="$emit('saveCart')" :disabled="items.length === 0" icon="pi pi-save" rounded text severity="secondary" v-tooltip.bottom="'Guardar para después'"/>
+                    <Button @click="$emit('saveCart', { total: total })" :disabled="items.length === 0" icon="pi pi-save" rounded text severity="secondary" v-tooltip.bottom="'Guardar para después'"/>
                     <Button @click="requireConfirmation($event)" :disabled="items.length === 0" icon="pi pi-trash" rounded text severity="danger" v-tooltip.bottom="'Limpiar carrito'"/>
                 </div>
             </div>
@@ -146,7 +184,19 @@ const handlePaymentSubmit = (paymentData) => {
             <!-- Detalles del Pago -->
             <div class="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
                 <div class="flex justify-between items-center text-gray-600 dark:text-gray-300"><span>Subtotal</span><span class="font-medium">${{ subtotal.toFixed(2) }}</span></div>
-                <div v-if="totalDiscount > 0" class="flex justify-between items-center text-red-500"><span>Descuento</span><span class="font-medium">-${{ totalDiscount.toFixed(2) }}</span></div>
+                
+                <div v-if="totalDiscount > 0" class="text-red-500">
+                    <div class="flex justify-between items-center">
+                        <span>Descuentos</span>
+                        <span class="font-medium">-${{ totalDiscount.toFixed(2) }}</span>
+                    </div>
+                    <!-- Detalle de descuentos de carrito -->
+                    <div v-for="promo in cartLevelDiscounts" :key="promo.name" class="flex justify-between items-center pl-4 text-xs">
+                        <span>{{ promo.name }}</span>
+                        <span>-${{ promo.amount.toFixed(2) }}</span>
+                    </div>
+                </div>
+
                 <div v-if="amountFromBalance > 0" class="flex justify-between items-center text-green-600"><span>Saldo Utilizado</span><span class="font-medium">-${{ amountFromBalance.toFixed(2) }}</span></div>
                 <Divider v-if="amountFromBalance > 0" />
                 <div class="flex justify-between items-center font-bold text-lg text-gray-800 dark:text-gray-100"><span>Total</span><span>${{ finalTotalToPay.toFixed(2) }}</span></div>

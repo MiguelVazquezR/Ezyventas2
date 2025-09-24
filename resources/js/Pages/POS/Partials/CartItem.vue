@@ -67,10 +67,11 @@ watch(() => props.item.price, (newVal) => {
                 <Button icon="pi pi-check" text rounded size="small" @click="applyPriceChange" />
                 <Button icon="pi pi-times" text rounded size="small" severity="secondary" @click="cancelPriceEdit" />
             </div>
-            <div v-else class="flex items-center gap-2">
+           <div v-else class="flex items-center gap-2">
                 <p class="text-sm text-gray-600 dark:text-gray-400">${{ item.price.toFixed(2) }}</p>
-                <Button @click="isEditingPrice = true" icon="pi pi-pencil" rounded text severity="secondary"
-                    style="width: 1.5rem; height: 1.5rem" />
+                <!-- CAMBIO: Muestra el precio original tachado -->
+                <del v-if="item.original_price && item.original_price > item.price" class="text-xs text-gray-400">${{ item.original_price.toFixed(2) }}</del>
+                <Button @click="isEditingPrice = true" icon="pi pi-pencil" rounded text severity="secondary" style="width: 1.5rem; height: 1.5rem" />
             </div>
 
             <p class="text-xs text-gray-500"

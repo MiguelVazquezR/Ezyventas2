@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { Head, useForm, router } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PosLeftPanel from './Partials/PosLeftPanel.vue';
@@ -13,6 +13,7 @@ const props = defineProps({
     customers: Array,
     defaultCustomer: Object,
     filters: Object,
+    activePromotions: Array,
 });
 
 const toast = useToast();
@@ -22,11 +23,7 @@ const selectedClient = ref(null);
 
 const addToCart = (data) => {
     const { product, variant } = data;
-
-    const cartItemId = variant 
-        ? `prod-${product.id}-variant-${variant.id}`
-        : `prod-${product.id}`;
-
+    const cartItemId = variant ? `prod-${product.id}-variant-${variant.id}` : `prod-${product.id}`;
     const existingItem = cartItems.value.find(item => item.cartItemId === cartItemId);
     const stock = variant ? variant.stock : product.stock;
 
@@ -34,22 +31,19 @@ const addToCart = (data) => {
         if (existingItem.quantity < stock) {
             existingItem.quantity++;
         } else {
-            toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
+            toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 7000 });
         }
     } else {
         if (stock > 0) {
-            const variantDescription = variant 
-                ? ' (' + Object.entries(variant.attributes).map(([key, value]) => `${key}: ${value}`).join(', ') + ')'
-                : '';
-
+            const variantDescription = variant ? ' (' + Object.entries(variant.attributes).map(([key, value]) => `${key}: ${value}`).join(', ') + ')' : '';
             const newItem = {
                 ...product,
                 cartItemId: cartItemId,
                 quantity: 1,
-                original_price: product.promotion ? product.promotion.original_price : product.price,
+                original_price: product.original_price,
                 ...(variant && {
                     price: product.price + variant.price_modifier,
-                    original_price: (product.promotion ? product.promotion.original_price : product.price) + variant.price_modifier,
+                    original_price: product.original_price + variant.price_modifier,
                     sku: `${product.sku}-${variant.sku_suffix}`,
                     stock: variant.stock,
                     selectedVariant: variant.attributes,
@@ -60,7 +54,7 @@ const addToCart = (data) => {
             };
             cartItems.value.push(newItem);
         } else {
-            toast.add({ severity: 'warn', summary: 'Sin Stock', detail: 'Este producto o variante no tiene stock.', life: 3000 });
+            toast.add({ severity: 'warn', summary: 'Sin Stock', detail: 'Este producto o variante no tiene stock.', life: 7000 });
         }
     }
 };
@@ -82,7 +76,7 @@ const removeCartItem = (itemId) => {
 const clearCart = () => {
     cartItems.value = [];
     selectedClient.value = null;
-    toast.add({ severity: 'info', summary: 'Carrito Limpio', detail: 'Se han eliminado todos los productos del carrito.', life: 3000 });
+    toast.add({ severity: 'info', summary: 'Carrito Limpio', detail: 'Se han eliminado todos los productos del carrito.', life: 7000 });
 };
 
 const localCustomers = ref([...props.customers]);
@@ -91,26 +85,27 @@ const handleSelectCustomer = (customer) => selectedClient.value = customer;
 const handleCustomerCreated = (newCustomer) => {
     localCustomers.value = [...localCustomers.value, newCustomer];
     selectedClient.value = newCustomer;
-    toast.add({ severity: 'success', summary: 'Cliente Creado', detail: 'El nuevo cliente ha sido seleccionado.', life: 3000 });
+    toast.add({ severity: 'success', summary: 'Cliente Creado', detail: 'El nuevo cliente ha sido seleccionado.', life: 7000 });
 };
 
 const pendingCarts = ref([]);
-const saveCartToPending = () => {
+const saveCartToPending = (payload) => {
     if (cartItems.value.length === 0) return;
     pendingCarts.value.push({
         id: uuidv4(),
         client: selectedClient.value || props.defaultCustomer,
         items: JSON.parse(JSON.stringify(cartItems.value)),
         time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+        total: payload.total,
     });
     clearCart();
-    toast.add({ severity: 'success', summary: 'Carrito Guardado', detail: 'El carrito actual se movió a la lista de espera.', life: 3000 });
+    toast.add({ severity: 'success', summary: 'Carrito Guardado', detail: 'El carrito actual se movió a la lista de espera.', life: 7000 });
 };
 
 const resumePendingCart = (cartId) => {
     const cartToResume = pendingCarts.value.find(c => c.id === cartId);
     if (!cartToResume) return;
-    if (cartItems.value.length > 0) saveCartToPending();
+    if (cartItems.value.length > 0) saveCartToPending({ total: cartItems.value.reduce((acc, item) => acc + item.price * item.quantity, 0) });
     cartItems.value = cartToResume.items;
     selectedClient.value = cartToResume.client.id === props.defaultCustomer.id ? null : cartToResume.client;
     pendingCarts.value = pendingCarts.value.filter(c => c.id !== cartId);
@@ -118,7 +113,7 @@ const resumePendingCart = (cartId) => {
 
 const deletePendingCart = (cartId) => {
     pendingCarts.value = pendingCarts.value.filter(c => c.id !== cartId);
-    toast.add({ severity: 'warn', summary: 'Carrito Descartado', detail: 'Se ha eliminado un carrito de la lista de espera.', life: 3000 });
+    toast.add({ severity: 'warn', summary: 'Carrito Descartado', detail: 'Se ha eliminado un carrito de la lista de espera.', life: 7000 });
 };
 
 const form = useForm({
@@ -126,6 +121,31 @@ const form = useForm({
     subtotal: 0, total_discount: 0, total: 0,
     payments: [], use_balance: false,
 });
+
+const handleProductCreatedAndAddToCart = (newProduct) => {
+    // Se formatea el objeto del nuevo producto para que coincida con la estructura
+    // que espera la función `addToCart`.
+    const formattedProduct = {
+        id: newProduct.id,
+        name: newProduct.name,
+        price: parseFloat(newProduct.selling_price),
+        // Un producto nuevo no tiene promociones, su precio original es el de venta.
+        original_price: parseFloat(newProduct.selling_price),
+        // La función addToCart espera la propiedad 'stock'. El controlador devuelve 'current_stock'.
+        stock: newProduct.current_stock || 0,
+        category: 'Sin categoría', // Valor por defecto
+        image: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' + encodeURIComponent(newProduct.name), // Placeholder
+        description: newProduct.description || '',
+        sku: newProduct.sku || '',
+        // Se añaden las propiedades de variantes y promociones vacías para consistencia.
+        variants: {},
+        variant_combinations: [],
+        promotions: [],
+    };
+
+    addToCart({ product: formattedProduct });
+    router.reload({ preserveState: true });
+};
 
 const handleCheckout = (checkoutData) => {
     form.cartItems = cartItems.value.map(item => ({
@@ -168,6 +188,7 @@ const handleCheckout = (checkoutData) => {
                     @add-to-cart="addToCart" 
                     @resume-cart="resumePendingCart" 
                     @delete-cart="deletePendingCart"
+                    @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
                     class="h-full" 
                 />
             </div>
@@ -177,6 +198,7 @@ const handleCheckout = (checkoutData) => {
                     :client="selectedClient" 
                     :customers="localCustomers" 
                     :default-customer="defaultCustomer"
+                    :active-promotions="activePromotions"
                     @update-quantity="updateCartQuantity" 
                     @update-price="updateCartPrice"
                     @remove-item="removeCartItem" 

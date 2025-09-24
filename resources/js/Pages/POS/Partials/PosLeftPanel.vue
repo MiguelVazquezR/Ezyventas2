@@ -6,15 +6,25 @@ import ProductCard from './ProductCard.vue';
 import CategoryFilters from './CategoryFilters.vue';
 import PendingCartsPopover from './PendingCartsPopover.vue';
 import ProductDetailModal from './ProductDetailModal.vue';
+import CreateProductModal from '@/Components/CreateProductModal.vue';
+
+// PrimeVue components
+import Button from 'primevue/button';
+import InputText from 'primevue/inputtext';
+import InputIcon from 'primevue/inputicon';
+import IconField from 'primevue/iconfield';
+import Badge from 'primevue/badge';
+import Popover from 'primevue/popover';
 
 const props = defineProps({
     products: Array,
     categories: Array,
     pendingCarts: Array,
-    filters: Object, // Recibe los filtros actuales
+    filters: Object,
 });
 
-const emit = defineEmits(['addToCart', 'resumeCart', 'deleteCart']);
+// CAMBIO: Se añade el nuevo evento a la lista de emits
+const emit = defineEmits(['addToCart', 'resumeCart', 'deleteCart', 'productCreatedAndAddToCart']);
 
 const op = ref();
 const toggleOverlay = (event) => op.value.toggle(event);
@@ -27,7 +37,15 @@ const showProductDetails = (product) => {
     isDetailModalVisible.value = true;
 };
 
-// --- LÓGICA DE BÚSQUEDA Y FILTRADO ---
+// --- Lógica de creación rápida de producto ---
+const isCreateProductModalVisible = ref(false);
+
+// CAMBIO: Esta función ahora recibe el nuevo producto y lo emite hacia el componente padre
+const handleProductCreated = (newProduct) => {
+    emit('productCreatedAndAddToCart', newProduct);
+};
+
+// --- Lógica de búsqueda y filtrado ---
 const searchTerm = ref(props.filters.search || '');
 const selectedCategoryId = ref(props.filters.category || null);
 
@@ -42,10 +60,8 @@ const applyFilters = () => {
     });
 };
 
-// Debounce para el input de búsqueda
 watch(searchTerm, debounce(applyFilters, 300));
 
-// Función para manejar el filtro de categoría desde el componente hijo
 const handleCategoryFilter = (categoryId) => {
     selectedCategoryId.value = categoryId;
     applyFilters();
@@ -59,7 +75,7 @@ const handleCategoryFilter = (categoryId) => {
             <div class="flex justify-between items-center mb-4">
                 <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Registrar ventas</h1>
                 <div class="flex items-center gap-2">
-                    <Button icon="pi pi-plus" rounded text severity="secondary" v-tooltip.bottom="'Agregar nuevo producto'" />
+                    <Button @click="isCreateProductModalVisible = true" icon="pi pi-plus" rounded text severity="secondary" v-tooltip.bottom="'Agregar nuevo producto'" />
                     <Button icon="pi pi-th-large" rounded text severity="secondary" v-tooltip.bottom="'Cambiar vista'" />
                     <Button icon="pi pi-clock" rounded text severity="secondary" v-tooltip.bottom="'Ver historial de ventas'" />
                     <button @click="toggleOverlay" class="relative">
@@ -86,5 +102,6 @@ const handleCategoryFilter = (categoryId) => {
             </div>
         </div>
         <ProductDetailModal v-model:visible="isDetailModalVisible" :product="selectedProductForModal" @addToCart="$emit('addToCart', $event)" />
+        <CreateProductModal v-model:visible="isCreateProductModalVisible" @created="handleProductCreated" />
     </div>
 </template>

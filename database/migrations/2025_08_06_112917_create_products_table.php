@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->text('description')->nullable();
-            $table->string('sku')->unique()->comment('Stock Keeping Unit');
+            $table->string('sku')->nullable()->unique()->comment('Stock Keeping Unit');
             
             // Relaciones: si se borra una categoría/marca, el producto no se borra, solo se desvincula.
             $table->foreignId('category_id')->nullable()->constrained('categories')->onDelete('set null');
