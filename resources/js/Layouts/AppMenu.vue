@@ -58,7 +58,32 @@ const model = ref([
                     },
                 ]
             },
-            { label: 'Configuraciones', icon: 'pi pi-fw pi-cog', to: route('settings.index'), routeName: 'settings.*' },
+            {
+                label: 'Configuraciones', icon: 'pi pi-fw pi-cog',
+                items: [
+                    {
+                        label: 'Generales',
+                        icon: 'pi pi-key',
+                        to: route('settings.index'),
+                        routeName: 'settings.*',
+                        // permission: 'ver_roles_permisos'
+                    },
+                    {
+                        label: 'Roles y permisos',
+                        icon: 'pi pi-calendar-plus',
+                        to: route('roles.index'),
+                        routeName: 'roles.*',
+                        // permission: 'ver_festivos'
+                    },
+                    {
+                        label: 'Usuarios',
+                        icon: 'pi pi-user',
+                        to: route('users.index'),
+                        routeName: 'users.*',
+                        // permission: 'ver_festivos'
+                    },
+                ]
+            },
         ]
     },
 ]);

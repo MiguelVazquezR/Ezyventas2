@@ -160,8 +160,7 @@ class CashRegisterSessionController extends Controller
             $cashRegisterSession->cashRegister->update(['in_use' => false]);
         });
 
-        return redirect()->route('cash-registers.show', $cashRegisterSession->cash_register_id)
-            ->with('success', 'Corte de caja realizado con éxito.');
+        return redirect()->back()->with('success', 'Corte de caja realizado con éxito.');
     }
 
     /**

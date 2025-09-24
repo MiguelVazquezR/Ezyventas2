@@ -27,8 +27,6 @@ use App\Models\ServiceOrder;
 use App\Models\SessionCashMovement;
 use App\Models\Transaction;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class DatabaseSeeder extends Seeder
 {
@@ -36,7 +34,8 @@ class DatabaseSeeder extends Seeder
     {
         // 1. Llenar catálogos base
         $this->call(BusinessTypeSeeder::class);
-        $this->call(SettingDefinitionSeeder::class); // <-- Seeder agregado aquí
+        $this->call(SettingDefinitionSeeder::class);
+        $this->call(PermissionSeeder::class); // <-- Seeder de permisos agregado
         $this->seedGlobalBrandsAndProducts();
 
         // 2. Crear Suscriptores y sus datos privados
