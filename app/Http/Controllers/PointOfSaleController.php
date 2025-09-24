@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CashRegisterSessionStatus;
 use App\Enums\PromotionEffectType;
 use App\Enums\PromotionType;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
+use App\Models\CashRegister;
+use App\Models\CashRegisterSession;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Product;
@@ -24,8 +27,44 @@ class PointOfSaleController extends Controller
 {
     public function index(Request $request): Response
     {
+        $user = Auth::user();
         $search = $request->input('search');
         $categoryId = $request->input('category');
+
+        $activeSession = CashRegisterSession::where('user_id', $user->id)
+            ->where('status', CashRegisterSessionStatus::OPEN)
+            ->with([
+                'cashRegister:id,name',
+                'user:id,name',
+                'transactions' => function ($query) {
+                    $query->with(['payments', 'customer:id,name'])->latest();
+                },
+                'cashMovements' => function ($query) {
+                    $query->latest();
+                }
+            ])
+            ->first();
+        
+        // CAMBIO: Si hay una sesión activa, se calculan y adjuntan los totales por método de pago.
+        if ($activeSession) {
+            $paymentTotals = $activeSession->transactions
+                ->flatMap->payments
+                ->where('status', 'completado')
+                ->groupBy('payment_method.value')
+                ->map->sum('amount');
+
+            $activeSession->totals = [
+                'card' => $paymentTotals['tarjeta'] ?? 0,
+                'transfer' => $paymentTotals['transferencia'] ?? 0,
+            ];
+        }
+
+        $availableCashRegisters = null;
+        if (!$activeSession) {
+            $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
+                ->where('is_active', true)->where('in_use', false)
+                ->select('id', 'name')->get();
+        }
 
         return Inertia::render('POS/Index', [
             'products' => $this->getProductsData($search, $categoryId),
@@ -33,14 +72,16 @@ class PointOfSaleController extends Controller
             'customers' => $this->getCustomersData(),
             'defaultCustomer' => $this->getDefaultCustomerData(),
             'filters' => $request->only(['search', 'category']),
-            // CAMBIO: Se envían todas las promociones activas al frontend.
             'activePromotions' => $this->getActivePromotions(),
+            'activeSession' => $activeSession,
+            'availableCashRegisters' => $availableCashRegisters,
         ]);
     }
 
     public function checkout(Request $request)
     {
         $validated = $request->validate([
+            'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
             'cartItems' => 'required|array|min:1',
             'cartItems.*.id' => 'required|exists:products,id',
             'cartItems.*.product_attribute_id' => 'nullable|exists:product_attributes,id',
@@ -81,6 +122,7 @@ class PointOfSaleController extends Controller
                 }
 
                 $newTransaction = Transaction::create([
+                    'cash_register_session_id' => $validated['cash_register_session_id'],
                     'folio' => $this->generateFolio(),
                     'customer_id' => $customer?->id,
                     'branch_id' => $user->branch_id,
@@ -209,9 +251,15 @@ class PointOfSaleController extends Controller
 
             $promoPrice = $originalPrice;
             switch ($effect->type) {
-                case PromotionEffectType::FIXED_DISCOUNT: $promoPrice = $originalPrice - $effect->value; break;
-                case PromotionEffectType::PERCENTAGE_DISCOUNT: $promoPrice = $originalPrice * (1 - ($effect->value / 100)); break;
-                case PromotionEffectType::SET_PRICE: $promoPrice = $effect->value; break;
+                case PromotionEffectType::FIXED_DISCOUNT:
+                    $promoPrice = $originalPrice - $effect->value;
+                    break;
+                case PromotionEffectType::PERCENTAGE_DISCOUNT:
+                    $promoPrice = $originalPrice * (1 - ($effect->value / 100));
+                    break;
+                case PromotionEffectType::SET_PRICE:
+                    $promoPrice = $effect->value;
+                    break;
             }
             $promoPrice = max(0, (float)$promoPrice);
             if ($promoPrice < $bestPrice) {
