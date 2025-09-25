@@ -41,6 +41,7 @@ require __DIR__ . '/web/settings.php';
 require __DIR__ . '/web/roles.php';
 require __DIR__ . '/web/permissions.php';
 require __DIR__ . '/web/users.php';
+require __DIR__ . '/web/subscriptions.php';
 
 
 //artisan commands -------------------

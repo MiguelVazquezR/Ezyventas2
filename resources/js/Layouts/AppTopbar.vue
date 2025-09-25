@@ -1,23 +1,28 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
 import { useLayout } from '@/Layouts/composables/layout';
-import { Link, router, usePage, useForm } from '@inertiajs/vue3';
-import { useToast } from 'primevue/usetoast';
-import { format } from 'date-fns';
-import es from 'date-fns/locale/es';
+import { Link, router, usePage } from '@inertiajs/vue3';
 
 const { toggleMenu: toggleSidebar, toggleDarkMode, isDarkTheme } = useLayout();
 const user = usePage().props.auth.user;
-const page = usePage(); // Crear una referencia a usePage()
+const isOwner = usePage().props.auth.is_subscription_owner;
 
-// --- Lógica para el Menú de Usuario ---
 const userMenu = ref();
-const userMenuItems = ref([
-    { label: 'Perfil', icon: 'pi pi-user', command: () => router.get(route('profile.show')) },
-    { label: 'Cerrar sesión', icon: 'pi pi-sign-out', command: () => router.post(route('logout')) }
-]);
-const toggleUserMenu = (event) => { userMenu.value.toggle(event); };
 
+// El menú ahora es una propiedad computada para ser dinámico
+const userMenuItems = computed(() => {
+    const items = [
+        { label: 'Perfil', icon: 'pi pi-user', command: () => router.get(route('profile.show')) },
+    ];
+    // Se añade la opción de Suscripción condicionalmente
+    if (isOwner) {
+        items.push({ label: 'Suscripción', icon: 'pi pi-star', command: () => router.get(route('subscription.show')) });
+    }
+    items.push({ label: 'Cerrar sesión', icon: 'pi pi-sign-out', command: () => router.post(route('logout')) });
+    return items;
+});
+
+const toggleUserMenu = (event) => { userMenu.value.toggle(event); };
 const mobileUserMenuVisible = ref(false);
 
 </script>

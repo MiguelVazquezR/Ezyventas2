@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use Tightenco\Ziggy\Ziggy;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -33,22 +34,24 @@ class HandleInertiaRequests extends Middleware
      *
      * @return array<string, mixed>
      */
-     public function share(Request $request): array
+    public function share(Request $request): array
     {
         return array_merge(parent::share($request), [
             'auth' => function () use ($request) {
                 $user = $request->user();
+                if (!$user) {
+                    return null;
+                }
 
                 return [
-                    'user' => $request->user(),
-                    // Si el usuario está logueado, obtenemos todos sus permisos y los enviamos como un array.
-                    // Si no, enviamos un array vacío.
-                    'permissions' => [],
-                    // 'permissions' => $request->user() ? $request->user()->getAllPermissions()->pluck('name') : [],
+                    'user' => $user,
+                    // Se obtienen todos los permisos del usuario logueado.
+                    'permissions' => $user->getAllPermissions()->pluck('name'),
+                    // Se añade la bandera para saber si el usuario es el propietario de la suscripción.
+                    'is_subscription_owner' => !$user->roles()->exists(),
                 ];
             },
-            // Esto crea una propiedad 'flash' en tus props de Vue
-            // que contendrá los mensajes de éxito o error.
+            // Mensajes flash para notificaciones (toasts).
             'flash' => function () use ($request) {
                 return [
                     'success' => $request->session()->get('success'),

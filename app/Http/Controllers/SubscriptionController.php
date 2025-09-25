@@ -2,64 +2,35 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Subscription;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class SubscriptionController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Muestra la página de detalles de la suscripción para el propietario.
      */
-    public function index()
+    public function show(): Response
     {
-        //
-    }
+        $user = Auth::user();
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
+        // Lógica de negocio: El propietario de la suscripción es el usuario
+        // que no tiene roles asignados en una sucursal.
+        if ($user->roles()->exists()) {
+            abort(403, 'No tienes permiso para acceder a esta sección.');
+        }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        //
-    }
+        $subscription = $user->branch->subscription()->with([
+            'branches', // Carga todas las sucursales de la suscripción
+            'versions' => function ($query) {
+                $query->with(['items', 'payments'])->latest('start_date');
+            } // Carga las versiones con sus items y pagos, las más recientes primero
+        ])->firstOrFail();
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Subscription $subscription)
-    {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Subscription $subscription)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Subscription $subscription)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Subscription $subscription)
-    {
-        //
+        return Inertia::render('Subscription/Show', [
+            'subscription' => $subscription,
+        ]);
     }
 }
