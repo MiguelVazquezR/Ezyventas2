@@ -36,7 +36,7 @@ const model = ref([
                 label: 'Control financiero', icon: 'pi pi-fw pi-sun',
                 items: [
                     {
-                        label: 'Resumen',
+                        label: 'Reportes',
                         icon: 'pi pi-key',
                         to: route('financial-control.index'),
                         routeName: 'financial-control.*',

@@ -39,7 +39,7 @@ const closeModal = () => {
 
 <template>
     <Dialog :visible="visible" @update:visible="closeModal" :modal="true" header="Iniciar Sesión de Caja" :style="{ width: '30rem' }">
-        <!-- <div class="p-4 text-center">
+        <div class="p-4 text-center">
             <div class="bg-blue-100 dark:bg-blue-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
                 <i class="pi pi-box text-4xl text-blue-500"></i>
             </div>
@@ -47,7 +47,7 @@ const closeModal = () => {
             <p class="text-gray-600 dark:text-gray-400 mt-2">
                 Selecciona una caja e ingresa el monto inicial para comenzar a registrar ventas.
             </p>
-        </div> -->
+        </div>
 
         <form v-if="cashRegisters && cashRegisters.length > 0" @submit.prevent="submit" class="p-2 space-y-4">
              <div>

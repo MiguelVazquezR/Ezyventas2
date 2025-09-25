@@ -78,7 +78,6 @@ class PermissionSeeder extends Seeder
                 'settings.access' => 'Acceder a la configuración de la sucursal',
                 'settings.update' => 'Modificar la configuración',
             ],
-            // Agrega aquí otros módulos como Servicios, Cotizaciones, etc.
         ];
 
         // Creación de los permisos
