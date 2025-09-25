@@ -16,6 +16,7 @@ return new class extends Migration
             $table->string('name');
             $table->integer('quantity');
             $table->decimal('unit_price', 10, 2);
+            $table->string('billing_period')->default('mensual');
             $table->timestamps();
         });
     }

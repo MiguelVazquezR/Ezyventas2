@@ -7,16 +7,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
-class Subscription extends Model
+class Subscription extends Model implements HasMedia
 {
-    use HasFactory;
+    use HasFactory, InteractsWithMedia;
 
     protected $fillable = [
         'business_name',
         'business_type_id',
         'commercial_name',
-        'status',       
+        'status',
         'contact_phone',
         'contact_email',
         'tax_id',
@@ -25,9 +27,15 @@ class Subscription extends Model
     ];
 
     protected $casts = [
-        'address' => 'array', // [cite: 414]
-        'status' => SubscriptionStatus::class, // 
+        'address' => 'array',
+        'status' => SubscriptionStatus::class,
     ];
+
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('fiscal-documents')
+            ->singleFile(); // Solo permite un archivo a la vez
+    }
 
     /**
      * Get the route key for the model.
@@ -70,7 +78,7 @@ class Subscription extends Model
     {
         // This assumes a SubscriptionPayment belongs to a SubscriptionVersion
         return $this->hasManyThrough(
-            SubscriptionPayment::class, 
+            SubscriptionPayment::class,
             SubscriptionVersion::class,
             'subscription_id', // Foreign key on SubscriptionVersion table...
             'subscription_version_id' // Foreign key on SubscriptionPayment table... 

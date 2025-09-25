@@ -2,11 +2,14 @@
 
 namespace Database\Seeders;
 
+use App\Enums\BillingPeriod;
+use App\Enums\InvoiceStatus;
 use App\Models\User;
 use App\Models\Branch;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\CustomFieldDefinition;
+use App\Models\PlanItem;
 use App\Models\Product;
 use App\Models\Subscription;
 use App\Models\AttributeDefinition;
@@ -25,6 +28,9 @@ use App\Models\Quote;
 use App\Models\Service;
 use App\Models\ServiceOrder;
 use App\Models\SessionCashMovement;
+use App\Models\SubscriptionItem;
+use App\Models\SubscriptionPayment;
+use App\Models\SubscriptionVersion;
 use App\Models\Transaction;
 use Illuminate\Database\Seeder;
 
@@ -33,16 +39,19 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         // 1. Llenar catálogos base
-        $this->call(BusinessTypeSeeder::class);
-        $this->call(SettingDefinitionSeeder::class);
-        $this->call(PermissionSeeder::class); // <-- Seeder de permisos agregado
+        $this->call([
+            BusinessTypeSeeder::class,
+            SettingDefinitionSeeder::class,
+            PermissionSeeder::class,
+            PlanItemSeeder::class, // Seeder del catálogo de planes
+        ]);
+        
         $this->seedGlobalBrandsAndProducts();
 
         // 2. Crear Suscriptores y sus datos privados
         $ropaType = BusinessType::where('name', 'Tienda de Ropa y Accesorios')->first();
         $electronicaType = BusinessType::where('name', 'Tienda de Electrónica')->first();
 
-        // Crear una suscripción para cada tipo de negocio para asegurar datos de prueba consistentes
         $this->createSubscriptionData($ropaType);
         $this->createSubscriptionData($electronicaType);
     }
@@ -56,7 +65,18 @@ class DatabaseSeeder extends Seeder
             'business_type_id' => $businessType->id,
         ]);
 
-        // --- Crear Campos Personalizados para Órdenes de Servicio ---
+        // Se obtienen los items del plan desde el catálogo de la BD
+        $planItems = PlanItem::where('is_active', true)->get();
+
+        // --- Crear 2 versiones ANTERIORES para el historial ---
+        for ($i = 2; $i >= 1; $i--) {
+            $this->createSubscriptionVersion($subscription, now()->subYears($i), now()->subYears($i - 1), $planItems, true);
+        }
+
+        // --- Crear la versión ACTUAL ---
+        $this->createSubscriptionVersion($subscription, now(), now()->addYear(), $planItems, false);
+        
+        // --- RESTO DE LA LÓGICA DE DATOS DE PRUEBA ---
         if ($businessType->name === 'Tienda de Electrónica') {
             CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'module' => 'service_orders', 'name' => 'PIN de Desbloqueo', 'key' => 'pin_desbloqueo', 'type' => 'text']);
             CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'module' => 'service_orders', 'name' => 'Patrón de Desbloqueo', 'key' => 'patron_desbloqueo', 'type' => 'pattern']);
@@ -69,7 +89,6 @@ class DatabaseSeeder extends Seeder
             CustomFieldDefinition::factory()->create(['subscription_id' => $subscription->id, 'module' => 'service_orders', 'name' => 'Material de la Prenda', 'key' => 'material_prenda', 'type' => 'text']);
         }
 
-        // Crear Categorías de Productos y Atributos
         $ropaCategory = Category::factory()->create(['subscription_id' => $subscription->id, 'name' => 'Ropa y Accesorios', 'type' => 'product']);
         $this->createAttributeWithOptions($ropaCategory, 'Color', ['Rojo', 'Azul', 'Negro', 'Blanco'], true);
         $this->createAttributeWithOptions($ropaCategory, 'Talla', ['S', 'M', 'L', 'XL']);
@@ -81,39 +100,31 @@ class DatabaseSeeder extends Seeder
         $otherProductCategories = Category::factory(3)->create(['subscription_id' => $subscription->id, 'type' => 'product']);
         $allProductCategories = collect([$ropaCategory, $electronicaCategory])->merge($otherProductCategories);
 
-        // Crear Marcas y Proveedores
         $brands = Brand::factory(5)->create(['subscription_id' => $subscription->id]);
         Provider::factory(3)->create(['subscription_id' => $subscription->id]);
 
-        // Crear 2 Sucursales por Suscriptor
         $branches = Branch::factory(2)->create(['subscription_id' => $subscription->id]);
         $mainBranch = $branches->first();
         $mainBranch->update(['is_main' => true]);
 
-        // Crear Cajas Registradas y Cuentas Bancarias
         $cashRegisters = CashRegister::factory(2)->create(['branch_id' => $mainBranch->id]);
         BankAccount::factory(2)->create(['subscription_id' => $subscription->id]);
 
-        // Crear Categorías de Servicios
         $serviceCategories = Category::factory(3)->create(['subscription_id' => $subscription->id, 'type' => 'service']);
 
-        // Crear 1 Usuario admin por Suscriptor y asignarlo a la sucursal principal
         $adminUser = User::factory()->create([
             'branch_id' => $mainBranch->id,
             'name' => 'Admin ' . $subscription->commercial_name,
             'email' => 'admin@' . strtolower(str_replace([' ', ',', '.'], '', $subscription->commercial_name)) . '.com',
         ]);
 
-        // Crear datos por cada sucursal
         $branches->each(function ($branch) use ($serviceCategories, $adminUser, $allProductCategories, $brands, $cashRegisters) {
             $customers = Customer::factory(15)->create(['branch_id' => $branch->id]);
 
-            // Crear 5 cortes de caja cerrados por sucursal
             CashRegisterSession::factory(5)->create([
                 'cash_register_id' => $cashRegisters->random()->id,
                 'user_id' => $adminUser->id,
             ])->each(function ($session) use ($branch, $adminUser, $customers) {
-                // Crear entre 10 y 30 transacciones por cada corte de caja
                 $transactions = Transaction::factory(rand(10, 30))->create([
                     'branch_id' => $branch->id,
                     'user_id' => $adminUser->id,
@@ -122,7 +133,6 @@ class DatabaseSeeder extends Seeder
                     'created_at' => $session->closed_at,
                 ]);
 
-                // --- SOLUCIÓN: Crear un pago por cada transacción completada ---
                 $transactions->where('status', 'completado')->each(function ($transaction) {
                     Payment::factory()->create([
                         'transaction_id' => $transaction->id,
@@ -131,17 +141,9 @@ class DatabaseSeeder extends Seeder
                     ]);
                 });
 
-                // Crear movimientos de efectivo por cada sesión ---
-                SessionCashMovement::factory(rand(1, 3))->create([
-                    'cash_register_session_id' => $session->id,
-                    'type' => 'ingreso'
-                ]);
-                SessionCashMovement::factory(rand(1, 3))->create([
-                    'cash_register_session_id' => $session->id,
-                    'type' => 'egreso'
-                ]);
+                SessionCashMovement::factory(rand(1, 3))->create(['cash_register_session_id' => $session->id, 'type' => 'ingreso']);
+                SessionCashMovement::factory(rand(1, 3))->create(['cash_register_session_id' => $session->id, 'type' => 'egreso']);
 
-                // Actualizar los totales del corte de caja
                 $calculatedTotal = $session->opening_cash_balance + $transactions->sum(fn ($t) => $t->subtotal - $t->total_discount);
                 $session->update([
                     'calculated_cash_total' => $calculatedTotal,
@@ -155,7 +157,6 @@ class DatabaseSeeder extends Seeder
             Product::factory(10)->create(['branch_id' => $branch->id, 'category_id' => $allProductCategories->random()->id, 'brand_id' => $brands->random()->id]);
         });
 
-        // Crear Categorías de Gastos y Gastos
         $expenseCategories = ExpenseCategory::factory(5)->create(['subscription_id' => $subscription->id]);
         Expense::factory(25)->create([
             'user_id' => $adminUser->id,
@@ -164,12 +165,62 @@ class DatabaseSeeder extends Seeder
         ]);
     }
 
+    /**
+     * Crea una versión de suscripción con sus items y pago.
+     */
+    private function createSubscriptionVersion(Subscription $subscription, $startDate, $endDate, $planItems, bool $isPastVersion)
+    {
+        $version = SubscriptionVersion::create([
+            'subscription_id' => $subscription->id,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+        ]);
+
+        $totalAmount = 0;
+        $modules = $planItems->where('type', \App\Enums\PlanItemType::MODULE);
+        $limits = $planItems->where('type', \App\Enums\PlanItemType::LIMIT);
+
+        foreach ($modules as $module) {
+            $annualPrice = $module->monthly_price * 10;
+            SubscriptionItem::create([
+                'subscription_version_id' => $version->id,
+                'item_key' => $module->key,
+                'item_type' => $module->type->value,
+                'name' => $module->name,
+                'quantity' => 1,
+                'unit_price' => $annualPrice,
+                'billing_period' => BillingPeriod::ANNUALLY,
+            ]);
+            $totalAmount += $annualPrice;
+        }
+
+        foreach ($limits as $limit) {
+             SubscriptionItem::create([
+                'subscription_version_id' => $version->id,
+                'item_key' => $limit->key,
+                'item_type' => $limit->type->value,
+                'name' => $limit->name,
+                'quantity' => $limit->meta['quantity'],
+                'unit_price' => 0, // Los límites base se incluyen en el costo del plan
+                'billing_period' => BillingPeriod::ANNUALLY,
+            ]);
+        }
+
+        SubscriptionPayment::create([
+            'subscription_version_id' => $version->id,
+            'amount' => $totalAmount,
+            'payment_method' => 'transferencia',
+            'invoiced' => $isPastVersion,
+            'invoice_status' => $isPastVersion ? InvoiceStatus::GENERATED : InvoiceStatus::NOT_REQUESTED,
+            'created_at' => $startDate,
+        ]);
+    }
+
     private function seedGlobalBrandsAndProducts(): void
     {
         $ropaType = BusinessType::where('name', 'Tienda de Ropa y Accesorios')->first();
         $electronicaType = BusinessType::where('name', 'Tienda de Electrónica')->first();
 
-        // Marcas globales
         $nike = Brand::factory()->create(['name' => 'Nike', 'subscription_id' => null]);
         $zara = Brand::factory()->create(['name' => 'Zara', 'subscription_id' => null]);
         $samsung = Brand::factory()->create(['name' => 'Samsung', 'subscription_id' => null]);
@@ -180,7 +231,6 @@ class DatabaseSeeder extends Seeder
         $samsung->businessTypes()->attach($electronicaType->id);
         $apple->businessTypes()->attach($electronicaType->id);
 
-        // Productos Globales
         GlobalProduct::factory(20)->create(['brand_id' => $nike->id, 'business_type_id' => $ropaType->id]);
         GlobalProduct::factory(20)->create(['brand_id' => $samsung->id, 'business_type_id' => $electronicaType->id]);
     }
