@@ -42,6 +42,9 @@ require __DIR__ . '/web/roles.php';
 require __DIR__ . '/web/permissions.php';
 require __DIR__ . '/web/users.php';
 require __DIR__ . '/web/subscriptions.php';
+require __DIR__ . '/web/bank-accounts.php';
+require __DIR__ . '/web/branches.php';
+require __DIR__ . '/web/switch-branch.php';
 
 
 //artisan commands -------------------

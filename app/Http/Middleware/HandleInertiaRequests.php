@@ -36,9 +36,11 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $user = $request->user();
+        $subscription = $user->branch->subscription;
+
         return array_merge(parent::share($request), [
-            'auth' => function () use ($request) {
-                $user = $request->user();
+            'auth' => function () use ($user, $subscription) {
                 if (!$user) {
                     return null;
                 }
@@ -49,6 +51,11 @@ class HandleInertiaRequests extends Middleware
                     'permissions' => $user->getAllPermissions()->pluck('name'),
                     // Se añade la bandera para saber si el usuario es el propietario de la suscripción.
                     'is_subscription_owner' => !$user->roles()->exists(),
+                    'subscription' => [
+                        'commercial_name' => $subscription->commercial_name,
+                    ],
+                    'current_branch' => $user->branch,
+                    'available_branches' => $subscription->branches()->get(['id', 'name']),
                 ];
             },
             // Mensajes flash para notificaciones (toasts).

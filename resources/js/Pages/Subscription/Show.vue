@@ -2,8 +2,11 @@
 import { computed, ref } from 'vue';
 import { Head, useForm, router, Link } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
+import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
+import BankAccountModal from '@/Components/BankAccountModal.vue';
+import BranchModal from '@/Components/BranchModal.vue';
 
 const props = defineProps({
     subscription: Object,
@@ -11,6 +14,51 @@ const props = defineProps({
 });
 
 const toast = useToast();
+const confirm = useConfirm();
+
+// --- Lógica de Sucursales ---
+const isBranchModalVisible = ref(false);
+const selectedBranch = ref(null);
+const openCreateBranchModal = () => {
+    selectedBranch.value = null;
+    isBranchModalVisible.value = true;
+};
+const openEditBranchModal = (branch) => {
+    selectedBranch.value = branch;
+    isBranchModalVisible.value = true;
+};
+const confirmDeleteBranch = (branch) => {
+    confirm.require({
+        message: `¿Estás seguro de que quieres eliminar la sucursal "${branch.name}"?`,
+        header: 'Confirmar Eliminación',
+        icon: 'pi pi-exclamation-triangle',
+        accept: () => {
+            router.delete(route('branches.destroy', branch.id), { preserveScroll: true });
+        }
+    });
+};
+
+// --- Lógica de Cuentas Bancarias ---
+const isBankAccountModalVisible = ref(false);
+const selectedBankAccount = ref(null);
+const openCreateBankAccountModal = () => {
+    selectedBankAccount.value = null;
+    isBankAccountModalVisible.value = true;
+};
+const openEditBankAccountModal = (account) => {
+    selectedBankAccount.value = account;
+    isBankAccountModalVisible.value = true;
+};
+const confirmDeleteAccount = (account) => {
+    confirm.require({
+        message: `¿Estás seguro de que quieres eliminar la cuenta "${account.account_name}"?`,
+        header: 'Confirmar Eliminación',
+        icon: 'pi pi-exclamation-triangle',
+        accept: () => {
+            router.delete(route('bank-accounts.destroy', account.id), { preserveScroll: true });
+        }
+    });
+};
 
 const currentVersion = computed(() => props.subscription?.versions?.[0] || null);
 
@@ -182,9 +230,10 @@ const getInvoiceStatusTag = (status) => {
                         <template #title>
                             <div class="flex justify-between items-center">
                                 <span>Plan Actual y Módulos</span>
-                                <Link :href="route('subscription.upgrade.show')">
-                                <Button label="Mejorar Suscripción" icon="pi pi-arrow-up" size="small" />
-                                </Link>
+                                <!-- <Link :href="route('subscription.upgrade.show')"> -->
+                                <Button label="Mejorar Suscripción" icon="pi pi-arrow-up" :disabled="true"
+                                    size="small" />
+                                <!-- </Link> -->
                             </div>
                         </template>
                         <template #subtitle>
@@ -221,6 +270,78 @@ const getInvoiceStatusTag = (status) => {
                             </div>
                         </template>
                     </Card>
+                    <!-- Panel de Sucursales -->
+                    <Card>
+                        <template #title>
+                            <div class="flex justify-between items-center">
+                                <span>Sucursales</span>
+                                <Button @click="openCreateBranchModal" icon="pi pi-plus" size="small"
+                                    v-tooltip.bottom="'Nueva Sucursal'" />
+                            </div>
+                        </template>
+                        <template #content>
+                            <DataTable :value="subscription.branches" stripedRows size="small">
+                                <Column field="name" header="Nombre"></Column>
+                                <Column field="contact_email" header="Email"></Column>
+                                <Column field="contact_phone" header="Teléfono"></Column>
+                                <Column header="Principal">
+                                    <template #body="slotProps">
+                                        <i v-if="slotProps.data.is_main" class="pi pi-check-circle text-green-500"
+                                            v-tooltip.bottom="'Sucursal Principal'"></i>
+                                    </template>
+                                </Column>
+                                <Column>
+                                    <template #body="slotProps">
+                                        <div class="flex justify-end gap-2">
+                                            <Button @click="openEditBranchModal(slotProps.data)" icon="pi pi-pencil"
+                                                text rounded size="small" />
+                                            <Button @click="confirmDeleteBranch(slotProps.data)" icon="pi pi-trash" text
+                                                rounded severity="danger" size="small"
+                                                :disabled="slotProps.data.is_main" />
+                                        </div>
+                                    </template>
+                                </Column>
+                            </DataTable>
+                        </template>
+                    </Card>
+                    <!-- Panel de Cuentas Bancarias por Sucursal -->
+                    <Card>
+                        <template #title>
+                            <div class="flex justify-between items-center">
+                                <span>Cuentas Bancarias</span>
+                                <Button @click="openCreateBankAccountModal" icon="pi pi-plus" size="small"
+                                    v-tooltip.bottom="'Nueva Cuenta'" />
+                            </div>
+                        </template>
+                        <template #content>
+                            <DataTable :value="subscription.bank_accounts" size="small" responsiveLayout="scroll">
+                                <Column field="account_name" header="Nombre"></Column>
+                                <Column field="bank_name" header="Banco"></Column>
+                                <Column header="Sucursales Asignadas">
+                                    <template #body="{ data }">
+                                        <div class="flex flex-wrap gap-1">
+                                            <Tag v-for="branch in data.branches" :key="branch.id"
+                                                :value="branch.name" />
+                                        </div>
+                                    </template>
+                                </Column>
+                                <Column>
+                                    <template #body="slotProps">
+                                        <div class="flex justify-end gap-2">
+                                            <Button @click="openEditBankAccountModal(slotProps.data)"
+                                                icon="pi pi-pencil" text rounded size="small" />
+                                            <Button @click="confirmDeleteAccount(slotProps.data)" icon="pi pi-trash"
+                                                text rounded severity="danger" size="small" />
+                                        </div>
+                                    </template>
+                                </Column>
+                            </DataTable>
+                            <p v-if="!subscription.bank_accounts || subscription.bank_accounts.length === 0"
+                                class="text-sm text-center text-gray-500 py-4">
+                                No has registrado ninguna cuenta.
+                            </p>
+                        </template>
+                    </Card>
                     <Card>
                         <template #title>Historial de Versiones y Pagos</template>
                         <template #content>
@@ -233,23 +354,23 @@ const getInvoiceStatusTag = (status) => {
                                             <Column field="name" header="Concepto"></Column>
                                             <Column field="billing_period" header="Periodo">
                                                 <template #body="slotProps"><span class="capitalize">{{
-                                                        slotProps.data.billing_period }}</span></template>
+                                                    slotProps.data.billing_period }}</span></template>
                                             </Column>
                                             <Column field="unit_price" header="Precio">
                                                 <template #body="slotProps">{{ formatCurrency(slotProps.data.unit_price)
-                                                    }}</template>
+                                                }}</template>
                                             </Column>
                                         </DataTable>
                                         <h4 class="font-bold mb-2">Pagos Realizados</h4>
                                         <DataTable :value="version.payments" size="small">
                                             <Column field="created_at" header="Fecha de Pago">
                                                 <template #body="slotProps">{{ formatDate(slotProps.data.created_at)
-                                                    }}</template>
+                                                }}</template>
                                             </Column>
                                             <Column field="payment_method" header="Método" class="capitalize"></Column>
                                             <Column field="amount" header="Monto">
                                                 <template #body="slotProps">{{ formatCurrency(slotProps.data.amount)
-                                                    }}</template>
+                                                }}</template>
                                             </Column>
                                             <Column field="invoice_status" header="Factura">
                                                 <template #body="{ data }">
@@ -291,7 +412,6 @@ const getInvoiceStatusTag = (status) => {
                 </div>
             </form>
         </Dialog>
-
         <Dialog v-model:visible="isInvoiceModalVisible" modal header="Confirmar Solicitud de Factura"
             :style="{ width: '35rem' }">
             <div class="p-4 text-center">
@@ -307,5 +427,9 @@ const getInvoiceStatusTag = (status) => {
                 <Button label="Confirmar y Solicitar" icon="pi pi-check" @click="requestInvoice" />
             </template>
         </Dialog>
+        <BranchModal :visible="isBranchModalVisible" :branch="selectedBranch"
+            @update:visible="isBranchModalVisible = $event" />
+        <BankAccountModal :visible="isBankAccountModalVisible" :account="selectedBankAccount"
+            :branches="subscription.branches" @update:visible="isBankAccountModalVisible = $event" />
     </AppLayout>
 </template>

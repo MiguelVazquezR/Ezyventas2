@@ -38,6 +38,14 @@ class Subscription extends Model implements HasMedia
     }
 
     /**
+     * Obtiene todas las cuentas bancarias de la suscripción.
+     */
+    public function bankAccounts(): HasMany
+    {
+        return $this->hasMany(BankAccount::class);
+    }
+
+    /**
      * Get the route key for the model.
      *
      * @return string

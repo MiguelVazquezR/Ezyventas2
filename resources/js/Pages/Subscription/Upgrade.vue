@@ -14,6 +14,12 @@ const props = defineProps({
     allPlanItems: Array,
 });
 
+const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
+const breadcrumbItems = ref([
+    { label: 'Suscripción', url: route('subscription.show') },
+    { label: 'Mejorar suscripción' }
+]);
+
 const form = useForm({
     added_items: [],
 });
@@ -68,11 +74,11 @@ const totalProratedCost = computed(() => {
     return form.added_items.reduce((total, added) => {
         const planItem = props.allPlanItems.find(item => item.key === added.key);
         if (!planItem) return total;
-        
+
         const annualPrice = planItem.monthly_price * 10;
         let unitAnnualPrice = annualPrice;
         if (planItem.type === 'limit' && planItem.meta.quantity > 0) {
-             unitAnnualPrice = annualPrice / planItem.meta.quantity;
+            unitAnnualPrice = annualPrice / planItem.meta.quantity;
         }
 
         const proratedCost = (unitAnnualPrice / 365) * remainingDays * added.quantity;
@@ -89,12 +95,15 @@ const submit = () => {
 </script>
 
 <template>
+
     <Head title="Mejorar Suscripción" />
     <AppLayout>
+        <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="p-4 md:p-6 lg:p-8">
-             <header class="mb-6">
+            <header class="mb-6">
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Mejorar Suscripción</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Añade módulos o incrementa los límites de tu plan actual.</p>
+                <p class="text-gray-500 dark:text-gray-400 mt-1">Añade módulos o incrementa los límites de tu plan
+                    actual.</p>
             </header>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -103,20 +112,24 @@ const submit = () => {
                     <Card>
                         <template #title>Módulos Adicionales</template>
                         <template #content>
-                            <div v-if="availableModules.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                <div v-for="module in availableModules" :key="module.key" class="border dark:border-gray-700 rounded-lg p-4 flex items-center gap-4">
+                            <div v-if="availableModules.length > 0"
+                                class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <div v-for="module in availableModules" :key="module.key"
+                                    class="border dark:border-gray-700 rounded-lg p-4 flex items-center gap-4">
                                     <Checkbox v-model="selectedModules" :inputId="module.key" :value="module.key" />
                                     <label :for="module.key" class="flex-grow">
                                         <div class="flex items-center gap-2">
                                             <i :class="module.meta.icon" class="text-orange-500"></i>
                                             <span class="font-semibold">{{ module.name }}</span>
                                         </div>
-                                        <p class="text-xs text-gray-500">{{ formatCurrency(module.monthly_price * 10) }}/año</p>
+                                        <p class="text-xs text-gray-500">{{ formatCurrency(module.monthly_price * 10)
+                                            }}/año</p>
                                     </label>
                                 </div>
                             </div>
                             <div v-else class="text-center py-4">
-                                <p class="text-gray-500 dark:text-gray-400">¡Felicidades! Ya tienes todos los módulos disponibles.</p>
+                                <p class="text-gray-500 dark:text-gray-400">¡Felicidades! Ya tienes todos los módulos
+                                    disponibles.</p>
                             </div>
                         </template>
                     </Card>
@@ -124,20 +137,20 @@ const submit = () => {
                         <template #title>Incrementar Límites</template>
                         <template #content>
                             <div class="space-y-4">
-                                <div v-for="limit in allLimitItems" :key="limit.key" class="flex items-center justify-between">
+                                <div v-for="limit in allLimitItems" :key="limit.key"
+                                    class="flex items-center justify-between">
                                     <div>
                                         <p class="font-semibold">{{ limit.name }}</p>
-                                        <p class="text-xs text-gray-500">{{ formatCurrency(limit.monthly_price * 10) }}/año por cada {{ limit.meta.quantity }}</p>
+                                        <p class="text-xs text-gray-500">{{ formatCurrency(limit.monthly_price * 10)
+                                            }}/año por cada {{ limit.meta.quantity }}</p>
                                     </div>
-                                    <InputNumber
-                                        v-model="limitValues[limit.key]"
+                                    <InputNumber v-model="limitValues[limit.key]"
                                         :min="(currentVersion.items.find(i => i.item_key === limit.key)?.quantity || 0)"
-                                        :step="limit.key === 'limit_products' ? 50 : 1"
-                                        showButtons buttonLayout="horizontal" 
-                                        decrementButtonClass="p-button-secondary" incrementButtonClass="p-button-secondary" 
-                                        incrementButtonIcon="pi pi-plus" decrementButtonIcon="pi pi-minus" 
-                                        inputStyle="width: 5rem; text-align: center;" 
-                                    />
+                                        :step="limit.key === 'limit_products' ? 50 : 1" showButtons
+                                        buttonLayout="horizontal" decrementButtonClass="p-button-secondary"
+                                        incrementButtonClass="p-button-secondary" incrementButtonIcon="pi pi-plus"
+                                        decrementButtonIcon="pi pi-minus"
+                                        inputStyle="width: 5rem; text-align: center;" />
                                 </div>
                             </div>
                         </template>
@@ -151,24 +164,30 @@ const submit = () => {
                         <template #content>
                             <div class="space-y-3">
                                 <p class="text-sm text-gray-600 dark:text-gray-300">
-                                    Se te cobrará un monto prorrateado por los <b>{{ remainingDays }} días</b> restantes de tu ciclo de facturación actual.
+                                    Se te cobrará un monto prorrateado por los <b>{{ remainingDays }} días</b> restantes
+                                    de tu ciclo de facturación actual.
                                 </p>
                                 <Divider />
-                                <div v-if="form.added_items.length > 0" class="space-y-2 text-sm max-h-48 overflow-y-auto">
+                                <div v-if="form.added_items.length > 0"
+                                    class="space-y-2 text-sm max-h-48 overflow-y-auto">
                                     <div v-for="item in form.added_items" :key="item.key" class="flex justify-between">
                                         <span>
-                                            {{ allPlanItems.find(i => i.key === item.key).name }}
-                                            <span v-if="item.quantity > 1 && allPlanItems.find(i => i.key === item.key).type === 'limit'"> (x{{ item.quantity }})</span>
+                                            {{allPlanItems.find(i => i.key === item.key).name}}
+                                            <span
+                                                v-if="item.quantity > 1 && allPlanItems.find(i => i.key === item.key).type === 'limit'">
+                                                (x{{ item.quantity }})</span>
                                         </span>
                                     </div>
                                 </div>
-                                <p v-else class="text-sm text-center text-gray-500 py-4">Selecciona un ítem para ver el costo.</p>
+                                <p v-else class="text-sm text-center text-gray-500 py-4">Selecciona un ítem para ver el
+                                    costo.</p>
                                 <Divider />
                                 <div class="flex justify-between items-center font-bold text-lg">
                                     <span>Total a Pagar Hoy:</span>
                                     <span>{{ formatCurrency(totalProratedCost) }}</span>
                                 </div>
-                                <Button @click="submit" :disabled="form.added_items.length === 0 || form.processing" :loading="form.processing" label="Confirmar y Pagar" class="w-full mt-4" />
+                                <Button @click="submit" :disabled="form.added_items.length === 0 || form.processing"
+                                    :loading="form.processing" label="Confirmar y Pagar" class="w-full mt-4" />
                             </div>
                         </template>
                     </Card>

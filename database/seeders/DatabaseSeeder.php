@@ -108,7 +108,12 @@ class DatabaseSeeder extends Seeder
         $mainBranch->update(['is_main' => true]);
 
         $cashRegisters = CashRegister::factory(2)->create(['branch_id' => $mainBranch->id]);
-        BankAccount::factory(2)->create(['subscription_id' => $subscription->id]);
+        
+        // Se crean cuentas bancarias y se asignan a las sucursales
+        $bankAccounts = BankAccount::factory(2)->create(['subscription_id' => $subscription->id]);
+        foreach($bankAccounts as $account) {
+            $account->branches()->attach($branches->pluck('id'));
+        }
 
         $serviceCategories = Category::factory(3)->create(['subscription_id' => $subscription->id, 'type' => 'service']);
 

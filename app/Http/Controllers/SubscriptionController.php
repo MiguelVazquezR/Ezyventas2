@@ -15,7 +15,7 @@ class SubscriptionController extends Controller
     /**
      * Muestra la página de detalles de la suscripción para el propietario.
      */
-     public function show(): Response
+    public function show(): Response
     {
         $user = Auth::user();
 
@@ -25,18 +25,18 @@ class SubscriptionController extends Controller
 
         $subscription = $user->branch->subscription()->with([
             'branches',
+            'bankAccounts.branches:id,name', // Carga las cuentas y las sucursales a las que están asignadas
             'versions' => function ($query) {
                 $query->with(['items', 'payments'])->latest('start_date');
             },
             'media'
         ])->firstOrFail();
 
-        // Se obtienen todos los ítems de plan disponibles y activos
         $planItems = PlanItem::where('is_active', true)->get();
 
         return Inertia::render('Subscription/Show', [
             'subscription' => $subscription,
-            'planItems' => $planItems, // Se pasan los ítems del plan a la vista
+            'planItems' => $planItems,
         ]);
     }
 

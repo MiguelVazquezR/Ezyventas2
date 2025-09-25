@@ -37,10 +37,10 @@ class PlanItemSeeder extends Seeder
 
         // Límites
         $limits = [
-            ['key' => 'limit_branches', 'name' => 'Sucursal Adicional', 'price' => 300, 'quantity' => 1],
-            ['key' => 'limit_users', 'name' => 'Usuario Adicional', 'price' => 50, 'quantity' => 1],
-            ['key' => 'limit_products', 'name' => 'Paquete 500 Productos Adicionales', 'price' => 100, 'quantity' => 500],
-            ['key' => 'limit_cash_registers', 'name' => 'Caja Registradora Adicional', 'price' => 75, 'quantity' => 1],
+            ['key' => 'limit_branches', 'name' => 'Sucursales', 'price' => 300, 'quantity' => 1],
+            ['key' => 'limit_users', 'name' => 'Usuarios', 'price' => 50, 'quantity' => 1],
+            ['key' => 'limit_products', 'name' => 'Productos', 'price' => 100, 'quantity' => 50],
+            ['key' => 'limit_cash_registers', 'name' => 'Cajas Registradoras', 'price' => 75, 'quantity' => 1],
         ];
 
         foreach ($limits as $limit) {

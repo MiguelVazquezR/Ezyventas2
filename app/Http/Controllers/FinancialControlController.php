@@ -111,7 +111,7 @@ class FinancialControlController extends Controller
             'chartData' => $chartData,
             'incomeByMethod' => $formattedIncomeByMethod,
             'cashRegisters' => $cashRegisters,
-            'bankAccounts' => BankAccount::where('subscription_id', $subscriptionId)->get(),
+            'bankAccounts' => BankAccount::where('subscription_id', $subscriptionId)->with('branches:id,name')->get(),
             'recentSessions' => CashRegisterSession::whereHas('cashRegister.branch.subscription', fn($q) => $q->where('id', $subscriptionId))
                 ->where('status', 'cerrada')->latest()->take(5)->get(),
             'filters' => ['startDate' => $startDate->toDateString(), 'endDate' => $endDate->toDateString()]
