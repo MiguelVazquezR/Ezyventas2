@@ -1,8 +1,5 @@
 <script setup>
 import { ref, watch } from 'vue';
-import Button from 'primevue/button';
-import InputNumber from 'primevue/inputnumber';
-import InputText from 'primevue/inputtext';
 
 const props = defineProps({
     item: Object,

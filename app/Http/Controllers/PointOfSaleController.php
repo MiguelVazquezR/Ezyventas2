@@ -22,9 +22,19 @@ use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Validation\Rule;
 use Carbon\Carbon;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 
-class PointOfSaleController extends Controller
+class PointOfSaleController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:pos.access', only: ['index']),
+            new Middleware('can:pos.create_sale', only: ['checkout']),
+        ];
+    }
+
     public function index(Request $request): Response
     {
         $user = Auth::user();

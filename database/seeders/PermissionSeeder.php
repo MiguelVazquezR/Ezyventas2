@@ -21,7 +21,6 @@ class PermissionSeeder extends Seeder
             'Punto de Venta' => [
                 'pos.access' => 'Acceder al Punto de Venta',
                 'pos.create_sale' => 'Crear nuevas ventas',
-                'pos.manage_pending_carts' => 'Guardar y reanudar carritos',
                 'pos.apply_discounts' => 'Aplicar descuentos en el carrito',
                 'pos.edit_prices' => 'Editar precios en el carrito',
                 'pos.use_customer_credit' => 'Realizar ventas a crédito',
