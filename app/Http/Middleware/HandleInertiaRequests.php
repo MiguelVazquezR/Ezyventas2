@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use Spatie\Permission\Models\Permission;
 use Tightenco\Ziggy\Ziggy;
 
 class HandleInertiaRequests extends Middleware
@@ -36,21 +37,27 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
-        $user = $request->user();
-        $subscription = $user->branch->subscription;
-
         return array_merge(parent::share($request), [
-            'auth' => function () use ($user, $subscription) {
+            'auth' => function () use ($request) {
+                $user = $request->user();
+
                 if (!$user) {
                     return null;
                 }
 
+                $isOwner = !$user->roles()->exists();
+
+                // Si es el propietario/admin, obtiene todos los permisos; de lo contrario, solo los suyos.
+                $permissions = $isOwner
+                    ? Permission::all()->pluck('name')
+                    : $user->getAllPermissions()->pluck('name');
+
+                $subscription = $user->branch->subscription;
+
                 return [
                     'user' => $user,
-                    // Se obtienen todos los permisos del usuario logueado.
-                    'permissions' => $user->getAllPermissions()->pluck('name'),
-                    // Se añade la bandera para saber si el usuario es el propietario de la suscripción.
-                    'is_subscription_owner' => !$user->roles()->exists(),
+                    'permissions' => $permissions,
+                    'is_subscription_owner' => $isOwner,
                     'subscription' => [
                         'commercial_name' => $subscription->commercial_name,
                     ],
