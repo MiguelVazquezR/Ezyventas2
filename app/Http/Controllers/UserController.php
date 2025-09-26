@@ -1,0 +1,149 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules;
+use Inertia\Inertia;
+use Inertia\Response;
+use Spatie\Permission\Models\Role;
+
+class UserController extends Controller
+{
+    public function index(Request $request): Response
+    {
+        $branchId = Auth::user()->branch_id;
+
+        $query = User::where('branch_id', $branchId)
+            ->with('roles:id,name');
+
+        if ($request->has('search')) {
+            $searchTerm = $request->input('search');
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('name', 'LIKE', "%{$searchTerm}%")
+                  ->orWhere('email', 'LIKE', "%{$searchTerm}%");
+            });
+        }
+
+        $sortField = $request->input('sortField', 'created_at');
+        $sortOrder = $request->input('sortOrder', 'desc');
+        $query->orderBy($sortField, $sortOrder);
+
+        $users = $query->paginate($request->input('rows', 20))->withQueryString();
+
+        return Inertia::render('User/Index', [
+            'users' => $users,
+            'filters' => $request->only(['search', 'sortField', 'sortOrder']),
+        ]);
+    }
+
+    public function destroy(User $user)
+    {
+        // Regla de negocio: No se puede eliminar al suscriptor principal (sin rol)
+        if (!$user->roles()->exists()) {
+            return redirect()->back()->with('error', 'No se puede eliminar al administrador principal.');
+        }
+
+        $user->delete();
+        return redirect()->route('users.index')->with('success', 'Usuario eliminado con éxito.');
+    }
+
+    public function toggleStatus(User $user)
+    {
+        // Regla de negocio: No se puede desactivar al suscriptor principal
+        if (!$user->roles()->exists()) {
+            return redirect()->back()->with('error', 'No se puede desactivar al administrador principal.');
+        }
+
+        $user->is_active = !$user->is_active;
+        $user->save();
+        $status = $user->is_active ? 'activado' : 'desactivado';
+
+        return redirect()->back()->with('success', "Usuario {$status} con éxito.");
+    }
+
+    public function create(): Response
+    {
+        $branchId = Auth::user()->branch_id;
+        // CAMBIO: Se cargan los permisos de cada rol
+        $roles = Role::where('branch_id', $branchId)
+            ->with('permissions:id,name,description,module')
+            ->get(['id', 'name']);
+
+        return Inertia::render('User/Create', [
+            'roles' => $roles,
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:'.User::class,
+            'password' => 'required',
+            'role_id' => 'required|exists:roles,id',
+        ]);
+
+        $user = User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+            'branch_id' => Auth::user()->branch_id,
+        ]);
+
+        $role = Role::find($request->role_id);
+        $user->assignRole($role);
+
+        return redirect()->route('users.index')->with('success', 'Usuario creado con éxito.');
+    }
+
+    public function edit(User $user): Response
+    {
+        if ($user->branch_id !== Auth::user()->branch_id) {
+            abort(403);
+        }
+
+        $user->load('roles:id,name');
+        // CAMBIO: Se cargan los permisos de cada rol
+        $roles = Role::where('branch_id', Auth::user()->branch_id)
+            ->with('permissions:id,name,description,module')
+            ->get(['id', 'name']);
+
+        return Inertia::render('User/Edit', [
+            'user' => $user,
+            'roles' => $roles,
+        ]);
+    }
+
+    public function update(Request $request, User $user)
+    {
+        if ($user->branch_id !== Auth::user()->branch_id) {
+            abort(403);
+        }
+        
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique(User::class)->ignore($user->id)],
+            'password' => 'nullable',
+            'role_id' => 'required|exists:roles,id',
+        ]);
+
+        $user->update([
+            'name' => $request->name,
+            'email' => $request->email,
+        ]);
+
+        if ($request->filled('password')) {
+            $user->update(['password' => Hash::make($request->password)]);
+        }
+
+        $role = Role::find($request->role_id);
+        $user->syncRoles($role);
+
+        return redirect()->route('users.index')->with('success', 'Usuario actualizado con éxito.');
+    }
+}

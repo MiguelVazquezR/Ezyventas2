@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use Tightenco\Ziggy\Ziggy;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -35,9 +36,37 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
-        return [
-            ...parent::share($request),
-            //
-        ];
+        $user = $request->user();
+        $subscription = $user->branch->subscription;
+
+        return array_merge(parent::share($request), [
+            'auth' => function () use ($user, $subscription) {
+                if (!$user) {
+                    return null;
+                }
+
+                return [
+                    'user' => $user,
+                    // Se obtienen todos los permisos del usuario logueado.
+                    'permissions' => $user->getAllPermissions()->pluck('name'),
+                    // Se añade la bandera para saber si el usuario es el propietario de la suscripción.
+                    'is_subscription_owner' => !$user->roles()->exists(),
+                    'subscription' => [
+                        'commercial_name' => $subscription->commercial_name,
+                    ],
+                    'current_branch' => $user->branch,
+                    'available_branches' => $subscription->branches()->get(['id', 'name']),
+                ];
+            },
+            // Mensajes flash para notificaciones (toasts).
+            'flash' => function () use ($request) {
+                return [
+                    'success' => $request->session()->get('success'),
+                    'error' => $request->session()->get('error'),
+                    'warning' => $request->session()->get('warning'),
+                    'info' => $request->session()->get('info'),
+                ];
+            },
+        ]);
     }
 }
