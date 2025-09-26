@@ -1,0 +1,165 @@
+<script setup>
+import { ref, watch } from 'vue';
+import { Head, router } from '@inertiajs/vue3';
+import AppLayout from '@/Layouts/AppLayout.vue';
+import { useConfirm } from "primevue/useconfirm";
+import ImportExpensesModal from './Partials/ImportExpensesModal.vue';
+
+const props = defineProps({
+    expenses: Object,
+    filters: Object,
+});
+
+const confirm = useConfirm();
+
+const selectedExpenses = ref([]);
+const searchTerm = ref(props.filters.search || '');
+const showImportModal = ref(false);
+
+const splitButtonItems = ref([
+    { label: 'Importar Gastos', icon: 'pi pi-upload', command: () => showImportModal.value = true },
+    { label: 'Exportar Gastos', icon: 'pi pi-download', command: () => window.location.href = route('import-export.expenses.export') },
+]);
+
+const menu = ref();
+const selectedExpenseForMenu = ref(null);
+
+const deleteSingleExpense = () => {
+    if (!selectedExpenseForMenu.value) return;
+    confirm.require({
+        message: `¿Estás seguro de que quieres eliminar el gasto con folio "${selectedExpenseForMenu.value.folio || 'N/A'}"?`,
+        header: 'Confirmar Eliminación',
+        icon: 'pi pi-info-circle',
+        acceptClass: 'p-button-danger',
+        accept: () => {
+            router.delete(route('expenses.destroy', selectedExpenseForMenu.value.id), {
+                preserveScroll: true,
+                onSuccess: () => {
+                    selectedExpenses.value = selectedExpenses.value.filter(e => e.id !== selectedExpenseForMenu.value.id);
+                }
+            });
+        }
+    });
+};
+
+const deleteSelectedExpenses = () => {
+    confirm.require({
+        message: `¿Estás seguro de que quieres eliminar los ${selectedExpenses.value.length} gastos seleccionados?`,
+        header: 'Confirmación de Eliminación Masiva',
+        icon: 'pi pi-exclamation-triangle',
+        acceptClass: 'p-button-danger',
+        acceptLabel: 'Sí, eliminar',
+        rejectLabel: 'Cancelar',
+        accept: () => {
+            const idsToDelete = selectedExpenses.value.map(e => e.id);
+            router.post(route('expenses.batchDestroy'), { ids: idsToDelete }, {
+                onSuccess: () => selectedExpenses.value = [],
+                preserveScroll: true,
+            });
+        }
+    });
+};
+
+const menuItems = ref([
+    { label: 'Ver Detalle', icon: 'pi pi-eye', command: () => router.get(route('expenses.show', selectedExpenseForMenu.value.id)) },
+    { label: 'Editar Gasto', icon: 'pi pi-pencil', command: () => router.get(route('expenses.edit', selectedExpenseForMenu.value.id)) },
+    { separator: true },
+    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleExpense },
+]);
+
+const toggleMenu = (event, data) => {
+    selectedExpenseForMenu.value = data;
+    menu.value.toggle(event);
+};
+
+const fetchData = (options = {}) => {
+    const queryParams = {
+        page: options.page || 1,
+        rows: options.rows || props.expenses.per_page,
+        sortField: options.sortField || props.filters.sortField,
+        sortOrder: options.sortOrder === 1 ? 'asc' : 'desc',
+        search: searchTerm.value,
+    };
+    router.get(route('expenses.index'), queryParams, { preserveState: true, replace: true });
+};
+
+const onPage = (event) => fetchData({ page: event.page + 1, rows: event.rows });
+const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: event.sortOrder });
+watch(searchTerm, () => fetchData());
+
+const getStatusSeverity = (status) => {
+    return status === 'pagado' ? 'success' : 'warning';
+};
+
+const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    const userTimezoneOffset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() + userTimezoneOffset).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+};
+</script>
+
+<template>
+
+    <Head title="Gastos" />
+    <AppLayout>
+        <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
+                <!-- Header -->
+                <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
+                    <IconField iconPosition="left" class="w-full md:w-1/3">
+                        <InputIcon class="pi pi-search"></InputIcon>
+                        <InputText v-model="searchTerm" placeholder="Buscar por folio o descripción..."
+                            class="w-full" />
+                    </IconField>
+                    <div class="flex items-center gap-2">
+                        <SplitButton label="Nuevo Gasto" icon="pi pi-plus" @click="router.get(route('expenses.create'))"
+                            :model="splitButtonItems" severity="warning"></SplitButton>
+                    </div>
+                </div>
+
+                <!-- Barra de Acciones Masivas -->
+                <div v-if="selectedExpenses.length > 0"
+                    class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-2 mb-4 flex justify-between items-center">
+                    <span class="font-semibold text-sm text-blue-800 dark:text-blue-200">{{ selectedExpenses.length }}
+                        gasto(s) seleccionado(s)</span>
+                    <Button @click="deleteSelectedExpenses" label="Eliminar" icon="pi pi-trash" size="small"
+                        severity="danger" outlined />
+                </div>
+
+                <!-- Tabla de Gastos -->
+                <DataTable :value="expenses.data" v-model:selection="selectedExpenses" lazy paginator
+                    :totalRecords="expenses.total" :rows="expenses.per_page" :rowsPerPageOptions="[20, 50, 100, 200]"
+                    dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 60rem"
+                    paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
+                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} gastos">
+                    <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
+                    <Column field="folio" header="Folio" sortable></Column>
+                    <Column field="expense_date" header="Fecha" sortable>
+                        <template #body="{ data }"> {{ formatDate(data.expense_date) }} </template>
+                    </Column>
+                    <Column field="category.name" header="Categoría" sortable></Column>
+                    <Column field="description" header="Descripción"></Column>
+                    <Column field="amount" header="Monto" sortable>
+                        <template #body="{ data }"> {{ new Intl.NumberFormat('es-MX', {
+                            style: 'currency', currency:
+                                'MXN' }).format(data.amount) }} </template>
+                    </Column>
+                    <Column field="status" header="Estatus" sortable>
+                        <template #body="{ data }">
+                            <Tag :value="data.status" :severity="getStatusSeverity(data.status)" />
+                        </template>
+                    </Column>
+                    <Column field="user.name" header="Registrado por" sortable></Column>
+                    <Column headerStyle="width: 5rem; text-align: center">
+                        <template #body="{ data }"> <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
+                                text rounded severity="secondary" /> </template>
+                    </Column>
+                </DataTable>
+
+                <Menu ref="menu" :model="menuItems" :popup="true" />
+            </div>
+        </div>
+        <!-- Modal de Importación -->
+        <ImportExpensesModal :visible="showImportModal" @update:visible="showImportModal = false" />
+    </AppLayout>
+</template>

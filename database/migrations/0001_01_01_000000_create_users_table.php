@@ -18,9 +18,14 @@ return new class extends Migration
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
             $table->rememberToken();
+            $table->boolean('is_active')->default(true);
             $table->foreignId('current_team_id')->nullable();
             $table->string('profile_photo_path', 2048)->nullable();
             $table->timestamps();
+            $table->string('phone')->nullable();
+            
+            // Un usuario pertenece a una sucursal. Si la sucursal se borra, se borran sus usuarios.
+            $table->foreignId('branch_id')->constrained('branches')->onDelete('cascade');
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {

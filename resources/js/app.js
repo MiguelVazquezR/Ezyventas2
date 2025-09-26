@@ -1,10 +1,19 @@
 import './bootstrap';
 import '../css/app.css';
+// import '../css/fonts.css';
 
 import { createApp, h } from 'vue';
 import { createInertiaApp } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
+
+import PrimeVue from 'primevue/config';
+import ConfirmationService from 'primevue/confirmationservice';
+import ToastService from 'primevue/toastservice';
+import "primeicons/primeicons.css";
+
+import '@/assets/styles.scss';
+import Ezyventas from './presets/ezyventas';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -15,9 +24,22 @@ createInertiaApp({
         return createApp({ render: () => h(App, props) })
             .use(plugin)
             .use(ZiggyVue)
+            .use(PrimeVue, {
+                            locale: {
+                                selectionMessage: '{0} elementos seleccionados'
+                            },
+                            theme: {
+                                preset: Ezyventas,
+                                options: {
+                                    darkModeSelector: '.app-dark'
+                                }
+                            }
+                        })
+                        .use(ToastService)
+                        .use(ConfirmationService)
             .mount(el);
     },
     progress: {
-        color: '#4B5563',
+        color: '#F68C0F',
     },
 });

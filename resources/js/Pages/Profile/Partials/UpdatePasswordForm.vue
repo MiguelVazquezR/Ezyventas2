@@ -1,12 +1,10 @@
 <script setup>
 import { ref } from 'vue';
 import { useForm } from '@inertiajs/vue3';
-import ActionMessage from '@/Components/ActionMessage.vue';
-import FormSection from '@/Components/FormSection.vue';
+import Button from 'primevue/button';
+import Password from 'primevue/password';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
-import TextInput from '@/Components/TextInput.vue';
 
 const passwordInput = ref(null);
 const currentPasswordInput = ref(null);
@@ -25,12 +23,13 @@ const updatePassword = () => {
         onError: () => {
             if (form.errors.password) {
                 form.reset('password', 'password_confirmation');
-                passwordInput.value.focus();
+                // CAMBIO: Se accede al elemento '.input' del componente
+                //passwordInput.value.input.focus();
             }
-
             if (form.errors.current_password) {
                 form.reset('current_password');
-                currentPasswordInput.value.focus();
+                // CAMBIO: Se accede al elemento '.input' del componente
+                //currentPasswordInput.value.input.focus();
             }
         },
     });
@@ -38,63 +37,45 @@ const updatePassword = () => {
 </script>
 
 <template>
-    <FormSection @submitted="updatePassword">
-        <template #title>
-            Update Password
-        </template>
+     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="md:col-span-1">
+            <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">Actualizar Contraseña</h3>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                Asegúrate de que tu cuenta utiliza una contraseña larga y aleatoria para mantenerla segura.
+            </p>
+        </div>
 
-        <template #description>
-            Ensure your account is using a long, random password to stay secure.
-        </template>
+        <div class="md:col-span-2">
+            <form @submit.prevent="updatePassword">
+                <div class="p-6 bg-white dark:bg-gray-800 sm:rounded-lg">
+                    <div class="space-y-6">
+                        <div>
+                            <InputLabel for="current_password" value="Contraseña Actual" />
+                            <Password fluid id="current_password" ref="currentPasswordInput" v-model="form.current_password" class="mt-1 block w-full" autocomplete="current-password" toggleMask :feedback="false"/>
+                            <InputError :message="form.errors.current_password" class="mt-2" />
+                        </div>
 
-        <template #form>
-            <div class="col-span-6 sm:col-span-4">
-                <InputLabel for="current_password" value="Current Password" />
-                <TextInput
-                    id="current_password"
-                    ref="currentPasswordInput"
-                    v-model="form.current_password"
-                    type="password"
-                    class="mt-1 block w-full"
-                    autocomplete="current-password"
-                />
-                <InputError :message="form.errors.current_password" class="mt-2" />
-            </div>
+                        <div>
+                            <InputLabel for="password" value="Nueva Contraseña" />
+                            <Password fluid id="password" ref="passwordInput" v-model="form.password" class="mt-1 block w-full" autocomplete="new-password" toggleMask :feedback="false"/>
+                            <InputError :message="form.errors.password" class="mt-2" />
+                        </div>
 
-            <div class="col-span-6 sm:col-span-4">
-                <InputLabel for="password" value="New Password" />
-                <TextInput
-                    id="password"
-                    ref="passwordInput"
-                    v-model="form.password"
-                    type="password"
-                    class="mt-1 block w-full"
-                    autocomplete="new-password"
-                />
-                <InputError :message="form.errors.password" class="mt-2" />
-            </div>
+                        <div>
+                            <InputLabel for="password_confirmation" value="Confirmar Contraseña" />
+                            <Password fluid id="password_confirmation" v-model="form.password_confirmation" class="mt-1 block w-full" autocomplete="new-password" toggleMask :feedback="false"/>
+                            <InputError :message="form.errors.password_confirmation" class="mt-2" />
+                        </div>
+                    </div>
 
-            <div class="col-span-6 sm:col-span-4">
-                <InputLabel for="password_confirmation" value="Confirm Password" />
-                <TextInput
-                    id="password_confirmation"
-                    v-model="form.password_confirmation"
-                    type="password"
-                    class="mt-1 block w-full"
-                    autocomplete="new-password"
-                />
-                <InputError :message="form.errors.password_confirmation" class="mt-2" />
-            </div>
-        </template>
-
-        <template #actions>
-            <ActionMessage :on="form.recentlySuccessful" class="me-3">
-                Saved.
-            </ActionMessage>
-
-            <PrimaryButton :class="{ 'opacity-25': form.processing }" :disabled="form.processing">
-                Save
-            </PrimaryButton>
-        </template>
-    </FormSection>
+                    <div class="flex items-center justify-end mt-6">
+                         <transition enter-active-class="transition ease-in-out" enter-from-class="opacity-0" leave-active-class="transition ease-in-out" leave-to-class="opacity-0">
+                            <p v-if="form.recentlySuccessful" class="text-sm text-gray-600 dark:text-gray-400 mr-3">Guardado.</p>
+                        </transition>
+                        <Button :class="{ 'opacity-25': form.processing }" :disabled="form.processing" type="submit" label="Guardar" />
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
 </template>
