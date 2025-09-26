@@ -1,11 +1,15 @@
 <script setup>
 import { ref, watch } from 'vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     item: Object,
 });
 
 const emit = defineEmits(['updateQuantity', 'updatePrice', 'removeItem']);
+
+// composables
+const { hasPermission } = usePermissions();
 
 const quantity = ref(props.item.quantity);
 const price = ref(props.item.price);
@@ -68,7 +72,7 @@ watch(() => props.item.price, (newVal) => {
                 <p class="text-sm text-gray-600 dark:text-gray-400">${{ item.price.toFixed(2) }}</p>
                 <!-- CAMBIO: Muestra el precio original tachado -->
                 <del v-if="item.original_price && item.original_price > item.price" class="text-xs text-gray-400">${{ item.original_price.toFixed(2) }}</del>
-                <Button @click="isEditingPrice = true" icon="pi pi-pencil" rounded text severity="secondary" style="width: 1.5rem; height: 1.5rem" />
+                <Button v-if="hasPermission('pos.edit_prices')" @click="isEditingPrice = true" icon="pi pi-pencil" rounded text severity="secondary" style="width: 1.5rem; height: 1.5rem" />
             </div>
 
             <p class="text-xs text-gray-500"

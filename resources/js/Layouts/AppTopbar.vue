@@ -2,9 +2,7 @@
 import { ref, computed } from 'vue';
 import { useLayout } from '@/Layouts/composables/layout';
 import { Link, router, usePage } from '@inertiajs/vue3';
-import Menu from 'primevue/menu';
-import Drawer from 'primevue/drawer';
-import Divider from 'primevue/divider';
+import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 
 const { toggleMenu: toggleSidebar, toggleDarkMode, isDarkTheme } = useLayout();
 const page = usePage();
@@ -55,7 +53,7 @@ const mobileUserMenuVisible = ref(false);
                 <i class="pi pi-bars"></i>
             </button>
             <Link href="/" class="layout-topbar-logo">
-            Logo
+            <ApplicationLogo class="h-14" />
             </Link>
         </div>
 

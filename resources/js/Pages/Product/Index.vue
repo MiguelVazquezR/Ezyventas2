@@ -6,6 +6,7 @@ import AddBatchStockModal from './Partials/AddBatchStockModal.vue';
 import ImportProductsModal from './Partials/ImportProductsModal.vue';
 import ProductNavigation from './Partials/ProductNavigation.vue';
 import { useConfirm } from "primevue/useconfirm";
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     products: Object,
@@ -13,6 +14,9 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+
+// composables
+const { hasPermission } = usePermissions();
 
 // --- Estado y Lógica ---
 const selectedProducts = ref([]);

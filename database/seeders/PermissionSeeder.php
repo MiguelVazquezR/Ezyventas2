@@ -21,13 +21,12 @@ class PermissionSeeder extends Seeder
             'Punto de Venta' => [
                 'pos.access' => 'Acceder al Punto de Venta',
                 'pos.create_sale' => 'Crear nuevas ventas',
-                'pos.apply_discounts' => 'Aplicar descuentos en el carrito',
                 'pos.edit_prices' => 'Editar precios en el carrito',
-                'pos.use_customer_credit' => 'Realizar ventas a crédito',
             ],
             'Historial de Ventas' => [
                 'transactions.access' => 'Acceder al historial de ventas',
-                'transactions.edit' => 'Cambiar status de transacciones o ventas',
+                'transactions.create_refund' => 'Generar devoluciones',
+                'transactions.cancel' => 'Cancelar ventas',
             ],
             'Productos' => [
                 'products.access' => 'Ver listado de productos',
