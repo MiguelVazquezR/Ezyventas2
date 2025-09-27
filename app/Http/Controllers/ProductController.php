@@ -11,14 +11,26 @@ use App\Models\Product;
 use App\Models\Promotion;
 use App\Models\Provider;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Support\Str;
 
-class ProductController extends Controller
+class ProductController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:products.access', only: ['index']),
+            new Middleware('can:products.create', only: ['create', 'store']),
+            new Middleware('can:products.see_details', only: ['show']),
+            new Middleware('can:products.edit', only: ['edit', 'update']),
+            new Middleware('can:products.delete', only: ['destroy', 'batchDestroy']),
+        ];
+    }
     /**
      * Display a listing of the resource.
      */

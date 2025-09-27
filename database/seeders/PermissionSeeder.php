@@ -26,7 +26,7 @@ class PermissionSeeder extends Seeder
             'Historial de Ventas' => [
                 'transactions.access' => 'Acceder al historial de ventas',
                 'transactions.see_details' => 'Ver detalles de ventas',
-                'transactions.create_refund' => 'Generar devoluciones',
+                'transactions.refund' => 'Generar devoluciones',
                 'transactions.cancel' => 'Cancelar ventas',
             ],
             'Productos' => [
@@ -43,7 +43,7 @@ class PermissionSeeder extends Seeder
             ],
             'Gastos' => [
                 'expenses.access' => 'Ver listado de gastos',
-                'expenses.details' => 'Ver detalles de gastos',
+                'expenses.see_details' => 'Ver detalles de gastos',
                 'expenses.create' => 'Crear nuevos gastos',
                 'expenses.edit' => 'Editar gastos existentes',
                 'expenses.delete' => 'Eliminar gastos',
@@ -73,8 +73,7 @@ class PermissionSeeder extends Seeder
                 'services.orders.edit' => 'Editar órdenes de servicio',
                 'services.orders.delete' => 'Eliminar órdenes de servicio',
                 'services.orders.import_export' => 'Importar y exportar órdenes de servicio',
-                'services.orders.change_status' => 'Cambiar status de órdenes de servicio',
-                'services.orders.cancel' => 'Cancelar órdenes de servicio',
+                'services.orders.change_status' => 'Cambiar status y cancelar órdenes de servicio',
                 'services.orders.see_customer_info' => 'Ver información de cliente en órdenes de servicio',
                 'services.orders.see_financial_info' => 'Ver información financiera en órdenes de servicio',
                 'services.print_tickets' => 'Imprimir tickets de órdenes',
@@ -99,7 +98,7 @@ class PermissionSeeder extends Seeder
                 'cash_registers.sessions.access' => 'Ver historial de cortes de caja (sesiones)',
                 'cash_registers.sessions.open' => 'Abrir sesiones de caja',
                 'cash_registers.sessions.close' => 'Crear cortes de caja (cierre de sesiones)',
-                'cash_registers.sessions.create_movemnts' => 'Crear movimientos de efectivo en sesiones de caja',
+                'cash_registers.sessions.create_movements' => 'Crear movimientos de efectivo en sesiones de caja',
             ],
             'Configuraciones' => [
                 'settings.generals.access' => 'Acceder a las configuraciones generales',

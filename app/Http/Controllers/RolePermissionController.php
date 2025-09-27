@@ -3,14 +3,25 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
-class RolePermissionController extends Controller
+class RolePermissionController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:settings.roles_permissions.access', only: ['index']),
+            new Middleware('can:settings.roles_permissions.manage', only: ['store', 'update']),
+            new Middleware('can:settings.roles_permissions.delete', only: ['destroy']),
+        ];
+    }
+
     public function index(): Response
     {
         $branchId = Auth::user()->branch_id;
@@ -70,9 +81,9 @@ class RolePermissionController extends Controller
         }
         
         // Opcional: Validar que el rol no tenga usuarios asignados
-        // if ($role->users()->count() > 0) {
-        //     return redirect()->back()->with('error', 'No se puede eliminar un rol con usuarios asignados.');
-        // }
+        if ($role->users()->count() > 0) {
+            return redirect()->back()->with('error', 'No se puede eliminar un rol con usuarios asignados.');
+        }
 
         $role->delete();
         return redirect()->route('roles.index')->with('success', 'Rol eliminado con éxito.');

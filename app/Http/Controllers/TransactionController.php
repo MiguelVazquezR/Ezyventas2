@@ -6,13 +6,25 @@ use App\Enums\TransactionStatus;
 use App\Models\Product;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class TransactionController extends Controller
+class TransactionController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:transactions.access', only: ['index']),
+            new Middleware('can:transactions.see_details', only: ['show']),
+            new Middleware('can:transactions.cancel', only: ['cancel']),
+            new Middleware('can:transactions.refund', only: ['refund']),
+        ];
+    }
+    
     public function index(Request $request): Response
     {
         $user = Auth::user();

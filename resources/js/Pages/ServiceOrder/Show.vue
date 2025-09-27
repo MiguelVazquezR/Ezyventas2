@@ -125,7 +125,7 @@ const formatCurrency = (value) => {
                 <p class="text-gray-500 dark:text-gray-400 mt-1">Cliente: {{ serviceOrder.customer_name }}</p>
             </div>
             <div class="flex items-center gap-2 mt-4 sm:mt-0">
-                <Button v-if="!isCancelled && hasPermission('services.orders.cancel')" @click="cancelOrder" label="Cancelar Orden" severity="danger" outlined />
+                <Button v-if="!isCancelled && hasPermission('services.orders.change_status')" @click="cancelOrder" label="Cancelar Orden" severity="danger" outlined />
                 <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined></SplitButton>
             </div>
         </div>

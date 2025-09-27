@@ -64,7 +64,7 @@ const generateReturn = () => {
 const actionItems = computed(() => [
     { label: 'Imprimir ticket', icon: 'pi pi-print' },
     { separator: true },
-    { label: 'Generar devolución', icon: 'pi pi-replay', command: generateReturn, disabled: !canRefund.value, visible: hasPermission('transactions.create_refund') },
+    { label: 'Generar devolución', icon: 'pi pi-replay', command: generateReturn, disabled: !canRefund.value, visible: hasPermission('transactions.refund') },
     { label: 'Cancelar venta', icon: 'pi pi-times-circle', class: 'text-red-500', command: cancelSale, disabled: !canCancel.value, visible: hasPermission('transactions.cancel') },
 ]);
 
