@@ -33,7 +33,6 @@ const submitPermissions = () => {
     if (selectedRole.value) {
         permissionsForm.put(route('roles.update', selectedRole.value.id), {
             preserveScroll: true,
-            onSuccess: () => toast.add({ severity: 'success', summary: 'Éxito', detail: 'Permisos guardados.', life: 3000 })
         });
     }
 };

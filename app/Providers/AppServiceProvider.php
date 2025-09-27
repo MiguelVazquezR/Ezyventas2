@@ -23,7 +23,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::before(function ($user, $ability) {
             // Si el usuario no tiene roles, se considera un superadministrador
             // y se le concede acceso a cualquier permiso.
-            if (!$user->roles()->exists()) {
+            if ($user && !$user->roles()->exists()) {
                 return true;
             }
         });
