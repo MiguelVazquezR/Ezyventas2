@@ -76,6 +76,13 @@ const model = ref([
                         routeName: 'users.*',
                         permission: 'settings.users.access'
                     },
+                    {
+                        label: 'Plantillas personalizadas',
+                        icon: 'pi pi-user',
+                        to: route('print-templates.index'),
+                        routeName: 'print-templates.*',
+                        // permission: 'settings.users.access'
+                    },
                 ]
             },
         ]
