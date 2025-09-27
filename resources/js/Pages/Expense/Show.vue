@@ -4,6 +4,7 @@ import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import DiffViewer from '@/Components/DiffViewer.vue';
 import { useConfirm } from 'primevue/useconfirm';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     expense: Object,
@@ -11,6 +12,9 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+
+// composables
+const { hasPermission } = usePermissions();
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -37,15 +41,15 @@ const deleteExpense = () => {
 };
 
 const actionItems = computed(() => [
-    { label: 'Crear Nuevo', icon: 'pi pi-plus', command: () => router.get(route('expenses.create')) },
-    { label: 'Editar Gasto', icon: 'pi pi-pencil', command: () => router.get(route('expenses.edit', props.expense.id)) },
+    { label: 'Crear Nuevo', icon: 'pi pi-plus', command: () => router.get(route('expenses.create')), visible: hasPermission('expenses.delete') },
+    { label: 'Editar Gasto', icon: 'pi pi-pencil', command: () => router.get(route('expenses.edit', props.expense.id)), visible: hasPermission('expenses.delete') },
     {
         label: props.expense.status === 'pagado' ? 'Marcar como Pendiente' : 'Marcar como Pagado',
         icon: 'pi pi-check-circle',
-        command: toggleStatus,
+        command: toggleStatus, visible: hasPermission('expenses.change_status')
     },
     { separator: true },
-    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteExpense },
+    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteExpense, visible: hasPermission('expenses.delete') },
 ]);
 
 const formatDate = (dateString) => {

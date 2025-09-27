@@ -3,12 +3,16 @@ import { ref } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     customer: Object,
 });
 
 const confirm = useConfirm();
+
+// composables
+const { hasPermission } = usePermissions();
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -29,10 +33,11 @@ const deleteCustomer = () => {
 };
 
 const actionItems = ref([
-    { label: 'Editar Cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', props.customer.id)) },
-    { label: 'Registrar Venta', icon: 'pi pi-shopping-cart' },
+    { label: 'Crear nuevo cliente', icon: 'pi pi-plus', command: () => router.get(route('customers.create')), visible: hasPermission('customers.create') },
+    { label: 'Editar cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', props.customer.id)), visible: hasPermission('customers.edit') },
+    { label: 'Registrar venta', icon: 'pi pi-shopping-cart', visible: hasPermission('customers.store_sale') },
     { separator: true },
-    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteCustomer },
+    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteCustomer, visible: hasPermission('customers.delete') },
 ]);
 
 // --- Helpers de Formato ---
@@ -90,7 +95,7 @@ const getTransactionStatusSeverity = (status) => {
                         <li v-if="customer.tax_id" class="flex items-center"><i class="pi pi-id-card w-6 text-gray-500"></i> <span class="font-medium">{{ customer.tax_id }}</span></li>
                      </ul>
                  </div>
-                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                 <div v-if="hasPermission('customers.see_financial_info')" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                      <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información Financiera</h2>
                      <ul class="space-y-3 text-sm">
                         <li class="flex justify-between items-center">

@@ -4,6 +4,7 @@ import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import DiffViewer from '@/Components/DiffViewer.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     quote: Object,
@@ -11,6 +12,10 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+
+// composables
+const { hasPermission } = usePermissions();
+
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
     { label: 'Cotizaciones', url: route('quotes.index') },
@@ -66,12 +71,12 @@ const deleteQuote = () => {
 };
 
 const actionItems = ref([
-    { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('quotes.edit', props.quote.id)), disabled: isTerminalStatus.value },
-    { label: 'Crear Nueva Versión', icon: 'pi pi-copy', command: createNewVersion },
+    { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('quotes.edit', props.quote.id)), disabled: isTerminalStatus.value, visible: hasPermission('quotes.create') },
+    { label: 'Crear nueva versión', icon: 'pi pi-copy', command: createNewVersion, visible: hasPermission('quotes.create') },
     { label: 'Ver PDF / Imprimir', icon: 'pi pi-print', command: () => window.open(route('quotes.print', props.quote.id), '_blank') },
-    { label: 'Convertir a Venta', icon: 'pi pi-dollar', disabled: props.quote.status !== 'autorizada' },
+    { label: 'Convertir a venta', icon: 'pi pi-dollar', disabled: props.quote.status !== 'autorizada', visible: hasPermission('quotes.create_sale') },
     { separator: true },
-    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteQuote },
+    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteQuote, visible: hasPermission('quotes.delete') },
 ]);
 
 // --- Helpers de Formato y Lógica de Vista ---
@@ -124,9 +129,10 @@ const allVersions = computed(() => {
                                     <div class="flex-auto relative">
                                         <button
                                             class="bg-transparent border-0 inline-flex flex-col gap-2 items-center text-center w-full"
-                                            @click="changeStatus(step.value, value)" v-bind="a11yAttrs.header">
+                                            @click="changeStatus(step.value, value)" v-bind="a11yAttrs.header"
+                                            :disabled="!hasPermission('quotes.change_status')">
                                             <span
-                                                :class="['w-12 h-12 rounded-full border-2 flex items-center justify-center transition-colors duration-200', { 'bg-primary border-primary text-primary-contrast': value <= activeIndex, 'border-surface-200 dark:border-surface-700': value > activeIndex, 'cursor-pointer hover:border-primary': value > activeIndex }]"><i
+                                                :class="['w-12 h-12 rounded-full border-2 flex items-center justify-center transition-colors duration-200', { 'bg-primary border-primary text-primary-contrast': value <= activeIndex, 'border-surface-200 dark:border-surface-700': value > activeIndex, 'cursor-pointer hover:border-primary': value > activeIndex && hasPermission('quotes.change_status') }]"><i
                                                     :class="step.icon" /></span>
                                             <span
                                                 :class="['font-medium text-sm', { 'text-primary': value <= activeIndex }]">{{

@@ -19,8 +19,8 @@ const searchTerm = ref(props.filters.search || '');
 const menu = ref();
 const selectedSessionForMenu = ref(null);
 const menuItems = ref([
-    { label: 'Ver Detalle del Corte', icon: 'pi pi-eye', command: () => router.get(route('cash-register-sessions.show', selectedSessionForMenu.value.id)) },
-    { label: 'Imprimir Reporte', icon: 'pi pi-print', command: () => window.open(route('cash-register-sessions.print', selectedSessionForMenu.value.id), '_blank') },
+    { label: 'Ver', icon: 'pi pi-eye', command: () => router.get(route('cash-register-sessions.show', selectedSessionForMenu.value.id)) },
+    { label: 'Imprimir reporte', icon: 'pi pi-print', command: () => window.open(route('cash-register-sessions.print', selectedSessionForMenu.value.id), '_blank') },
 ]);
 
 const toggleMenu = (event, data) => {

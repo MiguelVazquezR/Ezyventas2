@@ -29,9 +29,10 @@ const menuItems = computed(() => {
 
     return [
         {
-            label: 'Ver detalle de venta',
+            label: 'Ver',
             icon: 'pi pi-eye',
-            command: () => router.get(route('transactions.show', selectedTransactionForMenu.value.id))
+            command: () => router.get(route('transactions.show', selectedTransactionForMenu.value.id)),
+            visible: hasPermission('transactions.see_details')
         },
         {
             label: 'Generar devolución',

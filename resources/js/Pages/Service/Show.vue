@@ -4,6 +4,7 @@ import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import DiffViewer from '@/Components/DiffViewer.vue';
 import { useConfirm } from "primevue/useconfirm";
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     service: Object,
@@ -11,6 +12,9 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+
+// composables
+const { hasPermission } = usePermissions();
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -31,10 +35,10 @@ const deleteService = () => {
 };
 
 const actionItems = ref([
-    { label: 'Crear Nuevo', icon: 'pi pi-plus', command: () => router.get(route('services.create')) },
-    { label: 'Editar Servicio', icon: 'pi pi-pencil', command: () => router.get(route('services.edit', props.service.id)) },
+    { label: 'Crear nuevo', icon: 'pi pi-plus', command: () => router.get(route('services.create')), visible: hasPermission('services.catalog.create') },
+    { label: 'Editar servicio', icon: 'pi pi-pencil', command: () => router.get(route('services.edit', props.service.id)), visible: hasPermission('services.catalog.edit') },
     { separator: true },
-    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteService },
+    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteService, visible: hasPermission('services.catalog.delete') },
 ]);
 
 const mainImage = computed(() =>

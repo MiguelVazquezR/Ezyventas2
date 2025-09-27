@@ -7,11 +7,12 @@ const model = ref([
     {
         items: [
             { label: 'Inicio', icon: 'pi pi-fw pi-home', to: route('dashboard'), routeName: 'dashboard' },
+            { label: 'Reporte financiero', icon: 'pi pi-key', to: route('financial-control.index'), routeName: 'financial-control.*', permission: 'financial_reports.access' },
             { label: 'Punto de venta', icon: 'pi pi-fw pi-wallet', to: route('pos.index'), routeName: 'pos.*', permission: 'pos.access' },
-            { label: 'Historial de ventas', icon: 'pi pi-fw pi-moon', to: route('transactions.index'), routeName: 'transactions.*', permission: 'transactions.access'},
+            { label: 'Historial de ventas', icon: 'pi pi-fw pi-moon', to: route('transactions.index'), routeName: 'transactions.*', permission: 'transactions.access' },
             { label: 'Productos', icon: 'pi pi-fw pi-building', to: route('products.index'), routeName: 'products.*', permission: 'products.access' },
-            { label: 'Gastos', icon: 'pi pi-fw pi-calendar-times', to: route('expenses.index'), routeName: 'expenses.*' },
-            { label: 'Clientes', icon: 'pi pi-fw pi-user', to: route('customers.index'), routeName: 'customers.*' },
+            { label: 'Gastos', icon: 'pi pi-fw pi-calendar-times', to: route('expenses.index'), routeName: 'expenses.*', permission: 'expenses.access' },
+            { label: 'Clientes', icon: 'pi pi-fw pi-user', to: route('customers.index'), routeName: 'customers.*', permission: 'customers.access' },
             {
                 label: 'Servicios', icon: 'pi pi-fw pi-cog',
                 items: [
@@ -20,41 +21,34 @@ const model = ref([
                         icon: 'pi pi-key',
                         to: route('services.index'),
                         routeName: 'services.*',
-                        // permission: 'ver_roles_permisos'
+                        permission: 'services.catalog.access'
                     },
                     {
                         label: 'Órdenes de servico',
                         icon: 'pi pi-calendar-plus',
                         to: route('service-orders.index'),
                         routeName: 'service-orders.*',
-                        // permission: 'ver_festivos'
+                        permission: 'services.orders.access'
                     },
                 ]
             },
             { label: 'Cotizaciones', icon: 'pi pi-fw pi-user', to: route('quotes.index'), routeName: 'quotes.*' },
             {
-                label: 'Control financiero', icon: 'pi pi-fw pi-sun',
+                label: 'Cajas', icon: 'pi pi-fw pi-sun',
                 items: [
-                    {
-                        label: 'Reportes',
-                        icon: 'pi pi-key',
-                        to: route('financial-control.index'),
-                        routeName: 'financial-control.*',
-                        // permission: 'ver_roles_permisos'
-                    },
                     {
                         label: 'Cajas registradoras',
                         icon: 'pi pi-calendar-plus',
                         to: route('cash-registers.index'),
                         routeName: 'cash-registers.*',
-                        // permission: 'ver_festivos'
+                        permission: 'cash_registers.access'
                     },
                     {
                         label: 'Historial de cortes',
                         icon: 'pi pi-calendar-plus',
                         to: route('cash-register-sessions.index'),
                         routeName: 'cash-register-sessions.*',
-                        // permission: 'ver_festivos'
+                        permission: 'cash_registers.sessions.access'
                     },
                 ]
             },
@@ -66,21 +60,21 @@ const model = ref([
                         icon: 'pi pi-key',
                         to: route('settings.index'),
                         routeName: 'settings.*',
-                        // permission: 'ver_roles_permisos'
+                        permission: 'settings.generals.access'
                     },
                     {
                         label: 'Roles y permisos',
                         icon: 'pi pi-calendar-plus',
                         to: route('roles.index'),
                         routeName: 'roles.*',
-                        // permission: 'ver_festivos'
+                        permission: 'settings.roles_permissions.access'
                     },
                     {
                         label: 'Usuarios',
                         icon: 'pi pi-user',
                         to: route('users.index'),
                         routeName: 'users.*',
-                        // permission: 'ver_festivos'
+                        permission: 'settings.users.access'
                     },
                 ]
             },

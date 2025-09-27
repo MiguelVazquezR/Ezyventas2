@@ -3,6 +3,7 @@ import { ref, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     quotes: Object,
@@ -11,11 +12,18 @@ const props = defineProps({
 
 const confirm = useConfirm();
 
+// composables
+const { hasPermission } = usePermissions();
+
 // --- Estado y Lógica ---
 const selectedQuotes = ref([]);
 const searchTerm = ref(props.filters.search || '');
 // const showImportModal = ref(false); // Descomentar si se crea el modal de importación
 
+const headerMenu = ref();
+const toggleHeaderMenu = (event) => {
+    headerMenu.value.toggle(event);
+};
 const splitButtonItems = ref([
     // { label: 'Importar Cotizaciones', icon: 'pi pi-upload', command: () => showImportModal.value = true },
     { label: 'Exportar Cotizaciones', icon: 'pi pi-download', command: () => window.location.href = route('import-export.quotes.export') },
@@ -59,11 +67,11 @@ const deleteSelectedQuotes = () => {
 };
 
 const menuItems = ref([
-    { label: 'Ver Detalle', icon: 'pi pi-eye', command: () => router.get(route('quotes.show', selectedQuoteForMenu.value.id)) },
-    { label: 'Editar Cotización', icon: 'pi pi-pencil', command: () => router.get(route('quotes.edit', selectedQuoteForMenu.value.id)) },
-    { label: 'Convertir a Venta', icon: 'pi pi-dollar' },
+    { label: 'Ver', icon: 'pi pi-eye', command: () => router.get(route('quotes.show', selectedQuoteForMenu.value.id)), visible: hasPermission('quotes.see_details') },
+    { label: 'Editar cotización', icon: 'pi pi-pencil', command: () => router.get(route('quotes.edit', selectedQuoteForMenu.value.id)), visible: hasPermission('quotes.edit') },
+    { label: 'Convertir a venta', icon: 'pi pi-dollar', visible: hasPermission('quotes.create_sale') },
     { separator: true },
-    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleQuote },
+    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleQuote, visible: hasPermission('quotes.delete') },
 ]);
 
 const toggleMenu = (event, data) => {
@@ -117,9 +125,13 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                             <InputText v-model="searchTerm" placeholder="Buscar por folio o cliente..."
                                 class="w-full" />
                         </IconField>
-                        <SplitButton label="Nueva Cotización" icon="pi pi-plus"
-                            @click="router.get(route('quotes.create'))" :model="splitButtonItems" severity="warning">
-                        </SplitButton>
+                        <ButtonGroup>
+                            <Button v-if="hasPermission('quotes.create')" label="Nueva cotización" icon="pi pi-plus"
+                                @click="router.get(route('quotes.create'))" severity="warning" />
+                            <Button v-if="hasPermission('quotes.export')" icon="pi pi-chevron-down"
+                                @click="toggleHeaderMenu" severity="warning" />
+                        </ButtonGroup>
+                        <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" />
                     </div>
                 </div>
 
@@ -128,7 +140,7 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-2 mb-4 flex justify-between items-center">
                     <span class="font-semibold text-sm text-blue-800 dark:text-blue-200">{{ selectedQuotes.length }}
                         cotización(es) seleccionada(s)</span>
-                    <Button @click="deleteSelectedQuotes" label="Eliminar" icon="pi pi-trash" size="small"
+                    <Button v-if="hasPermission('quotes.delete')" @click="deleteSelectedQuotes" label="Eliminar" icon="pi pi-trash" size="small"
                         severity="danger" outlined />
                 </div>
 

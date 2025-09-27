@@ -3,12 +3,16 @@ import { ref } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     cashRegisters: Array,
 });
 
 const confirm = useConfirm();
+
+// composables
+const { hasPermission } = usePermissions();
 
 const menu = ref();
 const selectedRegisterForMenu = ref(null);
@@ -31,7 +35,7 @@ const menuItems = ref([
     { 
         label: 'Ver Detalles', 
         icon: 'pi pi-eye', 
-        command: () => router.get(route('cash-registers.show', selectedRegisterForMenu.value.id)) 
+        command: () => router.get(route('cash-registers.show', selectedRegisterForMenu.value.id)),
     },
     { 
         label: 'Editar Caja', 
@@ -61,7 +65,7 @@ const toggleMenu = (event, data) => {
                 <!-- Header -->
                 <div class="mb-6 flex justify-between items-center">
                      <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Gestión de Cajas Registradoras</h1>
-                     <Button label="Nueva Caja" icon="pi pi-plus" @click="router.get(route('cash-registers.create'))" severity="warning" />
+                     <Button v-if="hasPermission('cash_registers.manage')" label="Nueva Caja" icon="pi pi-plus" @click="router.get(route('cash-registers.create'))" severity="warning" />
                 </div>
 
                 <!-- Tabla de Cajas -->
@@ -81,7 +85,7 @@ const toggleMenu = (event, data) => {
                              <i class="pi" :class="{ 'pi-check-circle text-green-500': data.in_use, 'pi-times-circle text-gray-400': !data.in_use }"></i>
                         </template>
                     </Column>
-                    <Column headerStyle="width: 5rem; text-align: center">
+                    <Column v-if="hasPermission('cash_registers.manage')" headerStyle="width: 5rem; text-align: center">
                         <template #body="{ data }"> <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded severity="secondary" /> </template>
                     </Column>
                 </DataTable>

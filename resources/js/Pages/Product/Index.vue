@@ -24,6 +24,10 @@ const showAddStockModal = ref(false);
 const showImportModal = ref(false);
 const searchTerm = ref(props.filters.search || '');
 
+const headerMenu = ref();
+const toggleHeaderMenu = (event) => {
+    headerMenu.value.toggle(event);
+};
 const splitButtonItems = ref([
     {
         label: 'Importar desde Excel',
@@ -77,11 +81,11 @@ const deleteSingleProduct = () => {
 };
 
 const menuItems = ref([
-    { label: 'Ver', icon: 'pi pi-eye', command: () => { if (selectedProductForMenu.value) router.get(route('products.show', selectedProductForMenu.value.id)); } },
-    { label: 'Editar', icon: 'pi pi-pencil', command: () => { if (selectedProductForMenu.value) router.get(route('products.edit', selectedProductForMenu.value.id)); } },
-    { label: 'Agregar promoción', icon: 'pi pi-tag', command: () => { if (selectedProductForMenu.value) router.get(route('products.promotions.create', selectedProductForMenu.value.id)); } },
+    { label: 'Ver', icon: 'pi pi-eye', command: () => { if (selectedProductForMenu.value) router.get(route('products.show', selectedProductForMenu.value.id)); }, visible: hasPermission('products.see_details') },
+    { label: 'Editar', icon: 'pi pi-pencil', command: () => { if (selectedProductForMenu.value) router.get(route('products.edit', selectedProductForMenu.value.id)); }, visible: hasPermission('products.edit') },
+    { label: 'Agregar promoción', icon: 'pi pi-tag', command: () => { if (selectedProductForMenu.value) router.get(route('products.promotions.create', selectedProductForMenu.value.id)); }, visible: hasPermission('products.manage_promos') },
     { separator: true },
-    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleProduct },
+    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleProduct, visible: hasPermission('products.delete') },
 ]);
 
 const toggleMenu = (event, data) => {
@@ -119,7 +123,7 @@ const getStockSeverity = (product) => {
                 <!-- Header -->
                 <div class="mb-6">
                     <!-- Componente de Navegación -->
-                    <ProductNavigation />
+                    <ProductNavigation v-if="hasPermission('products.manage_global_products')" />
 
                     <div class="flex flex-col md:flex-row justify-between items-center gap-4 mt-4">
                         <IconField iconPosition="left" class="w-full md:w-1/3">
@@ -127,9 +131,12 @@ const getStockSeverity = (product) => {
                             <InputText v-model="searchTerm" placeholder="Buscar en mis productos..." class="w-full" />
                         </IconField>
                         <div class="flex items-center gap-2">
-                            <SplitButton label="Nuevo producto" icon="pi pi-plus"
-                                @click="router.get(route('products.create'))" :model="splitButtonItems"
-                                severity="warning"></SplitButton>
+                            <ButtonGroup>
+                                <Button v-if="hasPermission('products.create')" label="Nuevo producto" icon="pi pi-plus"
+                                    @click="router.get(route('products.create'))" severity="warning" />
+                                <Button v-if="hasPermission('products.import_export')" icon="pi pi-chevron-down" @click="toggleHeaderMenu" severity="warning" />
+                            </ButtonGroup>
+                            <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" />
                         </div>
                     </div>
                 </div>
@@ -140,9 +147,9 @@ const getStockSeverity = (product) => {
                     <span class="font-semibold text-sm text-blue-800 dark:text-blue-200">{{ selectedProducts.length }}
                         producto(s) seleccionado(s)</span>
                     <div class="flex items-center gap-2">
-                        <Button @click="showAddStockModal = true" label="Dar Entrada" icon="pi pi-arrow-down"
+                        <Button v-if="hasPermission('products.manage_stock')" @click="showAddStockModal = true" label="Dar Entrada" icon="pi pi-arrow-down"
                             size="small" severity="secondary" outlined />
-                        <Button @click="deleteSelectedProducts" label="Eliminar" icon="pi pi-trash" size="small"
+                        <Button v-if="hasPermission('products.delete')" @click="deleteSelectedProducts" label="Eliminar" icon="pi pi-trash" size="small"
                             severity="danger" outlined />
                     </div>
                 </div>

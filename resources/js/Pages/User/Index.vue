@@ -3,17 +3,7 @@ import { ref, watch, computed } from 'vue';
 import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
-
-// PrimeVue Components
-import DataTable from 'primevue/datatable';
-import Column from 'primevue/column';
-import Button from 'primevue/button';
-import IconField from 'primevue/iconfield';
-import InputIcon from 'primevue/inputicon';
-import InputText from 'primevue/inputtext';
-import Tag from 'primevue/tag';
-import Menu from 'primevue/menu';
-import ConfirmDialog from 'primevue/confirmdialog';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     users: Object,
@@ -21,6 +11,9 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+
+// composables
+const { hasPermission } = usePermissions();
 
 const searchTerm = ref(props.filters.search || '');
 const menu = ref();
@@ -35,15 +28,15 @@ const menuItems = computed(() => {
     const isActive = selectedUserForMenu.value.is_active;
 
     return [
-        { label: 'Editar Usuario', icon: 'pi pi-pencil', disabled: isProtected, command: () => router.get(route('users.edit', selectedUserForMenu.value.id)) },
+        { label: 'Editar usuario', icon: 'pi pi-pencil', disabled: isProtected, command: () => router.get(route('users.edit', selectedUserForMenu.value.id)), visible: hasPermission('settings.users.edit') },
         { 
-            label: isActive ? 'Desactivar Usuario' : 'Activar Usuario', 
+            label: isActive ? 'Desactivar usuario' : 'Activar usuario', 
             icon: isActive ? 'pi pi-ban' : 'pi pi-check-circle',
             disabled: isProtected,
-            command: () => toggleUserStatus(selectedUserForMenu.value)
+            command: () => toggleUserStatus(selectedUserForMenu.value), visible: hasPermission('settings.users.change_status')
         },
         { separator: true },
-        { label: 'Eliminar Usuario', icon: 'pi pi-trash', class: 'text-red-500', disabled: isProtected, command: () => confirmDeleteUser(selectedUserForMenu.value) },
+        { label: 'Eliminar usuario', icon: 'pi pi-trash', class: 'text-red-500', disabled: isProtected, command: () => confirmDeleteUser(selectedUserForMenu.value), visible: hasPermission('settings.users.delete') },
     ];
 });
 

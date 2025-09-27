@@ -3,9 +3,13 @@ import { ref, computed } from 'vue';
 import { useLayout } from '@/Layouts/composables/layout';
 import { Link, router, usePage } from '@inertiajs/vue3';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
+import { usePermissions } from '@/Composables';
 
 const { toggleMenu: toggleSidebar, toggleDarkMode, isDarkTheme } = useLayout();
 const page = usePage();
+
+// composables
+const { hasPermission } = usePermissions();
 
 // SOLUCIÓN: Usar 'computed' para asegurar la reactividad en cambios de página.
 const user = computed(() => page.props.auth.user);
@@ -58,7 +62,7 @@ const mobileUserMenuVisible = ref(false);
         </div>
 
         <div class="layout-topbar-actions flex items-center">
-            <div v-if="availableBranches && availableBranches.length > 1" class="layout-topbar-menu hidden lg:block">
+            <div v-if="availableBranches && availableBranches.length > 1 && hasPermission('system.branches.switch')" class="layout-topbar-menu hidden lg:block">
                 <div class="layout-topbar-menu-content">
                     <button @click="toggleBranchMenu"
                         class="flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
