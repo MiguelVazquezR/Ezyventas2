@@ -43,20 +43,50 @@ class PrintTemplateController extends Controller
             'name' => 'required|string|max:255',
             'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
             'content' => 'required|array',
+            'content.config' => 'required|array',
+            'content.elements' => 'required|array', // Se valida el array de elementos visuales
             'branch_ids' => 'required|array|min:1',
             'branch_ids.*' => ['required', Rule::in($subscription->branches->pluck('id'))],
         ]);
-
+        
         DB::transaction(function () use ($validated, $subscription) {
             $template = $subscription->printTemplates()->create([
                 'name' => $validated['name'],
                 'type' => $validated['type'],
-                'content' => $validated['content'],
+                'content' => $validated['content'], // Se guarda el objeto con config y elements
             ]);
             $template->branches()->attach($validated['branch_ids']);
         });
 
         return redirect()->route('print-templates.index')->with('success', 'Plantilla creada con éxito.');
+    }
+
+    public function update(Request $request, PrintTemplate $printTemplate)
+    {
+        if ($printTemplate->subscription_id !== Auth::user()->branch->subscription_id) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
+            'content' => 'required|array',
+            'content.config' => 'required|array',
+            'content.elements' => 'required|array',
+            'branch_ids' => 'required|array|min:1',
+            'branch_ids.*' => ['required', Rule::in($printTemplate->subscription->branches->pluck('id'))],
+        ]);
+        
+        DB::transaction(function () use ($validated, $printTemplate) {
+            $printTemplate->update([
+                'name' => $validated['name'],
+                'type' => $validated['type'],
+                'content' => $validated['content'],
+            ]);
+            $printTemplate->branches()->sync($validated['branch_ids']);
+        });
+
+        return redirect()->route('print-templates.index')->with('success', 'Plantilla actualizada con éxito.');
     }
 
     public function edit(PrintTemplate $printTemplate): Response
@@ -72,32 +102,6 @@ class PrintTemplateController extends Controller
             'template' => $printTemplate,
             'branches' => $subscription->branches()->get(['id', 'name']),
         ]);
-    }
-
-    public function update(Request $request, PrintTemplate $printTemplate)
-    {
-        if ($printTemplate->subscription_id !== Auth::user()->branch->subscription_id) {
-            abort(403);
-        }
-
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
-            'content' => 'required|array',
-            'branch_ids' => 'required|array|min:1',
-            'branch_ids.*' => ['required', Rule::in($printTemplate->subscription->branches->pluck('id'))],
-        ]);
-
-        DB::transaction(function () use ($validated, $printTemplate) {
-            $printTemplate->update([
-                'name' => $validated['name'],
-                'type' => $validated['type'],
-                'content' => $validated['content'],
-            ]);
-            $printTemplate->branches()->sync($validated['branch_ids']);
-        });
-
-        return redirect()->back()->with('success', 'Plantilla actualizada con éxito.');
     }
 
     public function destroy(PrintTemplate $printTemplate)

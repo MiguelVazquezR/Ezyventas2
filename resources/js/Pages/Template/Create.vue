@@ -5,8 +5,6 @@ import { useToast } from 'primevue/usetoast';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
-
-// Componentes Reutilizables
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 
@@ -24,74 +22,13 @@ const form = useForm({
     branch_ids: [],
     content: {
         config: { paperWidth: '80mm', feedLines: 3, codepage: 'cp850' },
-        operations: [],
+        elements: [], // Se guardará el array de elementos visuales
     },
 });
 
-const templateTypeOptions = ref([{ label: 'Ticket de Venta', value: 'ticket_venta' }]);
-const alignmentOptions = ref([ { icon: 'pi pi-align-left', value: 'left' }, { icon: 'pi pi-align-center', value: 'center' }, { icon: 'pi pi-align-right', value: 'right' } ]);
-const barcodeTypeOptions = ref(['CODE128', 'CODE39', 'EAN13', 'UPC-A']);
-const placeholderOptions = ref([
-    { group: 'Venta', items: [ { label: 'Folio', value: '{{folio}}' }, { label: 'Fecha y Hora', value: '{{fecha}}' }, { label: 'Total', value: '{{total}}' }, { label: 'Subtotal', value: '{{subtotal}}' }, { label: 'Descuentos', value: '{{descuentos}}' } ]},
-    { group: 'Negocio', items: [ { label: 'Nombre del Negocio', value: '{{negocio.nombre}}' }, { label: 'Dirección', value: '{{negocio.direccion}}' }, { label: 'Teléfono', value: '{{negocio.telefono}}' } ]},
-    { group: 'Cliente', items: [ { label: 'Nombre del Cliente', value: '{{cliente.nombre}}' }, { label: 'Teléfono del Cliente', value: '{{cliente.telefono}}' } ]},
-    { group: 'Productos (para bucles)', items: [ { label: 'Nombre Producto', value: '{{producto.nombre}}' }, { label: 'Cantidad', value: '{{producto.cantidad}}' }, { label: 'Precio Unitario', value: '{{producto.precio}}' }, { label: 'Total Producto', value: '{{producto.total}}' } ]},
-]);
-
-// --- Motor ESC/POS (Frontend) ---
-const hasSpecialChars = (text) => text && /[ñáéíóúÁÉÍÓÚ]/.test(text);
-const generateEscPosJson = () => {
-    let operations = [];
-    operations.push({ nombre: "EstablecerAlineacion", argumentos: ["left"] });
-
-    templateElements.value.forEach(element => {
-        if (element.data.align) {
-            operations.push({ nombre: "EstablecerAlineacion", argumentos: [element.data.align] });
-        }
-        
-        switch (element.type) {
-            case 'text':
-                operations.push(hasSpecialChars(element.data.text)
-                    ? { nombre: "TextoSegunPaginaDeCodigos", argumentos: [0, form.content.config.codepage, element.data.text + '\n'] }
-                    : { nombre: "EscribirTexto", argumentos: [element.data.text + '\n'] });
-                break;
-            case 'image':
-            case 'local_image':
-                if (element.data.url) {
-                    operations.push({ nombre: "DescargarImagenDeInternetEImprimir", argumentos: [element.data.url, element.data.width] });
-                }
-                break;
-            case 'separator':
-                operations.push({ nombre: "EscribirTexto", argumentos: ['-'.repeat(form.content.config.paperWidth === '80mm' ? 48 : 32) + '\n'] });
-                break;
-            case 'barcode':
-                operations.push({ nombre: "ImprimirCodigoDeBarras", argumentos: [element.data.type, element.data.value] });
-                break;
-            case 'qr':
-                operations.push({ nombre: "ImprimirQR", argumentos: [element.data.value] });
-                break;
-            case 'sales_table':
-                operations.push({ nombre: "IniciarBucleProductos", argumentos: [] });
-                operations.push({ nombre: "EscribirTexto", argumentos: ["{{producto.cantidad}} {{producto.nombre}} ${{producto.total}}\n"] });
-                operations.push({ nombre: "FinalizarBucleProductos", argumentos: [] });
-                break;
-        }
-
-        if (element.data.align) {
-             operations.push({ nombre: "EstablecerAlineacion", argumentos: ["left"] });
-        }
-    });
-
-    operations.push({ nombre: "CortarPapel", argumentos: [] });
-    if (form.content.config.feedLines > 0) {
-        operations.push({ nombre: "Feed", argumentos: [form.content.config.feedLines] });
-    }
-    
-    return operations;
-};
-
-watch(templateElements, () => {
-    form.content.operations = generateEscPosJson();
+// Se actualiza la propiedad 'elements' del formulario cuando el diseño cambia
+watch(templateElements, (newElements) => {
+    form.content.elements = newElements;
 }, { deep: true });
 
 const submit = () => {
@@ -99,28 +36,31 @@ const submit = () => {
 };
 
 const availableElements = ref([
-    { id: 'text', name: 'Texto', icon: 'pi-align-left' },
-    { id: 'image', name: 'Imagen de Internet', icon: 'pi-image' },
-    { id: 'local_image', name: 'Subir Imagen', icon: 'pi-upload' },
-    { id: 'separator', name: 'Separador', icon: 'pi-minus' },
-    { id: 'barcode', name: 'Código de Barras', icon: 'pi-bars' },
-    { id: 'qr', name: 'Código QR', icon: 'pi-qrcode' },
-    { id: 'sales_table', name: 'Tabla de Venta', icon: 'pi-table' },
+    { id: 'text', name: 'Texto', icon: 'pi pi-align-left' },
+    { id: 'image', name: 'Imagen de Internet', icon: 'pi pi-image' },
+    { id: 'local_image', name: 'Subir Imagen', icon: 'pi pi-upload' },
+    { id: 'separator', name: 'Separador', icon: 'pi pi-minus' },
+    { id: 'barcode', name: 'Código de Barras', icon: 'pi pi-bars' },
+    { id: 'qr', name: 'Código QR', icon: 'pi pi-qrcode' },
+    { id: 'sales_table', name: 'Tabla de Venta', icon: 'pi pi-table' },
 ]);
 
 const addElement = (type) => {
     const newElement = { id: uuidv4(), type: type, data: { align: 'left' } };
+    if (type === 'text') newElement.data = { text: 'Texto de ejemplo', align: 'left' };
     if (type === 'image') newElement.data = { url: 'https://placehold.co/300x150', width: 300, align: 'center' };
     if (type === 'local_image') newElement.data = { url: '', width: 300, align: 'center', isUploading: false };
-    if (type === 'barcode') newElement.data = { type: 'CODE128', value: '123456789', align: 'center' };
-    if (type === 'qr') newElement.data = { value: 'https://ezypos.com', align: 'center' };
+    if (type === 'barcode') newElement.data = { type: 'CODE128', value: '{{folio}}', align: 'center' };
+    if (type === 'qr') newElement.data = { value: '{{url_factura}}', align: 'center' };
     templateElements.value.push(newElement);
     selectedElement.value = newElement;
 };
 
 const removeElement = (elementId) => {
     templateElements.value = templateElements.value.filter(el => el.id !== elementId);
-    if (selectedElement.value?.id === elementId) selectedElement.value = null;
+    if (selectedElement.value?.id === elementId) {
+        selectedElement.value = null;
+    }
 };
 
 const handleImageUpload = async (event, uploader) => {
@@ -149,15 +89,24 @@ const insertPlaceholder = (placeholder) => {
     }
 };
 
+const templateTypeOptions = ref([{ label: 'Ticket de Venta', value: 'ticket_venta' }]);
+const alignmentOptions = ref([ { icon: 'pi pi-align-left', value: 'left' }, { icon: 'pi pi-align-center', value: 'center' }, { icon: 'pi pi-align-right', value: 'right' } ]);
+const barcodeTypeOptions = ref(['CODE128', 'CODE39', 'EAN13', 'UPC-A']);
+const placeholderOptions = ref([
+    { group: 'Venta', items: [ { label: 'Folio', value: '{{folio}}' }, { label: 'Fecha y Hora', value: '{{fecha}}' }, { label: 'Total', value: '{{total}}' }, { label: 'Subtotal', value: '{{subtotal}}' }, { label: 'Descuentos', value: '{{descuentos}}' } ]},
+    { group: 'Negocio', items: [ { label: 'Nombre del Negocio', value: '{{negocio.nombre}}' }, { label: 'Dirección', value: '{{negocio.direccion}}' }, { label: 'Teléfono', value: '{{negocio.telefono}}' } ]},
+    { group: 'Cliente', items: [ { label: 'Nombre del Cliente', value: '{{cliente.nombre}}' }, { label: 'Teléfono del Cliente', value: '{{cliente.telefono}}' } ]},
+    { group: 'Productos (para bucles)', items: [ { label: 'Nombre Producto', value: '{{producto.nombre}}' }, { label: 'Cantidad', value: '{{producto.cantidad}}' }, { label: 'Precio Unitario', value: '{{producto.precio}}' }, { label: 'Total Producto', value: '{{producto.total}}' } ]},
+]);
 </script>
 
 <template>
     <Head title="Crear Plantilla" />
     <AppLayout>
          <div class="flex h-[calc(100vh-6rem)]">
-             <!-- Columna de Herramientas -->
+            <!-- Columna de Herramientas -->
             <div class="w-1/4 border-r dark:border-gray-700 p-4 overflow-y-auto">
-                <h3 class="font-bold mb-4">Configuración</h3>
+                 <h3 class="font-bold mb-4">Configuración</h3>
                  <div class="space-y-4">
                      <div>
                         <InputLabel value="Nombre de la Plantilla *" />
@@ -236,7 +185,7 @@ const insertPlaceholder = (placeholder) => {
                  <div v-if="selectedElement" class="space-y-4">
                      <div v-if="selectedElement.type === 'text'">
                          <InputLabel>Alineación</InputLabel>
-                         <SelectButton v-model="selectedElement.data.align" :options="[{icon:'pi pi-align-left', value:'left'}, {icon:'pi pi-align-center', value:'center'}, {icon:'pi pi-align-right', value:'right'}]" optionValue="value" class="mt-1 w-full" >
+                         <SelectButton v-model="selectedElement.data.align" :options="alignmentOptions" optionValue="value" class="mt-1 w-full" >
                              <template #option="slotProps"> <i :class="slotProps.option.icon"></i> </template>
                          </SelectButton>
                          <InputLabel class="mt-4">Contenido del Texto</InputLabel>
@@ -302,3 +251,4 @@ const insertPlaceholder = (placeholder) => {
          </div>
     </AppLayout>
 </template>
+
