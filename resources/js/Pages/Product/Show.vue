@@ -6,6 +6,7 @@ import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import DiffViewer from '@/Components/DiffViewer.vue';
 import AddStockModal from './Partials/AddStockModal.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     product: Object,
@@ -15,6 +16,9 @@ const props = defineProps({
 
 const toast = useToast();
 const confirm = useConfirm();
+
+// composables
+const { hasPermission } = usePermissions();
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const items = ref([
@@ -27,12 +31,12 @@ const promoMenus = ref({});
 const showAddStockModal = ref(false);
 
 const actionItems = ref([
-    { label: 'Crear Nuevo', icon: 'pi pi-plus', command: () => router.get(route('products.create')) },
-    { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('products.edit', props.product.id)) },
-    { label: 'Agregar Promoción', icon: 'pi pi-tag', command: () => router.get(route('products.promotions.create', props.product.id)) },
-    { label: 'Dar Entrada a Producto', icon: 'pi pi-arrow-down', command: () => showAddStockModal.value = true },
+    { label: 'Crear Nuevo', icon: 'pi pi-plus', command: () => router.get(route('products.create')), visible: hasPermission('products.create') },
+    { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('products.edit', props.product.id)), visible: hasPermission('products.edit') },
+    { label: 'Agregar Promoción', icon: 'pi pi-tag', command: () => router.get(route('products.promotions.create', props.product.id)), visible: hasPermission('products.manage_promos') },
+    { label: 'Dar Entrada a Producto', icon: 'pi pi-arrow-down', command: () => showAddStockModal.value = true, visible: hasPermission('products.manage_stock') },
     { separator: true },
-    { label: 'Eliminar Producto', icon: 'pi pi-trash', class: 'text-red-500', command: () => deleteProduct() },
+    { label: 'Eliminar Producto', icon: 'pi pi-trash', class: 'text-red-500', command: () => deleteProduct(), visible: hasPermission('products.delete') },
 ]);
 
 const copyToClipboard = (text) => {
@@ -241,7 +245,7 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                             Intl.NumberFormat('es-MX', {
                                                 style: 'currency', currency: 'MXN'
                                             }).format(product.selling_price) }}</span></li>
-                                <li class="flex justify-between"><span class="text-gray-500 dark:text-gray-400">Precio
+                                <li v-if="hasPermission('products.see_cost_price')" class="flex justify-between"><span class="text-gray-500 dark:text-gray-400">Precio
                                         de
                                         Compra</span> <span class="font-medium text-gray-800 dark:text-gray-200">{{ new
                                             Intl.NumberFormat('es-MX', {
@@ -349,7 +353,7 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                 <div class="flex-shrink-0 ml-4 flex items-center gap-2">
                                     <Tag :value="promo.is_active ? 'Activa' : 'Inactiva'"
                                         :severity="promo.is_active ? 'warning' : 'secondary'"></Tag>
-                                    <Button icon="pi pi-ellipsis-v" text rounded severity="secondary"
+                                    <Button v-if="hasPermission('products.manage_promos')" icon="pi pi-ellipsis-v" text rounded severity="secondary"
                                         @click="promoMenus[promo.id].toggle($event)" />
                                     <Menu :ref="el => { if (el) promoMenus[promo.id] = el }" :model="[
                                         { label: promo.is_active ? 'Inactivar' : 'Reactivar', icon: promo.is_active ? 'pi pi-power-off' : 'pi pi-check', command: () => togglePromotionStatus(promo) },

@@ -4,6 +4,7 @@ import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ImportServiceOrdersModal from './Partials/ImportServiceOrdersModal.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     serviceOrders: Object,
@@ -11,6 +12,10 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+
+// composables
+const { hasPermission } = usePermissions();
+
 const selectedOrders = ref([]);
 const searchTerm = ref(props.filters.search || '');
 
@@ -18,6 +23,10 @@ const menu = ref();
 const selectedOrderForMenu = ref(null);
 const showImportModal = ref(false);
 
+const headerMenu = ref();
+const toggleHeaderMenu = (event) => {
+    headerMenu.value.toggle(event);
+};
 const splitButtonItems = ref([
     { label: 'Importar Órdenes', icon: 'pi pi-upload', command: () => showImportModal.value = true },
     { label: 'Exportar Órdenes', icon: 'pi pi-download', command: () => window.location.href = route('import-export.service-orders.export') },
@@ -53,10 +62,10 @@ const deleteSelectedOrders = () => {
 };
 
 const menuItems = ref([
-    { label: 'Ver Detalle', icon: 'pi pi-eye', command: () => router.get(route('service-orders.show', selectedOrderForMenu.value.id)) },
-    { label: 'Editar Orden', icon: 'pi pi-pencil', command: () => router.get(route('service-orders.edit', selectedOrderForMenu.value.id)) },
+    { label: 'Ver', icon: 'pi pi-eye', command: () => router.get(route('service-orders.show', selectedOrderForMenu.value.id)), visible: hasPermission('services.orders.see_details') },
+    { label: 'Editar orden', icon: 'pi pi-pencil', command: () => router.get(route('service-orders.edit', selectedOrderForMenu.value.id)), visible: hasPermission('services.orders.edit') },
     { separator: true },
-    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleOrder },
+    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleOrder, visible: hasPermission('services.orders.delete') },
 ]);
 
 const toggleMenu = (event, data) => {
@@ -112,9 +121,13 @@ const getStatusSeverity = (status) => {
                             <InputText v-model="searchTerm" placeholder="Buscar por cliente o equipo..."
                                 class="w-full" />
                         </IconField>
-                        <SplitButton label="Nueva Orden" icon="pi pi-plus"
-                            @click="router.get(route('service-orders.create'))" :model="splitButtonItems"
-                            severity="warning" />
+                        <ButtonGroup>
+                            <Button v-if="hasPermission('services.orders.create')" label="Nueva orden" icon="pi pi-plus"
+                                @click="router.get(route('service-orders.create'))" severity="warning" />
+                            <Button v-if="hasPermission('services.orders.import_export')" icon="pi pi-chevron-down"
+                                @click="toggleHeaderMenu" severity="warning" />
+                        </ButtonGroup>
+                        <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" />
                     </div>
                 </div>
 

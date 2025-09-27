@@ -5,6 +5,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import DiffViewer from '@/Components/DiffViewer.vue';
 import PatternLock from '@/Components/PatternLock.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     serviceOrder: Object,
@@ -12,6 +13,9 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+
+// composables
+const { hasPermission } = usePermissions();
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -75,9 +79,10 @@ const deleteOrder = () => {
 };
 
 const actionItems = ref([
-    { label: 'Editar Orden', icon: 'pi pi-pencil', command: () => router.get(route('service-orders.edit', props.serviceOrder.id)) },
+    { label: 'Crear nueva orden', icon: 'pi pi-plus', command: () => router.get(route('service-orders.create')), visible: hasPermission('services.orders.create') },
+    { label: 'Editar orden', icon: 'pi pi-pencil', command: () => router.get(route('service-orders.edit', props.serviceOrder.id)), visible: hasPermission('services.orders.edit') },
     { separator: true },
-    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteOrder },
+    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteOrder, visible: hasPermission('services.orders.delete') },
 ]);
 
 // --- Helpers de Formato ---
@@ -120,7 +125,7 @@ const formatCurrency = (value) => {
                 <p class="text-gray-500 dark:text-gray-400 mt-1">Cliente: {{ serviceOrder.customer_name }}</p>
             </div>
             <div class="flex items-center gap-2 mt-4 sm:mt-0">
-                <Button v-if="!isCancelled" @click="cancelOrder" label="Cancelar Orden" severity="danger" outlined />
+                <Button v-if="!isCancelled && hasPermission('services.orders.cancel')" @click="cancelOrder" label="Cancelar Orden" severity="danger" outlined />
                 <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined></SplitButton>
             </div>
         </div>
@@ -140,9 +145,10 @@ const formatCurrency = (value) => {
                             <div class="flex flex-row flex-auto" v-bind="a11yAttrs.root">
                                 <button class="bg-transparent border-0 inline-flex flex-col gap-2 items-center"
                                     :class="index == 4 ? 'w-32' : 'w-60'" @click="changeStatus(step.value, value)"
-                                    v-bind="a11yAttrs.header">
+                                    v-bind="a11yAttrs.header"
+                                    :disabled="!hasPermission('services.orders.change_status')">
                                     <span
-                                        :class="['size-12 rounded-full border-2 flex items-center justify-center transition-colors duration-200', { 'bg-primary border-primary text-primary-contrast': value <= activeIndex, 'border-surface-200 dark:border-surface-700': value > activeIndex, 'cursor-pointer hover:border-primary': value > activeIndex }]">
+                                        :class="['size-12 rounded-full border-2 flex items-center justify-center transition-colors duration-200', { 'bg-primary border-primary text-primary-contrast': value <= activeIndex, 'border-surface-200 dark:border-surface-700': value > activeIndex, 'cursor-pointer hover:border-primary': value > activeIndex && hasPermission('services.orders.change_status') }]">
                                         <i :class="step.icon" />
                                     </span>
                                     <span :class="['font-medium text-xs', { 'text-primary': value <= activeIndex }]">{{
@@ -158,7 +164,7 @@ const formatCurrency = (value) => {
             <div class="lg:col-span-2 space-y-6">
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
+                        <div v-if="hasPermission('services.orders.see_customer_info')">
                             <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información del Cliente</h2>
                             <ul class="space-y-3 text-sm">
                                 <li class="flex items-center"><i class="pi pi-user w-6 text-gray-500"></i> <span
