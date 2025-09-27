@@ -4,16 +4,28 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
 
-class UserController extends Controller
+class UserController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:settings.users.access', only: ['index']),
+            new Middleware('can:settings.users.create', only: ['create', 'store']),
+            new Middleware('can:settings.users.edit', only: ['edit', 'update']),
+            new Middleware('can:settings.users.delete', only: ['destroy']),
+            new Middleware('can:settings.users.change_status', only: ['toggleStatus']),
+        ];
+    }
+
     public function index(Request $request): Response
     {
         $branchId = Auth::user()->branch_id;

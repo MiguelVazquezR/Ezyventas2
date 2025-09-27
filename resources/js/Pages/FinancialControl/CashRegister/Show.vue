@@ -6,6 +6,7 @@ import { useConfirm } from "primevue/useconfirm";
 import OpenCashRegisterModal from './Partials/OpenCashRegisterModal.vue';
 import CloseCashRegisterModal from './Partials/CloseCashRegisterModal.vue';
 import AddCashMovementModal from './Partials/AddCashMovementModal.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     cashRegister: Object,
@@ -15,6 +16,10 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+
+// composables
+const { hasPermission } = usePermissions();
+
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
     { label: 'Control Financiero', url: route('financial-control.index') },
@@ -64,7 +69,7 @@ const formatDate = (dateString) => {
         <!-- Header -->
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{{ cashRegister.name }}</h1>
-            <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined class="mt-4 sm:mt-0">
+            <SplitButton v-if="hasPermission('cash_registers.manage')" label="Acciones" :model="actionItems" severity="secondary" outlined class="mt-4 sm:mt-0">
             </SplitButton>
         </div>
 
@@ -89,7 +94,7 @@ const formatDate = (dateString) => {
                             <div class="mt-4 border-t pt-4">
                                 <div class="flex justify-between items-center">
                                     <h4 class="font-semibold text-left">Movimientos de Efectivo</h4>
-                                    <Button @click="showAddMovementModal = true" label="Agregar Movimiento"
+                                    <Button v-if="hasPermission('cash_registers.sessions.create_movements')" @click="showAddMovementModal = true" label="Agregar Movimiento"
                                         icon="pi pi-plus" size="small" text />
                                 </div>
                                 <ul v-if="currentSession.cash_movements.length > 0"
@@ -105,14 +110,14 @@ const formatDate = (dateString) => {
                                 <p v-else class="text-xs text-gray-400 mt-2 text-center">No hay movimientos en esta
                                     sesión.</p>
                             </div>
-                            <Button @click="showCloseModal = true" label="Realizar Corte" class="w-full mt-6" />
+                            <Button v-if="hasPermission('cash_registers.sessions.close')" @click="showCloseModal = true" label="Realizar Corte" class="w-full mt-6" />
                         </div>
                         <div v-else class="text-center">
                             <i class="pi pi-lock text-5xl text-gray-400"></i>
                             <p class="mt-4 font-semibold">Caja Cerrada</p>
                             <p class="text-sm text-gray-500">Esta caja está disponible para iniciar una nueva sesión.
                             </p>
-                            <Button @click="showOpenModal = true" label="Abrir Caja" severity="success"
+                            <Button v-if="hasPermission('cash_registers.sessions.open')" @click="showOpenModal = true" label="Abrir Caja" severity="success"
                                 class="w-full mt-6" />
                         </div>
                     </template>
@@ -140,7 +145,7 @@ const formatDate = (dateString) => {
             </div>
 
             <!-- Columna Derecha: Historial de Cortes -->
-            <div class="lg:col-span-2">
+            <div v-if="hasPermission('cash_registers.sessions.access')" class="lg:col-span-2">
                 <Card>
                     <template #title>Historial de Cortes de Caja</template>
                     <template #content>

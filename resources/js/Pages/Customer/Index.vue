@@ -4,6 +4,7 @@ import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ImportCustomersModal from './Partials/ImportCustomersModal.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     customers: Object,
@@ -12,11 +13,18 @@ const props = defineProps({
 
 const confirm = useConfirm();
 
+// composables
+const { hasPermission } = usePermissions();
+
 // --- Estado y Lógica ---
 const selectedCustomers = ref([]);
 const searchTerm = ref(props.filters.search || '');
 const showImportModal = ref(false);
 
+const headerMenu = ref();
+const toggleHeaderMenu = (event) => {
+    headerMenu.value.toggle(event);
+};
 const splitButtonItems = ref([
     { label: 'Importar Clientes', icon: 'pi pi-upload', command: () => showImportModal.value = true },
     { label: 'Exportar Clientes', icon: 'pi pi-download', command: () => window.location.href = route('import-export.customers.export') },
@@ -67,11 +75,11 @@ const deleteSelectedCustomers = () => {
 };
 
 const menuItems = ref([
-    { label: 'Ver Perfil', icon: 'pi pi-eye', command: () => router.get(route('customers.show', selectedCustomerForMenu.value.id)) },
-    { label: 'Editar Cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', selectedCustomerForMenu.value.id)) },
-    { label: 'Registrar Venta', icon: 'pi pi-shopping-cart' },
+    { label: 'Ver', icon: 'pi pi-eye', command: () => router.get(route('customers.show', selectedCustomerForMenu.value.id)), visible: hasPermission('customers.see_details') },
+    { label: 'Editar Cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', selectedCustomerForMenu.value.id)), visible: hasPermission('customers.edit') },
+    { label: 'Registrar Venta', icon: 'pi pi-shopping-cart', visible: hasPermission('customers.store_sale') },
     { separator: true },
-    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleCustomer },
+    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleCustomer, visible: hasPermission('customers.delete') },
 ]);
 
 const toggleMenu = (event, data) => {
@@ -110,6 +118,7 @@ const formatCurrency = (value) => {
 </script>
 
 <template>
+
     <Head title="Clientes" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
@@ -118,24 +127,33 @@ const formatCurrency = (value) => {
                 <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
                     <IconField iconPosition="left" class="w-full md:w-1/3">
                         <InputIcon class="pi pi-search"></InputIcon>
-                        <InputText v-model="searchTerm" placeholder="Buscar por nombre, empresa, email..." class="w-full" />
+                        <InputText v-model="searchTerm" placeholder="Buscar por nombre, empresa, email..."
+                            class="w-full" />
                     </IconField>
                     <div class="flex items-center gap-2">
-                        <SplitButton label="Nuevo Cliente" icon="pi pi-plus" @click="router.get(route('customers.create'))" :model="splitButtonItems" severity="warning"></SplitButton>
+                        <ButtonGroup>
+                            <Button v-if="hasPermission('customers.create')" label="Nuevo cliente" icon="pi pi-plus"
+                                @click="router.get(route('customers.create'))" severity="warning" />
+                            <Button v-if="hasPermission('customers.import_export')" icon="pi pi-chevron-down"
+                                @click="toggleHeaderMenu" severity="warning" />
+                        </ButtonGroup>
+                        <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" />
                     </div>
                 </div>
 
                 <!-- Barra de Acciones Masivas -->
-                <div v-if="selectedCustomers.length > 0" class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-2 mb-4 flex justify-between items-center">
-                    <span class="font-semibold text-sm text-blue-800 dark:text-blue-200">{{ selectedCustomers.length }} cliente(s) seleccionado(s)</span>
-                    <Button @click="deleteSelectedCustomers" label="Eliminar" icon="pi pi-trash" size="small" severity="danger" outlined />
+                <div v-if="selectedCustomers.length > 0"
+                    class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-2 mb-4 flex justify-between items-center">
+                    <span class="font-semibold text-sm text-blue-800 dark:text-blue-200">{{ selectedCustomers.length }}
+                        cliente(s) seleccionado(s)</span>
+                    <Button v-if="hasPermission('customers.delete')" @click="deleteSelectedCustomers" label="Eliminar" icon="pi pi-trash" size="small"
+                        severity="danger" outlined />
                 </div>
 
                 <!-- Tabla de Clientes -->
                 <DataTable :value="customers.data" v-model:selection="selectedCustomers" lazy paginator
-                    :totalRecords="customers.total" :rows="customers.per_page"
-                    :rowsPerPageOptions="[20, 50, 100, 200]" dataKey="id" @page="onPage" @sort="onSort"
-                    removableSort tableStyle="min-width: 60rem"
+                    :totalRecords="customers.total" :rows="customers.per_page" :rowsPerPageOptions="[20, 50, 100, 200]"
+                    dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 60rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} clientes">
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
@@ -148,30 +166,31 @@ const formatCurrency = (value) => {
                         </template>
                     </Column>
                     <Column field="phone" header="Contacto" sortable>
-                         <template #body="{ data }">
+                        <template #body="{ data }">
                             <div>
                                 <p v-if="data.phone"><i class="pi pi-phone text-xs mr-2"></i>{{ data.phone }}</p>
                                 <p v-if="data.email"><i class="pi pi-envelope text-xs mr-2"></i>{{ data.email }}</p>
                             </div>
                         </template>
                     </Column>
-                    <Column field="balance" header="Saldo" sortable>
+                    <Column v-if="hasPermission('customers.see_financial_info')" field="balance" header="Saldo" sortable>
                         <template #body="{ data }">
                             <span :class="getBalanceClass(data.balance)" class="font-mono font-semibold">
                                 {{ formatCurrency(data.balance) }}
                             </span>
                         </template>
                     </Column>
-                     <Column field="credit_limit" header="Límite de Crédito" sortable>
+                    <Column v-if="hasPermission('customers.see_financial_info')" field="credit_limit" header="Límite de Crédito" sortable>
                         <template #body="{ data }">
-                           {{ formatCurrency(data.credit_limit) }}
+                            {{ formatCurrency(data.credit_limit) }}
                         </template>
                     </Column>
                     <Column headerStyle="width: 5rem; text-align: center">
-                        <template #body="{ data }"> <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded severity="secondary" /> </template>
+                        <template #body="{ data }"> <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
+                                text rounded severity="secondary" /> </template>
                     </Column>
                 </DataTable>
-                
+
                 <Menu ref="menu" :model="menuItems" :popup="true" />
             </div>
         </div>

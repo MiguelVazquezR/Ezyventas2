@@ -2,12 +2,14 @@
 import { ref, computed } from 'vue';
 import { useLayout } from '@/Layouts/composables/layout';
 import { Link, router, usePage } from '@inertiajs/vue3';
-import Menu from 'primevue/menu';
-import Drawer from 'primevue/drawer';
-import Divider from 'primevue/divider';
+import ApplicationLogo from '@/Components/ApplicationLogo.vue';
+import { usePermissions } from '@/Composables';
 
 const { toggleMenu: toggleSidebar, toggleDarkMode, isDarkTheme } = useLayout();
 const page = usePage();
+
+// composables
+const { hasPermission } = usePermissions();
 
 // SOLUCIÓN: Usar 'computed' para asegurar la reactividad en cambios de página.
 const user = computed(() => page.props.auth.user);
@@ -55,12 +57,13 @@ const mobileUserMenuVisible = ref(false);
                 <i class="pi pi-bars"></i>
             </button>
             <Link href="/" class="layout-topbar-logo">
-            Logo
+            <ApplicationLogo class="h-14" />
             </Link>
         </div>
 
         <div class="layout-topbar-actions flex items-center">
-            <div v-if="availableBranches && availableBranches.length > 1" class="layout-topbar-menu hidden lg:block">
+            <div v-if="availableBranches && availableBranches.length > 1 && hasPermission('system.branches.switch')"
+                class="layout-topbar-menu hidden lg:block">
                 <div class="layout-topbar-menu-content">
                     <button @click="toggleBranchMenu"
                         class="flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
@@ -88,6 +91,10 @@ const mobileUserMenuVisible = ref(false);
                     <button @click="toggleUserMenu"
                         class="flex text-sm border-2 border-transparent rounded-full focus:outline-none focus:border-gray-300 transition">
                         <img class="size-9 rounded-full object-cover" :src="user.profile_photo_url" :alt="user.name">
+                        <!-- <div class="flex items-center space-x-3 px-2 py-1">
+                            <span class="text-gray-700 dark:text-gray-200">{{ user.name }}</span>
+                            <i class="pi pi-chevron-down !text-xs text-gray-700 dark:text-gray-200"></i>
+                        </div> -->
                     </button>
                     <Menu ref="userMenu" :model="userMenuItems" :popup="true" />
                 </div>

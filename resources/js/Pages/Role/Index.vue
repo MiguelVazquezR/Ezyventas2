@@ -4,6 +4,7 @@ import { Head, useForm } from '@inertiajs/vue3';
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from 'primevue/usetoast';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     roles: Array,
@@ -12,6 +13,9 @@ const props = defineProps({
 
 const toast = useToast();
 const confirm = useConfirm();
+
+// composables
+const { hasPermission } = usePermissions();
 
 const selectedRole = ref(props.roles.length > 0 ? props.roles[0] : null);
 
@@ -29,7 +33,6 @@ const submitPermissions = () => {
     if (selectedRole.value) {
         permissionsForm.put(route('roles.update', selectedRole.value.id), {
             preserveScroll: true,
-            onSuccess: () => toast.add({ severity: 'success', summary: 'Éxito', detail: 'Permisos guardados.', life: 3000 })
         });
     }
 };
@@ -118,14 +121,14 @@ const confirmDeletePermission = (permission) => {
                     <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
                         <div class="flex justify-between items-center mb-4">
                             <h2 class="font-bold text-lg">Roles de la Sucursal</h2>
-                            <Button @click="isCreateRoleModalVisible = true" icon="pi pi-plus" size="small"
+                            <Button v-if="hasPermission('settings.roles_permissions.manage')" @click="isCreateRoleModalVisible = true" icon="pi pi-plus" size="small"
                                 v-tooltip.bottom="'Crear nuevo rol'" />
                         </div>
                         <Listbox v-model="selectedRole" :options="roles" optionLabel="name" class="w-full">
                             <template #option="slotProps">
                                 <div class="flex justify-between items-center w-full">
                                     <span>{{ slotProps.option.name }}</span>
-                                    <Button @click.stop="confirmDeleteRole(slotProps.option)" icon="pi pi-trash"
+                                    <Button v-if="hasPermission('settings.roles_permissions.delete')" @click.stop="confirmDeleteRole(slotProps.option)" icon="pi pi-trash"
                                         severity="danger" text rounded size="small" />
                                 </div>
                             </template>
@@ -153,7 +156,8 @@ const confirmDeletePermission = (permission) => {
                                                 class="flex items-center justify-between">
                                                 <div class="flex items-center">
                                                     <Checkbox v-model="permissionsForm.permissions"
-                                                        :inputId="`perm-${permission.id}`" :value="permission.id" />
+                                                        :inputId="`perm-${permission.id}`" :value="permission.id"
+                                                        :disabled="!hasPermission('settings.roles_permissions.manage')" />
                                                     <label :for="`perm-${permission.id}`" class="ml-3">
                                                         <span class="font-semibold">{{ permission.description }}</span>
                                                         <p class="text-xs text-gray-500">{{ permission.name }}</p>
@@ -172,7 +176,7 @@ const confirmDeletePermission = (permission) => {
                                 </Accordion>
                             </div>
                             <div class="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-b-lg flex justify-end">
-                                <Button type="submit" label="Guardar Permisos" icon="pi pi-check"
+                                <Button v-if="hasPermission('settings.roles_permissions.manage')" type="submit" label="Guardar Permisos" icon="pi pi-check"
                                     :loading="permissionsForm.processing" :disabled="!permissionsForm.isDirty" />
                             </div>
                         </form>

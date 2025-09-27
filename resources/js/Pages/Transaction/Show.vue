@@ -4,10 +4,14 @@ import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import AddPaymentModal from '@/Components/AddPaymentModal.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     transaction: Object,
 });
+
+// composables
+const { hasPermission } = usePermissions();
 
 const confirm = useConfirm();
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
@@ -58,10 +62,10 @@ const generateReturn = () => {
 };
 
 const actionItems = computed(() => [
-    { label: 'Imprimir Ticket', icon: 'pi pi-print' },
+    { label: 'Imprimir ticket', icon: 'pi pi-print' },
     { separator: true },
-    { label: 'Generar Devolución', icon: 'pi pi-replay', command: generateReturn, disabled: !canRefund.value },
-    { label: 'Cancelar Venta', icon: 'pi pi-times-circle', class: 'text-red-500', command: cancelSale, disabled: !canCancel.value },
+    { label: 'Generar devolución', icon: 'pi pi-replay', command: generateReturn, disabled: !canRefund.value, visible: hasPermission('transactions.refund') },
+    { label: 'Cancelar venta', icon: 'pi pi-times-circle', class: 'text-red-500', command: cancelSale, disabled: !canCancel.value, visible: hasPermission('transactions.cancel') },
 ]);
 
 const getStatusSeverity = (status) => {

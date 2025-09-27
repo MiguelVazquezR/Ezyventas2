@@ -7,13 +7,26 @@ use App\Http\Requests\UpdateServiceRequest;
 use App\Models\Category;
 use App\Models\Service;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Support\Str;
 
-class ServiceController extends Controller
+class ServiceController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:services.catalog.access', only: ['index']),
+            new Middleware('can:services.catalog.create', only: ['create', 'store']),
+            new Middleware('can:services.catalog.see_details', only: ['show']),
+            new Middleware('can:services.catalog.edit', only: ['edit', 'update']),
+            new Middleware('can:services.catalog.delete', only: ['destroy', 'batchDestroy']),
+        ];
+    }
+
     public function index(Request $request): Response
     {
         $user = Auth::user();

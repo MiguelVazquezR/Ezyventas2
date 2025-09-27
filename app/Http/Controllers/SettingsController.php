@@ -4,14 +4,24 @@ namespace App\Http\Controllers;
 
 use App\Models\SettingDefinition;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class SettingsController extends Controller
+class SettingsController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:settings.generals.access', only: ['index']),
+            new Middleware('can:settings.generals.update', only: ['update']),
+        ];
+    }
+
     public function index(): Response
     {
         $user = Auth::user();
@@ -37,15 +47,15 @@ class SettingsController extends Controller
                     $value = $subscriptionValues[$definition->id] ?? null;
                     break;
             }
-            
+
             if ($value === null) {
-                 if ($definition->type === 'list' || $definition->type === 'select') {
-                    $value = '[]'; 
-                 } else {
+                if ($definition->type === 'list' || $definition->type === 'select') {
+                    $value = '[]';
+                } else {
                     $value = $definition->default_value;
-                 }
+                }
             }
-            
+
             $definition->value = $value;
 
             if ($definition->type === 'boolean') {
@@ -71,20 +81,26 @@ class SettingsController extends Controller
         $user = Auth::user();
         $branch = $user->branch;
         $subscription = $branch->subscription;
-        
+
         $inputs = $request->input('settings', []);
         $files = $request->file('settings', []);
         $settings = array_merge($inputs, $files);
 
         foreach ($settings as $key => $value) {
             $definition = SettingDefinition::where('key', $key)->first();
-            
+
             if ($definition) {
                 $entity = null;
                 switch ($definition->level) {
-                    case 'user': $entity = $user; break;
-                    case 'branch': $entity = $branch; break;
-                    case 'subscription': $entity = $subscription; break;
+                    case 'user':
+                        $entity = $user;
+                        break;
+                    case 'branch':
+                        $entity = $branch;
+                        break;
+                    case 'subscription':
+                        $entity = $subscription;
+                        break;
                 }
 
                 if (!$entity) continue;
@@ -98,10 +114,9 @@ class SettingsController extends Controller
                         $oldPath = str_replace(Storage::url(''), '', $existingSetting->value);
                         Storage::disk('public')->delete($oldPath);
                     }
-                    
+
                     $path = $value->store('settings_files', 'public');
                     $finalValue = Storage::url($path);
-
                 } elseif ($definition->type === 'boolean') {
                     $finalValue = filter_var($value, FILTER_VALIDATE_BOOLEAN) ? 'true' : 'false';
                 } elseif ($definition->type === 'list' && is_array($value)) {
@@ -116,16 +131,6 @@ class SettingsController extends Controller
         }
 
         return redirect()->back()->with('success', 'Configuraciones guardadas con éxito.');
-    }
-
-    private function handleDefinitionRequestData(array $data): array
-    {
-        if (in_array($data['type'], ['select', 'list']) && is_array($data['default_value'])) {
-            $data['default_value'] = json_encode($data['default_value']);
-        } elseif (!isset($data['default_value'])) {
-             $data['default_value'] = null;
-        }
-        return $data;
     }
 
     public function store(Request $request)
@@ -156,9 +161,19 @@ class SettingsController extends Controller
             'type' => ['required', Rule::in(['text', 'number', 'boolean', 'list', 'file', 'select'])],
             'default_value' => 'nullable|sometimes',
         ]);
-        
+
         $setting->update($this->handleDefinitionRequestData($validated));
 
         return redirect()->back()->with('success', 'Configuración actualizada con éxito.');
+    }
+
+    private function handleDefinitionRequestData(array $data): array
+    {
+        if (in_array($data['type'], ['select', 'list']) && is_array($data['default_value'])) {
+            $data['default_value'] = json_encode($data['default_value']);
+        } elseif (!isset($data['default_value'])) {
+            $data['default_value'] = null;
+        }
+        return $data;
     }
 }

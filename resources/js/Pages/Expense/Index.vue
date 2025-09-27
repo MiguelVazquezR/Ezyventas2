@@ -4,6 +4,7 @@ import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ImportExpensesModal from './Partials/ImportExpensesModal.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     expenses: Object,
@@ -12,10 +13,17 @@ const props = defineProps({
 
 const confirm = useConfirm();
 
+// composables
+const { hasPermission } = usePermissions();
+
 const selectedExpenses = ref([]);
 const searchTerm = ref(props.filters.search || '');
 const showImportModal = ref(false);
 
+const headerMenu = ref();
+const toggleHeaderMenu = (event) => {
+    headerMenu.value.toggle(event);
+};
 const splitButtonItems = ref([
     { label: 'Importar Gastos', icon: 'pi pi-upload', command: () => showImportModal.value = true },
     { label: 'Exportar Gastos', icon: 'pi pi-download', command: () => window.location.href = route('import-export.expenses.export') },
@@ -61,10 +69,10 @@ const deleteSelectedExpenses = () => {
 };
 
 const menuItems = ref([
-    { label: 'Ver Detalle', icon: 'pi pi-eye', command: () => router.get(route('expenses.show', selectedExpenseForMenu.value.id)) },
-    { label: 'Editar Gasto', icon: 'pi pi-pencil', command: () => router.get(route('expenses.edit', selectedExpenseForMenu.value.id)) },
+    { label: 'Ver', icon: 'pi pi-eye', command: () => router.get(route('expenses.show', selectedExpenseForMenu.value.id)), visible: hasPermission('expenses.see_details') },
+    { label: 'Editar gasto', icon: 'pi pi-pencil', command: () => router.get(route('expenses.edit', selectedExpenseForMenu.value.id)), visible: hasPermission('expenses.edit') },
     { separator: true },
-    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleExpense },
+    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleExpense, visible: hasPermission('expenses.delete') },
 ]);
 
 const toggleMenu = (event, data) => {
@@ -112,8 +120,13 @@ const formatDate = (dateString) => {
                             class="w-full" />
                     </IconField>
                     <div class="flex items-center gap-2">
-                        <SplitButton label="Nuevo Gasto" icon="pi pi-plus" @click="router.get(route('expenses.create'))"
-                            :model="splitButtonItems" severity="warning"></SplitButton>
+                        <ButtonGroup>
+                            <Button v-if="hasPermission('expenses.create')" label="Nuevo gasto" icon="pi pi-plus"
+                                @click="router.get(route('expenses.create'))" severity="warning" />
+                            <Button v-if="hasPermission('expenses.import_export')" icon="pi pi-chevron-down"
+                                @click="toggleHeaderMenu" severity="warning" />
+                        </ButtonGroup>
+                        <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" />
                     </div>
                 </div>
 
@@ -122,8 +135,8 @@ const formatDate = (dateString) => {
                     class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-2 mb-4 flex justify-between items-center">
                     <span class="font-semibold text-sm text-blue-800 dark:text-blue-200">{{ selectedExpenses.length }}
                         gasto(s) seleccionado(s)</span>
-                    <Button @click="deleteSelectedExpenses" label="Eliminar" icon="pi pi-trash" size="small"
-                        severity="danger" outlined />
+                    <Button v-if="hasPermission('expenses.delete')" @click="deleteSelectedExpenses" label="Eliminar"
+                        icon="pi pi-trash" size="small" severity="danger" outlined />
                 </div>
 
                 <!-- Tabla de Gastos -->
@@ -142,7 +155,8 @@ const formatDate = (dateString) => {
                     <Column field="amount" header="Monto" sortable>
                         <template #body="{ data }"> {{ new Intl.NumberFormat('es-MX', {
                             style: 'currency', currency:
-                                'MXN' }).format(data.amount) }} </template>
+                                'MXN'
+                        }).format(data.amount) }} </template>
                     </Column>
                     <Column field="status" header="Estatus" sortable>
                         <template #body="{ data }">
