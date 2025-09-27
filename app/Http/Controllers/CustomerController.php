@@ -6,12 +6,25 @@ use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
 use App\Models\Customer;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class CustomerController extends Controller
+class CustomerController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:customers.access', only: ['index']),
+            new Middleware('can:customers.create', only: ['create', 'store']),
+            new Middleware('can:customers.see_details', only: ['show']),
+            new Middleware('can:customers.edit', only: ['edit', 'update']),
+            new Middleware('can:customers.delete', only: ['destroy', 'batchDestroy']),
+        ];
+    }
+    
     public function index(Request $request): Response
     {
         $user = Auth::user();

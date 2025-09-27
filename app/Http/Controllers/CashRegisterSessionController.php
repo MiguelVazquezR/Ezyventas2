@@ -5,19 +5,30 @@ namespace App\Http\Controllers;
 use App\Enums\CashRegisterSessionStatus;
 use App\Enums\PaymentStatus;
 use App\Http\Requests\StoreCashRegisterSessionRequest;
-use App\Http\Requests\UpdateCashRegisterSessionRequest; // <-- Añadir
+use App\Http\Requests\UpdateCashRegisterSessionRequest;
 use App\Models\CashRegister;
-use App\Models\CashRegisterSession; // <-- Añadir
+use App\Models\CashRegisterSession;
 use App\Models\Payment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class CashRegisterSessionController extends Controller
+class CashRegisterSessionController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:cash_registers_sessions.access', only: ['index', 'print', 'show']),
+            new Middleware('can:cash_registers_sessions.open', only: ['store']),
+            new Middleware('can:cash_registers_sessions.close', only: ['update']),
+        ];
+    }
+
     /**
      * Muestra una lista paginada de todas las sesiones de caja cerradas.
      */

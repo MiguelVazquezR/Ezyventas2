@@ -7,12 +7,22 @@ use App\Http\Requests\UpdateCashRegisterRequest;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class CashRegisterController extends Controller
+class CashRegisterController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:cash_registers.access', only: ['index', 'show']),
+            new Middleware('can:cash_registers.manage', only: ['create', 'store', 'edit', 'update', 'destroy']),
+        ];
+    }
+
     public function index(): Response
     {
         $user = Auth::user();

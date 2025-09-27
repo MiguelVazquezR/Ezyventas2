@@ -11,14 +11,28 @@ use App\Models\Product;
 use App\Models\Quote;
 use App\Models\Service;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class QuoteController extends Controller
+class QuoteController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:quotes.access', only: ['index', 'print']),
+            new Middleware('can:quotes.create', only: ['create', 'store', 'newVersion']),
+            new Middleware('can:quotes.see_details', only: ['show']),
+            new Middleware('can:quotes.edit', only: ['edit', 'update']),
+            new Middleware('can:quotes.delete', only: ['destroy', 'batchDestroy']),
+            new Middleware('can:quotes.change_status', only: ['updateStatus']),
+        ];
+    }
+
     public function index(Request $request): Response
     {
         $user = Auth::user();

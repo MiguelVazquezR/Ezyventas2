@@ -8,12 +8,25 @@ use App\Http\Requests\UpdateExpenseRequest;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class ExpenseController extends Controller
+class ExpenseController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:expenses.access', only: ['index']),
+            new Middleware('can:expenses.create', only: ['create', 'store']),
+            new Middleware('can:expenses.see_details', only: ['show']),
+            new Middleware('can:expenses.edit', only: ['edit', 'update']),
+            new Middleware('can:expenses.delete', only: ['destroy', 'batchDestroy']),
+        ];
+    }
+
     public function index(Request $request): Response
     {
         $user = Auth::user();
@@ -50,9 +63,6 @@ class ExpenseController extends Controller
         ]);
     }
 
-    /**
-     * Display the specified resource.
-     */
     public function show(Expense $expense): Response
     {
         $expense->load(['user', 'category', 'branch', 'activities.causer']);
@@ -94,9 +104,6 @@ class ExpenseController extends Controller
         ]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(StoreExpenseRequest $request)
     {
         $expense = Expense::create(array_merge($request->validated(), [
@@ -107,9 +114,6 @@ class ExpenseController extends Controller
         return redirect()->route('expenses.index')->with('success', 'Gasto creado con éxito.');
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
     public function edit(Expense $expense): Response
     {
         $subscriptionId = Auth::user()->branch->subscription_id;
@@ -119,9 +123,6 @@ class ExpenseController extends Controller
         ]);
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(UpdateExpenseRequest $request, Expense $expense)
     {
         $expense->update($request->validated());
@@ -137,9 +138,6 @@ class ExpenseController extends Controller
         return redirect()->back()->with('success', "Estatus del gasto actualizado a '{$statusText}'.");
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(Expense $expense)
     {
         $expense->delete();

@@ -11,14 +11,28 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\ServiceOrder;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class ServiceOrderController extends Controller
+class ServiceOrderController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:services.orders.access', only: ['index']),
+            new Middleware('can:services.orders.create', only: ['create', 'store']),
+            new Middleware('can:services.orders.see_details', only: ['show']),
+            new Middleware('can:services.orders.edit', only: ['edit', 'update']),
+            new Middleware('can:services.orders.delete', only: ['destroy', 'batchDestroy']),
+            new Middleware('can:services.orders.change_status', only: ['updateStatus']),
+        ];
+    }
+
     public function index(Request $request): Response
     {
         $user = Auth::user();

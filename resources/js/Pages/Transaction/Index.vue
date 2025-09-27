@@ -39,7 +39,7 @@ const menuItems = computed(() => {
             icon: 'pi pi-replay',
             disabled: !canRefund,
             command: generateReturn,
-            visible: hasPermission('transactions.create_refund')
+            visible: hasPermission('transactions.refund')
         },
         {
             label: 'Imprimir ticket',
