@@ -39,6 +39,14 @@ class Branch extends Model
         return $this->belongsTo(Subscription::class, 'subscription_id');
     }
 
+    /**
+     * Obtiene las plantillas de impresión asignadas a esta sucursal.
+     */
+    public function printTemplates(): BelongsToMany
+    {
+        return $this->belongsToMany(PrintTemplate::class, 'branch_print_template');
+    }
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class);

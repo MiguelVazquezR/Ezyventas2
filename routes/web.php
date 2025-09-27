@@ -45,6 +45,7 @@ require __DIR__ . '/web/subscriptions.php';
 require __DIR__ . '/web/bank-accounts.php';
 require __DIR__ . '/web/branches.php';
 require __DIR__ . '/web/switch-branch.php';
+require __DIR__ . '/web/print-templates.php';
 
 
 //artisan commands -------------------

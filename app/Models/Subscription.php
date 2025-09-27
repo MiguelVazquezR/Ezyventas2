@@ -38,6 +38,14 @@ class Subscription extends Model implements HasMedia
     }
 
     /**
+     * Obtiene todas las plantillas de impresión de la suscripción.
+     */
+    public function printTemplates(): HasMany
+    {
+        return $this->hasMany(PrintTemplate::class);
+    }
+
+    /**
      * Obtiene todas las cuentas bancarias de la suscripción.
      */
     public function bankAccounts(): HasMany

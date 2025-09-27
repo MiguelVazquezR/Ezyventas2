@@ -5,20 +5,6 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 
-// Componentes de PrimeVue
-import TabView from 'primevue/tabview';
-import TabPanel from 'primevue/tabpanel';
-import ToggleSwitch from 'primevue/toggleswitch';
-import InputText from 'primevue/inputtext';
-import InputNumber from 'primevue/inputnumber';
-import Button from 'primevue/button';
-import Dialog from 'primevue/dialog';
-import Dropdown from 'primevue/dropdown';
-import Textarea from 'primevue/textarea';
-import Badge from 'primevue/badge';
-import Chips from 'primevue/chips';
-import FileUpload from 'primevue/fileupload';
-
 const props = defineProps({
     settings: Object,
 });
@@ -64,10 +50,10 @@ const submit = () => {
     });
 };
 
-// --- Opciones para los Dropdowns ---
+// --- Opciones para los Select fluids ---
 const levelOptions = ref([ { label: 'Suscripción', value: 'subscription' }, { label: 'Sucursal', value: 'branch' }, { label: 'Usuario', value: 'user' }]);
-const typeOptions = ref([ { label: 'Texto', value: 'text' }, { label: 'Número', value: 'number' }, { label: 'Booleano (Sí/No)', value: 'boolean' }, { label: 'Lista', value: 'list' }, { label: 'Selección', value: 'select' }, { label: 'Archivo', value: 'file' }]);
-const moduleOptions = ref(['Control financiero', 'Cotizaciones', 'Gastos', 'Historial de ventas', 'Productos', 'Punto de venta', 'Servicios', 'Tienda en linea'].sort((a, b) => a.localeCompare(b)));
+const typeOptions = ref([ { label: 'Texto corto (255 caracteres)', value: 'text' }, { label: 'Texto largo (2,000 caracteres)', value: 'long_text' }, { label: 'Número', value: 'number' }, { label: 'Booleano (Sí/No)', value: 'boolean' }, { label: 'Lista', value: 'list' }, { label: 'Selección', value: 'select' }, { label: 'Archivo', value: 'file' }]);
+const moduleOptions = ref(['Control financiero', 'Cotizaciones', 'Gastos', 'Historial de ventas', 'Productos', 'Punto de venta', 'Servicios', 'Tienda en linea', 'Impresoras', 'Básculas'].sort((a, b) => a.localeCompare(b)));
 
 // -- Lógica para CREAR y EDITAR (sin cambios) --
 const isCreateModalVisible = ref(false);
@@ -124,11 +110,11 @@ const getLevelLabel = (level) => ({ subscription: 'Suscripción', branch: 'Sucur
                                     </div>
                                     <div class="flex-shrink-0 ml-4 w-64">
                                         <ToggleSwitch v-if="setting.type === 'boolean'" :inputId="setting.key" v-model="form.settings[setting.key]" />
-                                        <InputText v-if="setting.type === 'text'" :id="setting.key" v-model="form.settings[setting.key]" class="w-full" />
-                                        <InputNumber v-if="setting.type === 'number'" :inputId="setting.key" v-model="form.settings[setting.key]" class="w-full" />
+                                        <InputText fluid v-if="setting.type === 'text'" :id="setting.key" v-model="form.settings[setting.key]" class="w-full" />
+                                        <Textarea fluid v-if="setting.type === 'long_text'" :id="setting.key" v-model="form.settings[setting.key]" class="w-full" rows="3" />
+                                        <InputNumber fluid v-if="setting.type === 'number'" :inputId="setting.key" v-model="form.settings[setting.key]" class="w-full" />
                                         <Chips v-if="setting.type === 'list'" :inputId="setting.key" v-model="form.settings[setting.key]" class="w-full" />
-                                        <Dropdown v-if="setting.type === 'select'" v-model="form.settings[setting.key]" :options="setting.options" placeholder="Seleccionar" class="w-full" />
-                                        
+                                        <Select fluid v-if="setting.type === 'select'" v-model="form.settings[setting.key]" :options="setting.options" placeholder="Seleccionar" class="w-full" />
                                         <!-- CAMBIO: Lógica mejorada para FileUpload -->
                                         <div v-if="setting.type === 'file'" class="w-full">
                                             <!-- Muestra el archivo ya guardado si no hay uno nuevo seleccionado -->
@@ -158,18 +144,18 @@ const getLevelLabel = (level) => ({ subscription: 'Suscripción', branch: 'Sucur
         <Dialog v-model:visible="isModalVisible" modal :header="isEditModalVisible ? 'Editar Configuración' : 'Crear Nueva Configuración'" :style="{ width: '40rem' }">
             <form @submit.prevent="isEditModalVisible ? submitEditForm() : submitCreateForm()">
                 <div class="p-fluid space-y-4">
-                    <div class="field"><InputLabel value="Nombre" /><InputText v-model="(isEditModalVisible ? editForm : createForm).name" /><InputError :message="(isEditModalVisible ? editForm : createForm).errors.name" /></div>
-                    <div class="field"><InputLabel value="Clave (Key)" /><InputText v-model="(isEditModalVisible ? editForm : createForm).key" /><InputError :message="(isEditModalVisible ? editForm : createForm).errors.key" /></div>
-                    <div class="field"><InputLabel value="Descripción" /><Textarea v-model="(isEditModalVisible ? editForm : createForm).description" rows="3" /><InputError :message="(isEditModalVisible ? editForm : createForm).errors.description" /></div>
-                    <div class="field"><InputLabel value="Módulo" /><Dropdown v-model="(isEditModalVisible ? editForm : createForm).module" :options="moduleOptions" /><InputError :message="(isEditModalVisible ? editForm : createForm).errors.module" /></div>
+                    <div class="field"><InputLabel value="Nombre" /><InputText fluid v-model="(isEditModalVisible ? editForm : createForm).name" /><InputError :message="(isEditModalVisible ? editForm : createForm).errors.name" /></div>
+                    <div class="field"><InputLabel value="Clave (Key)" /><InputText fluid v-model="(isEditModalVisible ? editForm : createForm).key" /><InputError :message="(isEditModalVisible ? editForm : createForm).errors.key" /></div>
+                    <div class="field"><InputLabel value="Descripción" /><Textarea fluid v-model="(isEditModalVisible ? editForm : createForm).description" rows="3" /><InputError :message="(isEditModalVisible ? editForm : createForm).errors.description" /></div>
+                    <div class="field"><InputLabel value="Módulo" /><Select fluid v-model="(isEditModalVisible ? editForm : createForm).module" :options="moduleOptions" /><InputError :message="(isEditModalVisible ? editForm : createForm).errors.module" /></div>
                     <div class="grid grid-cols-2 gap-4">
-                        <div class="field"><InputLabel value="Nivel" /><Dropdown v-model="(isEditModalVisible ? editForm : createForm).level" :options="levelOptions" optionLabel="label" optionValue="value" /><InputError :message="(isEditModalVisible ? editForm : createForm).errors.level" /></div>
-                        <div class="field"><InputLabel value="Tipo de Dato" /><Dropdown v-model="(isEditModalVisible ? editForm : createForm).type" :options="typeOptions" optionLabel="label" optionValue="value" /><InputError :message="(isEditModalVisible ? editForm : createForm).errors.type" /></div>
+                        <div class="field"><InputLabel value="Nivel" /><Select fluid v-model="(isEditModalVisible ? editForm : createForm).level" :options="levelOptions" optionLabel="label" optionValue="value" /><InputError :message="(isEditModalVisible ? editForm : createForm).errors.level" /></div>
+                        <div class="field"><InputLabel value="Tipo de Dato" /><Select fluid v-model="(isEditModalVisible ? editForm : createForm).type" :options="typeOptions" optionLabel="label" optionValue="value" /><InputError :message="(isEditModalVisible ? editForm : createForm).errors.type" /></div>
                     </div>
                     <div class="field">
                         <InputLabel :value="['list', 'select'].includes((isEditModalVisible ? editForm : createForm).type) ? 'Opciones (una por una)' : 'Valor por Defecto'" />
                         <Chips v-if="['list', 'select'].includes((isEditModalVisible ? editForm : createForm).type)" v-model="(isEditModalVisible ? editForm : createForm).default_value" />
-                        <InputText v-else v-model="(isEditModalVisible ? editForm : createForm).default_value" />
+                        <InputText fluid v-else v-model="(isEditModalVisible ? editForm : createForm).default_value" />
                         <InputError :message="(isEditModalVisible ? editForm : createForm).errors.default_value" />
                     </div>
                 </div>
