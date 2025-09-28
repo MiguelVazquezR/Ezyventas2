@@ -20,24 +20,37 @@ const confirmDelete = (template) => {
     });
 };
 
+const newTemplateOptions = [
+    {
+        label: 'Nuevo Ticket de Venta',
+        icon: 'pi pi-receipt',
+        command: () => router.get(route('print-templates.create', { type: 'ticket_venta' }))
+    },
+    {
+        label: 'Nueva Etiqueta',
+        icon: 'pi pi-tags',
+        command: () => router.get(route('print-templates.create', { type: 'etiqueta' }))
+    }
+];
+
 </script>
 
 <template>
+
     <Head title="Plantillas Personalizadas" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6 flex justify-between items-center">
                 <div>
-                    <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Plantillas Personalizadas</h1>
-                    <p class="text-gray-500 dark:text-gray-400 mt-1">Gestiona las plantillas para tickets, etiquetas y más.</p>
+                    <h1 class="text-3xl font-bold">Plantillas Personalizadas</h1>
+                    <p class="text-gray-500 mt-1">Gestiona las plantillas para tickets, etiquetas y más.</p>
                 </div>
-                <Link :href="route('print-templates.create')">
-                    <Button label="Nueva Plantilla" icon="pi pi-plus" />
-                </Link>
+                <SplitButton label="Nueva Plantilla" icon="pi pi-plus" :model="newTemplateOptions"
+                    @click="newTemplateOptions[0].command" />
             </header>
 
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
-                 <DataTable :value="templates" responsiveLayout="scroll">
+                <DataTable :value="templates" responsiveLayout="scroll">
                     <Column field="name" header="Nombre"></Column>
                     <Column field="type" header="Tipo">
                         <template #body="{ data }">
@@ -56,9 +69,10 @@ const confirmDelete = (template) => {
                         <template #body="{ data }">
                             <div class="flex justify-end gap-2">
                                 <Link :href="route('print-templates.edit', data.id)">
-                                    <Button icon="pi pi-pencil" text rounded />
+                                <Button icon="pi pi-pencil" text rounded />
                                 </Link>
-                                <Button @click="confirmDelete(data)" icon="pi pi-trash" text rounded severity="danger" />
+                                <Button @click="confirmDelete(data)" icon="pi pi-trash" text rounded
+                                    severity="danger" />
                             </div>
                         </template>
                     </Column>

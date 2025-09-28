@@ -148,18 +148,18 @@ const placeholderOptions = ref([
         <div class="flex h-[calc(100vh-8rem)]">
             <!-- Columna de Herramientas -->
             <div class="w-1/4 border-r dark:border-gray-700 p-4 overflow-y-auto">
-                <h3 class="font-bold mb-4">Configuración</h3>
+                <h3 class="font-bold mb-4">Configuración de ticket</h3>
                 <div class="space-y-4">
                     <div>
                         <InputLabel value="Nombre de la Plantilla *" />
                         <InputText v-model="form.name" class="w-full mt-1" />
                         <InputError :message="form.errors.name" class="mt-1" />
                     </div>
-                    <div>
+                    <!-- <div>
                         <InputLabel value="Tipo de Plantilla *" />
                         <Dropdown v-model="form.type" :options="templateTypeOptions" optionLabel="label"
                             optionValue="value" class="w-full mt-1" />
-                    </div>
+                    </div> -->
                     <div>
                         <InputLabel value="Asignar a Sucursal(es) *" />
                         <MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" optionValue="id"

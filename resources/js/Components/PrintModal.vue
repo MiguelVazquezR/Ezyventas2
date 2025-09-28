@@ -17,17 +17,21 @@ const selectedPrinter = ref(localStorage.getItem('selectedPrinter') || null);
 const printJobs = ref([]);
 const isPrinting = ref(false);
 const error = ref(null);
-const isLoadingPrinters = ref(false); // Estado para la carga de impresoras
+const isLoadingPrinters = ref(false);
 
 const fetchPrinters = async () => {
     isLoadingPrinters.value = true;
     error.value = null;
+    printers.value = []; // Limpiar la lista antes de una nueva búsqueda
     try {
         const response = await fetch('http://localhost:8000/impresoras');
         if (!response.ok) throw new Error('No se pudo conectar con el plugin.');
-        printers.value = await response.json();
-        if (printers.value.length > 0 && !selectedPrinter.value) {
-            selectedPrinter.value = printers.value[0];
+        const printerList = await response.json();
+        printers.value = printerList;
+        
+        // Si no hay una impresora seleccionada, o la que estaba guardada ya no existe, selecciona la primera.
+        if (printerList.length > 0 && !printerList.includes(selectedPrinter.value)) {
+            selectedPrinter.value = printerList[0];
         }
     } catch (e) {
         error.value = 'Error al obtener impresoras. Asegúrate de que el plugin de impresión esté en ejecución.';
@@ -105,13 +109,23 @@ watch(() => props.visible, (newVal) => {
     <Dialog :visible="visible" @update:visible="closeModal" modal header="Imprimir Documentos" :style="{ width: '40rem' }">
         <div class="p-2 space-y-4">
             <div>
-                <InputLabel value="Seleccionar Impresora" />
-                <!-- SOLUCIÓN: Se cambió <Select> por <Dropdown> y se añadió la propiedad 'loading' -->
+                <div class="flex justify-between items-center mb-1">
+                    <InputLabel value="Seleccionar Impresora" />
+                    <Button 
+                        icon="pi pi-refresh" 
+                        text 
+                        rounded 
+                        severity="secondary" 
+                        @click="fetchPrinters"
+                        v-tooltip.bottom="'Recargar lista de impresoras'"
+                        :loading="isLoadingPrinters"
+                    />
+                </div>
                 <Dropdown 
                     v-model="selectedPrinter" 
                     :options="printers" 
-                    :placeholder="isLoadingPrinters ? 'Buscando impresoras...' : 'Selecciona una impresora'" 
-                    class="w-full mt-1" 
+                    :placeholder="isLoadingPrinters ? 'Buscando impresoras...' : (printers.length === 0 ? 'No se encontraron impresoras' : 'Selecciona una impresora')" 
+                    class="w-full" 
                     :loading="isLoadingPrinters"
                     :disabled="printers.length === 0 && !isLoadingPrinters"
                 />

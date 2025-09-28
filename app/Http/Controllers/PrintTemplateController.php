@@ -27,20 +27,19 @@ class PrintTemplateController extends Controller
         ]);
     }
 
-     public function create(): Response
+    public function create(Request $request): Response
     {
+        $type = $request->query('type', 'ticket_venta'); // Por defecto, crea un ticket
         $subscription = Auth::user()->branch->subscription;
-        
-        // Se obtienen las imágenes existentes para la galería
-        $templateImages = $subscription->getMedia('template-images')->map(fn ($media) => [
-            'id' => $media->id,
-            'url' => $media->getUrl(),
-            'name' => $media->name,
-        ]);
 
-        return Inertia::render('Template/Create', [
+        $view = match ($type) {
+            'etiqueta' => 'Template/CreateLabel',
+            default => 'Template/CreateTicket',
+        };
+
+        return Inertia::render($view, [
             'branches' => $subscription->branches()->get(['id', 'name']),
-            'templateImages' => $templateImages,
+            'templateImages' => $subscription->getMedia('template-images')->map(fn($media) => ['id' => $media->id, 'url' => $media->getUrl(), 'name' => $media->name]),
         ]);
     }
 
@@ -57,7 +56,7 @@ class PrintTemplateController extends Controller
             'branch_ids' => 'required|array|min:1',
             'branch_ids.*' => ['required', Rule::in($subscription->branches->pluck('id'))],
         ]);
-        
+
         DB::transaction(function () use ($validated, $subscription) {
             $template = $subscription->printTemplates()->create([
                 'name' => $validated['name'],
@@ -85,7 +84,7 @@ class PrintTemplateController extends Controller
             'branch_ids' => 'required|array|min:1',
             'branch_ids.*' => ['required', Rule::in($printTemplate->subscription->branches->pluck('id'))],
         ]);
-        
+
         DB::transaction(function () use ($validated, $printTemplate) {
             $printTemplate->update([
                 'name' => $validated['name'],
@@ -104,11 +103,16 @@ class PrintTemplateController extends Controller
             abort(403);
         }
 
+        $view = match ($printTemplate->type->value) {
+            'etiqueta' => 'Template/EditLabel',
+            default => 'Template/EditTicket',
+        };
+
         $subscription = Auth::user()->branch->subscription;
         $printTemplate->load('branches:id,name');
 
         // Se obtienen las imágenes existentes para la galería
-        $templateImages = $subscription->getMedia('template-images')->map(fn ($media) => [
+        $templateImages = $subscription->getMedia('template-images')->map(fn($media) => [
             'id' => $media->id,
             'url' => $media->getUrl(),
             'name' => $media->name,

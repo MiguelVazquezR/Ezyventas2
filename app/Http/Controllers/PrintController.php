@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\PrintTemplate;
+use App\Models\Product;
+use App\Models\ServiceOrder;
 use App\Models\Transaction;
-use App\Services\EscPosEncoderService;
+use App\Services\PrintEncoderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -14,7 +16,8 @@ class PrintController extends Controller
     {
         $validated = $request->validate([
             'template_id' => 'required|exists:print_templates,id',
-            'data_source_type' => 'required|in:transaction', // Se puede expandir a 'service_order', etc.
+            // Se añade 'service_order' como fuente de datos válida
+            'data_source_type' => 'required|in:transaction,product,service_order',
             'data_source_id' => 'required|integer',
         ]);
 
@@ -26,10 +29,18 @@ class PrintController extends Controller
         if ($validated['data_source_type'] === 'transaction') {
             $dataSource = Transaction::with(['customer', 'items.itemable'])->find($validated['data_source_id']);
             if (!$dataSource || $dataSource->branch->subscription_id !== $user->branch->subscription_id) abort(404);
+        } elseif ($validated['data_source_type'] === 'product') {
+            $dataSource = Product::find($validated['data_source_id']);
+            // Asumiendo que el producto pertenece a una sucursal de la suscripción
+            if (!$dataSource || $dataSource->branch->subscription_id !== $user->branch->subscription_id) abort(404);
+        } elseif ($validated['data_source_type'] === 'service_order') {
+            $dataSource = ServiceOrder::with(['customer'])->find($validated['data_source_id']);
+            if (!$dataSource || $dataSource->branch->subscription_id !== $user->branch->subscription_id) abort(404);
         }
+        
         if (!$dataSource) abort(404, 'Data source not found.');
 
-        $operations = EscPosEncoderService::encode($template, $dataSource);
+        $operations = PrintEncoderService::encode($template, $dataSource);
 
         return response()->json([
             'operations' => $operations,
