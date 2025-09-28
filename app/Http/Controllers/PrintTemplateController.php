@@ -27,11 +27,20 @@ class PrintTemplateController extends Controller
         ]);
     }
 
-    public function create(): Response
+     public function create(): Response
     {
         $subscription = Auth::user()->branch->subscription;
+        
+        // Se obtienen las imágenes existentes para la galería
+        $templateImages = $subscription->getMedia('template-images')->map(fn ($media) => [
+            'id' => $media->id,
+            'url' => $media->getUrl(),
+            'name' => $media->name,
+        ]);
+
         return Inertia::render('Template/Create', [
             'branches' => $subscription->branches()->get(['id', 'name']),
+            'templateImages' => $templateImages,
         ]);
     }
 
@@ -98,9 +107,17 @@ class PrintTemplateController extends Controller
         $subscription = Auth::user()->branch->subscription;
         $printTemplate->load('branches:id,name');
 
+        // Se obtienen las imágenes existentes para la galería
+        $templateImages = $subscription->getMedia('template-images')->map(fn ($media) => [
+            'id' => $media->id,
+            'url' => $media->getUrl(),
+            'name' => $media->name,
+        ]);
+
         return Inertia::render('Template/Edit', [
             'template' => $printTemplate,
             'branches' => $subscription->branches()->get(['id', 'name']),
+            'templateImages' => $templateImages,
         ]);
     }
 
@@ -121,7 +138,7 @@ class PrintTemplateController extends Controller
     public function storeMedia(Request $request)
     {
         $request->validate([
-            'image' => ['required', 'image'],
+            'image' => ['required', 'image', 'max:1024'],
         ]);
 
         $subscription = Auth::user()->branch->subscription;
@@ -129,6 +146,11 @@ class PrintTemplateController extends Controller
         $media = $subscription->addMediaFromRequest('image')
             ->toMediaCollection('template-images');
 
-        return response()->json(['url' => $media->getUrl()]);
+        // Se devuelve el objeto completo de la nueva imagen
+        return response()->json([
+            'id' => $media->id,
+            'url' => $media->getUrl(),
+            'name' => $media->name,
+        ]);
     }
 }
