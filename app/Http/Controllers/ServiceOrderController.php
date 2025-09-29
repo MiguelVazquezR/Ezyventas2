@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ServiceOrderStatus;
+use App\Enums\TemplateContextType;
+use App\Enums\TemplateType;
 use App\Http\Requests\StoreServiceOrderRequest;
 use App\Http\Requests\UpdateServiceOrderRequest;
 use App\Models\Customer;
@@ -58,9 +60,16 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
         $serviceOrders = $query->paginate($request->input('rows', 20))->withQueryString();
 
+        // Se obtienen las plantillas disponibles para la sucursal y el contexto de órdenes de servicio
+        $availableTemplates = $user->branch->printTemplates()
+            ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
+            ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER, TemplateContextType::GENERAL])
+            ->get();
+
         return Inertia::render('ServiceOrder/Index', [
             'serviceOrders' => $serviceOrders,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
+            'availableTemplates' => $availableTemplates, // Se pasan a la vista
         ]);
     }
 
@@ -91,10 +100,17 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'changes' => $changes,
             ];
         });
+        
+        // Se obtienen las plantillas disponibles para la sucursal y el contexto de órdenes de servicio
+        $availableTemplates = Auth::user()->branch->printTemplates()
+            ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
+            ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER, TemplateContextType::GENERAL])
+            ->get();
 
         return Inertia::render('ServiceOrder/Show', [
             'serviceOrder' => $serviceOrder,
             'activities' => $formattedActivities,
+            'availableTemplates' => $availableTemplates, // Se pasan a la vista
         ]);
     }
 
@@ -105,7 +121,10 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
     public function store(StoreServiceOrderRequest $request)
     {
-        DB::transaction(function () use ($request) {
+        // Se define la variable fuera del closure para poder acceder a ella después
+        $newServiceOrder = null;
+
+        DB::transaction(function () use ($request, &$newServiceOrder) {
             $serviceOrder = ServiceOrder::create(array_merge($request->validated(), [
                 'user_id' => Auth::id(),
                 'branch_id' => Auth::user()->branch_id,
@@ -113,7 +132,6 @@ class ServiceOrderController extends Controller implements HasMiddleware
             ]));
 
             foreach ($request->validated('items', []) as $item) {
-                // Si itemable_id es 0, es un concepto manual y no tiene relación polimórfica
                 if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
                     unset($item['itemable_id']);
                     unset($item['itemable_type']);
@@ -126,9 +144,18 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
                 }
             }
+            
+            // Se asigna la nueva orden a la variable
+            $newServiceOrder = $serviceOrder;
         });
 
-        return redirect()->route('service-orders.index')->with('success', 'Orden de servicio creada.');
+        // Se redirige a la vista 'show' de la nueva orden con un flash message para la impresión
+        return redirect()->route('service-orders.show', $newServiceOrder->id)
+            ->with('success', 'Orden de servicio creada.')
+            ->with('print_data', [
+                'type' => 'service_order',
+                'id' => $newServiceOrder->id
+            ]);
     }
 
     public function edit(ServiceOrder $serviceOrder): Response

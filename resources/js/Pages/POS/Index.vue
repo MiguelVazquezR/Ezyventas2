@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from 'vue';
-import { Head, useForm, router, Link } from '@inertiajs/vue3';
+import { ref, watch } from 'vue';
+import { Head, useForm, router, Link, usePage } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PosLeftPanel from './Partials/PosLeftPanel.vue';
@@ -8,6 +8,7 @@ import ShoppingCart from './Partials/ShoppingCart.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
 import CloseSessionModal from '@/Components/CloseSessionModal.vue';
 import SessionHistoryModal from '@/Components/SessionHistoryModal.vue';
+import PrintModal from '@/Components/PrintModal.vue';
 import { v4 as uuidv4 } from 'uuid';
 
 const props = defineProps({
@@ -19,17 +20,32 @@ const props = defineProps({
     activePromotions: Array,
     activeSession: Object,
     availableCashRegisters: Array,
+    availableTemplates: Array, // Se recibe la nueva prop
 });
 
+const page = usePage();
 const toast = useToast();
 
 const cartItems = ref([]);
-const selectedClient = ref(null);
+const selectedClient = ref(props.preselectedCustomer || null);
 
-// --- Lógica de creación del modal de sesión ---
+// --- Lógica para Modales ---
 const isStartSessionModalVisible = ref(false);
 const isCloseSessionModalVisible = ref(false);
 const isHistoryModalVisible = ref(false);
+const isPrintModalVisible = ref(false);
+const printDataSource = ref(null);
+
+// Observa el flash message del backend para activar el modal de impresión
+watch(() => page.props.flash.print_data, (newPrintData) => {
+    if (newPrintData) {
+        printDataSource.value = newPrintData;
+        isPrintModalVisible.value = true;
+        // Limpia el flash message para no volver a mostrar el modal si la página se recarga parcialmente
+        page.props.flash.print_data = null;
+    }
+}, { immediate: true });
+
 
 const addToCart = (data) => {
     const { product, variant } = data;
@@ -112,14 +128,10 @@ const saveCartToPending = (payload) => {
     toast.add({ severity: 'success', summary: 'Carrito Guardado', detail: 'El carrito actual se movió a la lista de espera.', life: 3000 });
 };
 
-// --- Nueva función para refrescar los datos de la sesión ---
 const handleRefreshSessionData = () => {
     router.reload({
         preserveState: true,
         preserveScroll: true,
-        // onSuccess: () => {
-        //     toast.add({ severity: 'success', summary: 'Caja Actualizada', detail: 'El movimiento de efectivo se registró correctamente.', life: 3000 });
-        // }
     });
 };
 
@@ -184,7 +196,10 @@ const handleCheckout = (checkoutData) => {
     form.cash_register_session_id = props.activeSession.id;
 
     form.post(route('pos.checkout'), {
-        onSuccess: () => clearCart(),
+        onSuccess: () => {
+             // El watcher se encargará de abrir el modal de impresión
+            clearCart();
+        },
         onError: (errors) => {
             console.error("Error de validación:", errors);
             const errorMessage = errors.default || Object.values(errors).flat().join(' ');
@@ -242,5 +257,12 @@ const handleCheckout = (checkoutData) => {
             @update:visible="isCloseSessionModalVisible = $event" />
         <SessionHistoryModal :visible="isHistoryModalVisible" :session="activeSession"
             @update:visible="isHistoryModalVisible = $event" />
+        
+        <PrintModal 
+            v-if="printDataSource"
+            v-model:visible="isPrintModalVisible"
+            :data-source="printDataSource"
+            :available-templates="availableTemplates"
+        />
     </AppLayout>
 </template>

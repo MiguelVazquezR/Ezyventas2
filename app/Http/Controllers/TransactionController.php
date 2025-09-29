@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\TemplateContextType;
+use App\Enums\TemplateType;
 use App\Enums\TransactionStatus;
 use App\Models\Product;
 use App\Models\Transaction;
@@ -25,7 +27,7 @@ class TransactionController extends Controller implements HasMiddleware
         ];
     }
     
-    public function index(Request $request): Response
+   public function index(Request $request): Response
     {
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
@@ -60,24 +62,38 @@ class TransactionController extends Controller implements HasMiddleware
 
         $transactions = $query->paginate($request->input('rows', 20))->withQueryString();
 
+        // Se obtienen las plantillas disponibles para la sucursal actual
+        $availableTemplates = $user->branch->printTemplates()
+            ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
+            ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
+            ->get();
+
         return Inertia::render('Transaction/Index', [
             'transactions' => $transactions,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
+            'availableTemplates' => $availableTemplates, // Se pasan a la vista
         ]);
     }
 
-    public function show(Transaction $transaction): Response
+     public function show(Transaction $transaction): Response
     {
         $transaction->load([
             'customer:id,name',
             'user:id,name',
             'branch:id,name',
-            'items.itemable', // Cargar el producto o servicio de cada item
+            'items.itemable',
             'payments'
         ]);
 
+        // Se obtienen las plantillas disponibles para la sucursal y el contexto de transacción
+        $availableTemplates = Auth::user()->branch->printTemplates()
+            ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
+            ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
+            ->get();
+
         return Inertia::render('Transaction/Show', [
             'transaction' => $transaction,
+            'availableTemplates' => $availableTemplates, // Se pasan a la vista
         ]);
     }
 

@@ -4,21 +4,33 @@ import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
+import PrintModal from '@/Components/PrintModal.vue';
 
 const props = defineProps({
     transactions: Object,
     filters: Object,
+    availableTemplates: Array,
 });
 
 const confirm = useConfirm();
-
-// composables
 const { hasPermission } = usePermissions();
 
 const selectedTransactions = ref([]);
 const searchTerm = ref(props.filters.search || '');
 const menu = ref();
 const selectedTransactionForMenu = ref(null);
+
+// --- Lógica del Modal de Impresión ---
+const isPrintModalVisible = ref(false);
+const printDataSource = ref(null);
+
+const openPrintModal = (transaction) => {
+    printDataSource.value = {
+        type: 'transaction',
+        id: transaction.id
+    };
+    isPrintModalVisible.value = true;
+};
 
 const menuItems = computed(() => {
     const transaction = selectedTransactionForMenu.value;
@@ -29,27 +41,29 @@ const menuItems = computed(() => {
 
     return [
         {
-            label: 'Ver',
+            label: 'Ver Detalle',
             icon: 'pi pi-eye',
             command: () => router.get(route('transactions.show', selectedTransactionForMenu.value.id)),
             visible: hasPermission('transactions.see_details')
         },
         {
-            label: 'Generar devolución',
+            label: 'Generar Devolución',
             icon: 'pi pi-replay',
             disabled: !canRefund,
             command: generateReturn,
             visible: hasPermission('transactions.refund')
         },
         {
-            label: 'Imprimir ticket',
-            icon: 'pi pi-print'
+            label: 'Imprimir',
+            icon: 'pi pi-print',
+            command: () => openPrintModal(selectedTransactionForMenu.value),
+            visible: hasPermission('pos.access') // Se asume que si puede vender, puede imprimir
         },
         {
             separator: true
         },
         {
-            label: 'Cancelar venta',
+            label: 'Cancelar Venta',
             icon: 'pi pi-times-circle',
             class: 'text-red-500',
             disabled: !canCancel,
@@ -66,7 +80,7 @@ const toggleMenu = (event, data) => {
 
 const cancelSale = () => {
     confirm.require({
-        message: `¿Estás seguro de que quieres cancelar la venta #${selectedTransactionForMenu.value.folio}? Esta acción repondrá el stock de los productos.`,
+        message: `¿Estás seguro de que quieres cancelar la venta #${selectedTransactionForMenu.value.folio}? Esta acción repondrá el stock.`,
         header: 'Confirmar Cancelación',
         icon: 'pi pi-exclamation-triangle',
         accept: () => {
@@ -77,7 +91,7 @@ const cancelSale = () => {
 
 const generateReturn = () => {
     confirm.require({
-        message: `¿Estás seguro de que quieres generar una devolución para la venta #${selectedTransactionForMenu.value.folio}? Esta acción repondrá el stock de los productos.`,
+        message: `¿Estás seguro de que quieres generar una devolución para la venta #${selectedTransactionForMenu.value.folio}? Esta acción repondrá el stock.`,
         header: 'Confirmar Devolución',
         icon: 'pi pi-replay',
         accept: () => {
@@ -114,15 +128,14 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 </script>
 
 <template>
-
     <Head title="Historial de Ventas" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
                 <!-- Header -->
                 <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Historial de Ventas</h1>
-                    <IconField iconPosition="left" class="w-full md:w-1/3">
+                     <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Historial de Ventas</h1>
+                     <IconField iconPosition="left" class="w-full md:w-1/3">
                         <InputIcon class="pi pi-search"></InputIcon>
                         <InputText v-model="searchTerm" placeholder="Buscar por folio o cliente..." class="w-full" />
                     </IconField>
@@ -142,11 +155,11 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     </Column>
                     <Column field="customer.name" header="Cliente" sortable></Column>
                     <Column field="channel" header="Canal" sortable>
-                        <template #body="{ data }">
-                            <span class="capitalize">{{ data.channel.replace(/_/g, ' ') }}</span>
+                         <template #body="{ data }">
+                           <span class="capitalize">{{ data.channel.replace(/_/g, ' ') }}</span>
                         </template>
                     </Column>
-                    <Column field="total" header="Total" sortable>
+                     <Column field="total" header="Total" sortable>
                         <template #body="{ data }"> {{ formatCurrency(data.subtotal - data.total_discount) }}
                         </template>
                     </Column>
@@ -161,9 +174,17 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                                 text rounded severity="secondary" /> </template>
                     </Column>
                 </DataTable>
-
+                
                 <Menu ref="menu" :model="menuItems" :popup="true" />
             </div>
         </div>
+        
+        <!-- Modal de Impresión -->
+        <PrintModal 
+            v-if="printDataSource"
+            v-model:visible="isPrintModalVisible"
+            :data-source="printDataSource"
+            :available-templates="availableTemplates"
+        />
     </AppLayout>
 </template>

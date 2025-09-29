@@ -4,11 +4,13 @@ import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ImportServiceOrdersModal from './Partials/ImportServiceOrdersModal.vue';
+import PrintModal from '@/Components/PrintModal.vue';
 import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     serviceOrders: Object,
     filters: Object,
+    availableTemplates: Array,
 });
 
 const confirm = useConfirm();
@@ -18,10 +20,21 @@ const { hasPermission } = usePermissions();
 
 const selectedOrders = ref([]);
 const searchTerm = ref(props.filters.search || '');
-
 const menu = ref();
 const selectedOrderForMenu = ref(null);
 const showImportModal = ref(false);
+
+// --- Lógica del Modal de Impresión ---
+const isPrintModalVisible = ref(false);
+const printDataSource = ref(null);
+
+const openPrintModal = (serviceOrder) => {
+    printDataSource.value = {
+        type: 'service_order',
+        id: serviceOrder.id
+    };
+    isPrintModalVisible.value = true;
+};
 
 const headerMenu = ref();
 const toggleHeaderMenu = (event) => {
@@ -64,6 +77,12 @@ const deleteSelectedOrders = () => {
 const menuItems = ref([
     { label: 'Ver', icon: 'pi pi-eye', command: () => router.get(route('service-orders.show', selectedOrderForMenu.value.id)), visible: hasPermission('services.orders.see_details') },
     { label: 'Editar orden', icon: 'pi pi-pencil', command: () => router.get(route('service-orders.edit', selectedOrderForMenu.value.id)), visible: hasPermission('services.orders.edit') },
+    {
+        label: 'Imprimir',
+        icon: 'pi pi-print',
+        command: () => openPrintModal(selectedOrderForMenu.value),
+        // visible: hasPermission('services.print_tickets') || hasPermission('services.print_etiquetas')
+    },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleOrder, visible: hasPermission('services.orders.delete') },
 ]);
@@ -180,5 +199,9 @@ const getStatusSeverity = (status) => {
 
         <!-- Modal de Importación -->
         <ImportServiceOrdersModal :visible="showImportModal" @update:visible="showImportModal = false" />
+
+        <!-- Modal de Impresión -->
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
+            :available-templates="availableTemplates" />
     </AppLayout>
 </template>

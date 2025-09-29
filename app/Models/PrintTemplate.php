@@ -18,6 +18,7 @@ class PrintTemplate extends Model implements HasMedia
         'subscription_id',
         'name',
         'type',
+        'context_type',
         'content',
         'is_default',
     ];
