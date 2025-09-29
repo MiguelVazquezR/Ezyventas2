@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -22,6 +23,8 @@ class Transaction extends Model
         'branch_id',
         'user_id',
         'cash_register_session_id',
+        'transactionable_id',
+        'transactionable_type',
         'status',
         'channel',
         'subtotal',
@@ -53,7 +56,7 @@ class Transaction extends Model
             ->setDescriptionForEvent(fn(string $eventName) => "La transacción ha sido {$this->translateEventName($eventName)}")
             ->logOnlyDirty()->dontSubmitEmptyLogs();
     }
-    
+
     private function translateEventName(string $eventName): string
     {
         return ['created' => 'creada', 'updated' => 'actualizada', 'deleted' => 'eliminada'][$eventName] ?? $eventName;
@@ -64,6 +67,11 @@ class Transaction extends Model
     | RELACIONES
     |--------------------------------------------------------------------------
     */
+
+    public function transactionable(): MorphTo
+    {
+        return $this->morphTo();
+    }
 
     /**
      * Obtiene el cliente asociado con la transacción.

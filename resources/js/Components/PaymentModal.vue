@@ -77,7 +77,7 @@ const submitForm = () => {
             <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ client.name }}</p>
             <div class="flex justify-between text-xs mt-1">
                 <span class="text-gray-500 dark:text-gray-400">Crédito Disponible:</span>
-                <span class="font-mono font-semibold text-blue-600">${{ client.available_credit.toFixed(2) }}</span>
+                <span class="font-mono font-semibold text-blue-600">${{ client.available_credit?.toFixed(2) }}</span>
             </div>
         </div>
 

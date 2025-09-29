@@ -213,7 +213,7 @@ const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evi
             </div>
 
             <!-- Campos Personalizados (DINÁMICOS) -->
-            <div v-if="customFieldDefinitions.length > 0" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <div class="flex items-center justify-between border-b pb-3 mb-4">
                     <h2 class="text-lg font-semibold">Detalles Adicionales</h2>
                     <!-- 3. Botón que llama al método para abrir el modal del componente hijo -->
