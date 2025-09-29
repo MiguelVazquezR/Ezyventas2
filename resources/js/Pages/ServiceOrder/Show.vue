@@ -1,21 +1,45 @@
 <script setup>
-import { ref, computed } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { ref, computed, watch } from 'vue';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import DiffViewer from '@/Components/DiffViewer.vue';
 import PatternLock from '@/Components/PatternLock.vue';
+import PrintModal from '@/Components/PrintModal.vue';
 import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     serviceOrder: Object,
     activities: Array,
+    availableTemplates: Array,
 });
 
-const confirm = useConfirm();
+const page = usePage(); // Se declara la variable page
 
+const confirm = useConfirm();
 // composables
 const { hasPermission } = usePermissions();
+
+// --- Lógica del Modal de Impresión ---
+const isPrintModalVisible = ref(false);
+const printDataSource = ref(null);
+
+const openPrintModal = () => {
+    printDataSource.value = {
+        type: 'service_order',
+        id: props.serviceOrder.id
+    };
+    isPrintModalVisible.value = true;
+};
+
+// Observa el flash message del backend para activar el modal de impresión
+watch(() => page.props.flash.print_data, (newPrintData) => {
+    if (newPrintData) {
+        openPrintModal();
+        // Limpia el flash message para no volver a mostrar el modal en recargas parciales
+        page.props.flash.print_data = null;
+    }
+}, { immediate: true });
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -81,6 +105,7 @@ const deleteOrder = () => {
 const actionItems = ref([
     { label: 'Crear nueva orden', icon: 'pi pi-plus', command: () => router.get(route('service-orders.create')), visible: hasPermission('services.orders.create') },
     { label: 'Editar orden', icon: 'pi pi-pencil', command: () => router.get(route('service-orders.edit', props.serviceOrder.id)), visible: hasPermission('services.orders.edit') },
+    { label: 'Imprimir', icon: 'pi pi-print', command: openPrintModal },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteOrder, visible: hasPermission('services.orders.delete') },
 ]);
@@ -125,7 +150,8 @@ const formatCurrency = (value) => {
                 <p class="text-gray-500 dark:text-gray-400 mt-1">Cliente: {{ serviceOrder.customer_name }}</p>
             </div>
             <div class="flex items-center gap-2 mt-4 sm:mt-0">
-                <Button v-if="!isCancelled && hasPermission('services.orders.change_status')" @click="cancelOrder" label="Cancelar Orden" severity="danger" outlined />
+                <Button v-if="!isCancelled && hasPermission('services.orders.change_status')" @click="cancelOrder"
+                    label="Cancelar Orden" severity="danger" outlined />
                 <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined></SplitButton>
             </div>
         </div>
@@ -195,7 +221,7 @@ const formatCurrency = (value) => {
                                     formatDate(serviceOrder.promised_at) }}</span></li>
                                 <li class="flex justify-between"><span>Técnico Asignado</span> <span>{{
                                     serviceOrder.technician_name ||
-                                    'Sin asignar' }}</span></li>
+                                        'Sin asignar' }}</span></li>
                             </ul>
                         </div>
                     </div>
@@ -277,7 +303,7 @@ const formatCurrency = (value) => {
                             </div>
                             <p v-else class="text-gray-700 dark:text-gray-300">{{ value === true ? 'Sí' : value
                                 === false ? 'No' : value
-                            }}</p>
+                                }}</p>
                         </li>
                     </ul>
                 </div>
@@ -361,5 +387,8 @@ const formatCurrency = (value) => {
                 </div>
             </div>
         </div>
+        <!-- Modal de Impresión -->
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
+            :available-templates="availableTemplates" />
     </AppLayout>
 </template>

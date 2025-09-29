@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Enums\CashRegisterSessionStatus;
 use App\Enums\PromotionEffectType;
 use App\Enums\PromotionType;
+use App\Enums\TemplateContextType;
+use App\Enums\TemplateType;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Models\CashRegister;
@@ -54,8 +56,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 }
             ])
             ->first();
-        
-        // CAMBIO: Si hay una sesión activa, se calculan y adjuntan los totales por método de pago.
+
         if ($activeSession) {
             $paymentTotals = $activeSession->transactions
                 ->flatMap->payments
@@ -76,6 +77,12 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 ->select('id', 'name')->get();
         }
 
+        // Se obtienen las plantillas de impresión disponibles para la sucursal actual
+        $availableTemplates = $user->branch->printTemplates()
+            ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
+            ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
+            ->get();
+
         return Inertia::render('POS/Index', [
             'products' => $this->getProductsData($search, $categoryId),
             'categories' => $this->getCategoriesData(),
@@ -85,6 +92,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'activePromotions' => $this->getActivePromotions(),
             'activeSession' => $activeSession,
             'availableCashRegisters' => $availableCashRegisters,
+            'availableTemplates' => $availableTemplates, // Se pasan a la vista
         ]);
     }
 
@@ -188,7 +196,13 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 return $newTransaction;
             });
 
-            return redirect()->back()->with('success', 'Venta registrada con éxito. Folio: ' . $transaction->folio);
+            // Se redirige con un flash message que contiene los datos para la impresión
+            return redirect()->route('pos.index')
+                ->with('success', 'Venta registrada con éxito. Folio: ' . $transaction->folio)
+                ->with('print_data', [
+                    'type' => 'transaction',
+                    'id' => $transaction->id
+                ]);
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar la venta: ' . $e->getMessage());
         }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
 use App\Models\PrintTemplate;
 use Illuminate\Http\Request;
@@ -27,11 +28,19 @@ class PrintTemplateController extends Controller
         ]);
     }
 
-    public function create(): Response
+    public function create(Request $request): Response
     {
+        $type = $request->query('type', 'ticket_venta'); // Por defecto, crea un ticket
         $subscription = Auth::user()->branch->subscription;
-        return Inertia::render('Template/Create', [
+
+        $view = match ($type) {
+            'etiqueta' => 'Template/CreateLabel',
+            default => 'Template/CreateTicket',
+        };
+
+        return Inertia::render($view, [
             'branches' => $subscription->branches()->get(['id', 'name']),
+            'templateImages' => $subscription->getMedia('template-images')->map(fn($media) => ['id' => $media->id, 'url' => $media->getUrl(), 'name' => $media->name]),
         ]);
     }
 
@@ -43,6 +52,8 @@ class PrintTemplateController extends Controller
             'name' => 'required|string|max:255',
             'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
             'content' => 'required|array',
+            'content.config' => 'required|array',
+            'content.elements' => 'required|array', // Se valida el array de elementos visuales
             'branch_ids' => 'required|array|min:1',
             'branch_ids.*' => ['required', Rule::in($subscription->branches->pluck('id'))],
         ]);
@@ -51,27 +62,13 @@ class PrintTemplateController extends Controller
             $template = $subscription->printTemplates()->create([
                 'name' => $validated['name'],
                 'type' => $validated['type'],
-                'content' => $validated['content'],
+                'content' => $validated['content'], // Se guarda el objeto con config y elements
+                'context_type' => $this->determineContextType($validated['content']['elements'] ?? []),
             ]);
             $template->branches()->attach($validated['branch_ids']);
         });
 
         return redirect()->route('print-templates.index')->with('success', 'Plantilla creada con éxito.');
-    }
-
-    public function edit(PrintTemplate $printTemplate): Response
-    {
-        if ($printTemplate->subscription_id !== Auth::user()->branch->subscription_id) {
-            abort(403);
-        }
-
-        $subscription = Auth::user()->branch->subscription;
-        $printTemplate->load('branches:id,name');
-
-        return Inertia::render('Template/Edit', [
-            'template' => $printTemplate,
-            'branches' => $subscription->branches()->get(['id', 'name']),
-        ]);
     }
 
     public function update(Request $request, PrintTemplate $printTemplate)
@@ -84,6 +81,8 @@ class PrintTemplateController extends Controller
             'name' => 'required|string|max:255',
             'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
             'content' => 'required|array',
+            'content.config' => 'required|array',
+            'content.elements' => 'required|array',
             'branch_ids' => 'required|array|min:1',
             'branch_ids.*' => ['required', Rule::in($printTemplate->subscription->branches->pluck('id'))],
         ]);
@@ -93,11 +92,40 @@ class PrintTemplateController extends Controller
                 'name' => $validated['name'],
                 'type' => $validated['type'],
                 'content' => $validated['content'],
+                'context_type' => $this->determineContextType($validated['content']['elements'] ?? []),
             ]);
             $printTemplate->branches()->sync($validated['branch_ids']);
         });
 
-        return redirect()->back()->with('success', 'Plantilla actualizada con éxito.');
+        return redirect()->route('print-templates.index')->with('success', 'Plantilla actualizada con éxito.');
+    }
+
+    public function edit(PrintTemplate $printTemplate): Response
+    {
+        if ($printTemplate->subscription_id !== Auth::user()->branch->subscription_id) {
+            abort(403);
+        }
+
+        $view = match ($printTemplate->type->value) {
+            'etiqueta' => 'Template/EditLabel',
+            default => 'Template/EditTicket',
+        };
+
+        $subscription = Auth::user()->branch->subscription;
+        $printTemplate->load('branches:id,name');
+
+        // Se obtienen las imágenes existentes para la galería
+        $templateImages = $subscription->getMedia('template-images')->map(fn($media) => [
+            'id' => $media->id,
+            'url' => $media->getUrl(),
+            'name' => $media->name,
+        ]);
+
+        return Inertia::render($view, [
+            'template' => $printTemplate,
+            'branches' => $subscription->branches()->get(['id', 'name']),
+            'templateImages' => $templateImages,
+        ]);
     }
 
     public function destroy(PrintTemplate $printTemplate)
@@ -117,7 +145,7 @@ class PrintTemplateController extends Controller
     public function storeMedia(Request $request)
     {
         $request->validate([
-            'image' => ['required', 'image'],
+            'image' => ['required', 'image', 'max:1024'],
         ]);
 
         $subscription = Auth::user()->branch->subscription;
@@ -125,6 +153,31 @@ class PrintTemplateController extends Controller
         $media = $subscription->addMediaFromRequest('image')
             ->toMediaCollection('template-images');
 
-        return response()->json(['url' => $media->getUrl()]);
+        // Se devuelve el objeto completo de la nueva imagen
+        return response()->json([
+            'id' => $media->id,
+            'url' => $media->getUrl(),
+            'name' => $media->name,
+        ]);
+    }
+
+    /**
+     * Analiza los elementos de una plantilla para determinar su contexto principal.
+     */
+    private function determineContextType(array $elements): string
+    {
+        $contentString = json_encode($elements);
+
+        if (str_contains($contentString, '{{orden.')) {
+            return TemplateContextType::SERVICE_ORDER->value;
+        }
+        if (str_contains($contentString, '{{folio') || str_contains($contentString, '{{cliente.')) {
+            return TemplateContextType::TRANSACTION->value;
+        }
+        if (str_contains($contentString, '{{producto.')) {
+            return TemplateContextType::PRODUCT->value;
+        }
+
+        return TemplateContextType::GENERAL->value;
     }
 }
