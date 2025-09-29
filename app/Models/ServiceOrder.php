@@ -22,11 +22,14 @@ class ServiceOrder extends Model implements HasMedia
         'branch_id',
         'user_id',
         'quote_id',
+        'customer_id',
         'customer_name',
         'customer_email',
         'customer_phone',
         'customer_address',
         'technician_name',
+        'technician_commission_type',
+        'technician_commission_value',
         'status',
         'received_at',
         'promised_at',
@@ -57,6 +60,11 @@ class ServiceOrder extends Model implements HasMedia
 
         $this->addMediaCollection('closing-service-order-evidence')
             ->withResponsiveImages();
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     public function getActivitylogOptions(): LogOptions

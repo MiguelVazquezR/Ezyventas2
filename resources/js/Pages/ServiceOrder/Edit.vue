@@ -22,26 +22,43 @@ const breadcrumbItems = ref([
 
 const form = useForm({
     _method: 'PUT',
+    // --- Campos de Cliente (actualizados y completos) ---
     customer_name: props.serviceOrder.customer_name,
     customer_phone: props.serviceOrder.customer_phone,
+    customer_email: props.serviceOrder.customer_email || '',
+    customer_address: props.serviceOrder.customer_address || { street: '', neighborhood: '', city: '', zip_code: '' },
+
+    // --- Campos de la Orden ---
     item_description: props.serviceOrder.item_description,
     reported_problems: props.serviceOrder.reported_problems,
     promised_at: props.serviceOrder.promised_at ? new Date(props.serviceOrder.promised_at) : null,
-    technician_name: props.serviceOrder.technician_name,
     technician_diagnosis: props.serviceOrder.technician_diagnosis,
     final_total: parseFloat(props.serviceOrder.final_total) || 0,
+    
+    // --- Campos del Técnico (nuevos) ---
+    assign_technician: !!props.serviceOrder.technician_name, // Se activa si ya hay un técnico
+    technician_name: props.serviceOrder.technician_name,
+    technician_commission_type: props.serviceOrder.technician_commission_type || 'percentage',
+    technician_commission_value: props.serviceOrder.technician_commission_value ? parseFloat(props.serviceOrder.technician_commission_value) : null,
+    
+    // --- Campos Dinámicos y Relaciones ---
     custom_fields: props.serviceOrder.custom_fields || {},
-    initial_evidence_images: [],
-    deleted_media_ids: [],
     items: props.serviceOrder.items.map(item => ({
-        itemable_id: item.itemable_id,
-        itemable_type: item.itemable_type,
-        description: item.description,
+        ...item,
         quantity: parseFloat(item.quantity),
         unit_price: parseFloat(item.unit_price),
         line_total: parseFloat(item.line_total),
     })),
+    
+    // --- Manejo de Archivos ---
+    initial_evidence_images: [],
+    deleted_media_ids: [],
 });
+
+const commissionOptions = ref([
+    { label: 'Porcentaje (%)', value: 'percentage' },
+    { label: 'Monto Fijo ($)', value: 'fixed' }
+]);
 
 const existingImages = ref(props.serviceOrder.media?.filter(m => m.collection_name === 'initial-service-order-evidence'));
 
@@ -92,7 +109,7 @@ watch(() => form.items, (newItems) => {
     form.final_total = total;
 }, { deep: true });
 
-// Lógica para el AutoComplete de clientes
+// --- Lógica para Clientes ---
 const filteredCustomers = ref();
 const searchCustomer = (event) => {
     setTimeout(() => {
@@ -108,19 +125,29 @@ const searchCustomer = (event) => {
 const onCustomerSelect = (event) => {
     form.customer_name = event.value.name;
     form.customer_phone = event.value.phone;
+    // Podrías también llenar email y dirección si los tienes en el objeto customer
 };
+
+// Limpia los datos del técnico si se desactiva
+watch(() => form.assign_technician, (newValue) => {
+    if (!newValue) {
+        form.technician_name = '';
+        form.technician_commission_type = 'percentage';
+        form.technician_commission_value = null;
+    }
+});
 
 const submit = () => {
     form.post(route('service-orders.update', props.serviceOrder.id), {
-        forceFormData: true,
+        forceFormData: true, // Necesario para el envío de archivos
     });
 };
 
-// Lógica para manejo de imágenes
+// --- Lógica para manejo de imágenes ---
 const onSelectImages = (event) => {
     form.initial_evidence_images = [...form.initial_evidence_images, ...event.files];
 };
-const onRemoveImage = (event) => {
+const onRemoveNewImage = (event) => {
     form.initial_evidence_images = form.initial_evidence_images.filter(img => img.objectURL !== event.file.objectURL);
 };
 const deleteExistingImage = (mediaId) => {
@@ -132,7 +159,6 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 </script>
 
 <template>
-
     <Head :title="`Editar Orden #${serviceOrder.id}`" />
     <AppLayout>
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
@@ -160,6 +186,22 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     <div>
                         <InputLabel for="customer_phone" value="Teléfono del Cliente" />
                         <InputText id="customer_phone" v-model="form.customer_phone" class="mt-1 w-full" />
+                        <InputError :message="form.errors.customer_phone" class="mt-2" />
+                    </div>
+                    <div>
+                        <InputLabel for="customer_email" value="Correo Electrónico" />
+                        <InputText id="customer_email" v-model="form.customer_email" type="email" class="mt-1 w-full" />
+                        <InputError :message="form.errors.customer_email" class="mt-2" />
+                    </div>
+                    <div>
+                        <InputLabel for="promised_at" value="Fecha Promesa de Entrega" />
+                        <Calendar id="promised_at" v-model="form.promised_at" showTime hourFormat="12" class="w-full mt-1" />
+                        <InputError :message="form.errors.promised_at" class="mt-2" />
+                    </div>
+                    <div class="md:col-span-2">
+                        <InputLabel for="customer_address_street" value="Dirección del Cliente" />
+                        <Textarea id="customer_address_street" v-model="form.customer_address.street" rows="2" class="mt-1 w-full" placeholder="Calle, número, colonia, ciudad, C.P."/>
+                        <InputError :message="form.errors['customer_address.street']" class="mt-2" />
                     </div>
                     <div class="md:col-span-2">
                         <InputLabel for="item_description" value="Descripción del Equipo *" />
@@ -176,24 +218,48 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                 </div>
             </div>
 
+            <!-- Información del Técnico -->
+            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <div class="flex items-center justify-between border-b pb-3 mb-4">
+                    <h2 class="text-lg font-semibold">Asignación de Técnico</h2>
+                    <ToggleSwitch v-model="form.assign_technician" inputId="assign_technician" />
+                </div>
+                <div v-if="form.assign_technician" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <InputLabel for="technician_name" value="Nombre del Técnico *" />
+                        <InputText id="technician_name" v-model="form.technician_name" class="mt-1 w-full" />
+                        <InputError :message="form.errors.technician_name" class="mt-2" />
+                    </div>
+                    <div>
+                        <InputLabel value="Tipo de Comisión *" />
+                        <SelectButton v-model="form.technician_commission_type" :options="commissionOptions"
+                                    optionLabel="label" optionValue="value" class="mt-1" />
+                        <InputError :message="form.errors.technician_commission_type" class="mt-2" />
+                    </div>
+                    <div class="md:col-span-2">
+                        <InputLabel for="technician_commission_value" value="Valor de la Comisión *" />
+                        <InputNumber id="technician_commission_value" v-model="form.technician_commission_value"
+                                    class="w-full mt-1"
+                                    :prefix="form.technician_commission_type === 'fixed' ? '$' : null"
+                                    :suffix="form.technician_commission_type === 'percentage' ? '%' : null" />
+                        <InputError :message="form.errors.technician_commission_value" class="mt-2" />
+                    </div>
+                </div>
+                <p v-else class="text-gray-500">Activa el interruptor para asignar un técnico y registrar su comisión.</p>
+            </div>
+            
             <!-- Campos Personalizados (DINÁMICOS) -->
             <div v-if="customFieldDefinitions.length > 0" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles Adicionales</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div v-for="field in customFieldDefinitions" :key="field.id">
                         <InputLabel :for="field.key" :value="field.name" />
-                        <InputText v-if="field.type === 'text'" :id="field.key" v-model="form.custom_fields[field.key]"
-                            class="mt-1 w-full" />
-                        <InputNumber v-if="field.type === 'number'" :id="field.key"
-                            v-model="form.custom_fields[field.key]" class="w-full mt-1" />
-                        <Textarea v-if="field.type === 'textarea'" :id="field.key"
-                            v-model="form.custom_fields[field.key]" rows="2" class="mt-1 w-full" />
-                        <ToggleSwitch v-if="field.type === 'boolean'" :id="field.key"
-                            v-model="form.custom_fields[field.key]" class="mt-1" />
-                        <Select v-if="field.type === 'select'" :id="field.key" v-model="form.custom_fields[field.key]"
-                            :options="field.options" class="mt-1 w-full" placeholder="Selecciona una opción" />
-                        <PatternLock v-if="field.type === 'pattern'" :id="field.key"
-                            v-model="form.custom_fields[field.key]" class="mt-1" />
+                        <InputText v-if="field.type === 'text'" :id="field.key" v-model="form.custom_fields[field.key]" class="mt-1 w-full" />
+                        <InputNumber v-if="field.type === 'number'" :id="field.key" v-model="form.custom_fields[field.key]" class="w-full mt-1" />
+                        <Textarea v-if="field.type === 'textarea'" :id="field.key" v-model="form.custom_fields[field.key]" rows="2" class="mt-1 w-full" />
+                        <ToggleSwitch v-if="field.type === 'boolean'" :id="field.key" v-model="form.custom_fields[field.key]" class="mt-1" />
+                        <Select v-if="field.type === 'select'" :id="field.key" v-model="form.custom_fields[field.key]" :options="field.options" class="mt-1 w-full" placeholder="Selecciona una opción" />
+                        <PatternLock v-if="field.type === 'pattern'" :id="field.key" v-model="form.custom_fields[field.key]" class="mt-1" />
                         <InputError :message="form.errors[`custom_fields.${field.key}`]" class="mt-2" />
                     </div>
                 </div>
@@ -214,24 +280,30 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     <Button @click="addItem" icon="pi pi-plus" label="Agregar" :disabled="!selectedItem" />
                 </div>
                 <DataTable :value="form.items" class="p-datatable-sm">
-                    <Column field="description" header="Descripción"><template #body="{ index }">
+                    <Column field="description" header="Descripción">
+                        <template #body="{ index }">
                             <InputText v-model="form.items[index].description" class="w-full" />
                         </template>
                     </Column>
-                    <Column field="quantity" header="Cantidad" style="width: 10rem"><template #body="{ index }">
+                    <Column field="quantity" header="Cantidad" style="width: 10rem">
+                        <template #body="{ index }">
                             <InputNumber v-model="form.items[index].quantity" class="w-full" showButtons
-                                buttonLayout="horizontal" :step="1" />
+                                buttonLayout="horizontal" :step="1" :min="0"/>
                         </template>
                     </Column>
-                    <Column field="unit_price" header="Precio Unit." style="width: 12rem"><template #body="{ index }">
+                    <Column field="unit_price" header="Precio Unit." style="width: 12rem">
+                        <template #body="{ index }">
                             <InputNumber v-model="form.items[index].unit_price" mode="currency" currency="MXN"
                                 locale="es-MX" class="w-full" />
                         </template>
                     </Column>
-                    <Column field="line_total" header="Total"><template #body="{ data }">{{
-                            formatCurrency(data.line_total) }}</template></Column>
-                    <Column style="width: 4rem"><template #body="{ index }"><Button @click="removeItem(index)"
-                                icon="pi pi-trash" text rounded severity="danger" /></template>
+                    <Column field="line_total" header="Total">
+                        <template #body="{ data }">{{ formatCurrency(data.line_total) }}</template>
+                    </Column>
+                    <Column style="width: 4rem">
+                        <template #body="{ index }">
+                            <Button @click="removeItem(index)" icon="pi pi-trash" text rounded severity="danger" />
+                        </template>
                     </Column>
                 </DataTable>
                 <InputError :message="form.errors.items" class="mt-2" />
@@ -250,12 +322,12 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Fotográfica Inicial (Máx. 5)</h2>
                 <div v-if="existingImages?.length > 0" class="flex flex-wrap gap-4 mb-4">
                     <div v-for="img in existingImages" :key="img.id" class="relative">
-                        <img :src="img.original_url" class="w-24 h-24 object-cover rounded-md border">
+                        <img :src="img.original_url" :alt="img.name" class="w-24 h-24 object-cover rounded-md border">
                         <Button @click="deleteExistingImage(img.id)" icon="pi pi-times" rounded text severity="danger"
                             class="!absolute -top-2 -right-2 bg-white/70 dark:bg-gray-800/70" />
                     </div>
                 </div>
-                <FileUpload name="initial_evidence_images[]" @select="onSelectImages" @remove="onRemoveImage"
+                <FileUpload name="initial_evidence_images[]" @select="onSelectImages" @remove="onRemoveNewImage"
                     :multiple="true" accept="image/*" :maxFileSize="2000000">
                     <template #empty>
                         <p>Arrastra y suelta para añadir más imágenes.</p>
@@ -264,29 +336,21 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                 <InputError :message="form.errors.initial_evidence_images" class="mt-2" />
             </div>
 
-            <!-- Información Interna -->
-            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+             <!-- Información Interna -->
+             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información Interna y Diagnóstico</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="grid grid-cols-1">
                     <div>
-                        <InputLabel for="promised_at" value="Fecha Promesa de Entrega" />
-                        <DatePicker id="promised_at" v-model="form.promised_at" showTime hourFormat="12"
-                            class="w-full mt-1" />
-                    </div>
-                    <div>
-                        <InputLabel for="technician_name" value="Técnico Asignado" />
-                        <InputText id="technician_name" v-model="form.technician_name" class="mt-1 w-full" />
-                    </div>
-                    <div class="md:col-span-2">
                         <InputLabel for="technician_diagnosis" value="Diagnóstico del Técnico" />
-                        <Textarea id="technician_diagnosis" v-model="form.technician_diagnosis" rows="3"
-                            class="mt-1 w-full" />
+                        <Textarea id="technician_diagnosis" v-model="form.technician_diagnosis" rows="3" class="mt-1 w-full" />
+                        <InputError :message="form.errors.technician_diagnosis" class="mt-2" />
                     </div>
                 </div>
             </div>
 
-            <div class="flex justify-end">
-                <Button type="submit" label="Actualizar Orden" :loading="form.processing" severity="warning" />
+            <div class="flex justify-end sticky bottom-4">
+                 <Button type="submit" label="Actualizar Orden" :loading="form.processing" severity="warning"
+                    class="shadow-lg" />
             </div>
         </form>
     </AppLayout>

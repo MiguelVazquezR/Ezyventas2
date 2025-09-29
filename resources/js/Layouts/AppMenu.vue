@@ -81,7 +81,7 @@ const model = ref([
                         icon: 'pi pi-user',
                         to: route('print-templates.index'),
                         routeName: 'print-templates.*',
-                        // permission: 'settings.users.access'
+                        permission: 'settings.templates.access'
                     },
                 ]
             },

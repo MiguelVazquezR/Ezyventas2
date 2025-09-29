@@ -1,11 +1,5 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import Button from 'primevue/button';
-import Dialog from 'primevue/dialog';
-import InputNumber from 'primevue/inputnumber';
-import SelectButton from 'primevue/selectbutton';
-import Divider from 'primevue/divider';
-import Message from 'primevue/message';
 
 const props = defineProps({
     visible: Boolean,

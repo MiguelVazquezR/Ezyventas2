@@ -233,7 +233,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
         $subscriptionId = $user->branch->subscription_id;
 
         return [
-            'customers' => Customer::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))->get(['id', 'name', 'phone']),
+            // MODIFICACIÓN: Añadir 'email' y 'customer_address' a la consulta
+            'customers' => Customer::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))->get(['id', 'name', 'phone', 'email', 'address']),
             'products' => Product::where('branch_id', $user->branch_id)->with('productAttributes')->get(),
             'services' => Service::where('branch_id', $user->branch_id)->get(['id', 'name', 'base_price']),
             'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'service_orders')->get(),
