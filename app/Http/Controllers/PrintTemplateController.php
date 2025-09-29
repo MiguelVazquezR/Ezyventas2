@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
 use App\Models\PrintTemplate;
 use Illuminate\Http\Request;
@@ -62,6 +63,7 @@ class PrintTemplateController extends Controller
                 'name' => $validated['name'],
                 'type' => $validated['type'],
                 'content' => $validated['content'], // Se guarda el objeto con config y elements
+                'context_type' => $this->determineContextType($validated['content']['elements'] ?? []),
             ]);
             $template->branches()->attach($validated['branch_ids']);
         });
@@ -90,6 +92,7 @@ class PrintTemplateController extends Controller
                 'name' => $validated['name'],
                 'type' => $validated['type'],
                 'content' => $validated['content'],
+                'context_type' => $this->determineContextType($validated['content']['elements'] ?? []),
             ]);
             $printTemplate->branches()->sync($validated['branch_ids']);
         });
@@ -118,7 +121,7 @@ class PrintTemplateController extends Controller
             'name' => $media->name,
         ]);
 
-        return Inertia::render('Template/Edit', [
+        return Inertia::render($view, [
             'template' => $printTemplate,
             'branches' => $subscription->branches()->get(['id', 'name']),
             'templateImages' => $templateImages,
@@ -156,5 +159,25 @@ class PrintTemplateController extends Controller
             'url' => $media->getUrl(),
             'name' => $media->name,
         ]);
+    }
+
+    /**
+     * Analiza los elementos de una plantilla para determinar su contexto principal.
+     */
+    private function determineContextType(array $elements): string
+    {
+        $contentString = json_encode($elements);
+
+        if (str_contains($contentString, '{{orden.')) {
+            return TemplateContextType::SERVICE_ORDER->value;
+        }
+        if (str_contains($contentString, '{{folio') || str_contains($contentString, '{{cliente.')) {
+            return TemplateContextType::TRANSACTION->value;
+        }
+        if (str_contains($contentString, '{{producto.')) {
+            return TemplateContextType::PRODUCT->value;
+        }
+
+        return TemplateContextType::GENERAL->value;
     }
 }

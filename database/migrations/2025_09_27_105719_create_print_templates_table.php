@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\TemplateContextType;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -14,6 +15,7 @@ return new class extends Migration
             $table->foreignId('subscription_id')->constrained()->onDelete('cascade');
             $table->string('name')->comment('Nombre descriptivo, ej: "Ticket de Venta Estándar 80mm"');
             $table->string('type')->default(TemplateType::SALE_TICKET->value);
+             $table->string('context_type')->default(TemplateContextType::GENERAL->value);
             $table->json('content')->comment('Almacena la estructura de operaciones ESC/POS en formato JSON');
             $table->boolean('is_default')->default(false);
             $table->timestamps();

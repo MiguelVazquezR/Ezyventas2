@@ -114,10 +114,18 @@ const placeholderOptions = ref([
     {
         group: 'Venta',
         items: [
-            { label: 'Folio', value: '{{folio}}' }, { label: 'Fecha', value: '{{fecha}}' }, { label: 'Hora', value: '{{hora}}' },
-            { label: 'Fecha y Hora', value: '{{fecha_hora}}' }, { label: 'Subtotal', value: '{{subtotal}}' }, { label: 'Descuentos', value: '{{descuentos}}' },
-            { label: 'Impuestos', value: '{{impuestos}}' }, { label: 'Total', value: '{{total}}' }, { label: 'Métodos de Pago', value: '{{metodos_pago}}' },
-            { label: 'Notas de Venta', value: '{{notas_venta}}' },
+            { label: 'Folio', value: '{{v.folio}}' }, { label: 'Fecha', value: '{{v.fecha}}' }, { label: 'Hora', value: '{{v.hora}}' },
+            { label: 'Fecha y Hora', value: '{{v.fecha_hora}}' }, { label: 'Subtotal', value: '{{v.subtotal}}' }, { label: 'Descuentos', value: '{{v.descuentos}}' },
+            { label: 'Impuestos', value: '{{v.impuestos}}' }, { label: 'Total', value: '{{v.total}}' }, { label: 'Métodos de Pago', value: '{{v.metodos_pago}}' },
+            { label: 'Notas de Venta', value: '{{v.notas_venta}}' },
+        ]
+    },
+    {
+        group: 'Orden de servicio',
+        items: [
+            { label: 'Folio', value: '{{os.folio}}' }, { label: 'Fecha recepción', value: '{{os.fecha_recepcion}}' }, { label: 'Hora recepción', value: '{{os.hora_recepcion}}' },
+            { label: 'Fecha y Hora recepción', value: '{{os.fecha_hora_recepcion}}' }, { label: 'Cliente', value: '{{os.cliente.nombre}}' }, { label: 'Problemas reportados', value: '{{os.problemas_reportados}}' },
+            { label: 'Equipo/Máquina', value: '{{os.item_description}}' }, { label: 'Total', value: '{{os.final_total}}' },
         ]
     },
     {
@@ -148,8 +156,8 @@ const placeholderOptions = ref([
     {
         group: 'Productos (para bucles)',
         items: [
-            { label: 'Nombre Producto', value: '{{producto.nombre}}' }, { label: 'Cantidad', value: '{{producto.cantidad}}' },
-            { label: 'Precio Unitario', value: '{{producto.precio}}' }, { label: 'Total Producto', value: '{{producto.total}}' }
+            { label: 'Nombre Producto', value: '{{p.nombre}}' }, { label: 'Cantidad', value: '{{p.cantidad}}' },
+            { label: 'Precio Unitario', value: '{{p.precio}}' }, { label: 'Total Producto', value: '{{p.total}}' }
         ]
     },
 ]);

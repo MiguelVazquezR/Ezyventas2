@@ -34,7 +34,7 @@ class PrintController extends Controller
             // Asumiendo que el producto pertenece a una sucursal de la suscripción
             if (!$dataSource || $dataSource->branch->subscription_id !== $user->branch->subscription_id) abort(404);
         } elseif ($validated['data_source_type'] === 'service_order') {
-            $dataSource = ServiceOrder::with(['customer'])->find($validated['data_source_id']);
+            $dataSource = ServiceOrder::find($validated['data_source_id']);
             if (!$dataSource || $dataSource->branch->subscription_id !== $user->branch->subscription_id) abort(404);
         }
         

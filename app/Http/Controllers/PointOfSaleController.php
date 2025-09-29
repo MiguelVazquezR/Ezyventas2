@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\CashRegisterSessionStatus;
 use App\Enums\PromotionEffectType;
 use App\Enums\PromotionType;
+use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
@@ -79,6 +80,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         // Se obtienen las plantillas de impresión disponibles para la sucursal actual
         $availableTemplates = $user->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
+            ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
             ->get();
 
         return Inertia::render('POS/Index', [

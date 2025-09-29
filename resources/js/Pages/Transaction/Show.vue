@@ -4,14 +4,27 @@ import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import AddPaymentModal from '@/Components/AddPaymentModal.vue';
+import PrintModal from '@/Components/PrintModal.vue';
 import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     transaction: Object,
+    availableTemplates: Array,
 });
 
 // composables
 const { hasPermission } = usePermissions();
+
+// --- Lógica del Modal de Impresión ---
+const isPrintModalVisible = ref(false);
+const printDataSource = ref(null);
+const openPrintModal = () => {
+    printDataSource.value = {
+        type: 'transaction',
+        id: props.transaction.id
+    };
+    isPrintModalVisible.value = true;
+};
 
 const confirm = useConfirm();
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
@@ -62,7 +75,7 @@ const generateReturn = () => {
 };
 
 const actionItems = computed(() => [
-    { label: 'Imprimir ticket', icon: 'pi pi-print' },
+    { label: 'Imprimir ticket', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
     { label: 'Generar devolución', icon: 'pi pi-replay', command: generateReturn, disabled: !canRefund.value, visible: hasPermission('transactions.refund') },
     { label: 'Cancelar venta', icon: 'pi pi-times-circle', class: 'text-red-500', command: cancelSale, disabled: !canCancel.value, visible: hasPermission('transactions.cancel') },
@@ -78,17 +91,20 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
 </script>
 
 <template>
+
     <Head :title="`Venta #${transaction.folio}`" />
     <AppLayout>
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
-        
+
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <div>
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Venta #{{ transaction.folio }}</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Realizada el {{ formatDate(transaction.created_at) }}</p>
+                <p class="text-gray-500 dark:text-gray-400 mt-1">Realizada el {{ formatDate(transaction.created_at) }}
+                </p>
             </div>
             <div class="flex items-center gap-2 mt-4 sm:mt-0">
-                <Button v-if="canAddPayment" @click="showAddPaymentModal = true" label="Registrar Abono" icon="pi pi-plus" severity="success" />
+                <Button v-if="canAddPayment" @click="showAddPaymentModal = true" label="Registrar Abono"
+                    icon="pi pi-plus" severity="success" />
                 <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined />
             </div>
         </div>
@@ -102,8 +118,12 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                         <DataTable :value="transaction.items" class="p-datatable-sm">
                             <Column field="description" header="Descripción"></Column>
                             <Column field="quantity" header="Cantidad"></Column>
-                            <Column field="unit_price" header="P. Unitario"><template #body="{data}">{{ formatCurrency(data.unit_price) }}</template></Column>
-                            <Column field="line_total" header="Total"><template #body="{data}">{{ formatCurrency(data.line_total) }}</template></Column>
+                            <Column field="unit_price" header="P. Unitario"><template #body="{ data }">{{
+                                    formatCurrency(data.unit_price) }}</template>
+                            </Column>
+                            <Column field="line_total" header="Total"><template #body="{ data }">{{
+                                    formatCurrency(data.line_total) }}</template>
+                            </Column>
                         </DataTable>
                     </template>
                 </Card>
@@ -113,12 +133,17 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                 <Card>
                     <template #title>Resumen Financiero</template>
                     <template #content>
-                         <ul class="space-y-3 text-sm">
-                            <li class="flex justify-between"><span>Subtotal:</span><span>{{ formatCurrency(transaction.subtotal) }}</span></li>
-                            <li class="flex justify-between"><span>Descuento:</span><span class="text-red-500">- {{ formatCurrency(transaction.total_discount) }}</span></li>
-                            <li class="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>Total de la Venta:</span><span>{{ formatCurrency(totalAmount) }}</span></li>
-                             <li class="flex justify-between"><span>Total Pagado:</span><span class="font-semibold">{{ formatCurrency(totalPaid) }}</span></li>
-                             <li v-if="pendingAmount > 0.01" class="flex justify-between font-bold text-red-600"><span>Saldo Pendiente:</span><span>{{ formatCurrency(pendingAmount) }}</span></li>
+                        <ul class="space-y-3 text-sm">
+                            <li class="flex justify-between"><span>Subtotal:</span><span>{{
+                                    formatCurrency(transaction.subtotal) }}</span></li>
+                            <li class="flex justify-between"><span>Descuento:</span><span class="text-red-500">- {{
+                                    formatCurrency(transaction.total_discount) }}</span></li>
+                            <li class="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>Total de la
+                                    Venta:</span><span>{{ formatCurrency(totalAmount) }}</span></li>
+                            <li class="flex justify-between"><span>Total Pagado:</span><span class="font-semibold">{{
+                                    formatCurrency(totalPaid) }}</span></li>
+                            <li v-if="pendingAmount > 0.01" class="flex justify-between font-bold text-red-600">
+                                <span>Saldo Pendiente:</span><span>{{ formatCurrency(pendingAmount) }}</span></li>
                         </ul>
                     </template>
                 </Card>
@@ -126,11 +151,18 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                     <template #title>Información de la Venta</template>
                     <template #content>
                         <ul class="space-y-3 text-sm">
-                            <li class="flex justify-between"><span>Estatus:</span><Tag :value="localTransaction.status" :severity="getStatusSeverity(localTransaction.status)" class="capitalize" /></li>
-                            <li class="flex justify-between"><span>Cliente:</span><span class="font-medium">{{ transaction.customer.name }}</span></li>
-                            <li class="flex justify-between"><span>Cajero:</span><span class="font-medium">{{ transaction.user.name }}</span></li>
-                            <li class="flex justify-between"><span>Sucursal:</span><span class="font-medium">{{ transaction.branch.name }}</span></li>
-                            <li class="flex justify-between"><span>Canal:</span><span class="font-medium capitalize">{{ transaction.channel.replace('_', ' ') }}</span></li>
+                            <li class="flex justify-between"><span>Estatus:</span>
+                                <Tag :value="localTransaction.status"
+                                    :severity="getStatusSeverity(localTransaction.status)" class="capitalize" />
+                            </li>
+                            <li class="flex justify-between"><span>Cliente:</span><span class="font-medium">{{
+                                    transaction.customer.name }}</span></li>
+                            <li class="flex justify-between"><span>Cajero:</span><span class="font-medium">{{
+                                    transaction.user.name }}</span></li>
+                            <li class="flex justify-between"><span>Sucursal:</span><span class="font-medium">{{
+                                    transaction.branch.name }}</span></li>
+                            <li class="flex justify-between"><span>Canal:</span><span class="font-medium capitalize">{{
+                                    transaction.channel.replace('_', ' ') }}</span></li>
                         </ul>
                     </template>
                 </Card>
@@ -140,7 +172,9 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                         <ul class="space-y-3">
                             <li v-for="payment in localTransaction.payments" :key="payment.id" class="text-sm">
                                 <div class="flex justify-between items-center">
-                                    <span class="flex items-center gap-2"><i class="pi" :class="paymentMethodIcons[payment.payment_method].icon + ' ' + paymentMethodIcons[payment.payment_method].color"></i> <span class="capitalize font-medium">{{ payment.payment_method }}</span></span>
+                                    <span class="flex items-center gap-2"><i class="pi"
+                                            :class="paymentMethodIcons[payment.payment_method].icon + ' ' + paymentMethodIcons[payment.payment_method].color"></i>
+                                        <span class="capitalize font-medium">{{ payment.payment_method }}</span></span>
                                     <span class="font-mono font-semibold">{{ formatCurrency(payment.amount) }}</span>
                                 </div>
                                 <p class="text-xs text-gray-500 ml-6">{{ formatDate(payment.payment_date) }}</p>
@@ -150,6 +184,9 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                 </Card>
             </div>
         </div>
-        <AddPaymentModal :visible="showAddPaymentModal" :transaction="transaction" :pending-amount="pendingAmount" @update:visible="showAddPaymentModal = false" />
+        <AddPaymentModal :visible="showAddPaymentModal" :transaction="transaction" :pending-amount="pendingAmount"
+            @update:visible="showAddPaymentModal = false" />
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
+            :available-templates="availableTemplates" />
     </AppLayout>
 </template>
