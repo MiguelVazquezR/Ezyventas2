@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CustomerBalanceMovementType;
 use App\Enums\TransactionStatus;
 use App\Http\Requests\StorePaymentRequest;
 use App\Models\Transaction;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class PaymentController extends Controller
 {
@@ -19,40 +19,51 @@ class PaymentController extends Controller
         DB::transaction(function () use ($request, $transaction) {
             $validated = $request->validated();
 
-            // SOLUCIÓN 3: Corregir el desfase de zona horaria.
-            // Se asume que la zona horaria del usuario es la central de México.
-            // En una app más compleja, esto vendría de la configuración del usuario o sucursal.
+            // Corregir el desfase de zona horaria.
             $validated['payment_date'] = Carbon::parse($validated['payment_date'])->setTimezone('America/Mexico_City');
 
+            // 1. Crear el registro del pago
             $payment = $transaction->payments()->create($validated);
 
-            // SOLUCIÓN 2: Lógica de pago completo y excedente.
-            $totalAmount = $transaction->subtotal - $transaction->total_discount;
-            $totalPaid = $transaction->payments()->where('status', 'completado')->sum('amount');
-            
-            if ($totalPaid >= $totalAmount) {
-                // Marcar la transacción como completada si no lo estaba
+            // 2. Si la transacción tiene un cliente, afectar su balance general
+            if ($customer = $transaction->customer) {
+                $newBalance = $customer->balance + $payment->amount;
+                $customer->update(['balance' => $newBalance]);
+
+                // 3. Registrar el movimiento de saldo para auditoría
+                $customer->balanceMovements()->create([
+                    'transaction_id' => $transaction->id,
+                    'type' => CustomerBalanceMovementType::PAYMENT,
+                    'amount' => $payment->amount,
+                    'balance_after' => $newBalance,
+                    'notes' => "Abono a la transacción #{$transaction->folio}",
+                ]);
+            }
+
+            // 4. Verificar si la transacción ya fue saldada y actualizar su estado
+            $totalAmountDue = $transaction->subtotal - $transaction->total_discount;
+            $totalPaid = $transaction->payments()->sum('amount');
+
+            if ($totalPaid >= $totalAmountDue) {
                 if ($transaction->status !== TransactionStatus::COMPLETED) {
                     $transaction->update(['status' => TransactionStatus::COMPLETED]);
                 }
 
-                // Calcular el excedente y añadirlo al saldo a favor del cliente
-                $surplus = $totalPaid - $totalAmount;
-                if ($surplus > 0.01 && $transaction->customer) {
-                    $transaction->customer->increment('balance', $surplus);
-
-                    // Opcional: Registrar el movimiento de saldo para auditoría
-                    $transaction->customer->balanceMovements()->create([
-                        'type' => 'ajuste_manual', // Podrías crear un Enum 'excedente_pago'
-                        'amount' => $surplus,
-                        'balance_after' => $transaction->customer->fresh()->balance,
-                        'notes' => "Excedente del pago para la venta #{$transaction->folio}",
+                // 5. Si hubo un pago en exceso (excedente), registrarlo como nota en el balance.
+                // El saldo del cliente ya es correcto, esto es solo para mayor claridad en el historial.
+                $surplus = $totalPaid - $totalAmountDue;
+                if ($surplus > 0.01 && $customer) {
+                    $customer->balanceMovements()->create([
+                        'transaction_id' => $transaction->id,
+                        'type' => CustomerBalanceMovementType::MANUAL_ADJUSTMENT,
+                        'amount' => 0, // El monto ya fue aplicado, esto es solo una anotación.
+                        'balance_after' => $customer->balance,
+                        'notes' => "Excedente de pago de " . number_format($surplus, 2) . " en transacción #{$transaction->folio} aplicado a saldo a favor.",
                     ]);
                 }
             }
         });
 
-        // Inertia recargará la página Show.vue con los datos actualizados.
         return redirect()->back()->with('success', 'Abono registrado con éxito.');
     }
 }

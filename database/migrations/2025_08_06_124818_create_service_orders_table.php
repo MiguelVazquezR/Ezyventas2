@@ -13,11 +13,14 @@ return new class extends Migration
             $table->foreignId('branch_id')->constrained('branches')->onDelete('cascade');
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
             $table->foreignId('quote_id')->nullable()->constrained('quotes')->onDelete('set null');
+            $table->foreignId('customer_id')->nullable()->constrained()->onDelete('set null');
             $table->string('customer_name');
             $table->string('customer_email')->nullable();
             $table->string('customer_phone')->nullable();
             $table->json('customer_address')->nullable();
             $table->string('technician_name')->nullable();
+            $table->string('technician_commission_type')->nullable(); // 'percentage', 'fixed'
+            $table->decimal('technician_commission_value', 10, 2)->nullable();
             $table->string('status');
             $table->timestamp('received_at');
             $table->timestamp('promised_at')->nullable();

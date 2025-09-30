@@ -37,6 +37,7 @@ require __DIR__ . '/web/cash-register-sessions.php';
 require __DIR__ . '/web/cash-register-session-movements.php';
 require __DIR__ . '/web/transactions.php';
 require __DIR__ . '/web/payments.php';
+require __DIR__ . '/web/transaction-payments.php';
 require __DIR__ . '/web/settings.php';
 require __DIR__ . '/web/roles.php';
 require __DIR__ . '/web/permissions.php';
@@ -47,6 +48,7 @@ require __DIR__ . '/web/branches.php';
 require __DIR__ . '/web/switch-branch.php';
 require __DIR__ . '/web/print-templates.php';
 require __DIR__ . '/web/print.php';
+require __DIR__ . '/web/custom-field-definitions.php';
 
 
 //artisan commands -------------------

@@ -4,11 +4,13 @@ namespace App\Models;
 
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -22,6 +24,8 @@ class Transaction extends Model
         'branch_id',
         'user_id',
         'cash_register_session_id',
+        'transactionable_id',
+        'transactionable_type',
         'status',
         'channel',
         'subtotal',
@@ -53,7 +57,7 @@ class Transaction extends Model
             ->setDescriptionForEvent(fn(string $eventName) => "La transacción ha sido {$this->translateEventName($eventName)}")
             ->logOnlyDirty()->dontSubmitEmptyLogs();
     }
-    
+
     private function translateEventName(string $eventName): string
     {
         return ['created' => 'creada', 'updated' => 'actualizada', 'deleted' => 'eliminada'][$eventName] ?? $eventName;
@@ -61,9 +65,31 @@ class Transaction extends Model
 
     /*
     |--------------------------------------------------------------------------
+    | ACCESORES Y MUTADORES
+    |--------------------------------------------------------------------------
+    */
+    protected $appends = ['total'];
+
+    /**
+     * Calcula el total de la transacción dinámicamente.
+     */
+    protected function total(): Attribute
+    {
+        return Attribute::make(
+            get: fn() => ($this->subtotal - $this->total_discount) + $this->total_tax,
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | RELACIONES
     |--------------------------------------------------------------------------
     */
+
+    public function transactionable(): MorphTo
+    {
+        return $this->morphTo();
+    }
 
     /**
      * Obtiene el cliente asociado con la transacción.

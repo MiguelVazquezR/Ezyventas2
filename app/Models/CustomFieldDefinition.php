@@ -9,4 +9,8 @@ class CustomFieldDefinition extends Model
 {
     use HasFactory;
     protected $guarded = [];
+
+    protected $casts = [
+        'options' => 'array', // Asegura que las opciones se manejen como un array
+    ];
 }

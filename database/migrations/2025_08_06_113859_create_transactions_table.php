@@ -20,7 +20,9 @@ return new class extends Migration
             $table->foreignId('branch_id')->constrained('branches')->onDelete('cascade');
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
             $table->foreignId('cash_register_session_id')->nullable()->constrained('cash_register_sessions')->onDelete('set null');
-            
+
+            $table->nullableMorphs('transactionable'); // Polimórfica: puede ser una venta, una compra, un reembolso, etc.
+
             // Detalles de la transacción
             $table->string('status'); // completado, pendiente, cancelado, reembolsado
             $table->string('channel'); // pos, online_store
@@ -33,6 +35,7 @@ return new class extends Migration
             $table->boolean('invoiced')->default(false);
 
             $table->timestamps();
+            $table->index(['transactionable_id', 'transactionable_type']);
         });
     }
 

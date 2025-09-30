@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Enums\ServiceOrderStatus;
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
+use App\Enums\TransactionChannel;
+use App\Enums\TransactionStatus;
 use App\Http\Requests\StoreServiceOrderRequest;
 use App\Http\Requests\UpdateServiceOrderRequest;
 use App\Models\Customer;
@@ -60,7 +62,6 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
         $serviceOrders = $query->paginate($request->input('rows', 20))->withQueryString();
 
-        // Se obtienen las plantillas disponibles para la sucursal y el contexto de órdenes de servicio
         $availableTemplates = $user->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
             ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER, TemplateContextType::GENERAL])
@@ -69,13 +70,13 @@ class ServiceOrderController extends Controller implements HasMiddleware
         return Inertia::render('ServiceOrder/Index', [
             'serviceOrders' => $serviceOrders,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
-            'availableTemplates' => $availableTemplates, // Se pasan a la vista
+            'availableTemplates' => $availableTemplates,
         ]);
     }
 
     public function show(ServiceOrder $serviceOrder): Response
     {
-        $serviceOrder->load(['branch', 'user', 'items.itemable', 'activities.causer', 'media']);
+        $serviceOrder->load(['branch', 'user', 'customer', 'items.itemable', 'activities.causer', 'media', 'transaction.payments']);
 
         $translations = config('log_translations.ServiceOrder', []);
 
@@ -100,17 +101,20 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'changes' => $changes,
             ];
         });
-        
-        // Se obtienen las plantillas disponibles para la sucursal y el contexto de órdenes de servicio
+
         $availableTemplates = Auth::user()->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
             ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER, TemplateContextType::GENERAL])
             ->get();
 
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+
         return Inertia::render('ServiceOrder/Show', [
             'serviceOrder' => $serviceOrder,
             'activities' => $formattedActivities,
-            'availableTemplates' => $availableTemplates, // Se pasan a la vista
+            'availableTemplates' => $availableTemplates,
+            'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'service_orders')->get(),
         ]);
     }
 
@@ -119,22 +123,65 @@ class ServiceOrderController extends Controller implements HasMiddleware
         return Inertia::render('ServiceOrder/Create', $this->getFormData());
     }
 
+    /**
+     * Almacena una nueva orden de servicio.
+     */
     public function store(StoreServiceOrderRequest $request)
     {
-        // Se define la variable fuera del closure para poder acceder a ella después
+        // MODIFICADO: Se mueven las reglas de validación aquí para añadir las nuevas.
+        // Si usas un FormRequest (`StoreServiceOrderRequest`), mueve estas reglas allí.
+        $validated = $request->validated();
+        $validated = array_merge($validated, $request->validate([
+            'create_customer' => 'required|boolean',
+            'credit_limit' => 'required_if:create_customer,true|numeric|min:0',
+        ]));
+
         $newServiceOrder = null;
 
-        DB::transaction(function () use ($request, &$newServiceOrder) {
-            $serviceOrder = ServiceOrder::create(array_merge($request->validated(), [
-                'user_id' => Auth::id(),
-                'branch_id' => Auth::user()->branch_id,
-                'status' => \App\Enums\ServiceOrderStatus::PENDING,
+        DB::transaction(function () use ($validated, &$newServiceOrder, $request) {
+            $user = Auth::user();
+            $customer = null;
+
+            // MODIFICADO: Lógica para manejar los 3 escenarios de cliente
+            if (! empty($validated['customer_id'])) {
+                // Escenario 1: Se seleccionó un cliente existente.
+                $customer = Customer::find($validated['customer_id']);
+            } elseif ($validated['create_customer']) {
+                // Escenario 2: Es un cliente nuevo y se eligió registrarlo.
+                $customer = Customer::create([
+                    'branch_id' => $user->branch_id,
+                    'name' => $validated['customer_name'],
+                    'phone' => $validated['customer_phone'] ?? null,
+                    'email' => $validated['customer_email'] ?? null,
+                    'address' => $validated['customer_address'] ?? null,
+                    'credit_limit' => $validated['credit_limit'], // Se usa el valor del formulario
+                    'balance' => 0,
+                ]);
+            }
+            // Escenario 3: Cliente nuevo sin registrar. No se hace nada, $customer permanece null.
+
+            $serviceOrder = ServiceOrder::create(array_merge($validated, [
+                'user_id' => $user->id,
+                'branch_id' => $user->branch_id,
+                'customer_id' => $customer?->id, // El operador ?-> asigna null si $customer no existe
+                'status' => ServiceOrderStatus::PENDING,
             ]));
 
-            foreach ($request->validated('items', []) as $item) {
+            $transaction = $serviceOrder->transaction()->create([
+                'folio' => 'TR-SO-' . time(),
+                'customer_id' => $customer?->id, // También se usa aquí
+                'branch_id' => $user->branch_id,
+                'user_id' => $user->id,
+                'subtotal' => $serviceOrder->final_total,
+                'total_discount' => 0,
+                'total_tax' => 0,
+                'channel' => TransactionChannel::SERVICE_ORDER,
+                'status' => $serviceOrder->final_total > 0 ? TransactionStatus::PENDING : TransactionStatus::COMPLETED,
+            ]);
+
+            foreach ($validated['items'] ?? [] as $item) {
                 if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
-                    unset($item['itemable_id']);
-                    unset($item['itemable_type']);
+                    unset($item['itemable_id'], $item['itemable_type']);
                 }
                 $serviceOrder->items()->create($item);
             }
@@ -144,19 +191,15 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
                 }
             }
-            
-            // Se asigna la nueva orden a la variable
+
             $newServiceOrder = $serviceOrder;
         });
 
-        // Se redirige a la vista 'show' de la nueva orden con un flash message para la impresión
         return redirect()->route('service-orders.show', $newServiceOrder->id)
             ->with('success', 'Orden de servicio creada.')
-            ->with('print_data', [
-                'type' => 'service_order',
-                'id' => $newServiceOrder->id
-            ]);
+            ->with('show_payment_modal', true);
     }
+
 
     public function edit(ServiceOrder $serviceOrder): Response
     {
@@ -168,15 +211,22 @@ class ServiceOrderController extends Controller implements HasMiddleware
     {
         DB::transaction(function () use ($request, $serviceOrder) {
             $validated = $request->validated();
+
             $serviceOrder->update($validated);
 
             $serviceOrder->items()->delete();
             foreach ($validated['items'] as $item) {
                 if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
-                    unset($item['itemable_id']);
-                    unset($item['itemable_type']);
+                    unset($item['itemable_id'], $item['itemable_type']);
                 }
                 $serviceOrder->items()->create($item);
+            }
+
+            $serviceOrder->load('transaction');
+            if ($serviceOrder->transaction) {
+                $serviceOrder->transaction->update([
+                    'subtotal' => $serviceOrder->final_total,
+                ]);
             }
 
             if ($request->input('deleted_media_ids')) {
@@ -190,7 +240,30 @@ class ServiceOrderController extends Controller implements HasMiddleware
             }
         });
 
-        return redirect()->route('service-orders.index')->with('success', 'Orden de servicio actualizada.');
+        return redirect()->route('service-orders.show', $serviceOrder->id)->with('success', 'Orden de servicio actualizada.');
+    }
+
+    public function saveDiagnosisAndEvidence(Request $request, ServiceOrder $serviceOrder)
+    {
+        $validated = $request->validate([
+            'technician_diagnosis' => 'nullable|string|max:1000',
+            'closing_evidence_images' => 'nullable|array|max:5',
+            'closing_evidence_images.*' => 'image|max:2048', // Max 2MB per image
+        ]);
+
+        DB::transaction(function () use ($validated, $serviceOrder, $request) {
+            $serviceOrder->update([
+                'technician_diagnosis' => $validated['technician_diagnosis'],
+            ]);
+
+            if ($request->hasFile('closing_evidence_images')) {
+                foreach ($request->file('closing_evidence_images') as $file) {
+                    $serviceOrder->addMedia($file)->toMediaCollection('closing-service-order-evidence');
+                }
+            }
+        });
+
+        return redirect()->back()->with('success', 'Diagnóstico y evidencias guardados correctamente.');
     }
 
     public function updateStatus(Request $request, ServiceOrder $serviceOrder)
@@ -207,7 +280,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
         activity()
             ->performedOn($serviceOrder)
             ->causedBy(auth()->user())
-            ->event('status_changed') // Evento personalizado para el historial
+            ->event('status_changed')
             ->withProperties(['old_status' => $oldStatus, 'new_status' => $newStatus])
             ->log("El estatus cambió de '{$oldStatus}' a '{$newStatus}'.");
 
@@ -216,14 +289,23 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
     public function destroy(ServiceOrder $serviceOrder)
     {
-        $serviceOrder->delete();
+        DB::transaction(function () use ($serviceOrder) {
+            $serviceOrder->transaction()->delete();
+            $serviceOrder->delete();
+        });
         return redirect()->route('service-orders.index')->with('success', 'Orden de servicio eliminada.');
     }
 
     public function batchDestroy(Request $request)
     {
         $request->validate(['ids' => 'required|array']);
-        ServiceOrder::whereIn('id', $request->input('ids'))->delete();
+        $orderIds = $request->input('ids');
+        DB::transaction(function () use ($orderIds) {
+            \App\Models\Transaction::whereHasMorph('transactionable', [ServiceOrder::class], function ($query) use ($orderIds) {
+                $query->whereIn('id', $orderIds);
+            })->delete();
+            ServiceOrder::whereIn('id', $orderIds)->delete();
+        });
         return redirect()->route('service-orders.index')->with('success', 'Órdenes seleccionadas eliminadas.');
     }
 
@@ -233,7 +315,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
         $subscriptionId = $user->branch->subscription_id;
 
         return [
-            'customers' => Customer::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))->get(['id', 'name', 'phone']),
+            'customers' => Customer::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))->get(),
             'products' => Product::where('branch_id', $user->branch_id)->with('productAttributes')->get(),
             'services' => Service::where('branch_id', $user->branch_id)->get(['id', 'name', 'base_price']),
             'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'service_orders')->get(),

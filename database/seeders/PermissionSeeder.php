@@ -111,6 +111,10 @@ class PermissionSeeder extends Seeder
                 'settings.users.edit' => 'Edit usuarios',
                 'settings.users.delete' => 'Eliminar usuarios',
                 'settings.users.change_status' => 'Activar y desactivar usuarios. Un usuario desactivado ya no tiene acceso al sistema',
+                'settings.templates.access' => 'Acceder al listado de plantillas.',
+                'settings.templates.create' => 'Crear plantillas.',
+                'settings.templates.edit' => 'Editar plantillas.',
+                'settings.templates.delete' => 'Eliminar plantillas.',
             ],
             'Sistema' => [
                 'system.branches.switch' => 'Cambiar entre sucursales',
