@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CashRegisterSessionStatus;
+use App\Enums\CustomerBalanceMovementType;
 use App\Enums\PromotionEffectType;
 use App\Enums\PromotionType;
 use App\Enums\TemplateContextType;
@@ -127,7 +128,8 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 if ($customer && $validated['use_balance'] && $customer->balance > 0) {
                     $amountFromBalance = min($totalSale, $customer->balance);
                 }
-                $remainingDue = $totalSale - $totalPaid - $amountFromBalance;
+                $amountPaidByMethods = $totalPaid;
+                $remainingDue = $totalSale - $amountPaidByMethods - $amountFromBalance;
 
                 if (!$customer) {
                     if ($remainingDue > 0.01) {
@@ -177,6 +179,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     Product::find($item['id'])->decrement('current_stock', $item['quantity']);
                 }
 
+                // 1. Registrar pagos de métodos (tarjeta, efectivo, etc.)
                 foreach ($validated['payments'] as $payment) {
                     $newTransaction->payments()->create([
                         'amount' => $payment['amount'],
@@ -186,10 +189,36 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     ]);
                 }
 
+                // 2. Afectar el balance del cliente si es necesario
                 if ($customer) {
-                    $totalChargedToBalance = $remainingDue + $amountFromBalance;
-                    if ($totalChargedToBalance > 0) {
-                        $customer->decrement('balance', $totalChargedToBalance);
+                    $chargeAmount = $totalSale; // Se le carga el total de la venta
+                    $paymentAmount = $amountPaidByMethods + $amountFromBalance; // Se le abona lo que pagó
+                    
+                    $balanceChange = $paymentAmount - $chargeAmount;
+                    
+                    if (abs($balanceChange) > 0.01) {
+                         $balanceBefore = $customer->balance;
+                         $customer->increment('balance', $balanceChange);
+                         
+                         // Movimiento de cargo por la venta
+                         $customer->balanceMovements()->create([
+                            'transaction_id' => $newTransaction->id,
+                            'type' => CustomerBalanceMovementType::CREDIT_SALE,
+                            'amount' => -$chargeAmount,
+                            'balance_after' => $balanceBefore - $chargeAmount,
+                            'notes' => "Cargo por venta POS. Folio: {$newTransaction->folio}",
+                         ]);
+
+                         // Movimiento de abono por el pago
+                         if ($paymentAmount > 0) {
+                             $customer->balanceMovements()->create([
+                                'transaction_id' => $newTransaction->id,
+                                'type' => CustomerBalanceMovementType::PAYMENT,
+                                'amount' => $paymentAmount,
+                                'balance_after' => $customer->balance,
+                                'notes' => "Abono por venta POS. Folio: {$newTransaction->folio}",
+                             ]);
+                         }
                     }
                 }
 

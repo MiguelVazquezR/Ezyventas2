@@ -37,6 +37,7 @@ require __DIR__ . '/web/cash-register-sessions.php';
 require __DIR__ . '/web/cash-register-session-movements.php';
 require __DIR__ . '/web/transactions.php';
 require __DIR__ . '/web/payments.php';
+require __DIR__ . '/web/transaction-payments.php';
 require __DIR__ . '/web/settings.php';
 require __DIR__ . '/web/roles.php';
 require __DIR__ . '/web/permissions.php';

@@ -38,15 +38,17 @@ watch(() => page.props.flash.show_payment_modal, (showModal) => {
 }, { immediate: true });
 
 const handlePaymentSubmit = (payload) => {
-    router.post(route('service-orders.storePayment', props.serviceOrder.id), {
+    // MODIFICADO: Apunta a la nueva ruta unificada, pasando el ID de la transacción
+    router.post(route('transactions.payments.store', props.serviceOrder.transaction.id), {
         payments: payload.payments
     }, {
         preserveScroll: true,
         onSuccess: () => {
             handlePaymentModalClosed();
         },
-        onError: () => {
-            toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo registrar el pago.', life: 3000 });
+        onError: (errors) => {
+            const errorMsg = Object.values(errors)[0] || 'No se pudo registrar el pago.';
+            toast.add({ severity: 'error', summary: 'Error', detail: errorMsg, life: 4000 });
         }
     });
 };
@@ -349,10 +351,11 @@ const formatCurrency = (value) => {
         </div>
 
         <PaymentModal
-            v-if="serviceOrder"
+            v-if="serviceOrder.transaction"
             v-model:visible="isPaymentModalVisible"
             :total-amount="amountDue"
             :client="serviceOrder.customer"
+            payment-mode="flexible"
             @submit="handlePaymentSubmit"
             @update:visible="(val) => { if (!val) handlePaymentModalClosed(); }"
         />

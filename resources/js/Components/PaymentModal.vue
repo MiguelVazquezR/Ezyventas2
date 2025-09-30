@@ -4,7 +4,13 @@ import { ref, computed, watch } from 'vue';
 const props = defineProps({
     visible: Boolean,
     totalAmount: { type: Number, required: true },
-    client: { type: Object, default: null } // AÑADIDO: Recibe el cliente
+    client: { type: Object, default: null },
+    // AÑADIDO: 'strict' para POS (pago completo), 'flexible' para Órdenes de Servicio (pagos parciales)
+    paymentMode: {
+        type: String,
+        default: 'strict', // 'strict' | 'flexible'
+        validator: (value) => ['strict', 'flexible'].includes(value)
+    }
 });
 
 const emit = defineEmits(['update:visible', 'submit']);
@@ -21,7 +27,7 @@ const change = computed(() => {
     return diff > 0 ? diff : 0;
 });
 
-// --- LÓGICA INTELIGENTE ---
+// --- LÓGICA INTELIGENTE ACTUALIZADA ---
 const isCreditSale = computed(() => {
     // Es una venta a crédito si hay un cliente, queda un monto por pagar,
     // y ese monto es cubierto por su crédito disponible.
@@ -29,11 +35,21 @@ const isCreditSale = computed(() => {
 });
 
 const canFinalize = computed(() => {
+    // En modo flexible, siempre se puede finalizar, incluso sin pagos.
+    if (props.paymentMode === 'flexible') {
+        return true;
+    }
+    // En modo estricto, se requiere el pago total o que el crédito lo cubra.
     if (amountRemaining.value <= 0.01) return true; // Totalmente pagado
     return isCreditSale.value; // O cubierto por el crédito
 });
 
 const finalizeButtonLabel = computed(() => {
+    if (props.paymentMode === 'flexible') {
+        if (totalPaid.value > 0) return `Registrar Pago de $${totalPaid.value.toFixed(2)}`;
+        return 'Continuar (Sin Pago)';
+    }
+    // Lógica para modo 'strict' (POS)
     if (isCreditSale.value) {
         return `Finalizar (Crédito: $${amountRemaining.value.toFixed(2)})`;
     }
@@ -65,6 +81,7 @@ const removePayment = (index) => {
 };
 
 const submitForm = () => {
+    // Se emiten solo los pagos. El backend se encargará del resto.
     emit('submit', { payments: payments.value });
 };
 </script>
@@ -72,7 +89,7 @@ const submitForm = () => {
 <template>
     <Dialog :visible="visible" @update:visible="$emit('update:visible', $event)" modal header="Procesar Pago" :style="{ width: '35rem' }">
         
-        <!-- AÑADIDO: Info del Cliente -->
+        <!-- Info del Cliente -->
         <div v-if="client" class="mb-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
             <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ client.name }}</p>
             <div class="flex justify-between text-xs mt-1">
@@ -85,7 +102,7 @@ const submitForm = () => {
             <!-- Columna Izquierda: Resumen -->
             <div class="space-y-4">
                 <div class="text-center">
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Total a Pagar</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">Monto a Pagar</p>
                     <p class="text-4xl font-bold text-gray-800 dark:text-gray-100">${{ totalAmount.toFixed(2) }}</p>
                 </div>
                 <Divider />
@@ -100,29 +117,33 @@ const submitForm = () => {
                         <span>${{ change.toFixed(2) }}</span>
                     </div>
                 </div>
-                 <!-- AÑADIDO: Mensaje de Venta a Crédito -->
-                <Message v-if="isCreditSale" severity="info" :closable="false">
+                <!-- Mensaje de Venta a Crédito -->
+                <Message v-if="isCreditSale && paymentMode === 'strict'" severity="info" :closable="false">
                     El monto restante se añadirá al saldo deudor del cliente.
+                </Message>
+                 <!-- AÑADIDO: Mensaje para modo flexible -->
+                 <Message v-if="paymentMode === 'flexible' && amountRemaining > 0.01" severity="warn" :closable="false">
+                    Puede registrar un pago parcial (anticipo) o continuar sin realizar ningún pago.
                 </Message>
             </div>
 
             <!-- Columna Derecha: Métodos de Pago -->
             <div class="space-y-4">
-                 <p class="font-semibold text-center text-gray-700 dark:text-gray-300">Agregar Pago</p>
+                <p class="font-semibold text-center text-gray-700 dark:text-gray-300">Agregar Pago</p>
                 <div class="p-fluid">
                     <div class="p-field">
                         <label for="payment-amount" class="text-sm">Monto</label>
                         <InputNumber id="payment-amount" v-model="newPaymentAmount" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1"/>
                     </div>
-                     <div class="p-field mt-4">
+                    <div class="p-field mt-4">
                         <label class="text-sm">Método</label>
-                         <SelectButton v-model="newPaymentMethod" :options="paymentOptions" aria-labelledby="basic" class="w-full mt-1"/>
+                        <SelectButton v-model="newPaymentMethod" :options="paymentOptions" aria-labelledby="basic" class="w-full mt-1"/>
                     </div>
                 </div>
                 <Button @click="addPayment" label="Agregar Pago" icon="pi pi-plus" class="w-full" :disabled="!newPaymentAmount || newPaymentAmount <= 0" />
 
                 <div v-if="payments.length > 0" class="space-y-2 pt-2">
-                     <div v-for="(payment, index) in payments" :key="index" class="flex items-center justify-between bg-gray-100 dark:bg-gray-800 p-2 rounded-md text-sm">
+                    <div v-for="(payment, index) in payments" :key="index" class="flex items-center justify-between bg-gray-100 dark:bg-gray-800 p-2 rounded-md text-sm">
                         <span class="capitalize">{{ payment.method }}: <b>${{ payment.amount.toFixed(2) }}</b></span>
                         <Button @click="removePayment(index)" icon="pi pi-times" text rounded severity="secondary" size="small" />
                     </div>

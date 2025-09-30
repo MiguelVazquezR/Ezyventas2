@@ -7,6 +7,7 @@ use App\Enums\PaymentMethod;
 use App\Enums\ServiceOrderStatus;
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
+use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Http\Requests\StoreServiceOrderRequest;
 use App\Http\Requests\UpdateServiceOrderRequest;
@@ -153,7 +154,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'user_id' => $user->id,
                 'branch_id' => $user->branch_id,
                 'customer_id' => $customer->id,
-                'status' => \App\Enums\ServiceOrderStatus::PENDING,
+                'status' => ServiceOrderStatus::PENDING,
             ]));
 
             $transaction = $serviceOrder->transaction()->create([
@@ -164,21 +165,9 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'subtotal' => $serviceOrder->final_total,
                 'total_discount' => 0,
                 'total_tax' => 0,
+                'channel' => TransactionChannel::SERVICE_ORDER,
                 'status' => TransactionStatus::PENDING,
             ]);
-
-            if ($customer && $serviceOrder->final_total > 0) {
-                $newBalance = $customer->balance - $serviceOrder->final_total;
-                $customer->update(['balance' => $newBalance]);
-
-                $customer->balanceMovements()->create([
-                    'transaction_id' => $transaction->id,
-                    'type' => CustomerBalanceMovementType::CREDIT_SALE,
-                    'amount' => -$serviceOrder->final_total,
-                    'balance_after' => $newBalance,
-                    'notes' => "Cargo por orden de servicio #{$serviceOrder->id}",
-                ]);
-            }
 
             foreach ($validated['items'] ?? [] as $item) {
                 if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
@@ -254,82 +243,6 @@ class ServiceOrderController extends Controller implements HasMiddleware
             ->log("El estatus cambió de '{$oldStatus}' a '{$newStatus}'.");
 
         return redirect()->back()->with('success', 'Estatus de la orden actualizado.');
-    }
-
-    public function storePayment(Request $request, ServiceOrder $serviceOrder)
-    {
-        $validated = $request->validate([
-            'payments' => 'sometimes|array',
-            'payments.*.amount' => 'required_with:payments|numeric|min:0.01',
-            'payments.*.method' => ['required_with:payments', Rule::enum(PaymentMethod::class)],
-        ]);
-
-        try {
-            DB::transaction(function () use ($validated, $serviceOrder) {
-                $transaction = $serviceOrder->transaction()->firstOrFail();
-                $customer = $serviceOrder->customer;
-
-                $totalDue = $transaction->subtotal;
-                $totalPaidFromMethods = collect($validated['payments'] ?? [])->sum('amount');
-                $remainingDue = $totalDue - $totalPaidFromMethods;
-
-                // 1. Validación de crédito
-                if ($customer && $remainingDue > 0.01 && $remainingDue > $customer->available_credit) {
-                    throw new Exception('El crédito disponible del cliente no es suficiente para cubrir el monto restante.');
-                }
-
-                // 2. Procesar pagos recibidos
-                if (! empty($validated['payments'])) {
-                    foreach ($validated['payments'] as $paymentData) {
-                        $transaction->payments()->create([
-                            'amount' => $paymentData['amount'],
-                            'payment_method' => $paymentData['method'],
-                            'payment_date' => now(),
-                        ]);
-                    }
-                }
-
-                // 3. Afectar el balance del cliente con la deuda (si la hay) y los abonos
-                if ($customer) {
-                    // Primero, se genera la deuda total de la orden de servicio
-                    $initialBalance = $customer->balance;
-                    $debtAmount = -$totalDue;
-                    $balanceAfterDebt = $initialBalance + $debtAmount;
-
-                    $customer->balanceMovements()->create([
-                        'transaction_id' => $transaction->id,
-                        'type' => CustomerBalanceMovementType::CREDIT_SALE,
-                        'amount' => $debtAmount,
-                        'balance_after' => $balanceAfterDebt,
-                        'notes' => "Cargo por orden de servicio #{$serviceOrder->id}",
-                    ]);
-
-                    // Luego, se abona cada pago recibido
-                    $currentBalance = $balanceAfterDebt;
-                    foreach ($transaction->payments as $payment) {
-                        $currentBalance += $payment->amount;
-                        $customer->balanceMovements()->create([
-                            'transaction_id' => $transaction->id,
-                            'type' => CustomerBalanceMovementType::PAYMENT,
-                            'amount' => $payment->amount,
-                            'balance_after' => $currentBalance,
-                            'notes' => "Abono a orden de servicio #{$serviceOrder->id}",
-                        ]);
-                    }
-                    // Finalmente, se actualiza el balance del cliente con el valor final
-                    $customer->update(['balance' => $currentBalance]);
-                }
-
-
-                // 4. Actualizar estado de la transacción
-                $status = ($remainingDue <= 0.01) ? TransactionStatus::COMPLETED : TransactionStatus::PENDING;
-                $transaction->update(['status' => $status]);
-            });
-        } catch (Exception $e) {
-            return redirect()->back()->with('error', 'Error al procesar el pago: ' . $e->getMessage());
-        }
-
-        return redirect()->back()->with('success', 'Pago registrado correctamente.');
     }
 
     public function destroy(ServiceOrder $serviceOrder)
