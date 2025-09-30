@@ -2,12 +2,14 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     templates: Array,
 });
 
 const confirm = useConfirm();
+const { hasPermission } = usePermissions();
 
 const confirmDelete = (template) => {
     confirm.require({
@@ -45,7 +47,7 @@ const newTemplateOptions = [
                     <h1 class="text-3xl font-bold">Plantillas Personalizadas</h1>
                     <p class="text-gray-500 mt-1">Gestiona las plantillas para tickets, etiquetas y más.</p>
                 </div>
-                <SplitButton label="Nueva Plantilla" icon="pi pi-plus" :model="newTemplateOptions"
+                <SplitButton v-if="hasPermission('settings.templates.create')" label="Nueva Plantilla" icon="pi pi-plus" :model="newTemplateOptions"
                     @click="newTemplateOptions[0].command" />
             </header>
 
@@ -69,9 +71,9 @@ const newTemplateOptions = [
                         <template #body="{ data }">
                             <div class="flex justify-end gap-2">
                                 <Link :href="route('print-templates.edit', data.id)">
-                                <Button icon="pi pi-pencil" text rounded />
+                                <Button v-if="hasPermission('settings.templates.edit')" icon="pi pi-pencil" text rounded />
                                 </Link>
-                                <Button @click="confirmDelete(data)" icon="pi pi-trash" text rounded
+                                <Button v-if="hasPermission('settings.templates.delete')" @click="confirmDelete(data)" icon="pi pi-trash" text rounded
                                     severity="danger" />
                             </div>
                         </template>

@@ -73,6 +73,7 @@ class HandleInertiaRequests extends Middleware
                     'warning' => $request->session()->get('warning'),
                     'info' => $request->session()->get('info'),
                     'print_data' => $request->session()->get('print_data'),
+                    'show_payment_modal' => $request->session()->get('show_payment_modal'),
                 ];
             },
         ]);

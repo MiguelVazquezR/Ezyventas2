@@ -6,21 +6,32 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateServiceOrderRequest extends FormRequest
 {
+    /**
+     * Determine if the user is authorized to make this request.
+     */
     public function authorize(): bool
     {
         return true;
     }
 
+    /**
+     * Get the validation rules that apply to the request.
+     *
+     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array|string>
+     */
     public function rules(): array
     {
         return [
-            'customer_name' => 'required|string|max:255',
-            'customer_phone' => 'nullable|string|max:255',
+            'customer_id' => ['nullable', 'exists:customers,id'],
+            'customer_name' => ['required', 'string', 'max:255'],
+            'customer_email' => ['nullable', 'email', 'max:255'],
+            'customer_phone' => ['nullable', 'string', 'max:20'],
+            'customer_address' => ['nullable', 'array'],
+            'customer_address.street' => ['nullable', 'string', 'max:255'],
+            'customer_address.city' => ['nullable', 'string', 'max:255'],
             'item_description' => 'required|string|max:255',
             'reported_problems' => 'required|string',
             'promised_at' => 'nullable|date',
-            'technician_name' => 'nullable|string|max:255',
-            'technician_diagnosis' => 'nullable|string',
             'final_total' => 'required|numeric|min:0',
             'custom_fields' => 'nullable|array',
             'initial_evidence_images' => 'nullable|array|max:5',
@@ -34,6 +45,10 @@ class UpdateServiceOrderRequest extends FormRequest
             'items.*.quantity' => 'required|numeric|min:0',
             'items.*.unit_price' => 'required|numeric|min:0',
             'items.*.line_total' => 'required|numeric|min:0',
+            'assign_technician' => ['required', 'boolean'],
+            'technician_name' => ['required_if:assign_technician,true', 'nullable', 'string', 'max:255'],
+            'technician_commission_type' => ['required_if:assign_technician,true', 'nullable', 'in:percentage,fixed'],
+            'technician_commission_value' => ['required_if:assign_technician,true', 'nullable', 'numeric', 'min:0'],
         ];
     }
 }

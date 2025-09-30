@@ -33,6 +33,8 @@ class Customer extends Model
         ];
     }
 
+    protected $appends = ['available_credit'];
+    
     // --- ACCESORS ---
 
     /**

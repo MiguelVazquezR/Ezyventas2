@@ -6,14 +6,26 @@ use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
 use App\Models\PrintTemplate;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
-class PrintTemplateController extends Controller
+class PrintTemplateController extends Controller implements HasMiddleware
 {
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:settings.templates.access', only: ['index']),
+            new Middleware('can:settings.templates.create', only: ['create', 'store']),
+            new Middleware('can:settings.templates.edit', only: ['edit', 'update']),
+            new Middleware('can:settings.templates.delete', only: ['destroy']),
+        ];
+    }
+
     public function index(): Response
     {
         $subscription = Auth::user()->branch->subscription;

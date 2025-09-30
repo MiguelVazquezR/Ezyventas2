@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\MediaLibrary\HasMedia;
@@ -22,11 +23,14 @@ class ServiceOrder extends Model implements HasMedia
         'branch_id',
         'user_id',
         'quote_id',
+        'customer_id',
         'customer_name',
         'customer_email',
         'customer_phone',
         'customer_address',
         'technician_name',
+        'technician_commission_type',
+        'technician_commission_value',
         'status',
         'received_at',
         'promised_at',
@@ -57,6 +61,16 @@ class ServiceOrder extends Model implements HasMedia
 
         $this->addMediaCollection('closing-service-order-evidence')
             ->withResponsiveImages();
+    }
+
+    public function transaction(): MorphOne
+    {
+        return $this->morphOne(Transaction::class, 'transactionable');
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     public function getActivitylogOptions(): LogOptions
