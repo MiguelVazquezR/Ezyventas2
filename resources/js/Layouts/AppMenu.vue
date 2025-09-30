@@ -6,39 +6,39 @@ import AppMenuItem from './AppMenuItem.vue';
 const model = ref([
     {
         items: [
-            { label: 'Inicio', icon: 'pi pi-fw pi-home', to: route('dashboard'), routeName: 'dashboard' },
-            { label: 'Reporte financiero', icon: 'pi pi-key', to: route('financial-control.index'), routeName: 'financial-control.*', permission: 'financial_reports.access' },
-            { label: 'Punto de venta', icon: 'pi pi-fw pi-wallet', to: route('pos.index'), routeName: 'pos.*', permission: 'pos.access' },
-            { label: 'Historial de ventas', icon: 'pi pi-fw pi-moon', to: route('transactions.index'), routeName: 'transactions.*', permission: 'transactions.access' },
-            { label: 'Productos', icon: 'pi pi-fw pi-building', to: route('products.index'), routeName: 'products.*', permission: 'products.access' },
-            { label: 'Gastos', icon: 'pi pi-fw pi-calendar-times', to: route('expenses.index'), routeName: 'expenses.*', permission: 'expenses.access' },
-            { label: 'Clientes', icon: 'pi pi-fw pi-user', to: route('customers.index'), routeName: 'customers.*', permission: 'customers.access' },
+            { label: 'Inicio', icon: 'pi pi-home', to: route('dashboard'), routeName: 'dashboard' },
+            { label: 'Reporte financiero', icon: 'pi pi-chart-bar', to: route('financial-control.index'), routeName: 'financial-control.*', permission: 'financial_reports.access' },
+            { label: 'Punto de venta', icon: 'pi pi-shop', to: route('pos.index'), routeName: 'pos.*', permission: 'pos.access' },
+            { label: 'Historial de ventas', icon: 'pi pi-history', to: route('transactions.index'), routeName: 'transactions.*', permission: 'transactions.access' },
+            { label: 'Productos', icon: 'pi pi-barcode', to: route('products.index'), routeName: 'products.*', permission: 'products.access' },
+            { label: 'Gastos', icon: 'pi pi-arrow-up-right', to: route('expenses.index'), routeName: 'expenses.*', permission: 'expenses.access' },
+            { label: 'Clientes', icon: 'pi pi-users', to: route('customers.index'), routeName: 'customers.*', permission: 'customers.access' },
             {
-                label: 'Servicios', icon: 'pi pi-fw pi-cog',
+                label: 'Servicios', icon: 'pi pi-wrench',
                 items: [
                     {
                         label: 'Catálogo de servicios',
-                        icon: 'pi pi-key',
+                        icon: 'pi pi-list',
                         to: route('services.index'),
                         routeName: 'services.*',
                         permission: 'services.catalog.access'
                     },
                     {
                         label: 'Órdenes de servico',
-                        icon: 'pi pi-calendar-plus',
+                        icon: 'pi pi-clipboard',
                         to: route('service-orders.index'),
                         routeName: 'service-orders.*',
                         permission: 'services.orders.access'
                     },
                 ]
             },
-            { label: 'Cotizaciones', icon: 'pi pi-fw pi-user', to: route('quotes.index'), routeName: 'quotes.*' },
+            { label: 'Cotizaciones', icon: 'pi pi-file-check', to: route('quotes.index'), routeName: 'quotes.*' },
             {
-                label: 'Cajas', icon: 'pi pi-fw pi-sun',
+                label: 'Cajas', icon: 'pi pi-dollar',
                 items: [
                     {
                         label: 'Cajas registradoras',
-                        icon: 'pi pi-calendar-plus',
+                        icon: 'pi pi-inbox',
                         to: route('cash-registers.index'),
                         routeName: 'cash-registers.*',
                         permission: 'cash_registers.access'
@@ -57,14 +57,14 @@ const model = ref([
                 items: [
                     {
                         label: 'Generales',
-                        icon: 'pi pi-key',
+                        icon: 'pi pi-sliders-h',
                         to: route('settings.index'),
                         routeName: 'settings.*',
                         permission: 'settings.generals.access'
                     },
                     {
                         label: 'Roles y permisos',
-                        icon: 'pi pi-calendar-plus',
+                        icon: 'pi pi-key',
                         to: route('roles.index'),
                         routeName: 'roles.*',
                         permission: 'settings.roles_permissions.access'
@@ -78,7 +78,7 @@ const model = ref([
                     },
                     {
                         label: 'Plantillas personalizadas',
-                        icon: 'pi pi-user',
+                        icon: 'pi pi-palette',
                         to: route('print-templates.index'),
                         routeName: 'print-templates.*',
                         permission: 'settings.templates.access'
