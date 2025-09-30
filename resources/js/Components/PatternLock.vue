@@ -3,7 +3,6 @@ import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
 
 const props = defineProps({
     modelValue: {
-        // El valor ahora es un objeto para soportar múltiples tipos
         type: Object,
         default: () => ({ type: 'pattern', value: [] })
     },
@@ -15,7 +14,6 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue']);
 
-// --- Estado Principal del Componente ---
 const isModalVisible = ref(false);
 const selectedType = ref(props.modelValue?.type || 'pattern');
 const localPassword = ref('');
@@ -25,20 +23,21 @@ const lockOptions = ref([
     { label: 'Contraseña', value: 'password' },
 ]);
 
-// --- Lógica de Retroalimentación (Feedback) ---
 const hasValue = computed(() => {
     return props.modelValue && props.modelValue.value && props.modelValue.value.length > 0;
 });
 
 const feedbackText = computed(() => {
-    const action = hasValue.value ? 'Ver' : 'Agregar';
+    if (!props.edit) {
+        return hasValue.value ? 'Ver ' + (props.modelValue.type === 'pattern' ? 'patrón' : 'contraseña') : 'No establecido';
+    }
+    const action = hasValue.value ? 'Editar' : 'Agregar';
     const type = selectedType.value === 'pattern' ? 'patrón' : 'contraseña';
     return `${action} ${type}`;
 });
 
-// --- Lógica del Modal ---
 const openModal = () => {
-    if (!props.edit && !hasValue.value) return; // No abrir si no es editable y no hay valor
+    if (!props.edit && !hasValue.value) return;
 
     if (selectedType.value === 'password' && props.modelValue?.type === 'password') {
         localPassword.value = props.modelValue.value;
@@ -48,9 +47,6 @@ const openModal = () => {
 
     isModalVisible.value = true;
 
-    // CORRECCIÓN 1: Usar setTimeout para esperar la animación del modal.
-    // Esto previene el desfase al dibujar, asegurando que la posición del modal
-    // es final antes de calcular las coordenadas de los puntos.
     if (selectedType.value === 'pattern') {
         setTimeout(() => {
             calculateDotPositions();
@@ -73,11 +69,8 @@ const clearValue = () => {
         localPassword.value = '';
         emit('update:modelValue', { type: 'password', value: '' });
     }
-    isModalVisible.value = false;
 };
 
-
-// --- Lógica del Patrón (Adaptada para el Modal) ---
 const svgRef = ref(null);
 const gridRef = ref(null);
 const isDrawing = ref(false);
@@ -86,7 +79,6 @@ const currentLine = ref('');
 const points = ref([]);
 const dots = ref(Array(9).fill(null).map((_, i) => ({ id: i + 1, x: 0, y: 0, active: false })));
 
-// CORRECCIÓN 2: Función para identificar el punto de inicio del patrón.
 const isStartDot = (dot) => {
     return points.value.length > 0 && points.value[0].id === dot.id;
 };
@@ -110,7 +102,7 @@ const getDotFromEvent = (e) => {
 
     for (const dot of dots.value) {
         const distance = Math.sqrt(Math.pow(dot.x - x, 2) + Math.pow(dot.y - y, 2));
-        if (distance < 15) return dot;
+        if (distance < 20) return dot;
     }
     return null;
 };
@@ -169,13 +161,17 @@ const drawStaticPath = () => {
     if (!sequence || sequence.length === 0) return;
 
     let staticPath = '';
+    let localPointsForPath = [];
     for (let i = 0; i < sequence.length; i++) {
-        const dot = dots.value.find(d => d.id === sequence[i]);
+        const sequenceId = parseInt(sequence[i], 10);
+        const dot = dots.value.find(d => d.id === sequenceId);
+        
         if (dot) {
             dot.active = true;
             points.value.push(dot);
+            localPointsForPath.push(dot);
             if (i > 0) {
-                const prevDot = points.value[i - 1];
+                const prevDot = localPointsForPath[i - 1];
                 staticPath += ` M ${prevDot.x} ${prevDot.y} L ${dot.x} ${dot.y}`;
             }
         }
@@ -203,38 +199,41 @@ onUnmounted(() => {
             aria-labelledby="basic" />
 
         <Button :label="feedbackText" @click="openModal" text
-            :class="[hasValue ? 'text-primary' : 'text-gray-500', 'p-1 mt-1']" />
+            :class="[hasValue ? 'text-primary' : 'text-gray-500', 'p-1 mt-1']" :disabled="!edit && !hasValue"/>
 
         <Dialog v-model:visible="isModalVisible" modal
             :header="selectedType === 'pattern' ? 'Establecer Patrón' : 'Establecer Contraseña'" class="w-full max-w-xs">
 
-            <!-- Vista para Patrón -->
             <div v-if="selectedType === 'pattern'">
+                <!-- Texto explicativo añadido -->
+                <p v-if="edit" class="text-sm text-center text-gray-500 dark:text-gray-400 mb-4">
+                    Dibuja un patrón conectando los puntos sin soltar el clic o despegar el dedo de la pantalla.
+                </p>
                 <div class="relative w-48 h-48 mx-auto" ref="gridRef">
                     <svg class="absolute top-0 left-0 w-full h-full" ref="svgRef"
                         @mousedown="handleStart" @mousemove="handleMove" @mouseup="handleEnd" @mouseleave="handleEnd"
-                        @touchstart.passive="handleStart" @touchmove.passive="handleMove" @touchend.passive="handleEnd">
+                        @touchstart="handleStart" @touchmove="handleMove" @touchend="handleEnd">
                         <path :d="path" stroke="var(--p-primary-color)" stroke-width="3" fill="none" />
                         <path :d="currentLine" stroke="var(--p-primary-color)" stroke-width="3" fill="none"
                             stroke-linecap="round" />
                     </svg>
-                    <div class="grid grid-cols-3 w-full h-full">
+                    <div class="grid grid-cols-3 w-full h-full pointer-events-none">
                         <div v-for="dot in dots" :key="dot.id" class="flex items-center justify-center">
-                            <!-- CORRECCIÓN 2: Se añaden clases dinámicas para el punto de inicio -->
                             <div class="w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all"
-                                :class="{
-                                    'bg-primary border-primary': dot.active,
-                                    'border-gray-300 dark:border-gray-600': !dot.active,
-                                    'border-green-600 bg-green-600 ring-offset-2 ring-offset-white dark:ring-offset-gray-800': isStartDot(dot) && dot.active
-                                }">
-                                <div v-if="dot.active" class="w-3 h-3 rounded-full bg-primary-contrast"></div>
+                                :class="[
+                                    !dot.active ? 'border-gray-300 dark:border-gray-600' :
+                                    isStartDot(dot) ? 'border-green-500 bg-green-500' :
+                                    'bg-primary border-primary'
+                                ]">
+                                <div v-if="dot.active" class="w-3 h-3 rounded-full"
+                                     :class="isStartDot(dot) ? 'bg-green-100' : 'bg-primary-contrast'">
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Vista para Contraseña -->
             <div v-if="selectedType === 'password'" class="p-fluid">
                 <div class="field">
                     <label for="password">Contraseña</label>
@@ -245,6 +244,8 @@ onUnmounted(() => {
             <template #footer>
                 <div class="flex justify-between w-full">
                     <Button v-if="edit" label="Limpiar" @click="clearValue" severity="danger" text />
+                    <div v-else class="w-0"></div>
+                    
                     <Button v-if="selectedType === 'password' && edit" label="Guardar" @click="saveAndClose" severity="warning" />
                     <Button v-else label="Cerrar" @click="isModalVisible = false" severity="secondary" text />
                 </div>

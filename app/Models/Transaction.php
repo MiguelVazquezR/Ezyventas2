@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -60,6 +61,23 @@ class Transaction extends Model
     private function translateEventName(string $eventName): string
     {
         return ['created' => 'creada', 'updated' => 'actualizada', 'deleted' => 'eliminada'][$eventName] ?? $eventName;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | ACCESORES Y MUTADORES
+    |--------------------------------------------------------------------------
+    */
+    protected $appends = ['total'];
+
+    /**
+     * Calcula el total de la transacción dinámicamente.
+     */
+    protected function total(): Attribute
+    {
+        return Attribute::make(
+            get: fn() => ($this->subtotal - $this->total_discount) + $this->total_tax,
+        );
     }
 
     /*

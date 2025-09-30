@@ -2,8 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\CustomerBalanceMovementType;
-use App\Enums\PaymentMethod;
 use App\Enums\ServiceOrderStatus;
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
@@ -24,7 +22,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
-use Exception;
 
 class ServiceOrderController extends Controller implements HasMiddleware
 {
@@ -37,7 +34,6 @@ class ServiceOrderController extends Controller implements HasMiddleware
             new Middleware('can:services.orders.edit', only: ['edit', 'update']),
             new Middleware('can:services.orders.delete', only: ['destroy', 'batchDestroy']),
             new Middleware('can:services.orders.change_status', only: ['updateStatus']),
-            new Middleware('can:services.orders.store_payment', only: ['storePayment']), // <-- Añadir permiso si es necesario
         ];
     }
 
@@ -111,10 +107,14 @@ class ServiceOrderController extends Controller implements HasMiddleware
             ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER, TemplateContextType::GENERAL])
             ->get();
 
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+
         return Inertia::render('ServiceOrder/Show', [
             'serviceOrder' => $serviceOrder,
             'activities' => $formattedActivities,
             'availableTemplates' => $availableTemplates,
+            'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'service_orders')->get(),
         ]);
     }
 
@@ -123,50 +123,60 @@ class ServiceOrderController extends Controller implements HasMiddleware
         return Inertia::render('ServiceOrder/Create', $this->getFormData());
     }
 
+    /**
+     * Almacena una nueva orden de servicio.
+     */
     public function store(StoreServiceOrderRequest $request)
     {
+        // MODIFICADO: Se mueven las reglas de validación aquí para añadir las nuevas.
+        // Si usas un FormRequest (`StoreServiceOrderRequest`), mueve estas reglas allí.
+        $validated = $request->validated();
+        $validated = array_merge($validated, $request->validate([
+            'create_customer' => 'required|boolean',
+            'credit_limit' => 'required_if:create_customer,true|numeric|min:0',
+        ]));
+
         $newServiceOrder = null;
 
-        DB::transaction(function () use ($request, &$newServiceOrder) {
+        DB::transaction(function () use ($validated, &$newServiceOrder, $request) {
             $user = Auth::user();
-            $validated = $request->validated();
             $customer = null;
 
+            // MODIFICADO: Lógica para manejar los 3 escenarios de cliente
             if (! empty($validated['customer_id'])) {
+                // Escenario 1: Se seleccionó un cliente existente.
                 $customer = Customer::find($validated['customer_id']);
-            } else {
-                $customer = Customer::firstOrCreate(
-                    [
-                        'branch_id' => $user->branch_id,
-                        'name' => $validated['customer_name'],
-                        'phone' => $validated['customer_phone'] ?? null,
-                    ],
-                    [
-                        'email' => $validated['customer_email'] ?? null,
-                        'address' => $validated['customer_address'] ?? null,
-                        'credit_limit' => 5000,
-                        'balance' => 0,
-                    ]
-                );
+            } elseif ($validated['create_customer']) {
+                // Escenario 2: Es un cliente nuevo y se eligió registrarlo.
+                $customer = Customer::create([
+                    'branch_id' => $user->branch_id,
+                    'name' => $validated['customer_name'],
+                    'phone' => $validated['customer_phone'] ?? null,
+                    'email' => $validated['customer_email'] ?? null,
+                    'address' => $validated['customer_address'] ?? null,
+                    'credit_limit' => $validated['credit_limit'], // Se usa el valor del formulario
+                    'balance' => 0,
+                ]);
             }
+            // Escenario 3: Cliente nuevo sin registrar. No se hace nada, $customer permanece null.
 
             $serviceOrder = ServiceOrder::create(array_merge($validated, [
                 'user_id' => $user->id,
                 'branch_id' => $user->branch_id,
-                'customer_id' => $customer->id,
+                'customer_id' => $customer?->id, // El operador ?-> asigna null si $customer no existe
                 'status' => ServiceOrderStatus::PENDING,
             ]));
 
             $transaction = $serviceOrder->transaction()->create([
-                'folio' => 'TR-' . time(),
-                'customer_id' => $customer->id,
+                'folio' => 'TR-SO-' . time(),
+                'customer_id' => $customer?->id, // También se usa aquí
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
                 'subtotal' => $serviceOrder->final_total,
                 'total_discount' => 0,
                 'total_tax' => 0,
                 'channel' => TransactionChannel::SERVICE_ORDER,
-                'status' => TransactionStatus::PENDING,
+                'status' => $serviceOrder->final_total > 0 ? TransactionStatus::PENDING : TransactionStatus::COMPLETED,
             ]);
 
             foreach ($validated['items'] ?? [] as $item) {
@@ -190,6 +200,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
             ->with('show_payment_modal', true);
     }
 
+
     public function edit(ServiceOrder $serviceOrder): Response
     {
         $serviceOrder->load('items.itemable');
@@ -200,6 +211,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
     {
         DB::transaction(function () use ($request, $serviceOrder) {
             $validated = $request->validated();
+
             $serviceOrder->update($validated);
 
             $serviceOrder->items()->delete();
@@ -208,6 +220,13 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     unset($item['itemable_id'], $item['itemable_type']);
                 }
                 $serviceOrder->items()->create($item);
+            }
+
+            $serviceOrder->load('transaction');
+            if ($serviceOrder->transaction) {
+                $serviceOrder->transaction->update([
+                    'subtotal' => $serviceOrder->final_total,
+                ]);
             }
 
             if ($request->input('deleted_media_ids')) {
@@ -221,7 +240,30 @@ class ServiceOrderController extends Controller implements HasMiddleware
             }
         });
 
-        return redirect()->route('service-orders.index')->with('success', 'Orden de servicio actualizada.');
+        return redirect()->route('service-orders.show', $serviceOrder->id)->with('success', 'Orden de servicio actualizada.');
+    }
+
+    public function saveDiagnosisAndEvidence(Request $request, ServiceOrder $serviceOrder)
+    {
+        $validated = $request->validate([
+            'technician_diagnosis' => 'nullable|string|max:1000',
+            'closing_evidence_images' => 'nullable|array|max:5',
+            'closing_evidence_images.*' => 'image|max:2048', // Max 2MB per image
+        ]);
+
+        DB::transaction(function () use ($validated, $serviceOrder, $request) {
+            $serviceOrder->update([
+                'technician_diagnosis' => $validated['technician_diagnosis'],
+            ]);
+
+            if ($request->hasFile('closing_evidence_images')) {
+                foreach ($request->file('closing_evidence_images') as $file) {
+                    $serviceOrder->addMedia($file)->toMediaCollection('closing-service-order-evidence');
+                }
+            }
+        });
+
+        return redirect()->back()->with('success', 'Diagnóstico y evidencias guardados correctamente.');
     }
 
     public function updateStatus(Request $request, ServiceOrder $serviceOrder)
@@ -247,14 +289,23 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
     public function destroy(ServiceOrder $serviceOrder)
     {
-        $serviceOrder->delete();
+        DB::transaction(function () use ($serviceOrder) {
+            $serviceOrder->transaction()->delete();
+            $serviceOrder->delete();
+        });
         return redirect()->route('service-orders.index')->with('success', 'Orden de servicio eliminada.');
     }
 
     public function batchDestroy(Request $request)
     {
         $request->validate(['ids' => 'required|array']);
-        ServiceOrder::whereIn('id', $request->input('ids'))->delete();
+        $orderIds = $request->input('ids');
+        DB::transaction(function () use ($orderIds) {
+            \App\Models\Transaction::whereHasMorph('transactionable', [ServiceOrder::class], function ($query) use ($orderIds) {
+                $query->whereIn('id', $orderIds);
+            })->delete();
+            ServiceOrder::whereIn('id', $orderIds)->delete();
+        });
         return redirect()->route('service-orders.index')->with('success', 'Órdenes seleccionadas eliminadas.');
     }
 

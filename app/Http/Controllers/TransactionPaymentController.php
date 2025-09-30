@@ -14,7 +14,6 @@ class TransactionPaymentController extends Controller
 {
     /**
      * Almacena nuevos pagos para una transacción existente.
-     * Este método es el punto central para registrar pagos desde cualquier módulo.
      */
     public function store(Request $request, Transaction $transaction)
     {
@@ -29,42 +28,68 @@ class TransactionPaymentController extends Controller
                 $customer = $transaction->customer;
                 $payments = $validated['payments'] ?? [];
 
-                // 1. Registrar los nuevos pagos
+                // Gracias al accesor en el modelo Transaction, ahora `$transaction->total` funciona.
+                $remainingDue = $transaction->total - $transaction->payments()->sum('amount');
+                
+                if ($remainingDue <= 0) {
+                    return;
+                }
+
+                $amountPaidInThisRequest = 0;
+
                 foreach ($payments as $paymentData) {
-                    $payment = $transaction->payments()->create([
-                        'amount' => $paymentData['amount'],
+                    if ($amountPaidInThisRequest >= $remainingDue) {
+                        break;
+                    }
+
+                    $amountOffered = (float) $paymentData['amount'];
+                    $amountToRecord = min($amountOffered, $remainingDue - $amountPaidInThisRequest);
+
+                    if ($amountToRecord <= 0) {
+                        continue;
+                    }
+
+                    $transaction->payments()->create([
+                        'amount' => $amountToRecord,
                         'payment_method' => $paymentData['method'],
                         'payment_date' => now(),
                         'status' => 'completado',
                     ]);
+                    
+                    $amountPaidInThisRequest += $amountToRecord;
 
-                    // 2. Afectar el balance del cliente por cada pago (abono)
                     if ($customer) {
-                        $balanceBefore = $customer->balance;
-                        $customer->increment('balance', $payment->amount);
+                        $customer->increment('balance', $amountToRecord);
                         
                         $customer->balanceMovements()->create([
                             'transaction_id' => $transaction->id,
                             'type' => CustomerBalanceMovementType::PAYMENT,
-                            'amount' => $payment->amount,
+                            'amount' => $amountToRecord,
                             'balance_after' => $customer->balance,
-                            'notes' => "Abono a transacción {$transaction->folio} / Orden de Servicio #{$transaction->transactionable_id}",
+                            'notes' => "Abono a transacción {$transaction->folio}",
                         ]);
                     }
                 }
-
-                // 3. Recalcular totales y actualizar estado de la transacción
-                $totalPaid = $transaction->payments()->sum('amount');
-                $totalSale = $transaction->total;
-                $amountDue = $totalSale - $totalPaid;
-
-                // 4. Validar crédito si aún queda un saldo pendiente
-                if ($amountDue > 0.01 && $customer && $amountDue > $customer->available_credit) {
-                    throw new Exception('El crédito disponible del cliente no es suficiente para cubrir el monto restante.');
-                }
                 
-                // 5. Actualizar el estado de la transacción
-                $newStatus = ($amountDue <= 0.01) ? TransactionStatus::COMPLETED : TransactionStatus::PENDING;
+                // Si se usó crédito, se registra el cargo al balance
+                $totalPaid = $transaction->fresh()->payments()->sum('amount');
+                $finalAmountDue = $transaction->total - $totalPaid;
+                
+                if($customer && $finalAmountDue > 0.01 && $finalAmountDue <= $customer->available_credit) {
+                     $customer->decrement('balance', $finalAmountDue);
+                     $customer->balanceMovements()->create([
+                        'transaction_id' => $transaction->id,
+                        'type' => CustomerBalanceMovementType::CREDIT_SALE,
+                        'amount' => -$finalAmountDue,
+                        'balance_after' => $customer->balance,
+                        'notes' => "Cargo a crédito para transacción {$transaction->folio}",
+                    ]);
+                    // Se considera pagada si el resto se fue a crédito
+                    $finalAmountDue = 0;
+                }
+
+                // Se actualiza el estado final de la transacción.
+                $newStatus = ($finalAmountDue <= 0.01) ? TransactionStatus::COMPLETED : TransactionStatus::PENDING;
                 $transaction->update(['status' => $newStatus]);
             });
         } catch (Exception $e) {

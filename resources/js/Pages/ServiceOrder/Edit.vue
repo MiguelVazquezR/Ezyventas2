@@ -5,6 +5,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import PatternLock from '@/Components/PatternLock.vue';
+import ManageCustomFields from '@/Components/ManageCustomFields.vue';
 
 const props = defineProps({
     serviceOrder: Object,
@@ -12,158 +13,140 @@ const props = defineProps({
     customers: Array,
     products: Array,
     services: Array,
+    errors: Object,
 });
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
-    { label: 'Órdenes de Servicio', url: route('service-orders.index') },
+    { label: 'Ódenes de Servicio', url: route('service-orders.index') },
     { label: `Editar Orden #${props.serviceOrder.id}` }
 ]);
 
 const form = useForm({
-    _method: 'PUT',
-    // --- Campos de Cliente (actualizados y completos) ---
+    _method: 'PUT', // Necesario para que Laravel interprete la petición POST como PUT para subida de archivos
+    customer_id: props.serviceOrder.customer_id,
     customer_name: props.serviceOrder.customer_name,
     customer_phone: props.serviceOrder.customer_phone,
-    customer_email: props.serviceOrder.customer_email || '',
-    customer_address: props.serviceOrder.customer_address || { street: '', neighborhood: '', city: '', zip_code: '' },
-
-    // --- Campos de la Orden ---
+    customer_email: props.serviceOrder.customer_email,
     item_description: props.serviceOrder.item_description,
     reported_problems: props.serviceOrder.reported_problems,
     promised_at: props.serviceOrder.promised_at ? new Date(props.serviceOrder.promised_at) : null,
-    technician_diagnosis: props.serviceOrder.technician_diagnosis,
-    final_total: parseFloat(props.serviceOrder.final_total) || 0,
-    
-    // --- Campos del Técnico (nuevos) ---
-    assign_technician: !!props.serviceOrder.technician_name, // Se activa si ya hay un técnico
+    final_total: props.serviceOrder.final_total,
+    custom_fields: props.serviceOrder.custom_fields || {},
+    initial_evidence_images: [], // Para nuevas imágenes
+    deleted_media_ids: [], // Para imágenes a eliminar
+    items: props.serviceOrder.items || [],
+    assign_technician: !!props.serviceOrder.technician_name,
     technician_name: props.serviceOrder.technician_name,
     technician_commission_type: props.serviceOrder.technician_commission_type || 'percentage',
-    technician_commission_value: props.serviceOrder.technician_commission_value ? parseFloat(props.serviceOrder.technician_commission_value) : null,
-    
-    // --- Campos Dinámicos y Relaciones ---
-    custom_fields: props.serviceOrder.custom_fields || {},
-    items: props.serviceOrder.items.map(item => ({
-        ...item,
-        quantity: parseFloat(item.quantity),
-        unit_price: parseFloat(item.unit_price),
-        line_total: parseFloat(item.line_total),
-    })),
-    
-    // --- Manejo de Archivos ---
-    initial_evidence_images: [],
-    deleted_media_ids: [],
+    technician_commission_value: props.serviceOrder.technician_commission_value,
 });
 
-const commissionOptions = ref([
-    { label: 'Porcentaje (%)', value: 'percentage' },
-    { label: 'Monto Fijo ($)', value: 'fixed' }
-]);
-
-const existingImages = ref(props.serviceOrder.media?.filter(m => m.collection_name === 'initial-service-order-evidence'));
-
-// --- Lógica para Items (Refacciones / Mano de Obra) ---
+// --- Lógica para Items (sin cambios) ---
 const availableItems = computed(() => [
     ...props.products.map(p => ({ ...p, type: 'Producto', price: p.selling_price, itemable_type: 'App\\Models\\Product' })),
     ...props.services.map(s => ({ ...s, type: 'Servicio', price: s.base_price, itemable_type: 'App\\Models\\Service' }))
 ]);
 const selectedItem = ref(null);
 const filteredItems = ref([]);
-
 const searchItems = (event) => {
     if (!event.query.trim().length) {
         filteredItems.value = [...availableItems.value];
     } else {
-        filteredItems.value = availableItems.value.filter((item) => {
-            return item.name.toLowerCase().includes(event.query.toLowerCase());
-        });
+        filteredItems.value = availableItems.value.filter((item) => item.name.toLowerCase().includes(event.query.toLowerCase()));
     }
 };
-
 const addItem = () => {
     let itemToAdd = {
         itemable_id: null, itemable_type: null, description: '',
         quantity: 1, unit_price: 0, line_total: 0,
     };
     if (typeof selectedItem.value === 'object' && selectedItem.value !== null) {
-        itemToAdd.itemable_id = selectedItem.value.id;
-        itemToAdd.itemable_type = selectedItem.value.itemable_type;
-        itemToAdd.description = selectedItem.value.name;
-        itemToAdd.unit_price = selectedItem.value.price;
+        itemToAdd = { ...itemToAdd, itemable_id: selectedItem.value.id, itemable_type: selectedItem.value.itemable_type, description: selectedItem.value.name, unit_price: selectedItem.value.price };
     } else if (typeof selectedItem.value === 'string') {
-        itemToAdd.itemable_id = 0;
-        itemToAdd.description = selectedItem.value;
+        itemToAdd = { ...itemToAdd, itemable_id: 0, description: selectedItem.value };
     } else { return; }
     form.items.push(itemToAdd);
     selectedItem.value = null;
 };
-
 const removeItem = (index) => form.items.splice(index, 1);
-
 watch(() => form.items, (newItems) => {
     let total = 0;
-    newItems.forEach(item => {
-        item.line_total = (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0);
-        total += item.line_total;
-    });
+    newItems.forEach(item => { total += (item.quantity || 0) * (item.unit_price || 0); item.line_total = (item.quantity || 0) * (item.unit_price || 0); });
     form.final_total = total;
 }, { deep: true });
 
-// --- Lógica para Clientes ---
+// --- Lógica para Clientes (sin cambios) ---
 const filteredCustomers = ref();
 const searchCustomer = (event) => {
     setTimeout(() => {
-        if (!event.query.trim().length) {
-            filteredCustomers.value = [...props.customers];
-        } else {
-            filteredCustomers.value = props.customers.filter((customer) => {
-                return customer.name.toLowerCase().startsWith(event.query.toLowerCase());
-            });
-        }
+        if (!event.query.trim().length) { filteredCustomers.value = [...props.customers]; }
+        else { filteredCustomers.value = props.customers.filter((customer) => customer.name.toLowerCase().startsWith(event.query.toLowerCase())); }
     }, 250);
 }
 const onCustomerSelect = (event) => {
-    form.customer_name = event.value.name;
-    form.customer_phone = event.value.phone;
-    // Podrías también llenar email y dirección si los tienes en el objeto customer
+    const customer = event.value;
+    form.customer_id = customer.id;
+    form.customer_name = customer.name;
+    form.customer_phone = customer.phone;
+    form.customer_email = customer.email;
+    if (customer.address) { form.customer_address = customer.address; }
 };
 
-// Limpia los datos del técnico si se desactiva
+// --- Lógica para Técnico (sin cambios) ---
+const commissionOptions = ref([{ label: 'Porcentaje (%)', value: 'percentage' }, { label: 'Monto Fijo ($)', value: 'fixed' }]);
 watch(() => form.assign_technician, (newValue) => {
-    if (!newValue) {
-        form.technician_name = '';
-        form.technician_commission_type = 'percentage';
-        form.technician_commission_value = null;
-    }
+    if (!newValue) { form.technician_name = ''; form.technician_commission_type = 'percentage'; form.technician_commission_value = null; }
 });
 
-const submit = () => {
-    form.post(route('service-orders.update', props.serviceOrder.id), {
-        forceFormData: true, // Necesario para el envío de archivos
+// --- Lógica para Campos Personalizados (sin cambios) ---
+const initializeCustomFields = (definitions) => {
+    const newCustomFields = {};
+    definitions.forEach(field => {
+        if (form.custom_fields && form.custom_fields.hasOwnProperty(field.key)) {
+            newCustomFields[field.key] = form.custom_fields[field.key];
+        } else {
+            newCustomFields[field.key] = field.type === 'checkbox' ? [] : (field.type === 'boolean' ? false : (field.type === 'pattern' ? [] : null));
+        }
     });
+    form.custom_fields = newCustomFields;
+};
+initializeCustomFields(props.customFieldDefinitions);
+watch(() => props.customFieldDefinitions, (newDefs) => {
+    initializeCustomFields(newDefs);
+}, { deep: true });
+
+const manageFieldsComponent = ref(null);
+const openCustomFieldManager = () => {
+    if (manageFieldsComponent.value) {
+        manageFieldsComponent.value.open();
+    }
 };
 
-// --- Lógica para manejo de imágenes ---
-const onSelectImages = (event) => {
-    form.initial_evidence_images = [...form.initial_evidence_images, ...event.files];
-};
-const onRemoveNewImage = (event) => {
-    form.initial_evidence_images = form.initial_evidence_images.filter(img => img.objectURL !== event.file.objectURL);
-};
-const deleteExistingImage = (mediaId) => {
+// --- Lógica de Evidencia (CORREGIDA) ---
+const existingMedia = ref((props.serviceOrder.media || []).filter(m => m.collection_name === 'initial-service-order-evidence'));
+
+const removeExistingImage = (mediaId) => {
     form.deleted_media_ids.push(mediaId);
-    existingImages.value = existingImages.value.filter(img => img.id !== mediaId);
+    existingMedia.value = existingMedia.value.filter(m => m.id !== mediaId);
+};
+const onSelectImages = (event) => form.initial_evidence_images = [...form.initial_evidence_images, ...event.files];
+const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evidence_images.filter(img => img.objectURL !== event.file.objectURL);
+
+// --- Lógica de Submit ---
+const submit = () => {
+    form.post(route('service-orders.update', props.serviceOrder.id));
 };
 
-const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 </script>
 
 <template>
-    <Head :title="`Editar Orden #${serviceOrder.id}`" />
+
+    <Head :title="`Editar Orden de Servicio #${serviceOrder.id}`" />
     <AppLayout>
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="mt-4">
-            <h1 class="text-2xl font-bold">Editar Orden de Servicio</h1>
+            <h1 class="text-2xl font-bold">Editar Orden de Servicio #{{ serviceOrder.id }}</h1>
         </div>
 
         <form @submit.prevent="submit" class="mt-6 max-w-4xl mx-auto space-y-6">
@@ -186,22 +169,17 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     <div>
                         <InputLabel for="customer_phone" value="Teléfono del Cliente" />
                         <InputText id="customer_phone" v-model="form.customer_phone" class="mt-1 w-full" />
-                        <InputError :message="form.errors.customer_phone" class="mt-2" />
                     </div>
                     <div>
                         <InputLabel for="customer_email" value="Correo Electrónico" />
-                        <InputText id="customer_email" v-model="form.customer_email" type="email" class="mt-1 w-full" />
+                        <InputText id="customer_email" v-model="form.customer_email" class="mt-1 w-full" />
                         <InputError :message="form.errors.customer_email" class="mt-2" />
                     </div>
                     <div>
                         <InputLabel for="promised_at" value="Fecha Promesa de Entrega" />
-                        <Calendar id="promised_at" v-model="form.promised_at" showTime hourFormat="12" class="w-full mt-1" />
+                        <Calendar id="promised_at" v-model="form.promised_at" class="w-full mt-1"
+                            dateFormat="dd/mm/yy" />
                         <InputError :message="form.errors.promised_at" class="mt-2" />
-                    </div>
-                    <div class="md:col-span-2">
-                        <InputLabel for="customer_address_street" value="Dirección del Cliente" />
-                        <Textarea id="customer_address_street" v-model="form.customer_address.street" rows="2" class="mt-1 w-full" placeholder="Calle, número, colonia, ciudad, C.P."/>
-                        <InputError :message="form.errors['customer_address.street']" class="mt-2" />
                     </div>
                     <div class="md:col-span-2">
                         <InputLabel for="item_description" value="Descripción del Equipo *" />
@@ -233,33 +211,49 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     <div>
                         <InputLabel value="Tipo de Comisión *" />
                         <SelectButton v-model="form.technician_commission_type" :options="commissionOptions"
-                                    optionLabel="label" optionValue="value" class="mt-1" />
+                            optionLabel="label" optionValue="value" class="mt-1" />
                         <InputError :message="form.errors.technician_commission_type" class="mt-2" />
                     </div>
                     <div class="md:col-span-2">
                         <InputLabel for="technician_commission_value" value="Valor de la Comisión *" />
                         <InputNumber id="technician_commission_value" v-model="form.technician_commission_value"
-                                    class="w-full mt-1"
-                                    :prefix="form.technician_commission_type === 'fixed' ? '$' : null"
-                                    :suffix="form.technician_commission_type === 'percentage' ? '%' : null" />
+                            class="w-full mt-1" :prefix="form.technician_commission_type === 'fixed' ? '$' : null"
+                            :suffix="form.technician_commission_type === 'percentage' ? '%' : null" />
                         <InputError :message="form.errors.technician_commission_value" class="mt-2" />
                     </div>
                 </div>
-                <p v-else class="text-gray-500">Activa el interruptor para asignar un técnico y registrar su comisión.</p>
+                <p v-else class="text-gray-500">Activa el interruptor para asignar un técnico y registrar su comisión.
+                </p>
             </div>
-            
-            <!-- Campos Personalizados (DINÁMICOS) -->
-            <div v-if="customFieldDefinitions.length > 0" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles Adicionales</h2>
+
+            <!-- Campos Personalizados -->
+            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <div class="flex items-center justify-between border-b pb-3 mb-4">
+                    <h2 class="text-lg font-semibold">Detalles Adicionales</h2>
+                    <Button @click="openCustomFieldManager" icon="pi pi-cog" text rounded severity="secondary" />
+                </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div v-for="field in customFieldDefinitions" :key="field.id">
                         <InputLabel :for="field.key" :value="field.name" />
-                        <InputText v-if="field.type === 'text'" :id="field.key" v-model="form.custom_fields[field.key]" class="mt-1 w-full" />
-                        <InputNumber v-if="field.type === 'number'" :id="field.key" v-model="form.custom_fields[field.key]" class="w-full mt-1" />
-                        <Textarea v-if="field.type === 'textarea'" :id="field.key" v-model="form.custom_fields[field.key]" rows="2" class="mt-1 w-full" />
-                        <ToggleSwitch v-if="field.type === 'boolean'" :id="field.key" v-model="form.custom_fields[field.key]" class="mt-1" />
-                        <Select v-if="field.type === 'select'" :id="field.key" v-model="form.custom_fields[field.key]" :options="field.options" class="mt-1 w-full" placeholder="Selecciona una opción" />
-                        <PatternLock v-if="field.type === 'pattern'" :id="field.key" v-model="form.custom_fields[field.key]" class="mt-1" />
+                        <InputText v-if="field.type === 'text'" :id="field.key" v-model="form.custom_fields[field.key]"
+                            class="mt-1 w-full" />
+                        <InputNumber v-if="field.type === 'number'" :id="field.key"
+                            v-model="form.custom_fields[field.key]" class="w-full mt-1" />
+                        <Textarea v-if="field.type === 'textarea'" :id="field.key"
+                            v-model="form.custom_fields[field.key]" rows="2" class="mt-1 w-full" />
+                        <ToggleSwitch v-if="field.type === 'boolean'" :id="field.key"
+                            v-model="form.custom_fields[field.key]" class="mt-1" />
+                        <PatternLock v-if="field.type === 'pattern'" :id="field.key"
+                            v-model="form.custom_fields[field.key]" class="mt-1" />
+                        <Dropdown v-if="field.type === 'select'" :id="field.key" v-model="form.custom_fields[field.key]"
+                            :options="field.options" class="mt-1 w-full" placeholder="Selecciona una opción" />
+                        <div v-if="field.type === 'checkbox'" class="flex flex-col gap-2 mt-2">
+                            <div v-for="option in field.options" :key="option" class="flex items-center">
+                                <Checkbox :inputId="`${field.key}-${option}`" v-model="form.custom_fields[field.key]"
+                                    :value="option" />
+                                <label :for="`${field.key}-${option}`" class="ml-2"> {{ option }} </label>
+                            </div>
+                        </div>
                         <InputError :message="form.errors[`custom_fields.${field.key}`]" class="mt-2" />
                     </div>
                 </div>
@@ -270,7 +264,8 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Refacciones y Mano de Obra</h2>
                 <div class="flex gap-2 mb-4">
                     <AutoComplete v-model="selectedItem" :suggestions="filteredItems" @complete="searchItems"
-                        field="name" placeholder="Busca o escribe un concepto..." class="w-full" dropdown>
+                        field="name" optionLabel="name" placeholder="Busca o escribe un concepto..." class="w-full"
+                        dropdown>
                         <template #option="slotProps">
                             <div>{{ slotProps.option.name }}
                                 <Tag :value="slotProps.option.type" />
@@ -280,30 +275,29 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     <Button @click="addItem" icon="pi pi-plus" label="Agregar" :disabled="!selectedItem" />
                 </div>
                 <DataTable :value="form.items" class="p-datatable-sm">
-                    <Column field="description" header="Descripción">
-                        <template #body="{ index }">
+                    <template #empty>
+                        <div class="text-center p-4">No se han agregado refacciones o servicios.</div>
+                    </template>
+                    <Column field="description" header="Descripción"><template #body="{ index }">
                             <InputText v-model="form.items[index].description" class="w-full" />
                         </template>
                     </Column>
-                    <Column field="quantity" header="Cantidad" style="width: 10rem">
-                        <template #body="{ index }">
+                    <Column field="quantity" header="Cantidad" style="width: 10rem"><template #body="{ index }">
                             <InputNumber v-model="form.items[index].quantity" class="w-full" showButtons
-                                buttonLayout="horizontal" :step="1" :min="0"/>
+                                buttonLayout="horizontal" :step="1" :min="0" />
                         </template>
                     </Column>
-                    <Column field="unit_price" header="Precio Unit." style="width: 12rem">
-                        <template #body="{ index }">
+                    <Column field="unit_price" header="Precio Unit." style="width: 12rem"><template #body="{ index }">
                             <InputNumber v-model="form.items[index].unit_price" mode="currency" currency="MXN"
                                 locale="es-MX" class="w-full" />
                         </template>
                     </Column>
-                    <Column field="line_total" header="Total">
-                        <template #body="{ data }">{{ formatCurrency(data.line_total) }}</template>
+                    <Column field="line_total" header="Total"><template #body="{ data }">{{ new
+                        Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(data.line_total)
+                            }}</template>
                     </Column>
-                    <Column style="width: 4rem">
-                        <template #body="{ index }">
-                            <Button @click="removeItem(index)" icon="pi pi-trash" text rounded severity="danger" />
-                        </template>
+                    <Column style="width: 4rem"><template #body="{ index }"><Button @click="removeItem(index)"
+                                icon="pi pi-trash" text rounded severity="danger" /></template>
                     </Column>
                 </DataTable>
                 <InputError :message="form.errors.items" class="mt-2" />
@@ -319,39 +313,32 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 
             <!-- Evidencia Inicial -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Fotográfica Inicial (Máx. 5)</h2>
-                <div v-if="existingImages?.length > 0" class="flex flex-wrap gap-4 mb-4">
-                    <div v-for="img in existingImages" :key="img.id" class="relative">
-                        <img :src="img.original_url" :alt="img.name" class="w-24 h-24 object-cover rounded-md border">
-                        <Button @click="deleteExistingImage(img.id)" icon="pi pi-times" rounded text severity="danger"
-                            class="!absolute -top-2 -right-2 bg-white/70 dark:bg-gray-800/70" />
+                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Fotográfica Inicial</h2>
+                <div v-if="existingMedia.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-4">
+                    <div v-for="media in existingMedia" :key="media.id" class="relative group">
+                        <img :src="media.original_url" alt="Evidencia existente"
+                            class="rounded-lg object-cover w-full h-32">
+                        <Button @click="removeExistingImage(media.id)" icon="pi pi-times" rounded text severity="danger"
+                            class="!absolute top-1 right-1 bg-black/50 hover:!bg-black/70" />
                     </div>
                 </div>
-                <FileUpload name="initial_evidence_images[]" @select="onSelectImages" @remove="onRemoveNewImage"
+                <FileUpload name="initial_evidence_images[]" @select="onSelectImages" @remove="onRemoveImage"
                     :multiple="true" accept="image/*" :maxFileSize="2000000">
                     <template #empty>
-                        <p>Arrastra y suelta para añadir más imágenes.</p>
+                        <p>Arrastra y suelta imágenes para AÑADIR nueva evidencia.</p>
                     </template>
                 </FileUpload>
                 <InputError :message="form.errors.initial_evidence_images" class="mt-2" />
-            </div>
-
-             <!-- Información Interna -->
-             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información Interna y Diagnóstico</h2>
-                <div class="grid grid-cols-1">
-                    <div>
-                        <InputLabel for="technician_diagnosis" value="Diagnóstico del Técnico" />
-                        <Textarea id="technician_diagnosis" v-model="form.technician_diagnosis" rows="3" class="mt-1 w-full" />
-                        <InputError :message="form.errors.technician_diagnosis" class="mt-2" />
-                    </div>
-                </div>
+                <InputError :message="form.errors.deleted_media_ids" class="mt-2" />
             </div>
 
             <div class="flex justify-end sticky bottom-4">
-                 <Button type="submit" label="Actualizar Orden" :loading="form.processing" severity="warning"
+                <Button type="submit" label="Guardar Cambios" :loading="form.processing" severity="warning"
                     class="shadow-lg" />
             </div>
         </form>
+
+        <ManageCustomFields ref="manageFieldsComponent" module="service_orders"
+            :definitions="props.customFieldDefinitions" />
     </AppLayout>
 </template>
