@@ -18,6 +18,8 @@ return new class extends Migration
             $table->date('expense_date');
             $table->string('status'); // pagado, pendiente
             $table->text('description')->nullable();
+            $table->string('payment_method');
+            $table->foreignId('bank_account_id')->nullable()->constrained('bank_accounts')->onDelete('set null');
             $table->timestamps();
         });
     }
