@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
+import { FireIcon } from '@heroicons/vue/24/solid';
 
 const props = defineProps({
     product: Object,
@@ -154,71 +155,65 @@ const getPromotionSummary = (promo) => {
 
 <template>
     <div
-        class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden flex flex-col bg-white dark:bg-gray-800 transition-shadow hover:shadow-lg">
-        <div class="relative">
-            <img :src="displayImage" :alt="product.name" class="w-full h-40 object-contain">
-
-            <div v-if="product.promotions && product.promotions.length > 0" @click="togglePromoPopover"
-                class="absolute top-2 right-2 cursor-pointer" v-tooltip.bottom="'Ver detalles de la promoción'">
-                <Badge value="Promoción" severity="danger"></Badge>
+        class="relative border border-gray-200 dark:border-gray-700 rounded-[15px] overflow-hidden flex flex-col bg-white dark:bg-gray-800 transition-shadow hover:shadow-lg">
+        <div class="m-3">
+            <img :src="displayImage" :alt="product.name" class="w-full h-40 object-contain bg-[#F2F2F2] rounded-xl">
+            <div class="absolute bottom-2 right-2 cursor-pointer" v-tooltip.bottom="'Ver detalles'">
+                <Button icon="pi pi-arrows-alt" rounded text severity="secondary" class="bg-white/50 dark:bg-black/50"
+                    @click="emit('showDetails', product)" v-tooltip.bottom="'Ver detalles'" />
             </div>
-            <div
-                class="absolute bottom-2 right-2 cursor-pointer" v-tooltip.bottom="'Ver detalles'">
-                <Button icon="pi pi-arrows-alt" rounded text severity="secondary"
-                    class="bg-white/50 dark:bg-black/50" @click="emit('showDetails', product)"
-                    v-tooltip.bottom="'Ver detalles'" />
-            </div>
-
-            <Popover ref="promoPopover">
-                <div class="p-3 w-64">
-                    <h4 class="font-bold text-md mb-2 border-b pb-2">Promociones Disponibles</h4>
-                    <div class="space-y-3 max-h-48 overflow-y-auto">
-                        <div v-for="promo in product.promotions" :key="promo.name" class="text-sm">
-                            <p class="font-semibold">{{ promo.name }}</p>
-                            <p class="text-xs text-gray-600">{{ getPromotionSummary(promo) }}</p>
-                        </div>
-                    </div>
-                </div>
-            </Popover>
-
-            <Badge :value="`${displayStock} en stock`" :severity="displayStock > 0 ? 'contrast' : 'danger'" class="absolute top-2 left-2"></Badge>
+            <span
+                class="absolute top-0 left-0 rounded-none rounded-tl-[15px] rounded-br-[15px] text-sm text-white dark:text-gray-900 p-2"
+                :class="displayStock > 0 ? 'bg-[#122C3C] dark:bg-gray-400' : 'bg-red-600 dark:bg-red-400'">
+                {{ displayStock + ' en stock' }}
+            </span>
         </div>
-        <div class="p-4 flex flex-col flex-grow">
-            <h3 class="font-bold text-gray-800 dark:text-gray-200 text-lg h-12 overflow-hidden">{{ product.name }}</h3>
+        <div class="px-4 py-2 flex flex-col flex-grow">
+            <h3 class="font-bold text-gray-800 dark:text-gray-200 text-lg overflow-hidden m-0">{{ product.name }}</h3>
             <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">{{ product.category }}</p>
-
-            <div class="space-y-2 my-2 min-h-[3rem]">
-                 <div v-if="hasVariants" class="space-y-3">
+            <div class="space-y-2 my-2 min-h-[1rem]">
+                <div v-if="hasVariants" class="space-y-3">
                     <div v-for="(options, variantName) in product.variants" :key="variantName">
-                        <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 capitalize">{{ variantName }}</p>
+                        <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 capitalize">{{
+                            variantName }}</p>
                         <div class="flex flex-wrap gap-2">
-                            <Button
-                                v-for="option in options"
-                                :key="option.value"
-                                :label="option.value"
-                                :outlined="!isCardOptionSelected(variantName, option.value)"
-                                severity="secondary"
+                            <Button v-for="option in options" :key="option.value" :label="option.value"
+                                :outlined="!isCardOptionSelected(variantName, option.value)" severity="secondary"
                                 class="p-button-sm !text-xs !py-1 !px-2"
                                 @click="selectCardOption(variantName, option.value)"
-                                :disabled="isCardOptionDisabled(variantName, option.value)"
-                            />
+                                :disabled="isCardOptionDisabled(variantName, option.value)" />
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="mb-3 mt-auto">
+            <div class="mb-3 mt-auto flex items-center gap-1">
                 <div v-if="displayPrice < product.original_price" class="flex items-baseline gap-2">
-                    <p class="text-xl font-semibold text-red-600">${{ displayPrice.toFixed(2) }}</p>
+                    <p class="text-xl font-semibold text-green-600 m-0">${{ displayPrice.toFixed(2) }}</p>
                     <del class="text-md text-gray-500">${{ product.original_price.toFixed(2) }}</del>
                 </div>
-                <p v-else class="text-xl font-semibold text-gray-900 dark:text-gray-100">${{ displayPrice.toFixed(2) }}
+                <p v-else class="text-xl font-semibold text-gray-900 dark:text-gray-100 m-0">
+                    ${{ displayPrice.toFixed(2) }}
                 </p>
+                <button v-if="product.promotions && product.promotions.length > 0" @click="togglePromoPopover"
+                    class="cursor-pointer" v-tooltip.bottom="'Ver detalles de la promoción'">
+                    <FireIcon class="size-5 text-[#AE080B] dark:text-red-400 animate-pulse" />
+                </button>
+                <Popover ref="promoPopover">
+                    <div class="p-3 w-64">
+                        <h4 class="font-bold text-md mb-2 border-b pb-2">Promociones Disponibles</h4>
+                        <div class="space-y-3 max-h-48 overflow-y-auto">
+                            <div v-for="promo in product.promotions" :key="promo.name" class="text-sm">
+                                <p class="font-semibold">{{ promo.name }}</p>
+                                <p class="text-xs text-gray-600">{{ getPromotionSummary(promo) }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </Popover>
             </div>
 
-            <Button
-                :label="hasVariants && !cardSelectedCombination ? 'Elegir opciones' : 'Agregar al carrito'"
-                icon="pi pi-plus" severity="warning" class="w-full" @click="handlePrimaryAction" />
+            <Button :label="hasVariants && !cardSelectedCombination ? 'Elegir opciones' : 'Agregar al carrito'"
+                icon="pi pi-plus" severity="warning" class="w-full" rounded size="small" @click="handlePrimaryAction" />
         </div>
     </div>
 </template>

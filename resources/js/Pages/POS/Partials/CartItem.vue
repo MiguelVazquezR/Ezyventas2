@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
 import { usePermissions } from '@/Composables';
+import { FireIcon } from '@heroicons/vue/24/solid';
 
 const props = defineProps({
     item: Object,
@@ -66,10 +67,10 @@ const isCartPromoAppliedToItem = computed(() => {
 const isPromoActive = computed(() => isItemDiscountApplied.value || isCartPromoAppliedToItem.value);
 
 const formatCurrency = (value) => {
-  return new Intl.NumberFormat('es-MX', {
-    style: 'currency',
-    currency: 'MXN'
-  }).format(value || 0);
+    return new Intl.NumberFormat('es-MX', {
+        style: 'currency',
+        currency: 'MXN'
+    }).format(value || 0);
 };
 
 const getPromotionSummary = (promo) => {
@@ -91,7 +92,8 @@ const getPromotionSummary = (promo) => {
         case 'BUNDLE_PRICE': {
             const effect = promo.effects.find(e => e.type === 'SET_PRICE');
             if (!effect || promo.rules.length === 0) return promo.description || 'Promoción de paquete.';
-            const productNames = promo.rules.filter(r => r.type === 'REQUIRES_PRODUCT_QUANTITY' && r.itemable).map(r => `${r.value} x ${r.itemable.name}`).join(' + ');
+            // CORRECCIÓN: Se cambió 'REQUIRES_PRODUCT_QUANTITY' por 'REQUIRES_PRODUCT' que es el tipo correcto para esta promoción.
+            const productNames = promo.rules.filter(r => r.type === 'REQUIRES_PRODUCT' && r.itemable).map(r => `${r.value} x ${r.itemable.name}`).join(' + ');
             return `Paquete (${productNames}) por ${formatCurrency(effect.value)}.`;
         }
         default:
@@ -103,49 +105,29 @@ const getPromotionSummary = (promo) => {
 
 <template>
     <div
-        class="flex gap-4 relative bg-white dark:bg-gray-900 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-        <Button @click="$emit('removeItem', item.cartItemId)" icon="pi pi-trash" rounded text severity="danger"
-            size="small" class="absolute top-1 right-1" />
-        <img :src="item.image" :alt="item.name" class="w-16 h-16 rounded-md object-cover">
+        class="flex gap-4 relative bg-white dark:bg-gray-900 p-3 rounded-xl border border-[#D9D9D9] dark:border-gray-700">
+        <img :src="item.image" :alt="item.name" class="size-16 rounded-[10px] object-contain bg-[#f2f2f2]">
         <div class="flex-grow">
-            <p class="font-semibold text-sm leading-tight text-gray-800 dark:text-gray-200">{{ item.name }}</p>
-
+            <p class="font-bold text-sm leading-tight text-[#373737] dark:text-gray-200">{{ item.name }}</p>
             <!-- Precio (Editable) -->
-            <div v-if="isEditingPrice" class="flex items-center gap-2 mt-1">
-                <InputText v-model.number="price" mode="decimal" :minFractionDigits="2" :maxFractionDigits="2"
-                    class="p-inputtext-sm w-24" @keyup.enter="applyPriceChange" @keyup.esc="cancelPriceEdit" />
-                <Button icon="pi pi-check" text rounded size="small" @click="applyPriceChange" />
-                <Button icon="pi pi-times" text rounded size="small" severity="secondary" @click="cancelPriceEdit" />
+            <div v-if="isEditingPrice" class="flex items-center gap-1 mt-1">
+                <InputNumber fluid v-model.number="price" mode="currency" currency="MXN"
+                    locale="es-MX"
+                    class="!w-24 !h-[2rem]" @keyup.enter="applyPriceChange" @keyup.esc="cancelPriceEdit" />
+                <Button icon="pi pi-check" variant="outlined" rounded size="small" @click="applyPriceChange" class="!size-6" />
+                <Button icon="pi pi-times" variant="outlined" rounded size="small" severity="secondary" @click="cancelPriceEdit" class="!size-6" />
             </div>
             <div v-else class="flex items-center gap-2 mt-1">
                 <!-- MEJORA: Lógica de visualización de precios con descuento y flama -->
-                <p v-if="!isItemDiscountApplied" class="text-sm text-gray-600 dark:text-gray-400">
+                <p v-if="!isItemDiscountApplied" class="text-sm font-light text-[#373737] dark:text-gray-400 m-0">
                     {{ formatCurrency(item.price) }}
                 </p>
                 <div v-else class="flex items-center gap-2">
                     <del class="text-xs text-gray-400">{{ formatCurrency(item.original_price) }}</del>
-                    <p class="text-sm font-bold text-red-500">{{ formatCurrency(item.price) }}</p>
+                    <p class="text-sm font-bold text-[#373737] dark:text-gray-100">{{ formatCurrency(item.price) }}</p>
                 </div>
-                
-                <div v-if="item.promotions && item.promotions.length > 0">
-                    <i class="pi pi-bolt cursor-pointer" 
-                        :class="isPromoActive ? 'text-red-500 animate-pulse' : 'text-gray-400'"
-                        @click="togglePromoPopover($event)"
-                        v-tooltip.bottom="'Ver promociones'"></i>
-                    <Popover ref="promoPopover">
-                       <div class="p-3 w-60">
-                            <h4 class="font-bold text-md mb-2 border-b pb-2">Promociones Disponibles</h4>
-                            <div class="space-y-3 max-h-48 overflow-y-auto">
-                                <div v-for="promo in item.promotions" :key="promo.name" class="text-sm">
-                                    <p class="font-semibold">{{ promo.name }}</p>
-                                    <p class="text-xs text-gray-600">{{ getPromotionSummary(promo) }}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </Popover>
-                </div>
-                
-                <Button v-if="hasPermission('pos.edit_prices')" @click="isEditingPrice = true" icon="pi pi-pencil" rounded text severity="secondary" style="width: 1.5rem; height: 1.5rem" />
+                <Button v-if="hasPermission('pos.edit_prices')" @click="isEditingPrice = true" icon="pi pi-pencil"
+                    rounded variant="outlined" severity="secondary" class="!size-6" size="small" />
             </div>
 
             <p class="text-xs text-gray-500"
@@ -155,13 +137,34 @@ const getPromotionSummary = (promo) => {
                         Object.keys(item.selectedVariant).length - 1 ? ' / ' : '' }} </span>
             </p>
 
-            <div class="flex justify-between items-center mt-2">
-                <InputNumber v-model="quantity" showButtons buttonLayout="horizontal" :min="1" :max="item.stock > 0 ? item.stock : undefined"
-                    decrementButtonClass="p-button-secondary" incrementButtonClass="p-button-secondary"
-                    incrementButtonIcon="pi pi-plus" decrementButtonIcon="pi pi-minus"
-                    :inputStyle="{ width: '3rem', textAlign: 'center' }" />
-                <p class="font-bold text-gray-800 dark:text-gray-100">{{ formatCurrency(item.price * quantity) }}</p>
+            <div class="flex justify-between items-end mt-2">
+                <InputNumber v-model="quantity" showButtons :min="1" :max="item.stock > 0 ? item.stock : undefined"
+                    :inputStyle="{ width: '5rem', height: '2rem' }" size="small" />
+                <div class="flex items-center gap-1">
+                    <div v-if="item.promotions && item.promotions.length > 0">
+                        <button @click="togglePromoPopover($event)" v-tooltip.bottom="'Ver promociones'">
+                            <FireIcon class="size-5"
+                                :class="isPromoActive ? 'text-[#AE080B] animate-pulse' : 'text-gray-400'" />
+                        </button>
+                        <Popover ref="promoPopover">
+                            <div class="p-3 w-60">
+                                <h4 class="font-bold text-base mb-2 border-b pb-2">Promociones disponibles</h4>
+                                <div class="space-y-3 max-h-48 overflow-y-auto">
+                                    <div v-for="promo in item.promotions" :key="promo.name" class="text-sm">
+                                        <p class="font-semibold m-0">{{ promo.name }}</p>
+                                        <p class="text-xs text-gray-600 m-0">{{ getPromotionSummary(promo) }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </Popover>
+                    </div>
+                    <p class="font-bold text-gray-800 dark:text-gray-100 m-0">
+                        {{ formatCurrency(item.price * quantity) }}
+                    </p>
+                </div>
             </div>
         </div>
+        <Button @click="$emit('removeItem', item.cartItemId)" icon="pi pi-trash" rounded variant="outlined" severity="danger"
+            size="small" class="!size-7 !absolute top-1 right-1" />
     </div>
 </template>

@@ -34,7 +34,7 @@ const onMouseDown = (e) => {
 };
 
 const onMouseLeaveOrUp = () => {
-     if (!scrollContainer.value) return;
+    if (!scrollContainer.value) return;
     isDown.value = false;
     scrollContainer.value.classList.remove('grabbing');
 };
@@ -50,25 +50,18 @@ const onMouseMove = (e) => {
 </script>
 
 <template>
-    <div 
-        class="flex items-center pb-2 overflow-x-auto category-scroll-container cursor-grab"
-        ref="scrollContainer"
-        @mousedown.prevent="onMouseDown"
-        @mouseleave="onMouseLeaveOrUp"
-        @mouseup="onMouseLeaveOrUp"
-        @mousemove="onMouseMove"
-    >
+    <div class="flex items-center pb-2 overflow-x-auto category-scroll-container cursor-grab" ref="scrollContainer"
+        @mousedown.prevent="onMouseDown" @mouseleave="onMouseLeaveOrUp" @mouseup="onMouseLeaveOrUp"
+        @mousemove="onMouseMove">
         <div class="flex gap-2">
-            <Button v-for="category in categories" :key="category.id"
-                @click="selectCategory(category.id)"
-                :outlined="selectedCategoryId !== category.id"
-                :severity="selectedCategoryId === category.id ? 'warning' : 'secondary'"
-                class="p-button-sm whitespace-nowrap">
+            <button v-for="category in categories" :key="category.id" @click="selectCategory(category.id)"
+                :class="selectedCategoryId === category.id ? 'text-[#373737] font-bold' : 'text-[#999999]'"
+                class="whitespace-nowrap rounded-full bg-white border border-[#D9D9D9] px-4 py-2 flex items-center gap-2 transition">
                 <span class="mr-2">{{ category.name }}</span>
-                <!-- CAMBIO: Se usa 'products_count' -->
-                <Badge :value="category.products_count" 
-                       :severity="selectedCategoryId === category.id ? 'warning' : 'secondary'"></Badge>
-            </Button>
+                <span class="bg-[#F2F2F2] px-2 py-px rounded text-sm" :class="selectedCategoryId === category.id ? 'font-bold' : null">
+                    {{ category.products_count }}
+                </span>
+            </button>
         </div>
     </div>
 </template>

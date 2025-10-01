@@ -4,6 +4,14 @@ import { useConfirm } from "primevue/useconfirm";
 import CartItem from './CartItem.vue';
 import CreateCustomerModal from '@/Components/CreateCustomerModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
+import Button from 'primevue/button';
+import ConfirmPopup from 'primevue/confirmpopup';
+import Dropdown from 'primevue/dropdown';
+import Select from 'primevue/select';
+import Avatar from 'primevue/avatar';
+import Checkbox from 'primevue/checkbox';
+import Divider from 'primevue/divider';
+import Badge from 'primevue/badge';
 
 const props = defineProps({
     items: Array,
@@ -72,7 +80,8 @@ const cartLevelDiscounts = computed(() => {
 
         // Lógica para BUNDLE_PRICE (Paquete por precio fijo)
         if (promo.type === 'BUNDLE_PRICE') {
-            const rules = promo.rules.filter(r => r.type === 'REQUIRES_PRODUCT_QUANTITY');
+            // CORRECCIÓN: Se cambió 'REQUIRES_PRODUCT_QUANTITY' por 'REQUIRES_PRODUCT'
+            const rules = promo.rules.filter(r => r.type === 'REQUIRES_PRODUCT');
             const effect = promo.effects.find(e => e.type === 'SET_PRICE');
             if (rules.length === 0 || !effect) return;
 
@@ -80,20 +89,24 @@ const cartLevelDiscounts = computed(() => {
                 const itemInCart = props.items.find(cartItem => cartItem.id === rule.itemable_id);
                 const requiredQty = parseInt(rule.value, 10);
                 if (!itemInCart || itemInCart.quantity < requiredQty) {
-                    return 0;
+                    return 0; // Si falta un producto o la cantidad no es suficiente, no se puede aplicar el paquete.
                 }
+                // Calcula cuántas veces se podría aplicar el paquete basado en este único producto.
                 const possibleApplications = Math.floor(itemInCart.quantity / requiredQty);
+                // Nos quedamos con el número mínimo de aplicaciones posibles entre todos los productos.
                 return Math.min(minTimes, possibleApplications);
             }, Infinity);
 
             if (canApplyBundleTimes > 0 && canApplyBundleTimes !== Infinity) {
                 const originalBundlePrice = rules.reduce((sum, rule) => {
                     const item = props.items.find(cartItem => cartItem.id === rule.itemable_id);
+                    // El precio original se multiplica por la cantidad requerida para UN solo paquete.
                     return sum + (item.original_price || item.price) * parseInt(rule.value, 10);
                 }, 0);
 
                 const discountAmount = originalBundlePrice - parseFloat(effect.value);
                 if (discountAmount > 0) {
+                    // El descuento total es el ahorro de un paquete por el número de veces que se puede aplicar.
                     applied.push({ name: promo.name, amount: discountAmount * canApplyBundleTimes });
                 }
             }
@@ -152,69 +165,82 @@ const formatCurrency = (value) => {
 <template>
     <div>
         <ConfirmPopup group="cart-actions"></ConfirmPopup>
-        <div class="bg-white p-6 rounded-lg shadow-md h-full flex flex-col dark:bg-gray-800">
+        <div
+            class="bg-[#E6E6E6] p-3 rounded-xl shadow-md border border-[#D9D9D9] h-full flex flex-col dark:bg-gray-800">
             <!-- Header -->
             <div class="flex justify-between items-center pb-4 border-b border-gray-200 dark:border-gray-700">
-                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200">Carrito</h2>
+                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Carrito</h2>
                 <div class="flex items-center gap-2">
                     <Button @click="$emit('saveCart', { total: total })" :disabled="items.length === 0"
-                        icon="pi pi-save" rounded text severity="secondary" v-tooltip.bottom="'Guardar para después'" />
+                        icon="pi pi-save" rounded variant="outlined" severity="secondary"
+                        v-tooltip.bottom="'Guardar para después'" size="small" class="!bg-white !size-7" />
                     <Button @click="requireConfirmation($event)" :disabled="items.length === 0" icon="pi pi-trash"
-                        rounded text severity="danger" v-tooltip.bottom="'Limpiar carrito'" />
+                        rounded variant="outlined" severity="danger" v-tooltip.bottom="'Limpiar carrito'" size="small"
+                        class="!bg-white !size-7" />
                 </div>
             </div>
 
             <!-- Selector de Cliente -->
-            <div class="py-4">
+            <div class="my-1">
                 <div class="flex items-center gap-2 mb-3">
-                    <Dropdown :modelValue="client" @change="handleCustomerSelect" :options="customers"
-                        optionLabel="name" placeholder="Seleccionar cliente" filter class="w-full" />
-                    <Button @click="isCreateCustomerModalVisible = true" icon="pi pi-plus" severity="secondary" />
+                    <Select :modelValue="client" @change="handleCustomerSelect" :options="customers" optionLabel="name"
+                        placeholder="Seleccionar cliente" filter class="w-full" />
+                    <Button @click="isCreateCustomerModalVisible = true" rounded icon="pi pi-plus" size="small"
+                        severity="contrast" />
                 </div>
-                <div v-if="displayedCustomer"
-                    class="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-2 rounded-lg">
-                    <div class="flex items-center gap-3">
-                        <Avatar :label="displayedCustomer.name.substring(0, 1)" shape="circle"
-                            class="!bg-[#F2E2FF] border border-[#D3A9FF] !text-[#5110A1]" />
-                        <div>
-                            <p class="font-semibold text-sm text-gray-800 dark:text-gray-200 m-0">{{
-                                displayedCustomer.name }}</p>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 m-0">{{ displayedCustomer.phone }}</p>
+                <div class="bg-white dark:bg-gray-700 p-2 rounded-[10px]">
+                    <div v-if="displayedCustomer" class="flex items-center justify-between pb-2">
+                        <div class="flex items-center gap-3">
+                            <Avatar :label="displayedCustomer.name.substring(0, 1)" shape="circle"
+                                class="!bg-[#F2E2FF] border border-[#D3A9FF] !text-[#5110A1]" />
+                            <div>
+                                <p class="font-semibold text-sm text-gray-800 dark:text-gray-200 m-0">{{
+                                    displayedCustomer.name }}</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 m-0">{{ displayedCustomer.phone }}
+                                </p>
+                            </div>
+                        </div>
+                        <Button v-if="client" @click="clearCustomer" icon="pi pi-times" rounded variant="outlined"
+                            severity="secondary" size="small" class="!size-6" />
+                    </div>
+                    <!-- Info de Saldo y Crédito del Cliente -->
+                    <div v-if="client" class="py-2 border-t space-y-2">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-600 dark:text-gray-300">Saldo:</span>
+                            <!-- CORRECCIÓN: Se añade '|| 0' para evitar error si client.balance es undefined -->
+                            <span :class="(client.balance || 0) >= 0 ? 'text-green-600' : 'text-red-600'"
+                                class="font-bold">
+                                {{ new Intl.NumberFormat('es-MX', {
+                                    style: 'currency', currency: 'MXN'
+                                }).format(client.balance
+                                    || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' : '' }}
+                            </span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-600 dark:text-gray-300">Crédito Disponible:</span>
+                            <!-- CORRECCIÓN: Se añade '|| 0' para evitar error si client.available_credit es undefined -->
+                            <span class="font-bold text-blue-600">
+                                {{ new Intl.NumberFormat('es-MX', {
+                                    style: 'currency', currency: 'MXN'
+                                }).format(client.available_credit || 0) }}
+                            </span>
+                        </div>
+                        <div v-if="client.balance > 0" class="flex items-center pt-2">
+                            <Checkbox v-model="useBalance" inputId="useBalance" :binary="true" />
+                            <label for="useBalance" class="ml-2 text-sm text-gray-800 dark:text-gray-200">
+                                Usar saldo a favor en esta compra
+                            </label>
                         </div>
                     </div>
-                    <Button v-if="client" @click="clearCustomer" icon="pi pi-times" rounded text severity="secondary"
-                        size="small" />
-                </div>
-            </div>
-
-            <!-- Info de Saldo y Crédito del Cliente -->
-            <div v-if="client" class="py-4 border-t border-b border-gray-200 dark:border-gray-700 space-y-2">
-                <div class="flex justify-between text-sm">
-                    <span class="text-gray-600 dark:text-gray-300">Balance:</span>
-                    <!-- CORRECCIÓN: Se añade '|| 0' para evitar error si client.balance es undefined -->
-                    <span :class="(client.balance || 0) >= 0 ? 'text-green-600' : 'text-red-600'" class="font-bold">
-                        {{ new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(client.balance
-                        || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' : '' }}
-                    </span>
-                </div>
-                <div class="flex justify-between text-sm">
-                    <span class="text-gray-600 dark:text-gray-300">Crédito Disponible:</span>
-                    <!-- CORRECCIÓN: Se añade '|| 0' para evitar error si client.available_credit es undefined -->
-                    <span class="font-bold text-blue-600">
-                        {{ new Intl.NumberFormat('es-MX', {
-                            style: 'currency', currency: 'MXN'
-                        }).format(client.available_credit || 0) }}
-                    </span>
-                </div>
-                <div v-if="client.balance > 0" class="flex items-center pt-2">
-                    <Checkbox v-model="useBalance" inputId="useBalance" :binary="true" />
-                    <label for="useBalance" class="ml-2 text-sm text-gray-800 dark:text-gray-200">Usar saldo a favor en
-                        esta compra</label>
                 </div>
             </div>
 
             <!-- Lista de Items -->
-            <div class="flex-grow py-4 overflow-y-auto space-y-4">
+            <p v-if="items.length > 0" class="my-2 text-sm text-[#1E1E1E] dark:text-gray-200 flex items-center space-x-2">
+                <span>Detalles de venta</span>
+                <Badge :value="items.length" class="!bg-white !text-black dark:!bg-black dark:!text-white"></Badge>
+            </p>
+            <div class="flex-grow py-1 overflow-y-auto space-y-2">
                 <p v-if="items.length === 0" class="text-gray-500 dark:text-gray-400 text-center mt-8">El carrito está
                     vacío</p>
                 <!-- MEJORA: Pasa el Set de promociones activas al CartItem -->
@@ -224,9 +250,10 @@ const formatCurrency = (value) => {
             </div>
 
             <!-- Detalles del Pago -->
-            <div class="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+            <div class="mt-4 p-2 rounded-[10px] border border-[#D9D9D9] bg-white dark:bg-gray-900 space-y-1">
                 <div class="flex justify-between items-center text-gray-600 dark:text-gray-300">
-                    <span>Subtotal</span><span class="font-medium">{{ formatCurrency(subtotal) }}</span></div>
+                    <span>Subtotal</span><span class="font-medium">{{ formatCurrency(subtotal) }}</span>
+                </div>
 
                 <div v-if="totalDiscount > 0" class="text-red-500">
                     <div class="flex justify-between items-center">
@@ -243,9 +270,10 @@ const formatCurrency = (value) => {
 
                 <div v-if="amountFromBalance > 0" class="flex justify-between items-center text-green-600"><span>Saldo
                         Utilizado</span><span class="font-medium">-{{ formatCurrency(amountFromBalance) }}</span></div>
-                <Divider v-if="amountFromBalance > 0" />
-                <div class="flex justify-between items-center font-bold text-lg text-gray-800 dark:text-gray-100">
-                    <span>Total</span><span>{{ formatCurrency(finalTotalToPay) }}</span></div>
+                <div
+                    class="flex justify-between items-center font-bold text-lg text-gray-800 dark:text-gray-100 border-t border-dashed border-[#D9D9D9] pt-1">
+                    <span>Total</span><span>{{ formatCurrency(finalTotalToPay) }}</span>
+                </div>
 
                 <Button @click="isPaymentModalVisible = true" :disabled="items.length === 0"
                     :label="client && finalTotalToPay <= 0.01 ? 'Finalizar (a Crédito)' : 'Pagar'"

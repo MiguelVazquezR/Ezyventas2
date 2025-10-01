@@ -56,7 +56,7 @@ const initialiseProductList = async () => {
 
         const responses = await Promise.all(fetchPromises);
         const previousProducts = responses.flatMap(response => response.data.props.products.data);
-        
+
         loadedProducts.value = [...previousProducts, ...props.products.data];
 
     } catch (error) {
@@ -70,7 +70,7 @@ const initialiseProductList = async () => {
 const loadMoreProducts = () => {
     if (!nextCursor.value || isLoadingMore.value) return;
     isLoadingMore.value = true;
-    
+
     router.get(nextCursor.value, {}, {
         preserveState: true,
         preserveScroll: true,
@@ -218,7 +218,7 @@ const handleGlobalKeyDown = (event) => {
     clearTimeout(barcodeTimer);
     barcodeTimer = setTimeout(() => {
         barcodeBuffer = '';
-    }, 100); 
+    }, 100);
 };
 
 onMounted(() => {
@@ -232,19 +232,24 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div class="bg-white dark:bg-gray-900 rounded-lg shadow-md flex flex-col h-full">
-        <div v-if="activeSession" class="p-1 text-center text-sm bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 font-semibold rounded-t-lg">
-            Caja Activa: <span class="font-bold">{{ activeSession.cash_register.name }}</span>
-        </div>
-        <div class="p-6 pb-4 flex-shrink-0">
+    <div class="shadow-md flex flex-col h-full mt-1">
+        <div class="px-6 flex-shrink-0">
             <div class="flex justify-between items-center mb-4">
-                <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Registrar ventas</h1>
-                <div class="flex items-center gap-2">
-                    <Button @click="isCreateProductModalVisible = true" icon="pi pi-plus" rounded text severity="secondary" v-tooltip.bottom="'Agregar nuevo producto'" />
-                    
-                    <Button @click="toggleMenu" icon="pi pi-inbox" rounded text severity="secondary" v-tooltip.bottom="'Resumen de Sesión'" />
+                <h1 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Registrar ventas</h1>
+                <div v-if="activeSession"
+                    class="p-1 text-center rounded-full px-8 text-base bg-gradient-to-r from-transparent via-[#CEEACB] dark:via-[#366531] to-transparent text-[#24880B] dark:text-[#69f446] font-semibold">
+                    Caja Activa: <span class="font-bold">{{ activeSession.cash_register.name }}</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <Button @click="isCreateProductModalVisible = true" icon="pi pi-plus" rounded severity="secondary"
+                        v-tooltip.bottom="'Agregar nuevo producto'" variant="outlined" size="medium"
+                        class="!size-8 !bg-white" />
+
+                    <Button @click="toggleMenu" icon="pi pi-inbox" rounded severity="secondary"
+                        v-tooltip.bottom="'Resumen de Sesión'" variant="outlined" size="medium"
+                        class="!size-8 !bg-white" />
                     <Menu ref="menu" :model="menuItems" :popup="true">
-                         <template #end>
+                        <template #end>
                             <div class="px-4 py-2 text-sm text-gray-700 dark:text-gray-200 space-y-3">
                                 <div>
                                     <span class="font-semibold">Efectivo en Caja:</span>
@@ -265,43 +270,57 @@ onUnmounted(() => {
                         </template>
                     </Menu>
 
-                    <Button @click="$emit('openHistoryModal')" icon="pi pi-clock" rounded text severity="secondary" v-tooltip.bottom="'Ver historial de ventas'" />
+                    <Button @click="$emit('openHistoryModal')" icon="pi pi-clock" rounded severity="secondary"
+                        v-tooltip.bottom="'Ver historial de ventas'" variant="outlined" size="medium"
+                        class="!size-8 !bg-white" />
                     <button @click="toggleOverlay" class="relative">
-                        <Button icon="pi pi-shopping-cart" rounded text severity="secondary" aria-label="Carritos en espera" />
-                        <Badge v-if="pendingCarts.length" :value="pendingCarts.length" severity="danger" class="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2"></Badge>
+                        <Button icon="pi pi-shopping-cart" rounded severity="secondary"
+                            aria-label="Carritos en espera" variant="outlined" size="medium"
+                        class="!size-8 !bg-white" />
+                        <Badge v-if="pendingCarts.length" :value="pendingCarts.length" severity="contrast"
+                            class="absolute top-2 right-0 transform translate-x-1/2 -translate-y-1/2" size="small"></Badge>
                     </button>
-                    <Button @click="$emit('openCloseSessionModal')" icon="pi pi-sign-out" rounded text severity="danger" v-tooltip.bottom="'Cerrar Caja'" />
+                    <Button @click="$emit('openCloseSessionModal')" icon="pi pi-sign-out" rounded severity="danger"
+                        v-tooltip.bottom="'Cerrar Caja'" variant="outlined" size="medium"
+                        class="!size-8 !bg-white" />
                     <Popover ref="op">
-                        <PendingCartsPopover :carts="pendingCarts" @resume-cart="$emit('resumeCart', $event)" @delete-cart="$emit('deleteCart', $event)" />
+                        <PendingCartsPopover :carts="pendingCarts" @resume-cart="$emit('resumeCart', $event)"
+                            @delete-cart="$emit('deleteCart', $event)" />
                     </Popover>
                 </div>
             </div>
             <div class="mb-4">
                 <IconField iconPosition="left">
                     <InputIcon class="pi pi-search" />
-                    <InputText v-model="searchTerm" placeholder="Escanear o buscar producto por nombre o SKU" class="w-full" />
+                    <InputText v-model="searchTerm" placeholder="Escanear o buscar producto por nombre o SKU"
+                        class="w-full" />
                 </IconField>
             </div>
-            <CategoryFilters :categories="categories" :active-category-id="selectedCategoryId" @filter="handleCategoryFilter" />
+            <CategoryFilters :categories="categories" :active-category-id="selectedCategoryId"
+                @filter="handleCategoryFilter" />
         </div>
-        
+
         <div class="flex-grow px-6 pb-6 overflow-y-auto" ref="productsContainer">
             <div v-if="isInitialising" class="flex justify-center items-center h-full">
                 <i class="pi pi-spin pi-spinner text-4xl text-gray-400"></i>
             </div>
             <template v-else>
-                <p v-if="loadedProducts.length === 0 && !isLoadingMore" class="text-center text-gray-500 mt-8">No se encontraron productos.</p>
+                <p v-if="loadedProducts.length === 0 && !isLoadingMore" class="text-center text-gray-500 mt-8">No se
+                    encontraron productos.</p>
                 <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2">
-                    <ProductCard v-for="product in loadedProducts" :key="`${product.id}-${product.sku}`" :product="product" @showDetails="showProductDetails" @addToCart="$emit('addToCart', $event)" />
+                    <ProductCard v-for="product in loadedProducts" :key="`${product.id}-${product.sku}`"
+                        :product="product" @showDetails="showProductDetails" @addToCart="$emit('addToCart', $event)" />
                 </div>
                 <div v-if="isLoadingMore" class="flex justify-center items-center h-24">
                     <i class="pi pi-spin pi-spinner text-3xl text-gray-400"></i>
                 </div>
             </template>
         </div>
-        
-        <ProductDetailModal v-model:visible="isDetailModalVisible" :product="selectedProductForModal" @addToCart="$emit('addToCart', $event)" />
+
+        <ProductDetailModal v-model:visible="isDetailModalVisible" :product="selectedProductForModal"
+            @addToCart="$emit('addToCart', $event)" />
         <CreateProductModal v-model:visible="isCreateProductModalVisible" @created="handleProductCreated" />
-        <CashMovementModal v-if="activeSession" v-model:visible="isCashMovementModalVisible" :type="movementType" :session-id="activeSession.id" @submitted="handleMovementSubmitted" />
+        <CashMovementModal v-if="activeSession" v-model:visible="isCashMovementModalVisible" :type="movementType"
+            :session-id="activeSession.id" @submitted="handleMovementSubmitted" />
     </div>
 </template>
