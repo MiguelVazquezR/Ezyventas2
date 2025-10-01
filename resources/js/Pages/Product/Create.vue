@@ -305,7 +305,7 @@ const refreshAttributes = () => {
                                 v-if="form.category_id"
                                 icon="pi pi-cog"
                                 text rounded
-                                v-tooltip.left="'Gestionar atributos de la categoría'"
+                                v-tooltip.left="'Gestionar variantes de la categoría'"
                                 @click="showAttributesModal = true"
                             />
                         </div>
