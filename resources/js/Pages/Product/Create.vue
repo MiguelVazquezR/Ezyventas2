@@ -19,7 +19,7 @@ const props = defineProps({
 // --- Refs and State ---
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const items = ref([
-    { label: 'Productos', url: route('products.index'), icon: PrimeIcons.USER },
+    { label: 'Productos', url: route('products.index') },
     { label: 'Crear producto' }
 ]);
 
@@ -44,7 +44,7 @@ const form = useForm({
     variants_matrix: [],
     show_online: false,
     online_price: null,
-    requires_shipping: true,
+    requires_shipping: false,
     weight: null,
     length: null,
     width: null,
@@ -95,6 +95,17 @@ const variantCombinations = computed(() => {
     return generate(selectedAttrs);
 });
 
+// --- MEJORA 1: Observador para reiniciar las variantes si cambia la categoría ---
+watch(() => form.category_id, (newCategoryId, oldCategoryId) => {
+    if (newCategoryId !== oldCategoryId) {
+        form.variant_attributes = [];
+        form.variants_matrix = [];
+        selectedVariants.value = [];
+        form.variant_images = {};
+        variantImagePreviews.value = {};
+    }
+});
+
 watch(variantCombinations, (newCombinations) => {
     selectedVariants.value = [...newCombinations];
 }, { deep: true });
@@ -122,6 +133,7 @@ const onSelectVariantImage = (event, optionValue) => {
     form.variant_images[optionValue] = file;
     variantImagePreviews.value[optionValue] = URL.createObjectURL(file);
 };
+// Esta función ya existía y es la que usará el nuevo botón de eliminar
 const onRemoveVariantImage = (optionValue) => {
     delete form.variant_images[optionValue];
     URL.revokeObjectURL(variantImagePreviews.value[optionValue]);
@@ -327,19 +339,30 @@ const handleNewProvider = (newProvider) => {
                                                 <div v-for="option in attr.options" :key="option.id"
                                                     class="text-center">
                                                     <InputLabel :value="option.value" class="text-sm" />
-                                                    <div class="mt-1 flex flex-col items-center">
-                                                        <img v-if="variantImagePreviews[option.value]"
-                                                            :src="variantImagePreviews[option.value]"
-                                                            class="w-20 h-20 object-cover rounded-md mb-2 border">
-                                                        <div v-else
-                                                            class="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-md mb-2 flex items-center justify-center text-gray-400">
-                                                            <i class="pi pi-image text-2xl"></i>
+                                                    <!-- INICIO MEJORA 2: Interfaz para eliminar imagen -->
+                                                    <div class="mt-1 flex flex-col items-center gap-2">
+                                                        <div class="relative w-20 h-20">
+                                                             <img v-if="variantImagePreviews[option.value]"
+                                                                :src="variantImagePreviews[option.value]"
+                                                                class="w-20 h-20 object-cover rounded-md border">
+                                                            <div v-else
+                                                                class="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center justify-center text-gray-400">
+                                                                <i class="pi pi-image text-2xl"></i>
+                                                            </div>
+                                                            <Button v-if="variantImagePreviews[option.value]"
+                                                                @click="onRemoveVariantImage(option.value)"
+                                                                icon="pi pi-times"
+                                                                rounded text severity="danger"
+                                                                class="!absolute !top-[-8px] !right-[-8px] bg-white dark:bg-gray-800"
+                                                                v-tooltip.bottom="'Eliminar imagen'" />
                                                         </div>
-                                                        <FileUpload mode="basic" name="variant_image[]" accept="image/*"
+                                                        <FileUpload v-if="!variantImagePreviews[option.value]"
+                                                            mode="basic" name="variant_image[]" accept="image/*"
                                                             :maxFileSize="1000000" :auto="true" :customUpload="true"
                                                             @uploader="onSelectVariantImage($event, option.value)"
-                                                            chooseLabel="Elegir" class="w-20" />
+                                                            chooseLabel="Elegir" class="p-button-sm !w-20" />
                                                     </div>
+                                                     <!-- FIN MEJORA 2 -->
                                                 </div>
                                             </div>
                                         </div>
@@ -402,7 +425,7 @@ const handleNewProvider = (newProvider) => {
                             </div>
                         </div>
                     </div>
-                    <div class="flex justify-end">
+                    <div class="flex justify-end sticky bottom-4">
                         <Button type="submit" label="Crear producto" icon="pi pi-check" severity="warning"
                             :loading="form.processing" />
                     </div>

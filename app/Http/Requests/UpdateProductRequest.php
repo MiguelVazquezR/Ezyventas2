@@ -33,9 +33,9 @@ class UpdateProductRequest extends FormRequest
             'measure_unit' => 'required|string|max:50',
             'variants_matrix' => 'required_if:product_type,variant|array',
             'general_images' => 'nullable|array|max:5',
-            'general_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp',
+            'general_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp,avif',
             'variant_images' => 'nullable|array',
-            'variant_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp',
+            'variant_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp,avif',
             'deleted_media_ids' => 'nullable|array', // Para las imágenes a eliminar
             'deleted_media_ids.*' => 'integer|exists:media,id',
             'show_online' => 'sometimes|boolean',
