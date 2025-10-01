@@ -1,10 +1,11 @@
 <script setup>
 import { ref, computed, nextTick, markRaw, watch } from 'vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { Head, useForm, router } from '@inertiajs/vue3'; // Importar router
 import AppLayout from '@/Layouts/AppLayout.vue';
 import CreateCategoryModal from '@/Components/CreateCategoryModal.vue';
 import CreateBrandModal from './Partials/CreateBrandModal.vue';
 import CreateProviderModal from './Partials/CreateProviderModal.vue';
+import ManageAttributesModal from './Partials/ManageAttributesModal.vue'; // --- IMPORTAR NUEVO MODAL ---
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import Breadcrumb from 'primevue/breadcrumb';
@@ -178,9 +179,26 @@ const localProviders = ref([...props.providers]);
 const showCategoryModal = ref(false);
 const showBrandModal = ref(false);
 const showProviderModal = ref(false);
+const showAttributesModal = ref(false); // --- ESTADO PARA NUEVO MODAL ---
 const handleNewCategory = (newCategory) => { localCategories.value.push(markRaw(newCategory)); nextTick(() => { form.category_id = newCategory.id; }); };
 const handleNewBrand = (newBrand) => { const myBrandsGroup = localBrands.value.find(g => g.label === 'Mis Marcas'); if (myBrandsGroup) { myBrandsGroup.items.push(markRaw(newBrand)); } nextTick(() => { form.brand_id = newBrand.id; }); };
 const handleNewProvider = (newProvider) => { localProviders.value.push(markRaw(newProvider)); nextTick(() => { form.provider_id = newProvider.id; }); };
+
+// --- FUNCIÓN PARA RECARGAR ATRIBUTOS ---
+const refreshAttributes = () => {
+    router.reload({
+        only: ['attributeDefinitions'],
+        preserveState: true,
+        preserveScroll: true,
+        onSuccess: () => {
+            // Limpia los atributos seleccionados si alguno fue eliminado
+            const validAttributeIds = props.attributeDefinitions
+                .filter(def => def.category_id === form.category_id)
+                .map(def => def.id);
+            form.variant_attributes = form.variant_attributes.filter(id => validAttributeIds.includes(id));
+        }
+    });
+};
 </script>
 
 
@@ -282,9 +300,18 @@ const handleNewProvider = (newProvider) => { localProviders.value.push(markRaw(n
                     </div>
                     <!-- Sección de Inventario y Variantes -->
                     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-                        <h2
-                            class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
-                            Inventario y variantes</h2>
+                        <!-- ***** INICIO DE LA MEJORA: AÑADIR BOTÓN DE ENGRANE ***** -->
+                        <div
+                            class="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
+                            <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-200 m-0">
+                                Inventario y variantes
+                            </h2>
+                            <Button v-if="form.category_id" icon="pi pi-cog" text rounded
+                                v-tooltip.left="'Gestionar atributos de la categoría'"
+                                @click="showAttributesModal = true" />
+                        </div>
+                        <!-- ***** FIN DE LA MEJORA ***** -->
+
                         <div>
                             <InputLabel value="Tipo de producto" class="mb-2" />
                             <SelectButton v-model="form.product_type" :options="productTypeOptions" optionLabel="label"
@@ -335,9 +362,13 @@ const handleNewProvider = (newProvider) => { localProviders.value.push(markRaw(n
                             </div>
                         </div>
                         <div class="mt-6">
-                            <Tabs>
-                                <TabPanel header="Imágenes Generales">
-                                     <div v-if="existingGeneralImages.length > 0" class="flex flex-wrap gap-4 mb-4">
+                            <Tabs value="0">
+                                <TabList>
+                                    <Tab value="0">Imágenes generales</Tab>
+                                    <Tab value="1">Imágenes por variante</Tab>
+                                </TabList>
+                                <TabPanel value="0">
+                                    <div v-if="existingGeneralImages.length > 0" class="flex flex-wrap gap-4 mb-4">
                                         <div v-for="img in existingGeneralImages" :key="img.id" class="relative">
                                             <img :src="img.original_url"
                                                 class="w-24 h-24 object-cover rounded-md border">
@@ -355,7 +386,7 @@ const handleNewProvider = (newProvider) => { localProviders.value.push(markRaw(n
                                     </FileUpload>
                                     <InputError class="mt-2" :message="form.errors.general_images" />
                                 </TabPanel>
-                                <TabPanel header="Imágenes por Variante"
+                                <TabPanel valule="1"
                                     :disabled="imageRequiringAttributes.length === 0">
                                     <div v-if="imageRequiringAttributes.length > 0" class="space-y-4">
                                         <div v-for="attr in imageRequiringAttributes" :key="attr.id">
@@ -374,21 +405,18 @@ const handleNewProvider = (newProvider) => { localProviders.value.push(markRaw(n
                                                                 class="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center justify-center text-gray-400">
                                                                 <i class="pi pi-image text-2xl"></i>
                                                             </div>
-                                                            <Button
-                                                                v-if="variantImagePreviews[option.value]"
-                                                                @click="() => {
-                                                                    const existingImg = existingVariantImages.find(i => i.custom_properties.variant_option === option.value);
-                                                                    if (existingImg) {
-                                                                        deleteExistingVariantImage(existingImg.id, option.value);
-                                                                    } else {
-                                                                        onRemoveVariantImage(option.value);
-                                                                    }
-                                                                }"
-                                                                icon="pi pi-times" rounded text severity="danger"
+                                                            <Button v-if="variantImagePreviews[option.value]" @click="() => {
+                                                                const existingImg = existingVariantImages.find(i => i.custom_properties.variant_option === option.value);
+                                                                if (existingImg) {
+                                                                    deleteExistingVariantImage(existingImg.id, option.value);
+                                                                } else {
+                                                                    onRemoveVariantImage(option.value);
+                                                                }
+                                                            }" icon="pi pi-times" rounded text severity="danger"
                                                                 class="!absolute !top-[-8px] !right-[-8px] bg-white dark:bg-gray-800"
                                                                 v-tooltip.bottom="'Eliminar imagen'" />
                                                         </div>
-                                                         <FileUpload v-if="!variantImagePreviews[option.value]"
+                                                        <FileUpload v-if="!variantImagePreviews[option.value]"
                                                             mode="basic" name="variant_image[]" accept="image/*"
                                                             :maxFileSize="1000000" :auto="true" :customUpload="true"
                                                             @uploader="onSelectVariantImage($event, option.value)"
@@ -467,5 +495,7 @@ const handleNewProvider = (newProvider) => { localProviders.value.push(markRaw(n
         <CreateCategoryModal v-model:visible="showCategoryModal" tyoe="product" @created="handleNewCategory" />
         <CreateBrandModal v-model:visible="showBrandModal" @created="handleNewBrand" />
         <CreateProviderModal v-model:visible="showProviderModal" @created="handleNewProvider" />
+        <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal"
+            :category-id="form.category_id" @updated="refreshAttributes" />
     </AppLayout>
 </template>
