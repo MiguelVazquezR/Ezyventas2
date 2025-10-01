@@ -10,7 +10,8 @@ const emit = defineEmits(['update:visible', 'created']);
 
 const form = ref({
     name: '',
-    phone: ''
+    phone: '',
+    credit_limit: 1000,
 });
 const processing = ref(false);
 
@@ -18,6 +19,7 @@ const closeModal = () => {
     emit('update:visible', false);
     form.value.name = '';
     form.value.phone = '';
+    form.value.credit_limit = 1000;
 };
 
 const submit = async () => {
@@ -36,7 +38,8 @@ const submit = async () => {
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" modal header="Crear Nuevo Cliente" :style="{ width: '25rem' }">
+    <Dialog :visible="visible" @update:visible="closeModal" modal header="Crear Nuevo Cliente"
+        :style="{ width: '25rem' }">
         <form @submit.prevent="submit" class="p-2 space-y-4">
             <div>
                 <InputLabel for="customer-name" value="Nombre del Cliente *" />
@@ -45,6 +48,11 @@ const submit = async () => {
             <div>
                 <InputLabel for="customer-phone" value="Teléfono" />
                 <InputText id="customer-phone" v-model="form.phone" class="w-full mt-1" />
+            </div>
+            <div>
+                <InputLabel for="customer-limit" value="Límite de crédito" />
+                <InputNumber id="customer-limit" v-model="form.credit_limit" mode="currency" currency="MXN"
+                    locale="es-MX" class="w-full mt-1" />
             </div>
             <div class="flex justify-end gap-2 mt-4">
                 <Button type="button" label="Cancelar" severity="secondary" @click="closeModal"></Button>
