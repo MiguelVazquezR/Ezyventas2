@@ -102,6 +102,12 @@ const cartLevelDiscounts = computed(() => {
     return applied;
 });
 
+// --- MEJORA: Crea un Set con los nombres de las promociones de carrito activas ---
+const appliedCartPromoNames = computed(() => {
+    return new Set(cartLevelDiscounts.value.map(d => d.name));
+});
+
+
 const cartDiscountAmount = computed(() => cartLevelDiscounts.value.reduce((sum, promo) => sum + promo.amount, 0));
 const subtotal = computed(() => props.items.reduce((total, item) => total + ((item.original_price || item.price) * item.quantity), 0));
 const manualDiscount = ref(0);
@@ -134,6 +140,13 @@ const handlePaymentSubmit = (paymentData) => {
         use_balance: useBalance.value,
     });
 };
+
+const formatCurrency = (value) => {
+    return new Intl.NumberFormat('es-MX', {
+        style: 'currency',
+        currency: 'MXN'
+    }).format(value || 0);
+};
 </script>
 
 <template>
@@ -144,26 +157,33 @@ const handlePaymentSubmit = (paymentData) => {
             <div class="flex justify-between items-center pb-4 border-b border-gray-200 dark:border-gray-700">
                 <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200">Carrito</h2>
                 <div class="flex items-center gap-2">
-                    <Button @click="$emit('saveCart', { total: total })" :disabled="items.length === 0" icon="pi pi-save" rounded text severity="secondary" v-tooltip.bottom="'Guardar para después'"/>
-                    <Button @click="requireConfirmation($event)" :disabled="items.length === 0" icon="pi pi-trash" rounded text severity="danger" v-tooltip.bottom="'Limpiar carrito'"/>
+                    <Button @click="$emit('saveCart', { total: total })" :disabled="items.length === 0"
+                        icon="pi pi-save" rounded text severity="secondary" v-tooltip.bottom="'Guardar para después'" />
+                    <Button @click="requireConfirmation($event)" :disabled="items.length === 0" icon="pi pi-trash"
+                        rounded text severity="danger" v-tooltip.bottom="'Limpiar carrito'" />
                 </div>
             </div>
 
             <!-- Selector de Cliente -->
             <div class="py-4">
                 <div class="flex items-center gap-2 mb-3">
-                    <Select :modelValue="client" @change="handleCustomerSelect" :options="customers" optionLabel="name" placeholder="Seleccionar cliente" filter class="w-full"/>
-                    <Button @click="isCreateCustomerModalVisible = true" icon="pi pi-plus" severity="secondary"/>
+                    <Dropdown :modelValue="client" @change="handleCustomerSelect" :options="customers"
+                        optionLabel="name" placeholder="Seleccionar cliente" filter class="w-full" />
+                    <Button @click="isCreateCustomerModalVisible = true" icon="pi pi-plus" severity="secondary" />
                 </div>
-                <div v-if="displayedCustomer" class="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-2 rounded-lg">
+                <div v-if="displayedCustomer"
+                    class="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-2 rounded-lg">
                     <div class="flex items-center gap-3">
-                        <Avatar :label="displayedCustomer.name.substring(0, 1)" shape="circle" class="bg-blue-100 text-blue-600"/>
+                        <Avatar :label="displayedCustomer.name.substring(0, 1)" shape="circle"
+                            class="!bg-[#F2E2FF] border border-[#D3A9FF] !text-[#5110A1]" />
                         <div>
-                            <p class="font-semibold text-sm text-gray-800 dark:text-gray-200">{{ displayedCustomer.name }}</p>
-                            <p class="text-xs text-gray-500 dark:text-gray-400">{{ displayedCustomer.phone }}</p>
+                            <p class="font-semibold text-sm text-gray-800 dark:text-gray-200 m-0">{{
+                                displayedCustomer.name }}</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 m-0">{{ displayedCustomer.phone }}</p>
                         </div>
                     </div>
-                    <Button v-if="client" @click="clearCustomer" icon="pi pi-times" rounded text severity="secondary" size="small"/>
+                    <Button v-if="client" @click="clearCustomer" icon="pi pi-times" rounded text severity="secondary"
+                        size="small" />
                 </div>
             </div>
 
@@ -173,56 +193,69 @@ const handlePaymentSubmit = (paymentData) => {
                     <span class="text-gray-600 dark:text-gray-300">Balance:</span>
                     <!-- CORRECCIÓN: Se añade '|| 0' para evitar error si client.balance es undefined -->
                     <span :class="(client.balance || 0) >= 0 ? 'text-green-600' : 'text-red-600'" class="font-bold">
-                        ${{ (client.balance || 0).toFixed(2) }} {{ (client.balance || 0) > 0 ? '(a favor)' : '' }}
+                        {{ new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(client.balance
+                        || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' : '' }}
                     </span>
                 </div>
                 <div class="flex justify-between text-sm">
                     <span class="text-gray-600 dark:text-gray-300">Crédito Disponible:</span>
-                     <!-- CORRECCIÓN: Se añade '|| 0' para evitar error si client.available_credit es undefined -->
-                    <span class="font-bold text-blue-600">${{ (client.available_credit || 0).toFixed(2) }}</span>
+                    <!-- CORRECCIÓN: Se añade '|| 0' para evitar error si client.available_credit es undefined -->
+                    <span class="font-bold text-blue-600">
+                        {{ new Intl.NumberFormat('es-MX', {
+                            style: 'currency', currency: 'MXN'
+                        }).format(client.available_credit || 0) }}
+                    </span>
                 </div>
-                 <div v-if="client.balance > 0" class="flex items-center pt-2">
+                <div v-if="client.balance > 0" class="flex items-center pt-2">
                     <Checkbox v-model="useBalance" inputId="useBalance" :binary="true" />
-                    <label for="useBalance" class="ml-2 text-sm text-gray-800 dark:text-gray-200">Usar saldo a favor en esta compra</label>
+                    <label for="useBalance" class="ml-2 text-sm text-gray-800 dark:text-gray-200">Usar saldo a favor en
+                        esta compra</label>
                 </div>
             </div>
 
             <!-- Lista de Items -->
             <div class="flex-grow py-4 overflow-y-auto space-y-4">
-                <p v-if="items.length === 0" class="text-gray-500 dark:text-gray-400 text-center mt-8">El carrito está vacío</p>
-                <CartItem v-for="item in items" :key="item.cartItemId" :item="item" @update-quantity="$emit('updateQuantity', $event)" @update-price="$emit('updatePrice', $event)" @remove-item="$emit('removeItem', $event)"/>
+                <p v-if="items.length === 0" class="text-gray-500 dark:text-gray-400 text-center mt-8">El carrito está
+                    vacío</p>
+                <!-- MEJORA: Pasa el Set de promociones activas al CartItem -->
+                <CartItem v-for="item in items" :key="item.cartItemId" :item="item"
+                    :applied-cart-promo-names="appliedCartPromoNames" @update-quantity="$emit('updateQuantity', $event)"
+                    @update-price="$emit('updatePrice', $event)" @remove-item="$emit('removeItem', $event)" />
             </div>
 
             <!-- Detalles del Pago -->
             <div class="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
-                <div class="flex justify-between items-center text-gray-600 dark:text-gray-300"><span>Subtotal</span><span class="font-medium">${{ subtotal.toFixed(2) }}</span></div>
-                
+                <div class="flex justify-between items-center text-gray-600 dark:text-gray-300">
+                    <span>Subtotal</span><span class="font-medium">{{ formatCurrency(subtotal) }}</span></div>
+
                 <div v-if="totalDiscount > 0" class="text-red-500">
                     <div class="flex justify-between items-center">
                         <span>Descuentos</span>
-                        <span class="font-medium">-${{ totalDiscount.toFixed(2) }}</span>
+                        <span class="font-medium">-{{ formatCurrency(totalDiscount) }}</span>
                     </div>
                     <!-- Detalle de descuentos de carrito -->
-                    <div v-for="promo in cartLevelDiscounts" :key="promo.name" class="flex justify-between items-center pl-4 text-xs">
+                    <div v-for="promo in cartLevelDiscounts" :key="promo.name"
+                        class="flex justify-between items-center pl-4 text-xs">
                         <span>{{ promo.name }}</span>
-                        <span>-${{ promo.amount.toFixed(2) }}</span>
+                        <span>-{{ formatCurrency(promo.amount) }}</span>
                     </div>
                 </div>
 
-                <div v-if="amountFromBalance > 0" class="flex justify-between items-center text-green-600"><span>Saldo Utilizado</span><span class="font-medium">-${{ amountFromBalance.toFixed(2) }}</span></div>
+                <div v-if="amountFromBalance > 0" class="flex justify-between items-center text-green-600"><span>Saldo
+                        Utilizado</span><span class="font-medium">-{{ formatCurrency(amountFromBalance) }}</span></div>
                 <Divider v-if="amountFromBalance > 0" />
-                <div class="flex justify-between items-center font-bold text-lg text-gray-800 dark:text-gray-100"><span>Total</span><span>${{ finalTotalToPay.toFixed(2) }}</span></div>
-                
-                <Button @click="isPaymentModalVisible = true" :disabled="items.length === 0" :label="client && finalTotalToPay <= 0.01 ? 'Finalizar (a Crédito)' : 'Pagar'" icon="pi pi-arrow-right" iconPos="right" class="w-full mt-2 bg-orange-500 hover:bg-orange-600 border-none"/>
+                <div class="flex justify-between items-center font-bold text-lg text-gray-800 dark:text-gray-100">
+                    <span>Total</span><span>{{ formatCurrency(finalTotalToPay) }}</span></div>
+
+                <Button @click="isPaymentModalVisible = true" :disabled="items.length === 0"
+                    :label="client && finalTotalToPay <= 0.01 ? 'Finalizar (a Crédito)' : 'Pagar'"
+                    icon="pi pi-arrow-right" iconPos="right"
+                    class="w-full mt-2 bg-orange-500 hover:bg-orange-600 border-none" />
             </div>
         </div>
-        
-        <CreateCustomerModal v-model:visible="isCreateCustomerModalVisible" @created="handleCustomerCreated"/>
-        <PaymentModal 
-            v-model:visible="isPaymentModalVisible" 
-            :total-amount="finalTotalToPay"
-            :client="client"
-            @submit="handlePaymentSubmit"
-        />
+
+        <CreateCustomerModal v-model:visible="isCreateCustomerModalVisible" @created="handleCustomerCreated" />
+        <PaymentModal v-model:visible="isPaymentModalVisible" :total-amount="finalTotalToPay" :client="client"
+            @submit="handlePaymentSubmit" />
     </div>
 </template>
