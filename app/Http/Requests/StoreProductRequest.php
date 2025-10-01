@@ -46,9 +46,9 @@ class StoreProductRequest extends FormRequest
 
             // Imágenes
             'general_images' => 'nullable|array|max:5',
-            'general_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp',
+            'general_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp,avif',
             'variant_images' => 'nullable|array',
-            'variant_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp',
+            'variant_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp,avif',
 
             // Tienda en Línea
             'show_online' => 'boolean',

@@ -83,7 +83,7 @@ watch(() => props.item.price, (newVal) => {
             </p>
 
             <div class="flex justify-between items-center mt-1">
-                <InputNumber v-model="quantity" showButtons buttonLayout="horizontal" :min="1" :max="item.stock"
+                <InputNumber v-model="quantity" showButtons buttonLayout="horizontal" :min="1"
                     decrementButtonClass="p-button-secondary" incrementButtonClass="p-button-secondary"
                     incrementButtonIcon="pi pi-plus" decrementButtonIcon="pi pi-minus"
                     :inputStyle="{ width: '3rem', textAlign: 'center' }" />

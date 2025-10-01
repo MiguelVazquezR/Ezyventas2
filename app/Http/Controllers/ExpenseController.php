@@ -5,12 +5,14 @@ namespace App\Http\Controllers;
 use App\Enums\ExpenseStatus;
 use App\Http\Requests\StoreExpenseRequest;
 use App\Http\Requests\UpdateExpenseRequest;
+use App\Models\BankAccount;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -38,8 +40,7 @@ class ExpenseController extends Controller implements HasMiddleware
             ->whereHas('branch.subscription', function ($q) use ($subscriptionId) {
                 $q->where('id', $subscriptionId);
             })
-            ->with(['user:id,name', 'category:id,name', 'branch:id,name'])
-            // Seleccionar explícitamente las columnas de la tabla principal para evitar conflictos de 'id'
+            ->with(['user:id,name', 'category:id,name', 'branch:id,name', 'bankAccount:id,account_name'])
             ->select('expenses.*');
 
         if ($request->has('search')) {
@@ -52,8 +53,8 @@ class ExpenseController extends Controller implements HasMiddleware
 
         $sortField = $request->input('sortField', 'expense_date');
         $sortOrder = $request->input('sortOrder', 'desc');
-        // Usar los nombres completos de las columnas para el ordenamiento
-        $query->orderBy($sortField === 'user.name' ? 'users.name' : ($sortField === 'category.name' ? 'expense_categories.name' : $sortField), $sortOrder);
+        $query->orderBy($sortField === 'user.name' ? 'users.name' : ($sortField === 'category.name' ? 'expense_categories.name' : 'expenses.' . $sortField), $sortOrder);
+
 
         $expenses = $query->paginate($request->input('rows', 20))->withQueryString();
 
@@ -63,9 +64,10 @@ class ExpenseController extends Controller implements HasMiddleware
         ]);
     }
 
-    public function show(Expense $expense): Response
+     public function show(Expense $expense): Response
     {
-        $expense->load(['user', 'category', 'branch', 'activities.causer']);
+        // Cargar la relación con la cuenta bancaria
+        $expense->load(['user', 'category', 'branch', 'activities.causer', 'bankAccount']);
         $translations = config('log_translations.Expense', []);
 
         $formattedActivities = $expense->activities->map(function ($activity) use ($translations) {
@@ -99,17 +101,33 @@ class ExpenseController extends Controller implements HasMiddleware
     public function create(): Response
     {
         $subscriptionId = Auth::user()->branch->subscription_id;
+        
+        $bankAccounts = BankAccount::where('subscription_id', $subscriptionId)
+            ->get(['id', 'account_name', 'bank_name', 'account_number']);
+
         return Inertia::render('Expense/Create', [
             'categories' => ExpenseCategory::where('subscription_id', $subscriptionId)->get(['id', 'name']),
+            'bankAccounts' => $bankAccounts,
         ]);
     }
 
     public function store(StoreExpenseRequest $request)
     {
-        $expense = Expense::create(array_merge($request->validated(), [
-            'user_id' => Auth::id(),
-            'branch_id' => Auth::user()->branch_id,
-        ]));
+        DB::transaction(function () use ($request) {
+            $validated = $request->validated();
+
+            $expense = Expense::create(array_merge($validated, [
+                'user_id' => Auth::id(),
+                'branch_id' => Auth::user()->branch_id,
+            ]));
+
+            if ($expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
+                $bankAccount = BankAccount::find($expense->bank_account_id);
+                if ($bankAccount) {
+                    $bankAccount->decrement('balance', $expense->amount);
+                }
+            }
+        });
 
         return redirect()->route('expenses.index')->with('success', 'Gasto creado con éxito.');
     }
@@ -117,22 +135,71 @@ class ExpenseController extends Controller implements HasMiddleware
     public function edit(Expense $expense): Response
     {
         $subscriptionId = Auth::user()->branch->subscription_id;
+        
+        $bankAccounts = BankAccount::where('subscription_id', $subscriptionId)
+            ->get(['id', 'account_name', 'bank_name', 'account_number']);
+
         return Inertia::render('Expense/Edit', [
             'expense' => $expense,
             'categories' => ExpenseCategory::where('subscription_id', $subscriptionId)->get(['id', 'name']),
+            'bankAccounts' => $bankAccounts,
         ]);
     }
 
     public function update(UpdateExpenseRequest $request, Expense $expense)
     {
-        $expense->update($request->validated());
+        DB::transaction(function () use ($request, $expense) {
+            $validated = $request->validated();
+            
+            // Guardar estado anterior para la lógica de saldo
+            $oldAmount = $expense->amount;
+            $oldStatus = $expense->status;
+            $oldBankAccountId = $expense->bank_account_id;
+
+            // Revertir el monto del gasto anterior si estaba pagado desde una cuenta
+            if ($oldStatus === ExpenseStatus::PAID && $oldBankAccountId) {
+                $oldBankAccount = BankAccount::find($oldBankAccountId);
+                if ($oldBankAccount) {
+                    $oldBankAccount->increment('balance', $oldAmount);
+                }
+            }
+
+            // Actualizar el gasto con los nuevos datos
+            $expense->update($validated);
+            
+            // Aplicar el nuevo monto del gasto si está pagado desde una cuenta
+            if ($expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
+                $newBankAccount = BankAccount::find($expense->bank_account_id);
+                if ($newBankAccount) {
+                    $newBankAccount->decrement('balance', $expense->amount);
+                }
+            }
+        });
+        
         return redirect()->route('expenses.index')->with('success', 'Gasto actualizado con éxito.');
     }
 
-    public function updateStatus(Expense $expense)
+    public function updateStatus(Request $request, Expense $expense)
     {
         $newStatus = $expense->status === ExpenseStatus::PAID ? ExpenseStatus::PENDING : ExpenseStatus::PAID;
-        $expense->update(['status' => $newStatus]);
+
+        DB::transaction(function () use ($expense, $newStatus) {
+            $expense->update(['status' => $newStatus]);
+
+            if ($expense->bank_account_id) {
+                $bankAccount = BankAccount::find($expense->bank_account_id);
+                if ($bankAccount) {
+                    // Si el nuevo estado es PAGADO, se resta del saldo.
+                    if ($newStatus === ExpenseStatus::PAID) {
+                        $bankAccount->decrement('balance', $expense->amount);
+                    } 
+                    // Si el nuevo estado es PENDIENTE (antes era pagado), se devuelve el dinero.
+                    else {
+                        $bankAccount->increment('balance', $expense->amount);
+                    }
+                }
+            }
+        });
 
         $statusText = $newStatus === ExpenseStatus::PAID ? 'Pagado' : 'Pendiente';
         return redirect()->back()->with('success', "Estatus del gasto actualizado a '{$statusText}'.");
@@ -140,7 +207,17 @@ class ExpenseController extends Controller implements HasMiddleware
 
     public function destroy(Expense $expense)
     {
-        $expense->delete();
+        DB::transaction(function () use ($expense) {
+            // Si el gasto estaba pagado desde una cuenta, restaurar el saldo.
+            if ($expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
+                $bankAccount = BankAccount::find($expense->bank_account_id);
+                if ($bankAccount) {
+                    $bankAccount->increment('balance', $expense->amount);
+                }
+            }
+            $expense->delete();
+        });
+
         return redirect()->route('expenses.index')->with('success', 'Gasto eliminado con éxito.');
     }
 
@@ -151,7 +228,19 @@ class ExpenseController extends Controller implements HasMiddleware
             'ids.*' => 'exists:expenses,id',
         ]);
 
-        Expense::whereIn('id', $validated['ids'])->delete();
+        DB::transaction(function () use ($validated) {
+            $expenses = Expense::whereIn('id', $validated['ids'])->get();
+            foreach ($expenses as $expense) {
+                if ($expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
+                    $bankAccount = BankAccount::find($expense->bank_account_id);
+                    if ($bankAccount) {
+                        $bankAccount->increment('balance', $expense->amount);
+                    }
+                }
+                $expense->delete();
+            }
+        });
+
         return redirect()->route('expenses.index')->with('success', 'Gastos seleccionados eliminados con éxito.');
     }
 }

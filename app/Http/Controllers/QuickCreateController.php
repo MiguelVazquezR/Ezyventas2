@@ -65,18 +65,28 @@ class QuickCreateController extends Controller
         return response()->json($expenseCategory);
     }
 
-    public function storeCustomer(Request $request)
+     public function storeCustomer(Request $request)
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'phone' => 'nullable|string|max:255',
+            'credit_limit' => 'nullable|numeric|min:0',
         ]);
 
         $customer = Customer::create(array_merge($validated, [
             'branch_id' => Auth::user()->branch_id,
         ]));
 
-        return response()->json($customer);
+        // CORRECCIÓN: Asegurarse de que los valores numéricos se devuelvan como números, no como cadenas.
+        // El modelo Customer tiene un 'accessor' para available_credit, por lo que podemos acceder a él.
+        // Lo convertimos a un array para modificar los tipos antes de enviarlo como JSON.
+        $customerData = $customer->toArray();
+        $customerData['balance'] = (float) $customer->balance;
+        $customerData['credit_limit'] = (float) $customer->credit_limit;
+        $customerData['available_credit'] = (float) $customer->available_credit;
+
+
+        return response()->json($customerData);
     }
 
     public function storeProduct(Request $request)

@@ -194,7 +194,7 @@ watch(() => props.visible, (newVal) => { if (newVal) fetchPrinters(); });
                 <div>
                     <h3 class="font-semibold mb-2 text-base">Trabajos de Impresión</h3>
                     <div v-if="printJobs.length === 0" class="text-center text-gray-500 border rounded-lg p-8">
-                        <icon class="pi pi-arrow-left text-4xl mb-4"></icon>
+                        <i class="pi pi-arrow-left text-4xl mb-4"></i>
                         <p>Añade plantillas para imprimir.</p>
                     </div>
                     <div v-else class="space-y-2">

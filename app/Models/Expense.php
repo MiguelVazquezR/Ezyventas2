@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ExpenseStatus;
+use App\Enums\PaymentMethod;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -23,7 +24,9 @@ class Expense extends Model
         'expense_date',
         'status',
         'description',
-    ];
+        'payment_method',
+        'bank_account_id',
+        ];
 
     protected function casts(): array
     {
@@ -31,6 +34,7 @@ class Expense extends Model
             'status' => ExpenseStatus::class,
             'amount' => 'decimal:2',
             'expense_date' => 'date',
+            'payment_method' => PaymentMethod::class,
         ];
     }
     
@@ -67,5 +71,10 @@ class Expense extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(ExpenseCategory::class, 'expense_category_id');
+    }
+
+    public function bankAccount(): BelongsTo
+    {
+        return $this->belongsTo(BankAccount::class);
     }
 }

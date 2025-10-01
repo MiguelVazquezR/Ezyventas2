@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { Head, useForm, Link } from '@inertiajs/vue3';
+import { Head, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
@@ -28,6 +28,7 @@ const discountTypes = ref([
     { label: 'Monto Fijo ($)', value: 'FIXED_DISCOUNT' }
 ]);
 
+// --- Formulario principal con la nueva estructura para BUNDLE_PRICE ---
 const form = useForm({
     name: '',
     description: '',
@@ -35,27 +36,53 @@ const form = useForm({
     end_date: null,
     is_active: true,
     type: 'ITEM_DISCOUNT',
+    // Campos para Descuento
     effect_type: 'PERCENTAGE_DISCOUNT',
     effect_value: null,
+    // Campos para BOGO
     required_product_id: props.product.id,
     required_quantity: 1,
     free_product_id: props.product.id,
     free_quantity: 1,
-    bundle_products: [props.product.id],
+    // MODIFICADO: Ahora es un array de objetos para soportar cantidades
+    bundle_products: [{
+        id: props.product.id,
+        name: props.product.name,
+        quantity: 1,
+    }],
     bundle_price: null,
 });
 
-// --- MEJORA: Limpiar campos del formulario al cambiar de tipo de promoción ---
+// --- Lógica para la sección de Paquetes ---
+const allAvailableProducts = ref([props.product, ...props.otherProducts]);
+const productToAdd = ref(null); // Producto seleccionado para añadir al paquete
+
+const addProductToBundle = () => {
+    if (productToAdd.value && !form.bundle_products.some(p => p.id === productToAdd.value.id)) {
+        form.bundle_products.push({
+            id: productToAdd.value.id,
+            name: productToAdd.value.name,
+            quantity: 1,
+        });
+    }
+    productToAdd.value = null; // Resetear el selector
+};
+
+const removeProductFromBundle = (index) => {
+    form.bundle_products.splice(index, 1);
+};
+
+// --- Limpiar campos al cambiar de tipo de promoción ---
 watch(promotionType, (newType) => {
     form.clearErrors();
-    // Resetear los campos a sus valores por defecto o nulos
+    // Resetear campos
     form.effect_type = 'PERCENTAGE_DISCOUNT';
     form.effect_value = null;
     form.required_product_id = props.product.id;
     form.required_quantity = 1;
     form.free_product_id = props.product.id;
     form.free_quantity = 1;
-    form.bundle_products = [props.product.id];
+    form.bundle_products = [{ id: props.product.id, name: props.product.name, quantity: 1 }];
     form.bundle_price = null;
 });
 
@@ -113,7 +140,7 @@ const submit = () => {
                 <div v-if="promotionType === 'ITEM_DISCOUNT'" class="mt-6 space-y-4">
                     <div class="grid grid-cols-2 gap-4">
                         <Select v-model="form.effect_type" :options="discountTypes" optionLabel="label" optionValue="value" class="w-full" size="large" />
-                        <InputNumber v-model="form.effect_value"
+                        <InputNumber fluid v-model="form.effect_value"
                             :placeholder="form.effect_type === 'PERCENTAGE_DISCOUNT' ? '% Descuento' : '$ Descuento'"
                             class="w-full" />
                     </div>
@@ -126,34 +153,52 @@ const submit = () => {
                     <h3 class="font-semibold">Regla: "Compra..."</h3>
                     <div class="flex items-center gap-4">
                         <span>Compra</span>
-                        <InputNumber v-model="form.required_quantity" :min="1" class="w-24" />
+                        <InputNumber v-model="form.required_quantity" :min="1" fluid class="!w-20" />
                         <span>de</span>
-                        <Select v-model="form.required_product_id" :options="[product, ...otherProducts]"
+                        <Select v-model="form.required_product_id" :options="allAvailableProducts"
                             optionLabel="name" optionValue="id" class="flex-grow" filter />
                     </div>
                     <h3 class="font-semibold">Efecto: "... y llévate"</h3>
                     <div class="flex items-center gap-4">
                         <span>Llévate</span>
-                        <InputNumber v-model="form.free_quantity" :min="1" class="w-24" />
+                        <InputNumber v-model="form.free_quantity" :min="1" fluid class="!w-20" />
                         <span>de</span>
-                        <Select v-model="form.free_product_id" :options="[product, ...otherProducts]" optionLabel="name"
+                        <Select v-model="form.free_product_id" :options="allAvailableProducts" optionLabel="name"
                             optionValue="id" class="flex-grow" filter />
                         <span>gratis.</span>
                     </div>
                 </div>
 
-                <!-- Configuración para Paquete -->
-                <div v-if="promotionType === 'BUNDLE_PRICE'" class="mt-6 space-y-4">
-                    <h3 class="font-semibold">Regla: "Productos en el paquete"</h3>
-                    <MultiSelect v-model="form.bundle_products" :options="[product, ...otherProducts]"
-                        optionLabel="name" optionValue="id" placeholder="Selecciona los productos del combo"
-                        class="w-full" filter />
-                    <h3 class="font-semibold">Efecto: "Precio final del paquete"</h3>
-                    <InputNumber v-model="form.bundle_price" mode="currency" currency="MXN" locale="es-MX"
-                        placeholder="Precio del paquete" />
-                    <InputError :message="form.errors.bundle_products" />
-                    <InputError :message="form.errors.bundle_price" />
+                <!-- INICIA SECCIÓN MODIFICADA PARA PAQUETE -->
+                <div v-if="promotionType === 'BUNDLE_PRICE'" class="mt-6 space-y-6">
+                    <div>
+                        <h3 class="font-semibold mb-2">Regla: "Productos en el paquete"</h3>
+                        <div class="flex gap-2">
+                             <Select v-model="productToAdd" :options="allAvailableProducts" optionLabel="name" placeholder="Selecciona un producto para agregar" filter class="w-full" />
+                             <Button @click="addProductToBundle" icon="pi pi-plus" label="Agregar" :disabled="!productToAdd" />
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-3" v-if="form.bundle_products.length > 0">
+                        <p class="text-sm text-gray-500">Ajusta la cantidad de cada producto en el paquete:</p>
+                        <div v-for="(item, index) in form.bundle_products" :key="item.id" class="flex items-center gap-4 p-2 bg-gray-50 dark:bg-gray-700 rounded-md">
+                            <span class="font-medium flex-grow">{{ item.name }}</span>
+                            <InputNumber fluid v-model="item.quantity" :min="1" showButtons buttonLayout="horizontal" class="!w-32" />
+                            <Button @click="removeProductFromBundle(index)" icon="pi pi-trash" text rounded severity="danger" />
+                        </div>
+                    </div>
+                     <InputError :message="form.errors.bundle_products" />
+
+                    <Divider />
+                    
+                    <div>
+                        <h3 class="font-semibold">Efecto: "Precio final del paquete"</h3>
+                        <InputNumber fluid v-model="form.bundle_price" mode="currency" currency="MXN" locale="es-MX"
+                            placeholder="Precio del paquete" class="mt-2" />
+                        <InputError :message="form.errors.bundle_price" />
+                    </div>
                 </div>
+                <!-- TERMINA SECCIÓN MODIFICADA -->
             </div>
 
             <div class="flex justify-end">

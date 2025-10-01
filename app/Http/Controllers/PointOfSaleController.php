@@ -124,7 +124,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
         try {
             $transaction = DB::transaction(function () use ($validated, $user, $customer, $totalSale, $paymentsFromRequest) {
-                
+
                 // Se calcula si se usará saldo a favor del cliente.
                 $amountFromBalance = 0;
                 if ($customer && $validated['use_balance'] && $customer->balance > 0) {
@@ -187,7 +187,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 }
 
                 // --- LÓGICA DE PAGOS CORREGIDA ---
-                
+
                 // Se calcula la deuda real a cubrir con los métodos de pago (después de usar el saldo a favor).
                 $dueAfterBalance = $totalSale - $amountFromBalance;
                 $amountRecordedFromMethods = 0;
@@ -214,7 +214,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
                     $amountRecordedFromMethods += $amountToRecord;
                 }
-                
+
                 // Se ajusta el balance del cliente.
                 if ($customer) {
                     $totalAmountPaid = $amountRecordedFromMethods + $amountFromBalance;
@@ -223,7 +223,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     if (abs($balanceChange) > 0.01) {
                         $balanceBefore = (float) $customer->balance;
                         $customer->update(['balance' => $balanceBefore + $balanceChange]);
-                        
+
                         // Movimiento de cargo por la venta total
                         $customer->balanceMovements()->create([
                            'transaction_id' => $newTransaction->id,
@@ -236,11 +236,11 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         // Movimiento de abono por el pago total recibido (métodos + saldo)
                         if ($totalAmountPaid > 0) {
                             $customer->balanceMovements()->create([
-                               'transaction_id' => $newTransaction->id,
-                               'type' => CustomerBalanceMovementType::PAYMENT,
-                               'amount' => $totalAmountPaid,
-                               'balance_after' => $customer->fresh()->balance,
-                               'notes' => "Abono por venta POS. Folio: {$newTransaction->folio}",
+                                'transaction_id' => $newTransaction->id,
+                                'type' => CustomerBalanceMovementType::PAYMENT,
+                                'amount' => $totalAmountPaid,
+                                'balance_after' => $customer->fresh()->balance,
+                                'notes' => "Abono por venta POS. Folio: {$newTransaction->folio}",
                             ]);
                         }
                     }
@@ -250,7 +250,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 $finalAmountDue = $totalSale - $newTransaction->payments()->sum('amount') - $amountFromBalance;
                 $newStatus = ($finalAmountDue <= 0.01) ? TransactionStatus::COMPLETED : TransactionStatus::PENDING;
                 $newTransaction->update(['status' => $newStatus]);
-                
+
                 return $newTransaction;
             });
 
@@ -276,27 +276,34 @@ class PointOfSaleController extends Controller implements HasMiddleware
         if ($categoryId) {
             $query->where('category_id', $categoryId);
         }
+        
+        // --- MEJORA: Se usa paginate() en lugar de get() ---
+        $paginatedProducts = $query->with(['media', 'category:id,name', 'productAttributes'])->paginate(20)->withQueryString();
 
-        return $query->with(['media', 'category:id,name', 'productAttributes'])->get()
-            ->map(function ($product) {
-                $promotionData = $this->getPromotionData($product);
-                $variantImages = $product->getMedia('product-variant-images');
+        // Se usa through() para transformar la colección dentro del paginador
+        $paginatedProducts->through(function ($product) {
+            $promotionData = $this->getPromotionData($product);
+            $variantImages = $product->getMedia('product-variant-images');
+            $generalImages = $product->getMedia('product-general-images')->map->getUrl();
 
-                return [
-                    'id' => $product->id,
-                    'name' => $product->name,
-                    'price' => $promotionData['price'],
-                    'original_price' => $promotionData['original_price'],
-                    'stock' => $product->current_stock,
-                    'category' => $product->category->name ?? 'Sin categoría',
-                    'image' => $product->getFirstMediaUrl('product-general-images') ?: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' . urlencode($product->name),
-                    'description' => $product->description,
-                    'sku' => $product->sku,
-                    'variants' => $this->mapVariants($product->productAttributes),
-                    'variant_combinations' => $this->mapVariantCombinations($product, $variantImages),
-                    'promotions' => $promotionData['promotions'],
-                ];
-            });
+            return [
+                'id' => $product->id,
+                'name' => $product->name,
+                'price' => $promotionData['price'],
+                'original_price' => $promotionData['original_price'],
+                'stock' => $product->current_stock,
+                'category' => $product->category->name ?? 'Sin categoría',
+                'image' => $generalImages->first() ?: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' . urlencode($product->name),
+                'general_images' => $generalImages,
+                'description' => $product->description,
+                'sku' => $product->sku,
+                'variants' => $this->mapVariants($product->productAttributes),
+                'variant_combinations' => $this->mapVariantCombinations($product, $variantImages),
+                'promotions' => $promotionData['promotions'],
+            ];
+        });
+
+        return $paginatedProducts;
     }
 
     private function getPromotionData(Product $product): array

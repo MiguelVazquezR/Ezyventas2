@@ -72,19 +72,29 @@ const cartLevelDiscounts = computed(() => {
 
         // Lógica para BUNDLE_PRICE (Paquete por precio fijo)
         if (promo.type === 'BUNDLE_PRICE') {
-            const rules = promo.rules.filter(r => r.type === 'REQUIRES_PRODUCT');
+            const rules = promo.rules.filter(r => r.type === 'REQUIRES_PRODUCT_QUANTITY');
             const effect = promo.effects.find(e => e.type === 'SET_PRICE');
             if (rules.length === 0 || !effect) return;
 
-            const requiredItemIds = rules.map(r => r.itemable_id);
-            if (requiredItemIds.every(id => props.items.some(cartItem => cartItem.id === id))) {
-                const originalBundlePrice = requiredItemIds.reduce((sum, id) => {
-                    const item = props.items.find(cartItem => cartItem.id === id);
-                    return sum + (item.original_price || item.price);
+            const canApplyBundleTimes = rules.reduce((minTimes, rule) => {
+                const itemInCart = props.items.find(cartItem => cartItem.id === rule.itemable_id);
+                const requiredQty = parseInt(rule.value, 10);
+                if (!itemInCart || itemInCart.quantity < requiredQty) {
+                    return 0;
+                }
+                const possibleApplications = Math.floor(itemInCart.quantity / requiredQty);
+                return Math.min(minTimes, possibleApplications);
+            }, Infinity);
+
+            if (canApplyBundleTimes > 0 && canApplyBundleTimes !== Infinity) {
+                const originalBundlePrice = rules.reduce((sum, rule) => {
+                    const item = props.items.find(cartItem => cartItem.id === rule.itemable_id);
+                    return sum + (item.original_price || item.price) * parseInt(rule.value, 10);
                 }, 0);
+
                 const discountAmount = originalBundlePrice - parseFloat(effect.value);
                 if (discountAmount > 0) {
-                    applied.push({ name: promo.name, amount: discountAmount });
+                    applied.push({ name: promo.name, amount: discountAmount * canApplyBundleTimes });
                 }
             }
         }
@@ -94,7 +104,7 @@ const cartLevelDiscounts = computed(() => {
 
 const cartDiscountAmount = computed(() => cartLevelDiscounts.value.reduce((sum, promo) => sum + promo.amount, 0));
 const subtotal = computed(() => props.items.reduce((total, item) => total + ((item.original_price || item.price) * item.quantity), 0));
-const manualDiscount = ref(0); // Mantenemos descuento manual por si se necesita
+const manualDiscount = ref(0);
 const totalDiscount = computed(() => itemsDiscount.value + cartDiscountAmount.value + manualDiscount.value);
 const total = computed(() => subtotal.value - totalDiscount.value);
 
@@ -142,7 +152,7 @@ const handlePaymentSubmit = (paymentData) => {
             <!-- Selector de Cliente -->
             <div class="py-4">
                 <div class="flex items-center gap-2 mb-3">
-                    <Dropdown :modelValue="client" @change="handleCustomerSelect" :options="customers" optionLabel="name" placeholder="Seleccionar cliente" filter class="w-full"/>
+                    <Select :modelValue="client" @change="handleCustomerSelect" :options="customers" optionLabel="name" placeholder="Seleccionar cliente" filter class="w-full"/>
                     <Button @click="isCreateCustomerModalVisible = true" icon="pi pi-plus" severity="secondary"/>
                 </div>
                 <div v-if="displayedCustomer" class="flex items-center justify-between bg-gray-50 dark:bg-gray-700 p-2 rounded-lg">
@@ -161,13 +171,15 @@ const handlePaymentSubmit = (paymentData) => {
             <div v-if="client" class="py-4 border-t border-b border-gray-200 dark:border-gray-700 space-y-2">
                 <div class="flex justify-between text-sm">
                     <span class="text-gray-600 dark:text-gray-300">Balance:</span>
-                    <span :class="client.balance >= 0 ? 'text-green-600' : 'text-red-600'" class="font-bold">
-                        ${{ client.balance.toFixed(2) }} {{ client.balance > 0 ? '(a favor)' : '' }}
+                    <!-- CORRECCIÓN: Se añade '|| 0' para evitar error si client.balance es undefined -->
+                    <span :class="(client.balance || 0) >= 0 ? 'text-green-600' : 'text-red-600'" class="font-bold">
+                        ${{ (client.balance || 0).toFixed(2) }} {{ (client.balance || 0) > 0 ? '(a favor)' : '' }}
                     </span>
                 </div>
                 <div class="flex justify-between text-sm">
                     <span class="text-gray-600 dark:text-gray-300">Crédito Disponible:</span>
-                    <span class="font-bold text-blue-600">${{ client.available_credit.toFixed(2) }}</span>
+                     <!-- CORRECCIÓN: Se añade '|| 0' para evitar error si client.available_credit es undefined -->
+                    <span class="font-bold text-blue-600">${{ (client.available_credit || 0).toFixed(2) }}</span>
                 </div>
                  <div v-if="client.balance > 0" class="flex items-center pt-2">
                     <Checkbox v-model="useBalance" inputId="useBalance" :binary="true" />
