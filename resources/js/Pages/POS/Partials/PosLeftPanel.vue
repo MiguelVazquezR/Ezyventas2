@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
+import axios from 'axios';
 import debounce from 'lodash/debounce';
 import ProductCard from './ProductCard.vue';
 import CategoryFilters from './CategoryFilters.vue';
@@ -10,7 +11,7 @@ import CreateProductModal from '@/Components/CreateProductModal.vue';
 import CashMovementModal from '@/Components/CashMovementModal.vue';
 
 const props = defineProps({
-    products: Array,
+    products: Object,
     categories: Array,
     pendingCarts: Array,
     filters: Object,
@@ -19,7 +20,119 @@ const props = defineProps({
 
 const emit = defineEmits(['addToCart', 'resumeCart', 'deleteCart', 'productCreatedAndAddToCart', 'refreshSessionData', 'openCloseSessionModal', 'openHistoryModal']);
 
-// --- Lógica del Menú de Sesión ---
+// --- Lógica para Infinite Scroll y Carga Inicial ---
+const loadedProducts = ref([]);
+const nextCursor = ref(props.products.next_page_url);
+const isLoadingMore = ref(false);
+const isInitialising = ref(false);
+const productsContainer = ref(null);
+
+const initialiseProductList = async () => {
+    const currentPage = props.products.current_page;
+    if (currentPage <= 1) {
+        loadedProducts.value = props.products.data;
+        return;
+    }
+
+    isInitialising.value = true;
+    try {
+        const fetchPromises = [];
+        const searchParams = new URLSearchParams(window.location.search);
+
+        for (let page = 1; page < currentPage; page++) {
+            searchParams.set('page', page);
+            const url = `${window.location.pathname}?${searchParams.toString()}`;
+            fetchPromises.push(
+                axios.get(url, {
+                    headers: {
+                        'X-Inertia': 'true',
+                        'X-Inertia-Version': usePage().version,
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                })
+            );
+        }
+
+        const responses = await Promise.all(fetchPromises);
+        const previousProducts = responses.flatMap(response => response.data.props.products.data);
+        
+        loadedProducts.value = [...previousProducts, ...props.products.data];
+
+    } catch (error) {
+        console.error("Failed to load previous product pages:", error);
+        loadedProducts.value = props.products.data; // Fallback en caso de error
+    } finally {
+        isInitialising.value = false;
+    }
+};
+
+const loadMoreProducts = () => {
+    if (!nextCursor.value || isLoadingMore.value) return;
+    isLoadingMore.value = true;
+    
+    router.get(nextCursor.value, {}, {
+        preserveState: true,
+        preserveScroll: true,
+        only: ['products'],
+        onSuccess: (page) => {
+            loadedProducts.value.push(...page.props.products.data);
+            nextCursor.value = page.props.products.next_page_url;
+            isLoadingMore.value = false;
+        },
+        onError: () => {
+            isLoadingMore.value = false;
+        },
+    });
+};
+
+const handleScroll = (event) => {
+    const el = event.target;
+    if (el.scrollHeight - el.scrollTop <= el.clientHeight + 200) {
+        loadMoreProducts();
+    }
+};
+
+onMounted(() => {
+    initialiseProductList();
+    productsContainer.value?.addEventListener('scroll', handleScroll);
+});
+
+onUnmounted(() => {
+    productsContainer.value?.removeEventListener('scroll', handleScroll);
+});
+
+// --- Lógica de Filtros ---
+const searchTerm = ref(props.filters.search || '');
+const selectedCategoryId = ref(props.filters.category || null);
+
+const applyFilters = () => {
+    router.get(route('pos.index'), {
+        search: searchTerm.value,
+        category: selectedCategoryId.value,
+    }, {
+        preserveState: true,
+        preserveScroll: false,
+        replace: true,
+        only: ['products'],
+        onSuccess: (page) => {
+            loadedProducts.value = page.props.products.data;
+            nextCursor.value = page.props.products.next_page_url;
+            if (productsContainer.value) productsContainer.value.scrollTop = 0;
+        },
+    });
+};
+
+watch(searchTerm, debounce(applyFilters, 300));
+
+const handleCategoryFilter = (categoryId) => {
+    if (selectedCategoryId.value === categoryId) return;
+    selectedCategoryId.value = categoryId;
+    applyFilters();
+};
+
+
+// --- Lógica del Menú de Sesión y Modales (sin cambios) ---
 const menu = ref();
 const toggleMenu = (event) => {
     menu.value.toggle(event);
@@ -73,23 +186,6 @@ const isCreateProductModalVisible = ref(false);
 const handleProductCreated = (newProduct) => {
     emit('productCreatedAndAddToCart', newProduct);
 };
-const searchTerm = ref(props.filters.search || '');
-const selectedCategoryId = ref(props.filters.category || null);
-const applyFilters = () => {
-    router.get(route('pos.index'), {
-        search: searchTerm.value,
-        category: selectedCategoryId.value,
-    }, {
-        preserveState: true,
-        preserveScroll: true,
-        replace: true,
-    });
-};
-watch(searchTerm, debounce(applyFilters, 300));
-const handleCategoryFilter = (categoryId) => {
-    selectedCategoryId.value = categoryId;
-    applyFilters();
-};
 
 // --- Lógica para Lector de Código de Barras Global ---
 let barcodeBuffer = '';
@@ -137,7 +233,7 @@ onUnmounted(() => {
 
 <template>
     <div class="bg-white dark:bg-gray-900 rounded-lg shadow-md flex flex-col h-full">
-        <div v-if="activeSession" class="p-2 text-center text-sm bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 font-semibold rounded-t-lg">
+        <div v-if="activeSession" class="p-1 text-center text-sm bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 font-semibold rounded-t-lg">
             Caja Activa: <span class="font-bold">{{ activeSession.cash_register.name }}</span>
         </div>
         <div class="p-6 pb-4 flex-shrink-0">
@@ -172,7 +268,7 @@ onUnmounted(() => {
                     <Button @click="$emit('openHistoryModal')" icon="pi pi-clock" rounded text severity="secondary" v-tooltip.bottom="'Ver historial de ventas'" />
                     <button @click="toggleOverlay" class="relative">
                         <Button icon="pi pi-shopping-cart" rounded text severity="secondary" aria-label="Carritos en espera" />
-                        <Badge :value="pendingCarts.length" severity="danger" class="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2"></Badge>
+                        <Badge v-if="pendingCarts.length" :value="pendingCarts.length" severity="danger" class="absolute top-0 right-0 transform translate-x-1/2 -translate-y-1/2"></Badge>
                     </button>
                     <Button @click="$emit('openCloseSessionModal')" icon="pi pi-sign-out" rounded text severity="danger" v-tooltip.bottom="'Cerrar Caja'" />
                     <Popover ref="op">
@@ -188,12 +284,22 @@ onUnmounted(() => {
             </div>
             <CategoryFilters :categories="categories" :active-category-id="selectedCategoryId" @filter="handleCategoryFilter" />
         </div>
-        <div class="flex-grow px-6 pb-6 overflow-y-auto">
-            <p v-if="products.length === 0" class="text-center text-gray-500 mt-8">No se encontraron productos.</p>
-            <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <ProductCard v-for="product in products" :key="product.id" :product="product" @showDetails="showProductDetails" @addToCart="$emit('addToCart', $event)" />
+        
+        <div class="flex-grow px-6 pb-6 overflow-y-auto" ref="productsContainer">
+            <div v-if="isInitialising" class="flex justify-center items-center h-full">
+                <i class="pi pi-spin pi-spinner text-4xl text-gray-400"></i>
             </div>
+            <template v-else>
+                <p v-if="loadedProducts.length === 0 && !isLoadingMore" class="text-center text-gray-500 mt-8">No se encontraron productos.</p>
+                <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2">
+                    <ProductCard v-for="product in loadedProducts" :key="`${product.id}-${product.sku}`" :product="product" @showDetails="showProductDetails" @addToCart="$emit('addToCart', $event)" />
+                </div>
+                <div v-if="isLoadingMore" class="flex justify-center items-center h-24">
+                    <i class="pi pi-spin pi-spinner text-3xl text-gray-400"></i>
+                </div>
+            </template>
         </div>
+        
         <ProductDetailModal v-model:visible="isDetailModalVisible" :product="selectedProductForModal" @addToCart="$emit('addToCart', $event)" />
         <CreateProductModal v-model:visible="isCreateProductModalVisible" @created="handleProductCreated" />
         <CashMovementModal v-if="activeSession" v-model:visible="isCashMovementModalVisible" :type="movementType" :session-id="activeSession.id" @submitted="handleMovementSubmitted" />

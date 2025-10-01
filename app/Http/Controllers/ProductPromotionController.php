@@ -31,7 +31,7 @@ class ProductPromotionController extends Controller
 
     public function store(Request $request, Product $product)
     {
-        // Validación corregida para ser condicional y permitir nulos
+        // MODIFICADO: Actualización de reglas de validación para el paquete
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -50,10 +50,12 @@ class ProductPromotionController extends Controller
             'free_product_id' => 'required_if:type,BOGO|nullable|exists:products,id',
             'free_quantity' => 'required_if:type,BOGO|nullable|integer|min:1',
 
-            // Campos para Paquete (BUNDLE_PRICE)
-            'bundle_products' => 'required_if:type,BUNDLE_PRICE|nullable|array',
-            'bundle_products.*' => 'exists:products,id',
+            // INICIA MODIFICACIÓN PARA PAQUETE
+            'bundle_products' => 'required_if:type,BUNDLE_PRICE|nullable|array|min:1',
+            'bundle_products.*.id' => 'required|exists:products,id',
+            'bundle_products.*.quantity' => 'required|integer|min:1',
             'bundle_price' => 'required_if:type,BUNDLE_PRICE|nullable|numeric|min:0',
+            // TERMINA MODIFICACIÓN
         ]);
 
         DB::transaction(function () use ($request, $product, $validated) {
@@ -71,25 +73,27 @@ class ProductPromotionController extends Controller
 
             switch ($validated['type']) {
                 case PromotionType::ITEM_DISCOUNT->value:
-                    // SOLUCIÓN: Añadir 'value' => 1 para indicar que se requiere 1 unidad del producto.
                     $promotion->rules()->create(['type' => PromotionRuleType::REQUIRES_PRODUCT, 'value' => 1, 'itemable_id' => $product->id, 'itemable_type' => Product::class]);
                     $promotion->effects()->create(['type' => $validated['effect_type'], 'value' => $validated['effect_value'], 'itemable_id' => $product->id, 'itemable_type' => Product::class]);
                     break;
                 case PromotionType::BOGO->value:
-                    // Este caso ya funcionaba correctamente porque 'value' se toma del formulario.
                     $promotion->rules()->create(['type' => PromotionRuleType::REQUIRES_PRODUCT_QUANTITY, 'itemable_id' => $validated['required_product_id'], 'itemable_type' => Product::class, 'value' => $validated['required_quantity']]);
                     $promotion->effects()->create(['type' => PromotionEffectType::FREE_ITEM, 'itemable_id' => $validated['free_product_id'], 'itemable_type' => Product::class, 'value' => $validated['free_quantity']]);
                     break;
                 case PromotionType::BUNDLE_PRICE->value:
-                    foreach ($validated['bundle_products'] as $bundleProductId) {
-                        // SOLUCIÓN: Añadir 'value' => 1 para indicar que se requiere 1 unidad de cada producto en el paquete.
-                        $promotion->rules()->create(['type' => PromotionRuleType::REQUIRES_PRODUCT, 'value' => 1, 'itemable_id' => $bundleProductId, 'itemable_type' => Product::class]);
+                    // MODIFICADO: Iterar sobre el array de objetos y usar la cantidad
+                    foreach ($validated['bundle_products'] as $bundleItem) {
+                        $promotion->rules()->create([
+                            'type' => PromotionRuleType::REQUIRES_PRODUCT,
+                            'itemable_id' => $bundleItem['id'],
+                            'itemable_type' => Product::class,
+                            'value' => $bundleItem['quantity'], // Usar la cantidad del formulario
+                        ]);
                     }
                     $promotion->effects()->create(['type' => PromotionEffectType::SET_PRICE, 'value' => $validated['bundle_price']]);
                     break;
             }
 
-            // Registrar actividad en todos los productos afectados
             foreach ($promotion->getAffectedProducts() as $affectedProduct) {
                 activity()
                     ->performedOn($affectedProduct)

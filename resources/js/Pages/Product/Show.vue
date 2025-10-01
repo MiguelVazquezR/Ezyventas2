@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
@@ -25,7 +25,6 @@ const items = ref([
     { label: 'Productos', url: route('products.index') },
     { label: props.product.name }
 ]);
-// Hacemos una copia local para poder modificar la lista sin alterar las props
 const localPromotions = ref([...props.promotions]);
 const promoMenus = ref({});
 const showAddStockModal = ref(false);
@@ -96,6 +95,7 @@ const deletePromotion = (promo) => {
     });
 };
 
+// --- FUNCIÓN MODIFICADA ---
 const getPromotionSummary = (promo) => {
     switch (promo.type) {
         case 'ITEM_DISCOUNT': {
@@ -111,8 +111,9 @@ const getPromotionSummary = (promo) => {
         }
         case 'BUNDLE_PRICE': {
             const effect = promo.effects[0];
-            const productNames = promo.rules.map(rule => rule.itemable.name).join(' + ');
-            return `Paquete (${productNames}) por ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(effect.value)}.`;
+            // Construye el texto con la cantidad de cada producto
+            const productDetails = promo.rules.map(rule => `${rule.value} x ${rule.itemable.name}`).join(' + ');
+            return `Paquete (${productDetails}) por ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(effect.value)}.`;
         }
         default:
             return promo.description || 'Promoción especial.';
@@ -142,7 +143,6 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
 <template>
 
     <Head :title="`Producto: ${product.name}`" />
-    <Toast />
     <AppLayout>
         <Breadcrumb :home="home" :model="items" class="!bg-transparent !p-0" />
 
@@ -189,7 +189,7 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                     style:
                                         'currency', currency: 'MXN'
                                 }).format(product.online_price || product.selling_price)
-                            }}</span>
+                                }}</span>
                         </li>
                         <li class="flex justify-between">
                             <span class="text-gray-500 dark:text-gray-400">Requiere envío</span>
@@ -230,7 +230,7 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                 <li class="flex"><span class="text-gray-500 dark:text-gray-400 w-24">Marca</span> <span
                                         class="font-medium text-gray-800 dark:text-gray-200">{{ product.brand?.name ||
                                             'N/A'
-                                        }}</span></li>
+                                            }}</span></li>
                             </ul>
                         </div>
                         <div>
@@ -257,11 +257,11 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                         || 'N/A'
                                         }}</span>
                                 </li>
-                                <li class="flex justify-between"><span
+                                <!-- <li class="flex justify-between"><span
                                         class="text-gray-500 dark:text-gray-400">Impuesto</span>
                                     <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.tax_rate ?
                                         `${product.tax_rate}%` : 'Sin impuestos' }}</span>
-                                </li>
+                                </li> -->
                             </ul>
                         </div>
                     </div>

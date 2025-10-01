@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { Head, useForm, router, Link, usePage } from '@inertiajs/vue3';
+import { Head, useForm, router, usePage } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PosLeftPanel from './Partials/PosLeftPanel.vue';
@@ -12,7 +12,7 @@ import PrintModal from '@/Components/PrintModal.vue';
 import { v4 as uuidv4 } from 'uuid';
 
 const props = defineProps({
-    products: Array,
+    products: Object, // Ahora es un objeto de paginación
     categories: Array,
     customers: Array,
     defaultCustomer: Object,
@@ -20,14 +20,14 @@ const props = defineProps({
     activePromotions: Array,
     activeSession: Object,
     availableCashRegisters: Array,
-    availableTemplates: Array, // Se recibe la nueva prop
+    availableTemplates: Array,
 });
 
 const page = usePage();
 const toast = useToast();
 
 const cartItems = ref([]);
-const selectedClient = ref(props.preselectedCustomer || null);
+const selectedClient = ref(null);
 
 // --- Lógica para Modales ---
 const isStartSessionModalVisible = ref(false);
@@ -41,7 +41,6 @@ watch(() => page.props.flash.print_data, (newPrintData) => {
     if (newPrintData) {
         printDataSource.value = newPrintData;
         isPrintModalVisible.value = true;
-        // Limpia el flash message para no volver a mostrar el modal si la página se recarga parcialmente
         page.props.flash.print_data = null;
     }
 }, { immediate: true });
@@ -51,36 +50,42 @@ const addToCart = (data) => {
     const { product, variant } = data;
     const cartItemId = variant ? `prod-${product.id}-variant-${variant.id}` : `prod-${product.id}`;
     const existingItem = cartItems.value.find(item => item.cartItemId === cartItemId);
+    
+    // Permitir agregar incluso si el stock es 0, pero advertir si se intenta aumentar la cantidad más allá del stock.
     const stock = variant ? variant.stock : product.stock;
 
     if (existingItem) {
         if (existingItem.quantity < stock) {
             existingItem.quantity++;
         } else {
-            toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
+             // Si el stock es 0, permite agregarlo una vez, pero no más.
+            if (stock > 0) {
+                 toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
+            } else {
+                 toast.add({ severity: 'warn', summary: 'Sin Stock', detail: `El producto no tiene stock, pero se agregó al carrito.`, life: 6000 });
+            }
         }
     } else {
-        if (stock > 0) {
-            const variantDescription = variant ? ' (' + Object.entries(variant.attributes).map(([key, value]) => `${key}: ${value}`).join(', ') + ')' : '';
-            const newItem = {
-                ...product,
-                cartItemId: cartItemId,
-                quantity: 1,
-                original_price: product.original_price,
-                ...(variant && {
-                    price: product.price + variant.price_modifier,
-                    original_price: product.original_price + variant.price_modifier,
-                    sku: `${product.sku}-${variant.sku_suffix}`,
-                    stock: variant.stock,
-                    selectedVariant: variant.attributes,
-                    product_attribute_id: variant.id,
-                    name: product.name + variantDescription,
-                    image: variant.image_url || product.image,
-                })
-            };
-            cartItems.value.push(newItem);
-        } else {
-            toast.add({ severity: 'warn', summary: 'Sin Stock', detail: 'Este producto o variante no tiene stock.', life: 3000 });
+        const variantDescription = variant ? ' (' + Object.entries(variant.attributes).map(([key, value]) => `${key}: ${value}`).join(', ') + ')' : '';
+        const newItem = {
+            ...product,
+            cartItemId: cartItemId,
+            quantity: 1,
+            original_price: product.original_price,
+            ...(variant && {
+                price: product.price + variant.price_modifier,
+                original_price: product.original_price + variant.price_modifier,
+                sku: `${product.sku}-${variant.sku_suffix}`,
+                stock: variant.stock,
+                selectedVariant: variant.attributes,
+                product_attribute_id: variant.id,
+                name: product.name + variantDescription,
+                image: variant.image_url || product.image,
+            })
+        };
+        cartItems.value.push(newItem);
+        if (stock <= 0) {
+             toast.add({ severity: 'warn', summary: 'Sin Stock', detail: `El producto se agregó al carrito pero no tiene stock disponible.`, life: 6000 });
         }
     }
 };
@@ -102,14 +107,19 @@ const removeCartItem = (itemId) => {
 const clearCart = () => {
     cartItems.value = [];
     selectedClient.value = null;
-    toast.add({ severity: 'info', summary: 'Carrito Limpio', detail: 'Se han eliminado todos los productos del carrito.', life: 3000 });
+    // toast.add({ severity: 'info', summary: 'Carrito Limpio', detail: 'Se han eliminado todos los productos del carrito.', life: 3000 });
 };
 
 const localCustomers = ref([...props.customers]);
 const handleSelectCustomer = (customer) => selectedClient.value = customer;
 
+// CORRECCIÓN 2: Observar cambios en la prop de clientes para mantener la lista local actualizada.
+watch(() => props.customers, (newCustomers) => {
+    localCustomers.value = [...newCustomers];
+});
+
 const handleCustomerCreated = (newCustomer) => {
-    localCustomers.value = [...localCustomers.value, newCustomer];
+    localCustomers.value.push(newCustomer);
     selectedClient.value = newCustomer;
     toast.add({ severity: 'success', summary: 'Cliente Creado', detail: 'El nuevo cliente ha sido seleccionado.', life: 3000 });
 };
@@ -172,7 +182,7 @@ const handleProductCreatedAndAddToCart = (newProduct) => {
         promotions: [],
     };
     addToCart({ product: formattedProduct });
-    router.reload({ preserveState: true });
+    router.reload({ preserveState: true, only: ['products'] });
 };
 
 const handleCheckout = (checkoutData) => {
@@ -197,8 +207,13 @@ const handleCheckout = (checkoutData) => {
 
     form.post(route('pos.checkout'), {
         onSuccess: () => {
-             // El watcher se encargará de abrir el modal de impresión
             clearCart();
+            // CORRECCIÓN 1: Refrescar la lista de clientes después de la venta.
+            router.reload({
+                only: ['customers'],
+                preserveState: true,
+                preserveScroll: true,
+            });
         },
         onError: (errors) => {
             console.error("Error de validación:", errors);
@@ -214,7 +229,7 @@ const handleCheckout = (checkoutData) => {
     <Head title="Punto de Venta" />
     <AppLayout>
         <template v-if="activeSession">
-            <div class="flex flex-col lg:flex-row gap-4 h-[calc(100vh-115px)]">
+            <div class="flex flex-col lg:flex-row gap-4 h-[calc(86vh)]">
                 <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden">
                     <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
                         :filters="filters" :active-session="activeSession" @add-to-cart="addToCart"
