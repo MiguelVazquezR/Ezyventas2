@@ -34,7 +34,7 @@ const submit = () => {
                 <p>La columna 'visible_en_tienda' debe contener "Si" o "No". El sistema debe encontrar la 'categoria' por su nombre exacto.</p>
             </div>
             
-            <FileUpload @select="form.file = $event.files[0]" :auto="true" :customUpload="true" accept=".xlsx, .xls">
+            <FileUpload @select="form.file = $event.files[0]" :auto="true" :customUpload="true" :show-upload-button="false" accept=".xlsx, .xls">
                  <template #empty>
                     <p>Arrastra y suelta el archivo aquí.</p>
                 </template>

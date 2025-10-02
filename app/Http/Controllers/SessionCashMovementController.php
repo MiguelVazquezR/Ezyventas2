@@ -22,7 +22,7 @@ class SessionCashMovementController extends Controller implements HasMiddleware
     {
         // Autorización para asegurar que la sesión esté abierta
         if ($session->status !== \App\Enums\CashRegisterSessionStatus::OPEN) {
-            return back()->withErrors(['error' => 'No se pueden agregar movimientos a una sesión cerrada.']);
+            return back()->with(['error' => 'No se pueden agregar movimientos a una sesión cerrada.']);
         }
 
         $session->cashMovements()->create($request->validated());

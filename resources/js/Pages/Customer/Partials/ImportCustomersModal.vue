@@ -33,7 +33,7 @@ const submit = () => {
                 <p>Las columnas deben tener exactamente esos nombres. Los campos vacíos serán ignorados.</p>
             </div>
             
-            <FileUpload @select="form.file = $event.files[0]" :auto="true" :customUpload="true" accept=".xlsx, .xls">
+            <FileUpload @select="form.file = $event.files[0]" :auto="true" :customUpload="true" :show-upload-button="false" accept=".xlsx, .xls">
                  <template #empty>
                     <p>Arrastra y suelta el archivo aquí.</p>
                 </template>
