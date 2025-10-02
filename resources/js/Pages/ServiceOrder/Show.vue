@@ -84,7 +84,6 @@ const diagnosisForm = useForm({
 const handleDiagnosisSubmit = () => {
     diagnosisForm.post(route('service-orders.saveDiagnosis', props.serviceOrder.id), {
         onSuccess: () => {
-            toast.add({ severity: 'success', summary: 'Éxito', detail: 'Diagnóstico y evidencias guardados.', life: 3000 });
             isDiagnosisModalVisible.value = false;
             router.reload({ only: ['serviceOrder'] }); // Reload serviceOrder prop to update diagnosis/media
         },

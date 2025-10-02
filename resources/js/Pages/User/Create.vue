@@ -53,21 +53,21 @@ const showRolePermissions = (roleId) => {
                 <form @submit.prevent="submit">
                     <div class="p-6 space-y-6">
                         <div>
-                            <InputLabel for="name" value="Nombre Completo" />
+                            <InputLabel for="name" value="Nombre completo *" />
                             <InputText id="name" v-model="form.name" type="text" class="mt-1 block w-full" required
                                 autofocus autocomplete="name" />
                             <InputError :message="form.errors.name" />
                         </div>
 
                         <div>
-                            <InputLabel for="email" value="Correo Electrónico" />
+                            <InputLabel for="email" value="Correo electrónico *" />
                             <InputText id="email" v-model="form.email" type="email" class="mt-1 block w-full" required
                                 autocomplete="username" />
                             <InputError :message="form.errors.email" />
                         </div>
 
                         <div>
-                            <InputLabel for="role" value="Rol del Usuario" />
+                            <InputLabel for="role" value="Rol del usuario *" />
                             <div class="flex items-end gap-2">
                                 <div class="flex-grow">
                                     <Select v-model="form.role_id" :options="roles" optionLabel="name" optionValue="id"
@@ -82,7 +82,7 @@ const showRolePermissions = (roleId) => {
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
-                                <InputLabel for="password" value="Contraseña" />
+                                <InputLabel for="password" value="Contraseña *" />
                                 <Password id="password" fluid v-model="form.password" class="mt-1 block w-full" required
                                     autocomplete="new-password" :feedback="false" toggleMask />
                                 <InputError :message="form.errors.password" />
