@@ -1,10 +1,11 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, markRaw, nextTick } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import RolePermissionsModal from '@/Components/RolePermissionsModal.vue';
+import CreateRoleModal from '@/Components/CreateRoleModal.vue';
 
 const props = defineProps({
     roles: Array,
@@ -18,6 +19,17 @@ const form = useForm({
     role_id: null,
 });
 
+// --- Lógica para el modal de roles ---
+const localRoles = ref([...props.roles]);
+const isCreateRoleModalVisible = ref(false);
+
+const handleRoleCreated = (newRole) => {
+    localRoles.value.push(markRaw(newRole));
+    nextTick(() => {
+        form.role_id = newRole.id;
+    });
+};
+
 const submit = () => {
     form.post(route('users.store'), {
         onFinish: () => form.reset('password', 'password_confirmation'),
@@ -30,7 +42,7 @@ const selectedRoleForPermissions = ref(null);
 
 const showRolePermissions = (roleId) => {
     if (!roleId) return;
-    const role = props.roles.find(r => r.id === roleId);
+    const role = localRoles.value.find(r => r.id === roleId);
     if (role) {
         selectedRoleForPermissions.value = role;
         isPermissionsModalVisible.value = true;
@@ -70,9 +82,11 @@ const showRolePermissions = (roleId) => {
                             <InputLabel for="role" value="Rol del usuario *" />
                             <div class="flex items-end gap-2">
                                 <div class="flex-grow">
-                                    <Select v-model="form.role_id" :options="roles" optionLabel="name" optionValue="id"
+                                    <Select v-model="form.role_id" :options="localRoles" optionLabel="name" optionValue="id"
                                         placeholder="Selecciona un rol" class="w-full mt-1" />
                                 </div>
+                                <Button @click="isCreateRoleModalVisible = true" type="button" icon="pi pi-plus"
+                                    severity="success" outlined v-tooltip.bottom="'Crear nuevo rol'" />
                                 <Button @click="showRolePermissions(form.role_id)" type="button" icon="pi pi-book"
                                     severity="secondary" outlined :disabled="!form.role_id"
                                     v-tooltip.bottom="'Ver permisos del rol'" />
@@ -101,5 +115,6 @@ const showRolePermissions = (roleId) => {
         </div>
 
         <RolePermissionsModal v-model:visible="isPermissionsModalVisible" :role="selectedRoleForPermissions" />
+        <CreateRoleModal v-model:visible="isCreateRoleModalVisible" @created="handleRoleCreated" />
     </AppLayout>
 </template>
