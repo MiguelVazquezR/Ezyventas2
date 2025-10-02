@@ -34,7 +34,7 @@ const submit = () => {
                 <p>La columna 'fecha' debe estar en formato AAAA-MM-DD. El 'estatus' debe ser 'pagado' o 'pendiente'. El sistema debe encontrar la 'categoria' por nombre exacto.</p>
             </div>
             
-            <FileUpload @select="form.file = $event.files[0]" :auto="true" :customUpload="true" accept=".xlsx, .xls">
+            <FileUpload @select="form.file = $event.files[0]" :auto="true" :customUpload="true" :show-upload-button="false" accept=".xlsx, .xls">
                  <template #empty>
                     <p>Arrastra y suelta el archivo aquí.</p>
                 </template>

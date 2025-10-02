@@ -103,7 +103,7 @@ class TransactionController extends Controller implements HasMiddleware
     public function cancel(Transaction $transaction)
     {
         if (!in_array($transaction->status, [TransactionStatus::PENDING, TransactionStatus::COMPLETED])) {
-            return redirect()->back()->withErrors(['error' => 'Solo se pueden cancelar ventas pendientes o completadas.']);
+            return redirect()->back()->with(['error' => 'Solo se pueden cancelar ventas pendientes o completadas.']);
         }
 
         DB::transaction(function () use ($transaction) {
@@ -123,7 +123,7 @@ class TransactionController extends Controller implements HasMiddleware
     public function refund(Transaction $transaction)
     {
         if ($transaction->status !== TransactionStatus::COMPLETED) {
-            return redirect()->back()->withErrors(['error' => 'Solo se pueden reembolsar ventas completadas.']);
+            return redirect()->back()->with(['error' => 'Solo se pueden reembolsar ventas completadas.']);
         }
 
         DB::transaction(function () use ($transaction) {

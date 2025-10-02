@@ -550,7 +550,7 @@ const closingEvidenceImages = computed(() => {
                 <div class="field col-12">
                     <label class="font-semibold mb-2 block">Evidencia de Cierre (Máx. 5 imágenes)</label>
                     <FileUpload name="closing_evidence_images[]" @select="onSelectClosingImages"
-                        @remove="onRemoveClosingImage" :multiple="true" accept="image/*" :maxFileSize="2000000"
+                        @remove="onRemoveClosingImage" :multiple="true" :show-upload-button="false" accept="image/*" :maxFileSize="2000000"
                         :fileLimit="MAX_CLOSING_EVIDENCE_IMAGES"
                         :invalidFileSizeMessage="'{0}: El tamaño del archivo excede el límite de 2MB.'"
                         :invalidFileLimitMessage="'Máximo {0} archivos permitidos.'">

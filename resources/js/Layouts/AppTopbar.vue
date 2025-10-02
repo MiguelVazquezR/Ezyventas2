@@ -67,7 +67,7 @@ const mobileUserMenuVisible = ref(false);
                 <div class="layout-topbar-menu-content">
                     <button @click="toggleBranchMenu"
                         class="flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                        <i class="pi pi-building text-xl"></i>
+                        <i class="pi pi-building !text-xl"></i>
                         <div class="text-left">
                             <p class="text-sm font-bold m-0">{{ subscription.commercial_name }}</p>
                             <p class="text-xs text-gray-500 m-0">{{ currentBranch.name }}</p>
@@ -75,6 +75,13 @@ const mobileUserMenuVisible = ref(false);
                         <i class="pi pi-chevron-down text-xs ml-2"></i>
                     </button>
                     <Menu ref="branchMenu" :model="branchMenuItems" :popup="true" />
+                </div>
+            </div>
+            <div v-else class="flex items-center gap-2 p-2 rounded-md">
+                <i class="pi pi-building !text-xl"></i>
+                <div class="text-left">
+                    <p class="text-sm font-bold m-0">{{ subscription.commercial_name }}</p>
+                    <p class="text-xs text-gray-500 m-0">{{ currentBranch.name }}</p>
                 </div>
             </div>
             <div class="layout-config-menu">

@@ -312,7 +312,7 @@ const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evi
             <!-- Evidencia Inicial (sin cambios) -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Fotográfica Inicial (Máx. 5)</h2>
-                <FileUpload name="initial_evidence_images[]" @select="onSelectImages" @remove="onRemoveImage" :multiple="true" accept="image/*" :maxFileSize="2000000">
+                <FileUpload name="initial_evidence_images[]" @select="onSelectImages" @remove="onRemoveImage" :multiple="true" :show-upload-button="false" accept="image/*" :maxFileSize="2000000">
                     <template #empty><p>Arrastra y suelta las imágenes del equipo al recibirlo.</p></template>
                 </FileUpload>
                 <InputError :message="form.errors.initial_evidence_images" class="mt-2" />

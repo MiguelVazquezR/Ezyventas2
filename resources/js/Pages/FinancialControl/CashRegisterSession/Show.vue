@@ -32,10 +32,54 @@ const paymentMethodIcons = {
     transferencia: { icon: 'pi pi-globe', color: 'text-purple-500' },
 };
 
-// SOLUCIÓN: Mover la lógica de navegación a un método
 const printReport = () => {
     window.open(route('cash-register-sessions.print', props.session.id), '_blank');
 };
+
+// --- Lógica de Ordenamiento ---
+const sort = ref({
+    field: 'created_at', // Campo inicial de ordenamiento
+    order: -1, // Orden inicial (1 para asc, -1 para desc)
+});
+
+const onSort = (event) => {
+    sort.value.field = event.sortField;
+    sort.value.order = event.sortOrder;
+};
+
+const sortedTransactions = computed(() => {
+    const transactions = [...props.session.transactions];
+    transactions.sort((a, b) => {
+        let valA, valB;
+        
+        // Asignar valores para la comparación
+        if (sort.value.field === 'created_at') {
+            valA = new Date(a.created_at);
+            valB = new Date(b.created_at);
+        } else if (sort.value.field === 'total') {
+            valA = parseFloat(a.total);
+            valB = parseFloat(b.total);
+        } else if (sort.value.field === 'payments') {
+            // Para ordenar por método de pago, se crea una cadena ordenada de los métodos.
+            valA = a.payments.map(p => p.payment_method).sort().join(', ');
+            valB = b.payments.map(p => p.payment_method).sort().join(', ');
+        } else {
+            valA = a[sort.value.field];
+            valB = b[sort.value.field];
+        }
+
+        // Comparación
+        if (valA < valB) {
+            return -1 * sort.value.order;
+        }
+        if (valA > valB) {
+            return 1 * sort.value.order;
+        }
+        return 0;
+    });
+    return transactions;
+});
+
 </script>
 
 <template>
@@ -46,10 +90,9 @@ const printReport = () => {
         <!-- Header -->
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <div>
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Detalle de Corte de Caja #{{ session.id }}</h1>
+                <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Detalle de Corte de Caja #{{ session.id }}</h1>
                 <p class="text-gray-500 dark:text-gray-400 mt-1">Realizado por: {{ session.user.name }} en la caja "{{ session.cash_register.name }}"</p>
             </div>
-            <!-- El botón ahora llama al método `printReport` -->
             <Button 
                 label="Imprimir Reporte" 
                 icon="pi pi-print" 
@@ -72,7 +115,7 @@ const printReport = () => {
                             <li class="flex justify-between"><span>(-) Egresos / Retiros:</span> <span class="font-mono text-red-500">{{ formatCurrency(session.cash_movements.filter(m => m.type === 'egreso').reduce((sum, m) => sum + parseFloat(m.amount), 0)) }}</span></li>
                             <li class="flex justify-between border-t pt-2 mt-2 font-semibold"><span>Total Esperado en Caja:</span> <span class="font-mono">{{ formatCurrency(session.calculated_cash_total) }}</span></li>
                              <li class="flex justify-between"><span>Total Contado por Cajero:</span> <span class="font-mono">{{ formatCurrency(session.closing_cash_balance) }}</span></li>
-                            <li class="flex justify-between font-bold text-base border-t pt-2 mt-2" :class="session.cash_difference !== 0 ? (session.cash_difference > 0 ? 'text-green-600' : 'text-red-600') : ''">
+                            <li class="flex justify-between font-bold text-base border-t pt-2 mt-2" :class="session.cash_difference != 0 ? (session.cash_difference > 0 ? 'text-green-600' : 'text-red-600') : ''">
                                 <span>Diferencia (Sobrante/Faltante):</span> <span class="font-mono">{{ formatCurrency(session.cash_difference) }}</span>
                             </li>
                         </ul>
@@ -86,23 +129,32 @@ const printReport = () => {
                     <template #title>Transacciones de la Sesión</template>
                     <template #content>
                         <div class="max-h-[350px] overflow-y-auto">
-                             <DataTable :value="session.transactions" class="p-datatable-sm" responsiveLayout="scroll">
+                             <DataTable 
+                                :value="sortedTransactions" 
+                                class="p-datatable-sm" 
+                                responsiveLayout="scroll"
+                                @sort="onSort"
+                                :sortField="sort.field"
+                                :sortOrder="sort.order"
+                             >
                                  <template #empty><div class="text-center py-4">No hay transacciones en esta sesión.</div></template>
-                                 <Column field="folio" header="Folio"></Column>
-                                 <Column field="created_at" header="Hora">
+                                 <Column field="folio" header="Folio" sortable></Column>
+                                 <Column field="created_at" header="Hora" sortable>
                                     <template #body="{ data }">{{ formatTime(data.created_at) }}</template>
                                  </Column>
-                                 <Column field="channel" header="Canal" class="capitalize"></Column>
-                                 <Column header="Monto"><template #body="{data}">{{ formatCurrency(data.subtotal - data.total_discount) }}</template></Column>
-                                 <Column header="Métodos de Pago">
-                                     <template #body="{ data }">
-                                         <div class="flex flex-col gap-1">
-                                            <div v-for="payment in data.payments" :key="payment.id" class="flex items-center gap-2">
-                                                <i class="pi" :class="paymentMethodIcons[payment.payment_method].icon + ' ' + paymentMethodIcons[payment.payment_method].color"></i>
-                                                <span class="text-xs capitalize">{{ payment.payment_method }}</span>
-                                            </div>
-                                         </div>
-                                     </template>
+                                 <Column field="channel" header="Canal" class="capitalize" sortable></Column>
+                                 <Column field="total" header="Monto" sortable>
+                                     <template #body="{data}">{{ formatCurrency(data.total) }}</template>
+                                 </Column>
+                                 <Column header="Métodos de Pago" sortable sortField="payments">
+                                      <template #body="{ data }">
+                                           <div class="flex flex-col gap-1">
+                                                <div v-for="payment in data.payments" :key="payment.id" class="flex items-center gap-2">
+                                                    <i class="pi" :class="paymentMethodIcons[payment.payment_method].icon + ' ' + paymentMethodIcons[payment.payment_method].color"></i>
+                                                    <span class="text-xs capitalize">{{ payment.payment_method }}</span>
+                                                </div>
+                                           </div>
+                                      </template>
                                  </Column>
                              </DataTable>
                         </div>
@@ -116,8 +168,8 @@ const printReport = () => {
                     <template #content>
                         <ul class="space-y-3 text-sm">
                              <li class="flex justify-between items-center">
-                                <span><i class="pi pi-money-bill mr-2 text-green-500"></i>Efectivo</span>
-                                <span class="font-mono font-semibold">{{ formatCurrency(sessionTotals.cash_total) }}</span>
+                                 <span><i class="pi pi-money-bill mr-2 text-green-500"></i>Efectivo</span>
+                                 <span class="font-mono font-semibold">{{ formatCurrency(sessionTotals.cash_total) }}</span>
                             </li>
                             <li class="flex justify-between items-center">
                                 <span><i class="pi pi-credit-card mr-2 text-blue-500"></i>Tarjeta</span>

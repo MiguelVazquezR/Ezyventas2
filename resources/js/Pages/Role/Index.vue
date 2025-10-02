@@ -113,7 +113,7 @@ const confirmDeletePermission = (permission) => {
                     <p class="text-gray-500 dark:text-gray-400 mt-1">Crea roles y asigna permisos para controlar el
                         acceso en tu sucursal.</p>
                 </div>
-                <Button @click="isCreatePermissionModalVisible = true" label="Crear Permiso" icon="pi pi-plus"
+                <Button v-if="$page.props.auth.user.id == 1" @click="isCreatePermissionModalVisible = true" label="Crear permiso" icon="pi pi-plus"
                     severity="contrast" />
             </header>
 
@@ -167,11 +167,11 @@ const confirmDeletePermission = (permission) => {
                                                         <p class="text-xs text-gray-500">{{ permission.name }}</p>
                                                     </label>
                                                 </div>
-                                                <div class="flex items-center gap-1">
+                                                <div v-if="$page.props.auth.user.id == 1" class="flex items-center gap-1">
                                                     <Button @click.stop="openEditPermissionModal(permission)"
-                                                        icon="pi pi-pencil" text rounded size="small" />
+                                                        icon="pi pi-pencil" severity="contrast" rounded text size="small" />
                                                     <Button @click.stop="confirmDeletePermission(permission)"
-                                                        icon="pi pi-trash" text rounded severity="danger"
+                                                        icon="pi pi-trash" severity="contrast" rounded text
                                                         size="small" />
                                                 </div>
                                             </div>
@@ -236,7 +236,7 @@ const confirmDeletePermission = (permission) => {
                 <div class="flex justify-end gap-2 mt-4">
                     <Button type="button" label="Cancelar" severity="secondary"
                         @click="isCreatePermissionModalVisible = false" text />
-                    <Button type="submit" label="Crear Permiso" :loading="createPermissionForm.processing" />
+                    <Button type="submit" label="Crear permiso" :loading="createPermissionForm.processing" />
                 </div>
             </form>
         </Dialog>

@@ -34,7 +34,7 @@ const submit = () => {
                 <p>Las fechas deben tener el formato AAAA-MM-DD HH:MM. El estatus debe coincidir con los valores permitidos (ej. pendiente, en_progreso).</p>
             </div>
             
-            <FileUpload @select="form.file = $event.files[0]" :auto="true" :customUpload="true" accept=".xlsx, .xls">
+            <FileUpload @select="form.file = $event.files[0]" :auto="true" :customUpload="true" :show-upload-button="false" accept=".xlsx, .xls">
                  <template #empty>
                     <p>Arrastra y suelta el archivo aquí.</p>
                 </template>

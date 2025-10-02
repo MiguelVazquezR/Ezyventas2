@@ -34,7 +34,7 @@ const submit = () => {
                 <p>El sistema intentará encontrar la categoría y marca por nombre. Si no existen, serán omitidas.</p>
             </div>
             
-            <FileUpload @select="form.file = $event.files[0]" :auto="true" :customUpload="true" accept=".xlsx, .xls">
+            <FileUpload @select="form.file = $event.files[0]" :auto="true" :show-upload-button="false" :customUpload="true" accept=".xlsx, .xls">
                  <template #empty>
                     <p>Arrastra y suelta el archivo aquí.</p>
                 </template>

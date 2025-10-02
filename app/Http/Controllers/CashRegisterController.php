@@ -103,7 +103,7 @@ class CashRegisterController extends Controller implements HasMiddleware
     public function destroy(CashRegister $cashRegister)
     {
         if ($cashRegister->sessions()->exists()) {
-            return redirect()->back()->withErrors(['error' => 'No se puede eliminar una caja con sesiones de historial.']);
+            return redirect()->back()->with(['error' => 'No se puede eliminar una caja con sesiones de historial.']);
         }
         $cashRegister->delete();
         return redirect()->route('cash-registers.index')->with('success', 'Caja registradora eliminada.');
