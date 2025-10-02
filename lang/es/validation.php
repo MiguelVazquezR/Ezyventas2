@@ -222,5 +222,6 @@ return [
         'reported_problems' => 'problemas reportados',
         'branch_ids' => 'sucursales',
         'role_id' => 'rol',
+        'general_images' => 'imagenes generales',
     ],
 ];

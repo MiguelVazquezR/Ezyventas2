@@ -115,11 +115,11 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         $user = User::findOrFail($request->input('user_id'));
 
         if ($cashRegister->in_use) {
-            return redirect()->back()->withErrors(['error' => 'Esta caja ya está en uso.']);
+            return redirect()->back()->with(['error' => 'Esta caja ya está en uso.']);
         }
 
         if ($user->cashRegisterSessions()->where('status', 'abierta')->exists()) {
-            return redirect()->back()->withErrors(['error' => 'Este usuario ya tiene una sesión activa.']);
+            return redirect()->back()->with(['error' => 'Este usuario ya tiene una sesión activa.']);
         }
 
         DB::transaction(function () use ($request, $cashRegister, $user) {

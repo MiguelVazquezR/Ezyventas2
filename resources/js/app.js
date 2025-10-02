@@ -26,7 +26,22 @@ createInertiaApp({
             .use(ZiggyVue)
             .use(PrimeVue, {
                             locale: {
-                                selectionMessage: '{0} elementos seleccionados'
+                                selectionMessage: '{0} elementos seleccionados',
+                                choose: 'Seleccionar',
+                                cancel: 'Cancelar',
+                                accept: 'Si',
+                                reject: 'No',
+                                dateFormat: 'dd/mm/yy',
+                                dayNames: ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'],
+                                dayNamesShort: ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'],
+                                dayNamesMin: ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sá'],
+                                monthNames: ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'],
+                                monthNamesShort: ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'],
+                                today: 'Hoy',
+                                weekHeader: 'Sm',
+                                weak: 'Semana',
+                                passwordPrompt: 'Ingrese una contraseña',
+                                emptyMessage: 'No se encontraron resultados',
                             },
                             theme: {
                                 preset: Ezyventas,

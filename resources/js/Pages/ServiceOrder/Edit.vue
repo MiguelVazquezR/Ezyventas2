@@ -323,7 +323,7 @@ const submit = () => {
                     </div>
                 </div>
                 <FileUpload name="initial_evidence_images[]" @select="onSelectImages" @remove="onRemoveImage"
-                    :multiple="true" accept="image/*" :maxFileSize="2000000">
+                    :multiple="true" :show-upload-button="false" accept="image/*" :maxFileSize="2000000">
                     <template #empty>
                         <p>Arrastra y suelta imágenes para AÑADIR nueva evidencia.</p>
                     </template>

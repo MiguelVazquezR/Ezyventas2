@@ -163,11 +163,11 @@ class DatabaseSeeder extends Seeder
         });
 
         $expenseCategories = ExpenseCategory::factory(5)->create(['subscription_id' => $subscription->id]);
-        Expense::factory(25)->create([
-            'user_id' => $adminUser->id,
-            'branch_id' => $branches->random()->id,
-            'expense_category_id' => $expenseCategories->random()->id,
-        ]);
+        // Expense::factory(25)->create([
+        //     'user_id' => $adminUser->id,
+        //     'branch_id' => $branches->random()->id,
+        //     'expense_category_id' => $expenseCategories->random()->id,
+        // ]);
     }
 
     /**

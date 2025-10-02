@@ -41,11 +41,16 @@ class PointOfSaleController extends Controller implements HasMiddleware
     public function index(Request $request): Response
     {
         $user = Auth::user();
+        $branchId = $user->branch_id; // Obtener la sucursal actual del usuario.
         $search = $request->input('search');
         $categoryId = $request->input('category');
 
+        // CORRECCIÓN: Se añade whereHas para asegurar que la sesión pertenezca a la sucursal actual.
         $activeSession = CashRegisterSession::where('user_id', $user->id)
             ->where('status', CashRegisterSessionStatus::OPEN)
+            ->whereHas('cashRegister', function ($query) use ($branchId) {
+                $query->where('branch_id', $branchId);
+            })
             ->with([
                 'cashRegister:id,name',
                 'user:id,name',
@@ -78,7 +83,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 ->select('id', 'name')->get();
         }
 
-        // Se obtienen las plantillas de impresión disponibles para la sucursal actual
         $availableTemplates = $user->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
             ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
@@ -93,7 +97,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'activePromotions' => $this->getActivePromotions(),
             'activeSession' => $activeSession,
             'availableCashRegisters' => $availableCashRegisters,
-            'availableTemplates' => $availableTemplates, // Se pasan a la vista
+            'availableTemplates' => $availableTemplates,
         ]);
     }
 
