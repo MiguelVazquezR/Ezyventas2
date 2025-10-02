@@ -5,6 +5,8 @@ import { useConfirm } from "primevue/useconfirm";
 import { useToast } from 'primevue/usetoast';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermissions } from '@/Composables';
+import InputLabel from '@/Components/InputLabel.vue';
+import InputError from '@/Components/InputError.vue';
 
 const props = defineProps({
     roles: Array,
@@ -121,14 +123,16 @@ const confirmDeletePermission = (permission) => {
                     <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md">
                         <div class="flex justify-between items-center mb-4">
                             <h2 class="font-bold text-lg">Roles de la Sucursal</h2>
-                            <Button v-if="hasPermission('settings.roles_permissions.manage')" @click="isCreateRoleModalVisible = true" icon="pi pi-plus" size="small"
+                            <Button v-if="hasPermission('settings.roles_permissions.manage')"
+                                @click="isCreateRoleModalVisible = true" icon="pi pi-plus" size="small"
                                 v-tooltip.bottom="'Crear nuevo rol'" />
                         </div>
                         <Listbox v-model="selectedRole" :options="roles" optionLabel="name" class="w-full">
                             <template #option="slotProps">
                                 <div class="flex justify-between items-center w-full">
                                     <span>{{ slotProps.option.name }}</span>
-                                    <Button v-if="hasPermission('settings.roles_permissions.delete')" @click.stop="confirmDeleteRole(slotProps.option)" icon="pi pi-trash"
+                                    <Button v-if="hasPermission('settings.roles_permissions.delete')"
+                                        @click.stop="confirmDeleteRole(slotProps.option)" icon="pi pi-trash"
                                         severity="danger" text rounded size="small" />
                                 </div>
                             </template>
@@ -142,7 +146,7 @@ const confirmDeletePermission = (permission) => {
                         <div class="p-3 border-b dark:border-gray-700">
                             <h2 class="text-xl font-bold">Permisos para el rol: <span class="text-orange-500">{{
                                 selectedRole.name
-                            }}</span></h2>
+                                    }}</span></h2>
                             <p class="text-sm text-gray-500 mt-1">Selecciona los permisos que tendrá este rol.</p>
                         </div>
 
@@ -176,8 +180,9 @@ const confirmDeletePermission = (permission) => {
                                 </Accordion>
                             </div>
                             <div class="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-b-lg flex justify-end">
-                                <Button v-if="hasPermission('settings.roles_permissions.manage')" type="submit" label="Guardar Permisos" icon="pi pi-check"
-                                    :loading="permissionsForm.processing" :disabled="!permissionsForm.isDirty" />
+                                <Button v-if="hasPermission('settings.roles_permissions.manage')" type="submit"
+                                    label="Guardar Permisos" icon="pi pi-check" :loading="permissionsForm.processing"
+                                    :disabled="!permissionsForm.isDirty" />
                             </div>
                         </form>
                     </div>
@@ -197,10 +202,9 @@ const confirmDeletePermission = (permission) => {
         <Dialog v-model:visible="isCreateRoleModalVisible" modal header="Crear Nuevo Rol" :style="{ width: '25rem' }">
             <form @submit.prevent="submitCreateRole" class="p-2 space-y-4">
                 <div>
-                    <label for="role-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre del
-                        Rol</label>
+                    <InputLabel for="role-name" value="Nombre del rol *" />
                     <InputText id="role-name" v-model="createRoleForm.name" class="w-full mt-1" />
-                    <InputError :message="createRoleForm.errors.name" class="mt-1" />
+                    <InputError :message="createRoleForm.errors.name" />
                 </div>
                 <div class="flex justify-end gap-2 mt-4">
                     <Button type="button" label="Cancelar" severity="secondary"
