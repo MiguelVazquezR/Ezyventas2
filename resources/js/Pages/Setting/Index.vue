@@ -104,7 +104,7 @@ const getLevelLabel = (level) => ({ subscription: 'Suscripción', branch: 'Sucur
                                          <div class="flex items-center gap-x-2">
                                             <InputLabel :for="setting.key" :value="setting.name" class="font-semibold" />
                                             <Badge :value="getLevelLabel(setting.level)" :severity="getLevelBadgeSeverity(setting.level)" />
-                                            <Button @click="openEditModal(setting)" icon="pi pi-pencil" class="h-6 w-6" text rounded />
+                                            <Button @click="openEditModal(setting)" icon="pi pi-pencil" class="size-6" text rounded severity="contrast" />
                                         </div>
                                         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{ setting.description }}</p>
                                     </div>
@@ -134,7 +134,7 @@ const getLevelLabel = (level) => ({ subscription: 'Suscripción', branch: 'Sucur
                             </div>
                         </TabPanel>
                     </TabView>
-                    <div class="mt-6 flex justify-end bg-white dark:bg-gray-800 p-4 rounded-b-lg shadow-md sticky bottom-0">
+                    <div class="mt-6 flex justify-end p-4 rounded-b-lg sticky bottom-2">
                         <Button type="submit" label="Guardar Cambios" icon="pi pi-check" :loading="form.processing" :disabled="!form.isDirty || form.processing" severity="warning" />
                     </div>
                 </form>

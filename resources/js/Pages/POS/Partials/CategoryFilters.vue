@@ -56,7 +56,7 @@ const onMouseMove = (e) => {
         <div class="flex gap-2">
             <button v-for="category in categories" :key="category.id" @click="selectCategory(category.id)"
                 :class="selectedCategoryId === category.id ? 'text-[#373737] font-bold' : 'text-[#999999]'"
-                class="whitespace-nowrap rounded-full bg-white border border-[#D9D9D9] px-4 py-2 flex items-center gap-2 transition">
+                class="whitespace-nowrap rounded-full bg-white border border-[#D9D9D9] px-4 py-2 flex items-center gap-2 transition cursor-grab active:cursor-grabbing">
                 <span class="mr-2">{{ category.name }}</span>
                 <span class="bg-[#F2F2F2] px-2 py-px rounded text-sm" :class="selectedCategoryId === category.id ? 'font-bold' : null">
                     {{ category.products_count }}
