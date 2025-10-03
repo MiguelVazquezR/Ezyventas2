@@ -144,7 +144,9 @@ const submit = () => {
     }));
     form.variants_matrix = matrixWithSelection;
 
-    form.post(route('products.store'));
+    form.post(route('products.store'), {
+        preserveScroll: true,
+    });
 };
 
 // --- Manejo de Imágenes ---
@@ -328,7 +330,6 @@ const refreshAttributes = () => {
                             </div>
                         </div>
 
-                        <!-- --- INICIO MEJORA: SECCIÓN PARA SELECCIONAR OPCIONES DE VARIANTES --- -->
                         <div v-if="form.product_type === 'variant' && form.category_id" class="mt-6 space-y-4">
                             <div>
                                 <InputLabel for="variant_attributes" value="Atributos para variantes" />
@@ -354,7 +355,6 @@ const refreshAttributes = () => {
                                 </div>
                             </div>
                         </div>
-                        <!-- --- FIN MEJORA --- -->
 
                         <div v-if="variantCombinations.length > 0" class="mt-6">
                             <h3 class="font-semibold text-gray-800 dark:text-gray-200">Gestión de variantes</h3>
@@ -407,33 +407,36 @@ const refreshAttributes = () => {
                                                     para
                                                     {{ attr.name }}</h4>
                                                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                                    <div v-for="option in attr.options" :key="option.id"
-                                                        class="text-center">
-                                                        <InputLabel :value="option.value" class="text-sm" />
-                                                        <div class="mt-1 flex flex-col items-center gap-2">
-                                                            <div class="relative w-20 h-20">
-                                                                <img v-if="variantImagePreviews[option.value]"
-                                                                    :src="variantImagePreviews[option.value]"
-                                                                    class="w-20 h-20 object-cover rounded-md border">
-                                                                <div v-else
-                                                                    class="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center justify-center text-gray-400">
-                                                                    <i class="pi pi-image text-2xl"></i>
+                                                    <template v-for="option in attr.options" :key="option.id">
+                                                        <div v-if="form.selected_variant_options[attr.id] && form.selected_variant_options[attr.id].includes(option.value)"
+                                                            class="text-center">
+                                                            <InputLabel :value="option.value" class="text-sm" />
+                                                            <div class="mt-1 flex flex-col items-center gap-2">
+                                                                <div class="relative w-20 h-20">
+                                                                    <img v-if="variantImagePreviews[option.value]"
+                                                                        :src="variantImagePreviews[option.value]"
+                                                                        class="w-20 h-20 object-cover rounded-md border">
+                                                                    <div v-else
+                                                                        class="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center justify-center text-gray-400">
+                                                                        <i class="pi pi-image text-2xl"></i>
+                                                                    </div>
+                                                                    <Button v-if="variantImagePreviews[option.value]"
+                                                                        @click="onRemoveVariantImage(option.value)"
+                                                                        icon="pi pi-times" rounded text
+                                                                        severity="danger"
+                                                                        class="!absolute !top-[-8px] !right-[-8px] bg-white dark:bg-gray-800"
+                                                                        v-tooltip.bottom="'Eliminar imagen'" />
                                                                 </div>
-                                                                <Button v-if="variantImagePreviews[option.value]"
-                                                                    @click="onRemoveVariantImage(option.value)"
-                                                                    icon="pi pi-times" rounded text severity="danger"
-                                                                    class="!absolute !top-[-8px] !right-[-8px] bg-white dark:bg-gray-800"
-                                                                    v-tooltip.bottom="'Eliminar imagen'" />
+                                                                <FileUpload v-if="!variantImagePreviews[option.value]"
+                                                                    :show-upload-button="false" mode="basic"
+                                                                    :name="`variant_images[${option.value}]`"
+                                                                    accept="image/*" :maxFileSize="1000000" :auto="true"
+                                                                    :customUpload="true"
+                                                                    @uploader="onSelectVariantImage($event, option.value)"
+                                                                    chooseLabel="Elegir" class="p-button-sm !w-20" />
                                                             </div>
-                                                            <FileUpload v-if="!variantImagePreviews[option.value]"
-                                                                :show-upload-button="false" mode="basic"
-                                                                :name="`variant_images[${option.value}]`"
-                                                                accept="image/*" :maxFileSize="1000000" :auto="true"
-                                                                :customUpload="true"
-                                                                @uploader="onSelectVariantImage($event, option.value)"
-                                                                chooseLabel="Elegir" class="p-button-sm !w-20" />
                                                         </div>
-                                                    </div>
+                                                    </template>
                                                 </div>
                                             </div>
                                         </div>

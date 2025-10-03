@@ -250,17 +250,17 @@ const handleCheckout = (checkoutData) => {
             </div>
         </template>
         <template v-else>
-            <div class="flex items-center justify-center h-[calc(100vh-150px)] bg-gray-50 dark:bg-gray-900 rounded-lg">
+            <div class="flex items-center justify-center h-[calc(100vh-150px)] dark:bg-gray-900 rounded-lg">
                 <div class="text-center p-8">
                     <div
                         class="bg-red-100 dark:bg-red-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
-                        <i class="pi pi-lock text-4xl text-red-500"></i>
+                        <i class="pi pi-lock !text-4xl text-red-500"></i>
                     </div>
                     <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Punto de Venta Bloqueado</h2>
                     <p class="text-gray-600 dark:text-gray-400 mt-2 max-w-md">
                         Necesitas tener una sesión de caja activa para poder registrar ventas.
                     </p>
-                    <Button @click="isStartSessionModalVisible = true" label="Activar Caja" icon="pi pi-box"
+                    <Button @click="isStartSessionModalVisible = true" label="Activar caja" icon="pi pi-inbox"
                         class="mt-6" />
                 </div>
             </div>

@@ -1,12 +1,7 @@
 <script setup>
 import { useForm, usePage } from '@inertiajs/vue3';
-import Dialog from 'primevue/dialog';
-import Dropdown from 'primevue/dropdown';
-import InputNumber from 'primevue/inputnumber';
-import Button from 'primevue/button';
 import InputLabel from './InputLabel.vue';
 import InputError from './InputError.vue';
-import Message from 'primevue/message';
 
 const props = defineProps({
     visible: Boolean,
@@ -25,9 +20,12 @@ const form = useForm({
 
 const submit = () => {
     form.post(route('cash-register-sessions.store'), {
-        // En caso de éxito, Inertia seguirá el redirect del backend,
-        // que recargará la página del TPV ya con la sesión activa.
-        // El toast de éxito se mostrará automáticamente.
+        // CORRECCIÓN: Se añade el callback onSuccess para cerrar el modal.
+        onSuccess: () => {
+            closeModal();
+            // Inertia se encargará de recargar la página principal automáticamente
+            // debido a la redirección del backend.
+        },
     });
 };
 
@@ -38,10 +36,10 @@ const closeModal = () => {
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" :modal="true" header="Iniciar Sesión de Caja" :style="{ width: '30rem' }">
+    <Dialog :visible="visible" @update:visible="closeModal" :modal="true" header="Iniciar sesión de caja" :style="{ width: '30rem' }">
         <div class="p-4 text-center">
             <div class="bg-blue-100 dark:bg-blue-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
-                <i class="pi pi-box text-4xl text-blue-500"></i>
+                <i class="pi pi-inbox !text-4xl text-blue-500"></i>
             </div>
             <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200">Apertura de Caja Requerida</h2>
             <p class="text-gray-600 dark:text-gray-400 mt-2">

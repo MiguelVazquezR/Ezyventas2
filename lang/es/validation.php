@@ -223,5 +223,6 @@ return [
         'branch_ids' => 'sucursales',
         'role_id' => 'rol',
         'general_images' => 'imagenes generales',
+        'cash_register_id' => 'caja registradora',
     ],
 ];
