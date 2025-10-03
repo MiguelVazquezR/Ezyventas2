@@ -4,14 +4,6 @@ import { useConfirm } from "primevue/useconfirm";
 import CartItem from './CartItem.vue';
 import CreateCustomerModal from '@/Components/CreateCustomerModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
-import Button from 'primevue/button';
-import ConfirmPopup from 'primevue/confirmpopup';
-import Dropdown from 'primevue/dropdown';
-import Select from 'primevue/select';
-import Avatar from 'primevue/avatar';
-import Checkbox from 'primevue/checkbox';
-import Divider from 'primevue/divider';
-import Badge from 'primevue/badge';
 
 const props = defineProps({
     items: Array,

@@ -151,6 +151,13 @@ const getPromotionSummary = (promo) => {
             return promo.description || 'Promoción especial.';
     }
 };
+
+const formatCurrency = (value) => {
+    return new Intl.NumberFormat('es-MX', {
+        style: 'currency',
+        currency: 'MXN'
+    }).format(value || 0);
+};
 </script>
 
 <template>
@@ -193,11 +200,11 @@ const getPromotionSummary = (promo) => {
 
             <div class="mb-3 mt-auto flex items-center gap-1">
                 <div v-if="displayPrice < product.original_price" class="flex items-baseline gap-2">
-                    <p class="text-xl font-semibold text-green-600 m-0">${{ displayPrice.toFixed(2) }}</p>
-                    <del class="text-md text-gray-500">${{ product.original_price.toFixed(2) }}</del>
+                    <p class="text-xl font-semibold text-green-600 m-0">{{ formatCurrency(displayPrice) }}</p>
+                    <del class="text-md text-gray-500">{{ formatCurrency(product.original_price) }}</del>
                 </div>
                 <p v-else class="text-xl font-semibold text-gray-900 dark:text-gray-100 m-0">
-                    ${{ displayPrice.toFixed(2) }}
+                    {{ formatCurrency(displayPrice) }}
                 </p>
                 <button v-if="product.promotions && product.promotions.length > 0" @click="togglePromoPopover"
                     class="cursor-pointer" v-tooltip.bottom="'Ver detalles de la promoción'">
