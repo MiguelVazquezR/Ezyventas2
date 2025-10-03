@@ -9,6 +9,7 @@ import CreateRoleModal from '@/Components/CreateRoleModal.vue';
 
 const props = defineProps({
     roles: Array,
+    permissions: Object,
 });
 
 const form = useForm({
@@ -57,7 +58,7 @@ const showRolePermissions = (roleId) => {
         <div class="p-4 md:p-6 lg:p-8">
             <div class="max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-md">
                 <div class="p-6 border-b dark:border-gray-700">
-                    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Crear Nuevo Usuario</h1>
+                    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Crear nuevo usuario</h1>
                     <p class="text-gray-500 dark:text-gray-400 mt-1">Completa los siguientes datos para registrar un
                         nuevo miembro del equipo.</p>
                 </div>
@@ -74,7 +75,7 @@ const showRolePermissions = (roleId) => {
                         <div>
                             <InputLabel for="email" value="Correo electrónico *" />
                             <InputText id="email" v-model="form.email" type="email" class="mt-1 block w-full" required
-                                autocomplete="username" />
+                                autocomplete="off" readonly @focus="$event.target.removeAttribute('readonly')" />
                             <InputError :message="form.errors.email" />
                         </div>
 
@@ -82,11 +83,11 @@ const showRolePermissions = (roleId) => {
                             <InputLabel for="role" value="Rol del usuario *" />
                             <div class="flex items-end gap-2">
                                 <div class="flex-grow">
-                                    <Select v-model="form.role_id" :options="localRoles" optionLabel="name" optionValue="id"
-                                        placeholder="Selecciona un rol" class="w-full mt-1" />
+                                    <Select v-model="form.role_id" :options="localRoles" optionLabel="name"
+                                        optionValue="id" placeholder="Selecciona un rol" class="w-full mt-1" />
                                 </div>
                                 <Button @click="isCreateRoleModalVisible = true" type="button" icon="pi pi-plus"
-                                    severity="success" outlined v-tooltip.bottom="'Crear nuevo rol'" />
+                                    severity="secondary" v-tooltip.bottom="'Crear nuevo rol'" />
                                 <Button @click="showRolePermissions(form.role_id)" type="button" icon="pi pi-book"
                                     severity="secondary" outlined :disabled="!form.role_id"
                                     v-tooltip.bottom="'Ver permisos del rol'" />
@@ -115,6 +116,7 @@ const showRolePermissions = (roleId) => {
         </div>
 
         <RolePermissionsModal v-model:visible="isPermissionsModalVisible" :role="selectedRoleForPermissions" />
-        <CreateRoleModal v-model:visible="isCreateRoleModalVisible" @created="handleRoleCreated" />
+        <CreateRoleModal v-model:visible="isCreateRoleModalVisible" :permissions="permissions"
+            @created="handleRoleCreated" />
     </AppLayout>
 </template>

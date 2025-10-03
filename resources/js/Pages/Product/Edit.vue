@@ -325,20 +325,16 @@ const refreshAttributes = () => {
                     </div>
                     <!-- Sección de Inventario y Variantes -->
                     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-                        <div
-                            class="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
+                        <div class="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
                             <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-200 m-0">
                                 Inventario y variantes
                             </h2>
-                            <Button v-if="form.category_id" icon="pi pi-cog" text rounded
-                                v-tooltip.left="'Gestionar atributos de la categoría'"
-                                @click="showAttributesModal = true" />
+                            <Button v-if="form.category_id" icon="pi pi-cog" text rounded v-tooltip.left="'Gestionar atributos de la categoría'" @click="showAttributesModal = true" />
                         </div>
-
                         <div>
                             <InputLabel value="Tipo de producto" class="mb-2" />
-                            <SelectButton v-model="form.product_type" :options="productTypeOptions" :allowEmpty="false"
-                                optionLabel="label" optionValue="value" />
+                            <SelectButton v-model="form.product_type" :options="productTypeOptions" :allowEmpty="false" optionLabel="label"
+                                optionValue="value" />
                         </div>
                         <div v-if="form.product_type === 'simple'" class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div>
@@ -356,8 +352,7 @@ const refreshAttributes = () => {
                                 <InputNumber v-model="form.max_stock" id="max_stock_simple" class="w-full mt-1" />
                             </div>
                         </div>
-
-                        <!-- --- INICIO MEJORA: SECCIÓN PARA SELECCIONAR OPCIONES DE VARIANTES --- -->
+                        
                         <div v-if="form.product_type === 'variant' && form.category_id" class="mt-6 space-y-4">
                             <div>
                                 <InputLabel for="variant_attributes" value="Atributos para variantes" />
@@ -383,7 +378,6 @@ const refreshAttributes = () => {
                                 </div>
                             </div>
                         </div>
-                        <!-- --- FIN MEJORA --- -->
 
                         <div v-if="variantCombinations.length > 0" class="mt-6">
                             <h3 class="font-semibold text-gray-800 dark:text-gray-200">Gestión de variantes</h3>
@@ -407,78 +401,84 @@ const refreshAttributes = () => {
                                 </Column>
                             </DataTable>
                         </div>
-
                         <div class="mt-6">
-                            <Tabs value="0">
+                             <Tabs value="0">
                                 <TabList>
                                     <Tab value="0">Imágenes generales</Tab>
                                     <Tab value="1">Imágenes por variante</Tab>
                                 </TabList>
-                                <TabPanel value="0">
-                                    <div v-if="existingGeneralImages.length > 0" class="flex flex-wrap gap-4 mb-4">
-                                        <div v-for="img in existingGeneralImages" :key="img.id" class="relative">
-                                            <img :src="img.original_url"
-                                                class="w-24 h-24 object-cover rounded-md border">
-                                            <Button @click="deleteExistingImage(img.id)" icon="pi pi-times" rounded text
-                                                severity="danger"
-                                                class="!absolute -top-2 -right-2 bg-white/70 dark:bg-gray-800/70" />
+                                <TabPanels>
+                                    <TabPanel value="0">
+                                        <div v-if="existingGeneralImages.length > 0" class="flex flex-wrap gap-4 mb-4">
+                                            <div v-for="img in existingGeneralImages" :key="img.id" class="relative">
+                                                <img :src="img.original_url"
+                                                    class="w-24 h-24 object-cover rounded-md border">
+                                                <Button @click="deleteExistingImage(img.id)" icon="pi pi-times" rounded text
+                                                    severity="danger"
+                                                    class="!absolute -top-2 -right-2 bg-white/70 dark:bg-gray-800/70" />
+                                            </div>
                                         </div>
-                                    </div>
-                                    <FileUpload name="general_images[]" @select="onSelectGeneralImages"
-                                        @remove="onRemoveGeneralImage" :multiple="true" :show-upload-button="false"
-                                        accept="image/*" :maxFileSize="5000000">
-                                        <template #empty>
-                                            <p>Arrastra y suelta para añadir más imágenes.</p>
-                                        </template>
-                                    </FileUpload>
-                                    <InputError class="mt-2" :message="form.errors.general_images" />
-                                </TabPanel>
-                                <TabPanel value="1" :disabled="imageRequiringAttributes.length === 0">
-                                    <div v-if="imageRequiringAttributes.length > 0" class="space-y-4">
-                                        <div v-for="attr in imageRequiringAttributes" :key="attr.id">
-                                            <h4 class="font-medium text-gray-700 dark:text-gray-300 mb-2">Imágenes para
-                                                {{ attr.name }}</h4>
-                                            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                                <div v-for="option in attr.options" :key="option.id"
-                                                    class="text-center">
-                                                    <InputLabel :value="option.value" class="text-sm" />
-                                                    <div class="mt-1 flex flex-col items-center gap-2">
-                                                        <div class="relative w-20 h-20">
-                                                            <img v-if="variantImagePreviews[option.value]"
-                                                                :src="variantImagePreviews[option.value]"
-                                                                class="w-20 h-20 object-cover rounded-md border">
-                                                            <div v-else
-                                                                class="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center justify-center text-gray-400">
-                                                                <i class="pi pi-image text-2xl"></i>
+                                        <FileUpload name="general_images[]" @select="onSelectGeneralImages"
+                                            @remove="onRemoveGeneralImage" :multiple="true" :show-upload-button="false"
+                                            accept="image/*" :maxFileSize="5000000">
+                                            <template #empty>
+                                                <p>Arrastra y suelta para añadir más imágenes.</p>
+                                            </template>
+                                        </FileUpload>
+                                        <InputError class="mt-2" :message="form.errors.general_images" />
+                                    </TabPanel>
+                                    <TabPanel value="1" :disabled="imageRequiringAttributes.length === 0">
+                                        <div v-if="imageRequiringAttributes.length > 0" class="space-y-4">
+                                            <div v-for="attr in imageRequiringAttributes" :key="attr.id">
+                                                <h4 class="font-medium text-gray-700 dark:text-gray-300 mb-2">Imágenes para
+                                                    {{ attr.name }}</h4>
+                                                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                                    <template v-for="option in attr.options" :key="option.id">
+                                                        <div v-if="form.selected_variant_options[attr.id] && form.selected_variant_options[attr.id].includes(option.value)"
+                                                            class="text-center">
+                                                            <InputLabel :value="option.value" class="text-sm" />
+                                                            <div class="mt-1 flex flex-col items-center gap-2">
+                                                                <div class="relative w-20 h-20">
+                                                                    <img v-if="variantImagePreviews[option.value]"
+                                                                        :src="variantImagePreviews[option.value]"
+                                                                        class="w-20 h-20 object-cover rounded-md border">
+                                                                    <div v-else
+                                                                        class="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center justify-center text-gray-400">
+                                                                        <i class="pi pi-image text-2xl"></i>
+                                                                    </div>
+                                                                    <Button
+                                                                        v-if="variantImagePreviews[option.value]"
+                                                                        @click="() => {
+                                                                            const existingImg = existingVariantImages.find(i => i.custom_properties.variant_option === option.value);
+                                                                            if (existingImg) {
+                                                                                deleteExistingVariantImage(existingImg.id, option.value);
+                                                                            } else {
+                                                                                onRemoveVariantImage(option.value);
+                                                                            }
+                                                                        }"
+                                                                        icon="pi pi-times" rounded text severity="danger"
+                                                                        class="!absolute !top-[-8px] !right-[-8px] bg-white dark:bg-gray-800"
+                                                                        v-tooltip.bottom="'Eliminar imagen'" />
+                                                                </div>
+                                                                 <FileUpload v-if="!variantImagePreviews[option.value]"
+                                                                    :show-upload-button="false"
+                                                                    mode="basic" :name="`variant_images[${option.value}]`" accept="image/*"
+                                                                    :maxFileSize="1000000" :auto="true" :customUpload="true"
+                                                                    @uploader="onSelectVariantImage($event, option.value)"
+                                                                    chooseLabel="Elegir" class="p-button-sm !w-20" />
                                                             </div>
-                                                            <Button v-if="variantImagePreviews[option.value]" @click="() => {
-                                                                const existingImg = existingVariantImages.find(i => i.custom_properties.variant_option === option.value);
-                                                                if (existingImg) {
-                                                                    deleteExistingVariantImage(existingImg.id, option.value);
-                                                                } else {
-                                                                    onRemoveVariantImage(option.value);
-                                                                }
-                                                            }" icon="pi pi-times" rounded text severity="danger"
-                                                                class="!absolute !top-[-8px] !right-[-8px] bg-white dark:bg-gray-800"
-                                                                v-tooltip.bottom="'Eliminar imagen'" />
                                                         </div>
-                                                        <FileUpload v-if="!variantImagePreviews[option.value]"
-                                                            :show-upload-button="false" mode="basic"
-                                                            :name="`variant_images[${option.value}]`" accept="image/*"
-                                                            :maxFileSize="1000000" :auto="true" :customUpload="true"
-                                                            @uploader="onSelectVariantImage($event, option.value)"
-                                                            chooseLabel="Elegir" class="p-button-sm !w-20" />
-                                                    </div>
+                                                    </template>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                    <div v-else class="text-center text-gray-500 dark:text-gray-400 p-4 text-sm">
-                                        <p class="m-0">Ninguna de las variantes seleccionadas requiere una imagen
-                                            específica.</p>
-                                    </div>
-                                    <InputError class="mt-2" :message="form.errors.variant_images" />
-                                </TabPanel>
+                                        <div v-else class="text-center text-gray-500 dark:text-gray-400 p-4 text-sm">
+                                            <p class="m-0">Ninguna de las variantes seleccionadas requiere una imagen
+                                                específica.</p>
+                                        </div>
+                                        <InputError class="mt-2" :message="form.errors.variant_images" />
+                                    </TabPanel>
+                                </TabPanels>
                             </Tabs>
                         </div>
                         <div class="mt-6">
@@ -542,7 +542,6 @@ const refreshAttributes = () => {
         <CreateCategoryModal v-model:visible="showCategoryModal" tyoe="product" @created="handleNewCategory" />
         <CreateBrandModal v-model:visible="showBrandModal" @created="handleNewBrand" />
         <CreateProviderModal v-model:visible="showProviderModal" @created="handleNewProvider" />
-        <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal"
-            :category-id="form.category_id" @updated="refreshAttributes" />
+        <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal" :category-id="form.category_id" @updated="refreshAttributes" />
     </AppLayout>
 </template>

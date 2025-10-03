@@ -257,7 +257,7 @@ const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evi
             <!-- Campos Personalizados (sin cambios) -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <div class="flex items-center justify-between border-b pb-3 mb-4">
-                    <h2 class="text-lg font-semibold">Detalles Adicionales</h2>
+                    <h2 class="text-lg font-semibold">Detalles adicionales</h2>
                     <Button @click="openCustomFieldManager" icon="pi pi-cog" text rounded v-tooltip.left="'Gestionar campos personalizados'" />
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -277,6 +277,10 @@ const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evi
                         </div>
                         <InputError :message="form.errors[`custom_fields.${field.key}`]" class="mt-2" />
                     </div>
+                    <p v-if="!customFieldDefinitions.length" class="col-span-full text-center text-gray-500">
+                        Actualmente no tienes ningún campo adicional, pero puedes agregar los que requieras
+                        haciendo clic en el ícono de engranaje (<i class="pi pi-cog"></i>) en la parte superior derecha.
+                    </p>
                 </div>
             </div>
 

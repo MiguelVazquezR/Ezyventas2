@@ -84,10 +84,14 @@ class UserController extends Controller implements HasMiddleware
         $roles = Role::with('permissions')->get()->map(fn($role) => [
             'id' => $role->id,
             'name' => $role->name,
-            'permissions' => $role->permissions->pluck('name'),
+            'permissions' => $role->permissions->map(fn($p) => [
+                'id' => $p->id,
+                'name' => $p->name,
+                'description' => $p->description,
+                'module' => $p->module
+            ])->all(),
         ]);
 
-        // CORRECCIÓN: Agrupar permisos por la columna 'module' para consistencia.
         $permissions = Permission::all()->groupBy('module');
 
         return Inertia::render('User/Create', [
@@ -120,19 +124,28 @@ class UserController extends Controller implements HasMiddleware
 
     public function edit(User $user): Response
     {
-        if ($user->branch_id !== Auth::user()->branch_id) {
-            abort(403);
-        }
+        // Cargar el usuario con su rol actual
+        $user->load('roles.permissions');
 
-        $user->load('roles:id,name');
-        // CAMBIO: Se cargan los permisos de cada rol
-        $roles = Role::where('branch_id', Auth::user()->branch_id)
-            ->with('permissions:id,name,description,module')
-            ->get(['id', 'name']);
+        // Obtener todos los roles con sus permisos (en el formato correcto)
+        $roles = Role::with('permissions')->get()->map(fn($role) => [
+            'id' => $role->id,
+            'name' => $role->name,
+            'permissions' => $role->permissions->map(fn($p) => [
+                'id' => $p->id,
+                'name' => $p->name,
+                'description' => $p->description,
+                'module' => $p->module
+            ])->all(),
+        ]);
+
+        // Obtener todos los permisos agrupados por módulo
+        $permissions = Permission::all()->groupBy('module');
 
         return Inertia::render('User/Edit', [
             'user' => $user,
             'roles' => $roles,
+            'permissions' => $permissions,
         ]);
     }
 

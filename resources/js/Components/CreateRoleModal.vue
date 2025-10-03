@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
 import axios from 'axios';
 import InputLabel from './InputLabel.vue';
 import InputError from './InputError.vue';
@@ -70,7 +70,7 @@ const submit = async () => {
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" modal header="Crear Nuevo Rol" :style="{ width: '40rem' }">
+    <Dialog :visible="visible" @update:visible="closeModal" modal header="Crear nuevo rol" :style="{ width: '40rem' }">
         <form @submit.prevent="submit" class="p-2 space-y-4">
             <div>
                 <InputLabel for="role-name" value="Nombre del Rol *" />
@@ -80,19 +80,20 @@ const submit = async () => {
 
             <div>
                 <InputLabel value="Permisos" class="mb-2" />
-                <Accordion :activeIndex="0">
-                    <AccordionTab v-for="(group, groupName) in permissions" :key="groupName" :header="groupName.charAt(0).toUpperCase() + groupName.slice(1)">
-                        <div class="flex items-center mb-4 pl-2">
-                            <Checkbox :inputId="`group-${groupName}`" :value="groupName" @change="handleGroupSelection(groupName)" :checked="isGroupSelected(groupName)" />
-                            <label :for="`group-${groupName}`" class="ml-2 font-bold text-sm">Seleccionar todo</label>
-                        </div>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            <div v-for="permission in group" :key="permission.id" class="flex items-center">
-                                <Checkbox v-model="form.permissions" :inputId="`perm-${permission.id}`" :value="permission.id" />
-                                <label :for="`perm-${permission.id}`" class="ml-2 text-sm">{{ permission.name.split('.')[1] }}</label>
+                <Accordion>
+                    <AccordionPanel :value="groupName" v-for="(group, groupName) in permissions" :key="groupName">
+                        <AccordionHeader>{{ groupName.charAt(0).toUpperCase() + groupName.slice(1) }}</AccordionHeader>
+                        <AccordionContent>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                <div v-for="permission in group" :key="permission.id" class="flex items-center">
+                                    <Checkbox v-model="form.permissions" :inputId="`perm-${permission.id}`"
+                                        :value="permission.id" />
+                                    <label :for="`perm-${permission.id}`" class="ml-2 text-sm">{{ permission.description
+                                        }}</label>
+                                </div>
                             </div>
-                        </div>
-                    </AccordionTab>
+                        </AccordionContent>
+                    </AccordionPanel>
                 </Accordion>
             </div>
 

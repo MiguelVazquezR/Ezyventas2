@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from 'primevue/usetoast';
@@ -100,6 +100,33 @@ const confirmDeletePermission = (permission) => {
         accept: () => useForm({}).delete(route('permissions.destroy', permission.id))
     });
 };
+
+// --- MEJORA: Lógica para seleccionar/deseleccionar todos los permisos de un grupo ---
+const groupPermissionIds = (group) => group.map(p => p.id);
+
+const isGroupFullySelected = (group) => {
+    const ids = groupPermissionIds(group);
+    return ids.every(id => permissionsForm.permissions.includes(id));
+};
+
+const isGroupPartiallySelected = (group) => {
+    const ids = groupPermissionIds(group);
+    const selectedCount = ids.filter(id => permissionsForm.permissions.includes(id)).length;
+    return selectedCount > 0 && selectedCount < ids.length;
+};
+
+const toggleGroupSelection = (group) => {
+    const ids = groupPermissionIds(group);
+    if (isGroupFullySelected(group)) {
+        // Deseleccionar todos
+        permissionsForm.permissions = permissionsForm.permissions.filter(id => !ids.includes(id));
+    } else {
+        // Seleccionar todos (añadiendo solo los que no están ya)
+        const newPermissions = [...new Set([...permissionsForm.permissions, ...ids])];
+        permissionsForm.permissions = newPermissions;
+    }
+};
+
 </script>
 
 <template>
@@ -152,31 +179,45 @@ const confirmDeletePermission = (permission) => {
 
                         <form @submit.prevent="submitPermissions">
                             <div class="p-3 max-h-[45vh] overflow-y-auto">
-                                <Accordion :multiple="true" :activeIndex="[0, 1, 2, 3, 4, 5]">
-                                    <AccordionTab v-for="(perms, moduleName) in permissions" :key="moduleName"
-                                        :header="moduleName">
-                                        <div class="space-y-4">
-                                            <div v-for="permission in perms" :key="permission.id"
-                                                class="flex items-center justify-between">
-                                                <div class="flex items-center">
-                                                    <Checkbox v-model="permissionsForm.permissions"
-                                                        :inputId="`perm-${permission.id}`" :value="permission.id"
-                                                        :disabled="!hasPermission('settings.roles_permissions.manage')" />
-                                                    <label :for="`perm-${permission.id}`" class="ml-3">
-                                                        <span class="font-semibold">{{ permission.description }}</span>
-                                                        <p class="text-xs text-gray-500">{{ permission.name }}</p>
-                                                    </label>
-                                                </div>
-                                                <div v-if="$page.props.auth.user.id == 1" class="flex items-center gap-1">
-                                                    <Button @click.stop="openEditPermissionModal(permission)"
-                                                        icon="pi pi-pencil" severity="contrast" rounded text size="small" />
-                                                    <Button @click.stop="confirmDeletePermission(permission)"
-                                                        icon="pi pi-trash" severity="contrast" rounded text
-                                                        size="small" />
+                                <Accordion :multiple="true" :activeIndex="[...Array(Object.keys(permissions).length).keys()]">
+                                     <AccordionPanel v-for="(group, groupName) in permissions" :key="groupName" :value="groupName">
+                                        <AccordionHeader>
+                                            <div class="flex items-center gap-3 w-full" @click.stop>
+                                                 <!-- MEJORA: Checkbox para seleccionar/deseleccionar todo el grupo -->
+                                                <Checkbox
+                                                    :modelValue="isGroupFullySelected(group)"
+                                                    :indeterminate="isGroupPartiallySelected(group)"
+                                                    @change="toggleGroupSelection(group)"
+                                                    :binary="true"
+                                                    :disabled="!hasPermission('settings.roles_permissions.manage')"
+                                                />
+                                                <span class="font-bold capitalize">{{ groupName }}</span>
+                                            </div>
+                                        </AccordionHeader>
+                                        <AccordionContent>
+                                            <div class="space-y-4 pt-4">
+                                                <div v-for="permission in group" :key="permission.id"
+                                                    class="flex items-center justify-between">
+                                                    <div class="flex items-center">
+                                                        <Checkbox v-model="permissionsForm.permissions"
+                                                            :inputId="`perm-${permission.id}`" :value="permission.id"
+                                                            :disabled="!hasPermission('settings.roles_permissions.manage')" />
+                                                        <label :for="`perm-${permission.id}`" class="ml-3">
+                                                            <span class="font-semibold">{{ permission.description }}</span>
+                                                            <p class="text-xs text-gray-500">{{ permission.name }}</p>
+                                                        </label>
+                                                    </div>
+                                                    <div v-if="$page.props.auth.user.id == 1" class="flex items-center gap-1">
+                                                        <Button @click.stop="openEditPermissionModal(permission)"
+                                                            icon="pi pi-pencil" severity="contrast" rounded text size="small" />
+                                                        <Button @click.stop="confirmDeletePermission(permission)"
+                                                            icon="pi pi-trash" severity="contrast" rounded text
+                                                            size="small" />
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    </AccordionTab>
+                                        </AccordionContent>
+                                     </AccordionPanel>
                                 </Accordion>
                             </div>
                             <div class="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-b-lg flex justify-end">
