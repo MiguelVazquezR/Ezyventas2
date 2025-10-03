@@ -96,8 +96,6 @@ class PermissionSeeder extends Seeder
                 'cash_registers.access' => 'Ver listado de cajas registradoras',
                 'cash_registers.manage' => 'Administrar cajas registradoras',
                 'cash_registers.sessions.access' => 'Ver historial de cortes de caja (sesiones)',
-                'cash_registers.sessions.open' => 'Abrir sesiones de caja',
-                'cash_registers.sessions.close' => 'Crear cortes de caja (cierre de sesiones)',
                 'cash_registers.sessions.create_movements' => 'Crear movimientos de efectivo en sesiones de caja',
             ],
             'Configuraciones' => [

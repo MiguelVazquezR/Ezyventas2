@@ -11,6 +11,7 @@ use App\Models\Provider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
+use Spatie\Permission\Models\Role;
 
 class QuickCreateController extends Controller
 {
@@ -65,7 +66,7 @@ class QuickCreateController extends Controller
         return response()->json($expenseCategory);
     }
 
-     public function storeCustomer(Request $request)
+    public function storeCustomer(Request $request)
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -104,5 +105,28 @@ class QuickCreateController extends Controller
         ]));
 
         return response()->json($product);
+    }
+
+    public function storeRole(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'permissions' => 'nullable|array',
+            'permissions.*' => 'exists:permissions,id' // Valida que cada ID de permiso exista
+        ]);
+
+        // CORRECCIÓN: Se añade branch_id para sistemas multisucursal.
+        $role = Role::create([
+            'name' => $request->name,
+            'branch_id' => Auth::user()->branch_id,
+            'guard_name' => 'web',
+        ]);
+
+        if (!empty($request->permissions)) {
+            $role->syncPermissions($request->permissions);
+        }
+
+        // Se devuelve el rol con sus permisos para que el frontend lo pueda usar
+        return response()->json($role->load('permissions'));
     }
 }

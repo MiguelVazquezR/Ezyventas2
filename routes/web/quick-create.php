@@ -10,4 +10,5 @@ Route::middleware('auth')->prefix('quick-create')->as('quick-create.')->group(fu
     Route::post('expense_categories', [QuickCreateController::class, 'storeExpenseCategory'])->name('expense_categories.store');
     Route::post('customers', [QuickCreateController::class, 'storeCustomer'])->name('customers.store');
     Route::post('/products', [QuickCreateController::class, 'storeProduct'])->name('products.store');
+    Route::post('roles', [QuickCreateController::class, 'storeRole'])->name('roles.store');
 });

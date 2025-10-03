@@ -165,7 +165,7 @@ const getPromotionSummary = (promo) => {
             <span
                 class="absolute top-0 left-0 rounded-none rounded-tl-[15px] rounded-br-[15px] text-sm text-white dark:text-gray-900 px-2 py-1"
                 :class="displayStock > 0 ? 'bg-[#122C3C] dark:bg-gray-400' : 'bg-red-600 dark:bg-red-400'">
-                {{ displayStock + ' en stock' }}
+                {{ displayStock + ' stock' }}
             </span>
             <button class="absolute top-4 right-4 bg-[#5c5c5c]/70 dark:bg-black/50 text-white rounded-[6px] size-7 border border-white flex items-center justify-center"
                 @click="emit('showDetails', product)" v-tooltip.bottom="'Ver detalles'">
