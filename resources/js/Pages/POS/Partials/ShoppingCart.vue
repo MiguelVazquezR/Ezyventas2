@@ -121,7 +121,7 @@ const total = computed(() => subtotal.value - totalDiscount.value);
 
 const isPaymentModalVisible = ref(false);
 
-const useBalance = ref(false);
+const useBalance = ref(true);
 const amountFromBalance = computed(() => {
     if (props.client && useBalance.value && props.client.balance > 0) {
         return Math.min(total.value, props.client.balance);
@@ -132,7 +132,7 @@ const amountFromBalance = computed(() => {
 const finalTotalToPay = computed(() => total.value - amountFromBalance.value);
 
 watch(() => props.client, () => {
-    useBalance.value = false;
+    useBalance.value = true;
 });
 
 const handlePaymentSubmit = (paymentData) => {
@@ -218,7 +218,7 @@ const formatCurrency = (value) => {
                             </span>
                         </div>
                         <div v-if="client.balance > 0" class="flex items-center pt-2">
-                            <Checkbox v-model="useBalance" inputId="useBalance" :binary="true" />
+                            <Checkbox v-model="useBalance" inputId="useBalance" :binary="true" disabled />
                             <label for="useBalance" class="ml-2 text-sm text-gray-800 dark:text-gray-200">
                                 Usar saldo a favor en esta compra
                             </label>
@@ -268,7 +268,7 @@ const formatCurrency = (value) => {
                 </div>
 
                 <Button @click="isPaymentModalVisible = true" :disabled="items.length === 0"
-                    :label="client && finalTotalToPay <= 0.01 ? 'Finalizar (a Crédito)' : 'Pagar'"
+                    :label="client && finalTotalToPay <= 0.01 ? 'Finalizar (a crédito)' : 'Pagar'"
                     icon="pi pi-arrow-right" iconPos="right"
                     class="w-full mt-2 bg-orange-500 hover:bg-orange-600 border-none" />
             </div>

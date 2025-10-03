@@ -7,4 +7,5 @@ enum PaymentMethod: string
     case CASH = 'efectivo';
     case CARD = 'tarjeta';
     case TRANSFER = 'transferencia';
+    case BALANCE = 'saldo';
 }

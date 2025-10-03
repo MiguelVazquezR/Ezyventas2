@@ -1,17 +1,16 @@
 <script setup>
-import { ref } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { ref, computed } from 'vue';
+import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
+import AddBalanceModal from '@/Components/AddBalanceModal.vue';
 
 const props = defineProps({
     customer: Object,
 });
 
 const confirm = useConfirm();
-
-// composables
 const { hasPermission } = usePermissions();
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
@@ -19,6 +18,8 @@ const breadcrumbItems = ref([
     { label: 'Clientes', url: route('customers.index') },
     { label: props.customer.name }
 ]);
+
+const isAddBalanceModalVisible = ref(false);
 
 const deleteCustomer = () => {
     confirm.require({
@@ -32,13 +33,21 @@ const deleteCustomer = () => {
     });
 };
 
-const actionItems = ref([
+const menu = ref();
+const toggleMenu = (event) => {
+    menu.value.toggle(event);
+};
+
+const actionItems = computed(() => [
+    { label: 'Abonar / Agregar Saldo', icon: 'pi pi-dollar', command: () => isAddBalanceModalVisible.value = true, visible: hasPermission('customers.edit') }, // MEJORA 4
+    { separator: true },
     { label: 'Crear nuevo cliente', icon: 'pi pi-plus', command: () => router.get(route('customers.create')), visible: hasPermission('customers.create') },
     { label: 'Editar cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', props.customer.id)), visible: hasPermission('customers.edit') },
-    { label: 'Registrar venta', icon: 'pi pi-shopping-cart', visible: hasPermission('customers.store_sale') },
+    { label: 'Registrar venta', icon: 'pi pi-shopping-cart', command: () => router.get(route('pos.index', { customer_id: props.customer.id })), visible: hasPermission('pos.access') },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteCustomer, visible: hasPermission('customers.delete') },
 ]);
+
 
 // --- Helpers de Formato ---
 const formatCurrency = (value) => {
@@ -81,7 +90,11 @@ const getTransactionStatusSeverity = (status) => {
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{{ customer.name }}</h1>
                 <p v-if="customer.company_name" class="text-gray-500 dark:text-gray-400 mt-1">{{ customer.company_name }}</p>
             </div>
-            <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined class="mt-4 sm:mt-0"></SplitButton>
+            <!-- MEJORA 2: Botón de Acciones con Menú -->
+            <div>
+                <Button @click="toggleMenu" label="Acciones" icon="pi pi-chevron-down" iconPos="right" severity="secondary" outlined class="mt-4 sm:mt-0" />
+                <Menu ref="menu" :model="actionItems" :popup="true" />
+            </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -90,26 +103,26 @@ const getTransactionStatusSeverity = (status) => {
                  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                      <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información de Contacto</h2>
                      <ul class="space-y-3 text-sm">
-                        <li v-if="customer.phone" class="flex items-center"><i class="pi pi-phone w-6 text-gray-500"></i> <span class="font-medium">{{ customer.phone }}</span></li>
-                        <li v-if="customer.email" class="flex items-center"><i class="pi pi-envelope w-6 text-gray-500"></i> <span class="font-medium">{{ customer.email }}</span></li>
-                        <li v-if="customer.tax_id" class="flex items-center"><i class="pi pi-id-card w-6 text-gray-500"></i> <span class="font-medium">{{ customer.tax_id }}</span></li>
+                         <li v-if="customer.phone" class="flex items-center"><i class="pi pi-phone w-6 text-gray-500"></i> <span class="font-medium">{{ customer.phone }}</span></li>
+                         <li v-if="customer.email" class="flex items-center"><i class="pi pi-envelope w-6 text-gray-500"></i> <span class="font-medium">{{ customer.email }}</span></li>
+                         <li v-if="customer.tax_id" class="flex items-center"><i class="pi pi-id-card w-6 text-gray-500"></i> <span class="font-medium">{{ customer.tax_id }}</span></li>
                      </ul>
                  </div>
                  <div v-if="hasPermission('customers.see_financial_info')" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                      <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información Financiera</h2>
                      <ul class="space-y-3 text-sm">
-                        <li class="flex justify-between items-center">
+                         <li class="flex justify-between items-center">
                             <span class="text-gray-500">Saldo Actual</span> 
                             <span :class="getBalanceClass(customer.balance)" class="font-mono font-semibold text-lg">
                                 {{ formatCurrency(customer.balance) }}
                             </span>
-                        </li>
-                         <li class="flex justify-between items-center">
+                         </li>
+                          <li class="flex justify-between items-center">
                             <span class="text-gray-500">Límite de Crédito</span> 
                             <span class="font-mono font-medium">
                                 {{ formatCurrency(customer.credit_limit) }}
                             </span>
-                        </li>
+                         </li>
                      </ul>
                  </div>
             </div>
@@ -125,12 +138,20 @@ const getTransactionStatusSeverity = (status) => {
                         </Column>
                         <Column field="total" header="Total">
                              <template #body="{ data }">
-                                {{ formatCurrency(data.subtotal - data.total_discount) }}
+                                {{ formatCurrency(data.total) }}
                             </template>
                         </Column>
                         <Column field="status" header="Estatus">
                             <template #body="{ data }">
-                                <Tag :value="data.status" :severity="getTransactionStatusSeverity(data.status)" />
+                                <Tag :value="data.status" :severity="getTransactionStatusSeverity(data.status)" class="capitalize"/>
+                            </template>
+                        </Column>
+                        <!-- MEJORA 1: Columna con enlace a detalles -->
+                        <Column headerStyle="width: 5rem; text-align: center">
+                            <template #body="{ data }">
+                                <Link :href="route('transactions.show', data.id)" v-tooltip.bottom="'Ver detalles'">
+                                    <Button icon="pi pi-external-link" text rounded severity="secondary" />
+                                </Link>
                             </template>
                         </Column>
                     </DataTable>
@@ -140,11 +161,24 @@ const getTransactionStatusSeverity = (status) => {
                 </div>
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Movimientos de Saldo</h2>
-                    <DataTable :value="customer.balanceMovements" class="p-datatable-sm" responsiveLayout="scroll" :paginator="customer.balanceMovements?.length > 5" :rows="5">
+                    <DataTable :value="customer.balance_movements" class="p-datatable-sm" responsiveLayout="scroll" :paginator="customer.balance_movements?.length > 5" :rows="5">
                         <Column field="created_at" header="Fecha">
                              <template #body="{ data }"> {{ formatDate(data.created_at) }}</template>
                         </Column>
-                        <Column field="type" header="Tipo"></Column>
+                        <Column field="type" header="Tipo">
+                            <template #body="{data}">
+                                <span class="capitalize">{{ data.type.replace(/_/g, ' ') }}</span>
+                            </template>
+                        </Column>
+                         <!-- MEJORA 3: Mostrar folio de transacción si existe -->
+                        <Column field="transaction.folio" header="Folio Venta">
+                            <template #body="{data}">
+                                <Link v-if="data.transaction" :href="route('transactions.show', data.transaction.id)" class="text-blue-500 hover:underline">
+                                    #{{ data.transaction.folio }}
+                                </Link>
+                                <span v-else>N/A</span>
+                            </template>
+                        </Column>
                         <Column field="amount" header="Monto">
                             <template #body="{ data }">
                                 <span :class="data.amount > 0 ? 'text-green-600' : 'text-red-600'">
@@ -156,11 +190,14 @@ const getTransactionStatusSeverity = (status) => {
                              <template #body="{ data }"> {{ formatCurrency(data.balance_after) }}</template>
                         </Column>
                     </DataTable>
-                     <div v-if="!customer.balanceMovements || customer.balanceMovements?.length === 0" class="text-center text-gray-500 py-4">
+                     <div v-if="!customer.balance_movements || customer.balance_movements?.length === 0" class="text-center text-gray-500 py-4">
                         No hay movimientos de saldo registrados.
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- MEJORA 4: Modal para agregar saldo/abono -->
+        <AddBalanceModal v-model:visible="isAddBalanceModalVisible" :customer="customer" />
     </AppLayout>
 </template>

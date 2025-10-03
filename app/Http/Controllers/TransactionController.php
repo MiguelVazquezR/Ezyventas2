@@ -28,16 +28,14 @@ class TransactionController extends Controller implements HasMiddleware
     }
     
    public function index(Request $request): Response
-    {
+   {
         $user = Auth::user();
-        $subscriptionId = $user->branch->subscription_id;
+        $branchId = $user->branch_id;
 
         $query = Transaction::query()
-            ->join('customers', 'transactions.customer_id', '=', 'customers.id')
-            ->join('users', 'transactions.user_id', '=', 'users.id')
-            ->whereHas('branch.subscription', function ($q) use ($subscriptionId) {
-                $q->where('id', $subscriptionId);
-            })
+            ->leftJoin('customers', 'transactions.customer_id', '=', 'customers.id')
+            ->leftJoin('users', 'transactions.user_id', '=', 'users.id')
+            ->where('transactions.branch_id', $branchId)
             ->with(['customer:id,name', 'user:id,name'])
             ->select('transactions.*');
 
@@ -73,17 +71,24 @@ class TransactionController extends Controller implements HasMiddleware
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
             'availableTemplates' => $availableTemplates, // Se pasan a la vista
         ]);
-    }
+   }
 
-     public function show(Transaction $transaction): Response
-    {
+   public function show(Transaction $transaction): Response
+   {
         $transaction->load([
             'customer:id,name',
             'user:id,name',
             'branch:id,name',
             'items.itemable',
-            'payments'
+            'payments',
+            // 'customerBalanceMovements' // Ya no es necesario
         ]);
+
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Se elimina el cálculo del monto pagado con saldo,
+        // ya que ahora viene incluido en la relación 'payments'.
+        // --- FIN DE LA CORRECCIÓN ---
+
 
         // Se obtienen las plantillas disponibles para la sucursal y el contexto de transacción
         $availableTemplates = Auth::user()->branch->printTemplates()
@@ -95,7 +100,7 @@ class TransactionController extends Controller implements HasMiddleware
             'transaction' => $transaction,
             'availableTemplates' => $availableTemplates, // Se pasan a la vista
         ]);
-    }
+   }
 
     /**
      * Cancela una transacción y repone el stock si estaba completada.

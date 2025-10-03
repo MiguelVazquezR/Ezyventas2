@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\CashRegisterSessionStatus;
 use App\Enums\CustomerBalanceMovementType;
+use App\Enums\PaymentMethod;
 use App\Enums\PromotionEffectType;
 use App\Enums\PromotionType;
 use App\Enums\TemplateContextType;
@@ -27,6 +28,7 @@ use Illuminate\Validation\Rule;
 use Carbon\Carbon;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Facades\Log;
 
 class PointOfSaleController extends Controller implements HasMiddleware
 {
@@ -101,7 +103,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         ]);
     }
 
-    public function checkout(Request $request)
+   public function checkout(Request $request)
     {
         $validated = $request->validate([
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
@@ -117,8 +119,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'total' => 'required|numeric',
             'payments' => 'sometimes|array',
             'payments.*.amount' => 'required|numeric|min:0.01',
-            'payments.*.method' => ['required', Rule::in(['efectivo', 'tarjeta', 'transferencia'])],
-            'use_balance' => 'required|boolean',
+            'payments.*.method' => ['required', Rule::in(array_column(PaymentMethod::cases(), 'value'))],
         ]);
 
         $user = Auth::user();
@@ -129,34 +130,13 @@ class PointOfSaleController extends Controller implements HasMiddleware
         try {
             $transaction = DB::transaction(function () use ($validated, $user, $customer, $totalSale, $paymentsFromRequest) {
 
-                // Se calcula si se usará saldo a favor del cliente.
-                $amountFromBalance = 0;
-                if ($customer && $validated['use_balance'] && $customer->balance > 0) {
-                    $amountFromBalance = min($totalSale, (float) $customer->balance);
-                }
-
-                // Se valida que el pago sea completo o que el crédito sea suficiente.
-                $totalOfferedByMethods = $paymentsFromRequest->sum('amount');
-                $remainingDueAfterPayments = $totalSale - $totalOfferedByMethods - $amountFromBalance;
-
-                if (!$customer) {
-                    if ($remainingDueAfterPayments > 0.01) {
-                        throw new \Exception('El pago debe ser completo para ventas a Público en General.');
-                    }
-                } else {
-                    if ($remainingDueAfterPayments > 0.01 && $remainingDueAfterPayments > $customer->available_credit) {
-                        throw new \Exception('El crédito disponible del cliente no es suficiente para cubrir el monto restante.');
-                    }
-                }
-
-                // Se crea la transacción.
                 $newTransaction = Transaction::create([
                     'cash_register_session_id' => $validated['cash_register_session_id'],
                     'folio' => $this->generateFolio(),
                     'customer_id' => $customer?->id,
                     'branch_id' => $user->branch_id,
                     'user_id' => $user->id,
-                    'status' => TransactionStatus::PENDING, // Se actualizará al final.
+                    'status' => TransactionStatus::PENDING, // Se crea inicialmente como 'pendiente'
                     'channel' => TransactionChannel::POS,
                     'subtotal' => $validated['subtotal'],
                     'total_discount' => $validated['total_discount'],
@@ -166,7 +146,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     'status_changed_at' => now(),
                 ]);
 
-                // Se registran los items y se descuenta el stock.
                 foreach ($validated['cartItems'] as $item) {
                     $itemableId = $item['id'];
                     $itemableType = Product::class;
@@ -190,71 +169,72 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     Product::find($item['id'])->decrement('current_stock', $item['quantity']);
                 }
 
-                // --- LÓGICA DE PAGOS CORREGIDA ---
+                // 1. Aplicación automática de saldo a favor
+                $amountFromBalance = 0;
+                if ($customer && $customer->balance > 0) {
+                    $amountFromBalance = min($totalSale, (float) $customer->balance);
+                    if ($amountFromBalance > 0) {
+                        $newTransaction->payments()->create([
+                            'amount' => $amountFromBalance,
+                            'payment_method' => PaymentMethod::BALANCE,
+                            'payment_date' => now(),
+                            'status' => 'completado',
+                        ]);
+                        
+                        $balanceBefore = $customer->balance;
+                        $customer->decrement('balance', $amountFromBalance);
+                        
+                        $customer->balanceMovements()->create([
+                            'transaction_id' => $newTransaction->id,
+                            'type' => CustomerBalanceMovementType::CREDIT_USAGE,
+                            'amount' => -$amountFromBalance,
+                            'balance_after' => $customer->balance,
+                            'notes' => "Uso de saldo en venta POS. Folio: {$newTransaction->folio}",
+                        ]);
+                    }
+                }
 
-                // Se calcula la deuda real a cubrir con los métodos de pago (después de usar el saldo a favor).
-                $dueAfterBalance = $totalSale - $amountFromBalance;
-                $amountRecordedFromMethods = 0;
-
+                // 2. Registrar los otros métodos de pago
                 foreach ($paymentsFromRequest as $paymentData) {
-                    if ($dueAfterBalance > 0 && $amountRecordedFromMethods >= $dueAfterBalance) {
-                        break; // La deuda ya está cubierta.
-                    }
-
-                    $amountOffered = (float) $paymentData['amount'];
-                    // Se calcula el monto real a registrar, evitando el sobrepago.
-                    $amountToRecord = min($amountOffered, $dueAfterBalance - $amountRecordedFromMethods);
-
-                    if ($amountToRecord <= 0) {
-                        continue;
-                    }
-
                     $newTransaction->payments()->create([
-                        'amount' => $amountToRecord,
+                        'amount' => (float) $paymentData['amount'],
                         'payment_method' => $paymentData['method'],
                         'payment_date' => now(),
                         'status' => 'completado',
                     ]);
-
-                    $amountRecordedFromMethods += $amountToRecord;
                 }
+                
+                // 3. Calcular el total pagado y el saldo pendiente
+                $totalPaid = $newTransaction->fresh()->payments()->sum('amount');
+                $remainingDue = $totalSale - $totalPaid;
 
-                // Se ajusta el balance del cliente.
-                if ($customer) {
-                    $totalAmountPaid = $amountRecordedFromMethods + $amountFromBalance;
-                    $balanceChange = $totalAmountPaid - $totalSale;
-
-                    if (abs($balanceChange) > 0.01) {
-                        $balanceBefore = (float) $customer->balance;
-                        $customer->update(['balance' => $balanceBefore + $balanceChange]);
-
-                        // Movimiento de cargo por la venta total
+                // 4. Gestionar venta a crédito y estatus final
+                if ($remainingDue > 0.01) {
+                    // Hay un saldo pendiente. La venta quedará como 'pendiente'.
+                    if ($customer && $remainingDue <= $customer->available_credit) {
+                        // Si hay cliente con crédito, se aplica el cargo a su cuenta.
+                        $balanceBefore = $customer->balance;
+                        $customer->decrement('balance', $remainingDue);
+                        
                         $customer->balanceMovements()->create([
                            'transaction_id' => $newTransaction->id,
                            'type' => CustomerBalanceMovementType::CREDIT_SALE,
-                           'amount' => -$totalSale,
-                           'balance_after' => $balanceBefore - $totalSale,
-                           'notes' => "Cargo por venta POS. Folio: {$newTransaction->folio}",
+                           'amount' => -$remainingDue,
+                           'balance_after' => $customer->balance,
+                           'notes' => "Cargo a crédito por venta POS. Folio: {$newTransaction->folio}",
                         ]);
 
-                        // Movimiento de abono por el pago total recibido (métodos + saldo)
-                        if ($totalAmountPaid > 0) {
-                            $customer->balanceMovements()->create([
-                                'transaction_id' => $newTransaction->id,
-                                'type' => CustomerBalanceMovementType::PAYMENT,
-                                'amount' => $totalAmountPaid,
-                                'balance_after' => $customer->fresh()->balance,
-                                'notes' => "Abono por venta POS. Folio: {$newTransaction->folio}",
-                            ]);
-                        }
+                        // IMPORTANTE: NO se actualiza el estado. Se mantiene como 'pendiente'.
+
+                    } else {
+                        // Si no hay cliente o no tiene crédito suficiente, es un error.
+                        throw new \Exception("Pago insuficiente y crédito no disponible o cliente no seleccionado.");
                     }
+                } else {
+                    // La venta está totalmente pagada. Se actualiza el estado a 'completado'.
+                    $newTransaction->update(['status' => TransactionStatus::COMPLETED]);
                 }
-
-                // Se actualiza el estado final de la transacción.
-                $finalAmountDue = $totalSale - $newTransaction->payments()->sum('amount') - $amountFromBalance;
-                $newStatus = ($finalAmountDue <= 0.01) ? TransactionStatus::COMPLETED : TransactionStatus::PENDING;
-                $newTransaction->update(['status' => $newStatus]);
-
+                                
                 return $newTransaction;
             });
 

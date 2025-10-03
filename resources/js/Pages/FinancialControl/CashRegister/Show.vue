@@ -80,7 +80,7 @@ const formatDate = (dateString) => {
                     <template #title>Estatus Actual</template>
                     <template #content>
                         <div v-if="currentSession" class="text-center">
-                            <i class="pi pi-lock-open text-5xl text-green-500"></i>
+                            <i class="pi pi-lock-open !text-5xl text-green-500"></i>
                             <p class="mt-4 font-semibold">Caja Abierta</p>
                             <p class="text-sm text-gray-500">Sesión iniciada por <span
                                     class="font-medium text-gray-700 dark:text-gray-300">{{ currentSession.user.name
@@ -110,14 +110,14 @@ const formatDate = (dateString) => {
                                 <p v-else class="text-xs text-gray-400 mt-2 text-center">No hay movimientos en esta
                                     sesión.</p>
                             </div>
-                            <Button v-if="hasPermission('cash_registers.sessions.close')" @click="showCloseModal = true" label="Realizar Corte" class="w-full mt-6" />
+                            <Button @click="showCloseModal = true" label="Realizar Corte" class="w-full mt-6" />
                         </div>
                         <div v-else class="text-center">
-                            <i class="pi pi-lock text-5xl text-gray-400"></i>
+                            <i class="pi pi-lock !text-5xl text-gray-400"></i>
                             <p class="mt-4 font-semibold">Caja Cerrada</p>
                             <p class="text-sm text-gray-500">Esta caja está disponible para iniciar una nueva sesión.
                             </p>
-                            <Button v-if="hasPermission('cash_registers.sessions.open')" @click="showOpenModal = true" label="Abrir Caja" severity="success"
+                            <Button @click="showOpenModal = true" label="Abrir Caja" severity="success"
                                 class="w-full mt-6" />
                         </div>
                     </template>

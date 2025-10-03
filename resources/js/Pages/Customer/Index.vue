@@ -160,7 +160,7 @@ const formatCurrency = (value) => {
                     <Column field="name" header="Nombre" sortable>
                         <template #body="{ data }">
                             <div>
-                                <p class="font-semibold">{{ data.name }}</p>
+                                <p class="font-semibold m-0">{{ data.name }}</p>
                                 <p v-if="data.company_name" class="text-xs text-gray-500">{{ data.company_name }}</p>
                             </div>
                         </template>
@@ -168,8 +168,8 @@ const formatCurrency = (value) => {
                     <Column field="phone" header="Contacto" sortable>
                         <template #body="{ data }">
                             <div>
-                                <p v-if="data.phone"><i class="pi pi-phone text-xs mr-2"></i>{{ data.phone }}</p>
-                                <p v-if="data.email"><i class="pi pi-envelope text-xs mr-2"></i>{{ data.email }}</p>
+                                <p v-if="data.phone" class="m-0"><i class="pi pi-phone !text-xs mr-2"></i>{{ data.phone }}</p>
+                                <p v-if="data.email" class="m-0"><i class="pi pi-envelope !text-xs mr-2"></i>{{ data.email }}</p>
                             </div>
                         </template>
                     </Column>

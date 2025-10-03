@@ -71,7 +71,7 @@ class CustomerController extends Controller implements HasMiddleware
 
     public function show(Customer $customer): Response
     {
-        $customer->load(['transactions.user', 'balanceMovements']);
+         $customer->load(['transactions.user', 'balanceMovements.transaction:id,folio']);
 
         return Inertia::render('Customer/Show', [
             'customer' => $customer,
@@ -104,4 +104,3 @@ class CustomerController extends Controller implements HasMiddleware
         return redirect()->route('customers.index')->with('success', 'Clientes seleccionados eliminados.');
     }
 }
-
