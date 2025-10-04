@@ -33,15 +33,15 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
     public function index(Request $request): Response
     {
         $user = Auth::user();
-        $subscriptionId = $user->branch->subscription_id;
+        $branchId = $user->branch_id;
 
         // SOLUCIÓN: Usar JOINs para permitir el ordenamiento y la búsqueda en tablas relacionadas
         $query = CashRegisterSession::query()
             ->join('users', 'cash_register_sessions.user_id', '=', 'users.id')
             ->join('cash_registers', 'cash_register_sessions.cash_register_id', '=', 'cash_registers.id')
             ->where('cash_register_sessions.status', CashRegisterSessionStatus::CLOSED)
-            ->whereHas('cashRegister.branch.subscription', function ($q) use ($subscriptionId) {
-                $q->where('id', $subscriptionId);
+            ->whereHas('cashRegister.branch', function ($q) use ($branchId) {
+                $q->where('id', $branchId);
             })
             ->with(['user:id,name', 'cashRegister:id,name'])
             ->select('cash_register_sessions.*'); // Evitar conflictos de columnas 'id'

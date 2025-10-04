@@ -148,4 +148,12 @@ class Transaction extends Model
             ->withPivot('discount_applied')
             ->withTimestamps();
     }
+
+    /**
+     * CORRECCIÓN: Obtiene los movimientos de saldo del cliente asociados a esta transacción.
+     */
+    public function customerBalanceMovements(): HasMany
+    {
+        return $this->hasMany(CustomerBalanceMovement::class);
+    }
 }

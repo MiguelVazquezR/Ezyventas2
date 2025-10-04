@@ -14,8 +14,11 @@ class BankAccount extends Model
     protected $fillable = [
         'subscription_id',
         'bank_name',
+        'owner_name',
         'account_name',
         'account_number',
+        'card_number',
+        'clabe',
         'balance',
     ];
 
@@ -39,4 +42,3 @@ class BankAccount extends Model
         return $this->belongsToMany(Branch::class, 'bank_account_branch');
     }
 }
-

@@ -66,7 +66,6 @@ const addToCart = (data) => {
             }
         }
     } else {
-        const variantDescription = variant ? ' (' + Object.entries(variant.attributes).map(([key, value]) => `${key}: ${value}`).join(', ') + ')' : '';
         const newItem = {
             ...product,
             cartItemId: cartItemId,
@@ -79,7 +78,7 @@ const addToCart = (data) => {
                 stock: variant.stock,
                 selectedVariant: variant.attributes,
                 product_attribute_id: variant.id,
-                name: product.name + variantDescription,
+                name: product.name,
                 image: variant.image_url || product.image,
             })
         };

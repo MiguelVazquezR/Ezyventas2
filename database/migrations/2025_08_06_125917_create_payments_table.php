@@ -16,7 +16,7 @@ return new class extends Migration
             $table->foreignId('transaction_id')->constrained('transactions')->onDelete('cascade');
             
             $table->decimal('amount', 10, 2);
-            $table->string('payment_method'); // efectivo, tarjeta, transferencia
+            $table->string('payment_method'); // efectivo, tarjeta, transferencia, saldo de cliente
             $table->string('status'); // completado, fallido
             $table->timestamp('payment_date');
             $table->text('notes')->nullable();

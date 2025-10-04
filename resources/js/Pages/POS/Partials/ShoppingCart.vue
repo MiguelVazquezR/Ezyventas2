@@ -4,14 +4,6 @@ import { useConfirm } from "primevue/useconfirm";
 import CartItem from './CartItem.vue';
 import CreateCustomerModal from '@/Components/CreateCustomerModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
-import Button from 'primevue/button';
-import ConfirmPopup from 'primevue/confirmpopup';
-import Dropdown from 'primevue/dropdown';
-import Select from 'primevue/select';
-import Avatar from 'primevue/avatar';
-import Checkbox from 'primevue/checkbox';
-import Divider from 'primevue/divider';
-import Badge from 'primevue/badge';
 
 const props = defineProps({
     items: Array,
@@ -115,7 +107,6 @@ const cartLevelDiscounts = computed(() => {
     return applied;
 });
 
-// --- MEJORA: Crea un Set con los nombres de las promociones de carrito activas ---
 const appliedCartPromoNames = computed(() => {
     return new Set(cartLevelDiscounts.value.map(d => d.name));
 });
@@ -129,28 +120,13 @@ const total = computed(() => subtotal.value - totalDiscount.value);
 
 const isPaymentModalVisible = ref(false);
 
-const useBalance = ref(false);
-const amountFromBalance = computed(() => {
-    if (props.client && useBalance.value && props.client.balance > 0) {
-        return Math.min(total.value, props.client.balance);
-    }
-    return 0;
-});
-
-const finalTotalToPay = computed(() => total.value - amountFromBalance.value);
-
-watch(() => props.client, () => {
-    useBalance.value = false;
-});
-
 const handlePaymentSubmit = (paymentData) => {
     isPaymentModalVisible.value = false;
     emit('checkout', {
         ...paymentData,
         subtotal: subtotal.value,
         total: total.value,
-        discount: totalDiscount.value,
-        use_balance: useBalance.value,
+        total_discount: totalDiscount.value,
     });
 };
 
@@ -203,11 +179,9 @@ const formatCurrency = (value) => {
                         <Button v-if="client" @click="clearCustomer" icon="pi pi-times" rounded variant="outlined"
                             severity="secondary" size="small" class="!size-6" />
                     </div>
-                    <!-- Info de Saldo y Crédito del Cliente -->
                     <div v-if="client" class="py-2 border-t space-y-2">
                         <div class="flex justify-between text-sm">
                             <span class="text-gray-600 dark:text-gray-300">Saldo:</span>
-                            <!-- CORRECCIÓN: Se añade '|| 0' para evitar error si client.balance es undefined -->
                             <span :class="(client.balance || 0) >= 0 ? 'text-green-600' : 'text-red-600'"
                                 class="font-bold">
                                 {{ new Intl.NumberFormat('es-MX', {
@@ -218,18 +192,11 @@ const formatCurrency = (value) => {
                         </div>
                         <div class="flex justify-between text-sm">
                             <span class="text-gray-600 dark:text-gray-300">Crédito Disponible:</span>
-                            <!-- CORRECCIÓN: Se añade '|| 0' para evitar error si client.available_credit es undefined -->
                             <span class="font-bold text-blue-600">
                                 {{ new Intl.NumberFormat('es-MX', {
                                     style: 'currency', currency: 'MXN'
                                 }).format(client.available_credit || 0) }}
                             </span>
-                        </div>
-                        <div v-if="client.balance > 0" class="flex items-center pt-2">
-                            <Checkbox v-model="useBalance" inputId="useBalance" :binary="true" />
-                            <label for="useBalance" class="ml-2 text-sm text-gray-800 dark:text-gray-200">
-                                Usar saldo a favor en esta compra
-                            </label>
                         </div>
                     </div>
                 </div>
@@ -243,7 +210,6 @@ const formatCurrency = (value) => {
             <div class="flex-grow py-1 overflow-y-auto space-y-2">
                 <p v-if="items.length === 0" class="text-gray-500 dark:text-gray-400 text-center mt-8">El carrito está
                     vacío</p>
-                <!-- MEJORA: Pasa el Set de promociones activas al CartItem -->
                 <CartItem v-for="item in items" :key="item.cartItemId" :item="item"
                     :applied-cart-promo-names="appliedCartPromoNames" @update-quantity="$emit('updateQuantity', $event)"
                     @update-price="$emit('updatePrice', $event)" @remove-item="$emit('removeItem', $event)" />
@@ -260,30 +226,38 @@ const formatCurrency = (value) => {
                         <span>Descuentos</span>
                         <span class="font-medium">-{{ formatCurrency(totalDiscount) }}</span>
                     </div>
-                    <!-- Detalle de descuentos de carrito -->
                     <div v-for="promo in cartLevelDiscounts" :key="promo.name"
                         class="flex justify-between items-center pl-4 text-xs">
                         <span>{{ promo.name }}</span>
                         <span>-{{ formatCurrency(promo.amount) }}</span>
                     </div>
                 </div>
-
-                <div v-if="amountFromBalance > 0" class="flex justify-between items-center text-green-600"><span>Saldo
-                        Utilizado</span><span class="font-medium">-{{ formatCurrency(amountFromBalance) }}</span></div>
+                
                 <div
                     class="flex justify-between items-center font-bold text-lg text-gray-800 dark:text-gray-100 border-t border-dashed border-[#D9D9D9] pt-1">
-                    <span>Total</span><span>{{ formatCurrency(finalTotalToPay) }}</span>
+                    <span>Total</span><span>{{ formatCurrency(total) }}</span>
                 </div>
 
                 <Button @click="isPaymentModalVisible = true" :disabled="items.length === 0"
-                    :label="client && finalTotalToPay <= 0.01 ? 'Finalizar (a Crédito)' : 'Pagar'"
+                    :label="client && total <= (client.available_credit || 0) ? 'Finalizar' : 'Pagar'"
                     icon="pi pi-arrow-right" iconPos="right"
                     class="w-full mt-2 bg-orange-500 hover:bg-orange-600 border-none" />
             </div>
         </div>
 
         <CreateCustomerModal v-model:visible="isCreateCustomerModalVisible" @created="handleCustomerCreated" />
-        <PaymentModal v-model:visible="isPaymentModalVisible" :total-amount="finalTotalToPay" :client="client"
-            @submit="handlePaymentSubmit" />
+
+        <!-- INICIO DE CORRECCIÓN -->
+        <PaymentModal 
+            v-model:visible="isPaymentModalVisible" 
+            :total-amount="total" 
+            :client="client"
+            :customers="customers"
+            @update:client="$emit('selectCustomer', $event)"
+            @customer-created="$emit('customerCreated', $event)"
+            @submit="handlePaymentSubmit" 
+        />
+        <!-- FIN DE CORRECCIÓN -->
     </div>
 </template>
+

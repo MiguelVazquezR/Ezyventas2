@@ -28,12 +28,10 @@ class CustomerController extends Controller implements HasMiddleware
     public function index(Request $request): Response
     {
         $user = Auth::user();
-        $subscriptionId = $user->branch->subscription_id;
+        $branchId = $user->branch_id;
 
         $query = Customer::query()
-            ->whereHas('branch.subscription', function ($q) use ($subscriptionId) {
-                $q->where('id', $subscriptionId);
-            });
+            ->where('branch_id', $branchId);
 
         if ($request->has('search')) {
             $searchTerm = $request->input('search');
@@ -73,7 +71,7 @@ class CustomerController extends Controller implements HasMiddleware
 
     public function show(Customer $customer): Response
     {
-        $customer->load(['transactions.user', 'balanceMovements']);
+         $customer->load(['transactions.user', 'balanceMovements.transaction:id,folio']);
 
         return Inertia::render('Customer/Show', [
             'customer' => $customer,
@@ -106,4 +104,3 @@ class CustomerController extends Controller implements HasMiddleware
         return redirect()->route('customers.index')->with('success', 'Clientes seleccionados eliminados.');
     }
 }
-
