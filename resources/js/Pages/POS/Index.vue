@@ -195,6 +195,7 @@ const handleCheckout = (checkoutData) => {
         quantity: item.quantity,
         unit_price: item.price,
         description: item.name,
+        discount: (item.original_price || item.price) - item.price,
     }));
     form.customerId = selectedClient.value ? selectedClient.value.id : null;
     form.subtotal = checkoutData.subtotal;
@@ -207,12 +208,6 @@ const handleCheckout = (checkoutData) => {
     form.post(route('pos.checkout'), {
         onSuccess: () => {
             clearCart();
-            // CORRECCIÓN 1: Refrescar la lista de clientes después de la venta.
-            router.reload({
-                only: ['customers'],
-                preserveState: true,
-                preserveScroll: true,
-            });
         },
         onError: (errors) => {
             console.error("Error de validación:", errors);

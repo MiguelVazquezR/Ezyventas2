@@ -113,11 +113,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'cartItems.*.quantity' => 'required|numeric|min:1',
             'cartItems.*.unit_price' => 'required|numeric|min:0',
             'cartItems.*.description' => 'required|string',
+            'cartItems.*.discount' => 'required|numeric|min:0',
             'customerId' => 'nullable|exists:customers,id',
             'subtotal' => 'required|numeric',
-            // --- INICIO DE CORRECCIÓN 1: El campo ahora es opcional ---
             'total_discount' => 'nullable|numeric|min:0',
-            // --- FIN DE CORRECCIÓN 1 ---
             'total' => 'required|numeric',
             'payments' => 'sometimes|array',
             'payments.*.amount' => 'required|numeric|min:0.01',
@@ -140,19 +139,17 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     'customer_id' => $customer?->id,
                     'branch_id' => $user->branch_id,
                     'user_id' => $user->id,
-                    'status' => TransactionStatus::PENDING, // Siempre se crea como pendiente
+                    'status' => TransactionStatus::PENDING,
                     'channel' => TransactionChannel::POS,
                     'subtotal' => $validated['subtotal'],
-                    // --- INICIO DE CORRECCIÓN 2: Si no llega el descuento, se asume 0 ---
                     'total_discount' => $validated['total_discount'] ?? 0,
-                    // --- FIN DE CORRECCIÓN 2 ---
-                    'total_tax' => 0,
+                    'total_tax' => 0, // Ajustar si se manejan impuestos
                     'total' => $totalSale,
                     'currency' => 'MXN',
                     'status_changed_at' => now(),
                 ]);
 
-                // Crear items de la transacción y descontar stock (sin cambios)
+                // Crear items de la transacción y descontar stock
                 foreach ($validated['cartItems'] as $item) {
                     $itemableId = $item['id'];
                     $itemableType = Product::class;
@@ -167,9 +164,11 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         'description' => $item['description'],
                         'quantity' => $item['quantity'],
                         'unit_price' => $item['unit_price'],
+                        'discount_amount' => $item['discount'],
                         'line_total' => $item['quantity'] * $item['unit_price'],
                     ]);
 
+                    // Descontar stock (sin cambios)
                     if (!empty($item['product_attribute_id'])) {
                         ProductAttribute::find($item['product_attribute_id'])->decrement('current_stock', $item['quantity']);
                     }
@@ -209,7 +208,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         'notes' => $paymentData['notes'] ?? null,
                     ]);
 
-                    // Si el pago es tarjeta o transferencia, se asocia a la cuenta bancaria.
                     if (in_array($paymentData['method'], ['tarjeta', 'transferencia']) && !empty($paymentData['bank_account_id'])) {
                         $bankAccount = BankAccount::find($paymentData['bank_account_id']);
                         if ($bankAccount) {
@@ -228,7 +226,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         throw new \Exception("Pago insuficiente y el cliente no tiene crédito disponible para cubrir la diferencia.");
                     }
 
-                    // Si hay cliente y crédito, se aplica el cargo a su cuenta.
                     $customer->decrement('balance', $remainingDue);
 
                     $customer->balanceMovements()->create([
@@ -238,10 +235,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         'balance_after' => $customer->balance,
                         'notes' => "Cargo a crédito por venta POS #{$newTransaction->folio}",
                     ]);
-
-                    // El estado se mantiene como 'pendiente' por defecto.
                 } else {
-                    // Si no hay saldo pendiente, la venta está completada.
                     $newTransaction->update(['status' => TransactionStatus::COMPLETED]);
                 }
 
