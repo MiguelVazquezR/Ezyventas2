@@ -246,8 +246,6 @@ const formatCurrency = (value) => {
         </div>
 
         <CreateCustomerModal v-model:visible="isCreateCustomerModalVisible" @created="handleCustomerCreated" />
-
-        <!-- INICIO DE CORRECCIÓN -->
         <PaymentModal 
             v-model:visible="isPaymentModalVisible" 
             :total-amount="total" 
@@ -257,7 +255,5 @@ const formatCurrency = (value) => {
             @customer-created="$emit('customerCreated', $event)"
             @submit="handlePaymentSubmit" 
         />
-        <!-- FIN DE CORRECCIÓN -->
     </div>
 </template>
-

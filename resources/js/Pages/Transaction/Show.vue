@@ -41,12 +41,9 @@ watch(() => props.transaction, (newTransaction) => {
 
 const totalAmount = computed(() => parseFloat(localTransaction.value.total));
 
-// --- INICIO DE LA CORRECCIÓN ---
 const totalPaid = computed(() => {
-    // Ahora simplemente sumamos todos los montos del arreglo de pagos.
     return localTransaction.value.payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
 });
-// --- FIN DE LA CORRECCIÓN ---
 
 const pendingAmount = computed(() => totalAmount.value - totalPaid.value);
 
@@ -123,12 +120,26 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                     <template #content>
                         <DataTable :value="transaction.items" class="p-datatable-sm">
                             <Column field="description" header="Descripción"></Column>
-                            <Column field="quantity" header="Cantidad"></Column>
-                            <Column field="unit_price" header="P. Unitario"><template #body="{ data }">{{
-                                formatCurrency(data.unit_price) }}</template>
+                            <Column field="quantity" header="Cantidad" class="text-center"></Column>
+                            <Column header="Precio Unitario">
+                                <template #body="{ data }">
+                                    <div>
+                                        <del v-if="parseFloat(data.discount_amount) > 0" class="text-gray-500 text-xs">
+                                            {{ formatCurrency(parseFloat(data.unit_price) + parseFloat(data.discount_amount)) }}
+                                        </del>
+                                        <p class="font-semibold m-0">
+                                            {{ formatCurrency(data.unit_price) }}
+                                        </p>
+                                        <p v-if="parseFloat(data.discount_amount) > 0" class="text-xs text-green-600 m-0">
+                                            Ahorro: {{ formatCurrency(data.discount_amount) }}
+                                        </p>
+                                    </div>
+                                </template>
                             </Column>
-                            <Column field="line_total" header="Total"><template #body="{ data }">{{
-                                formatCurrency(data.line_total) }}</template>
+                            <Column field="line_total" header="Total" class="text-right">
+                                <template #body="{ data }">
+                                    {{ formatCurrency(data.line_total) }}
+                                </template>
                             </Column>
                         </DataTable>
                     </template>
@@ -161,8 +172,20 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                                 <Tag :value="localTransaction.status"
                                     :severity="getStatusSeverity(localTransaction.status)" class="capitalize" />
                             </li>
-                            <li class="flex justify-between"><span>Cliente:</span><span class="font-medium">{{
-                                transaction.customer?.name ?? 'Público en general' }}</span></li>
+                            <li class="flex justify-between items-center">
+                                <span>Cliente:</span>
+                                <span class="font-medium">
+                                    <template v-if="transaction.customer">
+                                        <Link :href="route('customers.show', transaction.customer.id)" class="text-blue-600 hover:underline flex items-center gap-2">
+                                            {{ transaction.customer.name }}
+                                            <i class="pi pi-external-link text-xs"></i>
+                                        </Link>
+                                    </template>
+                                    <template v-else>
+                                        Público en general
+                                    </template>
+                                </span>
+                            </li>
                             <li class="flex justify-between"><span>Cajero:</span><span class="font-medium">{{
                                 transaction.user.name }}</span></li>
                             <li class="flex justify-between"><span>Sucursal:</span><span class="font-medium">{{
@@ -179,7 +202,6 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                             <p class="text-center text-gray-500 text-sm py-4">No se han registrado pagos.</p>
                         </div>
                         <ul v-else class="space-y-3">
-                            <!-- Se elimina el <li> especial para 'saldo a favor' -->
                             <li v-for="payment in localTransaction.payments" :key="payment.id" class="text-sm">
                                 <div class="flex justify-between items-center">
                                     <span class="flex items-center gap-2"><i class="pi"
