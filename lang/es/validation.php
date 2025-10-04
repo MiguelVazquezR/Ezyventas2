@@ -224,5 +224,8 @@ return [
         'role_id' => 'rol',
         'general_images' => 'imagenes generales',
         'cash_register_id' => 'caja registradora',
+        'account_name' => 'nombre de la cuenta',
+        'bank_name' => 'nombre del banco',
+        'owner_name' => 'nombre del propietario',
     ],
 ];

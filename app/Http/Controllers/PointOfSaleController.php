@@ -11,6 +11,7 @@ use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
+use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
 use App\Models\Category;
@@ -103,7 +104,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         ]);
     }
 
-   public function checkout(Request $request)
+    public function checkout(Request $request)
     {
         $validated = $request->validate([
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
@@ -115,11 +116,15 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'cartItems.*.description' => 'required|string',
             'customerId' => 'nullable|exists:customers,id',
             'subtotal' => 'required|numeric',
-            'total_discount' => 'required|numeric',
+            // --- INICIO DE CORRECCIÓN 1: El campo ahora es opcional ---
+            'total_discount' => 'nullable|numeric|min:0',
+            // --- FIN DE CORRECCIÓN 1 ---
             'total' => 'required|numeric',
             'payments' => 'sometimes|array',
             'payments.*.amount' => 'required|numeric|min:0.01',
             'payments.*.method' => ['required', Rule::in(array_column(PaymentMethod::cases(), 'value'))],
+            'payments.*.bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'payments.*.notes' => 'nullable|string|max:255',
         ]);
 
         $user = Auth::user();
@@ -136,16 +141,19 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     'customer_id' => $customer?->id,
                     'branch_id' => $user->branch_id,
                     'user_id' => $user->id,
-                    'status' => TransactionStatus::PENDING, // Se crea inicialmente como 'pendiente'
+                    'status' => TransactionStatus::PENDING, // Siempre se crea como pendiente
                     'channel' => TransactionChannel::POS,
                     'subtotal' => $validated['subtotal'],
-                    'total_discount' => $validated['total_discount'],
+                    // --- INICIO DE CORRECCIÓN 2: Si no llega el descuento, se asume 0 ---
+                    'total_discount' => $validated['total_discount'] ?? 0,
+                    // --- FIN DE CORRECCIÓN 2 ---
                     'total_tax' => 0,
                     'total' => $totalSale,
                     'currency' => 'MXN',
                     'status_changed_at' => now(),
                 ]);
 
+                // Crear items de la transacción y descontar stock (sin cambios)
                 foreach ($validated['cartItems'] as $item) {
                     $itemableId = $item['id'];
                     $itemableType = Product::class;
@@ -169,79 +177,81 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     Product::find($item['id'])->decrement('current_stock', $item['quantity']);
                 }
 
-                // 1. Aplicación automática de saldo a favor
-                $amountFromBalance = 0;
+                // 1. Aplicar el saldo a favor del cliente si existe.
                 if ($customer && $customer->balance > 0) {
-                    $amountFromBalance = min($totalSale, (float) $customer->balance);
-                    if ($amountFromBalance > 0) {
+                    $balanceToUse = min($totalSale, (float) $customer->balance);
+                    if ($balanceToUse > 0) {
                         $newTransaction->payments()->create([
-                            'amount' => $amountFromBalance,
+                            'amount' => $balanceToUse,
                             'payment_method' => PaymentMethod::BALANCE,
                             'payment_date' => now(),
                             'status' => 'completado',
                         ]);
-                        
-                        $balanceBefore = $customer->balance;
-                        $customer->decrement('balance', $amountFromBalance);
-                        
+
+                        $customer->decrement('balance', $balanceToUse);
+
                         $customer->balanceMovements()->create([
                             'transaction_id' => $newTransaction->id,
                             'type' => CustomerBalanceMovementType::CREDIT_USAGE,
-                            'amount' => -$amountFromBalance,
+                            'amount' => -$balanceToUse,
                             'balance_after' => $customer->balance,
-                            'notes' => "Uso de saldo en venta POS. Folio: {$newTransaction->folio}",
+                            'notes' => "Uso de saldo en venta POS #{$newTransaction->folio}",
                         ]);
                     }
                 }
 
-                // 2. Registrar los otros métodos de pago
+                // 2. Registrar los pagos directos (abonos o pagos completos) que vienen del modal.
                 foreach ($paymentsFromRequest as $paymentData) {
-                    $newTransaction->payments()->create([
+                    $payment = $newTransaction->payments()->create([
                         'amount' => (float) $paymentData['amount'],
                         'payment_method' => $paymentData['method'],
                         'payment_date' => now(),
                         'status' => 'completado',
+                        'notes' => $paymentData['notes'] ?? null,
                     ]);
+
+                    // Si el pago es tarjeta o transferencia, se asocia a la cuenta bancaria.
+                    if (in_array($paymentData['method'], ['tarjeta', 'transferencia']) && !empty($paymentData['bank_account_id'])) {
+                        $bankAccount = BankAccount::find($paymentData['bank_account_id']);
+                        if ($bankAccount) {
+                            $bankAccount->increment('balance', $payment->amount);
+                        }
+                    }
                 }
-                
-                // 3. Calcular el total pagado y el saldo pendiente
+
+                // 3. Calcular el estado final de la transacción.
                 $totalPaid = $newTransaction->fresh()->payments()->sum('amount');
                 $remainingDue = $totalSale - $totalPaid;
 
-                // 4. Gestionar venta a crédito y estatus final
+                // 4. Gestionar si el resto es a crédito o si la venta está completada.
                 if ($remainingDue > 0.01) {
-                    // Hay un saldo pendiente. La venta quedará como 'pendiente'.
-                    if ($customer && $remainingDue <= $customer->available_credit) {
-                        // Si hay cliente con crédito, se aplica el cargo a su cuenta.
-                        $balanceBefore = $customer->balance;
-                        $customer->decrement('balance', $remainingDue);
-                        
-                        $customer->balanceMovements()->create([
-                           'transaction_id' => $newTransaction->id,
-                           'type' => CustomerBalanceMovementType::CREDIT_SALE,
-                           'amount' => -$remainingDue,
-                           'balance_after' => $customer->balance,
-                           'notes' => "Cargo a crédito por venta POS. Folio: {$newTransaction->folio}",
-                        ]);
-
-                        // IMPORTANTE: NO se actualiza el estado. Se mantiene como 'pendiente'.
-
-                    } else {
-                        // Si no hay cliente o no tiene crédito suficiente, es un error.
-                        throw new \Exception("Pago insuficiente y crédito no disponible o cliente no seleccionado.");
+                    if (!$customer || $remainingDue > $customer->available_credit) {
+                        throw new \Exception("Pago insuficiente y el cliente no tiene crédito disponible para cubrir la diferencia.");
                     }
+
+                    // Si hay cliente y crédito, se aplica el cargo a su cuenta.
+                    $customer->decrement('balance', $remainingDue);
+
+                    $customer->balanceMovements()->create([
+                        'transaction_id' => $newTransaction->id,
+                        'type' => CustomerBalanceMovementType::CREDIT_SALE,
+                        'amount' => -$remainingDue,
+                        'balance_after' => $customer->balance,
+                        'notes' => "Cargo a crédito por venta POS #{$newTransaction->folio}",
+                    ]);
+
+                    // El estado se mantiene como 'pendiente' por defecto.
                 } else {
-                    // La venta está totalmente pagada. Se actualiza el estado a 'completado'.
+                    // Si no hay saldo pendiente, la venta está completada.
                     $newTransaction->update(['status' => TransactionStatus::COMPLETED]);
                 }
-                                
+
                 return $newTransaction;
             });
 
             return redirect()->route('pos.index')
                 ->with('success', 'Venta registrada con éxito. Folio: ' . $transaction->folio)
                 ->with('print_data', ['type' => 'transaction', 'id' => $transaction->id]);
-
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar la venta: ' . $e->getMessage());
         }
@@ -260,7 +270,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         if ($categoryId) {
             $query->where('category_id', $categoryId);
         }
-        
+
         // --- MEJORA: Se usa paginate() en lugar de get() ---
         $paginatedProducts = $query->with(['media', 'category:id,name', 'productAttributes'])->paginate(20)->withQueryString();
 
