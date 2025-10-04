@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('bank_account_id')->constrained()->onDelete('cascade');
             $table->foreignId('branch_id')->constrained()->onDelete('cascade');
+            $table->boolean('is_favorite')->default(false);
             $table->timestamps();
         });
     }

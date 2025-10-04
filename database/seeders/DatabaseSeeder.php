@@ -110,10 +110,10 @@ class DatabaseSeeder extends Seeder
         $cashRegisters = CashRegister::factory(2)->create(['branch_id' => $mainBranch->id]);
         
         // Se crean cuentas bancarias y se asignan a las sucursales
-        $bankAccounts = BankAccount::factory(2)->create(['subscription_id' => $subscription->id]);
-        foreach($bankAccounts as $account) {
-            $account->branches()->attach($branches->pluck('id'));
-        }
+        // $bankAccounts = BankAccount::factory(2)->create(['subscription_id' => $subscription->id]);
+        // foreach($bankAccounts as $account) {
+        //     $account->branches()->attach($branches->pluck('id'));
+        // }
 
         $serviceCategories = Category::factory(3)->create(['subscription_id' => $subscription->id, 'type' => 'service']);
 
@@ -162,7 +162,7 @@ class DatabaseSeeder extends Seeder
             Product::factory(10)->create(['branch_id' => $branch->id, 'category_id' => $allProductCategories->random()->id, 'brand_id' => $brands->random()->id]);
         });
 
-        $expenseCategories = ExpenseCategory::factory(5)->create(['subscription_id' => $subscription->id]);
+        // $expenseCategories = ExpenseCategory::factory(5)->create(['subscription_id' => $subscription->id]);
         // Expense::factory(25)->create([
         //     'user_id' => $adminUser->id,
         //     'branch_id' => $branches->random()->id,

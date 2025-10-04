@@ -5,6 +5,14 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
 import PrintModal from '@/Components/PrintModal.vue';
+import DataTable from 'primevue/datatable';
+import Column from 'primevue/column';
+import Button from 'primevue/button';
+import InputText from 'primevue/inputtext';
+import IconField from 'primevue/iconfield';
+import InputIcon from 'primevue/inputicon';
+import Tag from 'primevue/tag';
+import Menu from 'primevue/menu';
 
 const props = defineProps({
     transactions: Object,
@@ -91,7 +99,7 @@ const cancelSale = () => {
 
 const generateReturn = () => {
     confirm.require({
-        message: `¿Estás seguro de que quieres generar una devolución para la venta #${selectedTransactionForMenu.value.folio}? Esta acción repondrá el stock.`,
+        message: `¿Estás seguro de que quieres generar una devolución para la venta #${selectedTransactionForMenu.value.folio}? El stock será repuesto.`,
         header: 'Confirmar Devolución',
         icon: 'pi pi-replay',
         accept: () => {
@@ -153,14 +161,18 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     <Column field="created_at" header="Fecha y Hora" sortable>
                         <template #body="{ data }"> {{ formatDate(data.created_at) }} </template>
                     </Column>
-                    <Column field="customer.name" header="Cliente" sortable></Column>
+                    <Column field="customer.name" header="Cliente" sortable>
+                        <template #body="{ data }">
+                            {{ data.customer ? data.customer.name : 'Público en general' }}
+                        </template>
+                    </Column>
                     <Column field="channel" header="Canal" sortable>
                          <template #body="{ data }">
-                           <span class="capitalize">{{ data.channel.replace(/_/g, ' ') }}</span>
+                            <span class="capitalize">{{ data.channel.replace(/_/g, ' ') }}</span>
                         </template>
                     </Column>
                      <Column field="total" header="Total" sortable>
-                        <template #body="{ data }"> {{ formatCurrency(data.subtotal - data.total_discount) }}
+                        <template #body="{ data }"> {{ formatCurrency(data.total) }}
                         </template>
                     </Column>
                     <Column field="status" header="Estatus" sortable>

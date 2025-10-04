@@ -12,8 +12,11 @@ return new class extends Migration
             $table->id();
             $table->foreignId('subscription_id')->constrained()->onDelete('cascade');
             $table->string('bank_name');
+            $table->string('owner_name');
             $table->string('account_name');
             $table->string('account_number')->nullable();
+            $table->string('card_number')->nullable();
+            $table->string('clabe')->nullable();
             $table->decimal('balance', 15, 2)->default(0.00);
             $table->timestamps();
         });

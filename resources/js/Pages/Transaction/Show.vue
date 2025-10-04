@@ -34,14 +34,20 @@ const breadcrumbItems = ref([
 ]);
 const showAddPaymentModal = ref(false);
 
-// SOLUCIÓN 1: La variable reactiva local es clave para la reactividad
 const localTransaction = ref(props.transaction);
 watch(() => props.transaction, (newTransaction) => {
     localTransaction.value = newTransaction;
 }, { deep: true });
 
-const totalAmount = computed(() => parseFloat(localTransaction.value.subtotal) - parseFloat(localTransaction.value.total_discount));
-const totalPaid = computed(() => localTransaction.value.payments.reduce((sum, p) => sum + parseFloat(p.amount), 0));
+const totalAmount = computed(() => parseFloat(localTransaction.value.total));
+
+// --- INICIO DE LA CORRECCIÓN ---
+const totalPaid = computed(() => {
+    // Ahora simplemente sumamos todos los montos del arreglo de pagos.
+    return localTransaction.value.payments.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+});
+// --- FIN DE LA CORRECCIÓN ---
+
 const pendingAmount = computed(() => totalAmount.value - totalPaid.value);
 
 const canCancel = computed(() => ['completado', 'pendiente'].includes(localTransaction.value.status));
@@ -87,7 +93,7 @@ const getStatusSeverity = (status) => {
 };
 const formatDate = (dateString) => new Date(dateString).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
-const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-green-500' }, tarjeta: { icon: 'pi pi-credit-card', color: 'text-blue-500' }, transferencia: { icon: 'pi pi-globe', color: 'text-purple-500' } };
+const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-green-500' }, tarjeta: { icon: 'pi pi-credit-card', color: 'text-blue-500' }, transferencia: { icon: 'pi pi-globe', color: 'text-purple-500' }, saldo: { icon: 'pi pi-wallet', color: 'text-orange-500' } };
 </script>
 
 <template>
@@ -119,10 +125,10 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                             <Column field="description" header="Descripción"></Column>
                             <Column field="quantity" header="Cantidad"></Column>
                             <Column field="unit_price" header="P. Unitario"><template #body="{ data }">{{
-                                    formatCurrency(data.unit_price) }}</template>
+                                formatCurrency(data.unit_price) }}</template>
                             </Column>
                             <Column field="line_total" header="Total"><template #body="{ data }">{{
-                                    formatCurrency(data.line_total) }}</template>
+                                formatCurrency(data.line_total) }}</template>
                             </Column>
                         </DataTable>
                     </template>
@@ -135,13 +141,13 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                     <template #content>
                         <ul class="space-y-3 text-sm">
                             <li class="flex justify-between"><span>Subtotal:</span><span>{{
-                                    formatCurrency(transaction.subtotal) }}</span></li>
+                                formatCurrency(transaction.subtotal) }}</span></li>
                             <li class="flex justify-between"><span>Descuento:</span><span class="text-red-500">- {{
-                                    formatCurrency(transaction.total_discount) }}</span></li>
+                                formatCurrency(transaction.total_discount) }}</span></li>
                             <li class="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>Total de la
                                     Venta:</span><span>{{ formatCurrency(totalAmount) }}</span></li>
                             <li class="flex justify-between"><span>Total Pagado:</span><span class="font-semibold">{{
-                                    formatCurrency(totalPaid) }}</span></li>
+                                formatCurrency(totalPaid) }}</span></li>
                             <li v-if="pendingAmount > 0.01" class="flex justify-between font-bold text-red-600">
                                 <span>Saldo Pendiente:</span><span>{{ formatCurrency(pendingAmount) }}</span></li>
                         </ul>
@@ -156,20 +162,24 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                                     :severity="getStatusSeverity(localTransaction.status)" class="capitalize" />
                             </li>
                             <li class="flex justify-between"><span>Cliente:</span><span class="font-medium">{{
-                                    transaction.customer.name }}</span></li>
+                                transaction.customer?.name ?? 'Público en general' }}</span></li>
                             <li class="flex justify-between"><span>Cajero:</span><span class="font-medium">{{
-                                    transaction.user.name }}</span></li>
+                                transaction.user.name }}</span></li>
                             <li class="flex justify-between"><span>Sucursal:</span><span class="font-medium">{{
-                                    transaction.branch.name }}</span></li>
+                                transaction.branch.name }}</span></li>
                             <li class="flex justify-between"><span>Canal:</span><span class="font-medium capitalize">{{
-                                    transaction.channel.replace('_', ' ') }}</span></li>
+                                transaction.channel.replace('_', ' ') }}</span></li>
                         </ul>
                     </template>
                 </Card>
                 <Card>
                     <template #title>Pagos Realizados</template>
                     <template #content>
-                        <ul class="space-y-3">
+                        <div v-if="localTransaction.payments.length === 0">
+                            <p class="text-center text-gray-500 text-sm py-4">No se han registrado pagos.</p>
+                        </div>
+                        <ul v-else class="space-y-3">
+                            <!-- Se elimina el <li> especial para 'saldo a favor' -->
                             <li v-for="payment in localTransaction.payments" :key="payment.id" class="text-sm">
                                 <div class="flex justify-between items-center">
                                     <span class="flex items-center gap-2"><i class="pi"

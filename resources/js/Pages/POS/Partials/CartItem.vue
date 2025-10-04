@@ -108,8 +108,7 @@ const getPromotionSummary = (promo) => {
         class="flex gap-4 relative bg-white dark:bg-gray-900 p-3 rounded-xl border border-[#D9D9D9] dark:border-gray-700">
         <img :src="item.image" :alt="item.name" class="size-16 rounded-[10px] object-contain bg-[#f2f2f2]">
         <div class="flex-grow">
-            <p class="font-bold text-sm leading-tight text-[#373737] dark:text-gray-200">{{ item.name }}</p>
-            <!-- Precio (Editable) -->
+            <p class="font-bold text-sm leading-tight text-[#373737] dark:text-gray-200 w-[87%]">{{ item.name }}</p>
             <div v-if="isEditingPrice" class="flex items-center gap-1 mt-1">
                 <InputNumber fluid v-model.number="price" mode="currency" currency="MXN"
                     locale="es-MX"
@@ -118,7 +117,6 @@ const getPromotionSummary = (promo) => {
                 <Button icon="pi pi-times" variant="outlined" rounded size="small" severity="secondary" @click="cancelPriceEdit" class="!size-6" />
             </div>
             <div v-else class="flex items-center gap-2 mt-1">
-                <!-- MEJORA: Lógica de visualización de precios con descuento y flama -->
                 <p v-if="!isItemDiscountApplied" class="text-sm font-light text-[#373737] dark:text-gray-400 m-0">
                     {{ formatCurrency(item.price) }}
                 </p>
@@ -138,7 +136,7 @@ const getPromotionSummary = (promo) => {
             </p>
 
             <div class="flex justify-between items-end mt-2">
-                <InputNumber v-model="quantity" showButtons :min="1" :max="item.stock > 0 ? item.stock : undefined"
+                <InputNumber v-model="quantity" showButtons :min="1"
                     :inputStyle="{ width: '5rem', height: '2rem' }" size="small" />
                 <div class="flex items-center gap-1">
                     <div v-if="item.promotions && item.promotions.length > 0">
