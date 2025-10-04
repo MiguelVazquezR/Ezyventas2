@@ -29,7 +29,6 @@ use Illuminate\Validation\Rule;
 use Carbon\Carbon;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
-use Illuminate\Support\Facades\Log;
 
 class PointOfSaleController extends Controller implements HasMiddleware
 {

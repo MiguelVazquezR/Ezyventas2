@@ -198,7 +198,7 @@ const handleCheckout = (checkoutData) => {
     }));
     form.customerId = selectedClient.value ? selectedClient.value.id : null;
     form.subtotal = checkoutData.subtotal;
-    form.total_discount = checkoutData.discount;
+    form.total_discount = checkoutData.total_discount;
     form.total = checkoutData.total;
     form.payments = checkoutData.payments;
     form.use_balance = checkoutData.use_balance;
