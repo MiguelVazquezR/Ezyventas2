@@ -103,14 +103,22 @@ class ExpenseController extends Controller implements HasMiddleware
         ]);
     }
 
-    public function create(): Response
+     public function create(): Response
     {
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
-
-        $bankAccounts = BankAccount::where('subscription_id', $subscriptionId)
-            ->get(['id', 'account_name', 'bank_name', 'account_number']);
-
+        $branchId = $user->branch_id;
+        
+        // Obtiene las cuentas asignadas a la sucursal actual y carga la información pivote (is_favorite).
+        $bankAccounts = BankAccount::whereHas('branches', function ($query) use ($branchId) {
+                $query->where('branch_id', $branchId);
+            })
+            ->with(['branches' => function ($query) use ($branchId) {
+                // Limita la carga de la relación a solo la sucursal actual para acceder a 'pivot'
+                $query->where('branch_id', $branchId);
+            }])
+            ->get();
+        
         $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
             ->where('is_active', true)
             ->where('in_use', false)
@@ -119,7 +127,6 @@ class ExpenseController extends Controller implements HasMiddleware
         return Inertia::render('Expense/Create', [
             'categories' => ExpenseCategory::where('subscription_id', $subscriptionId)->get(['id', 'name']),
             'bankAccounts' => $bankAccounts,
-            // Se elimina 'hasActiveCashRegisterSession'
             'availableCashRegisters' => $availableCashRegisters,
         ]);
     }
@@ -175,17 +182,32 @@ class ExpenseController extends Controller implements HasMiddleware
         return redirect()->route('expenses.index')->with('success', 'Gasto creado con éxito.');
     }
 
-    public function edit(Expense $expense): Response
+     public function edit(Expense $expense): Response
     {
-        $subscriptionId = Auth::user()->branch->subscription_id;
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+        $branchId = $user->branch_id;
+        
+        $expense->load('sessionCashMovement');
 
-        $bankAccounts = BankAccount::where('subscription_id', $subscriptionId)
-            ->get(['id', 'account_name', 'bank_name', 'account_number']);
+        $bankAccounts = BankAccount::whereHas('branches', function ($query) use ($branchId) {
+                $query->where('branch_id', $branchId);
+            })
+            ->with(['branches' => function ($query) use ($branchId) {
+                $query->where('branch_id', $branchId);
+            }])
+            ->get();
+            
+        $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
+            ->where('is_active', true)
+            ->where('in_use', false)
+            ->get(['id', 'name']);
 
         return Inertia::render('Expense/Edit', [
             'expense' => $expense,
             'categories' => ExpenseCategory::where('subscription_id', $subscriptionId)->get(['id', 'name']),
             'bankAccounts' => $bankAccounts,
+            'availableCashRegisters' => $availableCashRegisters,
         ]);
     }
 
@@ -193,32 +215,63 @@ class ExpenseController extends Controller implements HasMiddleware
     {
         DB::transaction(function () use ($request, $expense) {
             $validated = $request->validated();
-
-            // Guardar estado anterior para la lógica de saldo
-            $oldAmount = $expense->amount;
-            $oldStatus = $expense->status;
-            $oldBankAccountId = $expense->bank_account_id;
-
-            // Revertir el monto del gasto anterior si estaba pagado desde una cuenta
-            if ($oldStatus === ExpenseStatus::PAID && $oldBankAccountId) {
-                $oldBankAccount = BankAccount::find($oldBankAccountId);
+            $user = Auth::user();
+            $takeFromCashRegister = $validated['take_from_cash_register'] ?? false;
+            
+            // --- 1. REVERTIR ESTADO ANTERIOR ---
+            // Revertir movimiento de caja si existía
+            if ($expense->sessionCashMovement) {
+                $expense->sessionCashMovement->delete();
+            }
+            // Revertir saldo de cuenta bancaria si estaba pagado desde una
+            if ($expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
+                $oldBankAccount = BankAccount::find($expense->bank_account_id);
                 if ($oldBankAccount) {
-                    $oldBankAccount->increment('balance', $oldAmount);
+                    $oldBankAccount->increment('balance', $expense->amount);
                 }
             }
 
-            // Actualizar el gasto con los nuevos datos
+            // --- 2. ACTUALIZAR EL GASTO ---
             $expense->update($validated);
+            // Asegurarse de que el enlace al movimiento se borra antes de crear uno nuevo
+            $expense->session_cash_movement_id = null; 
+            $expense->save();
 
-            // Aplicar el nuevo monto del gasto si está pagado desde una cuenta
+            // --- 3. APLICAR NUEVO ESTADO ---
+            // Aplicar nuevo saldo a cuenta bancaria
             if ($expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
                 $newBankAccount = BankAccount::find($expense->bank_account_id);
                 if ($newBankAccount) {
                     $newBankAccount->decrement('balance', $expense->amount);
                 }
             }
-        });
+            // Crear nuevo movimiento de caja si es necesario
+            if (
+                $expense->payment_method->value === 'efectivo' &&
+                $expense->status === ExpenseStatus::PAID &&
+                $takeFromCashRegister
+            ) {
+                $activeSession = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
+                    ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $user->branch_id))
+                    ->latest('opened_at')
+                    ->first();
+                
+                if (!$activeSession) {
+                    throw ValidationException::withMessages([
+                        'take_from_cash_register' => 'No hay una sesión de caja activa para registrar la salida de efectivo.',
+                    ]);
+                }
 
+                $movement = $activeSession->cashMovements()->create([
+                    'type' => SessionCashMovementType::OUTFLOW,
+                    'amount' => $expense->amount,
+                    'description' => "Gasto (act.): " . ($expense->folio ?: $expense->description),
+                ]);
+
+                $expense->update(['session_cash_movement_id' => $movement->id]);
+            }
+        });
+        
         return redirect()->route('expenses.index')->with('success', 'Gasto actualizado con éxito.');
     }
 

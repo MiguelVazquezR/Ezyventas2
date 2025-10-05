@@ -13,7 +13,6 @@ const props = defineProps({
     availableCashRegisters: Array,
 });
 
-// --- LÓGICA ACTUALIZADA: Usar la nueva propiedad global ---
 const page = usePage();
 const hasActiveBranchSession = computed(() => page.props.branchHasActiveSession);
 
@@ -47,12 +46,22 @@ const paymentMethodOptions = ref([
     { label: 'Transferencia', value: 'transferencia', icon: 'pi pi-arrows-h' },
 ]);
 
+// --- LÓGICA MEJORADA ---
+// Observa el método de pago para preseleccionar la cuenta favorita.
 watch(() => form.payment_method, (newMethod) => {
-    if (newMethod !== 'efectivo') {
-        form.take_from_cash_register = false;
-    }
     if (newMethod === 'efectivo') {
         form.bank_account_id = null;
+    } else { // 'tarjeta' or 'transferencia'
+        form.take_from_cash_register = false;
+        
+        // Busca la cuenta marcada como favorita para la sucursal actual.
+        // La consulta en el controlador asegura que `branches[0]` contiene la info de la sucursal actual.
+        const favoriteAccount = props.bankAccounts.find(account => 
+            account.branches?.[0]?.pivot?.is_favorite
+        );
+        
+        // Si se encuentra una cuenta favorita, se preselecciona. Si no, se limpia la selección.
+        form.bank_account_id = favoriteAccount ? favoriteAccount.id : null;
     }
 });
 
@@ -71,6 +80,7 @@ const submit = () => {
 </script>
 
 <template>
+    <!-- El template se mantiene igual, no necesita cambios -->
     <Head title="Crear Gasto" />
     <AppLayout>
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
@@ -80,7 +90,6 @@ const submit = () => {
 
         <form @submit.prevent="submit" class="mt-6 max-w-2xl mx-auto bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- ... campos existentes ... -->
                 <div>
                     <InputLabel for="folio" value="Concepto / Folio / Referencia" />
                     <InputText id="folio" v-model="form.folio" class="mt-1 w-full" />
@@ -105,7 +114,6 @@ const submit = () => {
                     <InputError :message="form.errors.expense_category_id" class="mt-2" />
                 </div>
 
-                <!-- INICIA SECCIÓN DE PAGO -->
                 <div class="md:col-span-2 space-y-4 p-4 border rounded-lg bg-gray-50 dark:bg-gray-900/50">
                     <h3 class="font-semibold text-gray-700 dark:text-gray-300">Detalles del Pago</h3>
                     <div>
@@ -119,7 +127,6 @@ const submit = () => {
                         <InputError :message="form.errors.payment_method" class="mt-2" />
                     </div>
 
-                    <!-- Renderizado condicional usando la nueva computed property -->
                     <div v-if="form.payment_method === 'efectivo'">
                         <div v-if="hasActiveBranchSession" class="flex items-center gap-3">
                              <ToggleSwitch v-model="form.take_from_cash_register" inputId="take_from_cash_register" />
@@ -127,9 +134,9 @@ const submit = () => {
                                 ¿Tomar efectivo de la caja activa?
                              </InputLabel>
                         </div>
-                        <div v-else class="flex items-start justify-between p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                            <div class="flex items-start gap-3 w-[70%]">
-                                <i class="pi pi-info-circle text-yellow-500 !text-xl"></i>
+                        <div v-else class="flex items-center justify-between p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                            <div class="flex items-center gap-3">
+                                <i class="pi pi-info-circle text-yellow-500 text-xl"></i>
                                 <span class="text-sm text-yellow-700 dark:text-yellow-300">
                                     Se requiere una sesión de caja activa para indicar que el dinero se toma de ahí.
                                 </span>
@@ -152,9 +159,7 @@ const submit = () => {
                         <InputError :message="form.errors.bank_account_id" class="mt-2" />
                     </div>
                 </div>
-                <!-- TERMINA SECCIÓN DE PAGO -->
 
-                <!-- ... resto de campos ... -->
                  <div class="md:col-span-2">
                     <InputLabel for="status" value="Estatus" />
                     <Select size="large" id="status" v-model="form.status" :options="statusOptions" optionLabel="label" optionValue="value" class="w-full mt-1" />

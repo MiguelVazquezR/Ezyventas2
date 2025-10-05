@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, inject } from 'vue';
 import axios from 'axios';
 import { useToast } from 'primevue/usetoast';
-import AddBankAccountModal from '@/Components/AddBankAccountModal.vue';
+import BankAccountModal from '@/Components/BankAccountModal.vue';
 import CreateCustomerModal from '@/Components/CreateCustomerModal.vue';
 import PaymentSummaryColumn from './PaymentModalPartials/PaymentSummaryColumn.vue';
 import PaymentStepBalance from './PaymentModalPartials/PaymentStepBalance.vue';
@@ -190,6 +190,6 @@ const submitForm = () => {
         <template #footer><div></div></template>
     </Dialog>
     
-    <AddBankAccountModal :visible="showAddBankAccountModal" @update:visible="showAddBankAccountModal = $event" @success="onBankAccountAdded" />
+    <BankAccountModal :visible="showAddBankAccountModal" @update:visible="showAddBankAccountModal = $event" @success="onBankAccountAdded" />
     <CreateCustomerModal :visible="showCreateCustomerModal" @update:visible="showCreateCustomerModal = $event" @created="emit('customerCreated', $event)" />
 </template>

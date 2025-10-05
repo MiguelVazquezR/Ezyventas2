@@ -39,6 +39,7 @@ class BankAccount extends Model
      */
     public function branches(): BelongsToMany
     {
-        return $this->belongsToMany(Branch::class, 'bank_account_branch');
+        return $this->belongsToMany(Branch::class, 'bank_account_branch')
+                    ->withPivot('is_favorite'); // <-- ¡AQUÍ ESTÁ LA LÍNEA CLAVE!
     }
 }
