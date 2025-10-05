@@ -59,4 +59,12 @@ class CashRegisterSession extends Model
     {
         return $this->hasMany(SessionCashMovement::class);
     }
+
+    /**
+     * Obtiene todos los pagos registrados durante esta sesión de caja.
+     */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class);
+    }
 }

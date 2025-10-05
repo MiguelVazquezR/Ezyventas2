@@ -35,7 +35,7 @@ class CustomFieldDefinitionController extends Controller
             'options' => $optionsArray, // Guardar como array JSON
         ]);
 
-        return back()->with('success', 'Campo personalizado creado.');
+        return back();
     }
 
     public function update(Request $request, CustomFieldDefinition $customFieldDefinition)
@@ -60,14 +60,14 @@ class CustomFieldDefinitionController extends Controller
         ]);
 
 
-        return back()->with('success', 'Campo personalizado actualizado.');
+        return back();
     }
 
     public function destroy(CustomFieldDefinition $customFieldDefinition)
     {
         $this->authorizeToModify($customFieldDefinition);
         $customFieldDefinition->delete();
-        return back()->with('success', 'Campo personalizado eliminado.');
+        return back();
     }
 
     private function authorizeToModify(CustomFieldDefinition $customFieldDefinition)

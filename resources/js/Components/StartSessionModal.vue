@@ -20,7 +20,6 @@ const form = useForm({
 
 const submit = () => {
     form.post(route('cash-register-sessions.store'), {
-        // CORRECCIÓN: Se añade el callback onSuccess para cerrar el modal.
         onSuccess: () => {
             closeModal();
             // Inertia se encargará de recargar la página principal automáticamente

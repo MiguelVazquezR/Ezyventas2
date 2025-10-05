@@ -1,9 +1,5 @@
 <script setup>
 import { computed } from 'vue';
-import Dialog from 'primevue/dialog';
-import Timeline from 'primevue/timeline';
-import Card from 'primevue/card';
-import Button from 'primevue/button';
 
 const props = defineProps({
     visible: Boolean,
@@ -42,7 +38,7 @@ const timelineEvents = computed(() => {
     const salesEvents = props.session.transactions.map(tx => ({
         type: 'sale',
         date: tx.created_at,
-        status: tx.status === 'completado' ? 'Venta' : 'Venta (Pendiente)',
+        status: tx.status === 'completado' ? 'Venta' : 'Venta (pendiente)',
         color: '#22c55e',
         icon: 'pi pi-shopping-cart',
         data: tx,
@@ -52,7 +48,7 @@ const timelineEvents = computed(() => {
     const movementEvents = props.session.cash_movements.map(mv => ({
         type: 'movement',
         date: mv.created_at,
-        status: mv.type === 'ingreso' ? 'Ingreso de Efectivo' : 'Retiro de Efectivo',
+        status: mv.type === 'ingreso' ? 'Ingreso de efectivo' : 'Retiro de efectivo',
         color: mv.type === 'ingreso' ? '#3b82f6' : '#ef4444',
         icon: mv.type === 'ingreso' ? 'pi pi-arrow-down-left' : 'pi pi-arrow-up-right',
         data: mv,
@@ -64,21 +60,21 @@ const timelineEvents = computed(() => {
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" modal header="Historial de la Sesión Actual" :style="{ width: '50rem' }">
+    <Dialog :visible="visible" @update:visible="closeModal" modal header="Historial de la sesión actual" :style="{ width: '50rem' }">
         <div v-if="session" class="p-2">
             <div class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg mb-6">
                 <div class="flex justify-between items-center">
                     <div>
-                        <p class="text-sm text-gray-500">Caja</p>
-                        <p class="font-bold text-lg">{{ session.cash_register.name }}</p>
+                        <p class="m-0 text-sm text-gray-500">Caja</p>
+                        <p class="m-0 font-bold text-base">{{ session.cash_register.name }}</p>
                     </div>
                     <div>
-                        <p class="text-sm text-gray-500">Usuario</p>
-                        <p class="font-bold text-lg">{{ session.user.name }}</p>
+                        <p class="m-0 text-sm text-gray-500">Usuario</p>
+                        <p class="m-0 font-bold text-base">{{ session.user.name }}</p>
                     </div>
                     <div class="text-right">
-                        <p class="text-sm text-gray-500">Apertura</p>
-                        <p class="font-bold text-lg">{{ formatDateTime(session.opened_at) }}</p>
+                        <p class="m-0 text-sm text-gray-500">Apertura</p>
+                        <p class="m-0 font-bold text-base">{{ formatDateTime(session.opened_at) }}</p>
                     </div>
                 </div>
             </div>
@@ -106,7 +102,7 @@ const timelineEvents = computed(() => {
                                     </div>
                                      <div class="flex justify-between">
                                         <span class="text-gray-500">Cliente:</span>
-                                        <span class="font-semibold">{{ slotProps.item.data.customer?.name || 'Público en General' }}</span>
+                                        <span class="font-semibold">{{ slotProps.item.data.customer?.name || 'Público en general' }}</span>
                                     </div>
                                     <div class="flex justify-between font-bold text-base pt-2 border-t mt-2">
                                         <span>Total Venta:</span>
@@ -125,13 +121,13 @@ const timelineEvents = computed(() => {
                     </template>
                 </Timeline>
                  <div v-else class="text-center py-12 text-gray-500">
-                    <i class="pi pi-history text-4xl mb-3"></i>
+                    <i class="pi pi-history !text-4xl mb-3"></i>
                     <p>No hay transacciones ni movimientos en esta sesión.</p>
                 </div>
             </div>
         </div>
         <template #footer>
-            <Button label="Cerrar" icon="pi pi-times" @click="closeModal" text />
+            <Button label="Cerrar" icon="pi pi-times" @click="closeModal" text severity="secondary" />
         </template>
     </Dialog>
 </template>

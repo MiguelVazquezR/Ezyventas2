@@ -14,13 +14,16 @@ return new class extends Migration
         Schema::create('payments', function (Blueprint $table) {
             $table->id();
             $table->foreignId('transaction_id')->constrained('transactions')->onDelete('cascade');
-            
+            $table->foreignId('cash_register_session_id')
+                ->nullable() // Nulable para pagos que no son del POS (ej. online)
+                ->constrained('cash_register_sessions')
+                ->onDelete('set null');
             $table->decimal('amount', 10, 2);
             $table->string('payment_method'); // efectivo, tarjeta, transferencia, saldo de cliente
             $table->string('status'); // completado, fallido
             $table->timestamp('payment_date');
             $table->text('notes')->nullable();
-            
+
             $table->timestamps();
         });
     }

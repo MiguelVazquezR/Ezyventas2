@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import PaymentModal from '@/Components/PaymentModal.vue';
 
@@ -10,22 +10,27 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible']);
 
+// Se añade 'cash_register_session_id' al formulario
 const form = useForm({
     payments: [],
+    cash_register_session_id: null,
 });
 
 const isPaymentModalVisible = ref(false);
 const paymentAmount = ref(0);
 
 const openPaymentModal = () => {
-    // Si el cliente tiene deuda, sugiere pagar la deuda. Si no, sugiere agregar 100.
     paymentAmount.value = props.customer.balance < 0 ? Math.abs(props.customer.balance) : 100;
     isPaymentModalVisible.value = true;
 };
 
 const handlePaymentSubmit = (paymentData) => {
+    // Se asignan ambos valores recibidos desde PaymentModal
     form.payments = paymentData.payments;
-    form.post(route('customers.addBalance', props.customer.id), {
+    form.cash_register_session_id = paymentData.cash_register_session_id;
+
+    // Se apunta a la nueva ruta estandarizada
+    form.post(route('customers.payments.store', props.customer.id), {
         onSuccess: () => {
             closeAllModals();
         },

@@ -75,18 +75,17 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
     /**
      * Muestra los detalles de una sesión de caja específica.
      */
-    public function show(CashRegisterSession $cashRegisterSession): Response
+     public function show(CashRegisterSession $cashRegisterSession): Response
     {
         $cashRegisterSession->load([
             'user:id,name',
             'cashRegister:id,name',
-            'transactions.payments',
+            'payments.transaction:id,folio', 
             'cashMovements'
         ]);
-
-        // SOLUCIÓN: Calcular totales por método de pago en el backend
-        $transactionIds = $cashRegisterSession->transactions->pluck('id');
-        $paymentTotals = Payment::whereIn('transaction_id', $transactionIds)
+        
+        // El cálculo ahora es mucho más simple y preciso
+        $paymentTotals = $cashRegisterSession->payments()
             ->where('status', PaymentStatus::COMPLETED)
             ->selectRaw('payment_method, SUM(amount) as total')
             ->groupBy('payment_method')
@@ -100,7 +99,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
 
         return Inertia::render('FinancialControl/CashRegisterSession/Show', [
             'session' => $cashRegisterSession,
-            'sessionTotals' => $sessionTotals, // Pasar los nuevos totales a la vista
+            'sessionTotals' => $sessionTotals,
         ]);
     }
 
@@ -140,14 +139,12 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
     {
         DB::transaction(function () use ($request, $cashRegisterSession) {
             $validated = $request->validated();
-
-            // Calcular el total de efectivo esperado
-            $cashSales = $cashRegisterSession->transactions()
+            // Ahora tomamos todos los pagos en efectivo registrados en ESTA sesión,
+            // sin importar de qué transacción provengan.
+            $cashSales = $cashRegisterSession->payments()
+                ->where('payment_method', 'efectivo')
                 ->where('status', 'completado')
-                ->whereHas('payments', fn($q) => $q->where('payment_method', 'efectivo'))
-                ->withSum('payments', 'amount')
-                ->get()
-                ->sum('payments_sum_amount');
+                ->sum('amount');
 
             $inflows = $cashRegisterSession->cashMovements()->where('type', 'ingreso')->sum('amount');
             $outflows = $cashRegisterSession->cashMovements()->where('type', 'egreso')->sum('amount');
@@ -155,7 +152,6 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
             $calculatedTotal = $cashRegisterSession->opening_cash_balance + $cashSales + $inflows - $outflows;
             $difference = $validated['closing_cash_balance'] - $calculatedTotal;
 
-            // Actualizar la sesión
             $cashRegisterSession->update([
                 'closing_cash_balance' => $validated['closing_cash_balance'],
                 'calculated_cash_total' => $calculatedTotal,
@@ -165,7 +161,6 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
                 'closed_at' => now(),
             ]);
 
-            // Marcar la caja como libre
             $cashRegisterSession->cashRegister->update(['in_use' => false]);
         });
 

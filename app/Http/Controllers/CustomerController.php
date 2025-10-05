@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
+use App\Models\CashRegister;
 use App\Models\Customer;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -71,10 +72,22 @@ class CustomerController extends Controller implements HasMiddleware
 
     public function show(Customer $customer): Response
     {
-         $customer->load(['transactions.user', 'balanceMovements.transaction:id,folio']);
+        $customer->load([
+            'transactions' => fn ($query) => $query->orderBy('created_at', 'desc'),
+            'balanceMovements' => fn ($query) => $query->with('transaction:id,folio')->orderBy('created_at', 'desc')
+        ]);
+        
+        // Se obtienen las cajas registradoras disponibles para pasarlas a la vista.
+        // Esto es necesario para que el modal de apertura de sesión funcione.
+        $user = Auth::user();
+        $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
+            ->where('is_active', true)
+            ->where('in_use', false)
+            ->get(['id', 'name']);
 
         return Inertia::render('Customer/Show', [
             'customer' => $customer,
+            'availableCashRegisters' => $availableCashRegisters, // Se pasa como prop
         ]);
     }
 
