@@ -26,7 +26,6 @@ class CustomerPaymentController extends Controller
             'payments.*.amount' => 'required|numeric|min:0.01',
             'payments.*.method' => ['required', Rule::in(array_column(PaymentMethod::cases(), 'value'))],
             'notes' => 'nullable|string|max:255',
-            // Se valida que la sesión de caja exista y esté activa.
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id,status,abierta',
         ]);
 
@@ -36,18 +35,15 @@ class CustomerPaymentController extends Controller
                 $user = Auth::user();
                 $sessionId = $validated['cash_register_session_id'];
 
-                // 1. Obtener todas las transacciones pendientes del cliente, de la más antigua a la más nueva.
                 $pendingTransactions = $customer->transactions()
                     ->where('status', TransactionStatus::PENDING)
                     ->orderBy('created_at', 'asc')
                     ->get();
 
-                // 2. Iterar sobre cada pago recibido (efectivo, tarjeta, etc.).
                 foreach ($validated['payments'] as $paymentData) {
                     $amountToApply = (float) $paymentData['amount'];
                     $paymentMethod = $paymentData['method'];
 
-                    // 3. Aplicar cada pago a las transacciones pendientes.
                     foreach ($pendingTransactions as $transaction) {
                         if ($amountToApply <= 0.001) break;
 
@@ -58,7 +54,6 @@ class CustomerPaymentController extends Controller
 
                         $amountForThisTransaction = min($amountToApply, $pendingAmountOnTransaction);
 
-                        // Se utiliza el PaymentService para registrar el pago
                         $paymentService->processPayments(
                             $transaction,
                             [[
@@ -82,7 +77,6 @@ class CustomerPaymentController extends Controller
                         $amountToApply -= $amountForThisTransaction;
                     }
 
-                    // 4. Si después de pagar todas las deudas, aún queda remanente, se va a saldo a favor.
                     if ($amountToApply > 0.001) {
                         // Se crea una transacción especial para registrar este ingreso
                         $balanceTransaction = $customer->transactions()->create([
@@ -94,12 +88,12 @@ class CustomerPaymentController extends Controller
                             'total_discount' => 0,
                             'total_tax' => 0,
                             'total' => $amountToApply,
-                            'channel' => TransactionChannel::POS, // Se registra como un ingreso en POS
+                            // Se usa el nuevo canal para identificar este tipo de transacción.
+                            'channel' => TransactionChannel::BALANCE_PAYMENT,
                             'status' => TransactionStatus::COMPLETED,
                             'notes' => 'Transacción generada para registrar abono a saldo a favor.',
                         ]);
 
-                        // Se registra el pago usando el servicio
                         $paymentService->processPayments(
                             $balanceTransaction,
                             [[
