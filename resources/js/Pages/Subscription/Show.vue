@@ -335,11 +335,12 @@ const getInvoiceStatusTag = (status) => {
                                         </div>
                                     </template>
                                 </Column>
+                                <template #empty>
+                                    <div class="text-center text-gray-500 py-4">
+                                        No has registrado ninguna cuenta.
+                                    </div>
+                                </template>
                             </DataTable>
-                            <p v-if="!subscription.bank_accounts || subscription.bank_accounts.length === 0"
-                                class="text-sm text-center text-gray-500 py-4">
-                                No has registrado ninguna cuenta.
-                            </p>
                         </template>
                     </Card>
                     <Card>
@@ -385,6 +386,11 @@ const getInvoiceStatusTag = (status) => {
                                                         class="capitalize" />
                                                 </template>
                                             </Column>
+                                            <template #empty>
+                                                <div class="text-center text-gray-500 py-4">
+                                                    No hay pagos registrados aún.
+                                                </div>
+                                            </template>
                                         </DataTable>
                                     </div>
                                 </AccordionTab>

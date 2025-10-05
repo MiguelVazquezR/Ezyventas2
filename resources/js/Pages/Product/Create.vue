@@ -151,7 +151,7 @@ const submit = () => {
 
 // --- Manejo de Imágenes ---
 const onSelectGeneralImages = (event) => {
-    form.general_images = [...form.general_images, ...event.files];
+    form.general_images = event.files;
 };
 const onRemoveGeneralImage = (event) => {
     form.general_images = form.general_images.filter(img => img.objectURL !== event.file.objectURL);
