@@ -53,7 +53,7 @@ const paymentMethods = computed(() => {
 const handleMethodSelect = (method) => {
     localCurrentStep.value = method;
     if (method === 'credito' && !props.client) {
-        localCurrentStep.value = 'credit-customer-selection';
+        localCurrentStep.value = 'credito-customer-selection';
     }
     emit('select-method', method);
 };
@@ -65,12 +65,12 @@ const goBack = () => {
 
 const handleCustomerSelect = (customer) => {
     emit('select-customer', customer);
-    localCurrentStep.value = 'credit';
+    localCurrentStep.value = 'credito';
 };
 
 const handleRemoveClient = () => {
     emit('remove-client');
-    localCurrentStep.value = 'credit-customer-selection';
+    localCurrentStep.value = 'credito-customer-selection';
 };
 
 const paymentAmountModel = computed({
@@ -125,11 +125,9 @@ watch(isDownPaymentForced, (isForced) => {
     }
 });
 
-// --- INICIO DE CORRECCIÓN: Resetear el paso local cuando el componente se vuelve a renderizar ---
 watch(() => props.paymentMode, () => {
     localCurrentStep.value = 'selection';
 }, { immediate: true });
-// --- FIN DE CORRECCIÓN ---
 
 </script>
 
@@ -142,7 +140,6 @@ watch(() => props.paymentMode, () => {
             :is-credit-sale="isCreditSale"
             @select="handleMethodSelect"
         />
-
         <div v-if="['efectivo', 'tarjeta', 'transferencia'].includes(localCurrentStep)" class="min-h-[350px] flex flex-col">
             <div class="flex-grow">
                 <div class="flex items-center gap-3 mb-4">
@@ -187,7 +184,7 @@ watch(() => props.paymentMode, () => {
                             <Dropdown :model-value="selectedAccountId" @update:modelValue="emit('update:selectedAccountId', $event)" :options="bankAccountOptions" optionLabel="label" optionValue="value" placeholder="Selecciona una cuenta" class="w-full mt-1" />
                         </div>
                         <div v-if="localCurrentStep === 'transferencia' && selectedAccountId" class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg space-y-2 text-sm mb-4">
-                           <div v-for="detail in [{label: 'Beneficiario', value: bankAccounts.find(b => b.id === selectedAccountId)?.owner_name}, {label: 'Banco', value: bankAccounts.find(b => b.id === selectedAccountId)?.bank_name}, {label: 'CLABE', value: bankAccounts.find(b => b.id === selectedAccountId)?.clabe}]" :key="detail.label">
+                            <div v-for="detail in [{label: 'Beneficiario', value: bankAccounts.find(b => b.id === selectedAccountId)?.owner_name}, {label: 'Banco', value: bankAccounts.find(b => b.id === selectedAccountId)?.bank_name}, {label: 'CLABE', value: bankAccounts.find(b => b.id === selectedAccountId)?.clabe}]" :key="detail.label">
                                 <div v-if="detail.value" class="flex justify-between items-center">
                                     <span>{{ detail.label }}:</span>
                                     <div class="flex items-center gap-2">
@@ -214,8 +211,9 @@ watch(() => props.paymentMode, () => {
             </div>
         </div>
 
-        <div v-if="localCurrentStep.startsWith('credit')">
-            <div v-if="localCurrentStep === 'credit-customer-selection'" class="min-h-[350px] flex flex-col">
+        <div v-if="localCurrentStep.startsWith('credito')">
+            {{ localCurrentStep }}
+            <div v-if="localCurrentStep === 'credito-customer-selection'" class="min-h-[350px] flex flex-col">
                 <div class="flex-grow">
                     <h3 class="text-xl font-semibold">Asignar cliente</h3>
                     <a @click="goBack" class="text-sm text-blue-500 hover:underline cursor-pointer mb-4 block">&larr; Volver</a>
@@ -235,7 +233,7 @@ watch(() => props.paymentMode, () => {
                 <div class="mt-4"><Button label="Crear cliente rápido" icon="pi pi-plus" @click="emit('create-customer')" severity="secondary" class="w-full" /></div>
             </div>
 
-            <div v-if="localCurrentStep === 'credit'" class="min-h-[350px] flex flex-col">
+            <div v-if="localCurrentStep === 'credito'" class="min-h-[350px] flex flex-col">
                  <div class="flex-grow">
                      <div class="flex items-center justify-between mb-4">
                         <div class="flex items-center gap-3"><img src="/images/credito.webp" alt="Credito" class="h-8"><h3 class="text-xl font-semibold">Venta a crédito</h3></div>

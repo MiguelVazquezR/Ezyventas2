@@ -5,10 +5,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
-// --- INICIO DE CORRECCIÓN ---
-// Se reemplaza AddBalanceModal por el PaymentModal directamente.
 import PaymentModal from '@/Components/PaymentModal.vue';
-// --- FIN DE CORRECCIÓN ---
 
 
 const props = defineProps({
@@ -21,33 +18,26 @@ const { hasPermission } = usePermissions();
 const page = usePage();
 const activeSession = computed(() => page.props.activeSession);
 
-// --- INICIO DE CORRECCIÓN ---
-// Se simplifica la lógica para manejar un solo modal de pago.
 const isPaymentModalVisible = ref(false);
 const isStartSessionModalVisible = ref(false);
-const sessionModalAwaitingPaymentModal = ref(false); // Flag para recordar la acción
+const sessionModalAwaitingPaymentModal = ref(false);
 
-// Método que orquesta el flujo de abono.
 const handleOpenAddBalanceFlow = () => {
     if (!activeSession.value) {
-        // Si no hay sesión, se muestra el modal para iniciar una.
         sessionModalAwaitingPaymentModal.value = true;
         isStartSessionModalVisible.value = true;
     } else {
-        // Si ya hay sesión, se muestra directamente el modal de pago.
         isPaymentModalVisible.value = true;
     }
 };
 
-// Observador para reaccionar cuando la sesión se inicie.
 watch(activeSession, (newSession) => {
     if (newSession && sessionModalAwaitingPaymentModal.value) {
-        sessionModalAwaitingPaymentModal.value = false; // Se resetea el flag.
-        isPaymentModalVisible.value = true; // Se abre el modal de pago que estaba pendiente.
+        sessionModalAwaitingPaymentModal.value = false;
+        isPaymentModalVisible.value = true;
     }
 });
 
-// Nuevo método para manejar el envío del abono.
 const handleBalancePaymentSubmit = (paymentData) => {
     const form = router.form({
         payments: paymentData.payments,
@@ -61,7 +51,6 @@ const handleBalancePaymentSubmit = (paymentData) => {
         preserveScroll: true,
     });
 };
-// --- FIN DE CORRECCIÓN ---
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -148,29 +137,29 @@ const getTransactionStatusSeverity = (status) => {
             <!-- Columna Izquierda: Información -->
             <div class="lg:col-span-1 space-y-6">
                  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                      <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información de Contacto</h2>
-                      <ul class="space-y-3 text-sm">
-                           <li v-if="customer.phone" class="flex items-center"><i class="pi pi-phone w-6 text-gray-500"></i> <span class="font-medium">{{ customer.phone }}</span></li>
-                           <li v-if="customer.email" class="flex items-center"><i class="pi pi-envelope w-6 text-gray-500"></i> <span class="font-medium">{{ customer.email }}</span></li>
-                           <li v-if="customer.tax_id" class="flex items-center"><i class="pi pi-id-card w-6 text-gray-500"></i> <span class="font-medium">{{ customer.tax_id }}</span></li>
-                      </ul>
+                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información de Contacto</h2>
+                     <ul class="space-y-3 text-sm">
+                         <li v-if="customer.phone" class="flex items-center"><i class="pi pi-phone w-6 text-gray-500"></i> <span class="font-medium">{{ customer.phone }}</span></li>
+                         <li v-if="customer.email" class="flex items-center"><i class="pi pi-envelope w-6 text-gray-500"></i> <span class="font-medium">{{ customer.email }}</span></li>
+                         <li v-if="customer.tax_id" class="flex items-center"><i class="pi pi-id-card w-6 text-gray-500"></i> <span class="font-medium">{{ customer.tax_id }}</span></li>
+                     </ul>
                  </div>
                  <div v-if="hasPermission('customers.see_financial_info')" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                      <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información Financiera</h2>
-                      <ul class="space-y-3 text-sm">
-                           <li class="flex justify-between items-center">
-                               <span class="text-gray-500">Saldo Actual</span> 
-                               <span :class="getBalanceClass(customer.balance)" class="font-mono font-semibold text-lg">
-                                   {{ formatCurrency(customer.balance) }}
-                               </span>
-                           </li>
-                            <li class="flex justify-between items-center">
-                                <span class="text-gray-500">Límite de Crédito</span> 
-                                <span class="font-mono font-medium">
-                                    {{ formatCurrency(customer.credit_limit) }}
-                                </span>
-                           </li>
-                      </ul>
+                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información Financiera</h2>
+                     <ul class="space-y-3 text-sm">
+                         <li class="flex justify-between items-center">
+                             <span class="text-gray-500">Saldo Actual</span> 
+                             <span :class="getBalanceClass(customer.balance)" class="font-mono font-semibold text-lg">
+                                 {{ formatCurrency(customer.balance) }}
+                             </span>
+                         </li>
+                          <li class="flex justify-between items-center">
+                             <span class="text-gray-500">Límite de Crédito</span> 
+                             <span class="font-mono font-medium">
+                                 {{ formatCurrency(customer.credit_limit) }}
+                             </span>
+                         </li>
+                     </ul>
                  </div>
             </div>
 
@@ -179,13 +168,19 @@ const getTransactionStatusSeverity = (status) => {
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Historial de Transacciones</h2>
                     <DataTable :value="customer.transactions" class="p-datatable-sm" responsiveLayout="scroll" :paginator="customer.transactions?.length > 5" :rows="5">
-                        <Column field="folio" header="Folio"></Column>
+                        <Column field="folio" header="Folio">
+                            <template #body="{ data }">
+                                <Link :href="route('transactions.show', data.id)" class="text-blue-500 hover:underline">
+                                    #{{ data.folio }}
+                                </Link>
+                            </template>
+                        </Column>
                         <Column field="created_at" header="Fecha">
                             <template #body="{ data }"> {{ formatDate(data.created_at) }}</template>
                         </Column>
                         <Column field="total" header="Total">
                              <template #body="{ data }">
-                                {{ formatCurrency(data.total) }}
+                                 {{ formatCurrency(data.total) }}
                             </template>
                         </Column>
                         <Column field="status" header="Estatus">
@@ -193,35 +188,31 @@ const getTransactionStatusSeverity = (status) => {
                                 <Tag :value="data.status" :severity="getTransactionStatusSeverity(data.status)" class="capitalize"/>
                             </template>
                         </Column>
-                        <Column headerStyle="width: 5rem; text-align: center">
-                            <template #body="{ data }">
-                                <Link :href="route('transactions.show', data.id)" v-tooltip.bottom="'Ver detalles'">
-                                    <Button icon="pi pi-external-link" text rounded severity="secondary" />
-                                </Link>
-                            </template>
-                        </Column>
+                        <!-- Se elimina la columna de acción con el icono de enlace externo -->
+                        <template #empty>
+                            <div class="text-center text-gray-500 py-4">
+                                No hay transacciones registradas.
+                            </div>
+                        </template>
                     </DataTable>
-                    <div v-if="!customer.transactions || customer.transactions?.length === 0" class="text-center text-gray-500 py-4">
-                        No hay transacciones registradas.
-                    </div>
                 </div>
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Movimientos de Saldo</h2>
                     <DataTable :value="customer.balance_movements" class="p-datatable-sm" responsiveLayout="scroll" :paginator="customer.balance_movements?.length > 5" :rows="5">
+                        <Column field="transaction.folio" header="Folio Venta">
+                           <template #body="{data}">
+                               <Link v-if="data.transaction" :href="route('transactions.show', data.transaction.id)" class="text-blue-500 hover:underline">
+                                   #{{ data.transaction.folio }}
+                               </Link>
+                               <span v-else>N/A</span>
+                           </template>
+                       </Column>
                         <Column field="created_at" header="Fecha">
                              <template #body="{ data }"> {{ formatDate(data.created_at) }}</template>
                         </Column>
                         <Column field="type" header="Tipo">
                             <template #body="{data}">
                                 <span class="capitalize">{{ data.type.replace(/_/g, ' ') }}</span>
-                            </template>
-                        </Column>
-                         <Column field="transaction.folio" header="Folio Venta">
-                            <template #body="{data}">
-                                <Link v-if="data.transaction" :href="route('transactions.show', data.transaction.id)" class="text-blue-500 hover:underline">
-                                    #{{ data.transaction.folio }}
-                                </Link>
-                                <span v-else>N/A</span>
                             </template>
                         </Column>
                         <Column field="amount" header="Monto">
@@ -232,12 +223,15 @@ const getTransactionStatusSeverity = (status) => {
                             </template>
                         </Column>
                          <Column field="balance_after" header="Saldo Resultante">
-                               <template #body="{ data }"> {{ formatCurrency(data.balance_after) }}</template>
+                                <template #body="{ data }"> {{ formatCurrency(data.balance_after) }}</template>
                         </Column>
+                        <template #empty>
+                            <div class="text-center text-gray-500 py-4">
+                                No hay movimientos de saldo registrados.
+                            </div>
+                        </template>
                     </DataTable>
-                     <div v-if="!customer.balance_movements || customer.balance_movements?.length === 0" class="text-center text-gray-500 py-4">
-                        No hay movimientos de saldo registrados.
-                    </div>
+                    <!-- Se elimina el div que mostraba el mensaje de no hay registros -->
                 </div>
             </div>
         </div>
@@ -248,7 +242,6 @@ const getTransactionStatusSeverity = (status) => {
             @update:visible="isStartSessionModalVisible = $event"
         />
 
-        <!-- INICIO DE CORRECCIÓN -->
         <PaymentModal
             v-if="isPaymentModalVisible"
             v-model:visible="isPaymentModalVisible"
@@ -257,6 +250,5 @@ const getTransactionStatusSeverity = (status) => {
             payment-mode="balance"
             @submit="handleBalancePaymentSubmit"
         />
-        <!-- FIN DE CORRECCIÓN -->
     </AppLayout>
 </template>

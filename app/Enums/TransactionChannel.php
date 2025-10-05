@@ -9,4 +9,5 @@ enum TransactionChannel: string
     case SERVICE_ORDER = 'orden_de_servicio';
     case QUOTE = 'cotizacion';
     case MANUAL = 'manual';
+    case BALANCE_PAYMENT = 'abono_a_saldo';
 }
