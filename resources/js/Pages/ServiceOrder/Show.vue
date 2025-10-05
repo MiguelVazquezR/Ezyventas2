@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, provide } from 'vue';
 import { Head, router, usePage, useForm } from '@inertiajs/vue3'; // Added useForm
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
@@ -14,13 +14,18 @@ const props = defineProps({
     serviceOrder: Object,
     activities: Array,
     availableTemplates: Array,
-    customFieldDefinitions: Array, // Added for custom fields display
+    customFieldDefinitions: Array,
+    // Se recibe la sesión activa desde el controlador.
+    activeSession: Object, 
 });
 
 const page = usePage();
 const confirm = useConfirm();
 const toast = useToast();
 const { hasPermission } = usePermissions();
+
+// Se provee la sesión activa para que componentes anidados (como PaymentModal) puedan inyectarla.
+provide('activeSession', computed(() => props.activeSession));
 
 // --- Lógica de Modales ---
 const isPrintModalVisible = ref(false);
@@ -46,9 +51,8 @@ watch(() => page.props.flash.show_payment_modal, (showModal) => {
 }, { immediate: true });
 
 const handlePaymentSubmit = (payload) => {
-    router.post(route('transactions.payments.store', props.serviceOrder.transaction.id), {
-        payments: payload.payments
-    }, {
+    // Se cambia la ruta y se envía el payload completo, que ahora incluye cash_register_session_id.
+    router.post(route('payments.store', props.serviceOrder.transaction.id), payload, {
         preserveScroll: true,
         onSuccess: () => {
             handlePaymentModalClosed();

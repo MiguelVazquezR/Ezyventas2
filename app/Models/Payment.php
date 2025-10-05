@@ -14,6 +14,7 @@ class Payment extends Model
 
     protected $fillable = [
         'transaction_id',
+        'cash_register_session_id',
         'amount',
         'payment_method',
         'payment_date',
@@ -34,5 +35,13 @@ class Payment extends Model
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class);
+    }
+
+    /**
+     * Obtiene la sesión de caja donde se registró el pago.
+     */
+    public function cashRegisterSession(): BelongsTo
+    {
+        return $this->belongsTo(CashRegisterSession::class);
     }
 }

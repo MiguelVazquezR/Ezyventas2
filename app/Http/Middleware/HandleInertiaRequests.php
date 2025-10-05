@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\CashRegisterSessionStatus;
+use App\Models\CashRegisterSession;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Spatie\Permission\Models\Permission;
@@ -75,6 +77,15 @@ class HandleInertiaRequests extends Middleware
                     'print_data' => $request->session()->get('print_data'),
                     'show_payment_modal' => $request->session()->get('show_payment_modal'),
                 ];
+            },
+            'activeSession' => function () use ($request) {
+                $user = $request->user();
+                if (!$user) {
+                    return null;
+                }
+                return CashRegisterSession::where('user_id', $user->id)
+                    ->where('status', CashRegisterSessionStatus::OPEN)
+                    ->first();
             },
         ]);
     }

@@ -3,7 +3,6 @@ import { ref, computed, watch } from 'vue';
 import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
-import AddPaymentModal from '@/Components/AddPaymentModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import { usePermissions } from '@/Composables';
 
@@ -32,7 +31,6 @@ const breadcrumbItems = ref([
     { label: 'Historial de Ventas', url: route('transactions.index') },
     { label: `Venta #${props.transaction.folio}` }
 ]);
-const showAddPaymentModal = ref(false);
 
 const localTransaction = ref(props.transaction);
 watch(() => props.transaction, (newTransaction) => {
@@ -49,7 +47,6 @@ const pendingAmount = computed(() => totalAmount.value - totalPaid.value);
 
 const canCancel = computed(() => ['completado', 'pendiente'].includes(localTransaction.value.status));
 const canRefund = computed(() => localTransaction.value.status === 'completado');
-const canAddPayment = computed(() => pendingAmount.value > 0.01 && ['completado', 'pendiente'].includes(localTransaction.value.status));
 
 const cancelSale = () => {
     confirm.require({
@@ -106,8 +103,6 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                 </p>
             </div>
             <div class="flex items-center gap-2 mt-4 sm:mt-0">
-                <Button v-if="canAddPayment" @click="showAddPaymentModal = true" label="Registrar Abono"
-                    icon="pi pi-plus" severity="success" />
                 <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined />
             </div>
         </div>
@@ -216,8 +211,6 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                 </Card>
             </div>
         </div>
-        <AddPaymentModal :visible="showAddPaymentModal" :transaction="transaction" :pending-amount="pendingAmount"
-            @update:visible="showAddPaymentModal = false" />
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
             :available-templates="availableTemplates" />
     </AppLayout>

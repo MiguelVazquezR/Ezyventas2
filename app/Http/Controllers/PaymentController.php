@@ -3,67 +3,64 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CustomerBalanceMovementType;
-use App\Enums\TransactionStatus;
-use App\Http\Requests\StorePaymentRequest;
 use App\Models\Transaction;
-use Carbon\Carbon;
+use App\Services\PaymentService; // Se importa el servicio
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Exception;
 
 class PaymentController extends Controller
 {
     /**
-     * Almacena un nuevo pago (abono) para una transacción.
+     * Almacena nuevos pagos para una transacción existente (abonos).
      */
-    public function store(StorePaymentRequest $request, Transaction $transaction)
+    public function store(Request $request, Transaction $transaction, PaymentService $paymentService)
     {
-        DB::transaction(function () use ($request, $transaction) {
-            $validated = $request->validated();
+        $validated = $request->validate([
+            'payments' => 'required|array|min:1',
+            'payments.*.amount' => 'required|numeric|min:0.01',
+            'payments.*.method' => ['required', Rule::in(['efectivo', 'tarjeta', 'transferencia'])],
+            'payments.*.notes' => 'nullable|string',
+            // Valida que la sesión de caja exista y esté abierta (si se envía)
+            'cash_register_session_id' => 'required|exists:cash_register_sessions,id,status,abierta',
+        ]);
 
-            // Corregir el desfase de zona horaria.
-            $validated['payment_date'] = Carbon::parse($validated['payment_date'])->setTimezone('America/Mexico_City');
+        try {
+            DB::transaction(function () use ($validated, $transaction, $paymentService) {
+                $customer = $transaction->customer;
+                $payments = $validated['payments'];
+                $sessionId = $validated['cash_register_session_id'];
 
-            // 1. Crear el registro del pago
-            $payment = $transaction->payments()->create($validated);
+                $remainingDue = $transaction->total - $transaction->payments()->sum('amount');
+                $totalAmountToPayInRequest = array_sum(array_column($payments, 'amount'));
 
-            // 2. Si la transacción tiene un cliente, afectar su balance general
-            if ($customer = $transaction->customer) {
-                $newBalance = $customer->balance + $payment->amount;
-                $customer->update(['balance' => $newBalance]);
-
-                // 3. Registrar el movimiento de saldo para auditoría
-                $customer->balanceMovements()->create([
-                    'transaction_id' => $transaction->id,
-                    'type' => CustomerBalanceMovementType::PAYMENT,
-                    'amount' => $payment->amount,
-                    'balance_after' => $newBalance,
-                    'notes' => "Abono a la transacción #{$transaction->folio}",
-                ]);
-            }
-
-            // 4. Verificar si la transacción ya fue saldada y actualizar su estado
-            $totalAmountDue = $transaction->subtotal - $transaction->total_discount;
-            $totalPaid = $transaction->payments()->sum('amount');
-
-            if ($totalPaid >= $totalAmountDue) {
-                if ($transaction->status !== TransactionStatus::COMPLETED) {
-                    $transaction->update(['status' => TransactionStatus::COMPLETED]);
+                // Se asegura que el monto del abono no sea mayor al saldo pendiente.
+                if ($totalAmountToPayInRequest > $remainingDue + 0.01) {
+                    throw new Exception('El monto del pago excede el saldo pendiente de la transacción.');
                 }
+                
+                // Se delega la creación del registro de pago al servicio.
+                $paymentService->processPayments($transaction, $payments, $sessionId);
 
-                // 5. Si hubo un pago en exceso (excedente), registrarlo como nota en el balance.
-                // El saldo del cliente ya es correcto, esto es solo para mayor claridad en el historial.
-                $surplus = $totalPaid - $totalAmountDue;
-                if ($surplus > 0.01 && $customer) {
+                // La lógica de negocio, como actualizar el balance del cliente, permanece aquí.
+                if ($customer) {
+                    // El balance del cliente se actualiza para reflejar que su deuda ha disminuido.
+                    $customer->increment('balance', $totalAmountToPayInRequest);
+                    
                     $customer->balanceMovements()->create([
                         'transaction_id' => $transaction->id,
-                        'type' => CustomerBalanceMovementType::MANUAL_ADJUSTMENT,
-                        'amount' => 0, // El monto ya fue aplicado, esto es solo una anotación.
+                        'type' => CustomerBalanceMovementType::PAYMENT,
+                        'amount' => $totalAmountToPayInRequest,
                         'balance_after' => $customer->balance,
-                        'notes' => "Excedente de pago de " . number_format($surplus, 2) . " en transacción #{$transaction->folio} aplicado a saldo a favor.",
+                        'notes' => "Abono a transacción {$transaction->folio}",
                     ]);
                 }
-            }
-        });
+            });
+        } catch (Exception $e) {
+            return redirect()->back()->with('error', 'Error al procesar el pago: ' . $e->getMessage());
+        }
 
-        return redirect()->back()->with('success', 'Abono registrado con éxito.');
+        return redirect()->back()->with('success', 'Pago registrado correctamente.');
     }
 }
