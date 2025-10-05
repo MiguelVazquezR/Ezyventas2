@@ -20,6 +20,7 @@ use App\Models\Product;
 use App\Models\ProductAttribute;
 use App\Models\Promotion;
 use App\Models\Transaction;
+use App\Services\PaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -103,7 +104,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         ]);
     }
 
-    public function checkout(Request $request)
+    public function checkout(Request $request, PaymentService $paymentService)
     {
         $validated = $request->validate([
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
@@ -128,10 +129,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
         $user = Auth::user();
         $customer = $validated['customerId'] ? Customer::find($validated['customerId']) : null;
         $totalSale = (float) $validated['total'];
-        $paymentsFromRequest = collect($validated['payments'] ?? []);
+        $paymentsFromRequest = $validated['payments'] ?? [];
 
         try {
-            $transaction = DB::transaction(function () use ($validated, $user, $customer, $totalSale, $paymentsFromRequest) {
+            $transaction = DB::transaction(function () use ($validated, $user, $customer, $totalSale, $paymentsFromRequest, $paymentService) {
 
                 $newTransaction = Transaction::create([
                     'cash_register_session_id' => $validated['cash_register_session_id'],
@@ -143,7 +144,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     'channel' => TransactionChannel::POS,
                     'subtotal' => $validated['subtotal'],
                     'total_discount' => $validated['total_discount'] ?? 0,
-                    'total_tax' => 0, // Ajustar si se manejan impuestos
+                    'total_tax' => 0,
                     'total' => $totalSale,
                     'currency' => 'MXN',
                     'status_changed_at' => now(),
@@ -168,7 +169,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         'line_total' => $item['quantity'] * $item['unit_price'],
                     ]);
 
-                    // Descontar stock (sin cambios)
                     if (!empty($item['product_attribute_id'])) {
                         ProductAttribute::find($item['product_attribute_id'])->decrement('current_stock', $item['quantity']);
                     }
@@ -179,12 +179,19 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 if ($customer && $customer->balance > 0) {
                     $balanceToUse = min($totalSale, (float) $customer->balance);
                     if ($balanceToUse > 0) {
-                        $newTransaction->payments()->create([
+                        
+                        // Se crea el array del pago con 'saldo' incluyendo la clave 'method'.
+                        $balancePaymentData = [[
                             'amount' => $balanceToUse,
-                            'payment_method' => PaymentMethod::BALANCE,
-                            'payment_date' => now(),
-                            'status' => 'completado',
-                        ]);
+                            'method' => PaymentMethod::BALANCE->value, // Se añade el método de pago.
+                            'notes' => "Uso de saldo en venta POS #{$newTransaction->folio}"
+                        ]];
+
+                        $paymentService->processPayments(
+                            $newTransaction,
+                            $balancePaymentData,
+                            $validated['cash_register_session_id']
+                        );
 
                         $customer->decrement('balance', $balanceToUse);
 
@@ -198,29 +205,15 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     }
                 }
 
-                // 2. Registrar los pagos directos (abonos o pagos completos) que vienen del modal.
-                foreach ($paymentsFromRequest as $paymentData) {
-                    $payment = $newTransaction->payments()->create([
-                        'amount' => (float) $paymentData['amount'],
-                        'payment_method' => $paymentData['method'],
-                        'payment_date' => now(),
-                        'status' => 'completado',
-                        'notes' => $paymentData['notes'] ?? null,
-                    ]);
-
-                    if (in_array($paymentData['method'], ['tarjeta', 'transferencia']) && !empty($paymentData['bank_account_id'])) {
-                        $bankAccount = BankAccount::find($paymentData['bank_account_id']);
-                        if ($bankAccount) {
-                            $bankAccount->increment('balance', $payment->amount);
-                        }
-                    }
+                // 2. Registrar los pagos directos (efectivo, tarjeta, etc.) que vienen del modal.
+                if (!empty($paymentsFromRequest)) {
+                    $paymentService->processPayments($newTransaction, $paymentsFromRequest, $validated['cash_register_session_id']);
                 }
 
-                // 3. Calcular el estado final de la transacción.
+                // 3. Calcular el estado final y gestionar el crédito.
                 $totalPaid = $newTransaction->fresh()->payments()->sum('amount');
                 $remainingDue = $totalSale - $totalPaid;
 
-                // 4. Gestionar si el resto es a crédito o si la venta está completada.
                 if ($remainingDue > 0.01) {
                     if (!$customer || $remainingDue > $customer->available_credit) {
                         throw new \Exception("Pago insuficiente y el cliente no tiene crédito disponible para cubrir la diferencia.");
@@ -235,7 +228,8 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         'balance_after' => $customer->balance,
                         'notes' => "Cargo a crédito por venta POS #{$newTransaction->folio}",
                     ]);
-                } else {
+
+                    // Al usar crédito, la transacción se considera completada
                     $newTransaction->update(['status' => TransactionStatus::COMPLETED]);
                 }
 

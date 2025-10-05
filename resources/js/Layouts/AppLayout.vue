@@ -1,7 +1,7 @@
 <script setup>
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3'; // Se añade usePage
 import { useLayout } from '@/Layouts/composables/layout';
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch, provide } from 'vue'; // Se añade provide
 import AppFooter from './AppFooter.vue';
 import AppSidebar from './AppSidebar.vue';
 import AppTopbar from './AppTopbar.vue';
@@ -10,6 +10,12 @@ import { useToast } from 'primevue/usetoast';
 defineProps({
     title: String,
 });
+// Se obtiene la información de la página, incluyendo los datos compartidos globalmente.
+const page = usePage();
+
+// Se provee la sesión activa para que cualquier componente hijo (como PaymentModal) pueda inyectarla.
+// Se usa 'computed' para que sea reactivo si la sesión cambia.
+provide('activeSession', computed(() => page.props.activeSession));
 
 const { layoutConfig, layoutState, isSidebarActive } = useLayout();
 const outsideClickListener = ref(null);

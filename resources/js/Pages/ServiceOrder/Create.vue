@@ -1,11 +1,12 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { Head, useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import PatternLock from '@/Components/PatternLock.vue';
 import ManageCustomFields from '@/Components/ManageCustomFields.vue';
+import StartSessionModal from '@/Components/StartSessionModal.vue';
 
 const props = defineProps({
     customFieldDefinitions: Array,
@@ -13,7 +14,13 @@ const props = defineProps({
     products: Array,
     services: Array,
     errors: Object,
+    availableCashRegisters: Array,
 });
+
+const page = usePage();
+const activeSession = computed(() => page.props.activeSession);
+const isStartSessionModalVisible = ref(false);
+const sessionModalAwaitingSubmit = ref(false);
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -27,8 +34,6 @@ const form = useForm({
     customer_name: '',
     customer_phone: '',
     customer_email: '',
-    // customer_address: { street: '', neighborhood: '', city: '', zip_code: '' },
-    // --- NUEVOS CAMPOS ---
     create_customer: false,
     credit_limit: 0,
     // --- Otros campos ---
@@ -43,9 +48,10 @@ const form = useForm({
     technician_name: '',
     technician_commission_type: 'percentage',
     technician_commission_value: null,
+    cash_register_session_id: null,
 });
 
-// --- Lógica para Items (sin cambios) ---
+// ... (toda la lógica de items, clientes, técnico y campos personalizados se mantiene igual)
 const availableItems = computed(() => [
     ...props.products.map(p => ({ ...p, type: 'Producto', price: p.selling_price, itemable_type: 'App\\Models\\Product' })),
     ...props.services.map(s => ({ ...s, type: 'Servicio', price: s.base_price, itemable_type: 'App\\Models\\Service' }))
@@ -79,7 +85,6 @@ watch(() => form.items, (newItems) => {
     form.final_total = total;
 }, { deep: true });
 
-// --- Lógica para Clientes (MODIFICADA) ---
 const filteredCustomers = ref();
 const searchCustomer = (event) => {
     setTimeout(() => {
@@ -96,36 +101,30 @@ const onCustomerSelect = (event) => {
     if (customer.address) { form.customer_address = customer.address; }
 };
 
-// NUEVO: Detecta si el cliente es nuevo (no tiene ID y tiene un nombre escrito)
 const isNewCustomer = computed(() => form.customer_name && !form.customer_id);
 
-// NUEVO: Watcher para resetear el ID del cliente si el nombre se modifica manualmente
 watch(() => form.customer_name, (newValue) => {
     if (form.customer_id) {
         const selectedCustomer = props.customers.find(c => c.id === form.customer_id);
         if (!selectedCustomer || selectedCustomer.name !== newValue) {
             form.customer_id = '';
-            // No reseteamos el teléfono/email para comodidad del usuario, pero sí la opción de crear
             form.create_customer = true;
             form.credit_limit = 0;
         }
     }
 });
 
-// NUEVO: Watcher para resetear el límite de crédito si no se va a crear el cliente
 watch(() => form.create_customer, (newValue) => {
     if (!newValue) {
         form.credit_limit = 0;
     }
 });
 
-// --- Lógica para Técnico (sin cambios) ---
 const commissionOptions = ref([{ label: 'Porcentaje (%)', value: 'percentage' }, { label: 'Monto Fijo ($)', value: 'fixed' }]);
 watch(() => form.assign_technician, (newValue) => {
     if (!newValue) { form.technician_name = ''; form.technician_commission_type = 'percentage'; form.technician_commission_value = null; }
 });
 
-// --- Lógica para Campos Personalizados (sin cambios) ---
 const initializeCustomFields = (definitions) => {
     const newCustomFields = {};
     definitions.forEach(field => {
@@ -149,10 +148,34 @@ const openCustomFieldManager = () => {
     }
 };
 
-// --- Lógica de Submit y Archivos (sin cambios) ---
-const submit = () => form.post(route('service-orders.store'));
 const onSelectImages = (event) => form.initial_evidence_images = [...form.initial_evidence_images, ...event.files];
 const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evidence_images.filter(img => img.objectURL !== event.file.objectURL);
+
+// --- INICIO DE CORRECCIÓN ---
+const submit = () => {
+    // 1. Verificar si hay una sesión activa ANTES de enviar.
+    if (!activeSession.value) {
+        // 2. Si no hay sesión, levantar un flag y mostrar el modal.
+        sessionModalAwaitingSubmit.value = true;
+        isStartSessionModalVisible.value = true;
+        return; // Detener el envío del formulario.
+    }
+    
+    // 3. Si hay sesión, agregar su ID al formulario y enviarlo.
+    form.cash_register_session_id = activeSession.value.id;
+    form.post(route('service-orders.store'));
+};
+
+// 4. Observar si la sesión activa cambia (es decir, después de que se abre en el modal).
+watch(activeSession, (newSession) => {
+    // 5. Si la sesión ahora existe y estábamos esperando para enviar, volvemos a llamar a submit().
+    if (newSession && sessionModalAwaitingSubmit.value) {
+        sessionModalAwaitingSubmit.value = false; // Resetear el flag
+        submit(); // Ahora sí se enviará el formulario.
+    }
+});
+// --- FIN DE CORRECCIÓN ---
+
 </script>
 
 <template>
@@ -164,7 +187,7 @@ const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evi
         </div>
 
         <form @submit.prevent="submit" class="mt-6 max-w-4xl mx-auto space-y-6">
-            <!-- Información del Cliente y Equipo -->
+            <!-- (Todo el contenido del formulario se mantiene igual) -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información Principal</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -183,7 +206,6 @@ const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evi
                         <InputText id="customer_phone" v-model="form.customer_phone" class="mt-1 w-full" />
                     </div>
                     
-                    <!-- NUEVO: Opciones para nuevo cliente -->
                     <div v-if="isNewCustomer" class="md:col-span-2 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg space-y-4">
                         <div class="flex items-center justify-between">
                             <span class="font-medium text-sm text-blue-800 dark:text-blue-200">Este parece ser un cliente nuevo. ¿Deseas agregarlo a tus registros?</span>
@@ -206,11 +228,6 @@ const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evi
                         <Calendar id="promised_at" v-model="form.promised_at" class="w-full mt-1" dateFormat="dd/mm/yy" />
                         <InputError :message="form.errors.promised_at" class="mt-2" />
                     </div>
-                    <!-- <div class="md:col-span-2">
-                        <InputLabel for="customer_address" value="Dirección del Cliente" />
-                        <Textarea id="customer_address" v-model="form.customer_address.street" rows="2" class="mt-1 w-full" placeholder="Calle, número, colonia, ciudad, C.P."/>
-                        <InputError :message="form.errors['customer_address.street']" class="mt-2" />
-                    </div> -->
                     <div class="md:col-span-2">
                         <InputLabel for="item_description" value="Descripción del Equipo *" />
                         <InputText id="item_description" v-model="form.item_description" class="mt-1 w-full" placeholder="Ej: iPhone 13 Pro, 256GB, Azul Sierra" />
@@ -224,7 +241,6 @@ const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evi
                 </div>
             </div>
 
-            <!-- Información del Técnico (sin cambios) -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <div class="flex items-center justify-between border-b pb-3 mb-4">
                     <h2 class="text-lg font-semibold">Asignación de Técnico</h2>
@@ -239,22 +255,21 @@ const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evi
                     <div>
                         <InputLabel value="Tipo de Comisión *" />
                         <SelectButton v-model="form.technician_commission_type" :options="commissionOptions"
-                                        optionLabel="label" optionValue="value" class="mt-1" />
+                                    optionLabel="label" optionValue="value" class="mt-1" />
                         <InputError :message="form.errors.technician_commission_type" class="mt-2" />
                     </div>
                     <div class="md:col-span-2">
                         <InputLabel for="technician_commission_value" value="Valor de la Comisión *" />
                         <InputNumber id="technician_commission_value" v-model="form.technician_commission_value"
-                                        class="w-full mt-1"
-                                        :prefix="form.technician_commission_type === 'fixed' ? '$' : null"
-                                        :suffix="form.technician_commission_type === 'percentage' ? '%' : null" />
+                                     class="w-full mt-1"
+                                     :prefix="form.technician_commission_type === 'fixed' ? '$' : null"
+                                     :suffix="form.technician_commission_type === 'percentage' ? '%' : null" />
                         <InputError :message="form.errors.technician_commission_value" class="mt-2" />
                     </div>
                 </div>
                 <p v-else class="text-gray-500">Activa el interruptor para asignar un técnico y registrar su comisión.</p>
             </div>
 
-            <!-- Campos Personalizados (sin cambios) -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <div class="flex items-center justify-between border-b pb-3 mb-4">
                     <h2 class="text-lg font-semibold">Detalles adicionales</h2>
@@ -284,7 +299,6 @@ const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evi
                 </div>
             </div>
 
-            <!-- Refacciones y Mano de Obra (sin cambios) -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                  <h2 class="text-lg font-semibold border-b pb-3 mb-4">Refacciones y Mano de Obra</h2>
                 <div class="flex gap-2 mb-4">
@@ -313,7 +327,6 @@ const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evi
                 </div>
             </div>
 
-            <!-- Evidencia Inicial (sin cambios) -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Fotográfica Inicial (Máx. 5)</h2>
                 <FileUpload name="initial_evidence_images[]" @select="onSelectImages" @remove="onRemoveImage" :multiple="true" :show-upload-button="false" accept="image/*" :maxFileSize="2000000">
@@ -327,11 +340,16 @@ const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evi
             </div>
         </form>
 
-        <!-- Componente de campos personalizados (sin cambios) -->
         <ManageCustomFields
             ref="manageFieldsComponent"
             module="service_orders"
             :definitions="props.customFieldDefinitions"
+        />
+
+        <StartSessionModal 
+            :visible="isStartSessionModalVisible"
+            :cash-registers="availableCashRegisters"
+            @update:visible="isStartSessionModalVisible = $event"
         />
     </AppLayout>
 </template>

@@ -9,6 +9,7 @@ use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Http\Requests\StoreServiceOrderRequest;
 use App\Http\Requests\UpdateServiceOrderRequest;
+use App\Models\CashRegister;
 use App\Models\Customer;
 use App\Models\CustomFieldDefinition;
 use App\Models\Product;
@@ -128,12 +129,11 @@ class ServiceOrderController extends Controller implements HasMiddleware
      */
     public function store(StoreServiceOrderRequest $request)
     {
-        // MODIFICADO: Se mueven las reglas de validación aquí para añadir las nuevas.
-        // Si usas un FormRequest (`StoreServiceOrderRequest`), mueve estas reglas allí.
-        $validated = $request->validated();
-        $validated = array_merge($validated, $request->validate([
+        $validated = array_merge($request->validated(), $request->validate([
             'create_customer' => 'required|boolean',
             'credit_limit' => 'required_if:create_customer,true|numeric|min:0',
+            // Se valida que la sesión de caja exista y esté activa.
+            'cash_register_session_id' => 'required|exists:cash_register_sessions,id,status,abierta',
         ]));
 
         $newServiceOrder = null;
@@ -142,36 +142,34 @@ class ServiceOrderController extends Controller implements HasMiddleware
             $user = Auth::user();
             $customer = null;
 
-            // MODIFICADO: Lógica para manejar los 3 escenarios de cliente
             if (! empty($validated['customer_id'])) {
-                // Escenario 1: Se seleccionó un cliente existente.
                 $customer = Customer::find($validated['customer_id']);
             } elseif ($validated['create_customer']) {
-                // Escenario 2: Es un cliente nuevo y se eligió registrarlo.
                 $customer = Customer::create([
                     'branch_id' => $user->branch_id,
                     'name' => $validated['customer_name'],
                     'phone' => $validated['customer_phone'] ?? null,
                     'email' => $validated['customer_email'] ?? null,
                     'address' => $validated['customer_address'] ?? null,
-                    'credit_limit' => $validated['credit_limit'], // Se usa el valor del formulario
+                    'credit_limit' => $validated['credit_limit'],
                     'balance' => 0,
                 ]);
             }
-            // Escenario 3: Cliente nuevo sin registrar. No se hace nada, $customer permanece null.
 
             $serviceOrder = ServiceOrder::create(array_merge($validated, [
                 'user_id' => $user->id,
                 'branch_id' => $user->branch_id,
-                'customer_id' => $customer?->id, // El operador ?-> asigna null si $customer no existe
+                'customer_id' => $customer?->id,
                 'status' => ServiceOrderStatus::PENDING,
             ]));
 
+            // Se asocia la transacción con la sesión de caja activa desde el formulario.
             $transaction = $serviceOrder->transaction()->create([
                 'folio' => 'TR-SO-' . time(),
-                'customer_id' => $customer?->id, // También se usa aquí
+                'customer_id' => $customer?->id,
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
+                'cash_register_session_id' => $validated['cash_register_session_id'], // Se asigna aquí
                 'subtotal' => $serviceOrder->final_total,
                 'total_discount' => 0,
                 'total_tax' => 0,
@@ -319,6 +317,10 @@ class ServiceOrderController extends Controller implements HasMiddleware
             'products' => Product::where('branch_id', $user->branch_id)->with('productAttributes')->get(),
             'services' => Service::where('branch_id', $user->branch_id)->get(['id', 'name', 'base_price']),
             'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'service_orders')->get(),
+            'availableCashRegisters' => CashRegister::where('branch_id', $user->branch_id)
+                ->where('is_active', true)
+                ->where('in_use', false)
+                ->get(['id', 'name']),
         ];
     }
 }
