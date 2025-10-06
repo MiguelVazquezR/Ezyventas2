@@ -87,6 +87,17 @@ class HandleInertiaRequests extends Middleware
                     ->where('status', CashRegisterSessionStatus::OPEN)
                     ->first();
             },
+            'branchHasActiveSession' => function () use ($request) {
+                $user = $request->user();
+                if (!$user) {
+                    return false;
+                }
+                return CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
+                    ->whereHas('cashRegister', function($q) use ($user) {
+                        $q->where('branch_id', $user->branch_id);
+                    })
+                    ->exists();
+            },
         ]);
     }
 }

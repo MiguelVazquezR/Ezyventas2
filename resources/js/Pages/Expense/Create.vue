@@ -1,15 +1,21 @@
 <script setup>
-import { ref, watch } from 'vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { ref, watch, computed } from 'vue';
+import { Head, useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import CreateExpenseCategoryModal from './Partials/CreateExpenseCategoryModal.vue';
+import StartSessionModal from '@/Components/StartSessionModal.vue';
 
 const props = defineProps({
     categories: Array,
     bankAccounts: Array,
+    availableCashRegisters: Array,
 });
+
+const page = usePage();
+const hasActiveBranchSession = computed(() => page.props.branchHasActiveSession);
+
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -24,8 +30,9 @@ const form = useForm({
     expense_date: new Date(),
     status: 'pagado',
     description: '',
-    payment_method: 'efectivo', // <-- Nuevo campo con valor por defecto
-    bank_account_id: null,     // <-- Nuevo campo
+    payment_method: 'efectivo',
+    bank_account_id: null,
+    take_from_cash_register: false,
 });
 
 const statusOptions = ref([
@@ -33,21 +40,31 @@ const statusOptions = ref([
     { label: 'Pendiente', value: 'pendiente' },
 ]);
 
-// <-- Nuevas opciones para método de pago -->
 const paymentMethodOptions = ref([
     { label: 'Efectivo', value: 'efectivo', icon: 'pi pi-money-bill' },
     { label: 'Tarjeta', value: 'tarjeta', icon: 'pi pi-credit-card' },
     { label: 'Transferencia', value: 'transferencia', icon: 'pi pi-arrows-h' },
 ]);
 
-// <-- Lógica para limpiar la cuenta si se elige efectivo -->
+// --- LÓGICA MEJORADA ---
+// Observa el método de pago para preseleccionar la cuenta favorita.
 watch(() => form.payment_method, (newMethod) => {
     if (newMethod === 'efectivo') {
         form.bank_account_id = null;
+    } else { // 'tarjeta' or 'transferencia'
+        form.take_from_cash_register = false;
+        
+        // Busca la cuenta marcada como favorita para la sucursal actual.
+        // La consulta en el controlador asegura que `branches[0]` contiene la info de la sucursal actual.
+        const favoriteAccount = props.bankAccounts.find(account => 
+            account.branches?.[0]?.pivot?.is_favorite
+        );
+        
+        // Si se encuentra una cuenta favorita, se preselecciona. Si no, se limpia la selección.
+        form.bank_account_id = favoriteAccount ? favoriteAccount.id : null;
     }
 });
 
-// Lógica para el modal de creación rápida
 const localCategories = ref([...props.categories]);
 const showCategoryModal = ref(false);
 const handleNewCategory = (newCategory) => {
@@ -55,12 +72,15 @@ const handleNewCategory = (newCategory) => {
     form.expense_category_id = newCategory.id;
 };
 
+const showStartSessionModal = ref(false);
+
 const submit = () => {
     form.post(route('expenses.store'));
 };
 </script>
 
 <template>
+    <!-- El template se mantiene igual, no necesita cambios -->
     <Head title="Crear Gasto" />
     <AppLayout>
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
@@ -94,7 +114,6 @@ const submit = () => {
                     <InputError :message="form.errors.expense_category_id" class="mt-2" />
                 </div>
 
-                <!-- INICIA SECCIÓN DE PAGO -->
                 <div class="md:col-span-2 space-y-4 p-4 border rounded-lg bg-gray-50 dark:bg-gray-900/50">
                     <h3 class="font-semibold text-gray-700 dark:text-gray-300">Detalles del Pago</h3>
                     <div>
@@ -106,6 +125,25 @@ const submit = () => {
                             </template>
                         </SelectButton>
                         <InputError :message="form.errors.payment_method" class="mt-2" />
+                    </div>
+
+                    <div v-if="form.payment_method === 'efectivo'">
+                        <div v-if="hasActiveBranchSession" class="flex items-center gap-3">
+                             <ToggleSwitch v-model="form.take_from_cash_register" inputId="take_from_cash_register" />
+                             <InputLabel for="take_from_cash_register">
+                                ¿Tomar efectivo de la caja activa?
+                             </InputLabel>
+                        </div>
+                        <div v-else class="flex items-center justify-between p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                            <div class="flex items-center gap-3">
+                                <i class="pi pi-info-circle text-yellow-500 text-xl"></i>
+                                <span class="text-sm text-yellow-700 dark:text-yellow-300">
+                                    Se requiere una sesión de caja activa para indicar que el dinero se toma de ahí.
+                                </span>
+                            </div>
+                            <Button label="Abrir Caja" icon="pi pi-inbox" size="small" @click="showStartSessionModal = true" />
+                        </div>
+                        <InputError :message="form.errors.take_from_cash_register" class="mt-2" />
                     </div>
 
                     <div v-if="form.payment_method === 'tarjeta' || form.payment_method === 'transferencia'">
@@ -121,9 +159,8 @@ const submit = () => {
                         <InputError :message="form.errors.bank_account_id" class="mt-2" />
                     </div>
                 </div>
-                <!-- TERMINA SECCIÓN DE PAGO -->
 
-                <div class="md:col-span-2">
+                 <div class="md:col-span-2">
                     <InputLabel for="status" value="Estatus" />
                     <Select size="large" id="status" v-model="form.status" :options="statusOptions" optionLabel="label" optionValue="value" class="w-full mt-1" />
                     <InputError :message="form.errors.status" class="mt-2" />
@@ -140,5 +177,10 @@ const submit = () => {
         </form>
 
         <CreateExpenseCategoryModal v-model:visible="showCategoryModal" @created="handleNewCategory" />
+        
+        <StartSessionModal
+            v-model:visible="showStartSessionModal"
+            :cash-registers="availableCashRegisters"
+        />
     </AppLayout>
 </template>

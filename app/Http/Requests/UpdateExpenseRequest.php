@@ -24,6 +24,7 @@ class UpdateExpenseRequest extends FormRequest
             'status' => ['required', Rule::enum(ExpenseStatus::class)],
             'description' => ['nullable', 'string'],
             'payment_method' => ['required', Rule::enum(PaymentMethod::class)],
+            'take_from_cash_register' => 'boolean',
             'bank_account_id' => [
                 'nullable',
                 Rule::requiredIf(function () {

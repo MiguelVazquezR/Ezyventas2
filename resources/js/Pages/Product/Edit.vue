@@ -195,7 +195,7 @@ const availableAttributes = computed(() => { if (!form.category_id) return []; r
 const imageRequiringAttributes = computed(() => { if (form.product_type !== 'variant') return []; return availableAttributes.value.filter(attr => form.variant_attributes.includes(attr.id) && attr.requires_image); });
 const deleteExistingImage = (mediaId) => { form.deleted_media_ids.push(mediaId); existingGeneralImages.value = existingGeneralImages.value.filter(img => img.id !== mediaId); };
 const deleteExistingVariantImage = (mediaId, optionValue) => { form.deleted_media_ids.push(mediaId); existingVariantImages.value = existingVariantImages.value.filter(img => img.id !== mediaId); delete variantImagePreviews.value[optionValue]; };
-const onSelectGeneralImages = (event) => { form.general_images = [...form.general_images, ...event.files]; };
+const onSelectGeneralImages = (event) => { form.general_images = event.files;  };
 const onRemoveGeneralImage = (event) => { form.general_images = form.general_images.filter(img => img.objectURL !== event.file.objectURL); };
 const onSelectVariantImage = (event, optionValue) => { const file = event.files[0]; form.variant_images[optionValue] = file; variantImagePreviews.value[optionValue] = URL.createObjectURL(file); };
 const onRemoveVariantImage = (optionValue) => { delete form.variant_images[optionValue]; URL.revokeObjectURL(variantImagePreviews.value[optionValue]); delete variantImagePreviews.value[optionValue]; };

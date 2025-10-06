@@ -6,6 +6,7 @@ use App\Enums\SessionCashMovementType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class SessionCashMovement extends Model
 {
@@ -23,5 +24,10 @@ class SessionCashMovement extends Model
     public function cashRegisterSession(): BelongsTo
     {
         return $this->belongsTo(CashRegisterSession::class);
+    }
+
+    public function expense(): HasOne
+    {
+        return $this->hasOne(Expense::class);
     }
 }

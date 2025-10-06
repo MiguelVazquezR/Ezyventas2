@@ -5,9 +5,6 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import DiffViewer from '@/Components/DiffViewer.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { usePermissions } from '@/Composables';
-import Breadcrumb from 'primevue/breadcrumb';
-import SplitButton from 'primevue/splitbutton';
-import Tag from 'primevue/tag';
 
 const props = defineProps({
     expense: Object,
