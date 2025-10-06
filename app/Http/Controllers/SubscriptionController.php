@@ -47,7 +47,7 @@ class SubscriptionController extends Controller
 
         $validated = $request->validate([
             'commercial_name' => 'required|string|max:255',
-            'business_name' => 'required|string|max:255',
+            'business_name' => 'nullable|string|max:255',
         ]);
 
         $user->branch->subscription->update($validated);

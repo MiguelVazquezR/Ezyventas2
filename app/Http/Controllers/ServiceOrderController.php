@@ -41,12 +41,10 @@ class ServiceOrderController extends Controller implements HasMiddleware
     public function index(Request $request): Response
     {
         $user = Auth::user();
-        $subscriptionId = $user->branch->subscription_id;
+        $branchId = $user->branch_id;
 
         $query = ServiceOrder::query()
-            ->whereHas('branch.subscription', function ($q) use ($subscriptionId) {
-                $q->where('id', $subscriptionId);
-            })
+            ->where('branch_id', $branchId)
             ->with('branch:id,name');
 
         if ($request->has('search')) {

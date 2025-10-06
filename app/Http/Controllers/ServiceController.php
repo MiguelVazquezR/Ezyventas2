@@ -30,14 +30,12 @@ class ServiceController extends Controller implements HasMiddleware
     public function index(Request $request): Response
     {
         $user = Auth::user();
-        $subscriptionId = $user->branch->subscription_id;
+        $branchId = $user->branch_id;
 
         // SOLUCIÓN: Usar JOIN para permitir el ordenamiento por columnas de tablas relacionadas
         $query = Service::query()
             ->join('categories', 'services.category_id', '=', 'categories.id')
-            ->whereHas('branch.subscription', function ($q) use ($subscriptionId) {
-                $q->where('id', $subscriptionId);
-            })
+            ->where('branch_id', $branchId)
             ->with('category:id,name')
             // Seleccionar explícitamente las columnas de la tabla principal para evitar conflictos
             ->select('services.*');

@@ -5,6 +5,7 @@ import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
+import InputError from '@/Components/InputError.vue';
 import BankAccountModal from '@/Components/BankAccountModal.vue';
 import BranchModal from '@/Components/BranchModal.vue';
 
@@ -151,8 +152,10 @@ const getInvoiceStatusTag = (status) => {
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6">
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Mi Suscripción</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Aquí puedes ver los detalles de tu plan, historial de
-                    pagos e información fiscal.</p>
+                <p class="text-gray-500 dark:text-gray-400 mt-1">
+                    Aquí puedes ver los detalles de tu plan, historial de
+                    pagos, gestion de sucursales, cuentas bancarias e información fiscal.
+                </p>
             </header>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -229,7 +232,7 @@ const getInvoiceStatusTag = (status) => {
                     <Card v-if="currentVersion">
                         <template #title>
                             <div class="flex justify-between items-center">
-                                <span>Plan Actual y Módulos</span>
+                                <span>Plan actual y módulos</span>
                                 <!-- <Link :href="route('subscription.upgrade.show')"> -->
                                 <Button label="Mejorar Suscripción" icon="pi pi-arrow-up" :disabled="true"
                                     size="small" />
@@ -247,10 +250,10 @@ const getInvoiceStatusTag = (status) => {
                                     <div v-for="module in activeModules" :key="module.key"
                                         class="p-4 rounded-lg text-center flex flex-col items-center justify-center transition-all"
                                         :class="module.is_active ? 'bg-gray-50 dark:bg-gray-800' : 'bg-gray-100 dark:bg-gray-900 opacity-60'">
-                                        <div class="relative">
+                                        <div class="relative w-full">
                                             <!-- SOLUCIÓN: Se combinan las clases en un solo array -->
                                             <i
-                                                :class="[module.meta.icon, 'text-3xl mb-2', module.is_active ? 'text-orange-500' : 'text-gray-500']"></i>
+                                                :class="[module.meta.icon, '!text-2xl mb-2', module.is_active ? 'text-primary-500' : 'text-gray-500']"></i>
                                             <i v-if="module.is_active"
                                                 class="pi pi-check-circle text-green-500 absolute -top-1 -right-1 bg-white dark:bg-gray-800 rounded-full"></i>
                                         </div>
@@ -404,12 +407,14 @@ const getInvoiceStatusTag = (status) => {
         <Dialog v-model:visible="isEditModalVisible" modal header="Editar Información" :style="{ width: '30rem' }">
             <form @submit.prevent="submitInfoForm" class="p-2 space-y-4">
                 <div>
-                    <InputLabel for="commercial_name" value="Nombre Comercial" />
+                    <InputLabel for="commercial_name" value="Nombre Comercial *" />
                     <InputText id="commercial_name" v-model="infoForm.commercial_name" class="w-full mt-1" />
+                    <InputError :message="infoForm.errors.commercial_name" />
                 </div>
                 <div>
-                    <InputLabel for="business_name" value="Razón Social" />
+                    <InputLabel for="business_name" value="Razón Social (opcional)" />
                     <InputText id="business_name" v-model="infoForm.business_name" class="w-full mt-1" />
+                    <InputError :message="infoForm.errors.business_name" />
                 </div>
                 <div class="flex justify-end gap-2 mt-4">
                     <Button type="button" label="Cancelar" severity="secondary" @click="isEditModalVisible = false"
