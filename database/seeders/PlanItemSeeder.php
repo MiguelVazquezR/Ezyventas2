@@ -42,7 +42,7 @@ class PlanItemSeeder extends Seeder
             ['key' => 'limit_users', 'name' => 'Usuarios', 'price' => 50, 'quantity' => 1],
             ['key' => 'limit_products', 'name' => 'Productos', 'price' => 25, 'quantity' => 50],
             ['key' => 'limit_cash_registers', 'name' => 'Cajas Registradoras', 'price' => 20, 'quantity' => 1],
-            ['key' => 'limit_custom_templates', 'name' => 'Plantillas personalizadas', 'price' => 5, 'quantity' => 1],
+            ['key' => 'limit_print_templates', 'name' => 'Plantillas personalizadas', 'price' => 5, 'quantity' => 1],
         ];
 
         foreach ($limits as $limit) {

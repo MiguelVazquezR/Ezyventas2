@@ -9,6 +9,7 @@ use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Permission;
@@ -25,6 +26,24 @@ class UserController extends Controller implements HasMiddleware
             new Middleware('can:settings.users.delete', only: ['destroy']),
             new Middleware('can:settings.users.change_status', only: ['toggleStatus']),
         ];
+    }
+
+    /**
+     * Obtiene los datos del límite de usuarios para la suscripción actual.
+     */
+    private function getUserLimitData()
+    {
+        $subscription = Auth::user()->branch->subscription;
+        $currentVersion = $subscription->versions()->latest('start_date')->first();
+        $limit = -1; // -1 significa ilimitado
+        if ($currentVersion) {
+            $limitItem = $currentVersion->items()->where('item_key', 'limit_users')->first();
+            if ($limitItem) {
+                $limit = $limitItem->quantity;
+            }
+        }
+        $usage = $subscription->users()->count();
+        return ['limit' => $limit, 'usage' => $usage];
     }
 
     public function index(Request $request): Response
@@ -48,9 +67,14 @@ class UserController extends Controller implements HasMiddleware
 
         $users = $query->paginate($request->input('rows', 20))->withQueryString();
 
+        // --- AÑADIDO: Se obtienen y pasan los datos del límite ---
+        $limitData = $this->getUserLimitData();
+
         return Inertia::render('User/Index', [
             'users' => $users,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
+            'userLimit' => $limitData['limit'],
+            'userUsage' => $limitData['usage'],
         ]);
     }
 
@@ -81,6 +105,9 @@ class UserController extends Controller implements HasMiddleware
 
     public function create(): Response
     {
+        // --- AÑADIDO: Se obtienen y pasan los datos del límite ---
+        $limitData = $this->getUserLimitData();
+
         $roles = Role::with('permissions')->get()->map(fn($role) => [
             'id' => $role->id,
             'name' => $role->name,
@@ -97,11 +124,21 @@ class UserController extends Controller implements HasMiddleware
         return Inertia::render('User/Create', [
             'roles' => $roles,
             'permissions' => $permissions,
+            'userLimit' => $limitData['limit'],
+            'userUsage' => $limitData['usage'],
         ]);
     }
 
     public function store(Request $request)
     {
+        // --- AÑADIDO: Validación del límite de usuarios ---
+        $limitData = $this->getUserLimitData();
+        if ($limitData['limit'] !== -1 && $limitData['usage'] >= $limitData['limit']) {
+            throw ValidationException::withMessages([
+                'limit' => 'Has alcanzado el límite de usuarios de tu plan.'
+            ]);
+        }
+
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:' . User::class,

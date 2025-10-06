@@ -23,20 +23,43 @@ class SubscriptionController extends Controller
             abort(403, 'No tienes permiso para acceder a esta sección.');
         }
 
+        // MODIFICADO: Se añade `withCount` para obtener el número de recursos utilizados.
+        // Asegúrate de que tu modelo `Subscription` tenga las relaciones correctas
+        // (p. ej., users(), products(), etc.) para que withCount funcione.
         $subscription = $user->branch->subscription()->with([
             'branches',
-            'bankAccounts.branches:id,name', // Carga las cuentas y las sucursales a las que están asignadas
+            'bankAccounts.branches:id,name',
             'versions' => function ($query) {
                 $query->with(['items', 'payments'])->latest('start_date');
             },
             'media'
+        ])->withCount([
+            'branches',
+            'users',
+            'bankAccounts',
+            'products',
+            'cashRegisters',
+            'printTemplates',
         ])->firstOrFail();
 
         $planItems = PlanItem::where('is_active', true)->get();
 
+        // NUEVO: Se crea un array con los datos de uso para pasarlo como prop.
+        // Las claves deben coincidir con la parte variable de la `item_key` de tus límites.
+        // Por ejemplo, si tu `item_key` es 'limit_branches', la clave aquí debe ser 'branches'.
+        $usageData = [
+            'branches' => $subscription->branches_count,
+            'users' => $subscription->users_count,
+            'bank_accounts' => $subscription->bank_accounts_count,
+            'products' => $subscription->products_count,
+            'cash_registers' => $subscription->cash_registers_count,
+            'print_templates' => $subscription->print_templates_count,
+        ];
+
         return Inertia::render('Subscription/Show', [
             'subscription' => $subscription,
             'planItems' => $planItems,
+            'usageData' => $usageData, // NUEVO: Se pasa el contador de uso a la vista.
         ]);
     }
 

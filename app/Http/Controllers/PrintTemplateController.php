@@ -11,6 +11,7 @@ use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -26,6 +27,24 @@ class PrintTemplateController extends Controller implements HasMiddleware
         ];
     }
 
+    /**
+     * --- AÑADIDO: Función auxiliar para obtener datos del límite de plantillas. ---
+     */
+    private function getTemplateLimitData()
+    {
+        $subscription = Auth::user()->branch->subscription;
+        $currentVersion = $subscription->versions()->latest('start_date')->first();
+        $limit = -1; // -1 significa ilimitado
+        if ($currentVersion) {
+            $limitItem = $currentVersion->items()->where('item_key', 'limit_print_templates')->first();
+            if ($limitItem) {
+                $limit = $limitItem->quantity;
+            }
+        }
+        $usage = $subscription->printTemplates()->count();
+        return ['limit' => $limit, 'usage' => $usage];
+    }
+
     public function index(): Response
     {
         $subscription = Auth::user()->branch->subscription;
@@ -35,15 +54,23 @@ class PrintTemplateController extends Controller implements HasMiddleware
             ->latest()
             ->get();
 
+        // --- AÑADIDO: Se pasan los datos del límite a la vista ---
+        $limitData = $this->getTemplateLimitData();
+
         return Inertia::render('Template/Index', [
             'templates' => $templates,
+            'templateLimit' => $limitData['limit'],
+            'templateUsage' => $limitData['usage'],
         ]);
     }
 
     public function create(Request $request): Response
     {
-        $type = $request->query('type', 'ticket_venta'); // Por defecto, crea un ticket
+        $type = $request->query('type', 'ticket_venta');
         $subscription = Auth::user()->branch->subscription;
+
+        // --- AÑADIDO: Se pasan los datos del límite a la vista ---
+        $limitData = $this->getTemplateLimitData();
 
         $view = match ($type) {
             'etiqueta' => 'Template/CreateLabel',
@@ -52,20 +79,29 @@ class PrintTemplateController extends Controller implements HasMiddleware
 
         return Inertia::render($view, [
             'branches' => $subscription->branches()->get(['id', 'name']),
-            'templateImages' => $subscription->getMedia('template-images')->map(fn($media) => ['id' => $media->id, 'url' => $media->getUrl(), 'name' => $media->name]),
+            'templateImages' => $subscription->getMedia('template-images')->map(fn ($media) => ['id' => $media->id, 'url' => $media->getUrl(), 'name' => $media->name]),
+            'templateLimit' => $limitData['limit'], // <-- Nuevo
+            'templateUsage' => $limitData['usage'],   // <-- Nuevo
         ]);
     }
 
     public function store(Request $request)
     {
-        $subscription = Auth::user()->branch->subscription;
+        // --- AÑADIDO: Validación del límite de plantillas ---
+        $limitData = $this->getTemplateLimitData();
+        if ($limitData['limit'] !== -1 && $limitData['usage'] >= $limitData['limit']) {
+            throw ValidationException::withMessages([
+                'limit' => 'Has alcanzado el límite de plantillas de tu plan.'
+            ]);
+        }
 
+        $subscription = Auth::user()->branch->subscription;
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
             'content' => 'required|array',
             'content.config' => 'required|array',
-            'content.elements' => 'required|array', // Se valida el array de elementos visuales
+            'content.elements' => 'required|array',
             'branch_ids' => 'required|array|min:1',
             'branch_ids.*' => ['required', Rule::in($subscription->branches->pluck('id'))],
         ]);
@@ -74,7 +110,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
             $template = $subscription->printTemplates()->create([
                 'name' => $validated['name'],
                 'type' => $validated['type'],
-                'content' => $validated['content'], // Se guarda el objeto con config y elements
+                'content' => $validated['content'],
                 'context_type' => $this->determineContextType($validated['content']['elements'] ?? []),
             ]);
             $template->branches()->attach($validated['branch_ids']);
@@ -82,6 +118,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
 
         return redirect()->route('print-templates.index')->with('success', 'Plantilla creada con éxito.');
     }
+    
+    // ... (El resto de los métodos se mantienen igual)
 
     public function update(Request $request, PrintTemplate $printTemplate)
     {
@@ -126,8 +164,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
         $subscription = Auth::user()->branch->subscription;
         $printTemplate->load('branches:id,name');
 
-        // Se obtienen las imágenes existentes para la galería
-        $templateImages = $subscription->getMedia('template-images')->map(fn($media) => [
+        $templateImages = $subscription->getMedia('template-images')->map(fn ($media) => [
             'id' => $media->id,
             'url' => $media->getUrl(),
             'name' => $media->name,
@@ -151,9 +188,6 @@ class PrintTemplateController extends Controller implements HasMiddleware
         return redirect()->back()->with('success', 'Plantilla eliminada con éxito.');
     }
 
-    /**
-     * Almacena una imagen para usar en las plantillas y devuelve su URL.
-     */
     public function storeMedia(Request $request)
     {
         $request->validate([
@@ -165,7 +199,6 @@ class PrintTemplateController extends Controller implements HasMiddleware
         $media = $subscription->addMediaFromRequest('image')
             ->toMediaCollection('template-images');
 
-        // Se devuelve el objeto completo de la nueva imagen
         return response()->json([
             'id' => $media->id,
             'url' => $media->getUrl(),
@@ -173,9 +206,6 @@ class PrintTemplateController extends Controller implements HasMiddleware
         ]);
     }
 
-    /**
-     * Analiza los elementos de una plantilla para determinar su contexto principal.
-     */
     private function determineContextType(array $elements): string
     {
         $contentString = json_encode($elements);
