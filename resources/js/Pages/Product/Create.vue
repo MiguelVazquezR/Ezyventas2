@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, nextTick, markRaw, watch } from 'vue';
-import { Head, useForm, router } from '@inertiajs/vue3';
+import { Head, useForm, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import CreateCategoryModal from '@/Components/CreateCategoryModal.vue';
 import CreateBrandModal from './Partials/CreateBrandModal.vue';
@@ -14,16 +14,23 @@ const props = defineProps({
     brands: Array,
     providers: Array,
     attributeDefinitions: Array,
+    // --- AÑADIDO: Props para manejar los límites ---
+    productLimit: Number,
+    productUsage: Number,
 });
 
-// --- Refs and State ---
+// --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
+const limitReached = computed(() => {
+    if (props.productLimit === -1) return false;
+    return props.productUsage >= props.productLimit;
+});
+
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const items = ref([
     { label: 'Productos', url: route('products.index') },
     { label: 'Crear producto' }
 ]);
 
-// --- Estado del Formulario ---
 const form = useForm({
     name: '',
     description: '',
@@ -41,7 +48,7 @@ const form = useForm({
     general_images: [],
     variant_images: {},
     variant_attributes: [],
-    selected_variant_options: {}, // --- MEJORA: Guardar opciones seleccionadas por atributo ---
+    selected_variant_options: {},
     variants_matrix: [],
     show_online: false,
     online_price: null,
@@ -58,7 +65,6 @@ const productTypeOptions = ref([
     { label: 'Producto con Variantes', value: 'variant' }
 ]);
 
-// Estado para previsualización de imágenes de variantes
 const variantImagePreviews = ref({});
 const selectedVariants = ref([]);
 
@@ -74,7 +80,6 @@ const imageRequiringAttributes = computed(() => {
     );
 });
 
-// --- MEJORA: Lógica de combinaciones basada en opciones seleccionadas ---
 const variantCombinations = computed(() => {
     const canGenerate = form.product_type === 'variant' &&
         form.variant_attributes.length > 0 &&
@@ -110,12 +115,10 @@ const variantCombinations = computed(() => {
     return generate(selectedAttrsWithOptions);
 });
 
-
-// --- Observadores para limpiar el estado ---
 watch(() => form.category_id, (newCategoryId, oldCategoryId) => {
     if (newCategoryId !== oldCategoryId) {
         form.variant_attributes = [];
-        form.selected_variant_options = {}; // <-- Limpiar
+        form.selected_variant_options = {};
         form.variants_matrix = [];
         selectedVariants.value = [];
         form.variant_images = {};
@@ -123,7 +126,6 @@ watch(() => form.category_id, (newCategoryId, oldCategoryId) => {
     }
 });
 
-// --- MEJORA: Limpiar opciones de atributos que ya no están seleccionados ---
 watch(() => form.variant_attributes, (newAttributeIds) => {
     const newOptions = {};
     newAttributeIds.forEach(id => {
@@ -149,13 +151,8 @@ const submit = () => {
     });
 };
 
-// --- Manejo de Imágenes ---
-const onSelectGeneralImages = (event) => {
-    form.general_images = event.files;
-};
-const onRemoveGeneralImage = (event) => {
-    form.general_images = form.general_images.filter(img => img.objectURL !== event.file.objectURL);
-};
+const onSelectGeneralImages = (event) => form.general_images = event.files;
+const onRemoveGeneralImage = (event) => form.general_images = form.general_images.filter(img => img.objectURL !== event.file.objectURL);
 const onSelectVariantImage = (event, optionValue) => {
     const file = event.files[0];
     form.variant_images[optionValue] = file;
@@ -167,7 +164,6 @@ const onRemoveVariantImage = (optionValue) => {
     delete variantImagePreviews.value[optionValue];
 };
 
-// --- Lógica para Modales ---
 const localCategories = ref([...props.categories]);
 const localBrands = ref(JSON.parse(JSON.stringify(props.brands)));
 const localProviders = ref([...props.providers]);
@@ -197,23 +193,39 @@ const refreshAttributes = () => {
         preserveScroll: true,
     });
 };
-
 </script>
 
 <template>
-
     <Head title="Agregar Nuevo Producto" />
     <AppLayout>
         <Breadcrumb :home="home" :model="items" class="!bg-transparent" />
         <div class="p-4 md:p-6 lg:p-8">
-            <div class="max-w-4xl mx-auto">
+            <!-- AÑADIDO: Mensaje cuando se alcanza el límite -->
+            <div v-if="limitReached" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
+                <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>
+                <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Límite de Productos Alcanzado</h1>
+                <p class="text-gray-600 dark:text-gray-300 mb-6">
+                    Has alcanzado el límite de <strong>{{ productLimit }} productos</strong> permitido por tu plan actual. Para agregar más productos, por favor mejora tu plan.
+                </p>
+                <div class="flex justify-center items-center gap-4">
+                    <Link :href="route('products.index')">
+                        <Button label="Volver a Productos" severity="secondary" outlined />
+                    </Link>
+                    <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer">
+                        <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
+                    </a>
+                </div>
+            </div>
+
+            <!-- Formulario de creación original -->
+            <div v-else class="max-w-4xl mx-auto">
                 <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-6">Agregar nuevo producto</h1>
                 <form @submit.prevent="submit">
                     <!-- Sección de Información General -->
                     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-                        <h2
-                            class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
-                            Información general</h2>
+                        <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
+                            Información general
+                        </h2>
                         <div class="grid grid-cols-1 gap-6">
                             <div>
                                 <InputLabel for="name" value="Nombre del producto*" />
@@ -252,9 +264,9 @@ const refreshAttributes = () => {
                                         filter optionLabel="name" optionValue="id" placeholder="Selecciona una marca"
                                         class="w-full" optionGroupLabel="label" optionGroupChildren="items">
                                         <template #optiongroup="{ option }">
-                                            <div
-                                                class="flex items-center font-bold px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
-                                                {{ option.label }}</div>
+                                            <div class="flex items-center font-bold px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                                                {{ option.label }}
+                                            </div>
                                         </template>
                                         <template #option="{ option }">
                                             <div class="px-2 py-1">{{ option.name }}</div>
@@ -267,9 +279,9 @@ const refreshAttributes = () => {
                     </div>
                     <!-- Sección de Precios -->
                     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-                        <h2
-                            class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
-                            Precios</h2>
+                        <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
+                            Precios
+                        </h2>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="mt-3">
                                 <InputLabel for="cost_price" value="Precio de compra" />
@@ -298,8 +310,7 @@ const refreshAttributes = () => {
                     </div>
                     <!-- Sección de Inventario y Variantes -->
                     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-                        <div
-                            class="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
+                        <div class="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
                             <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-200 m-0">
                                 Inventario y variantes
                             </h2>
@@ -307,7 +318,6 @@ const refreshAttributes = () => {
                                 v-tooltip.left="'Gestionar variantes de la categoría'"
                                 @click="showAttributesModal = true" />
                         </div>
-
                         <div>
                             <InputLabel value="Tipo de producto" class="mb-2" />
                             <SelectButton v-model="form.product_type" :options="productTypeOptions" optionLabel="label"
@@ -329,7 +339,6 @@ const refreshAttributes = () => {
                                 <InputNumber v-model="form.max_stock" id="max_stock_simple" class="w-full mt-1" />
                             </div>
                         </div>
-
                         <div v-if="form.product_type === 'variant' && form.category_id" class="mt-6 space-y-4">
                             <div>
                                 <InputLabel for="variant_attributes" value="Atributos para variantes" />
@@ -337,11 +346,9 @@ const refreshAttributes = () => {
                                     :options="availableAttributes" optionLabel="name" optionValue="id"
                                     placeholder="Selecciona atributos" class="w-full mt-1" />
                             </div>
-
                             <div v-if="form.variant_attributes.length > 0"
                                 class="mt-4 space-y-4 p-4 border dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-800/50">
-                                <h4 class="font-medium text-gray-700 dark:text-gray-300">Selecciona las opciones a usar:
-                                </h4>
+                                <h4 class="font-medium text-gray-700 dark:text-gray-300">Selecciona las opciones a usar:</h4>
                                 <div v-for="attrId in form.variant_attributes" :key="attrId">
                                     <template v-if="availableAttributes.find(a => a.id === attrId)">
                                         <InputLabel :value="availableAttributes.find(a => a.id === attrId).name"
@@ -355,7 +362,6 @@ const refreshAttributes = () => {
                                 </div>
                             </div>
                         </div>
-
                         <div v-if="variantCombinations.length > 0" class="mt-6">
                             <h3 class="font-semibold text-gray-800 dark:text-gray-200">Gestión de variantes</h3>
                             <DataTable :value="variantCombinations" v-model:selection="selectedVariants"
@@ -378,9 +384,7 @@ const refreshAttributes = () => {
                                 </Column>
                             </DataTable>
                         </div>
-
-                        <div v-if="form.product_type === 'variant' && !form.category_id"
-                            class="mt-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 rounded-md">
+                        <div v-if="form.product_type === 'variant' && !form.category_id" class="mt-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 rounded-md">
                             Por favor, selecciona una categoría para gestionar sus variantes.
                         </div>
                         <div class="mt-6">

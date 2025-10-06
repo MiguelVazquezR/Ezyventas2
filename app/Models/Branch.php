@@ -83,6 +83,11 @@ class Branch extends Model
     {
         return $this->hasMany(CashRegister::class);
     }
+    
+    public function products(): HasMany
+    {
+        return $this->hasMany(Product::class);
+    }
 
     /**
      * Get all of the branch's settings.

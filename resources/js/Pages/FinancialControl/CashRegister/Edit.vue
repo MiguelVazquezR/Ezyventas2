@@ -11,7 +11,6 @@ const props = defineProps({
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
-    { label: 'Control Financiero', url: route('financial-control.index') },
     { label: 'Cajas', url: route('cash-registers.index') },
     { label: `Editar: ${props.cashRegister.name}` }
 ]);

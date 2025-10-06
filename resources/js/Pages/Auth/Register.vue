@@ -65,7 +65,8 @@ const redirectToGoogle = () => {
 
                 <div>
                     <FloatLabel>
-                        <InputText id="email" v-model="form.email" type="email" :invalid="!!form.errors.email" fluid />
+                        <InputText id="email" v-model="form.email" type="email" autocomplete="off" readonly
+                            @focus="$event.target.removeAttribute('readonly')" :invalid="!!form.errors.email" fluid />
                         <label for="email">Correo Electrónico</label>
                     </FloatLabel>
                     <InputError class="mt-2" :message="form.errors.email" />
@@ -92,6 +93,17 @@ const redirectToGoogle = () => {
                     <InputError class="mt-2" :message="form.errors.password" />
                 </div>
 
+                <!-- CAMPO DE CONFIRMACIÓN DE CONTRASEÑA AÑADIDO -->
+                <div>
+                    <FloatLabel>
+                        <Password id="password_confirmation" v-model="form.password_confirmation" toggleMask
+                            :feedback="false" fluid :invalid="!!form.errors.password_confirmation"
+                            inputClass="w-full" />
+                        <label for="password_confirmation">Confirmar Contraseña</label>
+                    </FloatLabel>
+                    <InputError class="mt-2" :message="form.errors.password_confirmation" />
+                </div>
+
                 <div v-if="$page.props.jetstream.hasTermsAndPrivacyPolicyFeature" class="flex items-center">
                     <Checkbox id="terms" v-model="form.terms" :binary="true" :invalid="!!form.errors.terms"
                         class="mr-2" />
@@ -109,7 +121,7 @@ const redirectToGoogle = () => {
                 </div>
             </form>
 
-            <div class="relative">
+            <!-- <div class="relative">
                 <div class="absolute inset-0 flex items-center">
                     <div class="w-full border-t border-surface-300 dark:border-surface-700" />
                 </div>
@@ -137,7 +149,7 @@ const redirectToGoogle = () => {
                         </svg>
                     </template>
                 </Button>
-            </div>
+            </div> -->
         </div>
     </div>
 </template>

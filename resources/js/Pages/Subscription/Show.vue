@@ -5,12 +5,14 @@ import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
+import InputError from '@/Components/InputError.vue';
 import BankAccountModal from '@/Components/BankAccountModal.vue';
 import BranchModal from '@/Components/BranchModal.vue';
 
 const props = defineProps({
     subscription: Object,
-    planItems: Array, // Se recibe el catálogo de planes
+    planItems: Array,
+    usageData: Object,
 });
 
 const toast = useToast();
@@ -80,6 +82,29 @@ const activeLimits = computed(() => {
     return currentVersion.value.items.filter(item => item.item_type === 'limit');
 });
 
+const getUsage = (limit) => {
+    if (!props.usageData || !limit.item_key) return 0;
+    const resourceKey = limit.item_key.replace('limit_', '');
+    return props.usageData[resourceKey] ?? 0;
+};
+
+
+// --- AÑADIDO: Lógica específica para el límite de sucursales ---
+const branchLimit = computed(() => {
+    if (!activeLimits.value) return null;
+    return activeLimits.value.find(l => l.item_key === 'limit_branches');
+});
+
+const branchUsage = computed(() => props.usageData?.branches ?? 0);
+
+const branchLimitReached = computed(() => {
+    if (!branchLimit.value || branchLimit.value.quantity === -1) {
+        return false; // No hay límite o es ilimitado
+    }
+    return branchUsage.value >= branchLimit.value.quantity;
+});
+
+
 // --- Lógica de Edición de Información ---
 const isEditModalVisible = ref(false);
 const infoForm = useForm({
@@ -145,14 +170,15 @@ const getInvoiceStatusTag = (status) => {
 </script>
 
 <template>
-
     <Head title="Mi Suscripción" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6">
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Mi Suscripción</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Aquí puedes ver los detalles de tu plan, historial de
-                    pagos e información fiscal.</p>
+                <p class="text-gray-500 dark:text-gray-400 mt-1">
+                    Aquí puedes ver los detalles de tu plan, historial de
+                    pagos, gestion de sucursales, cuentas bancarias e información fiscal.
+                </p>
             </header>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -229,7 +255,7 @@ const getInvoiceStatusTag = (status) => {
                     <Card v-if="currentVersion">
                         <template #title>
                             <div class="flex justify-between items-center">
-                                <span>Plan Actual y Módulos</span>
+                                <span>Plan actual y módulos</span>
                                 <!-- <Link :href="route('subscription.upgrade.show')"> -->
                                 <Button label="Mejorar Suscripción" icon="pi pi-arrow-up" :disabled="true"
                                     size="small" />
@@ -247,10 +273,9 @@ const getInvoiceStatusTag = (status) => {
                                     <div v-for="module in activeModules" :key="module.key"
                                         class="p-4 rounded-lg text-center flex flex-col items-center justify-center transition-all"
                                         :class="module.is_active ? 'bg-gray-50 dark:bg-gray-800' : 'bg-gray-100 dark:bg-gray-900 opacity-60'">
-                                        <div class="relative">
-                                            <!-- SOLUCIÓN: Se combinan las clases en un solo array -->
+                                        <div class="relative w-full">
                                             <i
-                                                :class="[module.meta.icon, 'text-3xl mb-2', module.is_active ? 'text-orange-500' : 'text-gray-500']"></i>
+                                                :class="[module.meta.icon, '!text-2xl mb-2', module.is_active ? 'text-primary-500' : 'text-gray-500']"></i>
                                             <i v-if="module.is_active"
                                                 class="pi pi-check-circle text-green-500 absolute -top-1 -right-1 bg-white dark:bg-gray-800 rounded-full"></i>
                                         </div>
@@ -262,9 +287,14 @@ const getInvoiceStatusTag = (status) => {
                                 <h3 class="font-bold mb-4 text-gray-800 dark:text-gray-200">Límites del Plan</h3>
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                     <div v-for="limit in activeLimits" :key="limit.item_key"
-                                        class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg text-center">
-                                        <p class="text-2xl font-bold">{{ limit.quantity }}</p>
-                                        <p class="text-sm text-gray-500">{{ limit.name }}</p>
+                                        class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg text-center flex flex-col justify-between">
+                                        <div>
+                                            <p class="text-2xl font-bold">
+                                                {{ getUsage(limit) }} / <span class="text-gray-400">{{ limit.quantity === -1 ? '∞' : limit.quantity }}</span>
+                                            </p>
+                                            <p class="text-sm text-gray-500">{{ limit.name }}</p>
+                                        </div>
+                                        <ProgressBar v-if="limit.quantity > 0" :value="Math.round((getUsage(limit) / limit.quantity) * 100)" :showValue="false" class="h-2 mt-2"></ProgressBar>
                                     </div>
                                 </div>
                             </div>
@@ -275,8 +305,9 @@ const getInvoiceStatusTag = (status) => {
                         <template #title>
                             <div class="flex justify-between items-center">
                                 <span>Sucursales</span>
+                                <!-- MODIFICADO: Se deshabilita el botón si se alcanza el límite -->
                                 <Button @click="openCreateBranchModal" icon="pi pi-plus" size="small"
-                                    v-tooltip.bottom="'Nueva Sucursal'" />
+                                    v-tooltip.bottom="branchLimitReached ? 'Límite de sucursales alcanzado' : 'Nueva Sucursal'" />
                             </div>
                         </template>
                         <template #content>
@@ -320,8 +351,14 @@ const getInvoiceStatusTag = (status) => {
                                 <Column header="Sucursales Asignadas">
                                     <template #body="{ data }">
                                         <div class="flex flex-wrap gap-1">
-                                            <Tag v-for="branch in data.branches" :key="branch.id"
-                                                :value="branch.name" />
+                                            <Tag v-for="branch in data.branches" :key="branch.id">
+                                                <div class="flex items-center gap-1.5">
+                                                    <span>{{ branch.name }}</span>
+                                                    <i v-if="branch.pivot && branch.pivot.is_favorite"
+                                                        class="pi pi-star-fill text-yellow-400"
+                                                        v-tooltip.bottom="'Favorita para esta sucursal'"></i>
+                                                </div>
+                                            </Tag>
                                         </div>
                                     </template>
                                 </Column>
@@ -346,54 +383,62 @@ const getInvoiceStatusTag = (status) => {
                     <Card>
                         <template #title>Historial de Versiones y Pagos</template>
                         <template #content>
-                            <Accordion :activeIndex="0">
-                                <AccordionTab v-for="version in subscription.versions" :key="version.id"
-                                    :header="`Periodo: ${formatDate(version.start_date)} - ${formatDate(version.end_date)}`">
-                                    <div class="p-4">
-                                        <h4 class="font-bold mb-2">Conceptos del Plan</h4>
-                                        <DataTable :value="version.items" size="small" class="mb-6">
-                                            <Column field="name" header="Concepto"></Column>
-                                            <Column field="billing_period" header="Periodo">
-                                                <template #body="slotProps"><span class="capitalize">{{
-                                                    slotProps.data.billing_period }}</span></template>
-                                            </Column>
-                                            <Column field="unit_price" header="Precio">
-                                                <template #body="slotProps">{{ formatCurrency(slotProps.data.unit_price)
-                                                }}</template>
-                                            </Column>
-                                        </DataTable>
-                                        <h4 class="font-bold mb-2">Pagos Realizados</h4>
-                                        <DataTable :value="version.payments" size="small">
-                                            <Column field="created_at" header="Fecha de Pago">
-                                                <template #body="slotProps">{{ formatDate(slotProps.data.created_at)
-                                                }}</template>
-                                            </Column>
-                                            <Column field="payment_method" header="Método" class="capitalize"></Column>
-                                            <Column field="amount" header="Monto">
-                                                <template #body="slotProps">{{ formatCurrency(slotProps.data.amount)
-                                                }}</template>
-                                            </Column>
-                                            <Column field="invoice_status" header="Factura">
-                                                <template #body="{ data }">
-                                                    <div v-if="data.invoice_status === 'no_solicitada'">
-                                                        <Button @click="confirmRequestInvoice(data.id)"
-                                                            label="Solicitar" size="small" outlined
-                                                            :disabled="!fiscalDocumentUrl"
-                                                            v-tooltip.bottom="!fiscalDocumentUrl ? 'Debes subir tu constancia fiscal' : 'Solicitar factura'" />
+                            <Accordion>
+                                <AccordionPanel v-for="(version, index) in subscription.versions" :key="version.id"
+                                    :value="index">
+                                    <AccordionHeader>
+                                        Periodo: {{ formatDate(version.start_date) + ' - ' + formatDate(version.end_date) }}
+                                    </AccordionHeader>
+                                    <AccordionContent>
+                                        <div class="p-4">
+                                            <h4 class="font-bold mb-2">Conceptos del Plan</h4>
+                                            <DataTable :value="version.items" size="small" class="mb-6">
+                                                <Column field="name" header="Concepto"></Column>
+                                                <Column field="billing_period" header="Periodo">
+                                                    <template #body="slotProps"><span class="capitalize">{{
+                                                        slotProps.data.billing_period }}</span></template>
+                                                </Column>
+                                                <Column field="unit_price" header="Precio">
+                                                    <template #body="slotProps">{{
+                                                        formatCurrency(slotProps.data.unit_price)
+                                                        }}</template>
+                                                </Column>
+                                            </DataTable>
+                                            <h4 class="font-bold mb-2">Pagos Realizados</h4>
+                                            <DataTable :value="version.payments" size="small">
+                                                <Column field="created_at" header="Fecha de Pago">
+                                                    <template #body="slotProps">{{ formatDate(slotProps.data.created_at)
+                                                        }}</template>
+                                                </Column>
+                                                <Column field="payment_method" header="Método" class="capitalize">
+                                                </Column>
+                                                <Column field="amount" header="Monto">
+                                                    <template #body="slotProps">{{ formatCurrency(slotProps.data.amount)
+                                                        }}</template>
+                                                </Column>
+                                                <Column field="invoice_status" header="Factura">
+                                                    <template #body="{ data }">
+                                                        <div v-if="data.invoice_status === 'no_solicitada'">
+                                                            <Button @click="confirmRequestInvoice(data.id)"
+                                                                label="Solicitar" size="small" outlined
+                                                                :disabled="!fiscalDocumentUrl"
+                                                                v-tooltip.bottom="!fiscalDocumentUrl ? 'Debes subir tu constancia fiscal' : 'Solicitar factura'" />
+                                                        </div>
+                                                        <Tag v-else
+                                                            :value="getInvoiceStatusTag(data.invoice_status).text"
+                                                            :severity="getInvoiceStatusTag(data.invoice_status).severity"
+                                                            class="capitalize" />
+                                                    </template>
+                                                </Column>
+                                                <template #empty>
+                                                    <div class="text-center text-gray-500 py-4">
+                                                        No hay pagos registrados aún.
                                                     </div>
-                                                    <Tag v-else :value="getInvoiceStatusTag(data.invoice_status).text"
-                                                        :severity="getInvoiceStatusTag(data.invoice_status).severity"
-                                                        class="capitalize" />
                                                 </template>
-                                            </Column>
-                                            <template #empty>
-                                                <div class="text-center text-gray-500 py-4">
-                                                    No hay pagos registrados aún.
-                                                </div>
-                                            </template>
-                                        </DataTable>
-                                    </div>
-                                </AccordionTab>
+                                            </DataTable>
+                                        </div>
+                                    </AccordionContent>
+                                </AccordionPanel>
                             </Accordion>
                         </template>
                     </Card>
@@ -404,12 +449,14 @@ const getInvoiceStatusTag = (status) => {
         <Dialog v-model:visible="isEditModalVisible" modal header="Editar Información" :style="{ width: '30rem' }">
             <form @submit.prevent="submitInfoForm" class="p-2 space-y-4">
                 <div>
-                    <InputLabel for="commercial_name" value="Nombre Comercial" />
+                    <InputLabel for="commercial_name" value="Nombre Comercial *" />
                     <InputText id="commercial_name" v-model="infoForm.commercial_name" class="w-full mt-1" />
+                    <InputError :message="infoForm.errors.commercial_name" />
                 </div>
                 <div>
-                    <InputLabel for="business_name" value="Razón Social" />
+                    <InputLabel for="business_name" value="Razón Social (opcional)" />
                     <InputText id="business_name" v-model="infoForm.business_name" class="w-full mt-1" />
+                    <InputError :message="infoForm.errors.business_name" />
                 </div>
                 <div class="flex justify-end gap-2 mt-4">
                     <Button type="button" label="Cancelar" severity="secondary" @click="isEditModalVisible = false"
@@ -433,8 +480,13 @@ const getInvoiceStatusTag = (status) => {
                 <Button label="Confirmar y Solicitar" icon="pi pi-check" @click="requestInvoice" />
             </template>
         </Dialog>
+
+        <!-- MODIFICADO: Se pasan las props de límite y uso al modal -->
         <BranchModal :visible="isBranchModalVisible" :branch="selectedBranch"
+            :limit="branchLimit?.quantity"
+            :usage="branchUsage"
             @update:visible="isBranchModalVisible = $event" />
+            
         <BankAccountModal :visible="isBankAccountModalVisible" :account="selectedBankAccount"
             :branches="subscription.branches" @update:visible="isBankAccountModalVisible = $event" />
     </AppLayout>

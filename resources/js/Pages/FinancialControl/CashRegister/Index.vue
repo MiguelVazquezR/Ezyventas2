@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
@@ -7,12 +7,19 @@ import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     cashRegisters: Array,
+    // --- AÑADIDO: Props para manejar los límites ---
+    cashRegisterLimit: Number,
+    cashRegisterUsage: Number,
 });
 
 const confirm = useConfirm();
-
-// composables
 const { hasPermission } = usePermissions();
+
+// --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
+const limitReached = computed(() => {
+    if (props.cashRegisterLimit === -1) return false;
+    return props.cashRegisterUsage >= props.cashRegisterLimit;
+});
 
 const menu = ref();
 const selectedRegisterForMenu = ref(null);
@@ -60,7 +67,6 @@ const toggleMenu = (event, data) => {
 </script>
 
 <template>
-
     <Head title="Gestión de Cajas" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8">
@@ -68,8 +74,12 @@ const toggleMenu = (event, data) => {
                 <!-- Header -->
                 <div class="mb-6 flex justify-between items-center">
                     <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Gestión de Cajas Registradoras</h1>
-                    <Button v-if="hasPermission('cash_registers.manage')" label="Nueva Caja" icon="pi pi-plus"
-                        @click="router.get(route('cash-registers.create'))" severity="warning" />
+                    <!-- MODIFICADO: Se envuelve el botón para el tooltip y se deshabilita si se alcanza el límite -->
+                    <div v-tooltip.bottom="limitReached ? `Límite de ${cashRegisterLimit} cajas alcanzado` : 'Crear nueva caja'">
+                        <Button v-if="hasPermission('cash_registers.manage')" label="Nueva Caja" icon="pi pi-plus"
+                            @click="router.get(route('cash-registers.create'))" severity="warning"
+                            :disabled="limitReached" />
+                    </div>
                 </div>
 
                 <!-- Tabla de Cajas -->

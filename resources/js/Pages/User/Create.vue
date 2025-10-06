@@ -1,5 +1,5 @@
 <script setup>
-import { ref, markRaw, nextTick } from 'vue';
+import { ref, markRaw, nextTick, computed } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputError from '@/Components/InputError.vue';
@@ -10,6 +10,15 @@ import CreateRoleModal from '@/Components/CreateRoleModal.vue';
 const props = defineProps({
     roles: Array,
     permissions: Object,
+    // --- AÑADIDO: Props para manejar los límites ---
+    userLimit: Number,
+    userUsage: Number,
+});
+
+// --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
+const limitReached = computed(() => {
+    if (props.userLimit === -1) return false; // Si es ilimitado, nunca se alcanza
+    return props.userUsage >= props.userLimit;
 });
 
 const form = useForm({
@@ -52,11 +61,28 @@ const showRolePermissions = (roleId) => {
 </script>
 
 <template>
-
     <Head title="Crear Usuario" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8">
-            <div class="max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-md">
+            <!-- AÑADIDO: Mensaje cuando se alcanza el límite -->
+            <div v-if="limitReached" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
+                 <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>
+                 <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Límite de Usuarios Alcanzado</h1>
+                 <p class="text-gray-600 dark:text-gray-300 mb-6">
+                     Has alcanzado el límite de <strong>{{ userLimit }} usuarios</strong> permitido por tu plan actual. Para agregar más usuarios, por favor mejora tu plan.
+                 </p>
+                 <div class="flex justify-center items-center gap-4">
+                     <Link :href="route('users.index')">
+                         <Button label="Volver a Usuarios" severity="secondary" outlined />
+                     </Link>
+                     <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer">
+                          <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
+                     </a>
+                 </div>
+            </div>
+
+            <!-- Formulario de creación original -->
+            <div v-else class="max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-md">
                 <div class="p-6 border-b dark:border-gray-700">
                     <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Crear nuevo usuario</h1>
                     <p class="text-gray-500 dark:text-gray-400 mt-1">Completa los siguientes datos para registrar un

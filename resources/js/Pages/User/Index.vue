@@ -8,22 +8,27 @@ import { usePermissions } from '@/Composables';
 const props = defineProps({
     users: Object,
     filters: Object,
+    // --- AÑADIDO: Props para manejar los límites ---
+    userLimit: Number,
+    userUsage: Number,
 });
 
 const confirm = useConfirm();
-
-// composables
 const { hasPermission } = usePermissions();
+
+// --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
+const limitReached = computed(() => {
+    if (props.userLimit === -1) return false;
+    return props.userUsage >= props.userLimit;
+});
 
 const searchTerm = ref(props.filters.search || '');
 const menu = ref();
 const selectedUserForMenu = ref(null);
 
-// El menú de acciones ahora es dinámico y protege al admin
 const menuItems = computed(() => {
     if (!selectedUserForMenu.value) return [];
     
-    // Un usuario es considerado "protegido" si no tiene roles.
     const isProtected = !selectedUserForMenu.value.roles || selectedUserForMenu.value.roles.length === 0;
     const isActive = selectedUserForMenu.value.is_active;
 
@@ -89,13 +94,16 @@ const formatDate = (dateString) => {
                 <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
                      <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Gestión de Usuarios</h1>
                      <div class="flex items-center gap-2 w-full md:w-auto">
-                        <IconField iconPosition="left" class="w-full md:w-80">
-                            <InputIcon class="pi pi-search"></InputIcon>
-                            <InputText v-model="searchTerm" placeholder="Buscar por nombre o email..." class="w-full" />
-                        </IconField>
-                        <Link :href="route('users.create')">
-                            <Button label="Crear Usuario" icon="pi pi-plus" />
-                        </Link>
+                         <IconField iconPosition="left" class="w-full md:w-80">
+                             <InputIcon class="pi pi-search"></InputIcon>
+                             <InputText v-model="searchTerm" placeholder="Buscar por nombre o email..." class="w-full" />
+                         </IconField>
+                         <!-- MODIFICADO: Se envuelve el Link en un div para el tooltip y se deshabilita si se alcanza el límite -->
+                         <div v-tooltip.bottom="limitReached ? `Límite de ${userLimit} usuarios alcanzado` : 'Crear nuevo usuario'">
+                            <Link :href="route('users.create')" :class="{ 'pointer-events-none': limitReached }">
+                                <Button label="Crear Usuario" icon="pi pi-plus" :disabled="limitReached" />
+                            </Link>
+                         </div>
                      </div>
                 </div>
 

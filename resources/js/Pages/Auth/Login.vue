@@ -90,7 +90,7 @@ const redirectToGoogle = () => {
                 </div>
             </form>
 
-            <div class="relative">
+            <!-- <div class="relative">
                 <div class="absolute inset-0 flex items-center">
                     <div class="w-full border-t border-surface-300 dark:border-surface-700" />
                 </div>
@@ -117,7 +117,7 @@ const redirectToGoogle = () => {
                         </svg>
                     </template>
                 </Button>
-            </div>
+            </div> -->
         </div>
     </div>
 </template>

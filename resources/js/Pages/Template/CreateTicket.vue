@@ -11,6 +11,15 @@ import InputLabel from '@/Components/InputLabel.vue';
 const props = defineProps({
     branches: Array,
     templateImages: Array,
+    // --- AÑADIDO: Props para manejar los límites ---
+    templateLimit: Number,
+    templateUsage: Number,
+});
+
+// --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
+const limitReached = computed(() => {
+    if (props.templateLimit === -1) return false;
+    return props.templateUsage >= props.templateLimit;
 });
 
 const toast = useToast();
@@ -150,10 +159,29 @@ const placeholderOptions = ref([
 </script>
 
 <template>
-
     <Head title="Crear Plantilla" />
     <AppLayout>
-        <div class="flex h-[calc(100vh-8rem)]">
+        <!-- AÑADIDO: Contenido condicional basado en el límite -->
+        <div v-if="limitReached" class="h-[calc(100vh-8rem)] flex items-center justify-center p-4">
+             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
+                 <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>
+                 <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Límite de Plantillas Alcanzado</h1>
+                 <p class="text-gray-600 dark:text-gray-300 mb-6">
+                     Has alcanzado el límite de <strong>{{ templateLimit }} plantillas</strong> permitido por tu plan actual. Para agregar más, por favor mejora tu plan.
+                 </p>
+                 <div class="flex justify-center items-center gap-4">
+                     <Link :href="route('print-templates.index')">
+                         <Button label="Volver a Plantillas" severity="secondary" outlined />
+                     </Link>
+                     <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer">
+                          <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
+                     </a>
+                 </div>
+            </div>
+        </div>
+
+        <!-- Editor de plantillas original -->
+        <div v-else class="flex h-[calc(100vh-8rem)]">
             <!-- Columna de Herramientas -->
             <div class="w-1/4 border-r dark:border-gray-700 p-4 overflow-y-auto">
                 <h3 class="font-bold mb-4">Configuración de ticket</h3>
@@ -163,11 +191,6 @@ const placeholderOptions = ref([
                         <InputText v-model="form.name" class="w-full mt-1" />
                         <InputError :message="form.errors.name" class="mt-1" />
                     </div>
-                    <!-- <div>
-                        <InputLabel value="Tipo de Plantilla *" />
-                        <Dropdown v-model="form.type" :options="templateTypeOptions" optionLabel="label"
-                            optionValue="value" class="w-full mt-1" />
-                    </div> -->
                     <div>
                         <InputLabel value="Asignar a Sucursal(es) *" />
                         <MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" optionValue="id"

@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('subscriptions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('business_type_id')->nullable()->constrained('business_types')->onDelete('set null');
-            $table->string('business_name');
+            $table->string('business_name')->nullable();
             $table->string('commercial_name');
             $table->string('status')->default('activo'); // 'activo', 'expirado', 'suspendido'
             $table->string('contact_phone')->nullable();
