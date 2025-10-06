@@ -22,6 +22,7 @@ class StoreExpenseRequest extends FormRequest
             'expense_category_id' => ['required', 'exists:expense_categories,id'],
             'expense_date' => ['required', 'date'],
             'status' => ['required', Rule::enum(ExpenseStatus::class)],
+            'take_from_cash_register' => 'boolean',
             'description' => ['nullable', 'string'],
             'payment_method' => ['required', Rule::enum(PaymentMethod::class)],
             'bank_account_id' => [

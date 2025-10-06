@@ -227,5 +227,6 @@ return [
         'account_name' => 'nombre de la cuenta',
         'bank_name' => 'nombre del banco',
         'owner_name' => 'nombre del propietario',
+        'bank_account_id' => 'cuenta bancaria',
     ],
 ];

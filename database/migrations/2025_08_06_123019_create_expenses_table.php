@@ -20,6 +20,10 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->string('payment_method');
             $table->foreignId('bank_account_id')->nullable()->constrained('bank_accounts')->onDelete('set null');
+            $table->foreignId('session_cash_movement_id')
+                  ->nullable()
+                  ->constrained('session_cash_movements')
+                  ->onDelete('set null');
             $table->timestamps();
         });
     }

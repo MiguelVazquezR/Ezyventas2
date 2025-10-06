@@ -20,7 +20,7 @@ const breadcrumbItems = ref([
 const promotionType = ref('ITEM_DISCOUNT');
 const promotionTypes = ref([
     { label: 'Descuento en este producto', value: 'ITEM_DISCOUNT' },
-    { label: 'Compra X, llévate Y (BOGO)', value: 'BOGO' },
+    { label: 'Compra X, llévate Y', value: 'BOGO' },
     { label: 'Paquete / Combo', value: 'BUNDLE_PRICE' },
 ]);
 const discountTypes = ref([

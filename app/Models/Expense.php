@@ -13,7 +13,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class Expense extends Model
 {
-    use HasFactory, LogsActivity; // <-- Añadir trait de historial
+    use HasFactory, LogsActivity;
 
     protected $fillable = [
         'folio',
@@ -26,7 +26,8 @@ class Expense extends Model
         'description',
         'payment_method',
         'bank_account_id',
-        ];
+        'session_cash_movement_id', // <-- AÑADIR
+    ];
 
     protected function casts(): array
     {
@@ -76,5 +77,10 @@ class Expense extends Model
     public function bankAccount(): BelongsTo
     {
         return $this->belongsTo(BankAccount::class);
+    }
+
+    public function sessionCashMovement(): BelongsTo
+    {
+        return $this->belongsTo(SessionCashMovement::class);
     }
 }
