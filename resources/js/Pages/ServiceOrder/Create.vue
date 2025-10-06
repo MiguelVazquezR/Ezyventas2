@@ -7,6 +7,7 @@ import InputError from '@/Components/InputError.vue';
 import PatternLock from '@/Components/PatternLock.vue';
 import ManageCustomFields from '@/Components/ManageCustomFields.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     customFieldDefinitions: Array,
@@ -21,6 +22,9 @@ const page = usePage();
 const activeSession = computed(() => page.props.activeSession);
 const isStartSessionModalVisible = ref(false);
 const sessionModalAwaitingSubmit = ref(false);
+
+// composables
+const { hasPermission } = usePermissions();
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -273,7 +277,7 @@ watch(activeSession, (newSession) => {
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <div class="flex items-center justify-between border-b pb-3 mb-4">
                     <h2 class="text-lg font-semibold">Detalles adicionales</h2>
-                    <Button @click="openCustomFieldManager" icon="pi pi-cog" text rounded v-tooltip.left="'Gestionar campos personalizados'" />
+                    <Button v-if="hasPermission('services.orders.manage_custom_fields')" @click="openCustomFieldManager" icon="pi pi-cog" text rounded v-tooltip.left="'Gestionar campos personalizados'" />
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div v-for="field in customFieldDefinitions" :key="field.id">
@@ -320,7 +324,7 @@ watch(activeSession, (newSession) => {
                 <InputError :message="form.errors.items" class="mt-2" />
                 <div class="flex justify-end mt-4">
                     <div class="w-full max-w-xs">
-                        <InputLabel for="final_total" value="Total Final" class="font-bold" />
+                        <InputLabel for="final_total" value="Costo total del servicio" class="font-bold" />
                         <InputNumber id="final_total" v-model="form.final_total" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" inputClass="!font-bold" />
                         <InputError :message="form.errors.final_total" class="mt-2" />
                     </div>

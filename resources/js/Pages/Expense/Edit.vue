@@ -140,8 +140,8 @@ const submit = () => {
                                 ¿Tomar efectivo de la caja activa?
                              </InputLabel>
                         </div>
-                        <div v-else class="flex items-center justify-between p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                            <div class="flex items-center gap-3">
+                        <div v-else class="flex items-start justify-between p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                            <div class="flex items-start gap-3 w-[70%]">
                                 <i class="pi pi-info-circle text-yellow-500 !text-xl"></i>
                                 <span class="text-sm text-yellow-700 dark:text-yellow-300">
                                     Se requiere una sesión de caja activa para indicar que el dinero se toma de ahí.

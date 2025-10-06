@@ -127,12 +127,11 @@ class ServiceOrderController extends Controller implements HasMiddleware
     /**
      * Almacena una nueva orden de servicio.
      */
-    public function store(StoreServiceOrderRequest $request)
+     public function store(StoreServiceOrderRequest $request)
     {
         $validated = array_merge($request->validated(), $request->validate([
             'create_customer' => 'required|boolean',
             'credit_limit' => 'required_if:create_customer,true|numeric|min:0',
-            // Se valida que la sesión de caja exista y esté activa.
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id,status,abierta',
         ]));
 
@@ -141,6 +140,27 @@ class ServiceOrderController extends Controller implements HasMiddleware
         DB::transaction(function () use ($validated, &$newServiceOrder, $request) {
             $user = Auth::user();
             $customer = null;
+
+            // --- LÓGICA PARA GENERAR EL FOLIO ---
+            $subscriptionId = $user->branch->subscription_id;
+
+            // 1. Encontrar la última orden de la misma suscripción
+            $lastOrder = ServiceOrder::whereHas('branch', fn($q) => $q->where('subscription_id', $subscriptionId))
+                ->latest('id')
+                ->first();
+
+            // 2. Calcular el siguiente número
+            $nextNumber = 1;
+            if ($lastOrder && $lastOrder->folio) {
+                // Extraer el número del folio (ej. de "OS-008" extrae 8)
+                $lastNumber = (int) substr($lastOrder->folio, 3);
+                $nextNumber = $lastNumber + 1;
+            }
+
+            // 3. Formatear el nuevo folio (ej. OS-009)
+            $folio = 'OS-' . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
+            // --- FIN DE LA LÓGICA DEL FOLIO ---
+
 
             if (! empty($validated['customer_id'])) {
                 $customer = Customer::find($validated['customer_id']);
@@ -157,19 +177,20 @@ class ServiceOrderController extends Controller implements HasMiddleware
             }
 
             $serviceOrder = ServiceOrder::create(array_merge($validated, [
+                'folio' => $folio, // <-- GUARDAR EL FOLIO GENERADO
                 'user_id' => $user->id,
                 'branch_id' => $user->branch_id,
                 'customer_id' => $customer?->id,
                 'status' => ServiceOrderStatus::PENDING,
             ]));
 
-            // Se asocia la transacción con la sesión de caja activa desde el formulario.
+            // ... (el resto del método `store` se mantiene igual)
             $transaction = $serviceOrder->transaction()->create([
                 'folio' => 'TR-SO-' . time(),
                 'customer_id' => $customer?->id,
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
-                'cash_register_session_id' => $validated['cash_register_session_id'], // Se asigna aquí
+                'cash_register_session_id' => $validated['cash_register_session_id'],
                 'subtotal' => $serviceOrder->final_total,
                 'total_discount' => 0,
                 'total_tax' => 0,
@@ -197,7 +218,6 @@ class ServiceOrderController extends Controller implements HasMiddleware
             ->with('success', 'Orden de servicio creada.')
             ->with('show_payment_modal', true);
     }
-
 
     public function edit(ServiceOrder $serviceOrder): Response
     {

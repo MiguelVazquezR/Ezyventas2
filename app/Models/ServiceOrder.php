@@ -20,10 +20,13 @@ class ServiceOrder extends Model implements HasMedia
     protected $table = 'service_orders';
 
     protected $fillable = [
+        'folio',
         'branch_id',
         'user_id',
         'quote_id',
         'customer_id',
+        'itemable_id',
+        'itemable_type',
         'customer_name',
         'customer_email',
         'customer_phone',
