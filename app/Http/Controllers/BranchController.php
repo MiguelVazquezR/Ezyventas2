@@ -7,12 +7,29 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class BranchController extends Controller
 {
     public function store(Request $request)
     {
         $subscription = Auth::user()->branch->subscription;
+
+        // ---Validación del límite de sucursales ---
+        $currentVersion = $subscription->versions()->latest('start_date')->first();
+        if ($currentVersion) {
+            $limitItem = $currentVersion->items()->where('item_key', 'limit_branches')->first();
+            $limit = $limitItem ? $limitItem->quantity : 0;
+            $currentCount = $subscription->branches()->count();
+
+            // Si el límite no es ilimitado (-1) y la cuenta actual es mayor o igual al límite
+            if ($limit !== -1 && $currentCount >= $limit) {
+                // Lanza una excepción de validación que Inertia puede mostrar
+                throw ValidationException::withMessages([
+                    'limit' => 'Has alcanzado el límite de sucursales de tu plan.'
+                ]);
+            }
+        }
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',

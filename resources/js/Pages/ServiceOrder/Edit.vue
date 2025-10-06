@@ -6,6 +6,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import PatternLock from '@/Components/PatternLock.vue';
 import ManageCustomFields from '@/Components/ManageCustomFields.vue';
+import { useConfirm } from "primevue/useconfirm";
 
 const props = defineProps({
     serviceOrder: Object,
@@ -16,14 +17,16 @@ const props = defineProps({
     errors: Object,
 });
 
+const confirm = useConfirm();
+
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
     { label: 'Ódenes de Servicio', url: route('service-orders.index') },
-    { label: `Editar Orden #${props.serviceOrder.id}` }
+    { label: `Editar Orden #${props.serviceOrder.folio || props.serviceOrder.id}` }
 ]);
 
 const form = useForm({
-    _method: 'PUT', // Necesario para que Laravel interprete la petición POST como PUT para subida de archivos
+    _method: 'PUT',
     customer_id: props.serviceOrder.customer_id,
     customer_name: props.serviceOrder.customer_name,
     customer_phone: props.serviceOrder.customer_phone,
@@ -33,8 +36,8 @@ const form = useForm({
     promised_at: props.serviceOrder.promised_at ? new Date(props.serviceOrder.promised_at) : null,
     final_total: props.serviceOrder.final_total,
     custom_fields: props.serviceOrder.custom_fields || {},
-    initial_evidence_images: [], // Para nuevas imágenes
-    deleted_media_ids: [], // Para imágenes a eliminar
+    initial_evidence_images: [],
+    deleted_media_ids: [],
     items: props.serviceOrder.items || [],
     assign_technician: !!props.serviceOrder.technician_name,
     technician_name: props.serviceOrder.technician_name,
@@ -42,7 +45,11 @@ const form = useForm({
     technician_commission_value: props.serviceOrder.technician_commission_value,
 });
 
-// --- Lógica para Items (sin cambios) ---
+// --- Lógica de Items ---
+const itemTypeOptions = ref([
+    { label: 'Refacción', value: 'App\\Models\\Product' },
+    { label: 'Servicio', value: 'App\\Models\\Service' },
+]);
 const availableItems = computed(() => [
     ...props.products.map(p => ({ ...p, type: 'Producto', price: p.selling_price, itemable_type: 'App\\Models\\Product' })),
     ...props.services.map(s => ({ ...s, type: 'Servicio', price: s.base_price, itemable_type: 'App\\Models\\Service' }))
@@ -58,8 +65,12 @@ const searchItems = (event) => {
 };
 const addItem = () => {
     let itemToAdd = {
-        itemable_id: null, itemable_type: null, description: '',
-        quantity: 1, unit_price: 0, line_total: 0,
+        itemable_id: null,
+        itemable_type: 'App\\Models\\Service',
+        description: '',
+        quantity: 1,
+        unit_price: 0,
+        line_total: 0,
     };
     if (typeof selectedItem.value === 'object' && selectedItem.value !== null) {
         itemToAdd = { ...itemToAdd, itemable_id: selectedItem.value.id, itemable_type: selectedItem.value.itemable_type, description: selectedItem.value.name, unit_price: selectedItem.value.price };
@@ -70,13 +81,33 @@ const addItem = () => {
     selectedItem.value = null;
 };
 const removeItem = (index) => form.items.splice(index, 1);
+const confirmRemoveItem = (event, index) => {
+    confirm.require({
+        target: event.currentTarget,
+        message: '¿Estás seguro de que quieres eliminar este elemento?',
+        group: 'concept-delete',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Sí',
+        rejectLabel: 'No',
+        accept: () => {
+            removeItem(index);
+        }
+    });
+};
+const checkUnitPrice = (index) => {
+    setTimeout(() => {
+        if (form.items[index].unit_price === null || form.items[index].unit_price === undefined) {
+            form.items[index].unit_price = 0;
+        }
+    }, 0);
+};
 watch(() => form.items, (newItems) => {
     let total = 0;
     newItems.forEach(item => { total += (item.quantity || 0) * (item.unit_price || 0); item.line_total = (item.quantity || 0) * (item.unit_price || 0); });
     form.final_total = total;
 }, { deep: true });
 
-// --- Lógica para Clientes (sin cambios) ---
+
 const filteredCustomers = ref();
 const searchCustomer = (event) => {
     setTimeout(() => {
@@ -93,13 +124,11 @@ const onCustomerSelect = (event) => {
     if (customer.address) { form.customer_address = customer.address; }
 };
 
-// --- Lógica para Técnico (sin cambios) ---
 const commissionOptions = ref([{ label: 'Porcentaje (%)', value: 'percentage' }, { label: 'Monto Fijo ($)', value: 'fixed' }]);
 watch(() => form.assign_technician, (newValue) => {
     if (!newValue) { form.technician_name = ''; form.technician_commission_type = 'percentage'; form.technician_commission_value = null; }
 });
 
-// --- Lógica para Campos Personalizados (sin cambios) ---
 const initializeCustomFields = (definitions) => {
     const newCustomFields = {};
     definitions.forEach(field => {
@@ -123,17 +152,15 @@ const openCustomFieldManager = () => {
     }
 };
 
-// --- Lógica de Evidencia (CORREGIDA) ---
 const existingMedia = ref((props.serviceOrder.media || []).filter(m => m.collection_name === 'initial-service-order-evidence'));
 
 const removeExistingImage = (mediaId) => {
     form.deleted_media_ids.push(mediaId);
     existingMedia.value = existingMedia.value.filter(m => m.id !== mediaId);
 };
-const onSelectImages = (event) => form.initial_evidence_images = [...form.initial_evidence_images, ...event.files];
+const onSelectImages = (event) => form.initial_evidence_images = event.files;
 const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evidence_images.filter(img => img.objectURL !== event.file.objectURL);
 
-// --- Lógica de Submit ---
 const submit = () => {
     form.post(route('service-orders.update', props.serviceOrder.id));
 };
@@ -142,15 +169,14 @@ const submit = () => {
 
 <template>
 
-    <Head :title="`Editar Orden de Servicio #${serviceOrder.id}`" />
+    <Head :title="`Editar Orden de Servicio #${serviceOrder.folio || serviceOrder.id}`" />
     <AppLayout>
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="mt-4">
-            <h1 class="text-2xl font-bold">Editar Orden de Servicio #{{ serviceOrder.id }}</h1>
+            <h1 class="text-2xl font-bold">Editar Orden de Servicio #{{ serviceOrder.folio || serviceOrder.id }}</h1>
         </div>
 
         <form @submit.prevent="submit" class="mt-6 max-w-4xl mx-auto space-y-6">
-            <!-- Información del Cliente y Equipo -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información Principal</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -196,7 +222,65 @@ const submit = () => {
                 </div>
             </div>
 
-            <!-- Información del Técnico -->
+            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Refacciones y Mano de Obra</h2>
+                <div class="flex gap-2 mb-4">
+                    <AutoComplete v-model="selectedItem" :suggestions="filteredItems" @complete="searchItems"
+                        field="name" optionLabel="name" placeholder="Busca o escribe un concepto..." class="w-full"
+                        dropdown>
+                        <template #option="slotProps">
+                            <div>{{ slotProps.option.name }}
+                                <Tag :value="slotProps.option.type" />
+                            </div>
+                        </template>
+                    </AutoComplete>
+                    <Button @click="addItem" icon="pi pi-plus" label="Agregar" :disabled="!selectedItem" />
+                </div>
+                <DataTable :value="form.items" class="p-datatable-sm">
+                    <template #empty>
+                        <div class="text-center p-4">No se han agregado refacciones o servicios.</div>
+                    </template>
+                    <Column header="Tipo" style="width: 15rem">
+                        <template #body="{ data, index }">
+                            <SelectButton v-model="form.items[index].itemable_type" :options="itemTypeOptions"
+                                optionLabel="label" optionValue="value" :allowEmpty="false"
+                                :disabled="data.itemable_id !== 0 && data.itemable_id !== null" class="w-full" />
+                        </template>
+                    </Column>
+                    <Column field="description" header="Descripción"><template #body="{ index }">
+                            <InputText v-model="form.items[index].description" fluid class="w-full" />
+                        </template>
+                    </Column>
+                    <Column field="quantity" header="Cantidad" style="width: 9.5rem"><template #body="{ index }">
+                            <InputNumber v-model="form.items[index].quantity" fluid class="w-full" showButtons
+                                buttonLayout="horizontal" :step="1" :min="0" />
+                        </template>
+                    </Column>
+                    <Column field="unit_price" header="Precio Unit." style="width: 9.5rem"><template #body="{ index }">
+                            <InputNumber v-model="form.items[index].unit_price" @blur="checkUnitPrice(index)"
+                                mode="currency" currency="MXN" locale="es-MX" fluid class="w-full" />
+                        </template>
+                    </Column>
+                    <Column field="line_total" header="Total"><template #body="{ data }">{{ new
+                        Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(data.line_total)
+                            }}</template>
+                    </Column>
+                    <Column style="width: 4rem"><template #body="{ index, event }"><Button
+                                @click="confirmRemoveItem($event, index)" icon="pi pi-trash" text rounded size="small"
+                                severity="danger" /></template>
+                    </Column>
+                </DataTable>
+                <InputError :message="form.errors.items" class="mt-2" />
+                <div class="flex justify-end mt-4">
+                    <div class="w-full max-w-xs">
+                        <InputLabel for="final_total" value="Total Final" class="font-bold" />
+                        <InputNumber id="final_total" v-model="form.final_total" mode="currency" currency="MXN"
+                            locale="es-MX" class="w-full mt-1" inputClass="!font-bold" />
+                        <InputError :message="form.errors.final_total" class="mt-2" />
+                    </div>
+                </div>
+            </div>
+
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <div class="flex items-center justify-between border-b pb-3 mb-4">
                     <h2 class="text-lg font-semibold">Asignación de Técnico</h2>
@@ -226,7 +310,6 @@ const submit = () => {
                 </p>
             </div>
 
-            <!-- Campos Personalizados -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <div class="flex items-center justify-between border-b pb-3 mb-4">
                     <h2 class="text-lg font-semibold">Detalles Adicionales</h2>
@@ -259,59 +342,6 @@ const submit = () => {
                 </div>
             </div>
 
-            <!-- Refacciones y Mano de Obra -->
-            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Refacciones y Mano de Obra</h2>
-                <div class="flex gap-2 mb-4">
-                    <AutoComplete v-model="selectedItem" :suggestions="filteredItems" @complete="searchItems"
-                        field="name" optionLabel="name" placeholder="Busca o escribe un concepto..." class="w-full"
-                        dropdown>
-                        <template #option="slotProps">
-                            <div>{{ slotProps.option.name }}
-                                <Tag :value="slotProps.option.type" />
-                            </div>
-                        </template>
-                    </AutoComplete>
-                    <Button @click="addItem" icon="pi pi-plus" label="Agregar" :disabled="!selectedItem" />
-                </div>
-                <DataTable :value="form.items" class="p-datatable-sm">
-                    <template #empty>
-                        <div class="text-center p-4">No se han agregado refacciones o servicios.</div>
-                    </template>
-                    <Column field="description" header="Descripción"><template #body="{ index }">
-                            <InputText v-model="form.items[index].description" class="w-full" />
-                        </template>
-                    </Column>
-                    <Column field="quantity" header="Cantidad" style="width: 10rem"><template #body="{ index }">
-                            <InputNumber v-model="form.items[index].quantity" class="w-full" showButtons
-                                buttonLayout="horizontal" :step="1" :min="0" />
-                        </template>
-                    </Column>
-                    <Column field="unit_price" header="Precio Unit." style="width: 12rem"><template #body="{ index }">
-                            <InputNumber v-model="form.items[index].unit_price" mode="currency" currency="MXN"
-                                locale="es-MX" class="w-full" />
-                        </template>
-                    </Column>
-                    <Column field="line_total" header="Total"><template #body="{ data }">{{ new
-                        Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(data.line_total)
-                            }}</template>
-                    </Column>
-                    <Column style="width: 4rem"><template #body="{ index }"><Button @click="removeItem(index)"
-                                icon="pi pi-trash" text rounded severity="danger" /></template>
-                    </Column>
-                </DataTable>
-                <InputError :message="form.errors.items" class="mt-2" />
-                <div class="flex justify-end mt-4">
-                    <div class="w-full max-w-xs">
-                        <InputLabel for="final_total" value="Total Final" class="font-bold" />
-                        <InputNumber id="final_total" v-model="form.final_total" mode="currency" currency="MXN"
-                            locale="es-MX" class="w-full mt-1" inputClass="!font-bold" />
-                        <InputError :message="form.errors.final_total" class="mt-2" />
-                    </div>
-                </div>
-            </div>
-
-            <!-- Evidencia Inicial -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Fotográfica Inicial</h2>
                 <div v-if="existingMedia.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-4">
@@ -340,5 +370,7 @@ const submit = () => {
 
         <ManageCustomFields ref="manageFieldsComponent" module="service_orders"
             :definitions="props.customFieldDefinitions" />
+
+        <ConfirmPopup group="concept-delete" />
     </AppLayout>
 </template>

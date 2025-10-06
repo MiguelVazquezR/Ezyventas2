@@ -41,12 +41,10 @@ class ServiceOrderController extends Controller implements HasMiddleware
     public function index(Request $request): Response
     {
         $user = Auth::user();
-        $subscriptionId = $user->branch->subscription_id;
+        $branchId = $user->branch_id;
 
         $query = ServiceOrder::query()
-            ->whereHas('branch.subscription', function ($q) use ($subscriptionId) {
-                $q->where('id', $subscriptionId);
-            })
+            ->where('branch_id', $branchId)
             ->with('branch:id,name');
 
         if ($request->has('search')) {
@@ -132,7 +130,6 @@ class ServiceOrderController extends Controller implements HasMiddleware
         $validated = array_merge($request->validated(), $request->validate([
             'create_customer' => 'required|boolean',
             'credit_limit' => 'required_if:create_customer,true|numeric|min:0',
-            // Se valida que la sesión de caja exista y esté activa.
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id,status,abierta',
         ]));
 
@@ -141,6 +138,21 @@ class ServiceOrderController extends Controller implements HasMiddleware
         DB::transaction(function () use ($validated, &$newServiceOrder, $request) {
             $user = Auth::user();
             $customer = null;
+
+            $subscriptionId = $user->branch->subscription_id;
+
+            $lastOrder = ServiceOrder::whereHas('branch', fn($q) => $q->where('subscription_id', $subscriptionId))
+                ->latest('id')
+                ->first();
+
+            $nextNumber = 1;
+            if ($lastOrder && $lastOrder->folio) {
+                $lastNumber = (int) substr($lastOrder->folio, 3);
+                $nextNumber = $lastNumber + 1;
+            }
+
+            $folio = 'OS-' . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
+
 
             if (! empty($validated['customer_id'])) {
                 $customer = Customer::find($validated['customer_id']);
@@ -157,19 +169,19 @@ class ServiceOrderController extends Controller implements HasMiddleware
             }
 
             $serviceOrder = ServiceOrder::create(array_merge($validated, [
+                'folio' => $folio,
                 'user_id' => $user->id,
                 'branch_id' => $user->branch_id,
                 'customer_id' => $customer?->id,
                 'status' => ServiceOrderStatus::PENDING,
             ]));
 
-            // Se asocia la transacción con la sesión de caja activa desde el formulario.
             $transaction = $serviceOrder->transaction()->create([
                 'folio' => 'TR-SO-' . time(),
                 'customer_id' => $customer?->id,
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
-                'cash_register_session_id' => $validated['cash_register_session_id'], // Se asigna aquí
+                'cash_register_session_id' => $validated['cash_register_session_id'],
                 'subtotal' => $serviceOrder->final_total,
                 'total_discount' => 0,
                 'total_tax' => 0,
@@ -177,11 +189,15 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'status' => $serviceOrder->final_total > 0 ? TransactionStatus::PENDING : TransactionStatus::COMPLETED,
             ]);
 
-            foreach ($validated['items'] ?? [] as $item) {
-                if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
-                    unset($item['itemable_id'], $item['itemable_type']);
+            // El controlador procesará los items tal como lleguen del frontend.
+            // El frontend ahora es responsable de asignar el 'itemable_type' correcto.
+            if (!empty($validated['items'])) {
+                foreach ($validated['items'] as $item) {
+                    if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
+                        unset($item['itemable_id']); // Es mejor quitar el id si es 0
+                    }
+                    $serviceOrder->items()->create($item);
                 }
-                $serviceOrder->items()->create($item);
             }
 
             if ($request->hasFile('initial_evidence_images')) {
@@ -198,7 +214,6 @@ class ServiceOrderController extends Controller implements HasMiddleware
             ->with('show_payment_modal', true);
     }
 
-
     public function edit(ServiceOrder $serviceOrder): Response
     {
         $serviceOrder->load('items.itemable');
@@ -213,11 +228,16 @@ class ServiceOrderController extends Controller implements HasMiddleware
             $serviceOrder->update($validated);
 
             $serviceOrder->items()->delete();
-            foreach ($validated['items'] as $item) {
-                if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
-                    unset($item['itemable_id'], $item['itemable_type']);
+
+            // El controlador procesará los items tal como lleguen del frontend.
+            // El frontend ahora es responsable de asignar el 'itemable_type' correcto.
+            if (!empty($validated['items'])) {
+                foreach ($validated['items'] as $item) {
+                    if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
+                        unset($item['itemable_id']); // Es mejor quitar el id si es 0
+                    }
+                    $serviceOrder->items()->create($item);
                 }
-                $serviceOrder->items()->create($item);
             }
 
             $serviceOrder->load('transaction');

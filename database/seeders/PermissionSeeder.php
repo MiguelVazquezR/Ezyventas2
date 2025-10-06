@@ -76,6 +76,7 @@ class PermissionSeeder extends Seeder
                 'services.orders.change_status' => 'Cambiar status y cancelar órdenes de servicio',
                 'services.orders.see_customer_info' => 'Ver información de cliente en órdenes de servicio',
                 'services.orders.see_financial_info' => 'Ver información financiera en órdenes de servicio',
+                'services.orders.manage_custom_fields' => 'Administrar campos personalizados de órdenes de servicio',
                 'services.print_tickets' => 'Imprimir tickets de órdenes',
                 'services.print_etiquetas' => 'Imprimir etiqueta de órdenes',
             ],

@@ -167,6 +167,7 @@ const getStatusSeverity = (status) => {
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} órdenes">
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
+                    <Column field="folio" header="Folio" sortable></Column>
                     <Column field="customer_name" header="Cliente" sortable></Column>
                     <Column field="item_description" header="Equipo" sortable></Column>
                     <Column field="status" header="Estatus" sortable>

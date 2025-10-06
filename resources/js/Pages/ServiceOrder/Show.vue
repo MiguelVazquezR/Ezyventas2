@@ -16,7 +16,7 @@ const props = defineProps({
     availableTemplates: Array,
     customFieldDefinitions: Array,
     // Se recibe la sesión activa desde el controlador.
-    activeSession: Object, 
+    activeSession: Object,
 });
 
 const page = usePage();
@@ -112,7 +112,7 @@ const onRemoveClosingImage = (event) => {
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
     { label: 'Órdenes de Servicio', url: route('service-orders.index') },
-    { label: `Orden #${props.serviceOrder.id}` }
+    { label: `Orden #${props.serviceOrder.folio || props.serviceOrder.id}` }
 ]);
 
 const steps = ref([
@@ -138,22 +138,6 @@ const amountDue = computed(() => {
     return parseFloat(props.serviceOrder.final_total) - totalPaid.value;
 });
 
-// NEW: Computed property for technician commission
-const technicianCommission = computed(() => {
-    if (!props.serviceOrder.technician_name || !props.serviceOrder.technician_commission_value) {
-        return 'N/A';
-    }
-
-    const value = parseFloat(props.serviceOrder.technician_commission_value);
-    if (props.serviceOrder.technician_commission_type === 'percentage') {
-        const commissionAmount = (props.serviceOrder.final_total * value) / 100;
-        return `${formatCurrency(commissionAmount)} (${value}%)`;
-    } else if (props.serviceOrder.technician_commission_type === 'fixed') {
-        return formatCurrency(value);
-    }
-    return 'N/A';
-});
-
 const deliveryDate = computed(() => {
     // Verifica que el estatus sea 'entregado' y que existan pagos.
     if (props.serviceOrder.status === 'entregado' && props.serviceOrder.transaction?.payments?.length > 0) {
@@ -164,6 +148,71 @@ const deliveryDate = computed(() => {
         return latestPayment.payment_date;
     }
     return null; // Devuelve null si no se cumplen las condiciones.
+});
+
+// --- INICIO: LÓGICA DE GANANCIA ---
+const technicianCommissionCostNumeric = computed(() => {
+    if (!props.serviceOrder.technician_name || !props.serviceOrder.technician_commission_value) {
+        return 0;
+    }
+    const value = parseFloat(props.serviceOrder.technician_commission_value);
+    const total = parseFloat(props.serviceOrder.final_total);
+
+    if (props.serviceOrder.technician_commission_type === 'percentage') {
+        return (total * value) / 100;
+    } else if (props.serviceOrder.technician_commission_type === 'fixed') {
+        return value;
+    }
+    return 0;
+});
+
+const partsCost = computed(() => {
+    if (!props.serviceOrder.items || props.serviceOrder.items.length === 0) {
+        return 0;
+    }
+    return props.serviceOrder.items.reduce((total, item) => {
+        // Suma el costo solo si el item es un producto (refacción)
+        if (item.itemable_type === 'App\\Models\\Product') {
+            // Usa '|| 0' para manejar casos donde cost_price es null o undefined, evitando NaN.
+            const cost = parseFloat(item.unit_price) || 0;
+            const quantity = parseFloat(item.quantity) || 0;
+            return total + (cost * quantity);
+        }
+        return total;
+    }, 0);
+});
+
+const profitAnalysis = computed(() => {
+    const totalRevenue = parseFloat(props.serviceOrder.final_total) || 0;
+    const commission = technicianCommissionCostNumeric.value;
+    const parts = partsCost.value;
+
+    const totalCosts = commission + parts;
+    const netProfit = totalRevenue - totalCosts;
+    const margin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+
+    return {
+        totalRevenue,
+        commission,
+        parts,
+        totalCosts,
+        netProfit,
+        margin,
+    };
+});
+// --- FIN: LÓGICA DE GANANCIA ---
+
+const technicianCommission = computed(() => {
+    if (technicianCommissionCostNumeric.value === 0 && (!props.serviceOrder.technician_name || !props.serviceOrder.technician_commission_value)) {
+        return 'N/A';
+    }
+    const value = parseFloat(props.serviceOrder.technician_commission_value);
+    const formattedAmount = formatCurrency(technicianCommissionCostNumeric.value);
+
+    if (props.serviceOrder.technician_commission_type === 'percentage') {
+        return `${formattedAmount} (${value}%)`;
+    }
+    return formattedAmount;
 });
 
 const changeStatus = (newStatusValue, newIndex) => {
@@ -177,7 +226,6 @@ const changeStatus = (newStatusValue, newIndex) => {
             router.patch(route('service-orders.updateStatus', props.serviceOrder.id), { status: newStatusValue }, {
                 preserveScroll: true,
                 onSuccess: () => {
-                    // NEW: Open payment modal automatically if status is 'entregado' and there's an amount due
                     if (newStatusValue === 'entregado' && amountDue.value > 0.01) {
                         openPaymentModal();
                     }
@@ -214,7 +262,7 @@ const deleteOrder = () => {
 const actionItems = ref([
     { label: 'Crear nueva orden', icon: 'pi pi-plus', command: () => router.get(route('service-orders.create')), visible: hasPermission('services.orders.create') },
     { label: 'Editar orden', icon: 'pi pi-pencil', command: () => router.get(route('service-orders.edit', props.serviceOrder.id)), visible: hasPermission('services.orders.edit') },
-    { label: 'Registrar Diagnóstico y Evidencia', icon: 'pi pi-file-edit', command: openDiagnosisModal, visible: computed(() => !isCancelled.value && hasPermission('services.orders.edit')) }, // NEW action item
+    { label: 'Registrar Diagnóstico y Evidencia', icon: 'pi pi-file-edit', command: openDiagnosisModal, visible: computed(() => !isCancelled.value && hasPermission('services.orders.edit')) },
     { label: 'Registrar Pago', icon: 'pi pi-dollar', command: openPaymentModal, visible: computed(() => amountDue.value > 0.01 && props.serviceOrder.final_total > 0) },
     { label: 'Imprimir', icon: 'pi pi-print', command: openPrintModal },
     { separator: true },
@@ -242,32 +290,40 @@ const formatCurrency = (value) => {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 };
 
-// NEW: Function to get custom field definition for a given key
 const getCustomFieldDefinition = (key) => {
     return props.customFieldDefinitions?.find(def => def.key === key);
 };
 
-// NEW: Computed property to filter initial evidence images
 const initialEvidenceImages = computed(() => {
     return props.serviceOrder.media?.filter(m => m.collection_name === 'initial-service-order-evidence') || [];
 });
 
-// NEW: Computed property to filter closing evidence images
 const closingEvidenceImages = computed(() => {
     return props.serviceOrder.media?.filter(m => m.collection_name === 'closing-service-order-evidence') || [];
 });
+
+// --- NUEVA FUNCIÓN AUXILIAR ---
+const getItemType = (itemableType) => {
+    if (itemableType === 'App\\Models\\Product') {
+        return { text: 'Refacción', severity: 'info' };
+    }
+    if (itemableType === 'App\\Models\\Service') {
+        return { text: 'Servicio', severity: 'success' };
+    }
+    return { text: 'Otro', severity: 'secondary' };
+};
 
 </script>
 
 <template>
 
-    <Head :title="`Orden de Servicio #${serviceOrder.id}`" />
+    <Head :title="`Orden de Servicio #${serviceOrder.folio || serviceOrder.id}`" />
     <AppLayout>
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
 
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <div>
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Orden de Servicio #{{ serviceOrder.id }}
+                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Orden de Servicio #{{ serviceOrder.folio || serviceOrder.id }}
                 </h1>
                 <p class="text-gray-500 dark:text-gray-400 mt-1">Cliente: {{ serviceOrder.customer_name }}</p>
             </div>
@@ -334,9 +390,9 @@ const closingEvidenceImages = computed(() => {
                                         :severity="getStatusSeverity(serviceOrder.status)" class="capitalize" />
                                 </li>
                                 <li class="flex justify-between"><span>Fecha de Recepción</span><span>{{
-                                        formatDate(serviceOrder.received_at) }}</span></li>
+                                    formatDate(serviceOrder.received_at) }}</span></li>
                                 <li class="flex justify-between"><span>Fecha Promesa</span><span>{{
-                                        formatDate(serviceOrder.promised_at) }}</span></li>
+                                    formatDate(serviceOrder.promised_at) }}</span></li>
                                 <li v-if="deliveryDate" class="flex justify-between">
                                     <span>Fecha de Entrega</span>
                                     <span class="font-semibold">{{ formatDate(deliveryDate) }}</span>
@@ -344,7 +400,6 @@ const closingEvidenceImages = computed(() => {
                                 <li class="flex justify-between"><span>Técnico Asignado</span><span>{{
                                     serviceOrder.technician_name || 'Sin asignar' }}</span></li>
                                 <li v-if="serviceOrder.technician_name" class="flex justify-between">
-                                    <!-- NEW: Technician Commission -->
                                     <span>Comisión del Técnico:</span>
                                     <span class="font-semibold">{{ technicianCommission }}</span>
                                 </li>
@@ -353,7 +408,6 @@ const closingEvidenceImages = computed(() => {
                     </div>
                 </div>
 
-                <!-- NEW: Custom Fields / Detalles Adicionales -->
                 <div v-if="serviceOrder.custom_fields && Object.keys(serviceOrder.custom_fields).length > 0"
                     class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles Adicionales</h2>
@@ -363,7 +417,6 @@ const closingEvidenceImages = computed(() => {
                             <div v-if="getCustomFieldDefinition(key)?.type === 'pattern'" class="mt-2">
                                 <PatternLock :modelValue="value" :edit="false" />
                             </div>
-                            <!-- NEW: Display for 'select' and 'checkbox' types -->
                             <div v-else-if="getCustomFieldDefinition(key)?.type === 'select'">
                                 <p class="text-gray-700 dark:text-gray-300">{{ value || 'N/A' }}</p>
                             </div>
@@ -375,7 +428,7 @@ const closingEvidenceImages = computed(() => {
                                         :class="[value && value.includes(option) ? 'pi pi-check-circle text-green-500' : 'pi pi-times-circle text-red-500', 'mr-2']"></i>
                                     <span
                                         :class="{ 'font-medium': value && value.includes(option), 'text-gray-500': !value || !value.includes(option) }">{{
-                                        option }}</span>
+                                            option }}</span>
                                 </div>
                             </div>
                             <p v-else class="text-gray-700 dark:text-gray-300">{{ value === true ? 'Sí' : value ===
@@ -385,8 +438,13 @@ const closingEvidenceImages = computed(() => {
                 </div>
 
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Refacciones y Mano de Obra</h2>
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Refacciones y mano de obra</h2>
                     <DataTable :value="serviceOrder.items" class="p-datatable-sm">
+                        <Column header="Tipo" style="width: 8rem">
+                            <template #body="{ data }">
+                                <Tag :value="getItemType(data.itemable_type).text" :severity="getItemType(data.itemable_type).severity" />
+                            </template>
+                        </Column>
                         <Column field="description" header="Descripción"></Column>
                         <Column field="quantity" header="Cantidad" style="width: 6rem" class="text-center"></Column>
                         <Column field="unit_price" header="Precio Unit." style="width: 10rem" class="text-right">
@@ -395,10 +453,12 @@ const closingEvidenceImages = computed(() => {
                         <Column field="line_total" header="Total" style="width: 10rem" class="text-right font-semibold">
                             <template #body="{ data }">{{ formatCurrency(data.line_total) }}</template>
                         </Column>
+                        <template #empty>
+                            <div class="text-center text-gray-500 py-4">
+                                No se han agregado refacciones o mano de obra.
+                            </div>
+                        </template>
                     </DataTable>
-                    <div v-if="!serviceOrder.items || serviceOrder.items.length === 0"
-                        class="text-center text-gray-500 py-4">No se han
-                        agregado refacciones o mano de obra.</div>
                     <div class="flex justify-end mt-4">
                         <div class="w-full max-w-xs text-right space-y-2">
                             <div class="flex justify-between font-bold text-lg border-t pt-2 mt-2">
@@ -435,7 +495,7 @@ const closingEvidenceImages = computed(() => {
                             formatCurrency(serviceOrder.final_total) }}</span></li>
                         <li class="flex justify-between"><span>Total Pagado:</span><span
                                 class="font-semibold text-green-600">{{
-                                formatCurrency(totalPaid) }}</span></li>
+                                    formatCurrency(totalPaid) }}</span></li>
                         <li class="flex justify-between text-base font-bold border-t pt-2 mt-2"
                             :class="amountDue > 0.01 ? 'text-red-500' : 'text-gray-800 dark:text-gray-200'">
                             <span>Saldo Pendiente:</span>
@@ -443,20 +503,54 @@ const closingEvidenceImages = computed(() => {
                         </li>
                     </ul>
                 </div>
+                
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Análisis de Ganancia</h2>
+                    <ul class="space-y-2 text-sm">
+                        <li class="flex justify-between">
+                            <span>Total cobrado:</span>
+                            <span class="font-semibold">{{ formatCurrency(profitAnalysis.totalRevenue) }}</span>
+                        </li>
+                        <li class="flex justify-between">
+                            <span>Costo de refacciones:</span>
+                            <span class="text-red-500">(-) {{ formatCurrency(profitAnalysis.parts) }}</span>
+                        </li>
+                        <li class="flex justify-between">
+                            <span>Comisión del técnico:</span>
+                            <span class="text-red-500">(-) {{ formatCurrency(profitAnalysis.commission) }}</span>
+                        </li>
+                        <li class="flex justify-between font-medium border-t pt-2 mt-2">
+                            <span>Costos totales:</span>
+                            <span>{{ formatCurrency(profitAnalysis.totalCosts) }}</span>
+                        </li>
+                        <li class="flex justify-between text-base font-bold text-green-600 border-t pt-2 mt-2">
+                            <span>Ganancia neta:</span>
+                            <span>{{ formatCurrency(profitAnalysis.netProfit) }}</span>
+                        </li>
+                        <li class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
+                            <span>Margen de ganancia:</span>
+                            <span>{{ profitAnalysis.margin.toFixed(2) }}%</span>
+                        </li>
+                    </ul>
+                </div>
+
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Pagos Registrados</h2>
                     <DataTable :value="serviceOrder.transaction?.payments" class="p-datatable-sm"
                         responsiveLayout="scroll">
                         <Column field="payment_date" header="Fecha"><template #body="{ data }">{{
-                                formatDate(data.payment_date) }}</template></Column>
+                            formatDate(data.payment_date) }}</template></Column>
                         <Column field="payment_method" header="Método" style="width: 8rem"><template #body="{ data }">
                                 <Tag :value="data.payment_method" class="capitalize" />
                             </template></Column>
                         <Column field="amount" header="Monto" style="width: 8rem" class="text-right"><template
                                 #body="{ data }">{{ formatCurrency(data.amount) }}</template></Column>
+                        <template #empty>
+                            <div class="text-center text-gray-500 py-4">
+                                No se han registrado pagos.
+                            </div>
+                        </template>
                     </DataTable>
-                    <div v-if="!serviceOrder.transaction || serviceOrder.transaction.payments.length === 0"
-                        class="text-center text-gray-500 py-4">No se han registrado pagos.</div>
                 </div>
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Inicial</h2>
@@ -470,7 +564,6 @@ const closingEvidenceImages = computed(() => {
                         adjuntaron imágenes.
                     </div>
                 </div>
-                <!-- NEW: Closing Evidence -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia de Cierre de Servicio</h2>
                     <Galleria :value="closingEvidenceImages" :numVisible="4" containerStyle="max-width: 100%"
@@ -504,7 +597,7 @@ const closingEvidenceImages = computed(() => {
                                             activity.description }}</h3>
                                         <p class="text-xs text-gray-500 dark:text-gray-400">Por {{ activity.causer }} -
                                             {{
-                                            activity.timestamp }}</p>
+                                                activity.timestamp }}</p>
                                         <div v-if="activity.event === 'updated' && Object.keys(activity.changes.after).length > 0"
                                             class="mt-3 text-sm space-y-2">
                                             <div v-for="(value, key) in activity.changes.after" :key="key">
@@ -514,11 +607,11 @@ const closingEvidenceImages = computed(() => {
                                                 <div v-else class="flex items-center gap-2 text-xs">
                                                     <span
                                                         class="bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 px-2 py-0.5 rounded line-through">{{
-                                                        activity.changes.before[key] || 'Vacío' }}</span>
+                                                            activity.changes.before[key] || 'Vacío' }}</span>
                                                     <i class="pi pi-arrow-right text-gray-400"></i>
                                                     <span
                                                         class="bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 px-2 py-0.5 rounded font-medium">{{
-                                                        value }}</span>
+                                                            value }}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -539,7 +632,6 @@ const closingEvidenceImages = computed(() => {
             :data-source="{ type: 'service_order', id: serviceOrder.id }" :available-templates="availableTemplates"
             @hide="handlePrintModalClosed" />
 
-        <!-- NEW: Diagnosis and Evidence Modal -->
         <Dialog v-model:visible="isDiagnosisModalVisible" modal header="Registrar Diagnóstico y Evidencia"
             :style="{ width: '40rem' }">
             <div class="p-fluid formgrid grid">
@@ -554,8 +646,8 @@ const closingEvidenceImages = computed(() => {
                 <div class="field col-12">
                     <label class="font-semibold mb-2 block">Evidencia de Cierre (Máx. 5 imágenes)</label>
                     <FileUpload name="closing_evidence_images[]" @select="onSelectClosingImages"
-                        @remove="onRemoveClosingImage" :multiple="true" :show-upload-button="false" accept="image/*" :maxFileSize="2000000"
-                        :fileLimit="MAX_CLOSING_EVIDENCE_IMAGES"
+                        @remove="onRemoveClosingImage" :multiple="true" :show-upload-button="false" accept="image/*"
+                        :maxFileSize="2000000" :fileLimit="MAX_CLOSING_EVIDENCE_IMAGES"
                         :invalidFileSizeMessage="'{0}: El tamaño del archivo excede el límite de 2MB.'"
                         :invalidFileLimitMessage="'Máximo {0} archivos permitidos.'">
                         <template #empty>

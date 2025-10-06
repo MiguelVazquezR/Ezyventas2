@@ -10,6 +10,7 @@ return new class extends Migration
     {
         Schema::create('service_orders', function (Blueprint $table) {
             $table->id();
+            $table->string('folio')->nullable();
             $table->foreignId('branch_id')->constrained('branches')->onDelete('cascade');
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
             $table->foreignId('quote_id')->nullable()->constrained('quotes')->onDelete('set null');

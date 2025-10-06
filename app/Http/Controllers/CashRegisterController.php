@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -23,27 +24,64 @@ class CashRegisterController extends Controller implements HasMiddleware
         ];
     }
 
+    /**
+     * --- AÑADIDO: Función auxiliar para obtener datos del límite de cajas. ---
+     */
+    private function getCashRegisterLimitData()
+    {
+        $subscription = Auth::user()->branch->subscription;
+        $currentVersion = $subscription->versions()->latest('start_date')->first();
+        $limit = -1; // -1 significa ilimitado
+        if ($currentVersion) {
+            $limitItem = $currentVersion->items()->where('item_key', 'limit_cash_registers')->first();
+            if ($limitItem) {
+                $limit = $limitItem->quantity;
+            }
+        }
+        $usage = $subscription->cashRegisters()->count();
+        return ['limit' => $limit, 'usage' => $usage];
+    }
+
     public function index(): Response
     {
         $user = Auth::user();
         $branchId = $user->branch_id;
 
         $cashRegisters = CashRegister::where('branch_id', $branchId)
-            ->with('branch:id,name') // Cargar el nombre de la sucursal
+            ->with('branch:id,name')
             ->get();
+
+        // --- AÑADIDO: Se pasan los datos del límite a la vista ---
+        $limitData = $this->getCashRegisterLimitData();
 
         return Inertia::render('FinancialControl/CashRegister/Index', [
             'cashRegisters' => $cashRegisters,
+            'cashRegisterLimit' => $limitData['limit'],
+            'cashRegisterUsage' => $limitData['usage'],
         ]);
     }
 
     public function create(): Response
     {
-        return Inertia::render('FinancialControl/CashRegister/Create');
+        // --- AÑADIDO: Se pasan los datos del límite a la vista ---
+        $limitData = $this->getCashRegisterLimitData();
+
+        return Inertia::render('FinancialControl/CashRegister/Create', [
+            'cashRegisterLimit' => $limitData['limit'],
+            'cashRegisterUsage' => $limitData['usage'],
+        ]);
     }
 
     public function store(StoreCashRegisterRequest $request)
     {
+        // --- AÑADIDO: Validación del límite de cajas ---
+        $limitData = $this->getCashRegisterLimitData();
+        if ($limitData['limit'] !== -1 && $limitData['usage'] >= $limitData['limit']) {
+            throw ValidationException::withMessages([
+                'limit' => 'Has alcanzado el límite de cajas registradoras de tu plan.'
+            ]);
+        }
+
         CashRegister::create(array_merge($request->validated(), [
             'branch_id' => Auth::user()->branch_id,
         ]));
@@ -66,32 +104,24 @@ class CashRegisterController extends Controller implements HasMiddleware
     public function show(CashRegister $cashRegister): Response
     {
         $branch = $cashRegister->branch;
-
-       // Cargar la sesión activa con sus relaciones
         $currentSession = $cashRegister->sessions()
             ->where('status', 'abierta')
             ->with(['user:id,name', 'cashMovements', 'transactions.payments'])
             ->first();
-
         $closedSessions = $cashRegister->sessions()
             ->where('status', 'cerrada')
             ->with('user:id,name')
             ->latest('closed_at')
             ->paginate(10);
-
-        // Obtener IDs de usuarios que tienen una sesión abierta en CUALQUIER caja de la suscripción
         $busyUserIds = CashRegisterSession::where('status', 'abierta')
             ->whereHas('cashRegister.branch.subscription', function ($query) use ($branch) {
                 $query->where('id', $branch->subscription_id);
             })
             ->pluck('user_id');
-
-        // Obtener todos los usuarios de la sucursal y añadirles un estado
         $branchUsers = $branch->users->map(function ($branchUser) use ($busyUserIds) {
             $branchUser->is_busy = $busyUserIds->contains($branchUser->id);
             return $branchUser;
         });
-
         return Inertia::render('FinancialControl/CashRegister/Show', [
             'cashRegister' => $cashRegister->load('branch'),
             'currentSession' => $currentSession,

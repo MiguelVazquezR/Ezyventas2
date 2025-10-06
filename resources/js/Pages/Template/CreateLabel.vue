@@ -3,13 +3,20 @@ import { Head, Link, useForm } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
 import AppLayout from '@/Layouts/AppLayout.vue';
-
-// Componentes Reutilizables
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 
 const props = defineProps({
     branches: Array,
+    // --- AÑADIDO: Props para manejar los límites ---
+    templateLimit: Number,
+    templateUsage: Number,
+});
+
+// --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
+const limitReached = computed(() => {
+    if (props.templateLimit === -1) return false;
+    return props.templateUsage >= props.templateLimit;
 });
 
 const form = useForm({
@@ -17,9 +24,9 @@ const form = useForm({
     type: 'etiqueta',
     branch_ids: [],
     content: {
-        config: { 
-            width: 50, 
-            height: 25, 
+        config: {
+            width: 50,
+            height: 25,
             unit: 'mm',
             dpi: 203,
             gap: 2,
@@ -112,7 +119,7 @@ const addElement = (type) => {
         newElement.data.type = '128';
         newElement.data.height = 50;
     }
-     if (type === 'qr') {
+    if (type === 'qr') {
         newElement.data.value = '{{producto.url}}';
         newElement.data.magnification = 4;
     }
@@ -127,7 +134,6 @@ const removeElement = (elementId) => {
     }
 };
 
-// --- Lógica de Vista Previa y Drag & Drop ---
 const scale = 4;
 const dotsPerMm = computed(() => form.content.config.dpi / 25.4);
 
@@ -148,10 +154,10 @@ const getElementStyle = (element) => {
         const fontSizes = { 1: 12, 2: 16, 3: 20, 4: 24, 5: 28, 6: 32, 7: 36, 8: 40 };
         baseStyle.fontSize = `${(fontSizes[element.data.font_size] || 12) * (scale / 4)}px`;
     }
-     if (element.type === 'barcode') {
+    if (element.type === 'barcode') {
         const heightInMm = element.data.height / dotsPerMm.value;
         baseStyle.height = `${heightInMm * scale}px`;
-        baseStyle.width = '80%'; // Se ajusta para mejor visualización
+        baseStyle.width = '80%';
     }
     return baseStyle;
 };
@@ -173,10 +179,10 @@ const onDragMove = (event) => {
     if (!isDragging.value) return;
     const deltaX = event.clientX - dragStart.value.x;
     const deltaY = event.clientY - dragStart.value.y;
-    
+
     const newX = elementStart.value.x + (deltaX / scale);
     const newY = elementStart.value.y + (deltaY / scale);
-    
+
     selectedElement.value.data.x = Math.max(0, Math.min(newX, form.content.config.width));
     selectedElement.value.data.y = Math.max(0, Math.min(newY, form.content.config.height));
 };
@@ -188,53 +194,72 @@ const onDragEnd = () => {
 };
 
 const dpiOptions = ref([203, 300, 600]);
-
 </script>
 
 <template>
     <Head title="Crear Plantilla de Etiqueta" />
     <AppLayout>
-         <div class="flex h-[calc(100vh-6rem)]">
-             <!-- Columna de Herramientas -->
+        <!-- AÑADIDO: Contenido condicional basado en el límite -->
+        <div v-if="limitReached" class="h-[calc(100vh-6rem)] flex items-center justify-center p-4">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
+                <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>
+                <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Límite de Plantillas Alcanzado</h1>
+                <p class="text-gray-600 dark:text-gray-300 mb-6">
+                    Has alcanzado el límite de <strong>{{ templateLimit }} plantillas</strong> permitido por tu plan actual. Para agregar más, por favor mejora tu plan.
+                </p>
+                <div class="flex justify-center items-center gap-4">
+                    <Link :href="route('print-templates.index')">
+                        <Button label="Volver a Plantillas" severity="secondary" outlined />
+                    </Link>
+                    <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer">
+                        <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Editor de plantillas original -->
+        <div v-else class="flex h-[calc(100vh-6rem)]">
+            <!-- Columna de Herramientas -->
             <div class="w-1/4 border-r dark:border-gray-700 p-4 overflow-y-auto">
-                 <h3 class="font-bold mb-4">Configuración de Etiqueta</h3>
-                 <div class="space-y-4">
-                     <div>
+                <h3 class="font-bold mb-4">Configuración de Etiqueta</h3>
+                <div class="space-y-4">
+                    <div>
                         <InputLabel value="Nombre de la Plantilla *" />
                         <InputText v-model="form.name" class="w-full mt-1" />
                         <InputError :message="form.errors.name" />
                     </div>
-                     <div>
+                    <div>
                         <InputLabel value="Asignar a Sucursal(es) *" />
                         <MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" size="large" optionValue="id" placeholder="Selecciona" class="w-full mt-1" />
-                         <InputError :message="form.errors.branch_ids" />
+                        <InputError :message="form.errors.branch_ids" />
                     </div>
-                     <div class="grid grid-cols-2 gap-4 border-t pt-4">
+                    <div class="grid grid-cols-2 gap-4 border-t pt-4">
                         <div>
-                           <InputLabel value="Ancho (mm)" />
-                           <InputNumber showButtons fluid v-model="form.content.config.width" class="w-full mt-1" />
-                        </div>
-                         <div>
-                           <InputLabel value="Alto (mm)" />
-                           <InputNumber showButtons fluid v-model="form.content.config.height" class="w-full mt-1" />
+                            <InputLabel value="Ancho (mm)" />
+                            <InputNumber showButtons fluid v-model="form.content.config.width" class="w-full mt-1" />
                         </div>
                         <div>
-                           <InputLabel value="Resolución (DPI)" />
-                           <Select v-model="form.content.config.dpi" :options="dpiOptions" size="large" class="w-full mt-1" />
+                            <InputLabel value="Alto (mm)" />
+                            <InputNumber showButtons fluid v-model="form.content.config.height" class="w-full mt-1" />
                         </div>
                         <div>
-                           <InputLabel value="Espacio (mm)" />
-                           <InputNumber showButtons fluid v-model="form.content.config.gap" class="w-full mt-1" />
+                            <InputLabel value="Resolución (DPI)" />
+                            <Select v-model="form.content.config.dpi" :options="dpiOptions" size="large" class="w-full mt-1" />
                         </div>
-                     </div>
-                 </div>
+                        <div>
+                            <InputLabel value="Espacio (mm)" />
+                            <InputNumber showButtons fluid v-model="form.content.config.gap" class="w-full mt-1" />
+                        </div>
+                    </div>
+                </div>
 
-                 <h3 class="font-bold mb-4 mt-6">Elementos</h3>
-                 <div class="space-y-2">
-                     <Button v-for="el in availableElements" :key="el.id" @click="addElement(el.id)" :label="el.name" :icon="`pi ${el.icon}`" outlined class="w-full justify-start"/>
-                 </div>
+                <h3 class="font-bold mb-4 mt-6">Elementos</h3>
+                <div class="space-y-2">
+                    <Button v-for="el in availableElements" :key="el.id" @click="addElement(el.id)" :label="el.name" :icon="`pi ${el.icon}`" outlined class="w-full justify-start" />
+                </div>
 
-                 <div class="mt-6 border-t pt-4 flex justify-end gap-2">
+                <div class="mt-6 border-t pt-4 flex justify-end gap-2">
                     <Link :href="route('print-templates.index')"><Button label="Cancelar" severity="secondary" text /></Link>
                     <Button @click="submit" label="Crear Plantilla" :loading="form.processing" />
                 </div>
@@ -244,65 +269,59 @@ const dpiOptions = ref([203, 300, 600]);
             <div class="w-1/2 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
                 <div class="bg-white rounded-md shadow-lg relative border" :style="{ width: `${form.content.config.width * 4}px`, height: `${form.content.config.height * 4}px` }">
                     <p v-if="templateElements.length === 0" class="text-center text-gray-400 absolute inset-0 flex items-center justify-center">Vista Previa de Etiqueta</p>
-                    
-                    <div v-for="element in templateElements" :key="element.id" 
-                         @mousedown.prevent="onDragStart($event, element)"
-                         :style="getElementStyle(element)"
-                         class="flex items-center"
-                         :class="{ '!border-blue-500 !border-solid': selectedElement?.id === element.id }">
+
+                    <div v-for="element in templateElements" :key="element.id" @mousedown.prevent="onDragStart($event, element)" :style="getElementStyle(element)" class="flex items-center" :class="{ '!border-blue-500 !border-solid': selectedElement?.id === element.id }">
                         <div v-if="element.type === 'text'" class="whitespace-pre-line text-[10px]">{{ element.data.value }}</div>
                         <div v-if="element.type === 'barcode'" class="w-full h-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                           <i class="pi pi-bars text-xl text-gray-500"></i>
+                            <i class="pi pi-bars text-xl text-gray-500"></i>
                         </div>
                         <div v-if="element.type === 'qr'" class="w-full h-full flex items-center justify-center">
-                           <i class="pi pi-qrcode text-gray-500" :style="{ fontSize: `${element.data.magnification * 8}px` }"></i>
+                            <i class="pi pi-qrcode text-gray-500" :style="{ fontSize: `${element.data.magnification * 8}px` }"></i>
                         </div>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Panel de Propiedades -->
             <div class="w-1/4 border-l dark:border-gray-700 p-4 overflow-y-auto">
-                 <h3 class="font-bold mb-4">Propiedades</h3>
-                 <div v-if="selectedElement" class="space-y-4">
+                <h3 class="font-bold mb-4">Propiedades</h3>
+                <div v-if="selectedElement" class="space-y-4">
                     <div class="grid grid-cols-2 gap-4">
                         <div><InputLabel value="X (mm)" /><InputNumber v-model="selectedElement.data.x" class="w-full mt-1" showButtons inputClass="w-full" :step="0.1" /></div>
                         <div><InputLabel value="Y (mm)" /><InputNumber v-model="selectedElement.data.y" class="w-full mt-1" showButtons inputClass="w-full" :step="0.1" /></div>
                     </div>
-                    <div><InputLabel value="Rotación (°)" /><InputNumber v-model="selectedElement.data.rotation" class="w-full mt-1" showButtons inputClass="w-full"/></div>
+                    <div><InputLabel value="Rotación (°)" /><InputNumber v-model="selectedElement.data.rotation" class="w-full mt-1" showButtons inputClass="w-full" /></div>
                     <Divider />
-                     <div v-if="selectedElement.type === 'text'" class="space-y-4">
+                    <div v-if="selectedElement.type === 'text'" class="space-y-4">
                         <div><InputLabel value="Contenido" /><Textarea v-model="selectedElement.data.value" rows="3" class="w-full mt-1" /></div>
-                        <div><InputLabel value="Tamaño de Fuente" /><InputNumber v-model="selectedElement.data.font_size" class="w-full mt-1" showButtons/></div>
-                         <Accordion :activeIndex="null">
-                             <AccordionTab header="Insertar Variable">
-                                 <div class="space-y-2">
-                                     <div v-for="group in placeholderOptions" :key="group.group">
-                                         <p class="text-xs font-bold text-gray-500 mb-1">{{ group.group }}</p>
-                                         <div class="flex flex-wrap gap-1">
+                        <div><InputLabel value="Tamaño de Fuente" /><InputNumber v-model="selectedElement.data.font_size" class="w-full mt-1" showButtons /></div>
+                        <Accordion :activeIndex="null">
+                            <AccordionTab header="Insertar Variable">
+                                <div class="space-y-2">
+                                    <div v-for="group in placeholderOptions" :key="group.group">
+                                        <p class="text-xs font-bold text-gray-500 mb-1">{{ group.group }}</p>
+                                        <div class="flex flex-wrap gap-1">
                                             <Button v-for="item in group.items" :key="item.value" @click="selectedElement.data.value = (selectedElement.data.value || '') + item.value" :label="item.label" severity="secondary" outlined size="small" />
-                                         </div>
-                                     </div>
-                                 </div>
-                             </AccordionTab>
-                         </Accordion>
+                                        </div>
+                                    </div>
+                                </div>
+                            </AccordionTab>
+                        </Accordion>
                     </div>
-                     <div v-if="selectedElement.type === 'barcode'" class="space-y-4">
+                    <div v-if="selectedElement.type === 'barcode'" class="space-y-4">
                         <div><InputLabel value="Contenido" /><InputText v-model="selectedElement.data.value" class="w-full mt-1" /></div>
-                        <div><InputLabel value="Altura (px)" /><InputNumber v-model="selectedElement.data.height" class="w-full mt-1" showButtons/></div>
+                        <div><InputLabel value="Altura (px)" /><InputNumber v-model="selectedElement.data.height" class="w-full mt-1" showButtons /></div>
                     </div>
-                     <div v-if="selectedElement.type === 'qr'" class="space-y-4">
+                    <div v-if="selectedElement.type === 'qr'" class="space-y-4">
                         <div><InputLabel value="Contenido" /><InputText v-model="selectedElement.data.value" class="w-full mt-1" /></div>
-                        <div><InputLabel value="Magnificación" /><InputNumber v-model="selectedElement.data.magnification" class="w-full mt-1" showButtons/></div>
+                        <div><InputLabel value="Magnificación" /><InputNumber v-model="selectedElement.data.magnification" class="w-full mt-1" showButtons /></div>
                     </div>
-
                     <Button @click="removeElement(selectedElement.id)" label="Eliminar Elemento" icon="pi pi-trash" severity="danger" text class="w-full mt-4" />
-                 </div>
-                 <div v-else class="text-center text-sm text-gray-500 mt-8">
-                     <p>Selecciona un elemento para editar sus propiedades.</p>
-                 </div>
+                </div>
+                <div v-else class="text-center text-sm text-gray-500 mt-8">
+                    <p>Selecciona un elemento para editar sus propiedades.</p>
+                </div>
             </div>
-         </div>
+        </div>
     </AppLayout>
 </template>
-

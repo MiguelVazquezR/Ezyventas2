@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import AddBatchStockModal from './Partials/AddBatchStockModal.vue';
@@ -11,14 +11,20 @@ import { usePermissions } from '@/Composables';
 const props = defineProps({
     products: Object,
     filters: Object,
+    // --- AÑADIDO: Props para manejar los límites ---
+    productLimit: Number,
+    productUsage: Number,
 });
 
 const confirm = useConfirm();
-
-// composables
 const { hasPermission } = usePermissions();
 
-// --- Estado y Lógica ---
+// --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
+const limitReached = computed(() => {
+    if (props.productLimit === -1) return false;
+    return props.productUsage >= props.productLimit;
+});
+
 const selectedProducts = ref([]);
 const showAddStockModal = ref(false);
 const showImportModal = ref(false);
@@ -41,7 +47,6 @@ const splitButtonItems = ref([
     },
 ]);
 
-// --- Lógica para Acciones Masivas ---
 const deleteSelectedProducts = () => {
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar los ${selectedProducts.value.length} productos seleccionados? Esta acción no se puede deshacer.`,
@@ -60,7 +65,6 @@ const deleteSelectedProducts = () => {
     });
 };
 
-// --- Lógica para Acciones de Fila Individual ---
 const menu = ref();
 const selectedProductForMenu = ref(null);
 
@@ -93,7 +97,6 @@ const toggleMenu = (event, data) => {
     menu.value.toggle(event);
 };
 
-// --- Lógica de Datos de la Tabla ---
 const fetchData = (options = {}) => {
     const queryParams = {
         page: options.page || 1,
@@ -115,27 +118,28 @@ const getStockSeverity = (product) => {
 </script>
 
 <template>
-
     <Head title="Mis Productos" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
                 <!-- Header -->
                 <div class="mb-6">
-                    <!-- Componente de Navegación -->
                     <ProductNavigation v-if="hasPermission('products.manage_global_products')" />
-
                     <div class="flex flex-col md:flex-row justify-between items-center gap-4 mt-4">
                         <IconField iconPosition="left" class="w-full md:w-1/3">
                             <InputIcon class="pi pi-search"></InputIcon>
                             <InputText v-model="searchTerm" placeholder="Buscar en mis productos..." class="w-full" />
                         </IconField>
                         <div class="flex items-center gap-2">
-                            <ButtonGroup>
-                                <Button v-if="hasPermission('products.create')" label="Nuevo producto" icon="pi pi-plus"
-                                    @click="router.get(route('products.create'))" severity="warning" />
-                                <Button v-if="hasPermission('products.import_export')" icon="pi pi-chevron-down" @click="toggleHeaderMenu" severity="warning" />
-                            </ButtonGroup>
+                            <!-- MODIFICADO: Se envuelve en un div para el tooltip y se deshabilita el botón -->
+                            <div v-tooltip.bottom="limitReached ? `Límite de ${productLimit} productos alcanzado` : 'Crear nuevo producto'">
+                                <ButtonGroup>
+                                    <Button v-if="hasPermission('products.create')" label="Nuevo producto" icon="pi pi-plus"
+                                        @click="router.get(route('products.create'))" severity="warning"
+                                        :disabled="limitReached" />
+                                    <Button v-if="hasPermission('products.import_export')" icon="pi pi-chevron-down" @click="toggleHeaderMenu" severity="warning" />
+                                </ButtonGroup>
+                            </div>
                             <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" />
                         </div>
                     </div>

@@ -31,19 +31,29 @@ class ProductController extends Controller implements HasMiddleware
             new Middleware('can:products.delete', only: ['destroy', 'batchDestroy']),
         ];
     }
-    /**
-     * Display a listing of the resource.
+     /**
+     * --- AÑADIDO: Función auxiliar para obtener datos del límite de productos. ---
      */
+    private function getProductLimitData()
+    {
+        $subscription = Auth::user()->branch->subscription;
+        $currentVersion = $subscription->versions()->latest('start_date')->first();
+        $limit = -1; // -1 significa ilimitado
+        if ($currentVersion) {
+            $limitItem = $currentVersion->items()->where('item_key', 'limit_products')->first();
+            if ($limitItem) {
+                $limit = $limitItem->quantity;
+            }
+        }
+        $usage = $subscription->products()->count();
+        return ['limit' => $limit, 'usage' => $usage];
+    }
+
     public function index(Request $request): Response
     {
         $user = Auth::user();
+        $query = Product::query()->where('branch_id', $user->branch_id)->with('media');
 
-        // SOLUCIÓN: La consulta ahora obtiene TODOS los productos de la sucursal del usuario,
-        // sin filtrar por global_product_id.
-        $query = Product::query()->where('branch_id', $user->branch_id)
-            ->with('media');
-
-        // La lógica de búsqueda global se mantiene
         if ($request->has('search')) {
             $searchTerm = $request->input('search');
             $query->where(function ($q) use ($searchTerm) {
@@ -52,63 +62,65 @@ class ProductController extends Controller implements HasMiddleware
             });
         }
 
-        // El ordenamiento se mantiene
         $sortField = $request->input('sortField', 'created_at');
         $sortOrder = $request->input('sortOrder', 'desc');
         $query->orderBy($sortField, $sortOrder);
 
-        $products = $query->paginate($request->input('rows', 20))
-            ->withQueryString();
+        $products = $query->paginate($request->input('rows', 20))->withQueryString();
+
+        // --- AÑADIDO: Se pasan los datos del límite a la vista ---
+        $limitData = $this->getProductLimitData();
 
         return Inertia::render('Product/Index', [
             'products' => $products,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
+            'productLimit' => $limitData['limit'],
+            'productUsage' => $limitData['usage'],
         ]);
     }
 
-    public function create(): Response
+   public function create(): Response
     {
         $user = Auth::user();
-        $subscriptionId = $user->subscription->id;
+        $subscriptionId = $user->branch->subscription_id;
 
-        // --- MARCAS ---
-        $subscriberBrands = Brand::where('subscription_id', Auth::user()->branch->subscription_id)->get(['id', 'name']);
+        // --- AÑADIDO: Se pasan los datos del límite a la vista ---
+        $limitData = $this->getProductLimitData();
+
+        $subscriberBrands = Brand::where('subscription_id', $subscriptionId)->get(['id', 'name']);
         $globalBrands = Brand::whereNull('subscription_id')->get(['id', 'name']);
-
         $formattedBrands = [
             ['label' => 'Mis Marcas', 'items' => $subscriberBrands],
             ['label' => 'Marcas del Catálogo', 'items' => $globalBrands],
         ];
-
-        // --- DATOS ADICIONALES ---
-        $categories = Category::where([
-            'subscription_id' => $subscriptionId,
-            'type' => 'product',
-        ])->get(['id', 'name']);
+        $categories = Category::where(['subscription_id' => $subscriptionId, 'type' => 'product'])->get(['id', 'name']);
         $providers = Provider::where('subscription_id', $subscriptionId)->get(['id', 'name']);
-        $attributeDefinitions = AttributeDefinition::with('options')
-            ->where('subscription_id', $subscriptionId)
-            ->get();
+        $attributeDefinitions = AttributeDefinition::with('options')->where('subscription_id', $subscriptionId)->get();
 
         return Inertia::render('Product/Create', [
             'categories' => $categories,
             'brands' => $formattedBrands,
             'providers' => $providers,
             'attributeDefinitions' => $attributeDefinitions,
+            'productLimit' => $limitData['limit'], // <-- Nuevo
+            'productUsage' => $limitData['usage'],   // <-- Nuevo
         ]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(StoreProductRequest $request)
     {
+        // --- AÑADIDO: Validación del límite de productos ---
+        $limitData = $this->getProductLimitData();
+        if ($limitData['limit'] !== -1 && $limitData['usage'] >= $limitData['limit']) {
+            throw ValidationException::withMessages([
+                'limit' => 'Has alcanzado el límite de productos de tu plan.'
+            ]);
+        }
+
         DB::transaction(function () use ($request) {
             $user = Auth::user();
             $branch = $user->branch;
             $validatedData = $request->validated();
-
-            // Generar un slug único
             $baseSlug = Str::slug($validatedData['name']);
             $slug = $baseSlug;
             $counter = 1;
@@ -117,28 +129,19 @@ class ProductController extends Controller implements HasMiddleware
             }
             $validatedData['slug'] = $slug;
 
-            // Calcular stock total para productos con variantes
             if ($validatedData['product_type'] === 'variant') {
                 $variantsMatrix = $validatedData['variants_matrix'];
                 $validatedData['current_stock'] = collect($variantsMatrix)->where('selected', true)->sum('current_stock');
             }
-
-            // Crear el producto principal
             $productData = collect($validatedData)->except(['general_images', 'variant_images', 'variants_matrix'])->all();
             $product = Product::create(array_merge($productData, ['branch_id' => $branch->id]));
 
-            // --- SOLUCIÓN AL PROBLEMA DE ARCHIVOS TEMPORALES ---
-            // Usamos addMediaFromRequest para cada archivo, lo que es más seguro.
-
-            // Procesar imágenes generales
             if ($request->hasFile('general_images')) {
                 foreach (array_keys($request->file('general_images')) as $key) {
                     $product->addMediaFromRequest("general_images.{$key}")
                         ->toMediaCollection('product-general-images');
                 }
             }
-
-            // Procesar imágenes de variantes
             if ($request->hasFile('variant_images')) {
                 foreach (array_keys($request->file('variant_images')) as $optionValue) {
                     $product->addMediaFromRequest("variant_images.{$optionValue}")
@@ -146,15 +149,12 @@ class ProductController extends Controller implements HasMiddleware
                         ->toMediaCollection('product-variant-images');
                 }
             }
-
-            // Gestionar la creación de atributos para las variantes
             if ($validatedData['product_type'] === 'variant') {
                 $variantsMatrix = $validatedData['variants_matrix'];
                 foreach ($variantsMatrix as $combination) {
                     if (empty($combination['selected'])) continue;
 
                     $attributes = collect($combination)->except(['selected', 'sku_suffix', 'current_stock', 'min_stock', 'max_stock', 'selling_price', 'row_id'])->all();
-
                     $product->productAttributes()->create([
                         'attributes' => $attributes,
                         'sku_suffix' => $combination['sku_suffix'],
