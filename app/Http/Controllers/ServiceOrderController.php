@@ -127,7 +127,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
     /**
      * Almacena una nueva orden de servicio.
      */
-     public function store(StoreServiceOrderRequest $request)
+    public function store(StoreServiceOrderRequest $request)
     {
         $validated = array_merge($request->validated(), $request->validate([
             'create_customer' => 'required|boolean',
@@ -141,25 +141,19 @@ class ServiceOrderController extends Controller implements HasMiddleware
             $user = Auth::user();
             $customer = null;
 
-            // --- LÓGICA PARA GENERAR EL FOLIO ---
             $subscriptionId = $user->branch->subscription_id;
 
-            // 1. Encontrar la última orden de la misma suscripción
             $lastOrder = ServiceOrder::whereHas('branch', fn($q) => $q->where('subscription_id', $subscriptionId))
                 ->latest('id')
                 ->first();
 
-            // 2. Calcular el siguiente número
             $nextNumber = 1;
             if ($lastOrder && $lastOrder->folio) {
-                // Extraer el número del folio (ej. de "OS-008" extrae 8)
                 $lastNumber = (int) substr($lastOrder->folio, 3);
                 $nextNumber = $lastNumber + 1;
             }
 
-            // 3. Formatear el nuevo folio (ej. OS-009)
             $folio = 'OS-' . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
-            // --- FIN DE LA LÓGICA DEL FOLIO ---
 
 
             if (! empty($validated['customer_id'])) {
@@ -177,14 +171,13 @@ class ServiceOrderController extends Controller implements HasMiddleware
             }
 
             $serviceOrder = ServiceOrder::create(array_merge($validated, [
-                'folio' => $folio, // <-- GUARDAR EL FOLIO GENERADO
+                'folio' => $folio,
                 'user_id' => $user->id,
                 'branch_id' => $user->branch_id,
                 'customer_id' => $customer?->id,
                 'status' => ServiceOrderStatus::PENDING,
             ]));
 
-            // ... (el resto del método `store` se mantiene igual)
             $transaction = $serviceOrder->transaction()->create([
                 'folio' => 'TR-SO-' . time(),
                 'customer_id' => $customer?->id,
@@ -198,11 +191,15 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'status' => $serviceOrder->final_total > 0 ? TransactionStatus::PENDING : TransactionStatus::COMPLETED,
             ]);
 
-            foreach ($validated['items'] ?? [] as $item) {
-                if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
-                    unset($item['itemable_id'], $item['itemable_type']);
+            // El controlador procesará los items tal como lleguen del frontend.
+            // El frontend ahora es responsable de asignar el 'itemable_type' correcto.
+            if (!empty($validated['items'])) {
+                foreach ($validated['items'] as $item) {
+                    if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
+                        unset($item['itemable_id']); // Es mejor quitar el id si es 0
+                    }
+                    $serviceOrder->items()->create($item);
                 }
-                $serviceOrder->items()->create($item);
             }
 
             if ($request->hasFile('initial_evidence_images')) {
@@ -233,11 +230,16 @@ class ServiceOrderController extends Controller implements HasMiddleware
             $serviceOrder->update($validated);
 
             $serviceOrder->items()->delete();
-            foreach ($validated['items'] as $item) {
-                if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
-                    unset($item['itemable_id'], $item['itemable_type']);
+
+            // El controlador procesará los items tal como lleguen del frontend.
+            // El frontend ahora es responsable de asignar el 'itemable_type' correcto.
+            if (!empty($validated['items'])) {
+                foreach ($validated['items'] as $item) {
+                    if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
+                        unset($item['itemable_id']); // Es mejor quitar el id si es 0
+                    }
+                    $serviceOrder->items()->create($item);
                 }
-                $serviceOrder->items()->create($item);
             }
 
             $serviceOrder->load('transaction');

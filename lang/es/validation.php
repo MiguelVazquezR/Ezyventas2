@@ -228,5 +228,6 @@ return [
         'bank_name' => 'nombre del banco',
         'owner_name' => 'nombre del propietario',
         'bank_account_id' => 'cuenta bancaria',
+        'initial_evidence_images' => 'imagenes de evidencia',
     ],
 ];

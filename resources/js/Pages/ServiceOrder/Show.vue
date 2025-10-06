@@ -172,7 +172,7 @@ const partsCost = computed(() => {
     }
     return props.serviceOrder.items.reduce((total, item) => {
         // Suma el costo solo si el item es un producto (refacción)
-        if (item.itemable_type === 'App\\Models\\Product' && item.itemable) {
+        if (item.itemable_type === 'App\\Models\\Product') {
             // Usa '|| 0' para manejar casos donde cost_price es null o undefined, evitando NaN.
             const cost = parseFloat(item.unit_price) || 0;
             const quantity = parseFloat(item.quantity) || 0;
@@ -508,27 +508,27 @@ const getItemType = (itemableType) => {
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Análisis de Ganancia</h2>
                     <ul class="space-y-2 text-sm">
                         <li class="flex justify-between">
-                            <span>Ingreso Total:</span>
+                            <span>Total cobrado:</span>
                             <span class="font-semibold">{{ formatCurrency(profitAnalysis.totalRevenue) }}</span>
                         </li>
                         <li class="flex justify-between">
-                            <span>Costo de Refacciones:</span>
+                            <span>Costo de refacciones:</span>
                             <span class="text-red-500">(-) {{ formatCurrency(profitAnalysis.parts) }}</span>
                         </li>
                         <li class="flex justify-between">
-                            <span>Comisión del Técnico:</span>
+                            <span>Comisión del técnico:</span>
                             <span class="text-red-500">(-) {{ formatCurrency(profitAnalysis.commission) }}</span>
                         </li>
                         <li class="flex justify-between font-medium border-t pt-2 mt-2">
-                            <span>Costos Totales:</span>
+                            <span>Costos totales:</span>
                             <span>{{ formatCurrency(profitAnalysis.totalCosts) }}</span>
                         </li>
                         <li class="flex justify-between text-base font-bold text-green-600 border-t pt-2 mt-2">
-                            <span>Ganancia Neta:</span>
+                            <span>Ganancia neta:</span>
                             <span>{{ formatCurrency(profitAnalysis.netProfit) }}</span>
                         </li>
                         <li class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
-                            <span>Margen de Ganancia:</span>
+                            <span>Margen de ganancia:</span>
                             <span>{{ profitAnalysis.margin.toFixed(2) }}%</span>
                         </li>
                     </ul>
