@@ -3,12 +3,14 @@
 namespace App\Services;
 
 use App\Enums\ExpenseStatus;
+use App\Models\BankAccount;
+use App\Models\Branch;
 use App\Models\Expense;
 use App\Models\Payment;
 use App\Models\Transaction;
 use Carbon\Carbon;
+use Carbon\CarbonPeriod;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
 class FinancialReportService
 {
@@ -33,6 +35,7 @@ class FinancialReportService
             'paymentMethods' => $this->getPaymentMethodsDistribution(),
             'salesByChannel' => $this->getSalesByChannel(),
             'expensesByCategory' => $this->getExpensesByCategory(),
+            'bankAccounts' => $this->getBankAccounts(), // <-- DATO AÑADIDO
             'filters' => ['startDate' => $this->startDate->toDateString(), 'endDate' => $this->endDate->toDateString()]
         ];
     }
@@ -74,11 +77,17 @@ class FinancialReportService
             $labels = collect(['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']);
             $sqlDateFormat = '%w';
         } elseif ($diffInDays <= 31) { // Por Semana del mes
-            $startWeek = $this->startDate->weekOfYear;
-            $endWeek = $this->endDate->weekOfYear;
-            if ($endWeek < $startWeek) $endWeek = $this->startDate->weeksInYear() + $endWeek;
-            $labels = collect(range($startWeek, $endWeek))->map(fn($w) => "Semana {$w}");
-            $sqlDateFormat = '%v';
+            $period = CarbonPeriod::create($this->startDate, '1 week', $this->endDate);
+            foreach ($period as $date) {
+                $startOfWeek = $date->copy()->startOfWeek(Carbon::MONDAY);
+                $endOfWeek = $date->copy()->endOfWeek(Carbon::SUNDAY);
+                
+                $labelStart = $startOfWeek->isBefore($this->startDate) ? $this->startDate : $startOfWeek;
+                $labelEnd = $endOfWeek->isAfter($this->endDate) ? $this->endDate : $endOfWeek;
+                
+                $labels[] = "Sem " . $labelStart->format('W') . " (" . $labelStart->format('d') . ' - ' . $labelEnd->format('d M') . ")";
+            }
+            $sqlDateFormat = '%v'; // Semana del año (Lunes como primer día)
         } else { // Por Mes
             $labels = collect(range(1, 12))->map(fn($m) => Carbon::create(null, $m)->month($m)->isoFormat('MMM'));
             $sqlDateFormat = '%c';
@@ -115,27 +124,34 @@ class FinancialReportService
 
     private function getSalesByChannel()
     {
-        // --- CORRECCIÓN 1: Se remueve el filtro de status y se usa COALESCE para evitar errores con valores NULL ---
-        return Transaction::where('branch_id', $this->branchId)
+        $results = Transaction::where('branch_id', $this->branchId)
             ->whereBetween('created_at', [$this->startDate, $this->endDate])
             ->groupBy('channel')
-            ->select('channel', DB::raw('SUM(COALESCE(subtotal, 0)) - SUM(COALESCE(total_discount, 0)) + SUM(COALESCE(total_tax, 0)) as total'), DB::raw('COUNT(*) as count'))
-            ->get()
-            ->map(function ($channel) {
-                return [
-                    'channel' => $channel->channel->value,
-                    'total' => $channel->total,
-                    'count' => $channel->count,
-                ];
-            });
+            ->select(
+                'channel',
+                DB::raw('SUM(subtotal) as total_subtotal'),
+                DB::raw('SUM(total_discount) as total_total_discount'),
+                DB::raw('SUM(total_tax) as total_total_tax'),
+                DB::raw('COUNT(*) as count')
+            )
+            ->get();
+
+        return $results->map(function ($channel) {
+            $total = ($channel->total_subtotal ?? 0) - ($channel->total_total_discount ?? 0) + ($channel->total_total_tax ?? 0);
+            return [
+                'channel' => $channel->channel->value,
+                'total' => $total,
+                'count' => $channel->count,
+            ];
+        });
     }
 
     private function getExpensesByCategory()
     {
         return Expense::where('branch_id', $this->branchId)
-            ->where('status', ExpenseStatus::PAID) // Usando el Enum de tu modelo
+            ->where('status', ExpenseStatus::PAID)
             ->whereBetween('expense_date', [$this->startDate, $this->endDate])
-            ->with('category:id,name') // Solo necesitamos el nombre
+            ->with('category:id,name')
             ->groupBy('expense_category_id')
             ->select('expense_category_id', DB::raw('SUM(amount) as total'))
             ->get()
@@ -147,11 +163,24 @@ class FinancialReportService
             });
     }
 
+    // --- INICIO DE CAMBIO: MÉTODO PARA OBTENER CUENTAS BANCARIAS ---
+    private function getBankAccounts()
+    {
+        // Las cuentas bancarias pertenecen a la suscripción, no a la sucursal.
+        // Obtenemos el ID de la suscripción a partir del ID de la sucursal.
+        $subscriptionId = Branch::find($this->branchId)->subscription_id;
+
+        // Devolvemos todas las cuentas bancarias de esa suscripción.
+        return BankAccount::where('subscription_id', $subscriptionId)->get();
+    }
+    // --- FIN DE CAMBIO ---
+
     private function getComparisonPeriods(): array
     {
-        $diffInDays = $this->startDate->diffInDays($this->endDate);
-        $previousEnd = $this->startDate->copy()->subDay();
-        $previousStart = $previousEnd->copy()->subDays($diffInDays);
+        // --- CORRECCIÓN: Lógica mejorada para calcular el periodo anterior ---
+        $daysInPeriod = $this->startDate->diffInDays($this->endDate);
+        $previousEnd = $this->startDate->copy()->subDay()->endOfDay();
+        $previousStart = $this->startDate->copy()->subDays($daysInPeriod + 1)->startOfDay();
 
         return [
             'current' => ['start' => $this->startDate, 'end' => $this->endDate],
@@ -162,12 +191,20 @@ class FinancialReportService
     private function queryTotal(string $model, string $dateColumn, array $period): float
     {
         $query = $model::query();
-        $sumField = $model === Transaction::class ? DB::raw('subtotal - COALESCE(total_discount, 0) + COALESCE(total_tax, 0)') : 'amount';
-
+        
+        $sumField = 'amount';
         if ($model === Transaction::class) {
-            // Para KPIs sí consideramos solo las completadas
-            $query->where('branch_id', $this->branchId)->where('status', 'completado');
-        } elseif ($model === Payment::class) {
+            $result = $query->where('branch_id', $this->branchId)
+                ->whereBetween($dateColumn, [$period['start'], $period['end']])
+                ->select(
+                    DB::raw('SUM(subtotal) as total_subtotal'),
+                    DB::raw('SUM(total_discount) as total_total_discount'),
+                    DB::raw('SUM(total_tax) as total_total_tax')
+                )->first();
+            return ($result->total_subtotal ?? 0) - ($result->total_total_discount ?? 0) + ($result->total_total_tax ?? 0);
+        }
+
+        if ($model === Payment::class) {
             $query->where('status', 'completado')
                   ->whereHas('transaction', fn ($q) => $q->where('branch_id', $this->branchId));
         } elseif ($model === Expense::class) {
@@ -191,35 +228,55 @@ class FinancialReportService
     
     private function queryChartPoints(string $model, string $dateColumn, string $sqlDateFormat, $labels)
     {
-        $sumField = $model === Transaction::class 
-            ? DB::raw('SUM(subtotal - COALESCE(total_discount, 0) + COALESCE(total_tax, 0)) as total') 
-            : DB::raw('SUM(amount) as total');
-        
         $query = $model::query();
 
         if ($model === Transaction::class) {
-            $query->where('branch_id', $this->branchId); // Sin filtro de status para la gráfica de ventas totales
+            // --- CORRECCIÓN: Consulta robusta para Ventas Totales ---
+            $results = $query->where('branch_id', $this->branchId)
+                ->whereBetween($dateColumn, [$this->startDate, $this->endDate])
+                ->select(
+                    DB::raw("DATE_FORMAT({$dateColumn}, '{$sqlDateFormat}') as point"),
+                    DB::raw('SUM(subtotal) as total_subtotal'),
+                    DB::raw('SUM(total_discount) as total_total_discount'),
+                    DB::raw('SUM(total_tax) as total_total_tax')
+                )
+                ->groupBy('point')
+                ->get()
+                ->keyBy('point');
+            
+            $data = [];
+            foreach ($labels as $index => $label) {
+                $key = $this->getSqlKeyForLabel($sqlDateFormat, $index, $label);
+                if (isset($results[$key])) {
+                    $result = $results[$key];
+                    $data[] = floatval(($result->total_subtotal ?? 0) - ($result->total_total_discount ?? 0) + ($result->total_total_tax ?? 0));
+                } else {
+                    $data[] = 0;
+                }
+            }
+            return $data;
+
         } elseif ($model === Payment::class) {
             $query->where('status', 'completado')->whereHas('transaction', fn ($q) => $q->where('branch_id', $this->branchId));
         } elseif ($model === Expense::class) {
             $query->where('branch_id', $this->branchId)->where('status', ExpenseStatus::PAID);
         }
-
+        
         $results = $query->whereBetween($dateColumn, [$this->startDate, $this->endDate])
-            ->select(DB::raw("DATE_FORMAT({$dateColumn}, '{$sqlDateFormat}') as point"), $sumField)
+            ->select(DB::raw("DATE_FORMAT({$dateColumn}, '{$sqlDateFormat}') as point"), DB::raw('SUM(amount) as total'))
             ->groupBy('point')
             ->pluck('total', 'point');
         
         $data = [];
         foreach ($labels as $index => $label) {
-            $key = $this->getSqlKeyForLabel($sqlDateFormat, $index);
+            $key = $this->getSqlKeyForLabel($sqlDateFormat, $index, $label);
             $data[] = floatval($results[$key] ?? 0);
         }
         
         return $data;
     }
 
-    private function getSqlKeyForLabel(string $sqlFormat, int $index): string
+    private function getSqlKeyForLabel(string $sqlFormat, int $index, string $label): string
     {
         switch ($sqlFormat) {
             case '%k':
@@ -229,7 +286,8 @@ class FinancialReportService
                 $dayMapping = [0 => '1', 1 => '2', 2 => '3', 3 => '4', 4 => '5', 5 => '6', 6 => '0']; // Map index to SQL %w
                 return $dayMapping[$index];
             case '%v':
-                return strval($this->startDate->weekOfYear + $index);
+                preg_match('/Sem (\d+)/', $label, $matches);
+                return $matches[1] ?? '0';
             case '%c':
                 return strval($index + 1);
             default:
@@ -237,4 +295,3 @@ class FinancialReportService
         }
     }
 }
-

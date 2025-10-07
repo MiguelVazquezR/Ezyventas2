@@ -2,7 +2,8 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, isSameDay, isToday } from 'date-fns';
+import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, isSameDay, isToday, format } from 'date-fns';
+import axios from 'axios';
 
 const props = defineProps({
     kpis: Object,
@@ -10,6 +11,7 @@ const props = defineProps({
     paymentMethods: Array,
     salesByChannel: Array,
     expensesByCategory: Array,
+    bankAccounts: Array,
     filters: Object,
 });
 
@@ -18,8 +20,58 @@ const dates = ref();
 const selectedRange = ref('day');
 const mainChartOptions = ref();
 const sparklineChartOptions = ref();
+const isExporting = ref(false); // Estado para el botón de carga
 
-// --- RANGOS DE FECHA (CORRECCIÓN 2) ---
+// --- EXPORTACIÓN ---
+const exportUrl = computed(() => {
+    if (dates.value && dates.value[0] && dates.value[1]) {
+        const startDate = format(dates.value[0], 'yyyy-MM-dd');
+        const endDate = format(dates.value[1], 'yyyy-MM-dd');
+        return route('financial-control.export', { start_date: startDate, end_date: endDate });
+    }
+    return '#';
+});
+
+const handleExport = async () => {
+    if (exportUrl.value === '#') return;
+    isExporting.value = true;
+    try {
+        const response = await axios.get(exportUrl.value, {
+            responseType: 'blob', // Importante para la descarga de archivos
+        });
+
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+
+        // Extraer el nombre del archivo del header
+        let fileName = 'ReporteFinanciero.xlsx'; // Nombre por defecto
+        const contentDisposition = response.headers['content-disposition'];
+        if (contentDisposition) {
+            const fileNameMatch = contentDisposition.match(/filename="(.+)"/);
+            if (fileNameMatch && fileNameMatch.length === 2) {
+                fileName = fileNameMatch[1];
+            }
+        }
+
+        link.setAttribute('download', fileName);
+        document.body.appendChild(link);
+        link.click();
+
+        // Limpieza
+        link.remove();
+        window.URL.revokeObjectURL(url);
+
+    } catch (error) {
+        console.error("Error al exportar el reporte:", error);
+        // Opcional: Mostrar una notificación de error al usuario
+    } finally {
+        isExporting.value = false;
+    }
+};
+
+
+// --- RANGOS DE FECHA ---
 const rangeOptions = ref([
     { label: 'Día (Hoy)', value: 'day' },
     { label: 'Semana', value: 'week' },
@@ -35,8 +87,8 @@ const setDateRange = (period) => {
     
     switch (period) {
         case 'week':
-            startDate = startOfWeek(today, { weekStartsOn: 1 });
-            endDate = endOfWeek(today, { weekStartsOn: 1 });
+            startDate = startOfWeek(today, { weekStartsOn: 1 }); // Lunes
+            endDate = endOfWeek(today, { weekStartsOn: 1 }); // Domingo
             break;
         case 'month':
             startDate = startOfMonth(today);
@@ -64,11 +116,10 @@ watch(selectedRange, (newPeriod) => {
 
 // --- LÓGICA DE DATOS ---
 const fetchData = () => {
-    // CORRECCIÓN 3: Asegura que el rango esté completo antes de hacer la petición
     if (dates.value && dates.value[0] && dates.value[1]) { 
         router.get(route('financial-control.index'), {
-            start_date: dates.value[0].toISOString().split('T')[0],
-            end_date: dates.value[1].toISOString().split('T')[0],
+            start_date: format(dates.value[0], 'yyyy-MM-dd'),
+            end_date: format(dates.value[1], 'yyyy-MM-dd'),
         }, {
             preserveState: true,
             replace: true,
@@ -76,11 +127,12 @@ const fetchData = () => {
     }
 };
 
-// Observador del DatePicker, ahora solo llama a fetchData
-watch(dates, (newDates) => {
-    // CORRECCIÓN 3: La petición solo se dispara cuando el rango está completo.
+// Observador del DatePicker
+watch(dates, (newDates, oldDates) => {
     if (newDates && newDates[0] && newDates[1]) {
-        fetchData();
+        if (!oldDates || !isSameDay(newDates[0], oldDates[0]) || !isSameDay(newDates[1], oldDates[1])) {
+           fetchData();
+        }
     }
 }, { deep: true });
 
@@ -92,6 +144,12 @@ const barChartData = computed(() => ({
         { label: 'Ventas totales', data: props.chartData.sales, backgroundColor: '#a78bfa', borderRadius: 6 },
         { label: 'Total de pagos', data: props.chartData.payments, backgroundColor: '#7dd3fc', borderRadius: 6 },
         { label: 'Total de gastos', data: props.chartData.expenses, backgroundColor: '#fcd34d', borderRadius: 6 },
+        { 
+            label: 'Ganancias', 
+            data: props.chartData.payments.map((payment, index) => payment - props.chartData.expenses[index]), 
+            backgroundColor: '#1FAE07', 
+            borderRadius: 6 
+        },
     ]
 }));
 
@@ -101,27 +159,33 @@ const profitSparklineData = computed(() => ({
         label: 'Ganancias',
         data: props.chartData.payments.map((payment, index) => payment - props.chartData.expenses[index]),
         fill: true,
-        borderColor: '#a78bfa',
-        backgroundColor: 'rgba(167, 139, 250, 0.2)',
+        borderColor: '#1FAE07',
+        backgroundColor: '#C6FFBA',
         tension: 0.4,
     }]
 }));
 
+const totalBalance = computed(() => {
+    if (!props.bankAccounts || props.bankAccounts.length === 0) {
+        return 0;
+    }
+    return props.bankAccounts.reduce((sum, account) => sum + parseFloat(account.balance), 0);
+});
+
 // --- CONFIGURACIÓN (al montar) ---
 onMounted(() => {
-    // CORRECCIÓN 4: Lógica mejorada para determinar el rango inicial
     const initialStartDate = new Date(props.filters.startDate.replace(/-/g, '/'));
     const initialEndDate = new Date(props.filters.endDate.replace(/-/g, '/'));
     dates.value = [initialStartDate, initialEndDate];
     
-    const today = new Date();
+    // La comparación ahora se basa en las fechas iniciales, no en "today"
     if (isSameDay(initialStartDate, initialEndDate) && isToday(initialStartDate)) {
         selectedRange.value = 'day';
-    } else if (isSameDay(initialStartDate, startOfWeek(today, { weekStartsOn: 1 })) && isSameDay(initialEndDate, endOfWeek(today, { weekStartsOn: 1 }))) {
+    } else if (isSameDay(initialStartDate, startOfWeek(initialStartDate, { weekStartsOn: 1 })) && isSameDay(initialEndDate, endOfWeek(initialStartDate, { weekStartsOn: 1 }))) {
         selectedRange.value = 'week';
-    } else if (isSameDay(initialStartDate, startOfMonth(today)) && isSameDay(initialEndDate, endOfMonth(today))) {
+    } else if (isSameDay(initialStartDate, startOfMonth(initialStartDate)) && isSameDay(initialEndDate, endOfMonth(initialStartDate))) {
         selectedRange.value = 'month';
-    } else if (isSameDay(initialStartDate, startOfYear(today)) && isSameDay(initialEndDate, endOfYear(today))) {
+    } else if (isSameDay(initialStartDate, startOfYear(initialStartDate)) && isSameDay(initialEndDate, endOfYear(initialStartDate))) {
         selectedRange.value = 'year';
     } else {
         selectedRange.value = 'custom';
@@ -143,8 +207,18 @@ onMounted(() => {
     sparklineChartOptions.value = {
         maintainAspectRatio: false,
         aspectRatio: 3,
-        plugins: { legend: { display: false } },
-        scales: { x: { display: false }, y: { display: false } }
+        plugins: { 
+            legend: { display: false },
+            tooltip: {
+                enabled: false, // Se deshabilita el tooltip por defecto
+            }
+        },
+        scales: { x: { display: false }, y: { display: false } },
+        elements: {
+            point: {
+                radius: 0 // Se quitan los puntos
+            }
+        }
     };
 });
 
@@ -199,6 +273,14 @@ const getExpenseCategoryIcon = (categoryName) => {
                 <div class="flex items-center gap-2 flex-wrap">
                     <SelectButton v-model="selectedRange" :options="rangeOptions" optionLabel="label" optionValue="value" />
                     <DatePicker v-if="selectedRange === 'custom'" v-model="dates" selectionMode="range" dateFormat="dd/mm/yy" class="!w-64" @update:modelValue="selectedRange = 'custom'" />
+                    <Button 
+                        label="Crear Reporte" 
+                        icon="pi pi-file-excel" 
+                        severity="success" 
+                        outlined 
+                        @click="handleExport" 
+                        :loading="isExporting" 
+                    />
                 </div>
             </div>
 
@@ -259,6 +341,30 @@ const getExpenseCategoryIcon = (categoryName) => {
                             <p v-else class="text-center text-gray-500 py-4">No hay gastos registrados en este periodo.</p>
                         </template>
                     </Card>
+                    
+                    <Card>
+                        <template #title>Cuentas bancarias</template>
+                        <template #subtitle>Balance actual de tus cuentas registradas.</template>
+                        <template #content>
+                            <div v-if="bankAccounts && bankAccounts.length > 0">
+                                <div class="flex justify-between items-center mb-4 pb-2 border-b border-dashed dark:border-gray-700">
+                                    <span class="font-bold">Balance Total</span>
+                                    <span class="font-bold text-lg">{{ formatCurrency(totalBalance) }}</span>
+                                </div>
+                                <ul class="space-y-3 max-h-60 overflow-y-auto pr-2">
+                                    <li v-for="account in bankAccounts" :key="account.id" class="flex justify-between items-center">
+                                        <div>
+                                            <p class="font-semibold">{{ account.account_name }}</p>
+                                            <p class="text-sm text-gray-500">{{ account.bank_name }}</p>
+                                        </div>
+                                        <span class="font-mono font-bold">{{ formatCurrency(account.balance) }}</span>
+                                    </li>
+                                </ul>
+                            </div>
+                            <p v-else class="text-center text-gray-500 py-4">No hay cuentas bancarias registradas.</p>
+                        </template>
+                    </Card>
+
                 </div>
 
                 <!-- Ventas por Módulo -->
@@ -281,7 +387,7 @@ const getExpenseCategoryIcon = (categoryName) => {
                                 </div>
                             </div>
                         </div>
-                         <p v-else class="text-center text-gray-500 py-8">No hay ventas registradas en este periodo.</p>
+                       <p v-else class="text-center text-gray-500 py-8">No hay ventas registradas en este periodo.</p>
                     </template>
                 </Card>
             </div>
