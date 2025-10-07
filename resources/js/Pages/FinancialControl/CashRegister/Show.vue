@@ -167,9 +167,9 @@ const formatDate = (dateString) => {
                                 </template>
                             </Column>
                             <Column>
-                                <template #body="slotProps">
-                                    <Button icon="pi pi-search" text rounded
-                                        v-tooltip.bottom="'Ver Detalle del Corte'" />
+                                <template #body="{ data }">
+                                    <Button @click="$inertia.visit(route('cash-register-sessions.show', data.id))" icon="pi pi-search" text rounded
+                                        v-tooltip.bottom="'Ver detalle del corte'" />
                                 </template>
                             </Column>
                         </DataTable>

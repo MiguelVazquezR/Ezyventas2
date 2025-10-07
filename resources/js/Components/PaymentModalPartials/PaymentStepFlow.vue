@@ -116,7 +116,7 @@ const canFinalize = computed(() => {
     return false;
 });
 
-const balanceCoversTotal = computed(() => props.client && props.client.balance >= props.totalAmount);
+const balanceCoversTotal = computed(() => props.client && props.client.balance > 0);
 const isDownPaymentForced = computed(() => props.client && props.totalAmount > (Math.max(0, props.client.balance) + (props.client.available_credit || 0)));
 
 watch(isDownPaymentForced, (isForced) => {
@@ -146,9 +146,9 @@ watch(() => props.paymentMode, () => {
                     <img :src="paymentMethods.find(m => m.id === localCurrentStep)?.icon" :alt="localCurrentStep" class="h-8">
                     <h3 class="text-xl font-semibold">{{ paymentMethods.find(m => m.id === localCurrentStep)?.label }}</h3>
                 </div>
-                <a @click="goBack" class="text-sm text-blue-500 hover:underline cursor-pointer mb-6 block">&larr; Volver</a>
+                <a @click="goBack" class="text-sm text-primary cursor-pointer">&larr; Volver</a>
                 
-                <div v-if="localCurrentStep === 'efectivo' || paymentMode === 'flexible'" class="mb-4">
+                <div v-if="localCurrentStep === 'efectivo' || paymentMode === 'flexible'" class="mb-4 mt-3">
                     <label class="text-sm font-medium">{{ localCurrentStep === 'efectivo' ? 'Monto recibido' : 'Monto a pagar' }}</label>
                     <InputNumber v-model="paymentAmountModel" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1 text-2xl" inputClass="!py-3" />
                 </div>
@@ -172,11 +172,11 @@ watch(() => props.paymentMode, () => {
                 <div v-if="['tarjeta', 'transferencia'].includes(localCurrentStep)">
                     <div v-if="bankAccounts.length > 0">
                         <div v-if="localCurrentStep === 'tarjeta'" class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg text-center mb-6">
-                            <i class="pi pi-credit-card text-2xl text-gray-500 mb-2"></i>
+                            <i class="pi pi-credit-card !text-2xl text-gray-500 mb-2"></i>
                             <p class="text-sm text-gray-600 dark:text-gray-300">Procesa el pago en la terminal bancaria externa. Este paso solo registra la venta en el sistema.</p>
                         </div>
                         <div v-if="localCurrentStep === 'transferencia'" class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg text-center mb-6">
-                            <i class="pi pi-globe text-2xl text-gray-500 mb-2"></i>
+                            <i class="pi pi-arrows-h !text-2xl text-gray-500 mb-2"></i>
                             <p class="text-sm text-gray-600 dark:text-gray-300">Indica al cliente que realice la transferencia a la cuenta de tu elección.</p>
                         </div>
                         <div class="mb-4">
@@ -216,10 +216,10 @@ watch(() => props.paymentMode, () => {
             <div v-if="localCurrentStep === 'credito-customer-selection'" class="min-h-[350px] flex flex-col">
                 <div class="flex-grow">
                     <h3 class="text-xl font-semibold">Asignar cliente</h3>
-                    <a @click="goBack" class="text-sm text-blue-500 hover:underline cursor-pointer mb-4 block">&larr; Volver</a>
+                    <a @click="goBack" class="text-sm text-primary cursor-pointer">&larr; Volver</a>
                     <Message severity="info" :closable="false">Se requiere un cliente para venta a crédito.</Message>
                     <div class="mt-4">
-                        <span class="p-input-icon-left w-full"><i class="pi pi-search" /><InputText v-model="customerSearch" placeholder="Buscar cliente..." class="w-full"/></span>
+                        <span class="p-input-icon-left w-full"><InputText v-model="customerSearch" placeholder="Buscar cliente..." class="w-full"/></span>
                     </div>
                     <div class="border rounded-md mt-2 overflow-y-auto max-h-[150px]">
                         <ul v-if="filteredCustomers.length > 0" class="divide-y">
@@ -239,9 +239,9 @@ watch(() => props.paymentMode, () => {
                         <div class="flex items-center gap-3"><img src="/images/credito.webp" alt="Credito" class="h-8"><h3 class="text-xl font-semibold">Venta a crédito</h3></div>
                         <Button @click="handleRemoveClient" icon="pi pi-user-minus" text rounded severity="danger" v-tooltip.left="'Quitar cliente'" />
                     </div>
-                    <a @click="goBack" class="text-sm text-blue-500 hover:underline cursor-pointer mb-6 block">&larr; Volver</a>
+                    <a @click="goBack" class="text-sm text-primary cursor-pointer">&larr; Volver</a>
                     
-                    <Message v-if="balanceCoversTotal" severity="success" :closable="false">Se utilizará el saldo a favor ({{ formatCurrency(client.balance) }}) para cubrir el total de esta venta.</Message>
+                    <Message v-if="balanceCoversTotal" severity="success" :closable="false" class="!my-3">Se utilizará el saldo a favor ({{ formatCurrency(client.balance) }}) para esta venta.</Message>
                     
                     <div>
                          <label class="text-sm font-medium">Abono inicial</label>

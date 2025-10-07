@@ -12,7 +12,7 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 const salesChange = computed(() => {
     if (props.stats.today_sales === undefined || props.stats.yesterday_sales === undefined) return null;
     if (props.stats.yesterday_sales === 0) return { value: props.stats.today_sales > 0 ? 100 : 0, sign: '+' };
-    
+
     const change = ((props.stats.today_sales - props.stats.yesterday_sales) / props.stats.yesterday_sales) * 100;
     return {
         value: Math.abs(change).toFixed(1),
@@ -47,159 +47,219 @@ const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[st
 </script>
 
 <template>
+
     <Head title="Dashboard" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 space-y-6">
-            <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Dashboard</h1>
+            <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Inicio</h1>
 
             <div v-if="hasStatsToShow">
                 <!-- Fila 1: KPIs Principales -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <Link v-if="stats.today_sales !== undefined" :href="route('transactions.index')" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Ventas de Hoy</h2>
-                                <p class="text-3xl font-bold mt-2">{{ formatCurrency(stats.today_sales) }}</p>
-                            </div>
-                            <i class="pi pi-dollar text-2xl text-green-500 p-3 bg-green-100 dark:bg-green-900/50 rounded-full"></i>
+                    <Link v-if="stats.today_sales !== undefined" :href="route('transactions.index')"
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Ventas de hoy</h2>
+                            <p class="text-3xl font-bold mt-2 text-green-500">{{ formatCurrency(stats.today_sales) }}</p>
                         </div>
-                        <div v-if="salesChange" class="text-xs mt-2" :class="salesChange.sign === '+' ? 'text-green-500' : 'text-red-500'">
-                            <span v-if="salesChange.value > 0">{{ salesChange.sign }}{{ salesChange.value }}% vs ayer</span>
-                            <span v-else class="text-gray-500">Sin cambios vs ayer</span>
-                        </div>
+                        <i
+                            class="pi pi-dollar text-2xl text-green-500 p-3 bg-green-100 dark:bg-green-900/50 rounded-full"></i>
+                    </div>
+                    <div v-if="salesChange" class="text-xs mt-2"
+                        :class="salesChange.sign === '+' ? 'text-green-500' : 'text-red-500'">
+                        <span v-if="salesChange.value > 0">{{ salesChange.sign }}{{ salesChange.value }}% vs ayer</span>
+                        <span v-else class="text-gray-500">Sin cambios vs ayer</span>
+                    </div>
                     </Link>
-                    <Link v-if="stats.average_ticket_today !== undefined" :href="route('transactions.index')" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Ticket Promedio (Hoy)</h2>
-                                <p class="text-3xl font-bold mt-2">{{ formatCurrency(stats.average_ticket_today) }}</p>
-                            </div>
-                             <i class="pi pi-receipt text-2xl text-blue-500 p-3 bg-blue-100 dark:bg-blue-900/50 rounded-full"></i>
+                    <Link v-if="stats.average_ticket_today !== undefined" :href="route('transactions.index')"
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Ticket promedio (hoy)
+                            </h2>
+                            <p class="text-3xl font-bold text-blue-500 mt-2">{{ formatCurrency(stats.average_ticket_today) }}</p>
                         </div>
+                        <i class="pi pi-receipt text-blue-500 p-3 bg-blue-100 dark:bg-blue-900/50 rounded-full"></i>
+                    </div>
                     </Link>
-                    <Link v-if="stats.monthly_expenses !== undefined" :href="route('expenses.index')" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Gastos del Mes</h2>
-                                <p class="text-3xl font-bold mt-2 text-red-500">{{ formatCurrency(stats.monthly_expenses) }}</p>
-                            </div>
-                             <i class="pi pi-arrow-up-right text-2xl text-red-500 p-3 bg-red-100 dark:bg-red-900/50 rounded-full"></i>
+                    <Link v-if="stats.monthly_expenses !== undefined" :href="route('expenses.index')"
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Gastos del mes</h2>
+                            <p class="text-3xl font-bold mt-2 text-red-500">{{ formatCurrency(stats.monthly_expenses) }}
+                            </p>
                         </div>
+                        <i class="pi pi-arrow-up-right text-red-500 p-3 bg-red-100 dark:bg-red-900/50 rounded-full"></i>
+                    </div>
                     </Link>
-                    <Link v-if="stats.total_customer_debt !== undefined" :href="route('customers.index')" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow flex items-center justify-between">
-                         <div>
-                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Saldo por Cobrar</h2>
-                            <p class="text-3xl font-bold mt-2 text-cyan-500">{{ formatCurrency(stats.total_customer_debt) }}</p>
-                             <p class="text-xs text-gray-400">Total de clientes</p>
+                    <Link v-if="stats.total_customer_debt !== undefined" :href="route('customers.index')"
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Saldo por cobrar</h2>
+                            <p class="text-3xl font-bold mt-2 text-cyan-500">{{
+                                formatCurrency(stats.total_customer_debt) }}</p>
+                            <p class="text-xs text-gray-400">Total de clientes</p>
                         </div>
-                         <i class="pi pi-credit-card text-2xl text-cyan-500"></i>
+                        <i class="pi pi-credit-card text-cyan-500 p-3 bg-cyan-100 dark:bg-cyan-900/50 rounded-full"></i>
+                    </div>
                     </Link>
                 </div>
 
                 <!-- Fila 2: Gráfico de Ventas y Resumen de Módulos -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-                    <div v-if="stats.weekly_sales_trend" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md col-span-1 lg:col-span-2">
-                        <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">Tendencia de Ventas Semanal</h2>
-                        <div class="flex justify-around items-end h-40">
-                            <div v-for="day in stats.weekly_sales_trend" :key="day.day" class="text-center w-full group flex flex-col items-center justify-end h-full">
-                                <div v-tooltip.top="formatCurrency(day.total)" class="bg-orange-400 w-3/4 rounded-t-md mx-auto transition-all hover:bg-orange-500" :style="{ height: `${(day.total / maxWeeklySale) * 100}%`, minHeight: '2px' }"></div>
+                    <div v-if="stats.weekly_sales_trend"
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md col-span-1 lg:col-span-2">
+                        <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">
+                            Tendencia de ventas semanal</h2>
+                        <div class="flex justify-around items-end h-[80%]">
+                            <div v-for="day in stats.weekly_sales_trend" :key="day.day"
+                                class="text-center w-full group flex flex-col items-center justify-end h-full">
+                                <div v-tooltip.top="formatCurrency(day.total)"
+                                    class="bg-orange-400 w-3/4 rounded-t-md mx-auto transition-all hover:bg-orange-500"
+                                    :style="{ height: `${(day.total / maxWeeklySale) * 100}%`, minHeight: '2px' }">
+                                </div>
                                 <p class="text-xs mt-2 font-semibold">{{ day.day }}</p>
                             </div>
                         </div>
                     </div>
                     <div class="space-y-6">
-                         <Link v-if="stats.cash_registers_status" :href="route('cash-registers.index')" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow block">
-                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Estado de Cajas</h2>
-                            <div class="mt-3 space-y-2">
-                                <div class="flex justify-between items-center"><span class="text-green-500 flex items-center gap-2"><i class="pi pi-circle-fill text-xs"></i> En Uso</span><span class="font-bold text-2xl">{{ stats.cash_registers_status.in_use || 0 }}</span></div>
-                                <div class="flex justify-between items-center"><span class="text-gray-400 flex items-center gap-2"><i class="pi pi-circle-fill text-xs"></i> Sin Usar</span><span class="font-bold text-2xl">{{ stats.cash_registers_status.available || 0 }}</span></div>
+                        <Link v-if="stats.cash_registers_status" :href="route('cash-registers.index')"
+                            class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow block">
+                        <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Estado de cajas</h2>
+                        <div class="mt-3 space-y-2">
+                            <div class="flex justify-between items-center"><span
+                                    class="text-green-500 flex items-center gap-2"><i
+                                        class="pi pi-circle-fill text-xs"></i> En Uso</span><span
+                                    class="font-bold text-2xl">{{ stats.cash_registers_status.in_use || 0 }}</span>
                             </div>
+                            <div class="flex justify-between items-center"><span
+                                    class="text-gray-400 flex items-center gap-2"><i
+                                        class="pi pi-circle-fill text-xs"></i> Sin Usar</span><span
+                                    class="font-bold text-2xl">{{ stats.cash_registers_status.available || 0 }}</span>
+                            </div>
+                        </div>
                         </Link>
-                         <Link v-if="stats.service_orders_status" :href="route('service-orders.index')" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow block">
-                           <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Órdenes de Servicio</h2>
-                            <div class="grid grid-cols-2 gap-4 mt-3 text-center">
-                                <div><p class="font-bold text-2xl">{{ getServiceOrderStatus('pendiente') }}</p><p class="text-xs">Pendientes</p></div>
-                                <div><p class="font-bold text-2xl">{{ getServiceOrderStatus('en_proceso') }}</p><p class="text-xs">En Proceso</p></div>
-                                <div><p class="font-bold text-2xl">{{ getServiceOrderStatus('completado') }}</p><p class="text-xs">Completadas</p></div>
-                                <div><p class="font-bold text-2xl text-green-500">{{ getServiceOrderStatus('entregado') }}</p><p class="text-xs">Entregadas</p></div>
+                        <Link v-if="stats.service_orders_status" :href="route('service-orders.index')"
+                            class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow block">
+                        <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Órdenes de servicio</h2>
+                        <div class="grid grid-cols-2 gap-4 mt-3 text-center">
+                            <div>
+                                <p class="font-bold text-2xl">{{ getServiceOrderStatus('pendiente') }}</p>
+                                <p class="text-xs">Pendientes</p>
                             </div>
+                            <div>
+                                <p class="font-bold text-2xl">{{ getServiceOrderStatus('en_proceso') }}</p>
+                                <p class="text-xs">En proceso</p>
+                            </div>
+                            <div>
+                                <p class="font-bold text-2xl">{{ getServiceOrderStatus('completado') }}</p>
+                                <p class="text-xs">Completadas</p>
+                            </div>
+                            <div>
+                                <p class="font-bold text-2xl text-green-500">{{ getServiceOrderStatus('entregado') }}
+                                </p>
+                                <p class="text-xs">Entregadas</p>
+                            </div>
+                        </div>
                         </Link>
                     </div>
                 </div>
 
                 <!-- Fila 3: Productos y Clientes -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                    <div v-if="stats.top_selling_products && stats.top_selling_products.length > 0" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                        <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">Top 5 Productos más vendidos (Mes)</h2>
+                    <div v-if="stats.top_selling_products && stats.top_selling_products.length > 0"
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                        <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">Top 5 productos más
+                            vendidos (mes)</h2>
                         <ul class="space-y-3">
-                             <li v-for="(product, index) in stats.top_selling_products" :key="product.id" :class="{ 'border-b dark:border-gray-700 pb-3': index < stats.top_selling_products.length - 1 }">
-                                <Link :href="route('products.show', product.id)" class="flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700 p-2 -m-2 rounded-md">
-                                    <img :src="product.image" :alt="product.name" class="w-12 h-12 rounded-md object-cover">
-                                    <div class="flex-grow">
-                                        <p class="font-semibold text-sm">{{ product.name }}</p>
-                                        <p class="text-xs text-gray-500">{{ product.total_sold }} unidades</p>
-                                    </div>
-                                    <p class="font-semibold text-sm">{{ formatCurrency(product.selling_price) }}</p>
-                                </Link>
-                            </li>
-                        </ul>
-                         <Link :href="route('products.index')" class="w-full mt-4">
-                            <Button label="Ver todos los productos" severity="secondary" text class="w-full" />
-                         </Link>
-                    </div>
-
-                    <div v-if="stats.low_turnover_products && stats.low_turnover_products.length > 0" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                        <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Productos con baja rotación</h2>
-                        <p class="text-xs text-gray-400 mt-1">Estos productos tienen 15 días o más sin ventas.</p>
-                        <ul class="space-y-3 mt-4">
-                            <li v-for="(product, index) in stats.low_turnover_products" :key="product.id" :class="{ 'border-b dark:border-gray-700 pb-3': index < stats.low_turnover_products.length - 1 }">
-                                <Link :href="route('products.show', product.id)" class="flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700 p-2 -m-2 rounded-md">
-                                    <img :src="product.image" :alt="product.name" class="w-12 h-12 rounded-md object-cover flex-shrink-0">
-                                    <div class="flex-grow overflow-hidden">
-                                        <p class="font-semibold text-sm truncate">{{ product.name }}</p>
-                                        <p class="text-xs text-gray-500 flex flex-wrap items-center gap-x-2">
-                                            <span>{{ formatCurrency(product.selling_price) }}</span>
-                                            <span class="text-gray-300 dark:text-gray-600">•</span>
-                                            <span v-if="product.days_since_last_sale !== null">{{ product.days_since_last_sale }} días sin ventas</span>
-                                            <span v-else>Nunca vendido</span>
-                                            <span class="text-gray-300 dark:text-gray-600">•</span>
-                                            <span>{{ product.current_stock }} existencias</span>
-                                        </p>
-                                    </div>
+                            <li v-for="(product, index) in stats.top_selling_products" :key="product.id"
+                                :class="{ 'border-b dark:border-gray-700 pb-3': index < stats.top_selling_products.length - 1 }">
+                                <Link :href="route('products.show', product.id)"
+                                    class="flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700 p-2 -m-2 rounded-md">
+                                <img :src="product.image" :alt="product.name" class="w-12 h-12 rounded-md object-cover">
+                                <div class="flex-grow">
+                                    <p class="font-semibold text-sm">{{ product.name }}</p>
+                                    <p class="text-xs text-gray-500">{{ product.total_sold }} unidades</p>
+                                </div>
+                                <p class="font-semibold text-sm">{{ formatCurrency(product.selling_price) }}</p>
                                 </Link>
                             </li>
                         </ul>
                         <Link :href="route('products.index')" class="w-full mt-4">
-                            <Button label="Ver todos" severity="secondary" text class="w-full" />
-                         </Link>
+                        <Button label="Ver todos los productos" severity="secondary" text class="w-full" />
+                        </Link>
+                    </div>
+
+                    <div v-if="stats.low_turnover_products && stats.low_turnover_products.length > 0"
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                        <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Productos con baja rotación
+                        </h2>
+                        <p class="text-xs text-gray-400 mt-1">Estos productos tienen 15 días o más sin ventas.</p>
+                        <ul class="space-y-3 mt-4">
+                            <li v-for="(product, index) in stats.low_turnover_products" :key="product.id"
+                                :class="{ 'border-b dark:border-gray-700 pb-3': index < stats.low_turnover_products.length - 1 }">
+                                <Link :href="route('products.show', product.id)"
+                                    class="flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700 p-2 -m-2 rounded-md">
+                                <img :src="product.image" :alt="product.name"
+                                    class="w-12 h-12 rounded-md object-cover flex-shrink-0">
+                                <div class="flex-grow overflow-hidden">
+                                    <p class="font-semibold text-sm truncate">{{ product.name }}</p>
+                                    <p class="text-xs text-gray-500 flex flex-wrap items-center gap-x-2">
+                                        <span>{{ formatCurrency(product.selling_price) }}</span>
+                                        <span class="text-gray-300 dark:text-gray-600">•</span>
+                                        <span v-if="product.days_since_last_sale !== null">{{
+                                            product.days_since_last_sale }} días sin ventas</span>
+                                        <span v-else>Nunca vendido</span>
+                                        <span class="text-gray-300 dark:text-gray-600">•</span>
+                                        <span>{{ product.current_stock }} existencias</span>
+                                    </p>
+                                </div>
+                                </Link>
+                            </li>
+                        </ul>
+                        <Link :href="route('products.index')" class="w-full mt-4">
+                        <Button label="Ver todos" severity="secondary" text class="w-full" />
+                        </Link>
                     </div>
                 </div>
 
                 <!-- Fila 4: Clientes e Inventario -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
                     <div v-if="stats.recent_customers" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                        <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">Actividad de Clientes</h2>
-                         <div>
-                            <h3 class="font-semibold text-xs text-gray-600 dark:text-gray-300">Nuevos Clientes (Recientes)</h3>
+                        <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">Actividad de clientes
+                        </h2>
+                        <div>
+                            <h3 class="font-semibold text-xs text-gray-600 dark:text-gray-300">Nuevos clientes
+                                (recientes)</h3>
                             <div class="space-y-1 mt-2">
-                                <Link v-for="customer in stats.recent_customers" :key="customer.id" :href="route('customers.show', customer.id)" class="flex items-center justify-between p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
-                                    <div class="flex items-center gap-3">
-                                        <Avatar :label="getInitials(customer.name)" shape="circle" class="bg-blue-100 text-blue-600"/>
-                                        <span class="text-sm font-medium">{{ customer.name }}</span>
-                                    </div>
-                                    <i class="pi pi-arrow-right text-xs text-gray-400"></i>
+                                <Link v-for="customer in stats.recent_customers" :key="customer.id"
+                                    :href="route('customers.show', customer.id)"
+                                    class="flex items-center justify-between p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
+                                <div class="flex items-center gap-3">
+                                    <Avatar :label="getInitials(customer.name)" shape="circle"
+                                        class="bg-blue-100 text-blue-600" />
+                                    <span class="text-sm font-medium">{{ customer.name }}</span>
+                                </div>
+                                <i class="pi pi-arrow-right text-xs text-gray-400"></i>
                                 </Link>
                             </div>
                         </div>
                         <div class="mt-4">
-                            <h3 class="font-semibold text-xs text-gray-600 dark:text-gray-300">Clientes Frecuentes (Mes)</h3>
+                            <h3 class="font-semibold text-xs text-gray-600 dark:text-gray-300">Clientes frecuentes (Mes)
+                            </h3>
                             <div class="space-y-1 mt-2">
-                                <Link v-for="customer in stats.frequent_customers" :key="customer.id" :href="route('customers.show', customer.id)" class="flex items-center justify-between p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
-                                    <div class="flex items-center gap-3">
-                                        <Avatar :label="getInitials(customer.name)" shape="circle" class="bg-purple-100 text-purple-600"/>
-                                        <span class="text-sm font-medium">{{ customer.name }}</span>
-                                    </div>
-                                    <span class="text-xs text-gray-500">{{ customer.transactions_count }} compras</span>
+                                <Link v-for="customer in stats.frequent_customers" :key="customer.id"
+                                    :href="route('customers.show', customer.id)"
+                                    class="flex items-center justify-between p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
+                                <div class="flex items-center gap-3">
+                                    <Avatar :label="getInitials(customer.name)" shape="circle"
+                                        class="bg-purple-100 text-purple-600" />
+                                    <span class="text-sm font-medium">{{ customer.name }}</span>
+                                </div>
+                                <span class="text-xs text-gray-500">{{ customer.transactions_count }} compras</span>
                                 </Link>
                             </div>
                         </div>
@@ -207,22 +267,34 @@ const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[st
 
                     <div v-if="stats.inventory_summary" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                         <div class="flex justify-between items-center mb-1">
-                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Total en Inventario</h2>
+                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Total en inventario</h2>
                             <i class="pi pi-box text-gray-400"></i>
                         </div>
-                        <p class="text-2xl font-bold">{{ formatCurrency(stats.inventory_summary.total_sale_value) }} <span class="text-xs text-gray-500">Para venta</span></p>
-                        <p class="text-2xl font-bold">{{ formatCurrency(stats.inventory_summary.total_cost) }} <span class="text-xs text-gray-500">Invertido</span></p>
+                        <p class="text-2xl font-bold">{{ formatCurrency(stats.inventory_summary.total_sale_value) }}
+                            <span class="text-xs text-gray-500">Para venta</span>
+                        </p>
+                        <p class="text-2xl font-bold">{{ formatCurrency(stats.inventory_summary.total_cost) }} <span
+                                class="text-xs text-gray-500">Invertido</span></p>
                         <p class="text-sm text-gray-500">{{ stats.inventory_summary.total_products }} productos</p>
                         <div class="mt-4">
                             <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 flex overflow-hidden">
-                                <div class="bg-green-500 h-2" :style="{ width: `${inventoryPercentages.inStock}%` }"></div>
-                                <div class="bg-yellow-500 h-2" :style="{ width: `${inventoryPercentages.lowStock}%` }"></div>
-                                <div class="bg-red-500 h-2" :style="{ width: `${inventoryPercentages.outOfStock}%` }"></div>
+                                <div class="bg-green-500 h-2" :style="{ width: `${inventoryPercentages.inStock}%` }">
+                                </div>
+                                <div class="bg-yellow-500 h-2" :style="{ width: `${inventoryPercentages.lowStock}%` }">
+                                </div>
+                                <div class="bg-red-500 h-2" :style="{ width: `${inventoryPercentages.outOfStock}%` }">
+                                </div>
                             </div>
                             <div class="flex justify-between text-xs mt-2">
-                                <span class="flex items-center gap-1.5"><i class="pi pi-circle-fill text-green-500 text-[8px]"></i>Con stock: {{ stats.inventory_summary.in_stock_count }}</span>
-                                <span class="flex items-center gap-1.5"><i class="pi pi-circle-fill text-yellow-500 text-[8px]"></i>Bajo stock: {{ stats.inventory_summary.low_stock_count }}</span>
-                                <span class="flex items-center gap-1.5"><i class="pi pi-circle-fill text-red-500 text-[8px]"></i>Agotado: {{ stats.inventory_summary.out_of_stock_count }}</span>
+                                <span class="flex items-center gap-1.5"><i
+                                        class="pi pi-circle-fill text-green-500 text-[8px]"></i>Con stock: {{
+                                            stats.inventory_summary.in_stock_count }}</span>
+                                <span class="flex items-center gap-1.5"><i
+                                        class="pi pi-circle-fill text-yellow-500 text-[8px]"></i>Bajo stock: {{
+                                            stats.inventory_summary.low_stock_count }}</span>
+                                <span class="flex items-center gap-1.5"><i
+                                        class="pi pi-circle-fill text-red-500 text-[8px]"></i>Agotado: {{
+                                            stats.inventory_summary.out_of_stock_count }}</span>
                             </div>
                         </div>
                     </div>

@@ -77,7 +77,7 @@ const deleteSelectedCustomers = () => {
 const menuItems = ref([
     { label: 'Ver', icon: 'pi pi-eye', command: () => router.get(route('customers.show', selectedCustomerForMenu.value.id)), visible: hasPermission('customers.see_details') },
     { label: 'Editar Cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', selectedCustomerForMenu.value.id)), visible: hasPermission('customers.edit') },
-    { label: 'Registrar Venta', icon: 'pi pi-shopping-cart', visible: hasPermission('customers.store_sale') },
+    // { label: 'Registrar Venta', icon: 'pi pi-shopping-cart', visible: hasPermission('customers.store_sale') },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleCustomer, visible: hasPermission('customers.delete') },
 ]);
