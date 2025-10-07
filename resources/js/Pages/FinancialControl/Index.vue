@@ -2,7 +2,7 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
+import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, isSameDay, isToday } from 'date-fns';
 
 const props = defineProps({
     kpis: Object,
@@ -19,19 +19,20 @@ const selectedRange = ref('day');
 const mainChartOptions = ref();
 const sparklineChartOptions = ref();
 
-// --- RANGOS DE FECHA ---
+// --- RANGOS DE FECHA (CORRECCIÓN 2) ---
 const rangeOptions = ref([
     { label: 'Día (Hoy)', value: 'day' },
     { label: 'Semana', value: 'week' },
     { label: 'Mes', value: 'month' },
     { label: 'Año', value: 'year' },
+    { label: 'Personalizado', value: 'custom' },
 ]);
 
+// Función para establecer los atajos de fecha
 const setDateRange = (period) => {
     const today = new Date();
     let startDate, endDate;
-    selectedRange.value = period;
-
+    
     switch (period) {
         case 'week':
             startDate = startOfWeek(today, { weekStartsOn: 1 });
@@ -54,17 +55,20 @@ const setDateRange = (period) => {
     dates.value = [startDate, endDate];
 };
 
-watch(selectedRange, (newRange) => {
-    if (newRange) setDateRange(newRange);
+// Observador para los botones de atajo
+watch(selectedRange, (newPeriod) => {
+    if (newPeriod !== 'custom') {
+        setDateRange(newPeriod);
+    }
 });
 
 // --- LÓGICA DE DATOS ---
 const fetchData = () => {
-    if (dates.value && dates.value[0]) {
-        const endDate = dates.value[1] || dates.value[0];
+    // CORRECCIÓN 3: Asegura que el rango esté completo antes de hacer la petición
+    if (dates.value && dates.value[0] && dates.value[1]) { 
         router.get(route('financial-control.index'), {
             start_date: dates.value[0].toISOString().split('T')[0],
-            end_date: endDate.toISOString().split('T')[0],
+            end_date: dates.value[1].toISOString().split('T')[0],
         }, {
             preserveState: true,
             replace: true,
@@ -72,7 +76,14 @@ const fetchData = () => {
     }
 };
 
-watch(dates, fetchData, { deep: true });
+// Observador del DatePicker, ahora solo llama a fetchData
+watch(dates, (newDates) => {
+    // CORRECCIÓN 3: La petición solo se dispara cuando el rango está completo.
+    if (newDates && newDates[0] && newDates[1]) {
+        fetchData();
+    }
+}, { deep: true });
+
 
 // --- GRÁFICAS ---
 const barChartData = computed(() => ({
@@ -96,9 +107,26 @@ const profitSparklineData = computed(() => ({
     }]
 }));
 
-// --- CONFIGURACIÓN DE GRÁFICAS (al montar) ---
+// --- CONFIGURACIÓN (al montar) ---
 onMounted(() => {
-    dates.value = [new Date(props.filters.startDate), new Date(props.filters.endDate)];
+    // CORRECCIÓN 4: Lógica mejorada para determinar el rango inicial
+    const initialStartDate = new Date(props.filters.startDate.replace(/-/g, '/'));
+    const initialEndDate = new Date(props.filters.endDate.replace(/-/g, '/'));
+    dates.value = [initialStartDate, initialEndDate];
+    
+    const today = new Date();
+    if (isSameDay(initialStartDate, initialEndDate) && isToday(initialStartDate)) {
+        selectedRange.value = 'day';
+    } else if (isSameDay(initialStartDate, startOfWeek(today, { weekStartsOn: 1 })) && isSameDay(initialEndDate, endOfWeek(today, { weekStartsOn: 1 }))) {
+        selectedRange.value = 'week';
+    } else if (isSameDay(initialStartDate, startOfMonth(today)) && isSameDay(initialEndDate, endOfMonth(today))) {
+        selectedRange.value = 'month';
+    } else if (isSameDay(initialStartDate, startOfYear(today)) && isSameDay(initialEndDate, endOfYear(today))) {
+        selectedRange.value = 'year';
+    } else {
+        selectedRange.value = 'custom';
+    }
+
     const textColor = '#6b7280';
     const gridColor = '#e5e7eb';
 
@@ -170,7 +198,7 @@ const getExpenseCategoryIcon = (categoryName) => {
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Inicio</h1>
                 <div class="flex items-center gap-2 flex-wrap">
                     <SelectButton v-model="selectedRange" :options="rangeOptions" optionLabel="label" optionValue="value" />
-                    <DatePicker v-model="dates" selectionMode="range" dateFormat="dd/mm/yy" class="!w-64" />
+                    <DatePicker v-if="selectedRange === 'custom'" v-model="dates" selectionMode="range" dateFormat="dd/mm/yy" class="!w-64" @update:modelValue="selectedRange = 'custom'" />
                 </div>
             </div>
 

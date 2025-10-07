@@ -8,6 +8,7 @@ use App\Models\Payment;
 use App\Models\Transaction;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class FinancialReportService
 {
@@ -114,11 +115,11 @@ class FinancialReportService
 
     private function getSalesByChannel()
     {
+        // --- CORRECCIÓN 1: Se remueve el filtro de status y se usa COALESCE para evitar errores con valores NULL ---
         return Transaction::where('branch_id', $this->branchId)
-            ->where('status', 'completado')
             ->whereBetween('created_at', [$this->startDate, $this->endDate])
             ->groupBy('channel')
-            ->select('channel', DB::raw('SUM(subtotal - total_discount + total_tax) as total'), DB::raw('COUNT(*) as count'))
+            ->select('channel', DB::raw('SUM(COALESCE(subtotal, 0)) - SUM(COALESCE(total_discount, 0)) + SUM(COALESCE(total_tax, 0)) as total'), DB::raw('COUNT(*) as count'))
             ->get()
             ->map(function ($channel) {
                 return [
@@ -161,9 +162,10 @@ class FinancialReportService
     private function queryTotal(string $model, string $dateColumn, array $period): float
     {
         $query = $model::query();
-        $sumField = $model === Transaction::class ? DB::raw('subtotal - total_discount + total_tax') : 'amount';
+        $sumField = $model === Transaction::class ? DB::raw('subtotal - COALESCE(total_discount, 0) + COALESCE(total_tax, 0)') : 'amount';
 
         if ($model === Transaction::class) {
+            // Para KPIs sí consideramos solo las completadas
             $query->where('branch_id', $this->branchId)->where('status', 'completado');
         } elseif ($model === Payment::class) {
             $query->where('status', 'completado')
@@ -190,13 +192,13 @@ class FinancialReportService
     private function queryChartPoints(string $model, string $dateColumn, string $sqlDateFormat, $labels)
     {
         $sumField = $model === Transaction::class 
-            ? DB::raw('SUM(subtotal - total_discount + total_tax) as total') 
+            ? DB::raw('SUM(subtotal - COALESCE(total_discount, 0) + COALESCE(total_tax, 0)) as total') 
             : DB::raw('SUM(amount) as total');
         
         $query = $model::query();
 
         if ($model === Transaction::class) {
-            $query->where('branch_id', $this->branchId)->where('status', 'completado');
+            $query->where('branch_id', $this->branchId); // Sin filtro de status para la gráfica de ventas totales
         } elseif ($model === Payment::class) {
             $query->where('status', 'completado')->whereHas('transaction', fn ($q) => $q->where('branch_id', $this->branchId));
         } elseif ($model === Expense::class) {
@@ -235,3 +237,4 @@ class FinancialReportService
         }
     }
 }
+
