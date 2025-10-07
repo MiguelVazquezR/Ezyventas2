@@ -140,11 +140,12 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     'customer_id' => $customer?->id,
                     'branch_id' => $user->branch_id,
                     'user_id' => $user->id,
+                    // CORRECCIÓN: Se crea como PENDIENTE y se actualiza al final si se paga por completo.
                     'status' => TransactionStatus::PENDING,
                     'channel' => TransactionChannel::POS,
                     'subtotal' => $validated['subtotal'],
                     'total_discount' => $validated['total_discount'] ?? 0,
-                    'total_tax' => 0,
+                    'total_tax' => 0, // Ajustar si se manejan impuestos
                     'total' => $totalSale,
                     'currency' => 'MXN',
                     'status_changed_at' => now(),
@@ -180,10 +181,9 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     $balanceToUse = min($totalSale, (float) $customer->balance);
                     if ($balanceToUse > 0) {
                         
-                        // Se crea el array del pago con 'saldo' incluyendo la clave 'method'.
                         $balancePaymentData = [[
                             'amount' => $balanceToUse,
-                            'method' => PaymentMethod::BALANCE->value, // Se añade el método de pago.
+                            'method' => PaymentMethod::BALANCE->value,
                             'notes' => "Uso de saldo en venta POS #{$newTransaction->folio}"
                         ]];
 
@@ -214,7 +214,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 $totalPaid = $newTransaction->fresh()->payments()->sum('amount');
                 $remainingDue = $totalSale - $totalPaid;
 
-                if ($remainingDue > 0.01) {
+                if ($remainingDue > 0.01) { // VENTA A CRÉDITO
                     if (!$customer || $remainingDue > $customer->available_credit) {
                         throw new \Exception("Pago insuficiente y el cliente no tiene crédito disponible para cubrir la diferencia.");
                     }
@@ -229,7 +229,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         'notes' => "Cargo a crédito por venta POS #{$newTransaction->folio}",
                     ]);
 
-                    // Al usar crédito, la transacción se considera completada
+                    // CORRECCIÓN: No se hace nada aquí, la transacción ya está como PENDIENTE.
+                    
+                } else { // VENTA PAGADA POR COMPLETO
+                    // CORRECCIÓN: Si no hay adeudo, se actualiza a COMPLETADO.
                     $newTransaction->update(['status' => TransactionStatus::COMPLETED]);
                 }
 
@@ -435,12 +438,28 @@ class PointOfSaleController extends Controller implements HasMiddleware
         return ['id' => null, 'name' => 'Público en General', 'phone' => '', 'balance' => 0.0, 'credit_limit' => 0.0, 'available_credit' => 0.0];
     }
 
-    private function generateFolio(): string
+   private function generateFolio(): string
     {
-        $prefix = strtoupper(substr(Auth::user()->branch->name, 0, 4));
-        $date = Carbon::now()->format('Ymd');
-        $lastTransaction = Transaction::whereDate('created_at', Carbon::today())->where('branch_id', Auth::user()->branch_id)->latest('id')->first();
-        $sequence = $lastTransaction ? (int)substr($lastTransaction->folio, -3) + 1 : 1;
-        return $prefix . '-' . $date . '-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
+        // Obtener la suscripción del usuario actual
+        $subscriptionId = Auth::user()->branch->subscription_id;
+
+        // Buscar la última transacción para esta suscripción que siga el formato V-
+        $lastTransaction = Transaction::whereHas('branch', function ($query) use ($subscriptionId) {
+                $query->where('subscription_id', $subscriptionId);
+            })
+            ->where('folio', 'LIKE', 'V-%')
+            ->orderBy('id', 'desc') // Ordenar por ID para obtener la más reciente de forma fiable
+            ->first();
+
+        $sequence = 1; // Iniciar en 1 por defecto para un nuevo suscriptor
+
+        if ($lastTransaction) {
+            // Extraer solo la parte numérica del folio anterior
+            $lastFolioNumber = (int) substr($lastTransaction->folio, 2);
+            $sequence = $lastFolioNumber + 1;
+        }
+
+        // Formatear el nuevo folio con el prefijo y el número consecutivo con ceros a la izquierda
+        return 'V-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
     }
 }

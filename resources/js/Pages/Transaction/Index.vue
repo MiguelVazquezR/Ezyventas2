@@ -124,7 +124,7 @@ const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: eve
 watch(searchTerm, () => fetchData());
 
 const getStatusSeverity = (status) => {
-    const map = { completado: 'success', pendiente: 'info', cancelado: 'danger', reembolsado: 'warning' };
+    const map = { completado: 'success', pendiente: 'warn', cancelado: 'danger', reembolsado: 'info' };
     return map[status] || 'secondary';
 };
 
@@ -185,6 +185,9 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         <template #body="{ data }"> <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
                                 text rounded severity="secondary" /> </template>
                     </Column>
+                    <template #empty>
+                        <div class="text-center py-4">No hay ventas registradas.</div>
+                    </template>
                 </DataTable>
                 
                 <Menu ref="menu" :model="menuItems" :popup="true" />

@@ -82,12 +82,12 @@ const actionItems = computed(() => [
 ]);
 
 const getStatusSeverity = (status) => {
-    const map = { completado: 'success', pendiente: 'info', cancelado: 'danger', reembolsado: 'warning' };
+    const map = { completado: 'success', pendiente: 'warn', cancelado: 'danger', reembolsado: 'info' };
     return map[status] || 'secondary';
 };
 const formatDate = (dateString) => new Date(dateString).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
-const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-green-500' }, tarjeta: { icon: 'pi pi-credit-card', color: 'text-blue-500' }, transferencia: { icon: 'pi pi-globe', color: 'text-purple-500' }, saldo: { icon: 'pi pi-wallet', color: 'text-orange-500' } };
+const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-[#37672B]' }, tarjeta: { icon: 'pi pi-credit-card', color: 'text-[#063C53]' }, transferencia: { icon: 'pi pi-arrows-h', color: 'text-[#D2D880]' }, saldo: { icon: 'pi pi-wallet', color: 'text-purple-500' } };
 </script>
 
 <template>

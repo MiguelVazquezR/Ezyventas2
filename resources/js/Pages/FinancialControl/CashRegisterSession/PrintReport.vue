@@ -15,9 +15,10 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 const formatDate = (dateString) => new Date(dateString).toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short' });
 
 const paymentMethodIcons = {
-    efectivo: { icon: 'pi pi-money-bill', color: 'text-green-500' },
-    tarjeta: { icon: 'pi pi-credit-card', color: 'text-blue-500' },
-    transferencia: { icon: 'pi pi-globe', color: 'text-purple-500' },
+    efectivo: { icon: 'pi pi-money-bill', color: 'text-[#37672B]' },
+    tarjeta: { icon: 'pi pi-credit-card', color: 'text-[#063C53]' },
+    transferencia: { icon: 'pi pi-arrows-h', color: 'text-[#D2D880]' },
+    saldo: { icon: 'pi pi-wallet', color: 'text-purple-500' },
 };
 </script>
 
@@ -68,9 +69,10 @@ const paymentMethodIcons = {
                 <div>
                     <h3 class="font-semibold border-b pb-2 mb-3">Desglose de Ingresos</h3>
                     <ul class="space-y-2 text-sm">
-                        <li class="flex justify-between items-center"><span><i class="pi pi-money-bill mr-2 text-green-500"></i>Efectivo</span><span class="font-mono">{{ formatCurrency(sessionTotals.cash_total) }}</span></li>
-                        <li class="flex justify-between items-center"><span><i class="pi pi-credit-card mr-2 text-blue-500"></i>Tarjeta</span><span class="font-mono">{{ formatCurrency(sessionTotals.card_total) }}</span></li>
-                        <li class="flex justify-between items-center"><span><i class="pi pi-globe mr-2 text-purple-500"></i>Transferencia</span><span class="font-mono">{{ formatCurrency(sessionTotals.transfer_total) }}</span></li>
+                        <li class="flex justify-between items-center"><span><i class="pi pi-money-bill mr-2 text-[#37672B]"></i>Efectivo</span><span class="font-mono">{{ formatCurrency(sessionTotals.cash_total) }}</span></li>
+                        <li class="flex justify-between items-center"><span><i class="pi pi-credit-card mr-2 text-[#063C53]"></i>Tarjeta</span><span class="font-mono">{{ formatCurrency(sessionTotals.card_total) }}</span></li>
+                        <li class="flex justify-between items-center"><span><i class="pi pi-arrows-h mr-2 text-[#D2D880]"></i>Transferencia</span><span class="font-mono">{{ formatCurrency(sessionTotals.transfer_total) }}</span></li>
+                        <li class="flex justify-between items-center"><span><i class="pi pi-wallet mr-2 text-purple-500"></i>Saldo de cliente</span><span class="font-mono">{{ formatCurrency(sessionTotals.balance_total) }}</span></li>
                     </ul>
                 </div>
                  <div>

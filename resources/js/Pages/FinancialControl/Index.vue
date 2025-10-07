@@ -84,7 +84,7 @@ const rangeOptions = ref([
 const setDateRange = (period) => {
     const today = new Date();
     let startDate, endDate;
-    
+
     switch (period) {
         case 'week':
             startDate = startOfWeek(today, { weekStartsOn: 1 }); // Lunes
@@ -116,7 +116,7 @@ watch(selectedRange, (newPeriod) => {
 
 // --- LÓGICA DE DATOS ---
 const fetchData = () => {
-    if (dates.value && dates.value[0] && dates.value[1]) { 
+    if (dates.value && dates.value[0] && dates.value[1]) {
         router.get(route('financial-control.index'), {
             start_date: format(dates.value[0], 'yyyy-MM-dd'),
             end_date: format(dates.value[1], 'yyyy-MM-dd'),
@@ -131,7 +131,7 @@ const fetchData = () => {
 watch(dates, (newDates, oldDates) => {
     if (newDates && newDates[0] && newDates[1]) {
         if (!oldDates || !isSameDay(newDates[0], oldDates[0]) || !isSameDay(newDates[1], oldDates[1])) {
-           fetchData();
+            fetchData();
         }
     }
 }, { deep: true });
@@ -144,11 +144,11 @@ const barChartData = computed(() => ({
         { label: 'Ventas totales', data: props.chartData.sales, backgroundColor: '#a78bfa', borderRadius: 6 },
         { label: 'Total de pagos', data: props.chartData.payments, backgroundColor: '#7dd3fc', borderRadius: 6 },
         { label: 'Total de gastos', data: props.chartData.expenses, backgroundColor: '#fcd34d', borderRadius: 6 },
-        { 
-            label: 'Ganancias', 
-            data: props.chartData.payments.map((payment, index) => payment - props.chartData.expenses[index]), 
-            backgroundColor: '#1FAE07', 
-            borderRadius: 6 
+        {
+            label: 'Ganancias',
+            data: props.chartData.payments.map((payment, index) => payment - props.chartData.expenses[index]),
+            backgroundColor: '#1FAE07',
+            borderRadius: 6
         },
     ]
 }));
@@ -177,7 +177,7 @@ onMounted(() => {
     const initialStartDate = new Date(props.filters.startDate.replace(/-/g, '/'));
     const initialEndDate = new Date(props.filters.endDate.replace(/-/g, '/'));
     dates.value = [initialStartDate, initialEndDate];
-    
+
     // La comparación ahora se basa en las fechas iniciales, no en "today"
     if (isSameDay(initialStartDate, initialEndDate) && isToday(initialStartDate)) {
         selectedRange.value = 'day';
@@ -207,7 +207,7 @@ onMounted(() => {
     sparklineChartOptions.value = {
         maintainAspectRatio: false,
         aspectRatio: 3,
-        plugins: { 
+        plugins: {
             legend: { display: false },
             tooltip: {
                 enabled: false, // Se deshabilita el tooltip por defecto
@@ -228,9 +228,9 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 
 const getPaymentMethodDetails = (method) => {
     const details = {
-        efectivo: { name: 'Efectivo', icon: 'pi pi-money-bill', color: 'bg-green-500' },
-        tarjeta: { name: 'Pago con tarjeta', icon: 'pi pi-credit-card', color: 'bg-blue-500' },
-        transferencia: { name: 'Transferencias', icon: 'pi pi-globe', color: 'bg-yellow-500' },
+        efectivo: { name: 'Efectivo', icon: 'pi pi-money-bill', color: 'bg-[#37672B]' },
+        tarjeta: { name: 'Pago con tarjeta', icon: 'pi pi-credit-card', color: 'bg-[#063C53]' },
+        transferencia: { name: 'Transferencias', icon: 'pi pi-arrows-h', color: 'bg-[#D2D880]' },
         saldo: { name: 'Saldo a favor', icon: 'pi pi-wallet', color: 'bg-purple-500' }
     };
     return details[method] || { name: method, icon: 'pi pi-question-circle', color: 'bg-gray-500' };
@@ -250,7 +250,7 @@ const getChannelDetails = (channel) => {
 
 const getExpenseCategoryIcon = (categoryName) => {
     const name = categoryName.toLowerCase();
-    if (name.includes('servicio')) return 'pi pi-tint';
+    if (name.includes('servicio')) return 'pi pi-file';
     if (name.includes('proveedor')) return 'pi pi-calculator';
     if (name.includes('renta')) return 'pi pi-shopping-bag';
     if (name.includes('sueldo')) return 'pi pi-users';
@@ -264,6 +264,7 @@ const getExpenseCategoryIcon = (categoryName) => {
 </script>
 
 <template>
+
     <Head title="Reporte Financiero" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 space-y-6">
@@ -271,30 +272,89 @@ const getExpenseCategoryIcon = (categoryName) => {
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Inicio</h1>
                 <div class="flex items-center gap-2 flex-wrap">
-                    <SelectButton v-model="selectedRange" :options="rangeOptions" optionLabel="label" optionValue="value" />
-                    <DatePicker v-if="selectedRange === 'custom'" v-model="dates" selectionMode="range" dateFormat="dd/mm/yy" class="!w-64" @update:modelValue="selectedRange = 'custom'" />
-                    <Button 
-                        label="Crear Reporte" 
-                        icon="pi pi-file-excel" 
-                        severity="success" 
-                        outlined 
-                        @click="handleExport" 
-                        :loading="isExporting" 
-                    />
+                    <SelectButton v-model="selectedRange" :options="rangeOptions" optionLabel="label"
+                        optionValue="value" />
+                    <DatePicker v-if="selectedRange === 'custom'" v-model="dates" selectionMode="range"
+                        dateFormat="dd/mm/yy" class="!w-64" @update:modelValue="selectedRange = 'custom'" />
+                    <Button label="Crear Reporte" icon="pi pi-file-excel" severity="success" outlined
+                        @click="handleExport" :loading="isExporting" />
                 </div>
             </div>
 
             <!-- KPIs -->
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-                 <Card> <template #content> <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Ventas totales</span> <i class="pi pi-shopping-cart p-2 bg-purple-100 text-purple-600 rounded-full"></i> </div> <p class="text-2xl font-bold">{{ formatCurrency(kpis.sales.current) }}</p> <div class="flex items-center text-sm mt-1" :class="kpis.sales.percentage_change >= 0 ? 'text-green-500' : 'text-red-500'"> <i class="pi" :class="kpis.sales.percentage_change >= 0 ? 'pi-arrow-up' : 'pi-arrow-down'"></i> <span class="font-semibold mx-1">{{ Math.abs(kpis.sales.percentage_change) }}%</span> <span>({{ formatCurrency(kpis.sales.monetary_change) }})</span> </div> <p class="text-xs text-gray-400 mt-2">vs {{ formatCurrency(kpis.sales.previous) }} el periodo pasado</p> </template> </Card>
-                <Card> <template #content> <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Total de pagos</span> <i class="pi pi-dollar p-2 bg-cyan-100 text-cyan-600 rounded-full"></i> </div> <p class="text-2xl font-bold">{{ formatCurrency(kpis.payments.current) }}</p> <div class="flex items-center text-sm mt-1" :class="kpis.payments.percentage_change >= 0 ? 'text-green-500' : 'text-red-500'"> <i class="pi" :class="kpis.payments.percentage_change >= 0 ? 'pi-arrow-up' : 'pi-arrow-down'"></i> <span class="font-semibold mx-1">{{ Math.abs(kpis.payments.percentage_change) }}%</span> <span>({{ formatCurrency(kpis.payments.monetary_change) }})</span> </div> <p class="text-xs text-gray-400 mt-2">vs {{ formatCurrency(kpis.payments.previous) }} el periodo pasado</p> </template> </Card>
-                <Card> <template #content> <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Total de gastos</span> <i class="pi pi-file-export p-2 bg-yellow-100 text-yellow-600 rounded-full"></i> </div> <p class="text-2xl font-bold">{{ formatCurrency(kpis.expenses.current) }}</p> <div class="flex items-center text-sm mt-1" :class="kpis.expenses.percentage_change <= 0 ? 'text-green-500' : 'text-red-500'"> <i class="pi" :class="kpis.expenses.percentage_change <= 0 ? 'pi-arrow-down' : 'pi-arrow-up'"></i> <span class="font-semibold mx-1">{{ Math.abs(kpis.expenses.percentage_change) }}%</span> <span>({{ formatCurrency(kpis.expenses.monetary_change) }})</span> </div> <p class="text-xs text-gray-400 mt-2">vs {{ formatCurrency(kpis.expenses.previous) }} el periodo pasado</p> </template> </Card>
-                <Card> <template #content> <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Ganancias</span> <div class="w-24 h-12"> <Chart type="line" :data="profitSparklineData" :options="sparklineChartOptions" /> </div> </div> <p class="text-2xl font-bold" :class="kpis.profit.current >= 0 ? 'text-gray-800 dark:text-gray-200' : 'text-red-600'">{{ formatCurrency(kpis.profit.current) }}</p> <div class="flex items-center text-sm mt-1" :class="kpis.profit.percentage_change >= 0 ? 'text-green-500' : 'text-red-500'"> <i class="pi" :class="kpis.profit.percentage_change >= 0 ? 'pi-arrow-up' : 'pi-arrow-down'"></i> <span class="font-semibold mx-1">{{ Math.abs(kpis.profit.percentage_change) }}%</span> <span>({{ formatCurrency(kpis.profit.monetary_change) }})</span> </div> <p class="text-xs text-gray-400 mt-2">vs {{ formatCurrency(kpis.profit.previous) }} el periodo pasado</p> </template> </Card>
+                <Card> <template #content>
+                        <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Ventas
+                                totales</span> <i
+                                class="pi pi-shopping-cart p-2 bg-purple-100 text-purple-600 rounded-full"></i> </div>
+                        <p class="text-2xl font-bold">{{ formatCurrency(kpis.sales.current) }}</p>
+                        <div class="flex items-center text-sm mt-1"
+                            :class="kpis.sales.percentage_change >= 0 ? 'text-green-500' : 'text-red-500'"> <i
+                                class="pi"
+                                :class="kpis.sales.percentage_change >= 0 ? 'pi-arrow-up' : 'pi-arrow-down'"></i> <span
+                                class="font-semibold mx-1">{{ Math.abs(kpis.sales.percentage_change) }}%</span>
+                            <span>({{ formatCurrency(kpis.sales.monetary_change) }})</span> </div>
+                        <p class="text-xs text-gray-400 mt-2">vs {{ formatCurrency(kpis.sales.previous) }} el periodo
+                            pasado</p>
+                    </template>
+                </Card>
+                <Card> <template #content>
+                        <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Total de
+                                pagos</span> <i class="pi pi-dollar p-2 bg-cyan-100 text-cyan-600 rounded-full"></i>
+                        </div>
+                        <p class="text-2xl font-bold">{{ formatCurrency(kpis.payments.current) }}</p>
+                        <div class="flex items-center text-sm mt-1"
+                            :class="kpis.payments.percentage_change >= 0 ? 'text-green-500' : 'text-red-500'"> <i
+                                class="pi"
+                                :class="kpis.payments.percentage_change >= 0 ? 'pi-arrow-up' : 'pi-arrow-down'"></i>
+                            <span class="font-semibold mx-1">{{ Math.abs(kpis.payments.percentage_change) }}%</span>
+                            <span>({{ formatCurrency(kpis.payments.monetary_change) }})</span> </div>
+                        <p class="text-xs text-gray-400 mt-2">vs {{ formatCurrency(kpis.payments.previous) }} el periodo
+                            pasado</p>
+                    </template>
+                </Card>
+                <Card> <template #content>
+                        <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Total de
+                                gastos</span> <i
+                                class="pi pi-file-export p-2 bg-yellow-100 text-yellow-600 rounded-full"></i> </div>
+                        <p class="text-2xl font-bold">{{ formatCurrency(kpis.expenses.current) }}</p>
+                        <div class="flex items-center text-sm mt-1"
+                            :class="kpis.expenses.percentage_change <= 0 ? 'text-green-500' : 'text-red-500'"> <i
+                                class="pi"
+                                :class="kpis.expenses.percentage_change <= 0 ? 'pi-arrow-down' : 'pi-arrow-up'"></i>
+                            <span class="font-semibold mx-1">{{ Math.abs(kpis.expenses.percentage_change) }}%</span>
+                            <span>({{ formatCurrency(kpis.expenses.monetary_change) }})</span> </div>
+                        <p class="text-xs text-gray-400 mt-2">vs {{ formatCurrency(kpis.expenses.previous) }} el periodo
+                            pasado</p>
+                    </template>
+                </Card>
+                <Card> <template #content>
+                        <div class="flex items-center justify-between mb-2"> <span
+                                class="text-gray-500">Ganancias</span>
+                            <div class="w-24 h-12">
+                                <Chart type="line" :data="profitSparklineData" :options="sparklineChartOptions" />
+                            </div>
+                        </div>
+                        <p class="text-2xl font-bold"
+                            :class="kpis.profit.current >= 0 ? 'text-gray-800 dark:text-gray-200' : 'text-red-600'">{{
+                                formatCurrency(kpis.profit.current) }}</p>
+                        <div class="flex items-center text-sm mt-1"
+                            :class="kpis.profit.percentage_change >= 0 ? 'text-green-500' : 'text-red-500'"> <i
+                                class="pi"
+                                :class="kpis.profit.percentage_change >= 0 ? 'pi-arrow-up' : 'pi-arrow-down'"></i> <span
+                                class="font-semibold mx-1">{{ Math.abs(kpis.profit.percentage_change) }}%</span>
+                            <span>({{ formatCurrency(kpis.profit.monetary_change) }})</span> </div>
+                        <p class="text-xs text-gray-400 mt-2">vs {{ formatCurrency(kpis.profit.previous) }} el periodo
+                            pasado</p>
+                    </template>
+                </Card>
             </div>
 
             <!-- Gráfica Principal -->
-            <Card>
-                <template #title>Resumen comparativo de operaciones</template>
+            <Card class="!bg-[#2A2A2A]">
+                <template #title>
+                    <p class="text-white font-bold">Resumen comparativo de operaciones</p>
+                </template>
                 <template #content>
                     <Chart type="bar" :data="barChartData" :options="mainChartOptions" class="h-[400px]" />
                 </template>
@@ -308,19 +368,25 @@ const getExpenseCategoryIcon = (categoryName) => {
                         <template #title>Métodos de pago</template>
                         <template #subtitle>Visualiza los métodos de pago más usados en los pagos.</template>
                         <template #content>
-                             <div v-if="paymentMethods.length > 0" class="space-y-4">
+                            <div v-if="paymentMethods.length > 0" class="space-y-4">
                                 <div v-for="pm in paymentMethods" :key="pm.method">
                                     <div class="flex items-center justify-between mb-1">
                                         <div class="flex items-center">
-                                            <i :class="getPaymentMethodDetails(pm.method).icon" class="mr-2 text-gray-500"></i>
-                                            <span class="font-semibold text-sm">{{ getPaymentMethodDetails(pm.method).name }}</span>
+                                            <i :class="getPaymentMethodDetails(pm.method).icon"
+                                                class="mr-2 text-gray-500"></i>
+                                            <span class="font-semibold text-sm">{{
+                                                getPaymentMethodDetails(pm.method).name }}</span>
                                         </div>
                                         <span class="text-sm font-semibold">{{ pm.percentage }}%</span>
                                     </div>
-                                    <ProgressBar :value="pm.percentage" :showValue="false" :class="getPaymentMethodDetails(pm.method).color" style="height: 0.5rem" />
+                                    <div class="w-full bg-gray-200 rounded-full h-2 dark:bg-gray-700">
+                                        <div :class="getPaymentMethodDetails(pm.method).color" class="h-2 rounded-full"
+                                            :style="{ width: pm.percentage + '%' }"></div>
+                                    </div>
                                 </div>
                             </div>
-                            <p v-else class="text-center text-gray-500 py-4">No hay pagos registrados en este periodo.</p>
+                            <p v-else class="text-center text-gray-500 py-4">No hay pagos registrados en este periodo.
+                            </p>
                         </template>
                     </Card>
 
@@ -330,29 +396,34 @@ const getExpenseCategoryIcon = (categoryName) => {
                         <template #subtitle>Resumen de los gastos registrados en el periodo.</template>
                         <template #content>
                             <div v-if="expensesByCategory.length > 0" class="grid grid-cols-2 md:grid-cols-3 gap-4">
-                                <div v-for="cat in expensesByCategory" :key="cat.category_name" class="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg flex items-center gap-3">
-                                    <i :class="getExpenseCategoryIcon(cat.category_name)" class="text-2xl p-2 bg-gray-200 dark:bg-gray-700 rounded-full"></i>
+                                <div v-for="cat in expensesByCategory" :key="cat.category_name"
+                                    class="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg flex items-center gap-3">
+                                    <i :class="getExpenseCategoryIcon(cat.category_name)"
+                                        class="text-2xl p-2 bg-gray-200 dark:bg-gray-700 rounded-full"></i>
                                     <div>
-                                        <p class="text-sm text-gray-500">{{ cat.category_name }}</p>
-                                        <p class="font-bold">{{ formatCurrency(cat.total) }}</p>
+                                        <p class="text-sm text-gray-500 m-0">{{ cat.category_name }}</p>
+                                        <p class="font-bold m-0">{{ formatCurrency(cat.total) }}</p>
                                     </div>
                                 </div>
                             </div>
-                            <p v-else class="text-center text-gray-500 py-4">No hay gastos registrados en este periodo.</p>
+                            <p v-else class="text-center text-gray-500 py-4">No hay gastos registrados en este periodo.
+                            </p>
                         </template>
                     </Card>
-                    
+
                     <Card>
                         <template #title>Cuentas bancarias</template>
                         <template #subtitle>Balance actual de tus cuentas registradas.</template>
                         <template #content>
                             <div v-if="bankAccounts && bankAccounts.length > 0">
-                                <div class="flex justify-between items-center mb-4 pb-2 border-b border-dashed dark:border-gray-700">
+                                <div
+                                    class="flex justify-between items-center mb-4 pb-2 border-b border-dashed dark:border-gray-700">
                                     <span class="font-bold">Balance Total</span>
                                     <span class="font-bold text-lg">{{ formatCurrency(totalBalance) }}</span>
                                 </div>
                                 <ul class="space-y-3 max-h-60 overflow-y-auto pr-2">
-                                    <li v-for="account in bankAccounts" :key="account.id" class="flex justify-between items-center">
+                                    <li v-for="account in bankAccounts" :key="account.id"
+                                        class="flex justify-between items-center">
                                         <div>
                                             <p class="font-semibold">{{ account.account_name }}</p>
                                             <p class="text-sm text-gray-500">{{ account.bank_name }}</p>
@@ -368,26 +439,31 @@ const getExpenseCategoryIcon = (categoryName) => {
                 </div>
 
                 <!-- Ventas por Módulo -->
-                <Card class="lg:row-span-2">
+                <Card class="lg:row-span-2 !bg-[#E6E6E6] border border-[#d9d9d9]">
                     <template #title>Ventas por módulo</template>
                     <template #subtitle>Visualiza las ventas desglosadas por módulo.</template>
                     <template #content>
                         <div v-if="salesByChannel.length > 0" class="space-y-4">
-                            <div v-for="sc in salesByChannel" :key="sc.channel" class="p-4 rounded-lg bg-gray-50 dark:bg-gray-800">
+                            <div v-for="sc in salesByChannel" :key="sc.channel"
+                                class="p-4 rounded-lg bg-gray-50 dark:bg-gray-800">
                                 <div class="flex items-center gap-3">
-                                    <i :class="getChannelDetails(sc.channel).icon" class="text-2xl text-purple-500"></i>
-                                    <div>
-                                        <p class="font-bold">{{ getChannelDetails(sc.channel).name }}</p>
-                                        <p class="text-lg font-semibold">{{ formatCurrency(sc.total) }}</p>
+                                    <span
+                                        class="bg-[#EFD5FF] text-[#8C2FFE] border border-[#BE89FF] rounded-full size-8 flex items-center justify-center flex-shrink-0">
+                                        <i :class="getChannelDetails(sc.channel).icon" class="!text-lg"></i>
+                                    </span>
+                                    <div class="text-center text-lg w-full">
+                                        <p class="font-bold text-[#373737] m-0">{{ getChannelDetails(sc.channel).name }}
+                                        </p>
+                                        <p class="font-semibold text-black m-0">{{ formatCurrency(sc.total) }}</p>
                                     </div>
                                 </div>
-                                <div class="mt-2 pt-2 border-t border-dashed text-center">
-                                    <p class="text-sm text-gray-500">{{ getChannelDetails(sc.channel).verb }}</p>
-                                    <p class="font-bold text-lg">{{ sc.count }}</p>
+                                <div class="mt-1 pt-1 border-t border-dashed border-[#d9d9d9] text-center">
+                                    <p class="text-sm text-gray-500 m-0">{{ getChannelDetails(sc.channel).verb }}</p>
+                                    <p class="font-bold text-lg m-0 bg-[#F2F2F2] rounded-md">{{ sc.count }}</p>
                                 </div>
                             </div>
                         </div>
-                       <p v-else class="text-center text-gray-500 py-8">No hay ventas registradas en este periodo.</p>
+                        <p v-else class="text-center text-gray-500 py-8">No hay ventas registradas en este periodo.</p>
                     </template>
                 </Card>
             </div>
