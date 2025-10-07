@@ -71,12 +71,12 @@ class Subscription extends Model implements HasMedia
     {
         return $this->hasManyThrough(User::class, Branch::class);
     }
-    
+
     public function cashRegisters(): HasManyThrough
     {
         return $this->hasManyThrough(CashRegister::class, Branch::class);
     }
-    
+
     public function products(): HasManyThrough
     {
         return $this->hasManyThrough(Product::class, Branch::class);
@@ -110,6 +110,11 @@ class Subscription extends Model implements HasMedia
             'subscription_id', // Foreign key on SubscriptionVersion table...
             'subscription_version_id' // Foreign key on SubscriptionPayment table... 
         );
+    }
+
+    public function expenses(): HasManyThrough
+    {
+        return $this->hasManyThrough(Expense::class, Branch::class);
     }
 
     /**

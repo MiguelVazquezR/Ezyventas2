@@ -75,15 +75,15 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
     /**
      * Muestra los detalles de una sesión de caja específica.
      */
-     public function show(CashRegisterSession $cashRegisterSession): Response
+    public function show(CashRegisterSession $cashRegisterSession): Response
     {
         $cashRegisterSession->load([
             'user:id,name',
             'cashRegister:id,name',
-            'payments.transaction:id,folio', 
+            'transactions.payments',
             'cashMovements'
         ]);
-        
+
         // El cálculo ahora es mucho más simple y preciso
         $paymentTotals = $cashRegisterSession->payments()
             ->where('status', PaymentStatus::COMPLETED)
@@ -95,6 +95,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
             'cash_total' => $paymentTotals['efectivo'] ?? 0,
             'card_total' => $paymentTotals['tarjeta'] ?? 0,
             'transfer_total' => $paymentTotals['transferencia'] ?? 0,
+            'balance_total' => $paymentTotals['saldo'] ?? 0,
         ];
 
         return Inertia::render('FinancialControl/CashRegisterSession/Show', [
@@ -190,6 +191,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
             'cash_total' => $paymentTotals['efectivo'] ?? 0,
             'card_total' => $paymentTotals['tarjeta'] ?? 0,
             'transfer_total' => $paymentTotals['transferencia'] ?? 0,
+            'balance_total' => $paymentTotals['saldo'] ?? 0,
         ];
 
         return Inertia::render('FinancialControl/CashRegisterSession/PrintReport', [

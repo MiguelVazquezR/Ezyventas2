@@ -2,74 +2,124 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { startOfWeek, endOfWeek, subWeeks, startOfMonth, endOfMonth, subMonths, startOfYear, endOfYear, subYears } from 'date-fns';
+import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, isSameDay, isToday, format } from 'date-fns';
+import axios from 'axios';
 
 const props = defineProps({
     kpis: Object,
     chartData: Object,
-    incomeByMethod: Object,
-    cashRegisters: Array,
+    paymentMethods: Array,
+    salesByChannel: Array,
+    expensesByCategory: Array,
     bankAccounts: Array,
-    recentSessions: Array,
     filters: Object,
 });
 
+// --- STATE ---
 const dates = ref();
-const lineChartOptions = ref();
-const pieChartOptions = ref();
-const menu = ref();
+const selectedRange = ref('day');
+const mainChartOptions = ref();
+const sparklineChartOptions = ref();
+const isExporting = ref(false); // Estado para el botón de carga
 
-onMounted(() => {
-    dates.value = [new Date(props.filters.startDate), new Date(props.filters.endDate)];
-
-    lineChartOptions.value = {
-        maintainAspectRatio: false, aspectRatio: 0.6,
-        plugins: { legend: { labels: { color: '#4B5563' } } },
-        scales: {
-            x: { ticks: { color: '#6B7280' }, grid: { color: '#E5E7EB' } },
-            y: { ticks: { color: '#6B7280' }, grid: { color: '#E5E7EB' } }
-        }
-    };
-
-    pieChartOptions.value = {
-        plugins: {
-            legend: {
-                labels: { color: '#4B5563' },
-                position: 'bottom'
-            }
-        }
-    };
+// --- EXPORTACIÓN ---
+const exportUrl = computed(() => {
+    if (dates.value && dates.value[0] && dates.value[1]) {
+        const startDate = format(dates.value[0], 'yyyy-MM-dd');
+        const endDate = format(dates.value[1], 'yyyy-MM-dd');
+        return route('financial-control.export', { start_date: startDate, end_date: endDate });
+    }
+    return '#';
 });
 
-const lineChartData = computed(() => ({
-    labels: props.chartData.labels,
-    datasets: [
-        { label: 'Ingresos', data: props.chartData.income, fill: false, borderColor: '#10B981', tension: 0.4 },
-        { label: 'Gastos', data: props.chartData.expenses, fill: false, borderColor: '#EF4444', tension: 0.4 }
-    ]
-}));
+const handleExport = async () => {
+    if (exportUrl.value === '#') return;
+    isExporting.value = true;
+    try {
+        const response = await axios.get(exportUrl.value, {
+            responseType: 'blob', // Importante para la descarga de archivos
+        });
 
-const incomeByMethodChartData = computed(() => ({
-    labels: props.incomeByMethod.labels,
-    datasets: [{
-        data: props.incomeByMethod.data,
-        backgroundColor: ['#10B981', '#3B82F6', '#F97316', '#8B5CF6'],
-    }]
-}));
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
 
-const hasLineChartData = computed(() =>
-    props.chartData.income.some(val => val > 0) || props.chartData.expenses.some(val => val > 0)
-);
+        // Extraer el nombre del archivo del header
+        let fileName = 'ReporteFinanciero.xlsx'; // Nombre por defecto
+        const contentDisposition = response.headers['content-disposition'];
+        if (contentDisposition) {
+            const fileNameMatch = contentDisposition.match(/filename="(.+)"/);
+            if (fileNameMatch && fileNameMatch.length === 2) {
+                fileName = fileNameMatch[1];
+            }
+        }
 
-const hasPieChartData = computed(() =>
-    props.incomeByMethod.data.length > 0
-);
+        link.setAttribute('download', fileName);
+        document.body.appendChild(link);
+        link.click();
 
+        // Limpieza
+        link.remove();
+        window.URL.revokeObjectURL(url);
+
+    } catch (error) {
+        console.error("Error al exportar el reporte:", error);
+        // Opcional: Mostrar una notificación de error al usuario
+    } finally {
+        isExporting.value = false;
+    }
+};
+
+
+// --- RANGOS DE FECHA ---
+const rangeOptions = ref([
+    { label: 'Día (Hoy)', value: 'day' },
+    { label: 'Semana', value: 'week' },
+    { label: 'Mes', value: 'month' },
+    { label: 'Año', value: 'year' },
+    { label: 'Personalizado', value: 'custom' },
+]);
+
+// Función para establecer los atajos de fecha
+const setDateRange = (period) => {
+    const today = new Date();
+    let startDate, endDate;
+
+    switch (period) {
+        case 'week':
+            startDate = startOfWeek(today, { weekStartsOn: 1 }); // Lunes
+            endDate = endOfWeek(today, { weekStartsOn: 1 }); // Domingo
+            break;
+        case 'month':
+            startDate = startOfMonth(today);
+            endDate = endOfMonth(today);
+            break;
+        case 'year':
+            startDate = startOfYear(today);
+            endDate = endOfYear(today);
+            break;
+        case 'day':
+        default:
+            startDate = today;
+            endDate = today;
+            break;
+    }
+    dates.value = [startDate, endDate];
+};
+
+// Observador para los botones de atajo
+watch(selectedRange, (newPeriod) => {
+    if (newPeriod !== 'custom') {
+        setDateRange(newPeriod);
+    }
+});
+
+// --- LÓGICA DE DATOS ---
 const fetchData = () => {
     if (dates.value && dates.value[0] && dates.value[1]) {
         router.get(route('financial-control.index'), {
-            start_date: dates.value[0].toISOString().split('T')[0],
-            end_date: dates.value[1].toISOString().split('T')[0],
+            start_date: format(dates.value[0], 'yyyy-MM-dd'),
+            end_date: format(dates.value[1], 'yyyy-MM-dd'),
         }, {
             preserveState: true,
             replace: true,
@@ -77,191 +127,343 @@ const fetchData = () => {
     }
 };
 
-watch(dates, fetchData);
-
-const setDateRange = (period) => {
-    const today = new Date();
-    let startDate, endDate;
-    switch (period) {
-        case 'today':
-            startDate = today; endDate = today; break;
-        case 'this_week':
-            startDate = startOfWeek(today, { weekStartsOn: 1 }); endDate = endOfWeek(today, { weekStartsOn: 1 }); break;
-        case 'last_week':
-            const lastWeek = subWeeks(today, 1);
-            startDate = startOfWeek(lastWeek, { weekStartsOn: 1 }); endDate = endOfWeek(lastWeek, { weekStartsOn: 1 }); break;
-        case 'this_month':
-            startDate = startOfMonth(today); endDate = endOfMonth(today); break;
-        case 'last_month':
-            const lastMonth = subMonths(today, 1);
-            startDate = startOfMonth(lastMonth); endDate = endOfMonth(lastMonth); break;
-        case 'this_year':
-            startDate = startOfYear(today); endDate = endOfYear(today); break;
-        case 'last_year':
-            const lastYear = subYears(today, 1);
-            startDate = startOfYear(lastYear); endDate = endOfYear(lastYear); break;
+// Observador del DatePicker
+watch(dates, (newDates, oldDates) => {
+    if (newDates && newDates[0] && newDates[1]) {
+        if (!oldDates || !isSameDay(newDates[0], oldDates[0]) || !isSameDay(newDates[1], oldDates[1])) {
+            fetchData();
+        }
     }
-    dates.value = [startDate, endDate];
+}, { deep: true });
+
+
+// --- GRÁFICAS ---
+const barChartData = computed(() => ({
+    labels: props.chartData.labels,
+    datasets: [
+        { label: 'Ventas totales', data: props.chartData.sales, backgroundColor: '#a78bfa', borderRadius: 6 },
+        { label: 'Total de pagos', data: props.chartData.payments, backgroundColor: '#7dd3fc', borderRadius: 6 },
+        { label: 'Total de gastos', data: props.chartData.expenses, backgroundColor: '#fcd34d', borderRadius: 6 },
+        {
+            label: 'Ganancias',
+            data: props.chartData.payments.map((payment, index) => payment - props.chartData.expenses[index]),
+            backgroundColor: '#1FAE07',
+            borderRadius: 6
+        },
+    ]
+}));
+
+const profitSparklineData = computed(() => ({
+    labels: props.chartData.labels,
+    datasets: [{
+        label: 'Ganancias',
+        data: props.chartData.payments.map((payment, index) => payment - props.chartData.expenses[index]),
+        fill: true,
+        borderColor: '#1FAE07',
+        backgroundColor: '#C6FFBA',
+        tension: 0.4,
+    }]
+}));
+
+const totalBalance = computed(() => {
+    if (!props.bankAccounts || props.bankAccounts.length === 0) {
+        return 0;
+    }
+    return props.bankAccounts.reduce((sum, account) => sum + parseFloat(account.balance), 0);
+});
+
+// --- CONFIGURACIÓN (al montar) ---
+onMounted(() => {
+    const initialStartDate = new Date(props.filters.startDate.replace(/-/g, '/'));
+    const initialEndDate = new Date(props.filters.endDate.replace(/-/g, '/'));
+    dates.value = [initialStartDate, initialEndDate];
+
+    // La comparación ahora se basa en las fechas iniciales, no en "today"
+    if (isSameDay(initialStartDate, initialEndDate) && isToday(initialStartDate)) {
+        selectedRange.value = 'day';
+    } else if (isSameDay(initialStartDate, startOfWeek(initialStartDate, { weekStartsOn: 1 })) && isSameDay(initialEndDate, endOfWeek(initialStartDate, { weekStartsOn: 1 }))) {
+        selectedRange.value = 'week';
+    } else if (isSameDay(initialStartDate, startOfMonth(initialStartDate)) && isSameDay(initialEndDate, endOfMonth(initialStartDate))) {
+        selectedRange.value = 'month';
+    } else if (isSameDay(initialStartDate, startOfYear(initialStartDate)) && isSameDay(initialEndDate, endOfYear(initialStartDate))) {
+        selectedRange.value = 'year';
+    } else {
+        selectedRange.value = 'custom';
+    }
+
+    const textColor = '#6b7280';
+    const gridColor = '#e5e7eb';
+
+    mainChartOptions.value = {
+        maintainAspectRatio: false,
+        aspectRatio: 0.8,
+        plugins: { legend: { position: 'bottom', labels: { color: textColor, usePointStyle: true, boxWidth: 8 } } },
+        scales: {
+            x: { ticks: { color: textColor }, grid: { display: false } },
+            y: { ticks: { color: textColor }, grid: { color: gridColor } }
+        }
+    };
+
+    sparklineChartOptions.value = {
+        maintainAspectRatio: false,
+        aspectRatio: 3,
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                enabled: false, // Se deshabilita el tooltip por defecto
+            }
+        },
+        scales: { x: { display: false }, y: { display: false } },
+        elements: {
+            point: {
+                radius: 0 // Se quitan los puntos
+            }
+        }
+    };
+});
+
+
+// --- HELPERS ---
+const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+
+const getPaymentMethodDetails = (method) => {
+    const details = {
+        efectivo: { name: 'Efectivo', icon: 'pi pi-money-bill', color: 'bg-[#37672B]' },
+        tarjeta: { name: 'Pago con tarjeta', icon: 'pi pi-credit-card', color: 'bg-[#063C53]' },
+        transferencia: { name: 'Transferencias', icon: 'pi pi-arrows-h', color: 'bg-[#D2D880]' },
+        saldo: { name: 'Saldo a favor', icon: 'pi pi-wallet', color: 'bg-purple-500' }
+    };
+    return details[method] || { name: method, icon: 'pi pi-question-circle', color: 'bg-gray-500' };
 };
 
-const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+const getChannelDetails = (channel) => {
+    const details = {
+        punto_de_venta: { name: 'Ventas en tienda', icon: 'pi pi-shopping-cart', verb: 'Ventas realizadas' },
+        tienda_en_linea: { name: 'Ventas en línea', icon: 'pi pi-mobile', verb: 'Ventas realizadas' },
+        orden_de_servicio: { name: 'Ordenes de servicio', icon: 'pi pi-wrench', verb: 'Número de ordenes' },
+        cotizacion: { name: 'Cotizaciones', icon: 'pi pi-file', verb: 'Número de cotizaciones' },
+        manual: { name: 'Manual', icon: 'pi pi-pencil', verb: 'Ventas realizadas' },
+        abono_a_saldo: { name: 'Abono a Saldo', icon: 'pi pi-wallet', verb: 'Abonos realizados' }
+    };
+    return details[channel] || { name: channel, icon: 'pi pi-question-circle', verb: 'Transacciones' };
+};
+
+const getExpenseCategoryIcon = (categoryName) => {
+    const name = categoryName.toLowerCase();
+    if (name.includes('servicio')) return 'pi pi-file';
+    if (name.includes('proveedor')) return 'pi pi-calculator';
+    if (name.includes('renta')) return 'pi pi-shopping-bag';
+    if (name.includes('sueldo')) return 'pi pi-users';
+    if (name.includes('publicidad')) return 'pi pi-megaphone';
+    if (name.includes('administrativo')) return 'pi pi-cog';
+    if (name.includes('mantenimiento')) return 'pi pi-wrench';
+    if (name.includes('otro')) return 'pi pi-box';
+    return 'pi pi-tag'; // Icono por defecto
+};
+
 </script>
 
 <template>
 
-    <Head title="Control Financiero" />
+    <Head title="Reporte Financiero" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 space-y-6">
             <!-- Header con Filtros -->
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Control Financiero</h1>
+                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Inicio</h1>
                 <div class="flex items-center gap-2 flex-wrap">
-                    <DatePicker v-model="dates" selectionMode="range" placeholder="Selecciona un rango"
-                        dateFormat="dd/mm/yy" class="w-full md:w-auto" />
-                    <Button @click="setDateRange('today')" label="Hoy" text size="small" />
-                    <Menu ref="menu" :model="[
-                        { label: 'Esta Semana', command: () => setDateRange('this_week') },
-                        { label: 'Semana Pasada', command: () => setDateRange('last_week') },
-                        { label: 'Este Mes', command: () => setDateRange('this_month') },
-                        { label: 'Mes Pasado', command: () => setDateRange('last_month') },
-                        { label: 'Este Año', command: () => setDateRange('this_year') },
-                        { label: 'Año Pasado', command: () => setDateRange('last_year') },
-                    ]" :popup="true" />
-                    <Button @click="$refs.menu.toggle($event)" label="Más Rangos" icon="pi pi-calendar" outlined
-                        severity="secondary" size="small" />
-                    <Button label="Crear Reporte" icon="pi pi-file-pdf" severity="danger" outlined />
+                    <SelectButton v-model="selectedRange" :options="rangeOptions" optionLabel="label"
+                        optionValue="value" />
+                    <DatePicker v-if="selectedRange === 'custom'" v-model="dates" selectionMode="range"
+                        dateFormat="dd/mm/yy" class="!w-64" @update:modelValue="selectedRange = 'custom'" />
+                    <Button label="Crear Reporte" icon="pi pi-file-excel" severity="success" outlined
+                        @click="handleExport" :loading="isExporting" />
                 </div>
             </div>
 
             <!-- KPIs -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card><template #title>Ingresos</template><template #subtitle>Periodo seleccionado</template><template
-                        #content>
-                        <p class="text-2xl font-bold text-green-600">{{ formatCurrency(kpis.totalIncome) }}</p>
-                    </template></Card>
-                <Card><template #title>Gastos</template><template #subtitle>Periodo seleccionado</template><template
-                        #content>
-                        <p class="text-2xl font-bold text-red-600">{{ formatCurrency(kpis.totalExpenses) }}</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                <Card> <template #content>
+                        <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Ventas
+                                totales</span> <i
+                                class="pi pi-shopping-cart p-2 bg-purple-100 text-purple-600 rounded-full"></i> </div>
+                        <p class="text-2xl font-bold">{{ formatCurrency(kpis.sales.current) }}</p>
+                        <div class="flex items-center text-sm mt-1"
+                            :class="kpis.sales.percentage_change >= 0 ? 'text-green-500' : 'text-red-500'"> <i
+                                class="pi"
+                                :class="kpis.sales.percentage_change >= 0 ? 'pi-arrow-up' : 'pi-arrow-down'"></i> <span
+                                class="font-semibold mx-1">{{ Math.abs(kpis.sales.percentage_change) }}%</span>
+                            <span>({{ formatCurrency(kpis.sales.monetary_change) }})</span> </div>
+                        <p class="text-xs text-gray-400 mt-2">vs {{ formatCurrency(kpis.sales.previous) }} el periodo
+                            pasado</p>
                     </template>
                 </Card>
-                <Card><template #title>Beneficio Neto</template><template #subtitle>Periodo
-                        seleccionado</template><template #content>
+                <Card> <template #content>
+                        <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Total de
+                                pagos</span> <i class="pi pi-dollar p-2 bg-cyan-100 text-cyan-600 rounded-full"></i>
+                        </div>
+                        <p class="text-2xl font-bold">{{ formatCurrency(kpis.payments.current) }}</p>
+                        <div class="flex items-center text-sm mt-1"
+                            :class="kpis.payments.percentage_change >= 0 ? 'text-green-500' : 'text-red-500'"> <i
+                                class="pi"
+                                :class="kpis.payments.percentage_change >= 0 ? 'pi-arrow-up' : 'pi-arrow-down'"></i>
+                            <span class="font-semibold mx-1">{{ Math.abs(kpis.payments.percentage_change) }}%</span>
+                            <span>({{ formatCurrency(kpis.payments.monetary_change) }})</span> </div>
+                        <p class="text-xs text-gray-400 mt-2">vs {{ formatCurrency(kpis.payments.previous) }} el periodo
+                            pasado</p>
+                    </template>
+                </Card>
+                <Card> <template #content>
+                        <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Total de
+                                gastos</span> <i
+                                class="pi pi-file-export p-2 bg-yellow-100 text-yellow-600 rounded-full"></i> </div>
+                        <p class="text-2xl font-bold">{{ formatCurrency(kpis.expenses.current) }}</p>
+                        <div class="flex items-center text-sm mt-1"
+                            :class="kpis.expenses.percentage_change <= 0 ? 'text-green-500' : 'text-red-500'"> <i
+                                class="pi"
+                                :class="kpis.expenses.percentage_change <= 0 ? 'pi-arrow-down' : 'pi-arrow-up'"></i>
+                            <span class="font-semibold mx-1">{{ Math.abs(kpis.expenses.percentage_change) }}%</span>
+                            <span>({{ formatCurrency(kpis.expenses.monetary_change) }})</span> </div>
+                        <p class="text-xs text-gray-400 mt-2">vs {{ formatCurrency(kpis.expenses.previous) }} el periodo
+                            pasado</p>
+                    </template>
+                </Card>
+                <Card> <template #content>
+                        <div class="flex items-center justify-between mb-2"> <span
+                                class="text-gray-500">Ganancias</span>
+                            <div class="w-24 h-12">
+                                <Chart type="line" :data="profitSparklineData" :options="sparklineChartOptions" />
+                            </div>
+                        </div>
                         <p class="text-2xl font-bold"
-                            :class="kpis.netProfit >= 0 ? 'text-gray-800 dark:text-gray-200' : 'text-red-600'">{{
-                            formatCurrency(kpis.netProfit) }}</p>
+                            :class="kpis.profit.current >= 0 ? 'text-gray-800 dark:text-gray-200' : 'text-red-600'">{{
+                                formatCurrency(kpis.profit.current) }}</p>
+                        <div class="flex items-center text-sm mt-1"
+                            :class="kpis.profit.percentage_change >= 0 ? 'text-green-500' : 'text-red-500'"> <i
+                                class="pi"
+                                :class="kpis.profit.percentage_change >= 0 ? 'pi-arrow-up' : 'pi-arrow-down'"></i> <span
+                                class="font-semibold mx-1">{{ Math.abs(kpis.profit.percentage_change) }}%</span>
+                            <span>({{ formatCurrency(kpis.profit.monetary_change) }})</span> </div>
+                        <p class="text-xs text-gray-400 mt-2">vs {{ formatCurrency(kpis.profit.previous) }} el periodo
+                            pasado</p>
                     </template>
                 </Card>
             </div>
 
+            <!-- Gráfica Principal -->
+            <Card class="!bg-[#2A2A2A]">
+                <template #title>
+                    <p class="text-white font-bold">Resumen comparativo de operaciones</p>
+                </template>
+                <template #content>
+                    <Chart type="bar" :data="barChartData" :options="mainChartOptions" class="h-[400px]" />
+                </template>
+            </Card>
+
+            <!-- Nuevos Paneles de Desglose -->
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- Gráfica Principal -->
-                <div class="lg:col-span-2">
-                    <Card class="h-full">
-                        <template #title>Resumen de Ingresos vs. Gastos</template>
+                <div class="lg:col-span-2 space-y-6">
+                    <!-- Métodos de Pago -->
+                    <Card>
+                        <template #title>Métodos de pago</template>
+                        <template #subtitle>Visualiza los métodos de pago más usados en los pagos.</template>
                         <template #content>
-                            <Chart v-if="hasLineChartData" type="line" :data="lineChartData" :options="lineChartOptions"
-                                class="h-[400px]" />
-                            <div v-else class="h-[400px] flex items-center justify-center text-center text-gray-500">
-                                <div>
-                                    <i class="pi pi-chart-line text-4xl"></i>
-                                    <p class="mt-2">No hay datos suficientes para mostrar la gráfica en este período.
-                                    </p>
+                            <div v-if="paymentMethods.length > 0" class="space-y-4">
+                                <div v-for="pm in paymentMethods" :key="pm.method">
+                                    <div class="flex items-center justify-between mb-1">
+                                        <div class="flex items-center">
+                                            <i :class="getPaymentMethodDetails(pm.method).icon"
+                                                class="mr-2 text-gray-500"></i>
+                                            <span class="font-semibold text-sm">{{
+                                                getPaymentMethodDetails(pm.method).name }}</span>
+                                        </div>
+                                        <span class="text-sm font-semibold">{{ pm.percentage }}%</span>
+                                    </div>
+                                    <div class="w-full bg-gray-200 rounded-full h-2 dark:bg-gray-700">
+                                        <div :class="getPaymentMethodDetails(pm.method).color" class="h-2 rounded-full"
+                                            :style="{ width: pm.percentage + '%' }"></div>
+                                    </div>
                                 </div>
                             </div>
+                            <p v-else class="text-center text-gray-500 py-4">No hay pagos registrados en este periodo.
+                            </p>
                         </template>
                     </Card>
-                </div>
 
-                <!-- Columna Derecha -->
-                <div class="space-y-6">
-                    <!-- Desglose de Ingresos -->
+                    <!-- Gastos por Categoría -->
                     <Card>
-                        <template #title>Ingresos por Método de Pago</template>
+                        <template #title>Gastos por categoría</template>
+                        <template #subtitle>Resumen de los gastos registrados en el periodo.</template>
                         <template #content>
-                            <div class="h-64 flex items-center justify-center">
-                                <Chart v-if="hasPieChartData" type="doughnut" :data="incomeByMethodChartData"
-                                    :options="pieChartOptions" class="h-full" />
-                                <div v-else class="text-center text-gray-500">
-                                    <i class="pi pi-chart-pie text-4xl"></i>
-                                    <p class="mt-2">No hay ingresos registrados en este período.</p>
-                                </div>
-                            </div>
-                        </template>
-                    </Card>
-                    <!-- Cuentas Bancarias -->
-                    <Card>
-                        <template #title>Cuentas Bancarias</template>
-                        <template #content>
-                            <ul v-if="bankAccounts.length > 0" class="space-y-3">
-                                <li v-for="account in bankAccounts" :key="account.id"
-                                    class="flex justify-between items-center">
+                            <div v-if="expensesByCategory.length > 0" class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                <div v-for="cat in expensesByCategory" :key="cat.category_name"
+                                    class="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg flex items-center gap-3">
+                                    <i :class="getExpenseCategoryIcon(cat.category_name)"
+                                        class="text-2xl p-2 bg-gray-200 dark:bg-gray-700 rounded-full"></i>
                                     <div>
-                                        <p class="font-semibold">{{ account.account_name }}</p>
-                                        <p class="text-sm text-gray-500">{{ account.bank_name }}</p>
+                                        <p class="text-sm text-gray-500 m-0">{{ cat.category_name }}</p>
+                                        <p class="font-bold m-0">{{ formatCurrency(cat.total) }}</p>
                                     </div>
-                                    <span class="font-mono font-bold">{{ formatCurrency(account.balance) }}</span>
-                                </li>
-                            </ul>
-                            <p v-else class="text-sm text-gray-500 text-center py-4">No hay cuentas bancarias
-                                registradas.</p>
+                                </div>
+                            </div>
+                            <p v-else class="text-center text-gray-500 py-4">No hay gastos registrados en este periodo.
+                            </p>
                         </template>
                     </Card>
-                </div>
-            </div>
 
-            <!-- Historial de Cortes y Cajas -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
-                    <template #title>Cajas Registradas</template>
+                    <Card>
+                        <template #title>Cuentas bancarias</template>
+                        <template #subtitle>Balance actual de tus cuentas registradas.</template>
+                        <template #content>
+                            <div v-if="bankAccounts && bankAccounts.length > 0">
+                                <div
+                                    class="flex justify-between items-center mb-4 pb-2 border-b border-dashed dark:border-gray-700">
+                                    <span class="font-bold">Balance Total</span>
+                                    <span class="font-bold text-lg">{{ formatCurrency(totalBalance) }}</span>
+                                </div>
+                                <ul class="space-y-3 max-h-60 overflow-y-auto pr-2">
+                                    <li v-for="account in bankAccounts" :key="account.id"
+                                        class="flex justify-between items-center">
+                                        <div>
+                                            <p class="font-semibold">{{ account.account_name }}</p>
+                                            <p class="text-sm text-gray-500">{{ account.bank_name }}</p>
+                                        </div>
+                                        <span class="font-mono font-bold">{{ formatCurrency(account.balance) }}</span>
+                                    </li>
+                                </ul>
+                            </div>
+                            <p v-else class="text-center text-gray-500 py-4">No hay cuentas bancarias registradas.</p>
+                        </template>
+                    </Card>
+
+                </div>
+
+                <!-- Ventas por Módulo -->
+                <Card class="lg:row-span-2 !bg-[#E6E6E6] border border-[#d9d9d9]">
+                    <template #title>Ventas por módulo</template>
+                    <template #subtitle>Visualiza las ventas desglosadas por módulo.</template>
                     <template #content>
-                        <ul v-if="cashRegisters.length > 0" class="space-y-3">
-                            <li v-for="register in cashRegisters" :key="register.id">
-                                <div v-if="register.in_use"
-                                    class="p-3 rounded-md bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700">
-                                    <div class="flex justify-between items-center">
-                                        <p class="font-semibold text-green-800 dark:text-green-200">{{ register.name }}
+                        <div v-if="salesByChannel.length > 0" class="space-y-4">
+                            <div v-for="sc in salesByChannel" :key="sc.channel"
+                                class="p-4 rounded-lg bg-gray-50 dark:bg-gray-800">
+                                <div class="flex items-center gap-3">
+                                    <span
+                                        class="bg-[#EFD5FF] text-[#8C2FFE] border border-[#BE89FF] rounded-full size-8 flex items-center justify-center flex-shrink-0">
+                                        <i :class="getChannelDetails(sc.channel).icon" class="!text-lg"></i>
+                                    </span>
+                                    <div class="text-center text-lg w-full">
+                                        <p class="font-bold text-[#373737] m-0">{{ getChannelDetails(sc.channel).name }}
                                         </p>
-                                        <Tag value="En Uso" severity="success" />
-                                    </div>
-                                    <div class="mt-2 text-sm text-green-700 dark:text-green-300">
-                                        <p>Usuario: <span class="font-medium">{{ register.active_session_user }}</span>
-                                        </p>
-                                        <p>Balance Actual: <span class="font-semibold font-mono">{{
-                                                formatCurrency(register.current_balance) }}</span></p>
+                                        <p class="font-semibold text-black m-0">{{ formatCurrency(sc.total) }}</p>
                                     </div>
                                 </div>
-                                <div v-else class="flex justify-between items-center p-3">
-                                    <p class="font-semibold">{{ register.name }}</p>
-                                    <Tag value="Libre" severity="secondary" />
+                                <div class="mt-1 pt-1 border-t border-dashed border-[#d9d9d9] text-center">
+                                    <p class="text-sm text-gray-500 m-0">{{ getChannelDetails(sc.channel).verb }}</p>
+                                    <p class="font-bold text-lg m-0 bg-[#F2F2F2] rounded-md">{{ sc.count }}</p>
                                 </div>
-                            </li>
-                        </ul>
-                        <p v-else class="text-sm text-gray-500 text-center py-4">No hay cajas registradoras
-                            configuradas.</p>
-                    </template>
-                    <template #footer><Button label="Gestionar Cajas" severity="secondary" text class="w-full"
-                            @click="router.get(route('cash-registers.index'))" /></template>
-                </Card>
-                <Card>
-                    <template #title>Últimos Cortes de Caja</template>
-                    <template #content>
-                        <DataTable :value="recentSessions" class="p-datatable-sm">
-                            <template #empty>
-                                <div class="text-center py-4">No hay cortes de caja recientes.</div>
-                            </template>
-                            <Column field="id" header="ID Sesión"></Column>
-                            <Column field="closed_at" header="Fecha de Cierre"></Column>
-                            <Column field="opening_cash_balance" header="Fondo Inicial"><template #body="{ data }">{{
-                                    formatCurrency(data.opening_cash_balance) }}</template></Column>
-                            <Column field="cash_difference" header="Diferencia"><template #body="{ data }"><span
-                                        :class="data.cash_difference < 0 ? 'text-red-500' : 'text-green-500'">{{
-                                        formatCurrency(data.cash_difference) }}</span></template>
-                            </Column>
-                        </DataTable>
-                    </template>
-                    <template #footer>
-                        <Button label="Ver Todos los Cortes" severity="secondary" text class="w-full"
-                            @click="router.get(route('cash-register-sessions.index'))" />
+                            </div>
+                        </div>
+                        <p v-else class="text-center text-gray-500 py-8">No hay ventas registradas en este periodo.</p>
                     </template>
                 </Card>
             </div>

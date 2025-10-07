@@ -80,7 +80,7 @@ const actionItems = computed(() => [
     { separator: true },
     { label: 'Crear nuevo cliente', icon: 'pi pi-plus', command: () => router.get(route('customers.create')), visible: hasPermission('customers.create') },
     { label: 'Editar cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', props.customer.id)), visible: hasPermission('customers.edit') },
-    { label: 'Registrar venta', icon: 'pi pi-shopping-cart', command: () => router.get(route('pos.index', { customer_id: props.customer.id })), visible: hasPermission('pos.access') },
+    // { label: 'Registrar venta', icon: 'pi pi-shopping-cart', command: () => router.get(route('pos.index', { customer_id: props.customer.id })), visible: hasPermission('pos.access') },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteCustomer, visible: hasPermission('customers.delete') },
 ]);

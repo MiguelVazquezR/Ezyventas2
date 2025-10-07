@@ -192,6 +192,9 @@ const getStatusSeverity = (status) => {
                         <template #body="{ data }"> <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
                                 text rounded severity="secondary" /> </template>
                     </Column>
+                    <template #empty>
+                        <div class="text-center py-4">No hay órdenes de servicio registrados.</div>
+                    </template>
                 </DataTable>
 
                 <Menu ref="menu" :model="menuItems" :popup="true" />
