@@ -28,7 +28,7 @@ const toggleStatus = () => {
 
 const deleteExpense = () => {
     confirm.require({
-        message: `¿Estás seguro de que quieres eliminar el gasto con folio "${props.expense.folio || props.expense.id}"?`,
+        message: `¿Estás seguro de que quieres eliminar el gasto con concepto "${props.expense.folio || props.expense.id}"?`,
         header: 'Confirmar Eliminación',
         icon: 'pi pi-info-circle',
         acceptClass: 'p-button-danger',
@@ -83,7 +83,7 @@ const getPaymentMethodIcon = (method) => {
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <div>
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Detalle del Gasto</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Concepto / Folio / Referencia: {{ expense.folio || 'N/A' }}</p>
+                <p class="text-gray-500 dark:text-gray-400 mt-1">Concepto: {{ expense.folio || 'N/A' }}</p>
             </div>
             <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined class="mt-4 sm:mt-0">
             </SplitButton>
@@ -152,7 +152,7 @@ const getPaymentMethodIcon = (method) => {
 
             <!-- Columna Derecha: Historial -->
             <div class="lg:col-span-1">
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                <!-- <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-6">Historial de Actividad</h2>
                     <div v-if="activities && activities.length > 0" class="relative max-h-[600px] overflow-y-auto pr-2">
                         <div class="relative pl-6">
@@ -176,7 +176,6 @@ const getPaymentMethodIcon = (method) => {
                                             class="mt-3 text-sm space-y-2">
                                             <div v-for="(value, key) in activity.changes.after" :key="key">
                                                 <p class="font-medium">{{ key }}</p>
-                                                <!-- CORRECCIÓN: Convertir valores a String antes de pasarlos a DiffViewer -->
                                                 <DiffViewer :oldValue="String(activity.changes.before[key] || '')"
                                                     :newValue="String(value || '')" />
                                             </div>
@@ -187,7 +186,7 @@ const getPaymentMethodIcon = (method) => {
                         </div>
                     </div>
                     <div v-else class="text-center text-gray-500 py-8"> No hay actividades registradas. </div>
-                </div>
+                </div> -->
             </div>
         </div>
     </AppLayout>

@@ -237,11 +237,8 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         'balance_after' => $customer->balance,
                         'notes' => "Cargo a crédito por venta POS #{$newTransaction->folio}",
                     ]);
-
-                    // CORRECCIÓN: No se hace nada aquí, la transacción ya está como PENDIENTE.
                     
                 } else { // VENTA PAGADA POR COMPLETO
-                    // CORRECCIÓN: Si no hay adeudo, se actualiza a COMPLETADO.
                     $newTransaction->update(['status' => TransactionStatus::COMPLETED]);
                 }
 

@@ -53,7 +53,7 @@ const model = ref([
                 ]
             },
             {
-                label: 'Configuraciones', icon: 'pi pi-fw pi-cog',
+                label: 'Configuraciones', icon: 'pi pi-cog',
                 items: [
                     // {
                     //     label: 'Generales',

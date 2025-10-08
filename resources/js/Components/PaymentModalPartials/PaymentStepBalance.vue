@@ -78,7 +78,7 @@ const formatCurrency = (value) => {
         </div>
         <div v-else class="flex-grow flex flex-col">
             <div class="flex-grow">
-                <a @click="goBack" class="text-sm text-blue-500 hover:underline cursor-pointer mb-6 block">&larr; Cambiar monto o método</a>
+                <a @click="goBack" class="text-sm text-primary cursor-pointer mb-6 block">&larr; Cambiar monto o método</a>
                 
                 <!-- INICIO DE CORRECCIÓN: Lógica separada por método -->
                 <div v-if="selectedMethod === 'efectivo'">
@@ -97,7 +97,7 @@ const formatCurrency = (value) => {
                         </div>
                     </div>
                     <div v-else class="flex-grow flex flex-col items-center justify-center text-center">
-                        <i class="pi pi-exclamation-triangle text-4xl text-yellow-500 mb-4"></i>
+                        <i class="pi pi-exclamation-triangle !text-4xl text-yellow-500 mb-4"></i>
                         <p class="font-semibold">No hay cuentas bancarias</p>
                         <p class="text-sm text-gray-500 mb-4">Para aceptar este tipo de pago, debe registrar una cuenta.</p>
                         <Button label="Registrar Nueva Cuenta" icon="pi pi-plus" @click="emit('add-account')" />

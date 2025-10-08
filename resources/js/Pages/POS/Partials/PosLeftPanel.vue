@@ -237,7 +237,7 @@ onUnmounted(() => {
             <div class="flex justify-between items-center mb-4">
                 <h1 class="hidden lg:block text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Registrar ventas</h1>
                 <div v-if="activeSession"
-                    class="p-1 text-center rounded-full px-2 lg:px-8 text-sm text-base bg-gradient-to-r from-transparent via-[#CEEACB] dark:via-[#366531] to-transparent text-[#24880B] dark:text-[#69f446] font-semibold">
+                    class="p-1 text-center rounded-full px-2 lg:px-8 text-sm lg:text-base bg-gradient-to-r from-transparent via-[#CEEACB] dark:via-[#366531] to-transparent text-[#24880B] dark:text-[#69f446] font-semibold">
                     Caja Activa: <span class="font-bold">{{ activeSession.cash_register.name }}</span>
                 </div>
                 <div class="flex items-center gap-3">

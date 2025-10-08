@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
+use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Models\Product;
 use App\Models\Transaction;
@@ -36,6 +37,7 @@ class TransactionController extends Controller implements HasMiddleware
             ->leftJoin('customers', 'transactions.customer_id', '=', 'customers.id')
             ->leftJoin('users', 'transactions.user_id', '=', 'users.id')
             ->where('transactions.branch_id', $branchId)
+            // ->where('transactions.channel', '!=', TransactionChannel::BALANCE_PAYMENT)
             ->with(['customer:id,name', 'user:id,name'])
             ->select('transactions.*');
 

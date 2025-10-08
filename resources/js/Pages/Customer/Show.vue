@@ -107,9 +107,9 @@ const getBalanceClass = (balance) => {
 const getTransactionStatusSeverity = (status) => {
     const map = {
         completado: 'success',
-        pendiente: 'info',
+        pendiente: 'warn',
         cancelado: 'danger',
-        reembolsado: 'warning',
+        reembolsado: 'info',
     };
     return map[status] || 'secondary';
 };
@@ -217,13 +217,17 @@ const getTransactionStatusSeverity = (status) => {
                         </Column>
                         <Column field="amount" header="Monto">
                             <template #body="{ data }">
-                                <span :class="data.amount > 0 ? 'text-green-600' : 'text-red-600'">
+                                <span>
                                     {{ formatCurrency(data.amount) }}
                                 </span>
                             </template>
                         </Column>
                          <Column field="balance_after" header="Saldo Resultante">
-                                <template #body="{ data }"> {{ formatCurrency(data.balance_after) }}</template>
+                                <template #body="{ data }">
+                                    <span :class="data.balance_after > 0 ? 'text-green-600' : 'text-red-600'">
+                                        {{ formatCurrency(data.balance_after) }}
+                                    </span>
+                                </template>
                         </Column>
                         <template #empty>
                             <div class="text-center text-gray-500 py-4">

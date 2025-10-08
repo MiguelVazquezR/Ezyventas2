@@ -35,7 +35,7 @@ const selectedExpenseForMenu = ref(null);
 const deleteSingleExpense = () => {
     if (!selectedExpenseForMenu.value) return;
     confirm.require({
-        message: `¿Estás seguro de que quieres eliminar el gasto con folio "${selectedExpenseForMenu.value.folio || 'N/A'}"?`,
+        message: `¿Estás seguro de que quieres eliminar el gasto con concepto "${selectedExpenseForMenu.value.folio || 'N/A'}"?`,
         header: 'Confirmar Eliminación',
         icon: 'pi pi-info-circle',
         acceptClass: 'p-button-danger',
@@ -116,7 +116,7 @@ const formatDate = (dateString) => {
                 <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
                     <IconField iconPosition="left" class="w-full md:w-1/3">
                         <InputIcon class="pi pi-search"></InputIcon>
-                        <InputText v-model="searchTerm" placeholder="Buscar por folio o descripción..."
+                        <InputText v-model="searchTerm" placeholder="Buscar por concepto o descripción..."
                             class="w-full" />
                     </IconField>
                     <div class="flex items-center gap-2">
@@ -146,7 +146,7 @@ const formatDate = (dateString) => {
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} gastos">
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
-                    <Column field="folio" header="Folio" sortable></Column>
+                    <Column field="folio" header="Concepto" sortable></Column>
                     <Column field="expense_date" header="Fecha" sortable>
                         <template #body="{ data }"> {{ formatDate(data.expense_date) }} </template>
                     </Column>
