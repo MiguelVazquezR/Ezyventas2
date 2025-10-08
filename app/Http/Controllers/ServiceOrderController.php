@@ -15,6 +15,7 @@ use App\Models\CustomFieldDefinition;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\ServiceOrder;
+use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -139,20 +140,9 @@ class ServiceOrderController extends Controller implements HasMiddleware
             $user = Auth::user();
             $customer = null;
 
-            $subscriptionId = $user->branch->subscription_id;
-
-            $lastOrder = ServiceOrder::whereHas('branch', fn($q) => $q->where('subscription_id', $subscriptionId))
-                ->latest('id')
-                ->first();
-
-            $nextNumber = 1;
-            if ($lastOrder && $lastOrder->folio) {
-                $lastNumber = (int) substr($lastOrder->folio, 3);
-                $nextNumber = $lastNumber + 1;
-            }
-
-            $folio = 'OS-' . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
-
+            // --- Se generan ambos folios consecutivos ---
+            $folio = $this->generateServiceOrderFolio();
+            $transactionFolio = $this->generateTransactionFolio();
 
             if (! empty($validated['customer_id'])) {
                 $customer = Customer::find($validated['customer_id']);
@@ -177,7 +167,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
             ]));
 
             $transaction = $serviceOrder->transaction()->create([
-                'folio' => 'TR-SO-' . time(),
+                'folio' => $transactionFolio,
                 'customer_id' => $customer?->id,
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
@@ -189,12 +179,10 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'status' => $serviceOrder->final_total > 0 ? TransactionStatus::PENDING : TransactionStatus::COMPLETED,
             ]);
 
-            // El controlador procesará los items tal como lleguen del frontend.
-            // El frontend ahora es responsable de asignar el 'itemable_type' correcto.
             if (!empty($validated['items'])) {
                 foreach ($validated['items'] as $item) {
                     if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
-                        unset($item['itemable_id']); // Es mejor quitar el id si es 0
+                        unset($item['itemable_id']);
                     }
                     $serviceOrder->items()->create($item);
                 }
@@ -212,6 +200,64 @@ class ServiceOrderController extends Controller implements HasMiddleware
         return redirect()->route('service-orders.show', $newServiceOrder->id)
             ->with('success', 'Orden de servicio creada.')
             ->with('show_payment_modal', true);
+    }
+
+    /**
+     * Genera un folio consecutivo para las órdenes de servicio, único por suscripción.
+     *
+     * @return string
+     */
+    private function generateServiceOrderFolio(): string
+    {
+        $subscriptionId = Auth::user()->branch->subscription_id;
+
+        // Busca la última orden de servicio de la suscripción con el formato de folio específico
+        $lastOrder = ServiceOrder::whereHas('branch', function ($query) use ($subscriptionId) {
+            $query->where('subscription_id', $subscriptionId);
+        })
+            ->where('folio', 'like', 'OS-%')
+            // Ordena por el valor numérico del folio para encontrar el más alto, no por ID.
+            ->orderByRaw('CAST(SUBSTRING(folio, 4) AS UNSIGNED) DESC')
+            ->first();
+
+        $sequence = 1;
+        if ($lastOrder) {
+            // Extrae la parte numérica del folio (después de "OS-") y le suma 1
+            $lastSequence = (int) substr($lastOrder->folio, 3);
+            $sequence = $lastSequence + 1;
+        }
+
+        // Retorna el nuevo folio formateado con 3 dígitos (ej: OS-001)
+        return 'OS-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Genera un folio consecutivo para la transacción de la orden de servicio.
+     *
+     * @return string
+     */
+    private function generateTransactionFolio(): string
+    {
+        $subscriptionId = Auth::user()->branch->subscription_id;
+
+        // Busca la última transacción de la suscripción con el formato de folio específico
+        $lastTransaction = Transaction::whereHas('branch', function ($query) use ($subscriptionId) {
+            $query->where('subscription_id', $subscriptionId);
+        })
+            ->where('folio', 'like', 'OS-V-%')
+            // Ordena por el valor numérico del folio para encontrar el más alto
+            ->orderByRaw('CAST(SUBSTRING(folio, 6) AS UNSIGNED) DESC')
+            ->first();
+
+        $sequence = 1;
+        if ($lastTransaction) {
+            // Extrae la parte numérica del folio (después de "OS-V-") y le suma 1
+            $lastSequence = (int) substr($lastTransaction->folio, 5);
+            $sequence = $lastSequence + 1;
+        }
+
+        // Retorna el nuevo folio formateado
+        return 'OS-V-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
     }
 
     public function edit(ServiceOrder $serviceOrder): Response

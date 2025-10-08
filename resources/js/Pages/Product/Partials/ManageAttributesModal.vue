@@ -188,7 +188,7 @@ const closeModal = () => {
         <template #footer>
             <div class="flex justify-between w-full">
                 <Button @click="addNewAttribute" label="Nuevo Atributo" icon="pi pi-plus" severity="success" />
-                <Button label="Cerrar" icon="pi pi-times" @click="closeModal" text />
+                <Button label="Cerrar" icon="pi pi-times" severity="secondary" @click="closeModal" text />
             </div>
         </template>
     </Dialog>

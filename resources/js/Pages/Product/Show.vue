@@ -157,9 +157,9 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
             <!-- Columna Izquierda -->
             <div class="lg:col-span-1 space-y-6">
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <Galleria :value="generalImages" :numVisible="3" containerStyle="max-width: 640px">
+                    <Galleria :value="generalImages" :numVisible="3" containerStyle="max-width: 640px;">
                         <template #item="slotProps">
-                            <img :src="slotProps.item.original_url" :alt="slotProps.item.name"
+                            <img :src="slotProps.item.original_url" :alt="slotProps.item.name" class="h-80 object-contain"
                                 style="width: 100%; display: block;" />
                         </template>
                         <template #thumbnail="slotProps">
@@ -171,7 +171,7 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                         No hay imágenes generales.
                     </div>
                 </div>
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                <!-- <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2
                         class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
                         Tienda en Línea</h2>
@@ -202,7 +202,7 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                 kg</span>
                         </li>
                     </ul>
-                </div>
+                </div> -->
             </div>
 
             <!-- Columna Derecha -->
@@ -274,21 +274,21 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2
                         class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
-                        Inventario y Variantes</h2>
+                        Inventario y variantes</h2>
 
                     <div v-if="!isVariantProduct" class="grid grid-cols-3 gap-4 text-center">
                         <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Stock Actual</p>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Stock actual</p>
                             <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.current_stock }}
                             </p>
                         </div>
                         <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Stock Mínimo</p>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Stock mínimo</p>
                             <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.min_stock || 'N/A'
                                 }}</p>
                         </div>
                         <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Stock Máximo</p>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Stock máximo</p>
                             <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.max_stock || 'N/A'
                                 }}</p>
                         </div>
@@ -300,9 +300,9 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                 <template #body="{ data }">
                                     <img v-if="variantImages[data.attributes.Color]"
                                         :src="variantImages[data.attributes.Color]"
-                                        class="w-12 h-12 object-cover rounded-md" />
+                                        class="size-12 object-contain rounded-md" />
                                     <div v-else
-                                        class="w-12 h-12 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                                        class="size-12 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
                                         <i class="pi pi-image text-2xl text-gray-400 dark:text-gray-500"></i>
                                     </div>
                                 </template>

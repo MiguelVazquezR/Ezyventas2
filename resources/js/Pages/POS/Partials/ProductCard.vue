@@ -189,7 +189,7 @@ const formatCurrency = (value) => {
                             variantName }}</p>
                         <div class="flex flex-wrap gap-2">
                             <Button v-for="option in options" :key="option.value" :label="option.value"
-                                :outlined="!isCardOptionSelected(variantName, option.value)" severity="secondary"
+                                :outlined="!isCardOptionSelected(variantName, option.value)" severity="contrast"
                                 class="p-button-sm !text-xs !py-1 !px-2"
                                 @click="selectCardOption(variantName, option.value)"
                                 :disabled="isCardOptionDisabled(variantName, option.value)" />
