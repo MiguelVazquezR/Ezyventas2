@@ -95,7 +95,7 @@ class FinancialReportService
 
         $sales = $this->queryChartPoints(Transaction::class, 'created_at', $sqlDateFormat, $labels);
         $payments = $this->queryChartPoints(Payment::class, 'payment_date', $sqlDateFormat, $labels);
-        $expenses = $this->queryChartPoints(Expense::class, 'expense_date', $sqlDateFormat, $labels);
+        $expenses = $this->queryChartPoints(Expense::class, 'created_at', $sqlDateFormat, $labels);
         
         return ['labels' => $labels, 'sales' => $sales, 'payments' => $payments, 'expenses' => $expenses];
     }
@@ -150,7 +150,7 @@ class FinancialReportService
     {
         return Expense::where('branch_id', $this->branchId)
             ->where('status', ExpenseStatus::PAID)
-            ->whereBetween('expense_date', [$this->startDate, $this->endDate])
+            ->whereBetween('created_at', [$this->startDate, $this->endDate])
             ->with('category:id,name')
             ->groupBy('expense_category_id')
             ->select('expense_category_id', DB::raw('SUM(amount) as total'))

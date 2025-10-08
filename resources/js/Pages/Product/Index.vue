@@ -35,11 +35,11 @@ const toggleHeaderMenu = (event) => {
     headerMenu.value.toggle(event);
 };
 const splitButtonItems = ref([
-    {
-        label: 'Importar desde Excel',
-        icon: 'pi pi-upload',
-        command: () => showImportModal.value = true
-    },
+    // {
+    //     label: 'Importar desde Excel',
+    //     icon: 'pi pi-upload',
+    //     command: () => showImportModal.value = true
+    // },
     {
         label: 'Exportar a Excel',
         icon: 'pi pi-download',

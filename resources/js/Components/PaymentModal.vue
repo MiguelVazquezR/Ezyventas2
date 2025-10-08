@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, inject } from 'vue';
+import { ref, computed, watch, inject } from 'vue';
 import axios from 'axios';
 import { useToast } from 'primevue/usetoast';
 import BankAccountModal from '@/Components/BankAccountModal.vue';
@@ -25,7 +25,6 @@ const toast = useToast();
 const activeSession = inject('activeSession', ref(null));
 
 // --- ESTADO PRINCIPAL DEL COMPONENTE ---
-const currentStep = ref('selection');
 const selectedMethod = ref(null);
 const payments = ref([]);
 const showAddBankAccountModal = ref(false);
@@ -38,15 +37,18 @@ const amountToPay = ref(0);
 const willMakeDownPayment = ref(false);
 const downPaymentAmount = ref(null);
 const downPaymentMethod = ref('efectivo');
+// --- NUEVO: Estado para la cuenta del abono ---
+const downPaymentBankAccountId = ref(null);
 
 // --- LÓGICA DE DATOS Y CÁLCULOS ---
-onMounted(() => fetchBankAccounts());
-
 const fetchBankAccounts = async () => {
     try {
         const response = await axios.get(route('branch-bank-accounts'));
         bankAccounts.value = response.data;
-        if (bankAccounts.value.length === 1) selectedAccountId.value = bankAccounts.value[0].id;
+        if (bankAccounts.value.length === 1) {
+            selectedAccountId.value = bankAccounts.value[0].id;
+            downPaymentBankAccountId.value = bankAccounts.value[0].id; // Pre-seleccionar también
+        }
     } catch (error) { console.error("Error fetching bank accounts:", error); }
 };
 
@@ -62,8 +64,7 @@ const bankAccountOptions = computed(() => bankAccounts.value.map(acc => ({
 })));
 
 const clientBalance = computed(() => props.client?.balance || 0);
-const balanceUsedForSale = computed(() => Math.min(props.totalAmount, Math.max(0, clientBalance.value)));
-const amountAfterBalance = computed(() => props.totalAmount - balanceUsedForSale.value);
+const amountAfterBalance = computed(() => props.totalAmount - Math.min(props.totalAmount, Math.max(0, clientBalance.value)));
 const amountToCreditFinal = computed(() => (willMakeDownPayment.value && downPaymentAmount.value > 0) ? amountAfterBalance.value - downPaymentAmount.value : amountAfterBalance.value);
 const futureDebt = computed(() => Math.abs(Math.min(0, clientBalance.value)) + amountToCreditFinal.value);
 const creditLimitExceeded = computed(() => futureDebt.value > (props.client?.credit_limit || 0));
@@ -73,35 +74,25 @@ const isCreditSale = computed(() => props.client ? amountToCreditFinal.value <= 
 // --- LÓGICA DE FLUJO Y MANEJO DE EVENTOS ---
 watch(() => props.visible, (newVal) => {
     if (newVal) {
-        amountToPay.value = 0;
-        goBackToSelection();
+        fetchBankAccounts();
+        resetState();
         if (props.paymentMode === 'balance' && props.client?.balance < 0) {
             amountToPay.value = Math.abs(props.client.balance);
         }
     }
 });
 
-const goBackToSelection = () => {
-    currentStep.value = props.paymentMode === 'balance' ? 'balance-mode-entry' : 'selection';
+const resetState = () => {
     selectedMethod.value = null;
-    cashReceived.value = null;
-    selectedAccountId.value = bankAccounts.value.find(acc => acc.is_favorite)?.id || (bankAccounts.value.length === 1 ? bankAccounts.value[0].id : null);
-    paymentNotes.value = '';
     payments.value = [];
+    cashReceived.value = null;
+    selectedAccountId.value = null;
+    paymentNotes.value = '';
+    amountToPay.value = 0;
     willMakeDownPayment.value = false;
     downPaymentAmount.value = null;
-};
-
-const handleMethodSelect = (method) => {
-    selectedMethod.value = method;
-    if (props.paymentMode !== 'balance') {
-        cashReceived.value = props.totalAmount > 0 ? props.totalAmount : null;
-        amountToPay.value = props.totalAmount > 0 ? props.totalAmount : null;
-    }
-    currentStep.value = method;
-    if (method === 'credito' && !props.client) {
-        currentStep.value = 'credit-customer-selection';
-    }
+    downPaymentMethod.value = 'efectivo';
+    downPaymentBankAccountId.value = null; // Resetear
 };
 
 const submitForm = () => {
@@ -112,7 +103,18 @@ const submitForm = () => {
         amount = amountToPay.value;
         if (amount > 0) payments.value.push({ amount, method: selectedMethod.value, notes: paymentNotes.value, bank_account_id: selectedAccountId.value });
     } else if (selectedMethod.value === 'credito') {
-        if (willMakeDownPayment.value && downPaymentAmount.value > 0) payments.value.push({ amount: downPaymentAmount.value, method: downPaymentMethod.value, notes: 'Abono inicial en venta a crédito' });
+        if (willMakeDownPayment.value && downPaymentAmount.value > 0) {
+            const downPaymentPayload = { 
+                amount: downPaymentAmount.value, 
+                method: downPaymentMethod.value, 
+                notes: 'Abono inicial en venta a crédito' 
+            };
+            // --- NUEVO: Añadir ID de cuenta bancaria si es necesario ---
+            if (['tarjeta', 'transferencia'].includes(downPaymentMethod.value)) {
+                downPaymentPayload.bank_account_id = downPaymentBankAccountId.value;
+            }
+            payments.value.push(downPaymentPayload);
+        }
     } else {
         amount = selectedMethod.value === 'efectivo' ? (cashReceived.value || 0) : (amountToPay.value || 0);
         const finalAmount = Math.min(amount, props.totalAmount);
@@ -155,7 +157,7 @@ const submitForm = () => {
                     v-model:paymentNotes="paymentNotes"
                     :bank-accounts="bankAccounts"
                     :bank-account-options="bankAccountOptions"
-                    @select-method="handleMethodSelect"
+                    @select-method="selectedMethod = $event"
                     @submit="submitForm"
                     @add-account="showAddBankAccountModal = true"
                 />
@@ -168,6 +170,7 @@ const submitForm = () => {
                     v-model:willMakeDownPayment="willMakeDownPayment"
                     v-model:downPaymentAmount="downPaymentAmount"
                     v-model:downPaymentMethod="downPaymentMethod"
+                    v-model:downPaymentBankAccountId="downPaymentBankAccountId"
                     :payment-mode="paymentMode"
                     :total-amount="totalAmount"
                     :client="client"
@@ -178,7 +181,7 @@ const submitForm = () => {
                     :credit-limit-exceeded="creditLimitExceeded"
                     :required-down-payment="requiredDownPayment"
                     :amount-to-credit-final="amountToCreditFinal"
-                    @select-method="handleMethodSelect"
+                    @select-method="selectedMethod = $event"
                     @submit="submitForm"
                     @add-account="showAddBankAccountModal = true"
                     @select-customer="emit('update:client', $event)"

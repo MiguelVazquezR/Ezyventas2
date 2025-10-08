@@ -92,7 +92,7 @@ const submit = () => {
             class="mt-6 max-w-2xl mx-auto bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                    <InputLabel for="folio" value="Concepto / Folio / Referencia" />
+                    <InputLabel for="folio" value="Concepto" />
                     <InputText id="folio" v-model="form.folio" class="mt-1 w-full" />
                     <InputError :message="form.errors.folio" class="mt-2" />
                 </div>
@@ -170,7 +170,7 @@ const submit = () => {
 
                  <div class="md:col-span-2">
                     <InputLabel for="status" value="Estatus" />
-                    <Select size="large" id="status" v-model="form.status" :options="statusOptions" optionLabel="label"
+                    <Select size="large" id="status" v-model="form.status" :disabled="true" :options="statusOptions" optionLabel="label"
                         optionValue="value" class="w-full mt-1" />
                     <InputError :message="form.errors.status" class="mt-2" />
                 </div>

@@ -75,13 +75,13 @@ class SalesSheet implements FromQuery, WithTitle, WithHeadings, WithMapping, Sho
         $pendingAmount = $transaction->total - $totalPaid;
         $paymentMethods = $transaction->payments->pluck('payment_method.value')->unique()->implode(', ');
         $items = $transaction->items->map(function ($item) {
-            return "{$item->quantity} x {$item->description} (@ " . number_format($item->unit_price, 2) . ")";
+            return "{$item->quantity} x {$item->description} ( " . number_format($item->unit_price, 2) . " por unidad)";
         })->implode("\n");
 
         return [
             $transaction->folio,
             $transaction->created_at->format('Y-m-d H:i:s'),
-            optional($transaction->customer)->name ?? 'N/A',
+            optional($transaction->customer)->name ?? 'Público en general',
             optional($transaction->user)->name ?? 'N/A',
             $transaction->subtotal,
             $transaction->total_discount,

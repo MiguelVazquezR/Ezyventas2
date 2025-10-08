@@ -10,9 +10,11 @@ const props = defineProps({
     branches: Array,
 });
 
-const emit = defineEmits(['update:visible']);
+const emit = defineEmits(['update:visible', 'success']);
 
 const isEditMode = computed(() => !!props.account);
+// --- NUEVO: Comprueba si se pasaron sucursales al modal ---
+const hasBranches = computed(() => props.branches && props.branches.length > 0);
 
 const form = useForm({
     bank_name: '',
@@ -21,61 +23,66 @@ const form = useForm({
     account_number: '',
     card_number: '',
     clabe: '',
-    branch_ids: [], // Para el v-model del MultiSelect, ej: [1, 2]
-    favorite_branch_ids: [], // Para el v-model de los Checkboxes, ej: [1]
+    branch_ids: [],
+    favorite_branch_ids: [],
 });
 
-// Cuando se abre el modal, se llena o resetea el formulario.
 watch(() => props.visible, (newVal) => {
     if (newVal) {
         form.clearErrors();
         if (isEditMode.value) {
-            // Llenar formulario para edición
             form.bank_name = props.account.bank_name;
             form.owner_name = props.account.owner_name;
             form.account_name = props.account.account_name;
             form.account_number = props.account.account_number;
             form.card_number = props.account.card_number;
             form.clabe = props.account.clabe;
-            form.branch_ids = props.account.branches.map(b => b.id);
-            form.favorite_branch_ids = props.account.branches
-                .filter(b => b.pivot.is_favorite)
-                .map(b => b.id);
+            if (hasBranches.value) {
+                form.branch_ids = props.account.branches.map(b => b.id);
+                form.favorite_branch_ids = props.account.branches
+                    .filter(b => b.pivot.is_favorite)
+                    .map(b => b.id);
+            }
         } else {
-            // Resetear para creación
             form.reset();
         }
     }
 });
 
-// Filtra las sucursales completas que han sido seleccionadas en el MultiSelect
 const selectedBranches = computed(() => {
+    if (!hasBranches.value) return [];
     return props.branches.filter(branch => form.branch_ids.includes(branch.id));
 });
 
 const closeModal = () => emit('update:visible', false);
 
 const submit = () => {
-    // Transforma los datos del formulario a la estructura que espera el backend
     form.transform((data) => {
-        // Crea el array de objetos {id, is_favorite}
-        const transformedBranches = data.branch_ids.map(id => ({
-            id: id,
-            is_favorite: data.favorite_branch_ids.includes(id),
-        }));
-        
-        // Retorna el nuevo objeto de datos para la petición
-        return {
-            ...data,
-            branches: transformedBranches, // El campo que el backend espera
-            branch_ids: undefined, // Elimina los campos que ya no son necesarios
-            favorite_branch_ids: undefined,
+        const payload = {
+            bank_name: data.bank_name,
+            owner_name: data.owner_name,
+            account_name: data.account_name,
+            account_number: data.account_number,
+            card_number: data.card_number,
+            clabe: data.clabe,
         };
+
+        if (hasBranches.value && data.branch_ids.length > 0) {
+            payload.branches = data.branch_ids.map(id => ({
+                id: id,
+                is_favorite: data.favorite_branch_ids.includes(id),
+            }));
+        }
+        
+        return payload;
     });
 
     const options = {
-        onSuccess: () => closeModal(),
-        // Resetea la transformación después de que la petición finalice (éxito o error)
+        onSuccess: () => {
+            closeModal();
+            // --- NUEVO: Emitir evento de éxito ---
+            emit('success'); 
+        },
         onFinish: () => form.transform(), 
     };
 
@@ -121,19 +128,22 @@ const submit = () => {
                 <InputText id="account_number" v-model="form.account_number" class="w-full mt-1" />
                 <InputError :message="form.errors.account_number" />
             </div>
-            <div>
-                <InputLabel for="branch_ids" value="Asignar a Sucursal(es) *" />
-                <MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" optionValue="id"
-                    placeholder="Selecciona sucursales" class="w-full mt-1" />
-                <InputError :message="form.errors.branches" />
-            </div>
             
-            <!-- Nueva sección para marcar favoritas -->
-            <div v-if="form.branch_ids.length > 0" class="space-y-2 border-t dark:border-gray-700 pt-4 mt-4">
-                <InputLabel value="Marcar como cuenta favorita en:" class="font-semibold" />
-                <div v-for="branch in selectedBranches" :key="branch.id" class="flex items-center">
-                    <Checkbox v-model="form.favorite_branch_ids" :inputId="`fav_${branch.id}`" name="favorite_branches" :value="branch.id" />
-                    <label :for="`fav_${branch.id}`" class="ml-2 cursor-pointer"> {{ branch.name }} </label>
+            <!-- --- NUEVO: Condicional para mostrar solo si hay sucursales --- -->
+            <div v-if="hasBranches">
+                <div>
+                    <InputLabel for="branch_ids" value="Asignar a Sucursal(es) *" />
+                    <MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" optionValue="id"
+                        placeholder="Selecciona sucursales" class="w-full mt-1" />
+                    <InputError :message="form.errors.branches" />
+                </div>
+                
+                <div v-if="form.branch_ids.length > 0" class="space-y-2 border-t dark:border-gray-700 pt-4 mt-4">
+                    <InputLabel value="Marcar como cuenta favorita en:" class="font-semibold" />
+                    <div v-for="branch in selectedBranches" :key="branch.id" class="flex items-center">
+                        <Checkbox v-model="form.favorite_branch_ids" :inputId="`fav_${branch.id}`" name="favorite_branches" :value="branch.id" />
+                        <label :for="`fav_${branch.id}`" class="ml-2 cursor-pointer"> {{ branch.name }} </label>
+                    </div>
                 </div>
             </div>
 

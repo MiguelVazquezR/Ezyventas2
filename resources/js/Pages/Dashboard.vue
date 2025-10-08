@@ -132,12 +132,12 @@ const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[st
                         <div class="mt-3 space-y-2">
                             <div class="flex justify-between items-center"><span
                                     class="text-green-500 flex items-center gap-2"><i
-                                        class="pi pi-circle-fill text-xs"></i> En Uso</span><span
+                                        class="pi pi-circle-fill text-xs"></i> En uso</span><span
                                     class="font-bold text-2xl">{{ stats.cash_registers_status.in_use || 0 }}</span>
                             </div>
                             <div class="flex justify-between items-center"><span
                                     class="text-gray-400 flex items-center gap-2"><i
-                                        class="pi pi-circle-fill text-xs"></i> Sin Usar</span><span
+                                        class="pi pi-circle-fill text-xs"></i> Sin usar</span><span
                                     class="font-bold text-2xl">{{ stats.cash_registers_status.available || 0 }}</span>
                             </div>
                         </div>
@@ -179,7 +179,7 @@ const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[st
                                 :class="{ 'border-b dark:border-gray-700 pb-3': index < stats.top_selling_products.length - 1 }">
                                 <Link :href="route('products.show', product.id)"
                                     class="flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700 p-2 -m-2 rounded-md">
-                                <img :src="product.image" :alt="product.name" class="w-12 h-12 rounded-md object-cover">
+                                <img :src="product.image" :alt="product.name" class="w-12 h-12 rounded-md object-contain">
                                 <div class="flex-grow">
                                     <p class="font-semibold text-sm">{{ product.name }}</p>
                                     <p class="text-xs text-gray-500">{{ product.total_sold }} unidades</p>
@@ -204,7 +204,7 @@ const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[st
                                 <Link :href="route('products.show', product.id)"
                                     class="flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700 p-2 -m-2 rounded-md">
                                 <img :src="product.image" :alt="product.name"
-                                    class="w-12 h-12 rounded-md object-cover flex-shrink-0">
+                                    class="w-12 h-12 rounded-md object-contain flex-shrink-0">
                                 <div class="flex-grow overflow-hidden">
                                     <p class="font-semibold text-sm truncate">{{ product.name }}</p>
                                     <p class="text-xs text-gray-500 flex flex-wrap items-center gap-x-2">

@@ -25,7 +25,7 @@ const toggleHeaderMenu = (event) => {
     headerMenu.value.toggle(event);
 };
 const splitButtonItems = ref([
-    { label: 'Importar Servicios', icon: 'pi pi-upload', command: () => showImportModal.value = true },
+    //{ label: 'Importar Servicios', icon: 'pi pi-upload', command: () => showImportModal.value = true },
     { label: 'Exportar Servicios', icon: 'pi pi-download', command: () => window.location.href = route('import-export.services.export') },
 ]);
 

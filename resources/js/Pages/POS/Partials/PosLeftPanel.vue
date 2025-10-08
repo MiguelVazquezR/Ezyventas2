@@ -232,12 +232,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div class="shadow-md flex flex-col h-full mt-1">
-        <div class="px-6 flex-shrink-0">
+    <div class="flex flex-col h-full mt-1">
+        <div class="lg:px-6 flex-shrink-0">
             <div class="flex justify-between items-center mb-4">
-                <h1 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Registrar ventas</h1>
+                <h1 class="hidden lg:block text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Registrar ventas</h1>
                 <div v-if="activeSession"
-                    class="p-1 text-center rounded-full px-8 text-base bg-gradient-to-r from-transparent via-[#CEEACB] dark:via-[#366531] to-transparent text-[#24880B] dark:text-[#69f446] font-semibold">
+                    class="p-1 text-center rounded-full px-2 lg:px-8 text-sm lg:text-base bg-gradient-to-r from-transparent via-[#CEEACB] dark:via-[#366531] to-transparent text-[#24880B] dark:text-[#69f446] font-semibold">
                     Caja Activa: <span class="font-bold">{{ activeSession.cash_register.name }}</span>
                 </div>
                 <div class="flex items-center gap-3">
@@ -250,7 +250,7 @@ onUnmounted(() => {
                         class="!size-8 !bg-white" />
                     <Menu ref="menu" :model="menuItems" :popup="true">
                         <template #end>
-                            <div class="px-4 py-2 text-sm text-gray-700 dark:text-gray-200 space-y-3">
+                            <div class="lg:px-4 py-2 text-sm text-gray-700 dark:text-gray-200 space-y-3">
                                 <div>
                                     <span class="font-semibold">Efectivo en Caja:</span>
                                     <p class="text-lg font-bold text-right">${{ cashBalance.toFixed(2) }}</p>
@@ -300,14 +300,14 @@ onUnmounted(() => {
                 @filter="handleCategoryFilter" />
         </div>
 
-        <div class="flex-grow px-6 pb-6 overflow-y-auto" ref="productsContainer">
+        <div class="flex-grow lg:px-6 pb-6 overflow-y-auto" ref="productsContainer">
             <div v-if="isInitialising" class="flex justify-center items-center h-full">
                 <i class="pi pi-spin pi-spinner text-4xl text-gray-400"></i>
             </div>
             <template v-else>
                 <p v-if="loadedProducts.length === 0 && !isLoadingMore" class="text-center text-gray-500 mt-8">No se
                     encontraron productos.</p>
-                <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2">
+                <div v-else class="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2">
                     <ProductCard v-for="product in loadedProducts" :key="`${product.id}-${product.sku}`"
                         :product="product" @showDetails="showProductDetails" @addToCart="$emit('addToCart', $event)" />
                 </div>

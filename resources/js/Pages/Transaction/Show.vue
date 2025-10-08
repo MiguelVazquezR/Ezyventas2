@@ -136,6 +136,11 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                                     {{ formatCurrency(data.line_total) }}
                                 </template>
                             </Column>
+                            <template #empty>
+                                <div class="text-gray-500 py-4">
+                                    No hay conceptos registrados.
+                                </div>
+                            </template>
                         </DataTable>
                     </template>
                 </Card>
@@ -185,7 +190,7 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                                 transaction.user.name }}</span></li>
                             <li class="flex justify-between"><span>Sucursal:</span><span class="font-medium">{{
                                 transaction.branch.name }}</span></li>
-                            <li class="flex justify-between"><span>Canal:</span><span class="font-medium capitalize">{{
+                            <li class="flex justify-between"><span>Canal:</span><span class="font-medium">{{
                                 transaction.channel.replace('_', ' ') }}</span></li>
                         </ul>
                     </template>

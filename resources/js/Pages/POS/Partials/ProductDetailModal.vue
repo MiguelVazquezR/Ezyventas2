@@ -198,6 +198,13 @@ const getPromotionSummary = (promo) => {
             return promo.description || 'Promoción especial.';
     }
 };
+
+const formatCurrency = (value) => {
+    return new Intl.NumberFormat('es-MX', {
+        style: 'currency',
+        currency: 'MXN'
+    }).format(value || 0);
+};
 </script>
 
 <template>
@@ -232,7 +239,7 @@ const getPromotionSummary = (promo) => {
                             }}</p>
                         <div class="flex flex-wrap gap-2">
                             <Button v-for="option in options" :key="option.value" :label="option.value"
-                                :outlined="!isOptionSelected(variantName, option.value)" severity="secondary"
+                                :outlined="!isOptionSelected(variantName, option.value)" severity="contrast"
                                 size="small" @click="selectOption(variantName, option.value)"
                                 :disabled="isOptionDisabled(variantName, option.value)"
                                 v-tooltip.bottom="`Stock: ${option.stock}`" />
@@ -253,7 +260,7 @@ const getPromotionSummary = (promo) => {
                     <div v-else
                         class="flex justify-between items-center text-3xl font-bold text-gray-900 dark:text-gray-100">
                         <span>Precio:</span>
-                        <span>${{ currentPrice.toFixed(2) }}</span>
+                        <span>{{ formatCurrency(currentPrice) }}</span>
                     </div>
                     <div class="flex justify-between items-center text-sm mt-2"><span
                             class="text-gray-500">SKU:</span><span class="font-medium font-mono">{{ currentSku }}</span>
@@ -272,7 +279,7 @@ const getPromotionSummary = (promo) => {
             </div>
         </div>
         <template #footer>
-            <div v-if="product">
+            <div v-if="product" class="flex items-center space-x-2">
                 <Button label="Cancelar" text severity="secondary" @click="closeModal" />
                 <Button label="Agregar al carrito" icon="pi pi-shopping-cart" @click="addProductToCart"
                     :disabled="!canAddToCart" />
