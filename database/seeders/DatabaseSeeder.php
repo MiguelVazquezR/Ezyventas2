@@ -46,13 +46,13 @@ class DatabaseSeeder extends Seeder
             PlanItemSeeder::class, // Seeder del catálogo de planes
         ]);
         
-        $this->seedGlobalBrandsAndProducts();
+        // $this->seedGlobalBrandsAndProducts();
 
         // 2. Crear Suscriptores y sus datos privados
         $ropaType = BusinessType::where('name', 'Tienda de Ropa y Accesorios')->first();
         $electronicaType = BusinessType::where('name', 'Tienda de Electrónica')->first();
 
-        $this->createSubscriptionData($ropaType);
+        //$this->createSubscriptionData($ropaType);
         $this->createSubscriptionData($electronicaType);
     }
 
@@ -107,7 +107,7 @@ class DatabaseSeeder extends Seeder
         $mainBranch = $branches->first();
         $mainBranch->update(['is_main' => true]);
 
-        $cashRegisters = CashRegister::factory(2)->create(['branch_id' => $mainBranch->id]);
+        //$cashRegisters = CashRegister::factory(2)->create(['branch_id' => $mainBranch->id]);
         
         // Se crean cuentas bancarias y se asignan a las sucursales
         // $bankAccounts = BankAccount::factory(2)->create(['subscription_id' => $subscription->id]);
@@ -115,7 +115,7 @@ class DatabaseSeeder extends Seeder
         //     $account->branches()->attach($branches->pluck('id'));
         // }
 
-        $serviceCategories = Category::factory(3)->create(['subscription_id' => $subscription->id, 'type' => 'service']);
+        //$serviceCategories = Category::factory(3)->create(['subscription_id' => $subscription->id, 'type' => 'service']);
 
         $adminUser = User::factory()->create([
             'branch_id' => $mainBranch->id,
@@ -123,44 +123,44 @@ class DatabaseSeeder extends Seeder
             'email' => 'admin@' . strtolower(str_replace([' ', ',', '.'], '', $subscription->commercial_name)) . '.com',
         ]);
 
-        $branches->each(function ($branch) use ($serviceCategories, $adminUser, $allProductCategories, $brands, $cashRegisters) {
-            $customers = Customer::factory(15)->create(['branch_id' => $branch->id]);
+        // $branches->each(function ($branch) use ($serviceCategories, $adminUser, $allProductCategories, $brands, $cashRegisters) {
+        //     $customers = Customer::factory(15)->create(['branch_id' => $branch->id]);
 
-            CashRegisterSession::factory(5)->create([
-                'cash_register_id' => $cashRegisters->random()->id,
-                'user_id' => $adminUser->id,
-            ])->each(function ($session) use ($branch, $adminUser, $customers) {
-                $transactions = Transaction::factory(rand(10, 30))->create([
-                    'branch_id' => $branch->id,
-                    'user_id' => $adminUser->id,
-                    'customer_id' => $customers->random()->id,
-                    'cash_register_session_id' => $session->id,
-                    'created_at' => $session->closed_at,
-                ]);
+        //     CashRegisterSession::factory(5)->create([
+        //         'cash_register_id' => $cashRegisters->random()->id,
+        //         'user_id' => $adminUser->id,
+        //     ])->each(function ($session) use ($branch, $adminUser, $customers) {
+        //         $transactions = Transaction::factory(rand(10, 30))->create([
+        //             'branch_id' => $branch->id,
+        //             'user_id' => $adminUser->id,
+        //             'customer_id' => $customers->random()->id,
+        //             'cash_register_session_id' => $session->id,
+        //             'created_at' => $session->closed_at,
+        //         ]);
 
-                $transactions->where('status', 'completado')->each(function ($transaction) {
-                    Payment::factory()->create([
-                        'transaction_id' => $transaction->id,
-                        'amount' => $transaction->subtotal - $transaction->total_discount,
-                        'payment_date' => $transaction->created_at,
-                    ]);
-                });
+        //         $transactions->where('status', 'completado')->each(function ($transaction) {
+        //             Payment::factory()->create([
+        //                 'transaction_id' => $transaction->id,
+        //                 'amount' => $transaction->subtotal - $transaction->total_discount,
+        //                 'payment_date' => $transaction->created_at,
+        //             ]);
+        //         });
 
-                SessionCashMovement::factory(rand(1, 3))->create(['cash_register_session_id' => $session->id, 'type' => 'ingreso']);
-                SessionCashMovement::factory(rand(1, 3))->create(['cash_register_session_id' => $session->id, 'type' => 'egreso']);
+        //         SessionCashMovement::factory(rand(1, 3))->create(['cash_register_session_id' => $session->id, 'type' => 'ingreso']);
+        //         SessionCashMovement::factory(rand(1, 3))->create(['cash_register_session_id' => $session->id, 'type' => 'egreso']);
 
-                $calculatedTotal = $session->opening_cash_balance + $transactions->sum(fn ($t) => $t->subtotal - $t->total_discount);
-                $session->update([
-                    'calculated_cash_total' => $calculatedTotal,
-                    'closing_cash_balance' => $calculatedTotal + $session->cash_difference,
-                ]);
-            });
+        //         $calculatedTotal = $session->opening_cash_balance + $transactions->sum(fn ($t) => $t->subtotal - $t->total_discount);
+        //         $session->update([
+        //             'calculated_cash_total' => $calculatedTotal,
+        //             'closing_cash_balance' => $calculatedTotal + $session->cash_difference,
+        //         ]);
+        //     });
 
-            Quote::factory(10)->create(['branch_id' => $branch->id, 'user_id' => $adminUser->id, 'customer_id' => $customers->random()->id]);
-            Service::factory(15)->create(['branch_id' => $branch->id, 'category_id' => $serviceCategories->random()->id]);
-            ServiceOrder::factory(20)->create(['branch_id' => $branch->id, 'user_id' => $adminUser->id]);
-            Product::factory(10)->create(['branch_id' => $branch->id, 'category_id' => $allProductCategories->random()->id, 'brand_id' => $brands->random()->id]);
-        });
+        //     Quote::factory(10)->create(['branch_id' => $branch->id, 'user_id' => $adminUser->id, 'customer_id' => $customers->random()->id]);
+        //     Service::factory(15)->create(['branch_id' => $branch->id, 'category_id' => $serviceCategories->random()->id]);
+        //     ServiceOrder::factory(20)->create(['branch_id' => $branch->id, 'user_id' => $adminUser->id]);
+        //     Product::factory(10)->create(['branch_id' => $branch->id, 'category_id' => $allProductCategories->random()->id, 'brand_id' => $brands->random()->id]);
+        // });
 
         // $expenseCategories = ExpenseCategory::factory(5)->create(['subscription_id' => $subscription->id]);
         // Expense::factory(25)->create([
