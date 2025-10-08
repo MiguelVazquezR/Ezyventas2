@@ -26,7 +26,7 @@ const toggleHeaderMenu = (event) => {
     headerMenu.value.toggle(event);
 };
 const splitButtonItems = ref([
-    { label: 'Importar Clientes', icon: 'pi pi-upload', command: () => showImportModal.value = true },
+    //{ label: 'Importar Clientes', icon: 'pi pi-upload', command: () => showImportModal.value = true },
     { label: 'Exportar Clientes', icon: 'pi pi-download', command: () => window.location.href = route('import-export.customers.export') },
 ]);
 

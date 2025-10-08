@@ -200,7 +200,7 @@ watch(() => props.paymentMode, () => {
                         </div>
                     </div>
                     <div v-else class="text-center">
-                        <i class="pi pi-exclamation-triangle text-4xl text-yellow-500 mb-4"></i>
+                        <i class="pi pi-exclamation-triangle !text-4xl text-yellow-500 mb-4"></i>
                         <p class="font-semibold">No hay cuentas bancarias</p>
                         <Button label="Registrar Cuenta" icon="pi pi-plus" @click="emit('add-account')" />
                     </div>

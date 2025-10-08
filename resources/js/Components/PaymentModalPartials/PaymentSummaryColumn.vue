@@ -26,13 +26,12 @@ const title = computed(() => {
 </script>
 
 <template>
-    <div class="col-span-1 bg-gray-50 dark:bg-gray-800 p-8 flex flex-col justify-center items-center rounded-l-lg min-h-[500px]">
-        <p class="text-lg font-semibold text-gray-600 dark:text-gray-300">{{ title }}</p>
-        <p class="text-6xl font-bold text-gray-800 dark:text-gray-100 mt-4 break-all">
+    <div class="col-span-1 bg-gray-50 dark:bg-gray-800 p-3 lg:p-6 flex flex-col justify-center items-center rounded-l-lg min-h-[300px] lg:min-h-[500px]">
+        <p class="lg:text-lg font-semibold text-gray-600 dark:text-gray-300">{{ title }}</p>
+        <p class="text-3xl lg:text-6xl font-bold text-gray-800 dark:text-gray-100 mt-4 break-all">
             {{ formatCurrency(displayAmount) }}
         </p>
 
-        <!-- INICIO DE CORRECCIÓN: Mostrar detalles financieros del cliente -->
         <div v-if="client" class="mt-8 w-full border-t border-gray-200 dark:border-gray-700 pt-4 text-sm">
             <p class="font-semibold text-center text-gray-800 dark:text-gray-200 mb-2">{{ client.name }}</p>
             <div class="flex justify-between">
@@ -48,6 +47,5 @@ const title = computed(() => {
                 </span>
             </div>
         </div>
-        <!-- FIN DE CORRECCIÓN -->
     </div>
 </template>

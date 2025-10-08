@@ -30,6 +30,7 @@ use Illuminate\Validation\Rule;
 use Carbon\Carbon;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use Laravel\Jetstream\Agent;
 
 class PointOfSaleController extends Controller implements HasMiddleware
 {
@@ -91,7 +92,8 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
             ->get();
 
-        return Inertia::render('POS/Index', [
+        // Se preparan todos los props en un array.
+        $props = [
             'products' => $this->getProductsData($search, $categoryId),
             'categories' => $this->getCategoriesData(),
             'customers' => $this->getCustomersData(),
@@ -101,7 +103,14 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'activeSession' => $activeSession,
             'availableCashRegisters' => $availableCashRegisters,
             'availableTemplates' => $availableTemplates,
-        ]);
+        ];
+
+        $agent = new Agent();
+
+        // Se decide qué vista renderizar basándose en el tipo de dispositivo.
+        $view = ($agent->isMobile() || $agent->isTablet()) ? 'POS/IndexMobile' : 'POS/Index';
+
+        return Inertia::render($view, $props);
     }
 
     public function checkout(Request $request, PaymentService $paymentService)

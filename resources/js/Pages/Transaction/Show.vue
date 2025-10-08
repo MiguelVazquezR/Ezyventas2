@@ -136,6 +136,11 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                                     {{ formatCurrency(data.line_total) }}
                                 </template>
                             </Column>
+                            <template #empty>
+                                <div class="text-gray-500 py-4">
+                                    No hay conceptos registrados.
+                                </div>
+                            </template>
                         </DataTable>
                     </template>
                 </Card>
