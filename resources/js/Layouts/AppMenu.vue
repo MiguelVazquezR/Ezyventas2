@@ -32,7 +32,7 @@ const model = ref([
                     },
                 ]
             },
-            { label: 'Cotizaciones', icon: 'pi pi-file-check', to: route('quotes.index'), routeName: 'quotes.*', permission: 'quotes.access' },
+            // { label: 'Cotizaciones', icon: 'pi pi-file-check', to: route('quotes.index'), routeName: 'quotes.*', permission: 'quotes.access' },
             {
                 label: 'Cajas', icon: 'pi pi-dollar',
                 items: [
@@ -55,13 +55,13 @@ const model = ref([
             {
                 label: 'Configuraciones', icon: 'pi pi-fw pi-cog',
                 items: [
-                    {
-                        label: 'Generales',
-                        icon: 'pi pi-sliders-h',
-                        to: route('settings.index'),
-                        routeName: 'settings.*',
-                        permission: 'settings.generals.access'
-                    },
+                    // {
+                    //     label: 'Generales',
+                    //     icon: 'pi pi-sliders-h',
+                    //     to: route('settings.index'),
+                    //     routeName: 'settings.*',
+                    //     permission: 'settings.generals.access'
+                    // },
                     {
                         label: 'Roles y permisos',
                         icon: 'pi pi-key',

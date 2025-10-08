@@ -84,11 +84,11 @@ const mobileUserMenuVisible = ref(false);
                     <p class="text-xs text-gray-500 m-0">{{ currentBranch.name }}</p>
                 </div>
             </div>
-            <div class="layout-config-menu">
+            <!-- <div class="layout-config-menu">
                 <button type="button" class="layout-topbar-action" @click="toggleDarkMode">
                     <i :class="['pi', { 'pi-moon': isDarkTheme, 'pi-sun': !isDarkTheme }]"></i>
                 </button>
-            </div>
+            </div> -->
             <button type="button" class="layout-topbar-action lg:!hidden" @click="mobileUserMenuVisible = true">
                 <i class="pi pi-user text-xl"></i>
             </button>

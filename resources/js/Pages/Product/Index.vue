@@ -197,6 +197,11 @@ const getStockSeverity = (product) => {
                                 severity="secondary" aria-haspopup="true" aria-controls="overlay_menu" />
                         </template>
                     </Column>
+                    <template #empty>
+                        <div class="text-center text-gray-500 py-4">
+                            No hay productos registrados.
+                        </div>
+                    </template>
                 </DataTable>
 
                 <Menu ref="menu" id="overlay_menu" :model="menuItems" :popup="true" />
