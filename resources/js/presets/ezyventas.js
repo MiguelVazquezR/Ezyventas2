@@ -31,7 +31,7 @@ const Ezyventas = definePreset(Aura, {
                     700: '{gray.700}',
                     800: '{gray.800}',
                     900: '{gray.900}',
-                    950: '{gray.950}'
+                    950: '#373737'
                 }
             },
             // Y una paleta oscura basada en tu mainblack para el modo oscuro

@@ -316,7 +316,7 @@ const getExpenseCategoryIcon = (categoryName) => {
                 <Card> <template #content>
                         <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Total de
                                 gastos</span> <i
-                                class="pi pi-file-export p-2 bg-yellow-100 text-yellow-600 rounded-full"></i> </div>
+                                class="pi pi-arrow-up-right p-2 bg-yellow-100 text-yellow-600 rounded-full"></i> </div>
                         <p class="text-2xl font-bold">{{ formatCurrency(kpis.expenses.current) }}</p>
                         <div class="flex items-center text-sm mt-1"
                             :class="kpis.expenses.percentage_change <= 0 ? 'text-green-500' : 'text-red-500'"> <i
