@@ -37,7 +37,7 @@ class TransactionController extends Controller implements HasMiddleware
             ->leftJoin('customers', 'transactions.customer_id', '=', 'customers.id')
             ->leftJoin('users', 'transactions.user_id', '=', 'users.id')
             ->where('transactions.branch_id', $branchId)
-            // ->where('transactions.channel', '!=', TransactionChannel::BALANCE_PAYMENT)
+            ->where('transactions.channel', '!=', TransactionChannel::BALANCE_PAYMENT)
             ->with(['customer:id,name', 'user:id,name'])
             ->select('transactions.*');
 

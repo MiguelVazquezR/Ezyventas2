@@ -174,7 +174,7 @@ const getInvoiceStatusTag = (status) => {
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6">
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Mi Suscripción</h1>
+                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Mi suscripción</h1>
                 <p class="text-gray-500 dark:text-gray-400 mt-1">
                     Aquí puedes ver los detalles de tu plan, historial de
                     pagos, gestion de sucursales, cuentas bancarias e información fiscal.
@@ -187,19 +187,19 @@ const getInvoiceStatusTag = (status) => {
                     <Card>
                         <template #title>
                             <div class="flex justify-between items-center">
-                                <span>Información General</span>
-                                <Button icon="pi pi-pencil" text rounded severity="secondary"
-                                    @click="isEditModalVisible = true" v-tooltip.bottom="'Editar Información'" />
+                                <span>Información general</span>
+                                <Button icon="pi pi-pencil" text rounded
+                                    @click="isEditModalVisible = true" v-tooltip.bottom="'Editar información'" />
                             </div>
                         </template>
                         <template #content>
                             <div class="space-y-3 text-sm">
                                 <div class="flex justify-between">
-                                    <span class="text-gray-500">Nombre Comercial:</span>
+                                    <span class="text-gray-500">Nombre comercial:</span>
                                     <span class="font-semibold">{{ subscription.commercial_name }}</span>
                                 </div>
                                 <div class="flex justify-between">
-                                    <span class="text-gray-500">Razón Social:</span>
+                                    <span class="text-gray-500">Razón social:</span>
                                     <span class="font-semibold">{{ subscription.business_name }}</span>
                                 </div>
                                 <div class="flex justify-between items-center">
@@ -215,10 +215,10 @@ const getInvoiceStatusTag = (status) => {
                         </template>
                     </Card>
                     <Card>
-                        <template #title>Información Fiscal</template>
+                        <template #title>Información fiscal</template>
                         <template #content>
                             <div v-if="fiscalDocumentUrl" class="space-y-4">
-                                <p class="text-sm text-gray-600 dark:text-gray-300">Tu Constancia de Situación Fiscal
+                                <p class="text-sm text-gray-600 dark:text-gray-300">Tu constancia de situación fiscal
                                     está registrada.</p>
                                 <a :href="fiscalDocumentUrl" target="_blank" rel="noopener noreferrer">
                                     <Button label="Ver Documento Actual" icon="pi pi-file-pdf" outlined
@@ -284,7 +284,7 @@ const getInvoiceStatusTag = (status) => {
                                 </div>
                             </div>
                             <div>
-                                <h3 class="font-bold mb-4 text-gray-800 dark:text-gray-200">Límites del Plan</h3>
+                                <h3 class="font-bold mb-4 text-gray-800 dark:text-gray-200">Límites del plan</h3>
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                     <div v-for="limit in activeLimits" :key="limit.item_key"
                                         class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg text-center flex flex-col justify-between">

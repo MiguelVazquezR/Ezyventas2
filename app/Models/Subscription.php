@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\PlanItemType;
 use App\Enums\SubscriptionStatus;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -31,6 +32,38 @@ class Subscription extends Model implements HasMedia
         'address' => 'array',
         'status' => SubscriptionStatus::class,
     ];
+
+     /**
+     * Obtiene los nombres de los módulos disponibles en la versión activa de la suscripción.
+     *
+     * @return array
+     */
+    public function getAvailableModuleNames(): array
+    {
+        // Encuentra la versión de la suscripción que está actualmente activa.
+        $currentVersion = $this->versions()
+            ->where('start_date', '<=', now())
+            ->where('end_date', '>=', now())
+            ->latest('start_date')
+            ->first();
+
+        // Si no hay una versión activa, no hay módulos disponibles.
+        if (!$currentVersion) {
+            return [];
+        }
+
+        // Obtiene las claves de los items que son del tipo 'module'.
+        $subscribedModuleKeys = $currentVersion->items()
+            ->where('item_type', 'module')
+            ->pluck('item_key')
+            ->all();
+
+        // Usa las claves para encontrar los nombres legibles de los módulos desde PlanItem.
+        return PlanItem::whereIn('key', $subscribedModuleKeys)
+            ->where('type', PlanItemType::MODULE)
+            ->pluck('name')
+            ->all();
+    }
 
     public function registerMediaCollections(): void
     {

@@ -42,6 +42,7 @@ createInertiaApp({
                                 weak: 'Semana',
                                 passwordPrompt: 'Ingrese una contraseña',
                                 emptyMessage: 'No se encontraron resultados',
+                                pending: 'Pendiente'
                             },
                             theme: {
                                 preset: Ezyventas,
