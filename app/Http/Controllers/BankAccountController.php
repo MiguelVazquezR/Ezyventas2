@@ -22,11 +22,11 @@ class BankAccountController extends Controller
 
         return response()->json($bankAccounts);
     }
-    
-     public function store(Request $request)
+
+    public function store(Request $request)
     {
-        $subscription = Auth::user()->branch->subscription;
-        $branchIds = $subscription->branches->pluck('id')->toArray();
+        $user = Auth::user();
+        $subscription = $user->branch->subscription;
 
         $validated = $request->validate([
             'bank_name' => 'required|string|max:255',
@@ -35,23 +35,28 @@ class BankAccountController extends Controller
             'account_number' => 'nullable|string|max:255',
             'card_number' => 'nullable|string|max:255',
             'clabe' => 'nullable|string|max:255',
-            'branches' => 'required|array|min:1',
-            'branches.*.id' => ['required', Rule::in($branchIds)],
+            'branches' => 'sometimes|array', // 'sometimes' en lugar de 'required'
+            'branches.*.id' => ['required', Rule::in($subscription->branches->pluck('id')->toArray())],
             'branches.*.is_favorite' => 'required|boolean',
         ], [
             'branches.required' => 'Debes asignar la cuenta al menos a una sucursal.',
         ]);
-        
-        DB::transaction(function () use ($validated, $subscription) {
+
+        DB::transaction(function () use ($validated, $subscription, $user) {
             $bankAccount = $subscription->bankAccounts()->create(
                 collect($validated)->except(['branches'])->all()
             );
-            
-            $branchesToSync = collect($validated['branches'])->mapWithKeys(function ($branch) {
-                return [$branch['id'] => ['is_favorite' => $branch['is_favorite']]];
-            });
 
-            $bankAccount->branches()->attach($branchesToSync);
+            // Si se proporcionan sucursales, se sincronizan.
+            if (!empty($validated['branches'])) {
+                $branchesToSync = collect($validated['branches'])->mapWithKeys(function ($branch) {
+                    return [$branch['id'] => ['is_favorite' => $branch['is_favorite']]];
+                });
+                $bankAccount->branches()->attach($branchesToSync);
+            } else {
+                // Si no, se asigna a la sucursal actual del usuario.
+                $bankAccount->branches()->attach($user->branch_id, ['is_favorite' => false]);
+            }
         });
 
         return redirect()->back()->with('success', 'Cuenta bancaria creada con éxito.');
@@ -62,7 +67,7 @@ class BankAccountController extends Controller
         if ($bankAccount->subscription_id !== Auth::user()->branch->subscription_id) {
             abort(403);
         }
-        
+
         $branchIds = $bankAccount->subscription->branches->pluck('id')->toArray();
 
         $validated = $request->validate([
@@ -78,7 +83,7 @@ class BankAccountController extends Controller
         ], [
             'branches.required' => 'Debes asignar la cuenta al menos a una sucursal.',
         ]);
-        
+
         DB::transaction(function () use ($validated, $bankAccount) {
             $bankAccount->update(
                 collect($validated)->except(['branches'])->all()
@@ -99,7 +104,7 @@ class BankAccountController extends Controller
         if ($bankAccount->subscription_id !== Auth::user()->branch->subscription_id) {
             abort(403);
         }
-        
+
         $bankAccount->delete();
 
         return redirect()->back()->with('success', 'Cuenta bancaria eliminada con éxito.');

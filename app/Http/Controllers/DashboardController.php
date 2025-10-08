@@ -192,19 +192,43 @@ class DashboardController extends Controller
             ->sum(DB::raw('subtotal - total_discount'));
     }
 
+    /**
+     * Obtiene la tendencia de ventas de la semana actual.
+     * --- CORREGIDO ---
+     */
     private function getWeeklySalesTrend($branchId): array
     {
-        $trend = Transaction::where('branch_id', $branchId)
+        // Se obtienen las sumas de subtotal y descuento por separado para evitar errores con NULL.
+        $trendData = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [now()->startOfWeek(Carbon::SUNDAY), now()->endOfWeek(Carbon::SATURDAY)])
             ->where('status', 'completado')
-            ->select(DB::raw('DATE(created_at) as date'), DB::raw('sum(subtotal - total_discount) as total'))
-            ->groupBy('date')->orderBy('date', 'asc')->pluck('total', 'date')->toArray();
+            ->select(
+                DB::raw('DATE(created_at) as date'),
+                DB::raw('SUM(subtotal) as total_subtotal'),
+                DB::raw('SUM(total_discount) as total_discounts')
+            )
+            ->groupBy('date')
+            ->orderBy('date', 'asc')
+            ->get()
+            ->keyBy('date'); // Se agrupa por fecha para una búsqueda fácil.
 
         $weekSales = [];
         for ($i = 0; $i < 7; $i++) {
             $date = now()->startOfWeek(Carbon::SUNDAY)->addDays($i);
             $dateString = $date->format('Y-m-d');
-            $weekSales[] = ['day' => $date->translatedFormat('D'), 'total' => (float)($trend[$dateString] ?? 0)];
+            
+            $dayData = $trendData->get($dateString);
+            
+            $total = 0;
+            if ($dayData) {
+                // Se realiza el cálculo en PHP para mayor seguridad.
+                $total = ($dayData->total_subtotal ?? 0) - ($dayData->total_discounts ?? 0);
+            }
+
+            $weekSales[] = [
+                'day' => $date->translatedFormat('D'), 
+                'total' => (float) $total
+            ];
         }
         return $weekSales;
     }

@@ -7,7 +7,8 @@ use App\Enums\PaymentMethod;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Models\Customer;
-use App\Services\PaymentService; // Se importa el servicio de pagos
+use App\Models\Transaction;
+use App\Services\PaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -25,13 +26,14 @@ class CustomerPaymentController extends Controller
             'payments' => 'required|array|min:1',
             'payments.*.amount' => 'required|numeric|min:0.01',
             'payments.*.method' => ['required', Rule::in(array_column(PaymentMethod::cases(), 'value'))],
+            'payments.*.bank_account_id' => 'nullable|exists:bank_accounts,id',
             'notes' => 'nullable|string|max:255',
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id,status,abierta',
         ]);
 
         try {
             DB::transaction(function () use ($customer, $validated, $paymentService) {
-                
+
                 $user = Auth::user();
                 $sessionId = $validated['cash_register_session_id'];
 
@@ -42,7 +44,6 @@ class CustomerPaymentController extends Controller
 
                 foreach ($validated['payments'] as $paymentData) {
                     $amountToApply = (float) $paymentData['amount'];
-                    $paymentMethod = $paymentData['method'];
 
                     foreach ($pendingTransactions as $transaction) {
                         if ($amountToApply <= 0.001) break;
@@ -58,12 +59,13 @@ class CustomerPaymentController extends Controller
                             $transaction,
                             [[
                                 'amount' => $amountForThisTransaction,
-                                'method' => $paymentMethod,
+                                'method' => $paymentData['method'],
                                 'notes' => 'Abono a deuda. ' . ($validated['notes'] ?? ''),
+                                'bank_account_id' => $paymentData['bank_account_id'] ?? null,
                             ]],
                             $sessionId
                         );
-                        
+
                         $customer->increment('balance', $amountForThisTransaction);
 
                         $customer->balanceMovements()->create([
@@ -71,7 +73,7 @@ class CustomerPaymentController extends Controller
                             'type' => CustomerBalanceMovementType::PAYMENT,
                             'amount' => $amountForThisTransaction,
                             'balance_after' => $customer->balance,
-                            'notes' => "Abono a la venta #{$transaction->folio} ({$paymentMethod}). " . ($validated['notes'] ?? ''),
+                            'notes' => "Abono a la venta #{$transaction->folio} (" . $paymentData['method'] . "). " . ($validated['notes'] ?? ''),
                         ]);
 
                         $amountToApply -= $amountForThisTransaction;
@@ -80,7 +82,8 @@ class CustomerPaymentController extends Controller
                     if ($amountToApply > 0.001) {
                         // Se crea una transacción especial para registrar este ingreso
                         $balanceTransaction = $customer->transactions()->create([
-                            'folio' => 'ABONO-' . time() . '-' . $customer->id,
+                            // --- CORRECCIÓN: Se llama al nuevo método para generar el folio ---
+                            'folio' => $this->generateBalancePaymentFolio(),
                             'branch_id' => $user->branch_id,
                             'user_id' => $user->id,
                             'cash_register_session_id' => $sessionId,
@@ -88,7 +91,6 @@ class CustomerPaymentController extends Controller
                             'total_discount' => 0,
                             'total_tax' => 0,
                             'total' => $amountToApply,
-                            // Se usa el nuevo canal para identificar este tipo de transacción.
                             'channel' => TransactionChannel::BALANCE_PAYMENT,
                             'status' => TransactionStatus::COMPLETED,
                             'notes' => 'Transacción generada para registrar abono a saldo a favor.',
@@ -98,8 +100,9 @@ class CustomerPaymentController extends Controller
                             $balanceTransaction,
                             [[
                                 'amount' => $amountToApply,
-                                'method' => $paymentMethod,
+                                'method' => $paymentData['method'],
                                 'notes' => 'Abono directo a saldo. ' . ($validated['notes'] ?? ''),
+                                'bank_account_id' => $paymentData['bank_account_id'] ?? null,
                             ]],
                             $sessionId
                         );
@@ -120,5 +123,33 @@ class CustomerPaymentController extends Controller
         }
 
         return redirect()->back()->with('success', 'Abono registrado correctamente.');
+    }
+
+    /**
+     * Genera un folio consecutivo para las transacciones de abono.
+     *
+     * @return string
+     */
+    private function generateBalancePaymentFolio(): string
+    {
+        $subscriptionId = Auth::user()->branch->subscription_id;
+
+        // Busca la última transacción con un folio 'ABONO-' para esta suscripción
+        $lastTransaction = Transaction::whereHas('branch', function ($query) use ($subscriptionId) {
+                $query->where('subscription_id', $subscriptionId);
+            })
+            ->where('folio', 'like', 'ABONO-%')
+            ->orderByRaw('CAST(SUBSTRING(folio, 7) AS UNSIGNED) DESC') // 'ABONO-' tiene 6 caracteres
+            ->first();
+
+        $sequence = 1;
+        if ($lastTransaction) {
+            // Extrae la parte numérica del folio (ej. de 'ABONO-001' extrae '001' y lo convierte a 1)
+            $lastNumber = (int) substr($lastTransaction->folio, 6);
+            $sequence = $lastNumber + 1;
+        }
+
+        // Formatea el nuevo número con ceros a la izquierda y lo retorna con el prefijo
+        return 'ABONO-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
     }
 }

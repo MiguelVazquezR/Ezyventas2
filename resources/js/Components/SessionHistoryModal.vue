@@ -33,19 +33,21 @@ const formatTime = (dateTimeString) => {
 
 // Combina transacciones y movimientos de caja en una única línea de tiempo ordenada
 const timelineEvents = computed(() => {
-    if (!props.session) return [];
+    if (!props.session || !props.session.transactions) return [];
 
     const salesEvents = props.session.transactions.map(tx => ({
         type: 'sale',
         date: tx.created_at,
         status: tx.status === 'completado' ? 'Venta' : 'Venta (pendiente)',
-        color: '#22c55e',
+        color: tx.status === 'completado' ? '#22c55e' : '#f59e0b', // Verde para completado, ambar para pendiente
         icon: 'pi pi-shopping-cart',
         data: tx,
-        total: tx.payments.reduce((sum, p) => sum + parseFloat(p.amount), 0)
+        // --- CORRECCIÓN: Se calculan ambos totales ---
+        totalSale: parseFloat(tx.total),
+        totalPaid: tx.payments.reduce((sum, p) => sum + parseFloat(p.amount), 0)
     }));
 
-    const movementEvents = props.session.cash_movements.map(mv => ({
+    const movementEvents = (props.session.cash_movements || []).map(mv => ({
         type: 'movement',
         date: mv.created_at,
         status: mv.type === 'ingreso' ? 'Ingreso de efectivo' : 'Retiro de efectivo',
@@ -79,7 +81,7 @@ const timelineEvents = computed(() => {
                 </div>
             </div>
 
-            <div class="max-h-[60vh] overflow-y-auto pr-2">
+            <div class="max-h-[55vh] overflow-y-auto pr-2">
                  <Timeline v-if="timelineEvents.length > 0" :value="timelineEvents" align="alternate" class="customized-timeline">
                     <template #marker="slotProps">
                         <span class="flex w-8 h-8 items-center justify-center text-white rounded-full z-10 shadow-md" :style="{ backgroundColor: slotProps.item.color }">
@@ -100,13 +102,21 @@ const timelineEvents = computed(() => {
                                         <span class="text-gray-500">Folio:</span>
                                         <span class="font-mono">{{ slotProps.item.data.folio }}</span>
                                     </div>
-                                     <div class="flex justify-between">
+                                    <div class="flex justify-between">
                                         <span class="text-gray-500">Cliente:</span>
                                         <span class="font-semibold">{{ slotProps.item.data.customer?.name || 'Público en general' }}</span>
                                     </div>
-                                    <div class="flex justify-between font-bold text-base pt-2 border-t mt-2">
-                                        <span>Total Venta:</span>
-                                        <span>{{ formatCurrency(slotProps.item.total) }}</span>
+                                    
+                                    <!-- --- CORRECCIÓN: Se muestran ambos montos --- -->
+                                    <div class="pt-2 border-t mt-2 space-y-1">
+                                        <div class="flex justify-between">
+                                            <span class="text-gray-500">Total Venta:</span>
+                                            <span class="font-semibold">{{ formatCurrency(slotProps.item.totalSale) }}</span>
+                                        </div>
+                                        <div class="flex justify-between font-bold">
+                                            <span>Total Pagado:</span>
+                                            <span>{{ formatCurrency(slotProps.item.totalPaid) }}</span>
+                                        </div>
                                     </div>
                                 </div>
                                 <div v-if="slotProps.item.type === 'movement'" class="text-sm space-y-1">

@@ -369,19 +369,17 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                 </div>
 
                 <!-- historial -->
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                <!-- <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2
                         class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-6 text-gray-800 dark:text-gray-200">
                         Historial de Actividad</h2>
                     <div v-if="activities && activities.length > 0" class="relative max-h-[300px] overflow-y-auto pr-2">
                         <div class="relative pl-6">
-                            <!-- Línea vertical del timeline -->
                             <div class="absolute left-10 top-0 h-full border-l-2 border-gray-200 dark:border-gray-700">
                             </div>
 
                             <div class="space-y-8">
                                 <div v-for="activity in activities" :key="activity.id" class="relative">
-                                    <!-- Ícono del evento -->
                                     <div class="absolute left-0 top-1.5 -translate-x-1/2">
                                         <span
                                             class="flex w-8 h-8 items-center justify-center text-white rounded-full z-10 shadow-md"
@@ -400,7 +398,6 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                         </span>
                                     </div>
 
-                                    <!-- Contenido del evento -->
                                     <div class="ml-10">
                                         <h3 class="font-semibold text-gray-800 dark:text-gray-200 text-lg m-0">{{
                                             activity.description }}</h3>
@@ -408,7 +405,6 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                             {{
                                                 activity.timestamp }}</p>
 
-                                        <!-- Contenido para eventos de actualización -->
                                         <div v-if="activity.event === 'updated' && Object.keys(activity.changes.after).length > 0"
                                             class="mt-3 text-sm space-y-2">
                                             <div v-for="(value, key) in activity.changes.after" :key="key">
@@ -436,7 +432,7 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                     <div v-else class="text-center text-gray-500 py-8">
                         No hay actividades registradas para este producto.
                     </div>
-                </div>
+                </div> -->
             </div>
         </div>
         <AddStockModal v-if="product" :visible="showAddStockModal" :product="product"

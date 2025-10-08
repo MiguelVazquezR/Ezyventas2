@@ -462,7 +462,7 @@ const refreshAttributes = () => {
                         </div>
                     </div>
                     <!-- Sección Tienda en Línea -->
-                    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
+                    <!-- <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
                         <div class="flex items-center justify-between">
                             <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-200">Opciones para tienda en
                                 línea</h2>
@@ -502,7 +502,7 @@ const refreshAttributes = () => {
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </div> -->
                     <div class="flex justify-end sticky bottom-4">
                         <Button type="submit" label="Crear producto" icon="pi pi-check" severity="warning"
                             :loading="form.processing" />

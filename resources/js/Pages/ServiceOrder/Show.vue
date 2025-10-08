@@ -336,7 +336,7 @@ const getItemType = (itemableType) => {
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="col-span-full bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                <h2 class="text-lg font-semibold border-b pb-3 mb-6">Flujo de Estatus</h2>
+                <h2 class="text-lg font-semibold border-b pb-3 mb-6">Flujo de estatus</h2>
                 <div v-if="isCancelled" class="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-md">
                     <i class="pi pi-times-circle text-red-500 text-3xl"></i>
                     <p class="mt-2 font-semibold text-red-700 dark:text-red-300">Esta orden ha sido cancelada.</p>
@@ -366,7 +366,7 @@ const getItemType = (itemableType) => {
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div v-if="hasPermission('services.orders.see_customer_info')">
-                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información del Cliente</h2>
+                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información del cliente</h2>
                             <ul class="space-y-3 text-sm">
                                 <li class="flex items-center"><i class="pi pi-user w-6 text-gray-500"></i><span
                                         class="font-medium">{{ serviceOrder.customer_name }}</span></li>
@@ -383,24 +383,24 @@ const getItemType = (itemableType) => {
                             </ul>
                         </div>
                         <div>
-                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información de la Orden</h2>
+                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información de la orden</h2>
                             <ul class="space-y-3 text-sm">
-                                <li class="flex justify-between"><span>Estatus Actual</span>
+                                <li class="flex justify-between"><span>Estatus actual</span>
                                     <Tag :value="serviceOrder.status.replace('_', ' ')"
                                         :severity="getStatusSeverity(serviceOrder.status)" class="capitalize" />
                                 </li>
-                                <li class="flex justify-between"><span>Fecha de Recepción</span><span>{{
+                                <li class="flex justify-between"><span>Fecha de recepción</span><span>{{
                                     formatDate(serviceOrder.received_at) }}</span></li>
-                                <li class="flex justify-between"><span>Fecha Promesa</span><span>{{
+                                <li class="flex justify-between"><span>Fecha promesa</span><span>{{
                                     formatDate(serviceOrder.promised_at) }}</span></li>
                                 <li v-if="deliveryDate" class="flex justify-between">
-                                    <span>Fecha de Entrega</span>
+                                    <span>Fecha de entrega</span>
                                     <span class="font-semibold">{{ formatDate(deliveryDate) }}</span>
                                 </li>
-                                <li class="flex justify-between"><span>Técnico Asignado</span><span>{{
+                                <li class="flex justify-between"><span>Técnico asignado</span><span>{{
                                     serviceOrder.technician_name || 'Sin asignar' }}</span></li>
                                 <li v-if="serviceOrder.technician_name" class="flex justify-between">
-                                    <span>Comisión del Técnico:</span>
+                                    <span>Comisión del técnico:</span>
                                     <span class="font-semibold">{{ technicianCommission }}</span>
                                 </li>
                             </ul>
@@ -410,7 +410,7 @@ const getItemType = (itemableType) => {
 
                 <div v-if="serviceOrder.custom_fields && Object.keys(serviceOrder.custom_fields).length > 0"
                     class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles Adicionales</h2>
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles adicionales</h2>
                     <ul class="space-y-4 text-sm">
                         <li v-for="(value, key) in serviceOrder.custom_fields" :key="key">
                             <span class="font-semibold capitalize">{{ key.replace(/_/g, ' ') }}</span>
@@ -462,25 +462,25 @@ const getItemType = (itemableType) => {
                     <div class="flex justify-end mt-4">
                         <div class="w-full max-w-xs text-right space-y-2">
                             <div class="flex justify-between font-bold text-lg border-t pt-2 mt-2">
-                                <span>Total Final:</span>
+                                <span>Total cobrado:</span>
                                 <span>{{ formatCurrency(serviceOrder.final_total) }}</span>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles del Equipo y Falla</h2>
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles del equipo y falla</h2>
                     <div>
-                        <p class="font-semibold">Descripción del Equipo</p>
+                        <p class="font-semibold m-0">Descripción del equipo</p>
                         <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ serviceOrder.item_description }}</p>
                     </div>
                     <div class="mt-4">
-                        <p class="font-semibold">Problemas Reportados por el Cliente</p>
+                        <p class="font-semibold m-0">Problemas reportados por el cliente</p>
                         <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ serviceOrder.reported_problems }}
                         </p>
                     </div>
                     <div v-if="serviceOrder.technician_diagnosis" class="mt-4 pt-4 border-t">
-                        <p class="font-semibold">Diagnóstico del Técnico</p>
+                        <p class="font-semibold m-0">Diagnóstico del técnico</p>
                         <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ serviceOrder.technician_diagnosis }}
                         </p>
                     </div>
@@ -489,23 +489,23 @@ const getItemType = (itemableType) => {
 
             <div class="lg:col-span-1 space-y-6">
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Estado de Cuenta</h2>
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Estado de cuenta</h2>
                     <ul class="space-y-2 text-sm">
-                        <li class="flex justify-between"><span>Total de la Orden:</span><span class="font-semibold">{{
+                        <li class="flex justify-between"><span>Total de la orden:</span><span class="font-semibold">{{
                             formatCurrency(serviceOrder.final_total) }}</span></li>
-                        <li class="flex justify-between"><span>Total Pagado:</span><span
+                        <li class="flex justify-between"><span>Total pagado:</span><span
                                 class="font-semibold text-green-600">{{
                                     formatCurrency(totalPaid) }}</span></li>
                         <li class="flex justify-between text-base font-bold border-t pt-2 mt-2"
                             :class="amountDue > 0.01 ? 'text-red-500' : 'text-gray-800 dark:text-gray-200'">
-                            <span>Saldo Pendiente:</span>
+                            <span>Saldo pendiente:</span>
                             <span>{{ formatCurrency(amountDue) }}</span>
                         </li>
                     </ul>
                 </div>
                 
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Análisis de Ganancia</h2>
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Análisis de ganancia</h2>
                     <ul class="space-y-2 text-sm">
                         <li class="flex justify-between">
                             <span>Total cobrado:</span>
@@ -535,7 +535,7 @@ const getItemType = (itemableType) => {
                 </div>
 
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Pagos Registrados</h2>
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Pagos registrados</h2>
                     <DataTable :value="serviceOrder.transaction?.payments" class="p-datatable-sm"
                         responsiveLayout="scroll">
                         <Column field="payment_date" header="Fecha"><template #body="{ data }">{{
@@ -553,7 +553,7 @@ const getItemType = (itemableType) => {
                     </DataTable>
                 </div>
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Inicial</h2>
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia inicial</h2>
                     <Galleria :value="initialEvidenceImages" :numVisible="4" containerStyle="max-width: 100%"
                         :showThumbnails="false" :showIndicators="true">
                         <template #item="slotProps"><img :src="slotProps.item.original_url"
@@ -565,7 +565,7 @@ const getItemType = (itemableType) => {
                     </div>
                 </div>
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia de Cierre de Servicio</h2>
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia de cierre de servicio</h2>
                     <Galleria :value="closingEvidenceImages" :numVisible="4" containerStyle="max-width: 100%"
                         :showThumbnails="false" :showIndicators="true">
                         <template #item="slotProps"><img :src="slotProps.item.original_url"
@@ -576,7 +576,7 @@ const getItemType = (itemableType) => {
                         adjuntaron imágenes
                         de cierre.</div>
                 </div>
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                <!-- <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-6">Historial de Actividad</h2>
                     <div v-if="activities && activities.length > 0" class="relative max-h-[300px] overflow-y-auto pr-2">
                         <div class="relative pl-6">
@@ -621,7 +621,7 @@ const getItemType = (itemableType) => {
                         </div>
                     </div>
                     <div v-else class="text-center text-gray-500 py-8"> No hay actividades registradas. </div>
-                </div>
+                </div> -->
             </div>
         </div>
 
@@ -636,7 +636,7 @@ const getItemType = (itemableType) => {
             :style="{ width: '40rem' }">
             <div class="p-fluid formgrid grid">
                 <div class="field col-12 mb-4">
-                    <label for="technician_diagnosis" class="font-semibold">Diagnóstico del Técnico</label>
+                    <label for="technician_diagnosis" class="font-semibold">Diagnóstico del técnico</label>
                     <Textarea id="technician_diagnosis" v-model="diagnosisForm.technician_diagnosis" rows="5"
                         class="w-full mt-2" :class="{ 'p-invalid': diagnosisForm.errors.technician_diagnosis }" />
                     <small class="p-error" v-if="diagnosisForm.errors.technician_diagnosis">{{
@@ -644,7 +644,7 @@ const getItemType = (itemableType) => {
                 </div>
 
                 <div class="field col-12">
-                    <label class="font-semibold mb-2 block">Evidencia de Cierre (Máx. 5 imágenes)</label>
+                    <label class="font-semibold mb-2 block">Evidencia de cierre (Máx. 5 imágenes)</label>
                     <FileUpload name="closing_evidence_images[]" @select="onSelectClosingImages"
                         @remove="onRemoveClosingImage" :multiple="true" :show-upload-button="false" accept="image/*"
                         :maxFileSize="2000000" :fileLimit="MAX_CLOSING_EVIDENCE_IMAGES"

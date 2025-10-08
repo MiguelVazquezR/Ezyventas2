@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import PaymentMethodSelector from './PaymentMethodSelector.vue';
 
@@ -22,22 +22,17 @@ const props = defineProps({
     willMakeDownPayment: Boolean,
     downPaymentAmount: Number,
     downPaymentMethod: String,
+    downPaymentBankAccountId: Number,
 });
 
 const emit = defineEmits([
     'update:cashReceived', 'update:amountToPay', 'update:selectedAccountId', 'update:paymentNotes',
     'update:willMakeDownPayment', 'update:downPaymentAmount', 'update:downPaymentMethod',
+    'update:downPaymentBankAccountId',
     'select-method', 'submit', 'add-account', 'select-customer', 'create-customer', 'remove-client'
 ]);
 
-// --- INICIO DE CORRECCIÓN: Se elimina el estado local `currentStep` ---
-// const currentStep = ref('selection'); 
-// Se usará una prop implícita o se manejará el estado a través del padre.
-// Para este caso, el componente entero se renderiza condicionalmente, por lo que podemos manejar el estado internamente
-// pero debe reaccionar a los cambios de las props.
 const localCurrentStep = ref('selection');
-// --- FIN DE CORRECCIÓN ---
-
 const customerSearch = ref('');
 const toast = useToast();
 
@@ -181,7 +176,7 @@ watch(() => props.paymentMode, () => {
                         </div>
                         <div class="mb-4">
                             <label for="bank-account" class="text-sm font-medium">Cuenta destino</label>
-                            <Dropdown :model-value="selectedAccountId" @update:modelValue="emit('update:selectedAccountId', $event)" :options="bankAccountOptions" optionLabel="label" optionValue="value" placeholder="Selecciona una cuenta" class="w-full mt-1" />
+                            <Select :model-value="selectedAccountId" @update:modelValue="emit('update:selectedAccountId', $event)" :options="bankAccountOptions" optionLabel="label" optionValue="value" placeholder="Selecciona una cuenta" class="w-full mt-1" />
                         </div>
                         <div v-if="localCurrentStep === 'transferencia' && selectedAccountId" class="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg space-y-2 text-sm mb-4">
                             <div v-for="detail in [{label: 'Beneficiario', value: bankAccounts.find(b => b.id === selectedAccountId)?.owner_name}, {label: 'Banco', value: bankAccounts.find(b => b.id === selectedAccountId)?.bank_name}, {label: 'CLABE', value: bankAccounts.find(b => b.id === selectedAccountId)?.clabe}]" :key="detail.label">
@@ -200,7 +195,7 @@ watch(() => props.paymentMode, () => {
                         </div>
                     </div>
                     <div v-else class="text-center">
-                        <i class="pi pi-exclamation-triangle text-4xl text-yellow-500 mb-4"></i>
+                        <i class="pi pi-exclamation-triangle !text-4xl text-yellow-500 mb-4"></i>
                         <p class="font-semibold">No hay cuentas bancarias</p>
                         <Button label="Registrar Cuenta" icon="pi pi-plus" @click="emit('add-account')" />
                     </div>
@@ -212,7 +207,6 @@ watch(() => props.paymentMode, () => {
         </div>
 
         <div v-if="localCurrentStep.startsWith('credito')">
-            {{ localCurrentStep }}
             <div v-if="localCurrentStep === 'credito-customer-selection'" class="min-h-[350px] flex flex-col">
                 <div class="flex-grow">
                     <h3 class="text-xl font-semibold">Asignar cliente</h3>
@@ -235,7 +229,7 @@ watch(() => props.paymentMode, () => {
 
             <div v-if="localCurrentStep === 'credito'" class="min-h-[350px] flex flex-col">
                  <div class="flex-grow">
-                     <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center justify-between mb-4">
                         <div class="flex items-center gap-3"><img src="/images/credito.webp" alt="Credito" class="h-8"><h3 class="text-xl font-semibold">Venta a crédito</h3></div>
                         <Button @click="handleRemoveClient" icon="pi pi-user-minus" text rounded severity="danger" v-tooltip.left="'Quitar cliente'" />
                     </div>
@@ -255,7 +249,20 @@ watch(() => props.paymentMode, () => {
                         </div>
                          <div>
                             <label class="text-sm font-medium">Método de pago del abono</label>
-                            <Dropdown :model-value="downPaymentMethod" @update:modelValue="emit('update:downPaymentMethod', $event)" :options="['efectivo', 'tarjeta', 'transferencia']" placeholder="Selecciona método" class="w-full mt-1" />
+                            <Select :model-value="downPaymentMethod" @update:modelValue="emit('update:downPaymentMethod', $event)" :options="['efectivo', 'tarjeta', 'transferencia']" placeholder="Selecciona método" class="w-full mt-1" />
+                        </div>
+                        <!-- --- NUEVO: Selector de cuenta para el abono --- -->
+                        <div v-if="['tarjeta', 'transferencia'].includes(downPaymentMethod)">
+                            <label class="text-sm font-medium">Cuenta destino del abono</label>
+                            <Select 
+                                :model-value="downPaymentBankAccountId" 
+                                @update:modelValue="emit('update:downPaymentBankAccountId', $event)" 
+                                :options="bankAccountOptions" 
+                                optionLabel="label" 
+                                optionValue="value" 
+                                placeholder="Selecciona una cuenta" 
+                                class="w-full mt-1" 
+                            />
                         </div>
                     </div>
                 </div>
