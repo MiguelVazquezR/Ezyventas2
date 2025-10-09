@@ -72,13 +72,12 @@ class CustomerController extends Controller implements HasMiddleware
 
     public function show(Customer $customer): Response
     {
+        // Se cargan las transacciones por separado para la primera tabla.
         $customer->load([
             'transactions' => fn ($query) => $query->orderBy('created_at', 'desc'),
-            'balanceMovements' => fn ($query) => $query->with('transaction:id,folio')->orderBy('created_at', 'desc')
         ]);
         
-        // Se obtienen las cajas registradoras disponibles para pasarlas a la vista.
-        // Esto es necesario para que el modal de apertura de sesión funcione.
+        // Se obtienen las cajas registradoras disponibles para el modal de apertura de sesión.
         $user = Auth::user();
         $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
             ->where('is_active', true)
@@ -87,7 +86,9 @@ class CustomerController extends Controller implements HasMiddleware
 
         return Inertia::render('Customer/Show', [
             'customer' => $customer,
-            'availableCashRegisters' => $availableCashRegisters, // Se pasa como prop
+            // Se pasa el nuevo historial de movimientos calculado a través del accesor en el modelo Customer.
+            'historicalMovements' => $customer->historical_movements,
+            'availableCashRegisters' => $availableCashRegisters,
         ]);
     }
 

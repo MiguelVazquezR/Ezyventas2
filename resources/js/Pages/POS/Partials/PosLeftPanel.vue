@@ -116,6 +116,7 @@ const applyFilters = () => {
         replace: true,
         only: ['products'],
         onSuccess: (page) => {
+            page.props.flash.success = null;
             loadedProducts.value = page.props.products.data;
             nextCursor.value = page.props.products.next_page_url;
             if (productsContainer.value) productsContainer.value.scrollTop = 0;

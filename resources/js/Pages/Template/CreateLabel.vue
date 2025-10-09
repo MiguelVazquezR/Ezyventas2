@@ -8,9 +8,9 @@ import InputLabel from '@/Components/InputLabel.vue';
 
 const props = defineProps({
     branches: Array,
-    // --- AÑADIDO: Props para manejar los límites ---
     templateLimit: Number,
     templateUsage: Number,
+    customFieldDefinitions: Array,
 });
 
 // --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
@@ -52,7 +52,7 @@ const availableElements = ref([
     { id: 'qr', name: 'Código QR', icon: 'pi pi-qrcode' },
 ]);
 
-const placeholderOptions = ref([
+const getInitialPlaceholderOptions = () => ([
     {
         group: 'Venta',
         items: [
@@ -103,6 +103,87 @@ const placeholderOptions = ref([
         ]
     },
 ]);
+
+const placeholderOptions = computed(() => {
+    const options = getInitialPlaceholderOptions();
+    const customFieldsByModule = {};
+
+    // Agrupar campos personalizados por módulo
+    props.customFieldDefinitions.forEach(field => {
+        if (!customFieldsByModule[field.module]) {
+            customFieldsByModule[field.module] = [];
+        }
+        customFieldsByModule[field.module].push(field);
+    });
+
+    // Crear grupos de placeholders para cada módulo con campos personalizados
+    for (const moduleKey in customFieldsByModule) {
+        if (moduleKey === 'service_orders') {
+            options.push({
+                group: 'Campos Personalizados (Orden de Servicio)',
+                items: customFieldsByModule[moduleKey].map(field => ({
+                    label: field.name,
+                    value: `{{os.custom.${field.key}}}`
+                }))
+            });
+        }
+        // Aquí podrías añadir más `if` para otros módulos si es necesario
+    }
+
+    return options;
+});
+
+// const placeholderOptions = ref([
+//     {
+//         group: 'Venta',
+//         items: [
+//             { label: 'Folio', value: '{{v.folio}}' }, { label: 'Fecha', value: '{{v.fecha}}' }, { label: 'Hora', value: '{{v.hora}}' },
+//             { label: 'Fecha y Hora', value: '{{v.fecha_hora}}' }, { label: 'Subtotal', value: '{{v.subtotal}}' }, { label: 'Descuentos', value: '{{v.descuentos}}' },
+//             { label: 'Impuestos', value: '{{v.impuestos}}' }, { label: 'Total', value: '{{v.total}}' }, { label: 'Métodos de Pago', value: '{{v.metodos_pago}}' },
+//             { label: 'Notas de Venta', value: '{{v.notas_venta}}' },
+//         ]
+//     },
+//     {
+//         group: 'Orden de servicio',
+//         items: [
+//             { label: 'Folio', value: '{{os.folio}}' }, { label: 'Fecha recepción', value: '{{os.fecha_recepcion}}' }, { label: 'Hora recepción', value: '{{os.hora_recepcion}}' },
+//             { label: 'Fecha y Hora recepción', value: '{{os.fecha_hora_recepcion}}' }, { label: 'Cliente', value: '{{os.cliente.nombre}}' }, { label: 'Problemas reportados', value: '{{os.problemas_reportados}}' },
+//             { label: 'Equipo/Máquina', value: '{{os.item_description}}' }, { label: 'Total', value: '{{os.final_total}}' },
+//         ]
+//     },
+//     {
+//         group: 'Negocio',
+//         items: [
+//             { label: 'Nombre del Negocio', value: '{{negocio.nombre}}' }, { label: 'Razón Social', value: '{{negocio.razon_social}}' },
+//             { label: 'Dirección del Negocio', value: '{{negocio.direccion}}' }, { label: 'Teléfono del Negocio', value: '{{negocio.telefono}}' },
+//         ]
+//     },
+//     {
+//         group: 'Sucursal',
+//         items: [
+//             { label: 'Nombre Sucursal', value: '{{sucursal.nombre}}' }, { label: 'Dirección Sucursal', value: '{{sucursal.direccion}}' },
+//             { label: 'Teléfono Sucursal', value: '{{sucursal.telefono}}' },
+//         ]
+//     },
+//     {
+//         group: 'Cliente',
+//         items: [
+//             { label: 'Nombre del Cliente', value: '{{cliente.nombre}}' }, { label: 'Teléfono del Cliente', value: '{{cliente.telefono}}' },
+//             { label: 'Email del Cliente', value: '{{cliente.email}}' }, { label: 'Empresa del Cliente', value: '{{cliente.empresa}}' },
+//         ]
+//     },
+//     {
+//         group: 'Vendedor',
+//         items: [{ label: 'Nombre del Vendedor', value: '{{vendedor.nombre}}' }]
+//     },
+//     {
+//         group: 'Productos (para bucles)',
+//         items: [
+//             { label: 'Nombre Producto', value: '{{p.nombre}}' }, { label: 'Cantidad', value: '{{p.cantidad}}' },
+//             { label: 'Precio Unitario', value: '{{p.precio}}' }, { label: 'Total Producto', value: '{{p.total}}' }
+//         ]
+//     },
+// ]);
 
 const addElement = (type) => {
     const newElement = {
@@ -197,6 +278,7 @@ const dpiOptions = ref([203, 300, 600]);
 </script>
 
 <template>
+
     <Head title="Crear Plantilla de Etiqueta" />
     <AppLayout>
         <!-- AÑADIDO: Contenido condicional basado en el límite -->
@@ -205,11 +287,12 @@ const dpiOptions = ref([203, 300, 600]);
                 <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>
                 <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Límite de Plantillas Alcanzado</h1>
                 <p class="text-gray-600 dark:text-gray-300 mb-6">
-                    Has alcanzado el límite de <strong>{{ templateLimit }} plantillas</strong> permitido por tu plan actual. Para agregar más, por favor mejora tu plan.
+                    Has alcanzado el límite de <strong>{{ templateLimit }} plantillas</strong> permitido por tu plan
+                    actual. Para agregar más, por favor mejora tu plan.
                 </p>
                 <div class="flex justify-center items-center gap-4">
                     <Link :href="route('print-templates.index')">
-                        <Button label="Volver a Plantillas" severity="secondary" outlined />
+                    <Button label="Volver a Plantillas" severity="secondary" outlined />
                     </Link>
                     <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer">
                         <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
@@ -231,7 +314,8 @@ const dpiOptions = ref([203, 300, 600]);
                     </div>
                     <div>
                         <InputLabel value="Asignar a Sucursal(es) *" />
-                        <MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" size="large" optionValue="id" placeholder="Selecciona" class="w-full mt-1" />
+                        <MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" size="large"
+                            optionValue="id" placeholder="Selecciona" class="w-full mt-1" />
                         <InputError :message="form.errors.branch_ids" />
                     </div>
                     <div class="grid grid-cols-2 gap-4 border-t pt-4">
@@ -245,7 +329,8 @@ const dpiOptions = ref([203, 300, 600]);
                         </div>
                         <div>
                             <InputLabel value="Resolución (DPI)" />
-                            <Select v-model="form.content.config.dpi" :options="dpiOptions" size="large" class="w-full mt-1" />
+                            <Select v-model="form.content.config.dpi" :options="dpiOptions" size="large"
+                                class="w-full mt-1" />
                         </div>
                         <div>
                             <InputLabel value="Espacio (mm)" />
@@ -256,27 +341,38 @@ const dpiOptions = ref([203, 300, 600]);
 
                 <h3 class="font-bold mb-4 mt-6">Elementos</h3>
                 <div class="space-y-2">
-                    <Button v-for="el in availableElements" :key="el.id" @click="addElement(el.id)" :label="el.name" :icon="`pi ${el.icon}`" outlined class="w-full justify-start" />
+                    <Button v-for="el in availableElements" :key="el.id" @click="addElement(el.id)" :label="el.name"
+                        :icon="`pi ${el.icon}`" outlined class="w-full justify-start" />
                 </div>
 
                 <div class="mt-6 border-t pt-4 flex justify-end gap-2">
-                    <Link :href="route('print-templates.index')"><Button label="Cancelar" severity="secondary" text /></Link>
+                    <Link :href="route('print-templates.index')"><Button label="Cancelar" severity="secondary" text />
+                    </Link>
                     <Button @click="submit" label="Crear Plantilla" :loading="form.processing" />
                 </div>
             </div>
 
             <!-- Vista Previa de la Etiqueta -->
             <div class="w-1/2 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-                <div class="bg-white rounded-md shadow-lg relative border" :style="{ width: `${form.content.config.width * 4}px`, height: `${form.content.config.height * 4}px` }">
-                    <p v-if="templateElements.length === 0" class="text-center text-gray-400 absolute inset-0 flex items-center justify-center">Vista Previa de Etiqueta</p>
+                <div class="bg-white rounded-md shadow-lg relative border"
+                    :style="{ width: `${form.content.config.width * 4}px`, height: `${form.content.config.height * 4}px` }">
+                    <p v-if="templateElements.length === 0"
+                        class="text-center text-gray-400 absolute inset-0 flex items-center justify-center">Vista Previa
+                        de Etiqueta</p>
 
-                    <div v-for="element in templateElements" :key="element.id" @mousedown.prevent="onDragStart($event, element)" :style="getElementStyle(element)" class="flex items-center" :class="{ '!border-blue-500 !border-solid': selectedElement?.id === element.id }">
-                        <div v-if="element.type === 'text'" class="whitespace-pre-line text-[10px]">{{ element.data.value }}</div>
-                        <div v-if="element.type === 'barcode'" class="w-full h-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                    <div v-for="element in templateElements" :key="element.id"
+                        @mousedown.prevent="onDragStart($event, element)" :style="getElementStyle(element)"
+                        class="flex items-center"
+                        :class="{ '!border-blue-500 !border-solid': selectedElement?.id === element.id }">
+                        <div v-if="element.type === 'text'" class="whitespace-pre-line text-[10px]">{{
+                            element.data.value }}</div>
+                        <div v-if="element.type === 'barcode'"
+                            class="w-full h-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
                             <i class="pi pi-bars text-xl text-gray-500"></i>
                         </div>
                         <div v-if="element.type === 'qr'" class="w-full h-full flex items-center justify-center">
-                            <i class="pi pi-qrcode text-gray-500" :style="{ fontSize: `${element.data.magnification * 8}px` }"></i>
+                            <i class="pi pi-qrcode text-gray-500"
+                                :style="{ fontSize: `${element.data.magnification * 8}px` }"></i>
                         </div>
                     </div>
                 </div>
@@ -287,21 +383,41 @@ const dpiOptions = ref([203, 300, 600]);
                 <h3 class="font-bold mb-4">Propiedades</h3>
                 <div v-if="selectedElement" class="space-y-4">
                     <div class="grid grid-cols-2 gap-4">
-                        <div><InputLabel value="X (mm)" /><InputNumber v-model="selectedElement.data.x" class="w-full mt-1" showButtons inputClass="w-full" :step="0.1" /></div>
-                        <div><InputLabel value="Y (mm)" /><InputNumber v-model="selectedElement.data.y" class="w-full mt-1" showButtons inputClass="w-full" :step="0.1" /></div>
+                        <div>
+                            <InputLabel value="X (mm)" />
+                            <InputNumber v-model="selectedElement.data.x" class="w-full mt-1" showButtons
+                                inputClass="w-full" :step="0.1" />
+                        </div>
+                        <div>
+                            <InputLabel value="Y (mm)" />
+                            <InputNumber v-model="selectedElement.data.y" class="w-full mt-1" showButtons
+                                inputClass="w-full" :step="0.1" />
+                        </div>
                     </div>
-                    <div><InputLabel value="Rotación (°)" /><InputNumber v-model="selectedElement.data.rotation" class="w-full mt-1" showButtons inputClass="w-full" /></div>
+                    <div>
+                        <InputLabel value="Rotación (°)" />
+                        <InputNumber v-model="selectedElement.data.rotation" class="w-full mt-1" showButtons
+                            inputClass="w-full" />
+                    </div>
                     <Divider />
                     <div v-if="selectedElement.type === 'text'" class="space-y-4">
-                        <div><InputLabel value="Contenido" /><Textarea v-model="selectedElement.data.value" rows="3" class="w-full mt-1" /></div>
-                        <div><InputLabel value="Tamaño de Fuente" /><InputNumber v-model="selectedElement.data.font_size" class="w-full mt-1" showButtons /></div>
+                        <div>
+                            <InputLabel value="Contenido" /><Textarea v-model="selectedElement.data.value" rows="3"
+                                class="w-full mt-1" />
+                        </div>
+                        <div>
+                            <InputLabel value="Tamaño de Fuente" />
+                            <InputNumber v-model="selectedElement.data.font_size" class="w-full mt-1" showButtons />
+                        </div>
                         <Accordion :activeIndex="null">
                             <AccordionTab header="Insertar Variable">
                                 <div class="space-y-2">
                                     <div v-for="group in placeholderOptions" :key="group.group">
                                         <p class="text-xs font-bold text-gray-500 mb-1">{{ group.group }}</p>
                                         <div class="flex flex-wrap gap-1">
-                                            <Button v-for="item in group.items" :key="item.value" @click="selectedElement.data.value = (selectedElement.data.value || '') + item.value" :label="item.label" severity="secondary" outlined size="small" />
+                                            <Button v-for="item in group.items" :key="item.value"
+                                                @click="selectedElement.data.value = (selectedElement.data.value || '') + item.value"
+                                                :label="item.label" severity="secondary" outlined size="small" />
                                         </div>
                                     </div>
                                 </div>
@@ -309,14 +425,27 @@ const dpiOptions = ref([203, 300, 600]);
                         </Accordion>
                     </div>
                     <div v-if="selectedElement.type === 'barcode'" class="space-y-4">
-                        <div><InputLabel value="Contenido" /><InputText v-model="selectedElement.data.value" class="w-full mt-1" /></div>
-                        <div><InputLabel value="Altura (px)" /><InputNumber v-model="selectedElement.data.height" class="w-full mt-1" showButtons /></div>
+                        <div>
+                            <InputLabel value="Contenido" />
+                            <InputText v-model="selectedElement.data.value" class="w-full mt-1" />
+                        </div>
+                        <div>
+                            <InputLabel value="Altura (px)" />
+                            <InputNumber v-model="selectedElement.data.height" class="w-full mt-1" showButtons />
+                        </div>
                     </div>
                     <div v-if="selectedElement.type === 'qr'" class="space-y-4">
-                        <div><InputLabel value="Contenido" /><InputText v-model="selectedElement.data.value" class="w-full mt-1" /></div>
-                        <div><InputLabel value="Magnificación" /><InputNumber v-model="selectedElement.data.magnification" class="w-full mt-1" showButtons /></div>
+                        <div>
+                            <InputLabel value="Contenido" />
+                            <InputText v-model="selectedElement.data.value" class="w-full mt-1" />
+                        </div>
+                        <div>
+                            <InputLabel value="Magnificación" />
+                            <InputNumber v-model="selectedElement.data.magnification" class="w-full mt-1" showButtons />
+                        </div>
                     </div>
-                    <Button @click="removeElement(selectedElement.id)" label="Eliminar Elemento" icon="pi pi-trash" severity="danger" text class="w-full mt-4" />
+                    <Button @click="removeElement(selectedElement.id)" label="Eliminar Elemento" icon="pi pi-trash"
+                        severity="danger" text class="w-full mt-4" />
                 </div>
                 <div v-else class="text-center text-sm text-gray-500 mt-8">
                     <p>Selecciona un elemento para editar sus propiedades.</p>

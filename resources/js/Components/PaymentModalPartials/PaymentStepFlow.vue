@@ -101,7 +101,7 @@ const copyToClipboard = (text) => {
     });
 };
 
-const abonoOptions = [ { label: 'Sin abono', value: false }, { label: 'Agregar abono', value: true } ];
+const abonoOptions = [ { label: 'Sin anticipo', value: false }, { label: 'Agregar anticipo', value: true } ];
 
 const filteredCustomers = computed(() => {
     if (!customerSearch.value) return props.customers;
@@ -228,7 +228,7 @@ watch(() => props.paymentMode, () => {
                 <div class="flex-grow">
                     <h3 class="text-xl font-semibold">Asignar cliente</h3>
                     <a @click="goBack" class="text-sm text-primary cursor-pointer">&larr; Volver</a>
-                    <Message severity="info" :closable="false">Se requiere un cliente para venta a crédito.</Message>
+                    <Message severity="info" :closable="false" class="my-2">Se requiere un cliente para venta a crédito.</Message>
                     <div class="mt-4">
                         <span class="p-input-icon-left w-full"><InputText v-model="customerSearch" placeholder="Buscar cliente..." class="w-full"/></span>
                     </div>
@@ -255,22 +255,22 @@ watch(() => props.paymentMode, () => {
                     <Message v-if="balanceCoversTotal" severity="success" :closable="false" class="!my-3">Se utilizará el saldo a favor ({{ formatCurrency(client.balance) }}) para esta venta.</Message>
                     
                     <div>
-                         <label class="text-sm font-medium">Abono inicial</label>
+                         <label class="text-sm font-medium block my-2">Anticipo</label>
                          <SelectButton :model-value="willMakeDownPayment" @update:modelValue="emit('update:willMakeDownPayment', $event)" :options="abonoOptions" optionLabel="label" optionValue="value" class="mt-1" :optionDisabled="(option) => (option.value === false && isDownPaymentForced) || balanceCoversTotal" />
                     </div>
                     <div v-if="willMakeDownPayment" class="mt-4 space-y-4 pt-4 border-t">
                         <div>
-                            <label class="text-sm font-medium">Monto del abono</label>
+                            <label class="text-sm font-medium">Monto del anticipo</label>
                             <InputNumber :model-value="downPaymentAmount" @update:modelValue="emit('update:downPaymentAmount', $event)" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" />
-                            <small v-if="creditLimitExceeded" class="text-red-500 mt-1 block">Abono mínimo requerido: {{ formatCurrency(requiredDownPayment) }}</small>
+                            <small v-if="creditLimitExceeded" class="text-red-500 mt-1 block">Anticipo mínimo requerido: {{ formatCurrency(requiredDownPayment) }}</small>
                         </div>
                          <div>
-                            <label class="text-sm font-medium">Método de pago del abono</label>
+                            <label class="text-sm font-medium">Método de pago del anticipo</label>
                             <Select :model-value="downPaymentMethod" @update:modelValue="emit('update:downPaymentMethod', $event)" :options="['efectivo', 'tarjeta', 'transferencia']" placeholder="Selecciona método" class="w-full mt-1" />
                         </div>
                         <!-- --- NUEVO: Selector de cuenta para el abono --- -->
                         <div v-if="['tarjeta', 'transferencia'].includes(downPaymentMethod)">
-                            <label class="text-sm font-medium">Cuenta destino del abono</label>
+                            <label class="text-sm font-medium">Cuenta destino del anticipo</label>
                             <Select 
                                 :model-value="downPaymentBankAccountId" 
                                 @update:modelValue="emit('update:downPaymentBankAccountId', $event)" 
