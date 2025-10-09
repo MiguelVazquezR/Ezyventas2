@@ -61,7 +61,8 @@ const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[st
                     <div class="flex justify-between items-start">
                         <div>
                             <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Ventas de hoy</h2>
-                            <p class="text-3xl font-bold mt-2 text-green-500">{{ formatCurrency(stats.today_sales) }}</p>
+                            <p class="text-3xl font-bold mt-2 text-green-500">{{ formatCurrency(stats.today_sales) }}
+                            </p>
                         </div>
                         <i
                             class="pi pi-dollar text-2xl text-green-500 p-3 bg-green-100 dark:bg-green-900/50 rounded-full"></i>
@@ -78,7 +79,8 @@ const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[st
                         <div>
                             <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Ticket promedio (hoy)
                             </h2>
-                            <p class="text-3xl font-bold text-blue-500 mt-2">{{ formatCurrency(stats.average_ticket_today) }}</p>
+                            <p class="text-3xl font-bold text-blue-500 mt-2">{{
+                                formatCurrency(stats.average_ticket_today) }}</p>
                         </div>
                         <i class="pi pi-receipt text-blue-500 p-3 bg-blue-100 dark:bg-blue-900/50 rounded-full"></i>
                     </div>
@@ -175,14 +177,23 @@ const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[st
                         <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">Top 5 productos más
                             vendidos (mes)</h2>
                         <ul class="space-y-3">
-                            <li v-for="(product, index) in stats.top_selling_products" :key="product.id"
+                            <li v-for="(product, index) in stats.top_selling_products" :key="`${product.id}-${index}`"
                                 :class="{ 'border-b dark:border-gray-700 pb-3': index < stats.top_selling_products.length - 1 }">
                                 <Link :href="route('products.show', product.id)"
                                     class="flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700 p-2 -m-2 rounded-md">
-                                <img :src="product.image" :alt="product.name" class="w-12 h-12 rounded-md object-contain">
+                                <img :src="product.image" :alt="product.name"
+                                    class="w-12 h-12 rounded-md object-contain">
                                 <div class="flex-grow">
-                                    <p class="font-semibold text-sm">{{ product.name }}</p>
-                                    <p class="text-xs text-gray-500">{{ product.total_sold }} unidades</p>
+                                    <p class="font-semibold text-sm m-0">{{ product.name }}</p>
+
+                                    <!-- CORRECCIÓN: Mostrar detalles de la variante si existen -->
+                                    <p v-if="product.variant_description"
+                                        class="text-xs text-orange-500 m-0 font-medium">
+                                        {{ product.variant_description }}
+                                    </p>
+                                    <!-- FIN DE LA CORRECCIÓN -->
+
+                                    <p class="text-xs text-gray-500 m-0">{{ product.total_sold }} unidades</p>
                                 </div>
                                 <p class="font-semibold text-sm">{{ formatCurrency(product.selling_price) }}</p>
                                 </Link>
@@ -206,8 +217,8 @@ const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[st
                                 <img :src="product.image" :alt="product.name"
                                     class="w-12 h-12 rounded-md object-contain flex-shrink-0">
                                 <div class="flex-grow overflow-hidden">
-                                    <p class="font-semibold text-sm truncate">{{ product.name }}</p>
-                                    <p class="text-xs text-gray-500 flex flex-wrap items-center gap-x-2">
+                                    <p class="font-semibold text-sm truncate m-0">{{ product.name }}</p>
+                                    <p class="text-xs text-gray-500 flex flex-wrap items-center gap-x-2 m-0">
                                         <span>{{ formatCurrency(product.selling_price) }}</span>
                                         <span class="text-gray-300 dark:text-gray-600">•</span>
                                         <span v-if="product.days_since_last_sale !== null">{{

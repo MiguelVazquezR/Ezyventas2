@@ -145,12 +145,12 @@ const formatCurrency = (value) => {
                         <template #body="{ data }"> {{ formatCurrency(data.base_price) }} </template>
                     </Column>
                     <Column field="duration_estimate" header="Duración Estimada" sortable></Column>
-                    <Column field="show_online" header="Visible en Tienda" sortable>
+                    <!-- <Column field="show_online" header="Visible en Tienda" sortable>
                         <template #body="{ data }">
                             <i class="pi"
                                 :class="{ 'pi-check-circle text-green-500': data.show_online, 'pi-times-circle text-red-500': !data.show_online }"></i>
                         </template>
-                    </Column>
+                    </Column> -->
                     <Column headerStyle="width: 5rem; text-align: center">
                         <template #body="{ data }"> <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
                                 text rounded severity="secondary" /> </template>

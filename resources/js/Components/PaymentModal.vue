@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, inject } from 'vue';
+import { ref, computed, watch } from 'vue';
 import axios from 'axios';
 import { useToast } from 'primevue/usetoast';
 import BankAccountModal from '@/Components/BankAccountModal.vue';
@@ -13,6 +13,7 @@ const props = defineProps({
     totalAmount: { type: Number, required: true },
     client: { type: Object, default: null },
     customers: { type: Array, default: () => [] },
+    activeSession: { type: Object, default: null },
     paymentMode: {
         type: String,
         default: 'strict',
@@ -22,9 +23,8 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'submit', 'update:client', 'customerCreated']);
 const toast = useToast();
-const activeSession = inject('activeSession', ref(null));
 
-// --- ESTADO PRINCIPAL DEL COMPONENTE ---
+// --- ESTADO Y LÓGICA DEL COMPONENTE ---
 const selectedMethod = ref(null);
 const payments = ref([]);
 const showAddBankAccountModal = ref(false);
@@ -37,7 +37,6 @@ const amountToPay = ref(0);
 const willMakeDownPayment = ref(false);
 const downPaymentAmount = ref(null);
 const downPaymentMethod = ref('efectivo');
-// --- NUEVO: Estado para la cuenta del abono ---
 const downPaymentBankAccountId = ref(null);
 
 // --- LÓGICA DE DATOS Y CÁLCULOS ---
@@ -47,7 +46,7 @@ const fetchBankAccounts = async () => {
         bankAccounts.value = response.data;
         if (bankAccounts.value.length === 1) {
             selectedAccountId.value = bankAccounts.value[0].id;
-            downPaymentBankAccountId.value = bankAccounts.value[0].id; // Pre-seleccionar también
+            downPaymentBankAccountId.value = bankAccounts.value[0].id;
         }
     } catch (error) { console.error("Error fetching bank accounts:", error); }
 };
@@ -71,17 +70,6 @@ const creditLimitExceeded = computed(() => futureDebt.value > (props.client?.cre
 const requiredDownPayment = computed(() => creditLimitExceeded.value ? futureDebt.value - (props.client?.credit_limit || 0) : 0);
 const isCreditSale = computed(() => props.client ? amountToCreditFinal.value <= (props.client?.available_credit || 0) : false);
 
-// --- LÓGICA DE FLUJO Y MANEJO DE EVENTOS ---
-watch(() => props.visible, (newVal) => {
-    if (newVal) {
-        fetchBankAccounts();
-        resetState();
-        if (props.paymentMode === 'balance' && props.client?.balance < 0) {
-            amountToPay.value = Math.abs(props.client.balance);
-        }
-    }
-});
-
 const resetState = () => {
     selectedMethod.value = null;
     payments.value = [];
@@ -92,8 +80,19 @@ const resetState = () => {
     willMakeDownPayment.value = false;
     downPaymentAmount.value = null;
     downPaymentMethod.value = 'efectivo';
-    downPaymentBankAccountId.value = null; // Resetear
+    downPaymentBankAccountId.value = null;
 };
+
+// --- LÓGICA DE FLUJO Y MANEJO DE EVENTOS ---
+watch(() => props.visible, (newVal) => {
+    if (newVal) {
+        fetchBankAccounts();
+        resetState();
+        if (props.paymentMode === 'balance' && props.client?.balance < 0) {
+            amountToPay.value = Math.abs(props.client.balance);
+        }
+    }
+}, { immediate: true });
 
 const submitForm = () => {
     payments.value = [];
@@ -104,12 +103,11 @@ const submitForm = () => {
         if (amount > 0) payments.value.push({ amount, method: selectedMethod.value, notes: paymentNotes.value, bank_account_id: selectedAccountId.value });
     } else if (selectedMethod.value === 'credito') {
         if (willMakeDownPayment.value && downPaymentAmount.value > 0) {
-            const downPaymentPayload = { 
-                amount: downPaymentAmount.value, 
-                method: downPaymentMethod.value, 
-                notes: 'Abono inicial en venta a crédito' 
+            const downPaymentPayload = {
+                amount: downPaymentAmount.value,
+                method: downPaymentMethod.value,
+                notes: 'Abono inicial en venta a crédito'
             };
-            // --- NUEVO: Añadir ID de cuenta bancaria si es necesario ---
             if (['tarjeta', 'transferencia'].includes(downPaymentMethod.value)) {
                 downPaymentPayload.bank_account_id = downPaymentBankAccountId.value;
             }
@@ -133,7 +131,7 @@ const submitForm = () => {
         return;
     }
 
-    emit('submit', { payments: payments.value, cash_register_session_id: activeSession.value?.id });
+    emit('submit', { payments: payments.value, cash_register_session_id: props.activeSession?.id });
     emit('update:visible', false);
 };
 </script>

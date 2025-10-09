@@ -22,17 +22,24 @@ class RolePermissionController extends Controller implements HasMiddleware
         ];
     }
 
-    public function index(): Response
+   public function index(): Response
     {
-        $branchId = Auth::user()->branch_id;
+        $user = Auth::user();
+        $branchId = $user->branch_id;
+        $subscription = $user->branch->subscription;
 
-        // Obtener roles de la sucursal actual, cargando sus permisos
+        // Obtener roles de la sucursal actual, cargando sus permisos.
         $roles = Role::where('branch_id', $branchId)
             ->with('permissions:id,name')
             ->get(['id', 'name']);
+        
+        // 1. Obtener los nombres de los módulos disponibles en la suscripción actual.
+        $availableModuleNames = $subscription->getAvailableModuleNames();
 
-        // Obtener todos los permisos y agruparlos por módulo
-        $permissions = Permission::all()->groupBy('module');
+        // 2. Filtrar los permisos para mostrar solo los de los módulos disponibles.
+        $permissions = Permission::whereIn('module', $availableModuleNames)
+            ->get()
+            ->groupBy('module');
 
         return Inertia::render('Role/Index', [
             'roles' => $roles,

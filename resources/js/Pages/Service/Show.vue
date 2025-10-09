@@ -67,7 +67,7 @@ const mainImage = computed(() =>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                         <!-- Imagen -->
                         <div class="md:col-span-2">
-                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Imagen del Servicio</h2>
+                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Imagen del servicio</h2>
                             <img v-if="mainImage" :src="mainImage" :alt="service.name"
                                 class="w-full h-64 object-cover rounded-lg border">
                             <div v-else
@@ -78,17 +78,17 @@ const mainImage = computed(() =>
 
                         <!-- Información -->
                         <div>
-                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información General</h2>
+                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información general</h2>
                             <ul class="space-y-3 text-sm">
                                 <li class="flex justify-between"><span class="text-gray-500">Categoría</span> <span
                                         class="font-medium">{{ service.category?.name || 'N/A' }}</span></li>
-                                <li class="flex justify-between"><span class="text-gray-500">Duración Estimada</span>
+                                <li class="flex justify-between"><span class="text-gray-500">Duración estimada</span>
                                     <span class="font-medium">{{ service.duration_estimate || 'N/A' }}</span></li>
-                                <li class="flex justify-between">
+                                <!-- <li class="flex justify-between">
                                     <span class="text-gray-500">Visible en Tienda</span>
                                     <Tag :value="service.show_online ? 'Sí' : 'No'"
                                         :severity="service.show_online ? 'success' : 'secondary'"></Tag>
-                                </li>
+                                </li> -->
                             </ul>
                         </div>
                         <div>
