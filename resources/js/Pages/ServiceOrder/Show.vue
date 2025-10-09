@@ -626,7 +626,7 @@ const getItemType = (itemableType) => {
         </div>
 
         <PaymentModal v-if="serviceOrder.transaction" v-model:visible="isPaymentModalVisible" :total-amount="amountDue"
-            :client="serviceOrder.customer" payment-mode="flexible" @submit="handlePaymentSubmit"
+            :client="serviceOrder.customer" :active-session="activeSession" payment-mode="flexible" @submit="handlePaymentSubmit"
             @update:visible="(val) => { if (!val) handlePaymentModalClosed(); }" />
         <PrintModal v-if="serviceOrder" v-model:visible="isPrintModalVisible"
             :data-source="{ type: 'service_order', id: serviceOrder.id }" :available-templates="availableTemplates"

@@ -50,7 +50,7 @@ const addToCart = (data) => {
     const { product, variant } = data;
     const cartItemId = variant ? `prod-${product.id}-variant-${variant.id}` : `prod-${product.id}`;
     const existingItem = cartItems.value.find(item => item.cartItemId === cartItemId);
-    
+
     // Permitir agregar incluso si el stock es 0, pero advertir si se intenta aumentar la cantidad más allá del stock.
     const stock = variant ? variant.stock : product.stock;
 
@@ -58,11 +58,11 @@ const addToCart = (data) => {
         if (existingItem.quantity < stock) {
             existingItem.quantity++;
         } else {
-             // Si el stock es 0, permite agregarlo una vez, pero no más.
+            // Si el stock es 0, permite agregarlo una vez, pero no más.
             if (stock > 0) {
-                 toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
+                toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
             } else {
-                 toast.add({ severity: 'warn', summary: 'Sin Stock', detail: `El producto no tiene stock, pero se agregó al carrito.`, life: 6000 });
+                toast.add({ severity: 'warn', summary: 'Sin Stock', detail: `El producto no tiene stock, pero se agregó al carrito.`, life: 6000 });
             }
         }
     } else {
@@ -84,7 +84,7 @@ const addToCart = (data) => {
         };
         cartItems.value.push(newItem);
         if (stock <= 0) {
-             toast.add({ severity: 'warn', summary: 'Sin Stock', detail: `El producto se agregó al carrito pero no tiene stock disponible.`, life: 6000 });
+            toast.add({ severity: 'warn', summary: 'Sin Stock', detail: `El producto se agregó al carrito pero no tiene stock disponible.`, life: 6000 });
         }
     }
 };
@@ -208,6 +208,8 @@ const handleCheckout = (checkoutData) => {
     form.post(route('pos.checkout'), {
         onSuccess: () => {
             clearCart();
+            page.props.flash.success = null;
+            router.reload({ only: ['products'], preserveState: true });
         },
         onError: (errors) => {
             console.error("Error de validación:", errors);
@@ -266,12 +268,8 @@ const handleCheckout = (checkoutData) => {
             @update:visible="isCloseSessionModalVisible = $event" />
         <SessionHistoryModal :visible="isHistoryModalVisible" :session="activeSession"
             @update:visible="isHistoryModalVisible = $event" />
-        
-        <PrintModal 
-            v-if="printDataSource"
-            v-model:visible="isPrintModalVisible"
-            :data-source="printDataSource"
-            :available-templates="availableTemplates"
-        />
+
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
+            :available-templates="availableTemplates" />
     </AppLayout>
 </template>
