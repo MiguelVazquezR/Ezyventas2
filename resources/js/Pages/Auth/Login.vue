@@ -42,12 +42,12 @@ const redirectToGoogle = () => {
                 <h2 class="mt-6 text-center text-3xl font-bold tracking-tight text-surface-900 dark:text-surface-0">
                     Inicia sesión en tu cuenta
                 </h2>
-                <p class="mt-2 text-center text-sm text-surface-600 dark:text-surface-400">
+                <!-- <p class="mt-2 text-center text-sm text-surface-600 dark:text-surface-400">
                     ¿Aún no tienes una?
                     <Link :href="route('register')" class="font-medium text-primary-600 hover:text-primary-500">
                     Crea una cuenta gratis
                     </Link>
-                </p>
+                </p> -->
             </div>
 
             <Message v-if="status" severity="success" :closable="false">{{ status }}</Message>

@@ -11,6 +11,7 @@ import PaymentModal from '@/Components/PaymentModal.vue';
 const props = defineProps({
     customer: Object,
     availableCashRegisters: Array,
+    historicalMovements: Array, // <--- Nueva prop para el historial unificado
 });
 
 const confirm = useConfirm();
@@ -39,8 +40,6 @@ watch(activeSession, (newSession) => {
 });
 
 const handleBalancePaymentSubmit = (paymentData) => {
-    // CORRECCIÓN: Se envía el objeto 'paymentData' directamente,
-    // que ya contiene 'payments' y 'cash_register_session_id'.
     router.post(route('customers.payments.store', props.customer.id), paymentData, {
         onSuccess: () => {
             isPaymentModalVisible.value = false;
@@ -77,13 +76,12 @@ const actionItems = computed(() => [
     { separator: true },
     { label: 'Crear nuevo cliente', icon: 'pi pi-plus', command: () => router.get(route('customers.create')), visible: hasPermission('customers.create') },
     { label: 'Editar cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', props.customer.id)), visible: hasPermission('customers.edit') },
-    // { label: 'Registrar venta', icon: 'pi pi-shopping-cart', command: () => router.get(route('pos.index', { customer_id: props.customer.id })), visible: hasPermission('pos.access') },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteCustomer, visible: hasPermission('customers.delete') },
 ]);
 
 
-// --- Helpers de Formato (sin cambios) ---
+// --- Helpers de Formato (con un pequeño ajuste) ---
 const formatCurrency = (value) => {
     if (value === null || value === undefined) return 'N/A';
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
@@ -134,36 +132,36 @@ const getTransactionStatusSeverity = (status) => {
             <!-- Columna Izquierda: Información -->
             <div class="lg:col-span-1 space-y-6">
                  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                      <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información de Contacto</h2>
-                      <ul class="space-y-3 text-sm">
-                           <li v-if="customer.phone" class="flex items-center"><i class="pi pi-phone w-6 text-gray-500"></i> <span class="font-medium">{{ customer.phone }}</span></li>
-                           <li v-if="customer.email" class="flex items-center"><i class="pi pi-envelope w-6 text-gray-500"></i> <span class="font-medium">{{ customer.email }}</span></li>
-                           <li v-if="customer.tax_id" class="flex items-center"><i class="pi pi-id-card w-6 text-gray-500"></i> <span class="font-medium">{{ customer.tax_id }}</span></li>
-                      </ul>
+                        <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información de Contacto</h2>
+                        <ul class="space-y-3 text-sm">
+                            <li v-if="customer.phone" class="flex items-center"><i class="pi pi-phone w-6 text-gray-500"></i> <span class="font-medium">{{ customer.phone }}</span></li>
+                            <li v-if="customer.email" class="flex items-center"><i class="pi pi-envelope w-6 text-gray-500"></i> <span class="font-medium">{{ customer.email }}</span></li>
+                            <li v-if="customer.tax_id" class="flex items-center"><i class="pi pi-id-card w-6 text-gray-500"></i> <span class="font-medium">{{ customer.tax_id }}</span></li>
+                        </ul>
                  </div>
                  <div v-if="hasPermission('customers.see_financial_info')" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                      <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información Financiera</h2>
-                      <ul class="space-y-3 text-sm">
-                           <li class="flex justify-between items-center">
+                        <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información Financiera</h2>
+                        <ul class="space-y-3 text-sm">
+                            <li class="flex justify-between items-center">
                                 <span class="text-gray-500">Saldo Actual</span> 
                                 <span :class="getBalanceClass(customer.balance)" class="font-mono font-semibold text-lg">
-                                     {{ formatCurrency(customer.balance) }}
+                                    {{ formatCurrency(customer.balance) }}
                                 </span>
-                           </li>
-                           <li class="flex justify-between items-center">
+                            </li>
+                            <li class="flex justify-between items-center">
                                 <span class="text-gray-500">Límite de Crédito</span> 
                                 <span class="font-mono font-medium">
-                                     {{ formatCurrency(customer.credit_limit) }}
+                                    {{ formatCurrency(customer.credit_limit) }}
                                 </span>
-                           </li>
-                      </ul>
+                            </li>
+                        </ul>
                  </div>
             </div>
 
             <!-- Columna Derecha: Historial -->
             <div class="lg:col-span-2 space-y-6">
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Historial de Transacciones</h2>
+                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Ventas</h2>
                     <DataTable :value="customer.transactions" class="p-datatable-sm" responsiveLayout="scroll" :paginator="customer.transactions?.length > 5" :rows="5">
                         <Column field="folio" header="Folio">
                             <template #body="{ data }">
@@ -172,7 +170,8 @@ const getTransactionStatusSeverity = (status) => {
                                 </Link>
                             </template>
                         </Column>
-                        <Column field="created_at" header="Fecha">
+                        <!-- Columna de Fecha ahora es ordenable -->
+                        <Column field="created_at" header="Fecha" sortable>
                             <template #body="{ data }"> {{ formatDate(data.created_at) }}</template>
                         </Column>
                         <Column field="total" header="Total">
@@ -185,54 +184,51 @@ const getTransactionStatusSeverity = (status) => {
                                 <Tag :value="data.status" :severity="getTransactionStatusSeverity(data.status)" class="capitalize"/>
                             </template>
                         </Column>
-                        <!-- Se elimina la columna de acción con el icono de enlace externo -->
                         <template #empty>
                             <div class="text-center text-gray-500 py-4">
-                                No hay transacciones registradas.
+                                No hay ventas registradas.
                             </div>
                         </template>
                     </DataTable>
                 </div>
+                <!-- Tabla de Historial de Movimientos -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Movimientos de Saldo</h2>
-                    <DataTable :value="customer.balance_movements" class="p-datatable-sm" responsiveLayout="scroll" :paginator="customer.balance_movements?.length > 5" :rows="5">
-                        <Column field="transaction.folio" header="Folio Venta">
-                           <template #body="{data}">
-                               <Link v-if="data.transaction" :href="route('transactions.show', data.transaction.id)" class="text-blue-500 hover:underline">
-                                   #{{ data.transaction.folio }}
-                               </Link>
-                               <span v-else>N/A</span>
-                           </template>
-                       </Column>
-                        <Column field="created_at" header="Fecha">
-                             <template #body="{ data }"> {{ formatDate(data.created_at) }}</template>
+                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Historial de movimientos</h2>
+                    <DataTable :value="historicalMovements" class="p-datatable-sm" responsiveLayout="scroll" :paginator="historicalMovements?.length > 5" :rows="5" sortField="date" :sortOrder="-1">
+                        <!-- Columna de Fecha ahora es ordenable -->
+                        <Column field="date" header="Fecha" sortable>
+                             <template #body="{ data }"> {{ formatDate(data.date) }}</template>
                         </Column>
                         <Column field="type" header="Tipo">
                             <template #body="{data}">
-                                <span class="capitalize">{{ data.type.replace(/_/g, ' ') }}</span>
+                                <span class="capitalize">{{ data.type }}</span>
+                            </template>
+                        </Column>
+                        <Column field="description" header="Descripción">
+                             <template #body="{data}">
+                                 {{ data.description }}
                             </template>
                         </Column>
                         <Column field="amount" header="Monto">
                             <template #body="{ data }">
-                                <span>
+                                <span :class="{ 'text-green-600': data.type.toLowerCase().includes('abono'), 'dark:text-green-400': data.type.toLowerCase().includes('abono') }">
                                     {{ formatCurrency(data.amount) }}
                                 </span>
                             </template>
                         </Column>
-                         <Column field="balance_after" header="Saldo Resultante">
-                              <template #body="{ data }">
-                                  <span :class="data.balance_after > 0 ? 'text-green-600' : 'text-red-600'">
-                                      {{ formatCurrency(data.balance_after) }}
-                                  </span>
-                              </template>
+                         <Column field="resulting_balance" header="Saldo Resultante">
+                               <template #body="{ data }">
+                                   <span :class="getBalanceClass(data.resulting_balance)" class="font-mono font-semibold">
+                                       {{ formatCurrency(data.resulting_balance) }}
+                                   </span>
+                               </template>
                          </Column>
                         <template #empty>
                             <div class="text-center text-gray-500 py-4">
-                                No hay movimientos de saldo registrados.
+                                No hay movimientos registrados.
                             </div>
                         </template>
                     </DataTable>
-                    <!-- Se elimina el div que mostraba el mensaje de no hay registros -->
                 </div>
             </div>
         </div>

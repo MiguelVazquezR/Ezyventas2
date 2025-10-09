@@ -70,7 +70,7 @@ class PrintEncoderService
                     break;
             }
         }
-        
+
         $tspl .= "PRINT 1,1\n";
 
         return [['nombre' => 'EscribirTexto', 'argumentos' => [$tspl]]];
@@ -96,7 +96,7 @@ class PrintEncoderService
         if (!empty(trim($rawText))) {
             $operations[] = ['nombre' => 'TextoSegunPaginaDeCodigos', 'argumentos' => [0, $config['codepage'] ?? 'cp850', $rawText]];
         }
-        
+
         return $operations;
     }
 
@@ -117,7 +117,11 @@ class PrintEncoderService
 
         foreach ($elements as $element) {
             $align = $element['data']['align'] ?? 'left';
-            $fullText .= match ($align) { 'center' => $alignCenter, 'right' => $alignRight, default => $alignLeft };
+            $fullText .= match ($align) {
+                'center' => $alignCenter,
+                'right' => $alignRight,
+                default => $alignLeft
+            };
 
             switch ($element['type']) {
                 case 'text':
@@ -158,7 +162,7 @@ class PrintEncoderService
                     break;
             }
         }
-        
+
         $fullText .= str_repeat("\n", $config['feedLines'] ?? 0);
         $fullText .= $cutPaper;
         return $fullText;
@@ -169,16 +173,15 @@ class PrintEncoderService
         $replacements = [];
 
         if ($dataSource instanceof Product) {
-             $dataSource->loadMissing(['branch.subscription']);
-             $replacements = [
+            $dataSource->loadMissing(['branch.subscription']);
+            $replacements = [
                 '{{p.nombre}}' => $dataSource->name,
                 '{{p.precio}}' => number_format($dataSource->selling_price, 2),
                 '{{p.sku}}' => $dataSource->sku,
                 '{{negocio.nombre}}' => $dataSource->branch->subscription->commercial_name,
                 '{{sucursal.nombre}}' => $dataSource->branch->name,
             ];
-        } 
-        elseif ($dataSource instanceof Transaction) {
+        } elseif ($dataSource instanceof Transaction) {
             $dataSource->loadMissing(['customer', 'branch.subscription', 'user', 'payments']);
             $paymentMethods = $dataSource->payments->pluck('payment_method.value')->unique()->map(fn($method) => ucfirst($method))->implode(', ');
             $replacements = [
@@ -205,8 +208,7 @@ class PrintEncoderService
                 '{{v.sucursal.telefono}}' => $dataSource->branch->contact_phone,
                 '{{v.vendedor.nombre}}' => $dataSource->user->name,
             ];
-        }
-        elseif ($dataSource instanceof ServiceOrder) {
+        } elseif ($dataSource instanceof ServiceOrder) {
             $dataSource->loadMissing(['branch.subscription', 'user']);
             $subtotal = $dataSource->items->sum('line_total');
             $discount = $subtotal - $dataSource->final_total;
@@ -228,8 +230,25 @@ class PrintEncoderService
                 '{{os.problemas_reportados}}' => $dataSource->reported_problems,
                 '{{os.item_description}}' => $dataSource->item_description,
             ];
+
+            // --- Lógica para campos personalizados ---
+            if (!empty($dataSource->custom_fields)) {
+                foreach ($dataSource->custom_fields as $key => $fieldData) {
+                    // Nos aseguramos de que el campo tenga un valor que mostrar
+                    if (isset($fieldData['value'])) {
+                        $printValue = $fieldData['value'];
+                        // Si el valor es un array (como en el caso de 'pattern'), lo convertimos a texto
+                        if (is_array($printValue)) {
+                            $printValue = implode(', ', $printValue);
+                        }
+                        $replacements["{{os.custom.{$key}}}"] = $printValue ?? '';
+                    }
+                }
+            }
         }
-        
+
+        // Reemplazar cualquier placeholder de campo personalizado que no tuviera valor para evitar que se imprima la variable
+        $text = preg_replace('/{{os\.custom\.(.*?)}}/', '', $text);
         return str_replace(array_keys($replacements), array_values($replacements), $text);
     }
 }

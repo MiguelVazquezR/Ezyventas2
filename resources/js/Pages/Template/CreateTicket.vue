@@ -11,12 +11,12 @@ import InputLabel from '@/Components/InputLabel.vue';
 const props = defineProps({
     branches: Array,
     templateImages: Array,
-    // --- AÑADIDO: Props para manejar los límites ---
     templateLimit: Number,
     templateUsage: Number,
+    customFieldDefinitions: Array, // Prop para campos personalizados
 });
 
-// --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
+// Lógica para verificar si se alcanzó el límite
 const limitReached = computed(() => {
     if (props.templateLimit === -1) return false;
     return props.templateUsage >= props.templateLimit;
@@ -33,11 +33,10 @@ const form = useForm({
     branch_ids: [],
     content: {
         config: { paperWidth: '80mm', feedLines: 3, codepage: 'cp850' },
-        elements: [], // Se guardará el array de elementos visuales
+        elements: [],
     },
 });
 
-// Se actualiza la propiedad 'elements' del formulario cuando el diseño cambia
 watch(templateElements, (newElements) => {
     form.content.elements = newElements;
 }, { deep: true });
@@ -46,14 +45,13 @@ const submit = () => {
     form.post(route('print-templates.store'));
 };
 
-// Se añade el nuevo elemento a la lista
 const availableElements = ref([
     { id: 'text', name: 'Texto', icon: 'pi pi-align-left' },
     { id: 'image', name: 'Imagen de Internet', icon: 'pi pi-image' },
     { id: 'local_image', name: 'Subir Imagen', icon: 'pi pi-upload' },
     { id: 'separator', name: 'Separador', icon: 'pi pi-minus' },
     { id: 'line_break', name: 'Salto de Línea', icon: 'pi pi-arrow-down' },
-    { id: 'barcode', name: 'Código de Barras', icon: 'pi pi-bars' },
+    { id: 'barcode', name: 'Código de Barras', icon: 'pi pi-barcode' },
     { id: 'qr', name: 'Código QR', icon: 'pi pi-qrcode' },
     { id: 'sales_table', name: 'Tabla de Venta', icon: 'pi pi-table' },
 ]);
@@ -63,8 +61,8 @@ const addElement = (type) => {
     if (type === 'text') newElement.data = { text: 'Texto de ejemplo', align: 'left' };
     if (type === 'image') newElement.data = { url: 'https://placehold.co/300x150', width: 300, align: 'center' };
     if (type === 'local_image') newElement.data = { url: '', width: 300, align: 'center', isUploading: false };
-    if (type === 'barcode') newElement.data = { type: 'CODE128', value: '{{folio}}', align: 'center' };
-    if (type === 'qr') newElement.data = { value: '{{url_factura}}', align: 'center' };
+    if (type === 'barcode') newElement.data = { type: 'CODE128', value: '{{v.folio}}', align: 'center' };
+    if (type === 'qr') newElement.data = { value: '{{os.folio}}', align: 'center' };
     templateElements.value.push(newElement);
     selectedElement.value = newElement;
 };
@@ -86,11 +84,11 @@ const handleImageUpload = async (event, uploader) => {
         const response = await axios.post(route('print-templates.media.store'), formData);
         const newImage = response.data;
         selectedElement.value.data.url = newImage.url;
-        localTemplateImages.value.unshift(newImage); // Actualiza la galería en tiempo real
+        localTemplateImages.value.unshift(newImage);
         toast.add({ severity: 'success', summary: 'Éxito', detail: 'Imagen subida.', life: 3000 });
         uploader.clear();
     } catch (error) {
-        // toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo subir la imagen.', life: 3000 });
+        // Manejo de error
     } finally {
         selectedElement.value.data.isUploading = false;
     }
@@ -102,10 +100,7 @@ const insertPlaceholder = (placeholder) => {
     }
 };
 
-const templateTypeOptions = ref([{ label: 'Ticket de Venta', value: 'ticket_venta' }]);
-const alignmentOptions = ref([{ icon: 'pi pi-align-left', value: 'left' }, { icon: 'pi pi-align-center', value: 'center' }, { icon: 'pi pi-align-right', value: 'right' }]);
-const barcodeTypeOptions = ref(['CODE128', 'CODE39', 'EAN13', 'UPC-A']);
-const placeholderOptions = ref([
+const getInitialPlaceholderOptions = () => ([
     {
         group: 'Venta',
         items: [
@@ -120,7 +115,7 @@ const placeholderOptions = ref([
         items: [
             { label: 'Folio', value: '{{os.folio}}' }, { label: 'Fecha recepción', value: '{{os.fecha_recepcion}}' }, { label: 'Hora recepción', value: '{{os.hora_recepcion}}' },
             { label: 'Fecha y Hora recepción', value: '{{os.fecha_hora_recepcion}}' }, { label: 'Cliente', value: '{{os.cliente.nombre}}' }, { label: 'Problemas reportados', value: '{{os.problemas_reportados}}' },
-            { label: 'Equipo/Máquina', value: '{{os.item_description}}' }, { label: 'Total', value: '{{os.final_total}}' },
+            { label: 'Equipo/Máquina', value: '{{os.item_description}}' }, { label: 'Total', value: '{{os.total}}' },
         ]
     },
     {
@@ -148,39 +143,60 @@ const placeholderOptions = ref([
         group: 'Vendedor',
         items: [{ label: 'Nombre del Vendedor', value: '{{vendedor.nombre}}' }]
     },
-    {
-        group: 'Productos (para bucles)',
-        items: [
-            { label: 'Nombre Producto', value: '{{p.nombre}}' }, { label: 'Cantidad', value: '{{p.cantidad}}' },
-            { label: 'Precio Unitario', value: '{{p.precio}}' }, { label: 'Total Producto', value: '{{p.total}}' }
-        ]
-    },
 ]);
+
+// Propiedad computada para incluir campos personalizados dinámicamente
+const placeholderOptions = computed(() => {
+    const options = getInitialPlaceholderOptions();
+    const customFieldsByModule = {};
+
+    props.customFieldDefinitions.forEach(field => {
+        if (!customFieldsByModule[field.module]) {
+            customFieldsByModule[field.module] = [];
+        }
+        customFieldsByModule[field.module].push(field);
+    });
+
+    for (const moduleKey in customFieldsByModule) {
+        if (moduleKey === 'service_orders') {
+            options.push({
+                group: 'Campos Personalizados (Orden de Servicio)',
+                items: customFieldsByModule[moduleKey].map(field => ({
+                    label: field.name,
+                    value: `{{os.custom.${field.key}}}`
+                }))
+            });
+        }
+    }
+    return options;
+});
+
+const alignmentOptions = ref([{ icon: 'pi pi-align-left', value: 'left' }, { icon: 'pi pi-align-center', value: 'center' }, { icon: 'pi pi-align-right', value: 'right' }]);
+const barcodeTypeOptions = ref(['CODE128', 'CODE39', 'EAN13', 'UPC-A']);
+
 </script>
 
 <template>
-    <Head title="Crear Plantilla" />
+    <Head title="Crear Plantilla de Ticket" />
     <AppLayout>
-        <!-- AÑADIDO: Contenido condicional basado en el límite -->
         <div v-if="limitReached" class="h-[calc(100vh-8rem)] flex items-center justify-center p-4">
              <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
-                 <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>
-                 <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Límite de Plantillas Alcanzado</h1>
-                 <p class="text-gray-600 dark:text-gray-300 mb-6">
-                     Has alcanzado el límite de <strong>{{ templateLimit }} plantillas</strong> permitido por tu plan actual. Para agregar más, por favor mejora tu plan.
-                 </p>
-                 <div class="flex justify-center items-center gap-4">
-                     <Link :href="route('print-templates.index')">
-                         <Button label="Volver a Plantillas" severity="secondary" outlined />
-                     </Link>
-                     <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer">
-                          <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
-                     </a>
-                 </div>
-            </div>
+                   <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>
+                   <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Límite de Plantillas Alcanzado</h1>
+                   <p class="text-gray-600 dark:text-gray-300 mb-6">
+                         Has alcanzado el límite de <strong>{{ templateLimit }} plantillas</strong> permitido por tu plan actual. Para agregar más, por favor mejora tu plan.
+                   </p>
+                   <div class="flex justify-center items-center gap-4">
+                         <Link :href="route('print-templates.index')">
+                               <Button label="Volver a Plantillas" severity="secondary" outlined />
+                         </Link>
+                         <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer">
+                                <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
+                         </a>
+                   </div>
+             </div>
         </div>
 
-        <!-- Editor de plantillas original -->
         <div v-else class="flex h-[calc(100vh-8rem)]">
             <!-- Columna de Herramientas -->
             <div class="w-1/4 border-r dark:border-gray-700 p-4 overflow-y-auto">
@@ -282,13 +298,15 @@ const placeholderOptions = ref([
                         <InputLabel class="mt-4">Contenido del Texto</InputLabel>
                         <Textarea v-model="selectedElement.data.text" rows="5" class="w-full mt-1 font-mono text-sm" />
                         <Accordion :activeIndex="null">
-                            <AccordionTab header="Insertar Variable">
-                                <div class="space-y-2">
+                            <AccordionTab header="Insertar variable">
+                                <div class="space-y-2 max-h-72 overflow-y-auto">
                                     <div v-for="group in placeholderOptions" :key="group.group">
                                         <p class="text-xs font-bold text-gray-500 mb-1">{{ group.group }}</p>
-                                        <Button v-for="item in group.items" :key="item.value"
-                                            @click="insertPlaceholder(item.value)" :label="item.label"
-                                            severity="secondary" outlined size="small" class="mr-1 mb-1" />
+                                        <div class="flex flex-wrap gap-1">
+                                            <Button v-for="item in group.items" :key="item.value"
+                                                @click="insertPlaceholder(item.value)" :label="item.label"
+                                                severity="secondary" outlined size="small" />
+                                        </div>
                                     </div>
                                 </div>
                             </AccordionTab>
@@ -300,16 +318,9 @@ const placeholderOptions = ref([
                             optionValue="value" class="mt-1">
                             <template #option="slotProps"> <i :class="slotProps.option.icon"></i> </template>
                         </SelectButton>
-                        <div v-if="selectedElement.type === 'image'">
+                        <div>
                             <InputLabel>URL de la Imagen</InputLabel>
                             <InputText v-model="selectedElement.data.url" class="w-full mt-1 text-xs" />
-                        </div>
-                        <div v-if="selectedElement.type === 'local_image'">
-                            <InputLabel>Subir Imagen</InputLabel>
-                            <FileUpload @uploader="handleImageUpload" :multiple="false" accept="image/*"
-                                :showUploadButton="false" :showCancelButton="false" customUpload mode="basic"
-                                chooseLabel="Seleccionar Archivo" :auto="true"
-                                :loading="selectedElement.data.isUploading" />
                         </div>
                         <div>
                             <InputLabel>Ancho (px)</InputLabel>
@@ -322,7 +333,6 @@ const placeholderOptions = ref([
                             optionValue="value" class="mt-1">
                             <template #option="slotProps"> <i :class="slotProps.option.icon"></i> </template>
                         </SelectButton>
-
                         <div>
                             <InputLabel>Galería de Imágenes</InputLabel>
                             <div
@@ -333,10 +343,8 @@ const placeholderOptions = ref([
                                     :class="selectedElement.data.url === image.url ? 'border-blue-500' : 'border-transparent'">
                             </div>
                             <p v-if="localTemplateImages.length === 0" class="text-xs text-center text-gray-500 py-4">No
-                                hay imágenes en la
-                                galería.</p>
+                                hay imágenes en la galería.</p>
                         </div>
-
                         <div>
                             <InputLabel>o Subir Nueva Imagen</InputLabel>
                             <FileUpload @uploader="handleImageUpload" :multiple="false" accept="image/*"
