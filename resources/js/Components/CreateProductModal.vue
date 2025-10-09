@@ -2,10 +2,6 @@
 import { ref } from 'vue';
 import axios from 'axios';
 import { useToast } from 'primevue/usetoast';
-import Dialog from 'primevue/dialog';
-import InputText from 'primevue/inputtext';
-import InputNumber from 'primevue/inputnumber';
-import Button from 'primevue/button';
 import InputLabel from './InputLabel.vue';
 import InputError from './InputError.vue';
 

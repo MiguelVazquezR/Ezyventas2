@@ -15,13 +15,25 @@ const formatCurrency = (value) => {
 
 const displayAmount = computed(() => {
     if (props.paymentMode === 'balance') {
+        // CORRECCIÓN: Si el cliente tiene un saldo negativo, muéstralo.
+        // Si no, muestra el monto que se está ingresando para abonar.
+        if (props.client && props.client.balance < 0) {
+            return props.client.balance;
+        }
         return props.amountToPay || 0;
     }
     return props.totalAmount;
 });
 
 const title = computed(() => {
-    return props.paymentMode === 'balance' ? 'MONTO A ABONAR' : 'SALDO PENDIENTE';
+    if (props.paymentMode === 'balance') {
+        // CORRECCIÓN: Cambia el título si se muestra un saldo deudor.
+        if (props.client && props.client.balance < 0) {
+            return 'SALDO DEUDOR';
+        }
+        return 'ABONAR A SALDO';
+    }
+    return 'SALDO PENDIENTE';
 });
 </script>
 

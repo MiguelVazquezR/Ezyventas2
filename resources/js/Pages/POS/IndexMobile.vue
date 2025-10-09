@@ -55,7 +55,7 @@ const addToCart = (data) => {
     const { product, variant } = data;
     const cartItemId = variant ? `prod-${product.id}-variant-${variant.id}` : `prod-${product.id}`;
     const existingItem = cartItems.value.find(item => item.cartItemId === cartItemId);
-    
+
     const stock = variant ? variant.stock : product.stock;
 
     if (existingItem) {
@@ -211,6 +211,8 @@ const handleCheckout = (checkoutData) => {
     form.post(route('pos.checkout'), {
         onSuccess: () => {
             clearCart();
+            page.props.flash.success = null;
+            router.reload({ only: ['products'], preserveState: true });
             isCartDrawerVisible.value = false;
         },
         onError: (errors) => {
@@ -223,35 +225,25 @@ const handleCheckout = (checkoutData) => {
 </script>
 
 <template>
+
     <Head title="Punto de Venta" />
     <AppLayout>
         <div class="relative h-[calc(100vh-100px)]">
             <template v-if="activeSession">
-                <PosLeftPanel 
-                    :products="products" 
-                    :categories="categories" 
-                    :pending-carts="pendingCarts"
-                    :filters="filters" 
-                    :active-session="activeSession" 
-                    @add-to-cart="addToCart"
-                    @resume-cart="resumePendingCart" 
-                    @delete-cart="deletePendingCart"
+                <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
+                    :filters="filters" :active-session="activeSession" @add-to-cart="addToCart"
+                    @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
                     @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
-                    @refresh-session-data="handleRefreshSessionData"
-                    @open-history-modal="isHistoryModalVisible = true"
-                    @open-close-session-modal="isCloseSessionModalVisible = true" 
-                />
+                    @refresh-session-data="handleRefreshSessionData" @open-history-modal="isHistoryModalVisible = true"
+                    @open-close-session-modal="isCloseSessionModalVisible = true" />
 
                 <!-- Botón Flotante del Carrito -->
                 <div class="fixed bottom-6 right-6 z-50">
-                     <Button @click="isCartDrawerVisible = true" rounded class="!size-16 shadow-lg !bg-white !border !border-[#D9D9D9]">
+                    <Button @click="isCartDrawerVisible = true" rounded
+                        class="!size-16 shadow-lg !bg-white !border !border-[#D9D9D9]">
                         <i class="pi pi-shopping-cart !text-2xl text-black"></i>
-                        <Badge 
-                            v-if="cartItemCount > 0" 
-                            :value="cartItemCount" 
-                            severity="contrast" 
-                            class="absolute top-1 right-3"
-                        ></Badge>
+                        <Badge v-if="cartItemCount > 0" :value="cartItemCount" severity="contrast"
+                            class="absolute top-1 right-3"></Badge>
                     </Button>
                 </div>
 
@@ -260,29 +252,20 @@ const handleCheckout = (checkoutData) => {
                     <template #header>
                         <h2 class="text-xl font-bold">Resumen de Venta</h2>
                     </template>
-                    <ShoppingCart 
-                        :items="cartItems" 
-                        :client="selectedClient" 
-                        :customers="localCustomers"
-                        :default-customer="defaultCustomer" 
-                        :active-promotions="activePromotions"
-                        @update-quantity="updateCartQuantity" 
-                        @update-price="updateCartPrice"
-                        @remove-item="removeCartItem" 
-                        @clear-cart="clearCart" 
-                        @select-customer="handleSelectCustomer"
-                        @customer-created="handleCustomerCreated" 
-                        @save-cart="saveCartToPending"
-                        @checkout="handleCheckout" 
-                        class="h-full" 
-                    />
+                    <ShoppingCart :items="cartItems" :client="selectedClient" :customers="localCustomers"
+                        :default-customer="defaultCustomer" :active-promotions="activePromotions"
+                        @update-quantity="updateCartQuantity" @update-price="updateCartPrice"
+                        @remove-item="removeCartItem" @clear-cart="clearCart" @select-customer="handleSelectCustomer"
+                        @customer-created="handleCustomerCreated" @save-cart="saveCartToPending"
+                        @checkout="handleCheckout" class="h-full" />
                 </Drawer>
 
             </template>
             <template v-else>
                 <div class="flex items-center justify-center h-full dark:bg-gray-900 rounded-lg">
                     <div class="text-center p-8">
-                        <div class="bg-red-100 dark:bg-red-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
+                        <div
+                            class="bg-red-100 dark:bg-red-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
                             <i class="pi pi-lock !text-4xl text-red-500"></i>
                         </div>
                         <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Punto de Venta Bloqueado</h2>
@@ -296,26 +279,13 @@ const handleCheckout = (checkoutData) => {
             </template>
         </div>
 
-        <StartSessionModal 
-            :visible="isStartSessionModalVisible" 
-            :cash-registers="availableCashRegisters"
-            @update:visible="isStartSessionModalVisible = $event" 
-        />
-        <CloseSessionModal 
-            :visible="isCloseSessionModalVisible" 
-            :session="activeSession"
-            @update:visible="isCloseSessionModalVisible = $event" 
-        />
-        <SessionHistoryModal 
-            :visible="isHistoryModalVisible" 
-            :session="activeSession"
-            @update:visible="isHistoryModalVisible = $event" 
-        />
-        <PrintModal 
-            v-if="printDataSource" 
-            v-model:visible="isPrintModalVisible" 
-            :data-source="printDataSource"
-            :available-templates="availableTemplates" 
-        />
+        <StartSessionModal :visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
+            @update:visible="isStartSessionModalVisible = $event" />
+        <CloseSessionModal :visible="isCloseSessionModalVisible" :session="activeSession"
+            @update:visible="isCloseSessionModalVisible = $event" />
+        <SessionHistoryModal :visible="isHistoryModalVisible" :session="activeSession"
+            @update:visible="isHistoryModalVisible = $event" />
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
+            :available-templates="availableTemplates" />
     </AppLayout>
 </template>

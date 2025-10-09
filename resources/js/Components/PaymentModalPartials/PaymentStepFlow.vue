@@ -37,19 +37,31 @@ const customerSearch = ref('');
 const toast = useToast();
 
 const paymentMethods = computed(() => {
-    return [
+    const methods = [
         { id: 'efectivo', label: 'Efectivo', icon: '/images/efectivo.webp' },
         { id: 'tarjeta', label: 'Tarjeta', icon: '/images/tarjeta.webp' },
         { id: 'transferencia', label: 'Transferencia', icon: '/images/transferencia.webp' },
         { id: 'credito', label: 'A crédito', icon: '/images/credito.webp' },
     ];
+    
+    // CORRECCIÓN: Si el modo es 'flexible', se excluye la opción de pago 'a crédito'.
+    if (props.paymentMode === 'flexible') {
+        return methods.filter(m => m.id !== 'credito');
+    }
+
+    return methods;
 });
 
 const handleMethodSelect = (method) => {
     localCurrentStep.value = method;
 
-    if (method === 'efectivo' && props.paymentMode === 'strict') {
-        emit('update:cashReceived', props.totalAmount);
+    if (props.paymentMode === 'strict') {
+        if (method === 'efectivo') {
+            emit('update:cashReceived', props.totalAmount);
+        } else if (['tarjeta', 'transferencia'].includes(method)) {
+            // Se pre-llena el 'amountToPay' para tarjeta y transferencia
+            emit('update:amountToPay', props.totalAmount);
+        }
     }
 
     if (method === 'credito' && !props.client) {
