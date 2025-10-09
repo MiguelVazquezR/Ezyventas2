@@ -9,7 +9,7 @@ const props = defineProps({
 });
 
 const formatCurrency = (value) => {
-    if (typeof value !== 'number') return '$0.00';
+    // if (typeof value != 'number') return '$0.00';
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 };
 

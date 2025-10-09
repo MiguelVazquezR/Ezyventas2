@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
+use App\Models\CustomFieldDefinition;
 use App\Models\PrintTemplate;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -54,7 +55,6 @@ class PrintTemplateController extends Controller implements HasMiddleware
             ->latest()
             ->get();
 
-        // --- AÑADIDO: Se pasan los datos del límite a la vista ---
         $limitData = $this->getTemplateLimitData();
 
         return Inertia::render('Template/Index', [
@@ -69,8 +69,9 @@ class PrintTemplateController extends Controller implements HasMiddleware
         $type = $request->query('type', 'ticket_venta');
         $subscription = Auth::user()->branch->subscription;
 
-        // --- AÑADIDO: Se pasan los datos del límite a la vista ---
         $limitData = $this->getTemplateLimitData();
+
+        $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscription->id)->get();
 
         $view = match ($type) {
             'etiqueta' => 'Template/CreateLabel',
@@ -79,15 +80,15 @@ class PrintTemplateController extends Controller implements HasMiddleware
 
         return Inertia::render($view, [
             'branches' => $subscription->branches()->get(['id', 'name']),
-            'templateImages' => $subscription->getMedia('template-images')->map(fn ($media) => ['id' => $media->id, 'url' => $media->getUrl(), 'name' => $media->name]),
-            'templateLimit' => $limitData['limit'], // <-- Nuevo
-            'templateUsage' => $limitData['usage'],   // <-- Nuevo
+            'templateImages' => $subscription->getMedia('template-images')->map(fn($media) => ['id' => $media->id, 'url' => $media->getUrl(), 'name' => $media->name]),
+            'templateLimit' => $limitData['limit'],
+            'templateUsage' => $limitData['usage'],
+            'customFieldDefinitions' => $customFieldDefinitions, // <-- NUEVO: Pasar campos personalizados
         ]);
     }
 
     public function store(Request $request)
     {
-        // --- AÑADIDO: Validación del límite de plantillas ---
         $limitData = $this->getTemplateLimitData();
         if ($limitData['limit'] !== -1 && $limitData['usage'] >= $limitData['limit']) {
             throw ValidationException::withMessages([
@@ -118,8 +119,6 @@ class PrintTemplateController extends Controller implements HasMiddleware
 
         return redirect()->route('print-templates.index')->with('success', 'Plantilla creada con éxito.');
     }
-    
-    // ... (El resto de los métodos se mantienen igual)
 
     public function update(Request $request, PrintTemplate $printTemplate)
     {
@@ -163,8 +162,9 @@ class PrintTemplateController extends Controller implements HasMiddleware
 
         $subscription = Auth::user()->branch->subscription;
         $printTemplate->load('branches:id,name');
+        $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscription->id)->get();
 
-        $templateImages = $subscription->getMedia('template-images')->map(fn ($media) => [
+        $templateImages = $subscription->getMedia('template-images')->map(fn($media) => [
             'id' => $media->id,
             'url' => $media->getUrl(),
             'name' => $media->name,
@@ -174,6 +174,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
             'template' => $printTemplate,
             'branches' => $subscription->branches()->get(['id', 'name']),
             'templateImages' => $templateImages,
+            'customFieldDefinitions' => $customFieldDefinitions,
         ]);
     }
 
