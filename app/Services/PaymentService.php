@@ -51,7 +51,7 @@ class PaymentService
 
         // Después de procesar todos los pagos, se recalcula el total pagado y se actualiza el estado de la transacción.
         $totalPaid = $transaction->fresh()->payments()->sum('amount');
-        if ($totalPaid >= $transaction->total - 0.01) {
+        if ($totalPaid >= $transaction->total) {
             $transaction->update(['status' => TransactionStatus::COMPLETED]);
         }
     }

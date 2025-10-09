@@ -123,6 +123,11 @@ const applyFilters = () => {
     });
 };
 
+watch(() => props.products.data, (newProducts) => {
+    loadedProducts.value = newProducts;
+    nextCursor.value = props.products.next_page_url; // Asegúrate de actualizar también el cursor de paginación
+}, { deep: true }); // 'deep' por si acaso hay cambios anidados que detectar
+
 watch(searchTerm, debounce(applyFilters, 300));
 
 const handleCategoryFilter = (categoryId) => {
