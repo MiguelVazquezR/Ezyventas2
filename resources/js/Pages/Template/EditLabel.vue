@@ -1,64 +1,42 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { ref, watch, computed, onMounted } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
 import AppLayout from '@/Layouts/AppLayout.vue';
-
-// Componentes Reutilizables
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 
 const props = defineProps({
     template: Object,
     branches: Array,
+    customFieldDefinitions: Array,
 });
 
 const form = useForm({
-    _method: 'PUT',
-    name: '',
+    name: props.template.name,
     type: 'etiqueta',
-    branch_ids: [],
-    content: {
-        config: {
-            width: 50,
-            height: 25,
-            unit: 'mm',
-            dpi: 203,
-            gap: 2,
-        },
-        elements: [],
-    },
+    branch_ids: props.template.branches.map(b => b.id),
+    content: props.template.content,
 });
 
-const templateElements = ref([]);
+const templateElements = ref(props.template.content.elements || []);
 const selectedElement = ref(null);
-
-// Al montar el componente, se puebla el formulario y el editor con los datos existentes
-onMounted(() => {
-    if (props.template) {
-        form.name = props.template.name;
-        form.type = props.template.type;
-        form.branch_ids = props.template.branches.map(b => b.id);
-        form.content = props.template.content;
-        templateElements.value = props.template.content.elements || [];
-    }
-});
 
 watch(templateElements, (newElements) => {
     form.content.elements = newElements;
 }, { deep: true });
 
 const submit = () => {
-    form.post(route('print-templates.update', props.template.id));
+    form.put(route('print-templates.update', props.template.id));
 };
 
 const availableElements = ref([
     { id: 'text', name: 'Texto', icon: 'pi pi-align-left' },
-    { id: 'barcode', name: 'Código de Barras', icon: 'pi pi-bars' },
+    { id: 'barcode', name: 'Código de Barras', icon: 'pi pi-barcode' },
     { id: 'qr', name: 'Código QR', icon: 'pi pi-qrcode' },
 ]);
 
-const placeholderOptions = ref([
+const getInitialPlaceholderOptions = () => ([
     {
         group: 'Venta',
         items: [
@@ -110,6 +88,32 @@ const placeholderOptions = ref([
     },
 ]);
 
+const placeholderOptions = computed(() => {
+    const options = getInitialPlaceholderOptions();
+    const customFieldsByModule = {};
+
+    props.customFieldDefinitions.forEach(field => {
+        if (!customFieldsByModule[field.module]) {
+            customFieldsByModule[field.module] = [];
+        }
+        customFieldsByModule[field.module].push(field);
+    });
+
+    for (const moduleKey in customFieldsByModule) {
+        if (moduleKey === 'service_orders') {
+            options.push({
+                group: 'Campos Personalizados (Orden de Servicio)',
+                items: customFieldsByModule[moduleKey].map(field => ({
+                    label: field.name,
+                    value: `{{os.custom.${field.key}}}`
+                }))
+            });
+        }
+    }
+
+    return options;
+});
+
 const addElement = (type) => {
     const newElement = {
         id: uuidv4(),
@@ -121,12 +125,12 @@ const addElement = (type) => {
         newElement.data.font_size = 1;
     }
     if (type === 'barcode') {
-        newElement.data.value = '{{producto.sku}}';
+        newElement.data.value = '{{p.sku}}';
         newElement.data.type = '128';
         newElement.data.height = 50;
     }
     if (type === 'qr') {
-        newElement.data.value = '{{producto.url}}';
+        newElement.data.value = '{{os.folio}}';
         newElement.data.magnification = 4;
     }
     templateElements.value.push(newElement);
@@ -204,7 +208,6 @@ const dpiOptions = ref([203, 300, 600]);
 </script>
 
 <template>
-
     <Head title="Editar Plantilla de Etiqueta" />
     <AppLayout>
         <div class="flex h-[calc(100vh-6rem)]">
@@ -226,11 +229,11 @@ const dpiOptions = ref([203, 300, 600]);
                     <div class="grid grid-cols-2 gap-4 border-t pt-4">
                         <div>
                             <InputLabel value="Ancho (mm)" />
-                            <InputNumber fluid showCButtons v-model="form.content.config.width" class="w-full mt-1" />
+                            <InputNumber fluid showButtons v-model="form.content.config.width" class="w-full mt-1" />
                         </div>
                         <div>
                             <InputLabel value="Alto (mm)" />
-                            <InputNumber fluid showCButtons v-model="form.content.config.height" class="w-full mt-1" />
+                            <InputNumber fluid showButtons v-model="form.content.config.height" class="w-full mt-1" />
                         </div>
                         <div>
                             <InputLabel value="Resolución (DPI)" />
@@ -239,7 +242,7 @@ const dpiOptions = ref([203, 300, 600]);
                         </div>
                         <div>
                             <InputLabel value="Espacio (mm)" />
-                            <InputNumber fluid showCButtons v-model="form.content.config.gap" class="w-full mt-1" />
+                            <InputNumber fluid showButtons v-model="form.content.config.gap" class="w-full mt-1" />
                         </div>
                     </div>
                 </div>
@@ -261,7 +264,7 @@ const dpiOptions = ref([203, 300, 600]);
             <div class="w-1/2 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
                 <div class="bg-white rounded-md shadow-lg relative border"
                     :style="{ width: `${form.content.config.width * 4}px`, height: `${form.content.config.height * 4}px` }">
-                    <p v-if="templateElements.length === 0"
+                    <p v-if="!templateElements || templateElements.length === 0"
                         class="text-center text-gray-400 absolute inset-0 flex items-center justify-center">Vista Previa
                         de Etiqueta</p>
 
@@ -269,10 +272,11 @@ const dpiOptions = ref([203, 300, 600]);
                         @mousedown.prevent="onDragStart($event, element)" :style="getElementStyle(element)"
                         class="flex items-center"
                         :class="{ '!border-blue-500 !border-solid': selectedElement?.id === element.id }">
-                        <div v-if="element.type === 'text'" class="whitespace-pre-line text-[10px]">{{ element.data.value }}</div>
+                        <div v-if="element.type === 'text'" class="whitespace-pre-line text-[10px]">{{
+                            element.data.value }}</div>
                         <div v-if="element.type === 'barcode'"
                             class="w-full h-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                            <i class="pi pi-bars text-xl text-gray-500"></i>
+                            <i class="pi pi-barcode text-xl text-gray-500"></i>
                         </div>
                         <div v-if="element.type === 'qr'" class="w-full h-full flex items-center justify-center">
                             <i class="pi pi-qrcode text-gray-500"
@@ -315,7 +319,7 @@ const dpiOptions = ref([203, 300, 600]);
                         </div>
                         <Accordion :activeIndex="null">
                             <AccordionTab header="Insertar Variable">
-                                <div class="space-y-2">
+                                <div class="space-y-2 max-h-64 overflow-y-auto">
                                     <div v-for="group in placeholderOptions" :key="group.group">
                                         <p class="text-xs font-bold text-gray-500 mb-1">{{ group.group }}</p>
                                         <div class="flex flex-wrap gap-1">

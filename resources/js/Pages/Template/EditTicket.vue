@@ -1,6 +1,6 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { ref, watch, onMounted } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
@@ -12,53 +12,37 @@ const props = defineProps({
     template: Object,
     branches: Array,
     templateImages: Array,
+    customFieldDefinitions: Array,
 });
 
 const toast = useToast();
-const templateElements = ref([]);
-const selectedElement = ref(null);
 const localTemplateImages = ref([...props.templateImages]);
 
 const form = useForm({
-    _method: 'PUT', // Especifica el método para la actualización
-    name: '',
-    type: 'ticket_venta',
-    branch_ids: [],
-    content: {
-        config: { paperWidth: '80mm', feedLines: 3, codepage: 'cp850' },
-        elements: [],
-    },
+    name: props.template.name,
+    type: props.template.type,
+    branch_ids: props.template.branches.map(b => b.id),
+    content: props.template.content,
 });
 
-// Se puebla el formulario y el editor visual cuando el componente se monta
-onMounted(() => {
-    if (props.template) {
-        form.name = props.template.name;
-        form.type = props.template.type;
-        form.branch_ids = props.template.branches.map(b => b.id);
-        form.content = props.template.content;
-        // La parte más importante: se cargan los elementos visuales guardados
-        templateElements.value = props.template.content.elements || [];
-    }
-});
+const templateElements = ref(props.template.content.elements || []);
+const selectedElement = ref(null);
 
-// Se actualiza la propiedad 'elements' del formulario cuando el diseño cambia
 watch(templateElements, (newElements) => {
     form.content.elements = newElements;
 }, { deep: true });
 
 const submit = () => {
-    form.post(route('print-templates.update', props.template.id));
+    form.put(route('print-templates.update', props.template.id));
 };
 
-// --- Lógica del Editor (idéntica a Create.vue) ---
 const availableElements = ref([
     { id: 'text', name: 'Texto', icon: 'pi pi-align-left' },
     { id: 'image', name: 'Imagen de Internet', icon: 'pi pi-image' },
     { id: 'local_image', name: 'Subir Imagen', icon: 'pi pi-upload' },
     { id: 'separator', name: 'Separador', icon: 'pi pi-minus' },
     { id: 'line_break', name: 'Salto de Línea', icon: 'pi pi-arrow-down' },
-    { id: 'barcode', name: 'Código de Barras', icon: 'pi pi-bars' },
+    { id: 'barcode', name: 'Código de Barras', icon: 'pi pi-barcode' },
     { id: 'qr', name: 'Código QR', icon: 'pi pi-qrcode' },
     { id: 'sales_table', name: 'Tabla de Venta', icon: 'pi pi-table' },
 ]);
@@ -68,8 +52,8 @@ const addElement = (type) => {
     if (type === 'text') newElement.data = { text: 'Texto de ejemplo', align: 'left' };
     if (type === 'image') newElement.data = { url: 'https://placehold.co/300x150', width: 300, align: 'center' };
     if (type === 'local_image') newElement.data = { url: '', width: 300, align: 'center', isUploading: false };
-    if (type === 'barcode') newElement.data = { type: 'CODE128', value: '{{folio}}', align: 'center' };
-    if (type === 'qr') newElement.data = { value: '{{url_factura}}', align: 'center' };
+    if (type === 'barcode') newElement.data = { type: 'CODE128', value: '{{v.folio}}', align: 'center' };
+    if (type === 'qr') newElement.data = { value: '{{os.folio}}', align: 'center' };
     templateElements.value.push(newElement);
     selectedElement.value = newElement;
 };
@@ -91,11 +75,11 @@ const handleImageUpload = async (event, uploader) => {
         const response = await axios.post(route('print-templates.media.store'), formData);
         const newImage = response.data;
         selectedElement.value.data.url = newImage.url;
-        localTemplateImages.value.unshift(newImage); // Actualiza la galería en tiempo real
+        localTemplateImages.value.unshift(newImage);
         toast.add({ severity: 'success', summary: 'Éxito', detail: 'Imagen subida.', life: 3000 });
         uploader.clear();
     } catch (error) {
-        // toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo subir la imagen.', life: 3000 });
+        // Handle error
     } finally {
         selectedElement.value.data.isUploading = false;
     }
@@ -107,10 +91,7 @@ const insertPlaceholder = (placeholder) => {
     }
 };
 
-const templateTypeOptions = ref([{ label: 'Ticket de Venta', value: 'ticket_venta' }]);
-const alignmentOptions = ref([{ icon: 'pi pi-align-left', value: 'left' }, { icon: 'pi pi-align-center', value: 'center' }, { icon: 'pi pi-align-right', value: 'right' }]);
-const barcodeTypeOptions = ref(['CODE128', 'CODE39', 'EAN13', 'UPC-A']);
-const placeholderOptions = ref([
+const getInitialPlaceholderOptions = () => ([
     {
         group: 'Venta',
         items: [
@@ -125,7 +106,7 @@ const placeholderOptions = ref([
         items: [
             { label: 'Folio', value: '{{os.folio}}' }, { label: 'Fecha recepción', value: '{{os.fecha_recepcion}}' }, { label: 'Hora recepción', value: '{{os.hora_recepcion}}' },
             { label: 'Fecha y Hora recepción', value: '{{os.fecha_hora_recepcion}}' }, { label: 'Cliente', value: '{{os.cliente.nombre}}' }, { label: 'Problemas reportados', value: '{{os.problemas_reportados}}' },
-            { label: 'Equipo/Máquina', value: '{{os.item_description}}' }, { label: 'Total', value: '{{os.final_total}}' },
+            { label: 'Equipo/Máquina', value: '{{os.item_description}}' }, { label: 'Total', value: '{{os.total}}' },
         ]
     },
     {
@@ -153,34 +134,52 @@ const placeholderOptions = ref([
         group: 'Vendedor',
         items: [{ label: 'Nombre del Vendedor', value: '{{vendedor.nombre}}' }]
     },
-    {
-        group: 'Productos (para bucles)',
-        items: [
-            { label: 'Nombre Producto', value: '{{p.nombre}}' }, { label: 'Cantidad', value: '{{p.cantidad}}' },
-            { label: 'Precio Unitario', value: '{{p.precio}}' }, { label: 'Total Producto', value: '{{p.total}}' }
-        ]
-    },
 ]);
+
+const placeholderOptions = computed(() => {
+    const options = getInitialPlaceholderOptions();
+    const customFieldsByModule = {};
+
+    if (props.customFieldDefinitions) {
+        props.customFieldDefinitions.forEach(field => {
+            if (!customFieldsByModule[field.module]) {
+                customFieldsByModule[field.module] = [];
+            }
+            customFieldsByModule[field.module].push(field);
+        });
+    }
+
+    for (const moduleKey in customFieldsByModule) {
+        if (moduleKey === 'service_orders') {
+            options.push({
+                group: 'Campos Personalizados (Orden de Servicio)',
+                items: customFieldsByModule[moduleKey].map(field => ({
+                    label: field.name,
+                    value: `{{os.custom.${field.key}}}`
+                }))
+            });
+        }
+    }
+    return options;
+});
+
+const alignmentOptions = ref([{ icon: 'pi pi-align-left', value: 'left' }, { icon: 'pi pi-align-center', value: 'center' }, { icon: 'pi pi-align-right', value: 'right' }]);
+const barcodeTypeOptions = ref(['CODE128', 'CODE39', 'EAN13', 'UPC-A']);
+
 </script>
 
 <template>
-
-    <Head title="Editar Plantilla" />
+    <Head title="Editar Plantilla de Ticket" />
     <AppLayout>
-        <div class="flex h-[calc(100vh-6rem)]">
+        <div class="flex h-[calc(100vh-8rem)]">
             <!-- Columna de Herramientas -->
             <div class="w-1/4 border-r dark:border-gray-700 p-4 overflow-y-auto">
-                <h3 class="font-bold mb-4">Configuración</h3>
+                <h3 class="font-bold mb-4">Configuración de ticket</h3>
                 <div class="space-y-4">
                     <div>
                         <InputLabel value="Nombre de la Plantilla *" />
                         <InputText v-model="form.name" class="w-full mt-1" />
                         <InputError :message="form.errors.name" class="mt-1" />
-                    </div>
-                    <div>
-                        <InputLabel value="Tipo de Plantilla *" />
-                        <Dropdown v-model="form.type" :options="templateTypeOptions" optionLabel="label"
-                            optionValue="value" class="w-full mt-1" />
                     </div>
                     <div>
                         <InputLabel value="Asignar a Sucursal(es) *" />
@@ -256,7 +255,7 @@ const placeholderOptions = ref([
                             </div>
                         </div>
                     </div>
-                    <p v-if="templateElements.length === 0" class="text-center text-gray-400 py-16">Añade elementos
+                    <p v-if="!templateElements || templateElements.length === 0" class="text-center text-gray-400 py-16">Añade elementos
                         desde el panel izquierdo.</p>
                 </div>
             </div>
@@ -274,12 +273,14 @@ const placeholderOptions = ref([
                         <Textarea v-model="selectedElement.data.text" rows="5" class="w-full mt-1 font-mono text-sm" />
                         <Accordion :activeIndex="null">
                             <AccordionTab header="Insertar Variable">
-                                <div class="space-y-2">
+                                <div class="space-y-2 max-h-64 overflow-y-auto">
                                     <div v-for="group in placeholderOptions" :key="group.group">
                                         <p class="text-xs font-bold text-gray-500 mb-1">{{ group.group }}</p>
-                                        <Button v-for="item in group.items" :key="item.value"
-                                            @click="insertPlaceholder(item.value)" :label="item.label"
-                                            severity="secondary" outlined size="small" class="mr-1 mb-1" />
+                                        <div class="flex flex-wrap gap-1">
+                                            <Button v-for="item in group.items" :key="item.value"
+                                                @click="insertPlaceholder(item.value)" :label="item.label"
+                                                severity="secondary" outlined size="small" />
+                                        </div>
                                     </div>
                                 </div>
                             </AccordionTab>
@@ -291,16 +292,9 @@ const placeholderOptions = ref([
                             optionValue="value" class="mt-1">
                             <template #option="slotProps"> <i :class="slotProps.option.icon"></i> </template>
                         </SelectButton>
-                        <div v-if="selectedElement.type === 'image'">
+                        <div>
                             <InputLabel>URL de la Imagen</InputLabel>
                             <InputText v-model="selectedElement.data.url" class="w-full mt-1 text-xs" />
-                        </div>
-                        <div v-if="selectedElement.type === 'local_image'">
-                            <InputLabel>Subir Imagen</InputLabel>
-                            <FileUpload @uploader="handleImageUpload" :multiple="false" accept="image/*"
-                                :showUploadButton="false" :showCancelButton="false" customUpload mode="basic"
-                                chooseLabel="Seleccionar Archivo" :auto="true"
-                                :loading="selectedElement.data.isUploading" />
                         </div>
                         <div>
                             <InputLabel>Ancho (px)</InputLabel>
@@ -313,7 +307,6 @@ const placeholderOptions = ref([
                             optionValue="value" class="mt-1">
                             <template #option="slotProps"> <i :class="slotProps.option.icon"></i> </template>
                         </SelectButton>
-
                         <div>
                             <InputLabel>Galería de Imágenes</InputLabel>
                             <div
@@ -324,10 +317,8 @@ const placeholderOptions = ref([
                                     :class="selectedElement.data.url === image.url ? 'border-blue-500' : 'border-transparent'">
                             </div>
                             <p v-if="localTemplateImages.length === 0" class="text-xs text-center text-gray-500 py-4">No
-                                hay imágenes en la
-                                galería.</p>
+                                hay imágenes en la galería.</p>
                         </div>
-
                         <div>
                             <InputLabel>o Subir Nueva Imagen</InputLabel>
                             <FileUpload @uploader="handleImageUpload" :multiple="false" accept="image/*"

@@ -48,7 +48,7 @@ const submit = () => {
 
 const availableElements = ref([
     { id: 'text', name: 'Texto', icon: 'pi pi-align-left' },
-    { id: 'barcode', name: 'Código de Barras', icon: 'pi pi-bars' },
+    { id: 'barcode', name: 'Código de Barras', icon: 'pi pi-barcode' },
     { id: 'qr', name: 'Código QR', icon: 'pi pi-qrcode' },
 ]);
 
@@ -132,58 +132,6 @@ const placeholderOptions = computed(() => {
 
     return options;
 });
-
-// const placeholderOptions = ref([
-//     {
-//         group: 'Venta',
-//         items: [
-//             { label: 'Folio', value: '{{v.folio}}' }, { label: 'Fecha', value: '{{v.fecha}}' }, { label: 'Hora', value: '{{v.hora}}' },
-//             { label: 'Fecha y Hora', value: '{{v.fecha_hora}}' }, { label: 'Subtotal', value: '{{v.subtotal}}' }, { label: 'Descuentos', value: '{{v.descuentos}}' },
-//             { label: 'Impuestos', value: '{{v.impuestos}}' }, { label: 'Total', value: '{{v.total}}' }, { label: 'Métodos de Pago', value: '{{v.metodos_pago}}' },
-//             { label: 'Notas de Venta', value: '{{v.notas_venta}}' },
-//         ]
-//     },
-//     {
-//         group: 'Orden de servicio',
-//         items: [
-//             { label: 'Folio', value: '{{os.folio}}' }, { label: 'Fecha recepción', value: '{{os.fecha_recepcion}}' }, { label: 'Hora recepción', value: '{{os.hora_recepcion}}' },
-//             { label: 'Fecha y Hora recepción', value: '{{os.fecha_hora_recepcion}}' }, { label: 'Cliente', value: '{{os.cliente.nombre}}' }, { label: 'Problemas reportados', value: '{{os.problemas_reportados}}' },
-//             { label: 'Equipo/Máquina', value: '{{os.item_description}}' }, { label: 'Total', value: '{{os.final_total}}' },
-//         ]
-//     },
-//     {
-//         group: 'Negocio',
-//         items: [
-//             { label: 'Nombre del Negocio', value: '{{negocio.nombre}}' }, { label: 'Razón Social', value: '{{negocio.razon_social}}' },
-//             { label: 'Dirección del Negocio', value: '{{negocio.direccion}}' }, { label: 'Teléfono del Negocio', value: '{{negocio.telefono}}' },
-//         ]
-//     },
-//     {
-//         group: 'Sucursal',
-//         items: [
-//             { label: 'Nombre Sucursal', value: '{{sucursal.nombre}}' }, { label: 'Dirección Sucursal', value: '{{sucursal.direccion}}' },
-//             { label: 'Teléfono Sucursal', value: '{{sucursal.telefono}}' },
-//         ]
-//     },
-//     {
-//         group: 'Cliente',
-//         items: [
-//             { label: 'Nombre del Cliente', value: '{{cliente.nombre}}' }, { label: 'Teléfono del Cliente', value: '{{cliente.telefono}}' },
-//             { label: 'Email del Cliente', value: '{{cliente.email}}' }, { label: 'Empresa del Cliente', value: '{{cliente.empresa}}' },
-//         ]
-//     },
-//     {
-//         group: 'Vendedor',
-//         items: [{ label: 'Nombre del Vendedor', value: '{{vendedor.nombre}}' }]
-//     },
-//     {
-//         group: 'Productos (para bucles)',
-//         items: [
-//             { label: 'Nombre Producto', value: '{{p.nombre}}' }, { label: 'Cantidad', value: '{{p.cantidad}}' },
-//             { label: 'Precio Unitario', value: '{{p.precio}}' }, { label: 'Total Producto', value: '{{p.total}}' }
-//         ]
-//     },
-// ]);
 
 const addElement = (type) => {
     const newElement = {
@@ -368,7 +316,7 @@ const dpiOptions = ref([203, 300, 600]);
                             element.data.value }}</div>
                         <div v-if="element.type === 'barcode'"
                             class="w-full h-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                            <i class="pi pi-bars text-xl text-gray-500"></i>
+                            <i class="pi pi-barcode text-xl text-gray-500"></i>
                         </div>
                         <div v-if="element.type === 'qr'" class="w-full h-full flex items-center justify-center">
                             <i class="pi pi-qrcode text-gray-500"
@@ -410,8 +358,8 @@ const dpiOptions = ref([203, 300, 600]);
                             <InputNumber v-model="selectedElement.data.font_size" class="w-full mt-1" showButtons />
                         </div>
                         <Accordion :activeIndex="null">
-                            <AccordionTab header="Insertar Variable">
-                                <div class="space-y-2">
+                            <AccordionTab header="Insertar variable">
+                                <div class="space-y-2 max-h-72 overflow-y-auto">
                                     <div v-for="group in placeholderOptions" :key="group.group">
                                         <p class="text-xs font-bold text-gray-500 mb-1">{{ group.group }}</p>
                                         <div class="flex flex-wrap gap-1">

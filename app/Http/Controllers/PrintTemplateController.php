@@ -55,7 +55,6 @@ class PrintTemplateController extends Controller implements HasMiddleware
             ->latest()
             ->get();
 
-        // --- AÑADIDO: Se pasan los datos del límite a la vista ---
         $limitData = $this->getTemplateLimitData();
 
         return Inertia::render('Template/Index', [
@@ -82,15 +81,14 @@ class PrintTemplateController extends Controller implements HasMiddleware
         return Inertia::render($view, [
             'branches' => $subscription->branches()->get(['id', 'name']),
             'templateImages' => $subscription->getMedia('template-images')->map(fn($media) => ['id' => $media->id, 'url' => $media->getUrl(), 'name' => $media->name]),
-            'templateLimit' => $limitData['limit'], // <-- Nuevo
-            'templateUsage' => $limitData['usage'],  // <-- Nuevo
+            'templateLimit' => $limitData['limit'],
+            'templateUsage' => $limitData['usage'],
             'customFieldDefinitions' => $customFieldDefinitions, // <-- NUEVO: Pasar campos personalizados
         ]);
     }
 
     public function store(Request $request)
     {
-        // --- AÑADIDO: Validación del límite de plantillas ---
         $limitData = $this->getTemplateLimitData();
         if ($limitData['limit'] !== -1 && $limitData['usage'] >= $limitData['limit']) {
             throw ValidationException::withMessages([
@@ -121,8 +119,6 @@ class PrintTemplateController extends Controller implements HasMiddleware
 
         return redirect()->route('print-templates.index')->with('success', 'Plantilla creada con éxito.');
     }
-
-    // ... (El resto de los métodos se mantienen igual)
 
     public function update(Request $request, PrintTemplate $printTemplate)
     {
