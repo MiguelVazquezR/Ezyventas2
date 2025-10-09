@@ -69,10 +69,10 @@ const submit = () => {
                     <InputLabel for="duration_estimate" value="Duración Estimada" />
                     <InputText id="duration_estimate" v-model="form.duration_estimate" class="mt-1 w-full" placeholder="Ej: 1-2 horas, 3 días hábiles" />
                 </div>
-                <div class="flex items-center gap-2 pt-5">
+                <!-- <div class="flex items-center gap-2 pt-5">
                     <ToggleSwitch v-model="form.show_online" inputId="show_online" />
                     <InputLabel for="show_online" value="Mostrar en Tienda en Línea" />
-                </div>
+                </div> -->
                  <div class="md:col-span-2">
                     <InputLabel value="Imagen del Servicio" />
                     <FileUpload @select="form.image = $event.files[0]" :auto="true" :customUpload="true" accept="image/*" :show-upload-button="false" :show-cancel-button="false">

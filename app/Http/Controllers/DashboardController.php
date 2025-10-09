@@ -8,6 +8,7 @@ use App\Models\CashRegisterSession;
 use App\Models\Customer;
 use App\Models\Expense;
 use App\Models\Product;
+use App\Models\ProductAttribute;
 use App\Models\Promotion;
 use App\Models\ServiceOrder;
 use App\Models\Transaction;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Carbon\Carbon;
+use Illuminate\Support\Str;
 
 class DashboardController extends Controller
 {
@@ -85,17 +87,29 @@ class DashboardController extends Controller
     }
 
     /**
-     * Obtiene los 5 productos con 15 o más días sin ventas.
+     * Obtiene los 5 productos con 15 o más días sin ventas, considerando también las ventas de sus variantes.
      */
     private function getLowTurnoverProducts($branchId)
     {
         $thresholdDate = now()->subDays(15);
 
-        // SOLUCIÓN: Especificar la tabla 'transactions.created_at' para evitar ambigüedad.
+        // --- CORRECCIÓN: La subconsulta ahora busca ventas del producto base O de cualquiera de sus variantes. ---
         $lastSaleSubquery = Transaction::select('transactions.created_at')
             ->join('transactions_items', 'transactions.id', '=', 'transactions_items.transaction_id')
-            ->where('transactions_items.itemable_type', Product::class)
-            ->whereColumn('transactions_items.itemable_id', 'products.id')
+            ->where(function ($query) {
+                // Condición 1: El item vendido es el producto base.
+                $query->where('transactions_items.itemable_type', Product::class)
+                      ->whereColumn('transactions_items.itemable_id', 'products.id');
+            })
+            ->orWhere(function ($query) {
+                // Condición 2: El item vendido es una de las variantes de este producto.
+                $query->where('transactions_items.itemable_type', ProductAttribute::class)
+                      ->whereIn('transactions_items.itemable_id', function ($subQuery) {
+                          $subQuery->select('id')
+                                   ->from('product_attributes')
+                                   ->whereColumn('product_attributes.product_id', 'products.id');
+                      });
+            })
             ->latest('transactions.created_at')
             ->limit(1);
 
@@ -122,41 +136,71 @@ class DashboardController extends Controller
         });
     }
 
+    /**
+     * Obtiene los 5 productos más vendidos, sumando las ventas de productos base y sus variantes.
+     */
     private function getTopSellingProducts($branchId)
     {
-        $topProductsStats = Transaction::join('transactions_items', 'transactions.id', '=', 'transactions_items.transaction_id')
-            ->join('products', 'transactions_items.itemable_id', '=', 'products.id')
-            ->where('transactions_items.itemable_type', Product::class)
+        // --- CORRECCIÓN: La lógica se reestructura para identificar el itemable (producto o variante) más vendido. ---
+        $topItems = DB::table('transactions_items')
+            ->join('transactions', 'transactions_items.transaction_id', '=', 'transactions.id')
             ->where('transactions.branch_id', $branchId)
             ->whereBetween('transactions.created_at', [now()->startOfMonth(), now()->endOfMonth()])
-            ->select(
-                'products.id',
-                'products.name',
-                'products.selling_price',
-                DB::raw('SUM(transactions_items.quantity) as total_sold')
-            )
-            ->groupBy('products.id', 'products.name', 'products.selling_price')
+            ->select('itemable_id', 'itemable_type', DB::raw('SUM(quantity) as total_sold'))
+            ->groupBy('itemable_id', 'itemable_type')
             ->orderByDesc('total_sold')
             ->limit(5)
             ->get();
-
-        $productIds = $topProductsStats->pluck('id');
-        if ($productIds->isEmpty()) {
+    
+        if ($topItems->isEmpty()) {
             return collect();
         }
-
-        $productsWithMedia = Product::with('media')->whereIn('id', $productIds)->get()->keyBy('id');
-
-        return $topProductsStats->map(function ($stat) use ($productsWithMedia) {
-            $product = $productsWithMedia->get($stat->id);
-            return [
-                'id' => $stat->id,
-                'name' => $stat->name,
-                'selling_price' => (float)$stat->selling_price,
-                'total_sold' => (int)$stat->total_sold,
-                'image' => $product ? ($product->getFirstMediaUrl('product-general-images') ?: 'https://placehold.co/100x100?text=' . urlencode($stat->name)) : null,
-            ];
-        });
+    
+        // Separar IDs por tipo
+        $productIds = $topItems->where('itemable_type', Product::class)->pluck('itemable_id');
+        $attributeIds = $topItems->where('itemable_type', ProductAttribute::class)->pluck('itemable_id');
+    
+        // Cargar los modelos necesarios con sus relaciones
+        $products = Product::with('media')->whereIn('id', $productIds)->get()->keyBy('id');
+        $attributes = ProductAttribute::with(['product.media'])->whereIn('id', $attributeIds)->get()->keyBy('id');
+    
+        // Unir y formatear los resultados
+        return $topItems->map(function ($item) use ($products, $attributes) {
+            if ($item->itemable_type === Product::class) {
+                $product = $products->get($item->itemable_id);
+                if (!$product) return null;
+    
+                return [
+                    'id' => $product->id, // ID del producto padre para el enlace
+                    'name' => $product->name,
+                    'variant_description' => null, // No es una variante
+                    'selling_price' => (float)$product->selling_price,
+                    'total_sold' => (int)$item->total_sold,
+                    'image' => $product->getFirstMediaUrl('product-general-images') ?: 'https://placehold.co/100x100?text=' . urlencode($product->name),
+                ];
+            }
+    
+            if ($item->itemable_type === ProductAttribute::class) {
+                $attribute = $attributes->get($item->itemable_id);
+                if (!$attribute || !$attribute->product) return null;
+    
+                // Formatear la descripción de la variante
+                $variantDescription = collect($attribute->attributes)->map(function ($value, $key) {
+                    return Str::ucfirst($key) . ': ' . $value;
+                })->implode(' / ');
+    
+                return [
+                    'id' => $attribute->product->id, // ID del producto padre para el enlace
+                    'name' => $attribute->product->name,
+                    'variant_description' => $variantDescription,
+                    'selling_price' => (float)($attribute->product->selling_price + $attribute->selling_price_modifier),
+                    'total_sold' => (int)$item->total_sold,
+                    'image' => $attribute->product->getFirstMediaUrl('product-general-images') ?: 'https://placehold.co/100x100?text=' . urlencode($attribute->product->name),
+                ];
+            }
+    
+            return null;
+        })->filter()->sortByDesc('total_sold')->values(); // Limpiar nulos, reordenar por si acaso y resetear keys
     }
 
     private function getInventorySummary($branchId)
@@ -200,7 +244,8 @@ class DashboardController extends Controller
     {
         // Se obtienen las sumas de subtotal y descuento por separado para evitar errores con NULL.
         $trendData = Transaction::where('branch_id', $branchId)
-            ->whereBetween('created_at', [now()->startOfWeek(Carbon::SUNDAY), now()->endOfWeek(Carbon::SATURDAY)])
+            // CORRECCIÓN: La semana ahora comienza en Lunes y termina en Domingo.
+            ->whereBetween('created_at', [now()->startOfWeek(Carbon::MONDAY), now()->endOfWeek(Carbon::SUNDAY)])
             ->where('status', 'completado')
             ->select(
                 DB::raw('DATE(created_at) as date'),
@@ -214,7 +259,8 @@ class DashboardController extends Controller
 
         $weekSales = [];
         for ($i = 0; $i < 7; $i++) {
-            $date = now()->startOfWeek(Carbon::SUNDAY)->addDays($i);
+            // CORRECCIÓN: El ciclo ahora genera los días de Lunes a Domingo.
+            $date = now()->startOfWeek(Carbon::MONDAY)->addDays($i);
             $dateString = $date->format('Y-m-d');
             
             $dayData = $trendData->get($dateString);

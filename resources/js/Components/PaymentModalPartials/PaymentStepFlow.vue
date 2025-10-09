@@ -47,6 +47,11 @@ const paymentMethods = computed(() => {
 
 const handleMethodSelect = (method) => {
     localCurrentStep.value = method;
+
+    if (method === 'efectivo' && props.paymentMode === 'strict') {
+        emit('update:cashReceived', props.totalAmount);
+    }
+
     if (method === 'credito' && !props.client) {
         localCurrentStep.value = 'credito-customer-selection';
     }

@@ -96,13 +96,13 @@ const submit = () => {
                     <InputText id="folio" v-model="form.folio" class="mt-1 w-full" />
                     <InputError :message="form.errors.folio" class="mt-2" />
                 </div>
-                <div>
+                <!-- <div>
                     <InputLabel for="expense_date" value="Fecha del Gasto *" />
                     <DatePicker id="expense_date" v-model="form.expense_date" class="w-full mt-1"
                         dateFormat="dd/mm/yy" />
                     <InputError :message="form.errors.expense_date" class="mt-2" />
-                </div>
-                <div class="mt-3">
+                </div> -->
+                <div class="mt-0">
                     <InputLabel for="amount" value="Monto *" />
                     <InputNumber id="amount" v-model="form.amount" mode="currency" currency="MXN" locale="es-MX"
                         class="w-full mt-1" />

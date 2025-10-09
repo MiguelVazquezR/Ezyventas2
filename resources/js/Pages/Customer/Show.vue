@@ -39,12 +39,9 @@ watch(activeSession, (newSession) => {
 });
 
 const handleBalancePaymentSubmit = (paymentData) => {
-    const form = router.form({
-        payments: paymentData.payments,
-        cash_register_session_id: paymentData.cash_register_session_id,
-    });
-
-    form.post(route('customers.payments.store', props.customer.id), {
+    // CORRECCIÓN: Se envía el objeto 'paymentData' directamente,
+    // que ya contiene 'payments' y 'cash_register_session_id'.
+    router.post(route('customers.payments.store', props.customer.id), paymentData, {
         onSuccess: () => {
             isPaymentModalVisible.value = false;
         },
@@ -137,29 +134,29 @@ const getTransactionStatusSeverity = (status) => {
             <!-- Columna Izquierda: Información -->
             <div class="lg:col-span-1 space-y-6">
                  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información de Contacto</h2>
-                     <ul class="space-y-3 text-sm">
-                         <li v-if="customer.phone" class="flex items-center"><i class="pi pi-phone w-6 text-gray-500"></i> <span class="font-medium">{{ customer.phone }}</span></li>
-                         <li v-if="customer.email" class="flex items-center"><i class="pi pi-envelope w-6 text-gray-500"></i> <span class="font-medium">{{ customer.email }}</span></li>
-                         <li v-if="customer.tax_id" class="flex items-center"><i class="pi pi-id-card w-6 text-gray-500"></i> <span class="font-medium">{{ customer.tax_id }}</span></li>
-                     </ul>
+                      <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información de Contacto</h2>
+                      <ul class="space-y-3 text-sm">
+                           <li v-if="customer.phone" class="flex items-center"><i class="pi pi-phone w-6 text-gray-500"></i> <span class="font-medium">{{ customer.phone }}</span></li>
+                           <li v-if="customer.email" class="flex items-center"><i class="pi pi-envelope w-6 text-gray-500"></i> <span class="font-medium">{{ customer.email }}</span></li>
+                           <li v-if="customer.tax_id" class="flex items-center"><i class="pi pi-id-card w-6 text-gray-500"></i> <span class="font-medium">{{ customer.tax_id }}</span></li>
+                      </ul>
                  </div>
                  <div v-if="hasPermission('customers.see_financial_info')" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información Financiera</h2>
-                     <ul class="space-y-3 text-sm">
-                         <li class="flex justify-between items-center">
-                             <span class="text-gray-500">Saldo Actual</span> 
-                             <span :class="getBalanceClass(customer.balance)" class="font-mono font-semibold text-lg">
-                                 {{ formatCurrency(customer.balance) }}
-                             </span>
-                         </li>
-                          <li class="flex justify-between items-center">
-                             <span class="text-gray-500">Límite de Crédito</span> 
-                             <span class="font-mono font-medium">
-                                 {{ formatCurrency(customer.credit_limit) }}
-                             </span>
-                         </li>
-                     </ul>
+                      <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Información Financiera</h2>
+                      <ul class="space-y-3 text-sm">
+                           <li class="flex justify-between items-center">
+                                <span class="text-gray-500">Saldo Actual</span> 
+                                <span :class="getBalanceClass(customer.balance)" class="font-mono font-semibold text-lg">
+                                     {{ formatCurrency(customer.balance) }}
+                                </span>
+                           </li>
+                           <li class="flex justify-between items-center">
+                                <span class="text-gray-500">Límite de Crédito</span> 
+                                <span class="font-mono font-medium">
+                                     {{ formatCurrency(customer.credit_limit) }}
+                                </span>
+                           </li>
+                      </ul>
                  </div>
             </div>
 
@@ -180,8 +177,8 @@ const getTransactionStatusSeverity = (status) => {
                         </Column>
                         <Column field="total" header="Total">
                              <template #body="{ data }">
-                                 {{ formatCurrency(data.total) }}
-                            </template>
+                                  {{ formatCurrency(data.total) }}
+                             </template>
                         </Column>
                         <Column field="status" header="Estatus">
                             <template #body="{ data }">
@@ -223,12 +220,12 @@ const getTransactionStatusSeverity = (status) => {
                             </template>
                         </Column>
                          <Column field="balance_after" header="Saldo Resultante">
-                                <template #body="{ data }">
-                                    <span :class="data.balance_after > 0 ? 'text-green-600' : 'text-red-600'">
-                                        {{ formatCurrency(data.balance_after) }}
-                                    </span>
-                                </template>
-                        </Column>
+                              <template #body="{ data }">
+                                  <span :class="data.balance_after > 0 ? 'text-green-600' : 'text-red-600'">
+                                      {{ formatCurrency(data.balance_after) }}
+                                  </span>
+                              </template>
+                         </Column>
                         <template #empty>
                             <div class="text-center text-gray-500 py-4">
                                 No hay movimientos de saldo registrados.
@@ -251,6 +248,7 @@ const getTransactionStatusSeverity = (status) => {
             v-model:visible="isPaymentModalVisible"
             :total-amount="0"
             :client="customer"
+            :active-session="activeSession"
             payment-mode="balance"
             @submit="handleBalancePaymentSubmit"
         />
