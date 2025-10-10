@@ -170,6 +170,7 @@ const getInvoiceStatusTag = (status) => {
 </script>
 
 <template>
+
     <Head title="Mi Suscripción" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8">
@@ -188,8 +189,8 @@ const getInvoiceStatusTag = (status) => {
                         <template #title>
                             <div class="flex justify-between items-center">
                                 <span>Información general</span>
-                                <Button icon="pi pi-pencil" text rounded
-                                    @click="isEditModalVisible = true" v-tooltip.bottom="'Editar información'" />
+                                <Button icon="pi pi-pencil" text rounded @click="isEditModalVisible = true"
+                                    v-tooltip.bottom="'Editar información'" />
                             </div>
                         </template>
                         <template #content>
@@ -290,11 +291,14 @@ const getInvoiceStatusTag = (status) => {
                                         class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg text-center flex flex-col justify-between">
                                         <div>
                                             <p class="text-2xl font-bold">
-                                                {{ getUsage(limit) }} / <span class="text-gray-400">{{ limit.quantity === -1 ? '∞' : limit.quantity }}</span>
+                                                {{ getUsage(limit) }} / <span class="text-gray-400">{{ limit.quantity
+                                                    === -1 ? '∞' : limit.quantity }}</span>
                                             </p>
                                             <p class="text-sm text-gray-500">{{ limit.name }}</p>
                                         </div>
-                                        <ProgressBar v-if="limit.quantity > 0" :value="Math.round((getUsage(limit) / limit.quantity) * 100)" :showValue="false" class="h-2 mt-2"></ProgressBar>
+                                        <ProgressBar v-if="limit.quantity > 0"
+                                            :value="Math.round((getUsage(limit) / limit.quantity) * 100)"
+                                            :showValue="false" class="h-2 mt-2"></ProgressBar>
                                     </div>
                                 </div>
                             </div>
@@ -362,6 +366,13 @@ const getInvoiceStatusTag = (status) => {
                                         </div>
                                     </template>
                                 </Column>
+                                <Column header="Saldo actual">
+                                    <template #body="{ data }">
+                                        <div class="flex flex-wrap gap-1">
+                                            {{ formatCurrency(data.balance) }}
+                                        </div>
+                                    </template>
+                                </Column>
                                 <Column>
                                     <template #body="slotProps">
                                         <div class="flex justify-end gap-2">
@@ -387,7 +398,8 @@ const getInvoiceStatusTag = (status) => {
                                 <AccordionPanel v-for="(version, index) in subscription.versions" :key="version.id"
                                     :value="index">
                                     <AccordionHeader>
-                                        Periodo: {{ formatDate(version.start_date) + ' - ' + formatDate(version.end_date) }}
+                                        Periodo: {{ formatDate(version.start_date) + ' - ' +
+                                        formatDate(version.end_date) }}
                                     </AccordionHeader>
                                     <AccordionContent>
                                         <div class="p-4">
@@ -401,20 +413,20 @@ const getInvoiceStatusTag = (status) => {
                                                 <Column field="unit_price" header="Precio">
                                                     <template #body="slotProps">{{
                                                         formatCurrency(slotProps.data.unit_price)
-                                                        }}</template>
+                                                    }}</template>
                                                 </Column>
                                             </DataTable>
                                             <h4 class="font-bold mb-2">Pagos Realizados</h4>
                                             <DataTable :value="version.payments" size="small">
                                                 <Column field="created_at" header="Fecha de Pago">
                                                     <template #body="slotProps">{{ formatDate(slotProps.data.created_at)
-                                                        }}</template>
+                                                    }}</template>
                                                 </Column>
                                                 <Column field="payment_method" header="Método" class="capitalize">
                                                 </Column>
                                                 <Column field="amount" header="Monto">
                                                     <template #body="slotProps">{{ formatCurrency(slotProps.data.amount)
-                                                        }}</template>
+                                                    }}</template>
                                                 </Column>
                                                 <Column field="invoice_status" header="Factura">
                                                     <template #body="{ data }">
@@ -482,11 +494,9 @@ const getInvoiceStatusTag = (status) => {
         </Dialog>
 
         <!-- MODIFICADO: Se pasan las props de límite y uso al modal -->
-        <BranchModal :visible="isBranchModalVisible" :branch="selectedBranch"
-            :limit="branchLimit?.quantity"
-            :usage="branchUsage"
-            @update:visible="isBranchModalVisible = $event" />
-            
+        <BranchModal :visible="isBranchModalVisible" :branch="selectedBranch" :limit="branchLimit?.quantity"
+            :usage="branchUsage" @update:visible="isBranchModalVisible = $event" />
+
         <BankAccountModal :visible="isBankAccountModalVisible" :account="selectedBankAccount"
             :branches="subscription.branches" @update:visible="isBankAccountModalVisible = $event" />
     </AppLayout>

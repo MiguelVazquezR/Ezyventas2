@@ -45,11 +45,12 @@ class PointOfSaleController extends Controller implements HasMiddleware
     public function index(Request $request): Response
     {
         $user = Auth::user();
-        $branchId = $user->branch_id; // Obtener la sucursal actual del usuario.
+        $branchId = $user->branch_id;
         $search = $request->input('search');
         $categoryId = $request->input('category');
 
-        // CORRECCIÓN: Se añade whereHas para asegurar que la sesión pertenezca a la sucursal actual.
+        // CORRECCIÓN #1: Añadir 'payments' a la carga de relaciones.
+        // Esta es la única fuente de verdad para los pagos de la sesión.
         $activeSession = CashRegisterSession::where('user_id', $user->id)
             ->where('status', CashRegisterSessionStatus::OPEN)
             ->whereHas('cashRegister', function ($query) use ($branchId) {
@@ -59,24 +60,28 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'cashRegister:id,name',
                 'user:id,name',
                 'transactions' => function ($query) {
-                    $query->with(['payments', 'customer:id,name'])->latest();
+                    $query->with(['customer:id,name'])->latest();
                 },
                 'cashMovements' => function ($query) {
                     $query->latest();
-                }
+                },
+                'payments' // <- AÑADIDO
             ])
             ->first();
 
         if ($activeSession) {
-            $paymentTotals = $activeSession->transactions
-                ->flatMap->payments
+            // CORRECCIÓN #2: Calcular los totales usando la relación directa 'payments'.
+            // Esto asegura que se incluyan todos los pagos de la sesión, sin importar la fecha de la transacción.
+            $paymentTotals = $activeSession->payments
                 ->where('status', 'completado')
                 ->groupBy('payment_method.value')
                 ->map->sum('amount');
 
             $activeSession->totals = [
+                'cash' => $paymentTotals['efectivo'] ?? 0,
                 'card' => $paymentTotals['tarjeta'] ?? 0,
                 'transfer' => $paymentTotals['transferencia'] ?? 0,
+                'balance' => $paymentTotals['saldo'] ?? 0,
             ];
         }
 
@@ -92,7 +97,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
             ->get();
 
-        // Se preparan todos los props en un array.
         $props = [
             'products' => $this->getProductsData($search, $categoryId),
             'categories' => $this->getCategoriesData(),
@@ -106,8 +110,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
         ];
 
         $agent = new Agent();
-
-        // Se decide qué vista renderizar basándose en el tipo de dispositivo.
         $view = ($agent->isMobile() || $agent->isTablet()) ? 'POS/IndexMobile' : 'POS/Index';
 
         return Inertia::render($view, $props);

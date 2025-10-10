@@ -144,19 +144,25 @@ const toggleMenu = (event) => {
     menu.value.toggle(event);
 };
 
+// Usar 'activeSession.payments' como la única fuente de verdad para el cálculo.
 const cashBalance = computed(() => {
     if (!props.activeSession) return 0;
-    const cashSales = props.activeSession.transactions
-        .flatMap(t => t.payments)
-        .filter(p => p.payment_method === 'efectivo')
-        .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    
+    const cashSales = props.activeSession.payments
+        ? props.activeSession.payments
+            .filter(p => p && p.payment_method === 'efectivo' && p.status === 'completado')
+            .reduce((sum, p) => sum + parseFloat(p.amount), 0)
+        : 0;
+
     const inflows = props.activeSession.cash_movements
         .filter(m => m.type === 'ingreso')
         .reduce((sum, m) => sum + parseFloat(m.amount), 0);
+        
     const outflows = props.activeSession.cash_movements
         .filter(m => m.type === 'egreso')
         .reduce((sum, m) => sum + parseFloat(m.amount), 0);
-    return parseFloat(props.activeSession.opening_cash_balance) + cashSales + inflows - outflows;
+        
+    return (parseFloat(props.activeSession.opening_cash_balance) || 0) + cashSales + inflows - outflows;
 });
 
 const cardTotal = computed(() => props.activeSession?.totals?.card || 0);

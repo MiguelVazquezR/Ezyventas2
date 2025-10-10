@@ -41,7 +41,7 @@ class PlanItemSeeder extends Seeder
         $limits = [
             ['key' => 'limit_branches', 'name' => 'Sucursales', 'price' => 30, 'quantity' => 1],
             ['key' => 'limit_users', 'name' => 'Usuarios', 'price' => 7.5, 'quantity' => 1],
-            ['key' => 'limit_products', 'name' => 'Productos', 'price' => 3, 'quantity' => 50],
+            ['key' => 'limit_products', 'name' => 'Productos', 'price' => 1.5, 'quantity' => 50],
             ['key' => 'limit_cash_registers', 'name' => 'Cajas Registradoras', 'price' => 7.5, 'quantity' => 1],
             ['key' => 'limit_print_templates', 'name' => 'Plantillas personalizadas', 'price' => 3, 'quantity' => 1],
         ];
