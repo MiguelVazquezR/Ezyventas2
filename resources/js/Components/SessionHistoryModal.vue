@@ -31,21 +31,28 @@ const formatTime = (dateTimeString) => {
     return new Date(dateTimeString).toLocaleTimeString('es-MX', options);
 }
 
-// Combina transacciones y movimientos de caja en una única línea de tiempo ordenada
 const timelineEvents = computed(() => {
-    if (!props.session || !props.session.transactions) return [];
+    if (!props.session) return [];
 
-    const salesEvents = props.session.transactions.map(tx => ({
-        type: 'sale',
-        date: tx.created_at,
-        status: tx.status === 'completado' ? 'Venta' : 'Venta (pendiente)',
-        color: tx.status === 'completado' ? '#22c55e' : '#f59e0b', // Verde para completado, ambar para pendiente
-        icon: 'pi pi-shopping-cart',
-        data: tx,
-        // --- CORRECCIÓN: Se calculan ambos totales ---
-        totalSale: parseFloat(tx.total),
-        totalPaid: tx.payments.reduce((sum, p) => sum + parseFloat(p.amount), 0)
-    }));
+    const salesEvents = (props.session.transactions || []).map(tx => {
+        // CORRECCIÓN: Se buscan los pagos para esta transacción en la lista principal de la sesión.
+        // Esto evita el error ya que 'tx.payments' ya no existe en la data que llega.
+        const paymentsForTx = (props.session.payments || [])
+            .filter(p => p && p.transaction_id === tx.id);
+        
+        const totalPaid = paymentsForTx.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+
+        return {
+            type: 'sale',
+            date: tx.created_at,
+            status: tx.status === 'completado' ? 'Venta' : 'Venta (pendiente)',
+            color: tx.status === 'completado' ? '#22c55e' : '#f59e0b',
+            icon: 'pi pi-shopping-cart',
+            data: tx,
+            totalSale: parseFloat(tx.total),
+            totalPaid: totalPaid // Usamos el total calculado correctamente.
+        };
+    });
 
     const movementEvents = (props.session.cash_movements || []).map(mv => ({
         type: 'movement',
@@ -107,7 +114,6 @@ const timelineEvents = computed(() => {
                                         <span class="font-semibold">{{ slotProps.item.data.customer?.name || 'Público en general' }}</span>
                                     </div>
                                     
-                                    <!-- --- CORRECCIÓN: Se muestran ambos montos --- -->
                                     <div class="pt-2 border-t mt-2 space-y-1">
                                         <div class="flex justify-between">
                                             <span class="text-gray-500">Total Venta:</span>
