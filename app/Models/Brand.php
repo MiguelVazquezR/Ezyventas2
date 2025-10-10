@@ -14,8 +14,8 @@ class Brand extends Model
 
     protected $fillable = [
         'name',
-        'business_type',
         'subscription_id',
+        // 'business_type',
     ];
 
     /**

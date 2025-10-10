@@ -17,7 +17,6 @@ return new class extends Migration
 
             // Permite marcas globales o específicas de un negocio.
             $table->foreignId('subscription_id')->nullable()->constrained('subscriptions')->onDelete('cascade');
-            $table->foreignId('business_type')->nullable()->constrained()->onDelete('cascade');
             
             $table->timestamps();
         });

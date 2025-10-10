@@ -16,7 +16,7 @@ return new class extends Migration
             $table->foreignId('transaction_id')->constrained('transactions')->onDelete('cascade');
             
             // Relación polimórfica: un item puede ser un Product, Service, etc.
-            $table->morphs('itemable'); 
+            $table->nullableMorphs('itemable'); 
             
             $table->string('description')->comment('Descripción del item en el momento de la venta');
             $table->decimal('quantity', 10, 2);

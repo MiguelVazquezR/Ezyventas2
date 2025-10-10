@@ -27,6 +27,8 @@ class Expense extends Model
         'payment_method',
         'bank_account_id',
         'session_cash_movement_id', // <-- AÑADIR
+        'created_at',
+        'updated_at',
     ];
 
     protected function casts(): array

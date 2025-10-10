@@ -14,7 +14,7 @@ class SessionCashMovement extends Model
 
     protected $table = 'session_cash_movements';
 
-    protected $fillable = ['cash_register_session_id', 'type', 'amount', 'description'];
+    protected $fillable = ['cash_register_session_id', 'type', 'amount', 'description', 'created_at', 'updated_at'];
 
     protected $casts = [
         'type' => SessionCashMovementType::class,

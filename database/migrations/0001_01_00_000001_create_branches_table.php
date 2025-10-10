@@ -22,10 +22,6 @@ return new class extends Migration
             $table->string('contact_phone')->nullable();
             $table->string('contact_email')->nullable();
             $table->json('address')->nullable();
-
-            // El gerente es un usuario. Si se borra el usuario, el campo manager_id se pone nulo.
-            // $table->foreignId('manager_id')->nullable()->constrained('users')->onDelete('set null');
-
             $table->string('timezone')->nullable()->default('America/Mexico_City');
             $table->json('operating_hours')->nullable();
 
