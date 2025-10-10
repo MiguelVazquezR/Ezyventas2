@@ -23,6 +23,7 @@ const form = useForm({
     account_number: '',
     card_number: '',
     clabe: '',
+    balance: 0.0,
     branch_ids: [],
     favorite_branch_ids: [],
 });
@@ -37,6 +38,7 @@ watch(() => props.visible, (newVal) => {
             form.account_number = props.account.account_number;
             form.card_number = props.account.card_number;
             form.clabe = props.account.clabe;
+            form.balance = props.account.balance;
             if (hasBranches.value) {
                 form.branch_ids = props.account.branches.map(b => b.id);
                 form.favorite_branch_ids = props.account.branches
@@ -65,6 +67,7 @@ const submit = () => {
             account_number: data.account_number,
             card_number: data.card_number,
             clabe: data.clabe,
+            balance: data.balance,
         };
 
         if (hasBranches.value && data.branch_ids.length > 0) {
@@ -127,6 +130,11 @@ const submit = () => {
                 <InputLabel for="account_number" value="Número de cuenta (opcional)" />
                 <InputText id="account_number" v-model="form.account_number" class="w-full mt-1" />
                 <InputError :message="form.errors.account_number" />
+            </div>
+            <div>
+                <InputLabel for="balance" value="Saldo" />
+                <InputNumber id="balance" mode="currency" currency="MXN" locale="es-MX" v-model="form.balance" class="w-full mt-1" />
+                <InputError :message="form.errors.balance" />
             </div>
             
             <!-- --- NUEVO: Condicional para mostrar solo si hay sucursales --- -->

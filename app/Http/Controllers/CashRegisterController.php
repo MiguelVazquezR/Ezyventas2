@@ -104,24 +104,38 @@ class CashRegisterController extends Controller implements HasMiddleware
     public function show(CashRegister $cashRegister): Response
     {
         $branch = $cashRegister->branch;
+
+        // CORRECCIÓN DEFINITIVA: Simplificamos la consulta.
+        // La relación `payments` es la única fuente de verdad para los pagos recibidos
+        // durante esta sesión. Se eliminó `transactions.payments` para evitar confusiones
+        // y la posibilidad de contar pagos de otras sesiones.
         $currentSession = $cashRegister->sessions()
             ->where('status', 'abierta')
-            ->with(['user:id,name', 'cashMovements', 'transactions.payments'])
+            ->with([
+                'user:id,name',
+                'cashMovements',
+                'transactions', // Se mantiene por si se necesita mostrar las transacciones de la sesión
+                'payments'      // ÚNICA FUENTE DE VERDAD para los pagos de esta sesión.
+            ])
             ->first();
+
         $closedSessions = $cashRegister->sessions()
             ->where('status', 'cerrada')
             ->with('user:id,name')
             ->latest('closed_at')
             ->paginate(10);
+
         $busyUserIds = CashRegisterSession::where('status', 'abierta')
             ->whereHas('cashRegister.branch.subscription', function ($query) use ($branch) {
                 $query->where('id', $branch->subscription_id);
             })
             ->pluck('user_id');
+
         $branchUsers = $branch->users->map(function ($branchUser) use ($busyUserIds) {
             $branchUser->is_busy = $busyUserIds->contains($branchUser->id);
             return $branchUser;
         });
+
         return Inertia::render('FinancialControl/CashRegister/Show', [
             'cashRegister' => $cashRegister->load('branch'),
             'currentSession' => $currentSession,

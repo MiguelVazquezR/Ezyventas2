@@ -10,7 +10,7 @@ import InputError from './InputError.vue';
 
 const props = defineProps({
     visible: Boolean,
-    session: Object, // Recibe la sesión activa completa
+    session: Object,
 });
 
 const emit = defineEmits(['update:visible']);
@@ -20,11 +20,11 @@ const form = useForm({
     notes: '',
 });
 
-// --- Cálculos para el Resumen del Corte ---
+// CORRECCIÓN: Usar 'session.payments' como la única fuente de verdad para las ventas en efectivo.
 const cashSales = computed(() => {
-    if (!props.session?.transactions) return 0;
-    return props.session.transactions.flatMap(t => t.payments)
-        .filter(p => p.payment_method === 'efectivo')
+    if (!props.session?.payments) return 0;
+    return props.session.payments
+        .filter(p => p && p.payment_method === 'efectivo' && p.status === 'completado')
         .reduce((sum, p) => sum + parseFloat(p.amount), 0);
 });
 
@@ -42,7 +42,7 @@ const outflows = computed(() => {
 
 const expectedCashTotal = computed(() => {
     if (!props.session) return 0;
-    return parseFloat(props.session.opening_cash_balance) + cashSales.value + inflows.value - outflows.value;
+    return (parseFloat(props.session.opening_cash_balance) || 0) + cashSales.value + inflows.value - outflows.value;
 });
 
 const cashDifference = computed(() => {
@@ -70,7 +70,7 @@ const submit = () => {
             <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg mb-4">
                 <h3 class="font-bold text-lg mb-2 text-center">Resumen de Caja (Efectivo)</h3>
                 <div class="space-y-2 text-sm">
-                    <div class="flex justify-between"><span>Fondo Inicial:</span> <span class="font-semibold">${{ parseFloat(session.opening_cash_balance).toFixed(2) }}</span></div>
+                    <div class="flex justify-between"><span>Fondo Inicial:</span> <span class="font-semibold">${{ parseFloat(session.opening_cash_balance || 0).toFixed(2) }}</span></div>
                     <div class="flex justify-between"><span>(+) Ventas en Efectivo:</span> <span class="font-semibold text-green-600">+ ${{ cashSales.toFixed(2) }}</span></div>
                     <div class="flex justify-between"><span>(+) Entradas de Efectivo:</span> <span class="font-semibold text-green-600">+ ${{ inflows.toFixed(2) }}</span></div>
                     <div class="flex justify-between"><span>(-) Salidas de Efectivo:</span> <span class="font-semibold text-red-500">- ${{ outflows.toFixed(2) }}</span></div>
