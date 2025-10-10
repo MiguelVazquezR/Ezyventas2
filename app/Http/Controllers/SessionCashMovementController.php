@@ -7,14 +7,14 @@ use App\Models\CashRegisterSession;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 
-class SessionCashMovementController extends Controller implements HasMiddleware
+class SessionCashMovementController extends Controller //implements HasMiddleware
 {
-    public static function middleware(): array
-    {
-        return [
-            new Middleware('can:cash_registers_sessions.create_movements', only: ['store']),
-        ];
-    }
+    // public static function middleware(): array
+    // {
+    //     return [
+    //         new Middleware('can:cash_registers.sessions.create_movements', only: ['store']),
+    //     ];
+    // }
     /**
      * Almacena un nuevo movimiento de efectivo (ingreso/egreso) para una sesión de caja.
      */

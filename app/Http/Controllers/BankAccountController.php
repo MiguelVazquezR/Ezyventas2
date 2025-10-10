@@ -35,6 +35,7 @@ class BankAccountController extends Controller
             'account_number' => 'nullable|string|max:255',
             'card_number' => 'nullable|string|max:255',
             'clabe' => 'nullable|string|max:255',
+            'balance' => 'nullable|numeric|min:0',
             'branches' => 'sometimes|array', // 'sometimes' en lugar de 'required'
             'branches.*.id' => ['required', Rule::in($subscription->branches->pluck('id')->toArray())],
             'branches.*.is_favorite' => 'required|boolean',
@@ -77,6 +78,7 @@ class BankAccountController extends Controller
             'account_number' => 'nullable|string|max:255',
             'card_number' => 'nullable|string|max:255',
             'clabe' => 'nullable|string|max:255',
+            'balance' => 'nullable|numeric|min:0',
             'branches' => 'required|array|min:1',
             'branches.*.id' => ['required', Rule::in($branchIds)],
             'branches.*.is_favorite' => 'required|boolean',

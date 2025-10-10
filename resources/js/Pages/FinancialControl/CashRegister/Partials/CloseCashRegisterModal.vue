@@ -10,12 +10,16 @@ const props = defineProps({
 });
 
 const cashSales = computed(() => {
-    return props.session?.transactions
-        .filter(t => t.status === 'completado')
-        .flatMap(t => t.payments)
-        .filter(p => p.payment_method === 'efectivo')
+    if (!props.session?.payments) {
+        return 0;
+    }
+    return props.session.payments
+        // CORRECCIÓN: Se añade una comprobación (p && ...) antes de acceder a las propiedades.
+        // Esto previene el error si la colección de pagos contiene algún elemento nulo o indefinido.
+        .filter(p => p && p.payment_method === 'efectivo' && p.status === 'completado')
         .reduce((sum, p) => sum + parseFloat(p.amount), 0);
 });
+
 const inflows = computed(() => props.session?.cash_movements.filter(m => m.type === 'ingreso').reduce((sum, m) => sum + parseFloat(m.amount), 0));
 const outflows = computed(() => props.session?.cash_movements.filter(m => m.type === 'egreso').reduce((sum, m) => sum + parseFloat(m.amount), 0));
 const calculatedTotal = computed(() => (parseFloat(props.session?.opening_cash_balance) || 0) + cashSales.value + inflows.value - outflows.value);
