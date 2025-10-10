@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('transactions', function (Blueprint $table) {
             $table->id();
-            $table->string('folio')->unique();
+            $table->string('folio');
 
             // Relaciones: se desvinculan si el registro padre se borra, para no perder el historial.
             $table->foreignId('customer_id')->nullable()->constrained('customers')->onDelete('set null');

@@ -22,6 +22,8 @@ class Customer extends Model
         'tax_id',
         'balance',
         'credit_limit',
+        'created_at',
+        'updated_at',
     ];
 
     protected function casts(): array

@@ -45,7 +45,7 @@ class CustomerController extends Controller implements HasMiddleware
         }
 
         $sortField = $request->input('sortField', 'created_at');
-        $sortOrder = $request->input('sortOrder', 'desc');
+        $sortOrder = $request->input('sortOrder', 'asc');
         $query->orderBy($sortField, $sortOrder);
 
         $customers = $query->paginate($request->input('rows', 20))->withQueryString();

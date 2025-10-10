@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('service_order_items', function (Blueprint $table) {
             $table->id();
             $table->foreignId('service_order_id')->constrained('service_orders')->onDelete('cascade');
-            $table->nullableMorphs('itemable');
+            $table->nullableMorphs('itemable'); // Product para refacciones, Service para mano de obra
             $table->string('description');
             $table->decimal('quantity', 10, 2);
             $table->decimal('unit_price', 10, 2);

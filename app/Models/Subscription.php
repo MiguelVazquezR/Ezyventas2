@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
@@ -33,7 +34,18 @@ class Subscription extends Model implements HasMedia
         'status' => SubscriptionStatus::class,
     ];
 
-     /**
+    /**
+     * Obtiene la versión de la suscripción que está actualmente activa.
+     */
+    // public function currentVersion(): HasOne
+    // {
+    //     return $this->hasOne(SubscriptionVersion::class)
+    //         ->where('start_date', '<=', now())
+    //         ->where('end_date', '>=', now())
+    //         ->latest('start_date');
+    // }
+
+    /**
      * Obtiene los nombres de los módulos disponibles en la versión activa de la suscripción.
      *
      * @return array

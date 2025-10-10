@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('expenses', function (Blueprint $table) {
             $table->id();
-            $table->string('folio')->unique();
+            $table->string('folio');
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
             $table->foreignId('branch_id')->constrained()->onDelete('cascade');
             $table->foreignId('expense_category_id')->nullable()->constrained('expense_categories')->onDelete('set null');

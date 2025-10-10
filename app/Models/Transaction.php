@@ -35,6 +35,8 @@ class Transaction extends Model
         'notes',
         'status_changed_at',
         'invoiced',
+        'created_at',
+        'updated_at',
     ];
 
     protected function casts(): array

@@ -13,6 +13,8 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Jetstream\HasProfilePhoto;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
@@ -137,4 +139,31 @@ class User extends Authenticatable
     {
         return $this->morphMany(SettingValue::class, 'configurable');
     }
+
+    /**
+     * Obtiene los prefijos de los módulos a los que el propietario de la suscripción tiene acceso.
+     * Utiliza caché para optimizar el rendimiento.
+     */
+    // public function getSubscriptionModulePrefixes(): Collection
+    // {
+    //     if ($this->roles()->exists()) {
+    //         return collect(); // Esta función es solo para propietarios
+    //     }
+
+    //     // La clave del caché es única para cada usuario. Se almacena por 1 hora.
+    //     return Cache::remember('user_'.$this->id.'_module_prefixes', 3600, function () {
+    //         // Usamos la nueva relación `currentVersion` para obtener el plan activo.
+    //         $currentVersion = $this->branch->subscription->currentVersion;
+
+    //         if (! $currentVersion) {
+    //             return collect();
+    //         }
+
+    //         // Obtiene las claves de los items (ej. 'module_pos') y las convierte en prefijos (ej. 'pos').
+    //         return $currentVersion->items
+    //             ->where('item_type', 'module')
+    //             ->pluck('item_key')
+    //             ->map(fn ($key) => str_replace('module_', '', $key));
+    //     });
+    // }
 }

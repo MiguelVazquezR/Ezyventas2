@@ -50,6 +50,8 @@ class Product extends Model implements HasMedia
         'requires_shipping',
         'view_count',
         'purchase_count',
+        'created_at',
+        'updated_at',
     ];
 
     protected function casts(): array
