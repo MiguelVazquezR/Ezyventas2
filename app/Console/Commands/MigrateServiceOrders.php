@@ -8,6 +8,7 @@ use App\Models\ServiceOrder;
 use App\Models\ServiceOrderItem;
 use App\Models\Customer;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Support\Str;
 
 class MigrateServiceOrders extends Command
@@ -24,7 +25,7 @@ class MigrateServiceOrders extends Command
      *
      * @var string
      */
-    protected $description = 'Migra las órdenes de servicio desde la tabla service_reports a la nueva estructura service_orders.';
+    protected $description = 'Migra las órdenes de servicio y sus imágenes desde la tabla service_reports a la nueva estructura.';
 
     /**
      * Execute the console command.
@@ -56,12 +57,11 @@ class MigrateServiceOrders extends Command
         ];
 
          $statusMap = [
-            'Recibida' => 'pending',
+            'Recibida' => 'pendiente',
             'En proceso' => 'en_progreso',
             'Listo para entregar' => 'terminado',
             'Entregado/Pagado' => 'entregado',
             'Cancelado' => 'cancelado',
-            // Agrega más mapeos si es necesario
         ];
 
         DB::transaction(function () use ($oldDatabaseConnection, $storeToBranchMap, $branchToSubscriptionMap, $statusMap) {
@@ -70,6 +70,8 @@ class MigrateServiceOrders extends Command
             DB::statement('SET FOREIGN_KEY_CHECKS=0;');
             ServiceOrder::truncate();
             ServiceOrderItem::truncate();
+            // --- AÑADIDO: Limpiar solo la media de órdenes de servicio ---
+            DB::table('media')->where('model_type', ServiceOrder::class)->delete();
             DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
             $oldReports = DB::connection($oldDatabaseConnection)->table('service_reports')->get();
@@ -80,20 +82,16 @@ class MigrateServiceOrders extends Command
 
             foreach ($oldReports as $oldReport) {
                 if (!isset($storeToBranchMap[$oldReport->store_id])) {
-                    // $this->warn("\nSaltando reporte ID {$oldReport->id} porque su store_id ({$oldReport->store_id}) no tiene un branch_id correspondiente.");
                     $progressBar->advance();
                     continue;
                 }
                 $branchId = $storeToBranchMap[$oldReport->store_id];
                 
                 if (!isset($branchToSubscriptionMap[$branchId])) {
-                    //  $this->warn("\nSaltando reporte ID {$oldReport->id} porque su branch_id ({$branchId}) no tiene un subscription_id correspondiente.");
                     $progressBar->advance();
                     continue;
                 }
                 
-                // --- MODIFICADO: Lógica de Clientes ---
-                // Buscar cliente por nombre; si no existe, customer_id será null.
                 $customer = null;
                 if (!empty($oldReport->client_name)) {
                     $customer = Customer::where('branch_id', $branchId)
@@ -107,15 +105,15 @@ class MigrateServiceOrders extends Command
                 }
                 $userId = $defaultUsers[$branchId];
 
-                // --- MODIFICADO: Lógica de Campos Personalizados con estructura fija ---
+                // --- INICIO: Lógica de Campos Personalizados modificada ---
                 $customFieldsPayload = [
                     'desbloqueo' => '',
                     'accesorios' => [],
                     'imei' => '',
                     'estado_previo_del_equipo' => '',
+                    'servicios_a_realizar' => $oldReport->service_description ?? '', // <-- AÑADIDO
                 ];
 
-                // Procesar `aditionals` para desbloqueo y accesorios
                 $aditionals = json_decode($oldReport->aditionals, true);
                 if (is_array($aditionals)) {
                     if (isset($aditionals['unlockPassword'])) {
@@ -126,7 +124,6 @@ class MigrateServiceOrders extends Command
                     }
                 }
 
-                // Procesar `product_details` para el IMEI
                 $productDetails = json_decode($oldReport->product_details, true);
                 if (is_array($productDetails)) {
                     if (isset($productDetails['imei'])) {
@@ -136,7 +133,8 @@ class MigrateServiceOrders extends Command
                     }
                 }
                 
-                $reportedProblems = implode("\n", array_filter([$oldReport->description, $oldReport->service_description]));
+                // --- CORREGIDO: reported_problems ahora solo usa 'description' ---
+                $reportedProblems = $oldReport->description ?? '';
                 
                 $itemDescription = 'Equipo sin descripción';
                 if(is_array($productDetails) && !empty($productDetails['model'])) {
@@ -147,30 +145,23 @@ class MigrateServiceOrders extends Command
                     'folio' => 'OS-' . str_pad($oldReport->folio, 3, '0', STR_PAD_LEFT),
                     'branch_id' => $branchId,
                     'user_id' => $userId,
-                    'customer_id' => $customerId, // ID del cliente encontrado o null
-                    'customer_name' => $oldReport->client_name, // Siempre se guarda el nombre original
+                    'customer_id' => $customerId,
+                    'customer_name' => $oldReport->client_name,
                     'customer_phone' => $oldReport->client_phone_number,
                     'technician_name' => $oldReport->technician_name,
                     'technician_commission_type' => $oldReport->comision_percentage ? 'percentage' : null,
                     'technician_commission_value' => $oldReport->comision_percentage,
-                    'status' => $statusMap[strtolower(trim($oldReport->status))] ?? 'pendiente',
+                    'status' => $statusMap[trim($oldReport->status)] ?? 'pendiente',
                     'received_at' => $oldReport->service_date,
                     'item_description' => $itemDescription,
                     'reported_problems' => $reportedProblems,
                     'final_total' => $oldReport->total_cost,
-                    'custom_fields' => $customFieldsPayload, // Guarda el JSON con estructura fija
-                    'created_at' => $oldReport->created_at,
-                    'updated_at' => $oldReport->updated_at,
+                    'custom_fields' => $customFieldsPayload,
+                    'created_at' => Carbon::parse($oldReport->created_at),
+                    'updated_at' => Carbon::parse($oldReport->updated_at),
                 ];
 
                 $newServiceOrder = ServiceOrder::create($newOrderData);
-
-                // if ($oldReport->service_cost > 0) {
-                //     $newServiceOrder->items()->create([
-                //         'description' => 'Mano de Obra / Servicio Técnico',
-                //         'quantity' => 1, 'unit_price' => $oldReport->service_cost, 'line_total' => $oldReport->service_cost,
-                //     ]);
-                // }
 
                 $spareParts = json_decode($oldReport->spare_parts, true);
                 if (is_array($spareParts)) {
@@ -184,6 +175,46 @@ class MigrateServiceOrders extends Command
                             'quantity' => $quantity,
                             'unit_price' => $unitPrice,
                             'line_total' => $quantity * $unitPrice,
+                        ]);
+                    }
+                }
+                
+                $oldModelType = 'App\\Models\\ServiceReport';
+                
+                $allOldMedia = DB::connection($oldDatabaseConnection)
+                    ->table('media')
+                    ->where('model_type', $oldModelType)
+                    ->where('model_id', $oldReport->id)
+                    ->get();
+
+                foreach ($allOldMedia as $oldMedia) {
+                    $newCollectionName = null;
+                    if ($oldMedia->collection_name === 'default') {
+                        $newCollectionName = 'initial-service-order-evidence';
+                    } elseif ($oldMedia->collection_name === 'service_evidence') {
+                        $newCollectionName = 'closing-service-order-evidence';
+                    }
+
+                    if ($newCollectionName) {
+                        DB::connection('mysql')->table('media')->insert([
+                            'id' => $oldMedia->id,
+                            'model_type' => ServiceOrder::class,
+                            'model_id' => $newServiceOrder->id,
+                            'uuid' => $oldMedia->uuid ?? (string) Str::uuid(),
+                            'collection_name' => $newCollectionName,
+                            'name' => pathinfo($oldMedia->file_name, PATHINFO_FILENAME),
+                            'file_name' => $oldMedia->file_name,
+                            'mime_type' => $oldMedia->mime_type,
+                            'disk' => 'public',
+                            'conversions_disk' => $oldMedia->conversions_disk ?? 'public',
+                            'size' => $oldMedia->size,
+                            'manipulations' => '[]',
+                            'custom_properties' => '[]',
+                            'generated_conversions' => $oldMedia->generated_conversions ?? '[]',
+                            'responsive_images' => '[]',
+                            'order_column' => $oldMedia->order_column ?? 1,
+                            'created_at' => $oldMedia->created_at,
+                            'updated_at' => $oldMedia->updated_at,
                         ]);
                     }
                 }

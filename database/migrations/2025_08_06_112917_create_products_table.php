@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->text('description')->nullable();
-            $table->string('sku')->nullable()->unique()->comment('Stock Keeping Unit');
+            $table->string('sku')->nullable()->comment('Stock Keeping Unit');
             
             // Relaciones: si se borra una categoría/marca, el producto no se borra, solo se desvincula.
             $table->foreignId('category_id')->nullable()->constrained('categories')->onDelete('set null');
@@ -38,7 +38,7 @@ return new class extends Migration
             // Atributos para Tienda en Línea
             $table->boolean('show_online')->default(false);
             $table->decimal('online_price', 10, 2)->nullable()->comment('Precio especial para venta online');
-            $table->string('slug')->nullable()->unique();
+            $table->string('slug')->nullable();
             $table->integer('delivery_days')->nullable();
             $table->json('tags')->nullable();
             $table->boolean('is_featured')->default(false)->comment('Producto destacado');

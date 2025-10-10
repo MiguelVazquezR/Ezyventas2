@@ -113,7 +113,7 @@ const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[st
                 <!-- Fila 2: Gráfico de Ventas y Resumen de Módulos -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
                     <div v-if="stats.weekly_sales_trend"
-                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md col-span-1 lg:col-span-2">
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md col-span-1 lg:col-span-2 min-h-[200px]">
                         <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">
                             Tendencia de ventas semanal</h2>
                         <div class="flex justify-around items-end h-[80%]">

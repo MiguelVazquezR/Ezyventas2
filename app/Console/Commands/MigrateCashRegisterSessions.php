@@ -89,8 +89,8 @@ class MigrateCashRegisterSessions extends Command
                     'calculated_cash_total' => $oldSession->expected_cash,
                     'cash_difference' => $oldSession->difference_cash,
                     'notes' => $oldSession->notes,
-                    'created_at' => $oldSession->created_at,
-                    'updated_at' => $oldSession->updated_at,
+                    'created_at' => Carbon::parse($oldSession->created_at),
+                    'updated_at' => Carbon::parse($oldSession->updated_at),
                 ]
             );
 

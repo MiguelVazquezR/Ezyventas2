@@ -42,6 +42,8 @@ class ServiceOrder extends Model implements HasMedia
         'technician_diagnosis',
         'final_total',
         'custom_fields',
+        'created_at',
+        'updated_at',
     ];
 
     protected function casts(): array

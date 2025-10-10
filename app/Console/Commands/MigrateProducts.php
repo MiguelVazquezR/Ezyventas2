@@ -10,7 +10,6 @@ use App\Models\AttributeDefinition;
 use App\Models\AttributeOption;
 use App\Models\ProductAttribute;
 use App\Models\Branch;
-// --- AÑADIDO: Importar modelos de Brand y Category ---
 use App\Models\Brand;
 use App\Models\Category;
 
@@ -28,7 +27,7 @@ class MigrateProducts extends Command
      *
      * @var string
      */
-    protected $description = 'Migra los productos desde la estructura de la base de datos vieja a la nueva, incluyendo variantes desde el campo JSON "additional".';
+    protected $description = 'Migra los productos y sus imágenes desde la estructura de la base de datos vieja a la nueva.';
 
     /**
      * Execute the console command.
@@ -65,7 +64,8 @@ class MigrateProducts extends Command
             DB::statement('SET FOREIGN_KEY_CHECKS=0;');
             Product::truncate();
             ProductAttribute::truncate();
-            // No limpiamos AttributeDefinition/Option para no borrar datos si se corre múltiples veces
+            // --- MODIFICADO: Limpiar solo la media de productos ---
+            DB::table('media')->where('model_type', Product::class)->delete();
             DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
             $oldProducts = DB::connection($oldDatabaseConnection)->table('products')->get();
@@ -74,25 +74,21 @@ class MigrateProducts extends Command
 
             foreach ($oldProducts as $oldProduct) {
                 if (!isset($storeToBranchMap[$oldProduct->store_id])) {
-                    // $this->warn("\nSaltando producto '{$oldProduct->name}' (ID: {$oldProduct->id}) porque su store_id ({$oldProduct->store_id}) no tiene un branch_id correspondiente.");
                     $progressBar->advance();
                     continue;
                 }
                 $branchId = $storeToBranchMap[$oldProduct->store_id];
 
                 if (!isset($branchToSubscriptionMap[$branchId])) {
-                    // $this->warn("\nSaltando producto '{$oldProduct->name}' (ID: {$oldProduct->id}) porque su branch_id ({$branchId}) no tiene un subscription_id correspondiente.");
                     $progressBar->advance();
                     continue;
                 }
                 $subscriptionId = $branchToSubscriptionMap[$branchId];
 
-                // --- MODIFICADO: Lógica para encontrar o crear Brand y Category ---
                 $newBrandId = null;
                 if ($oldProduct->brand_id) {
                     $oldBrand = DB::connection($oldDatabaseConnection)->table('brands')->find($oldProduct->brand_id);
                     if ($oldBrand) {
-                        // Asumiendo que las tablas 'brands' y 'categories' tienen 'subscription_id'
                         $newBrand = Brand::firstOrCreate(
                             ['name' => $oldBrand->name, 'subscription_id' => $subscriptionId]
                         );
@@ -106,12 +102,11 @@ class MigrateProducts extends Command
                     if ($oldCategory) {
                         $newCategory = Category::firstOrCreate(
                             ['name' => $oldCategory->name, 'subscription_id' => $subscriptionId],
-                            ['parent_id' => null] // Asumir que son categorías padre si no hay más info
+                            ['parent_id' => null]
                         );
                         $newCategoryId = $newCategory->id;
                     }
                 }
-                // --- FIN DE LA MODIFICACIÓN ---
 
                 $additionalData = json_decode($oldProduct->additional, true);
                 $isVariantProduct = !empty($additionalData) && (isset($additionalData['size']) || isset($additionalData['color']));
@@ -121,8 +116,8 @@ class MigrateProducts extends Command
                     'description' => $oldProduct->description,
                     'sku' => $oldProduct->code,
                     'branch_id' => $branchId,
-                    'category_id' => $newCategoryId, // Usar el nuevo ID de categoría
-                    'brand_id' => $newBrandId,       // Usar el nuevo ID de marca
+                    'category_id' => $newCategoryId,
+                    'brand_id' => $newBrandId,
                     'selling_price' => $oldProduct->public_price,
                     'cost_price' => $oldProduct->cost,
                     'currency' => ltrim($oldProduct->currency, '$'),
@@ -146,6 +141,42 @@ class MigrateProducts extends Command
                 $newProductData['slug'] = $slug;
 
                 $newProduct = Product::create($newProductData);
+
+                // --- INICIO: Lógica modificada para migrar el registro de la imagen ---
+                $oldModelType = 'App\\Models\\Product'; // ¡IMPORTANTE! Ajustar si el namespace era diferente.
+                
+                $oldMedia = DB::connection($oldDatabaseConnection)
+                    ->table('media')
+                    ->where('model_type', $oldModelType)
+                    ->where('model_id', $oldProduct->id)
+                    ->where('collection_name', 'imageCover') // CORREGIDO a mayúscula como se indicó
+                    ->first();
+
+                if ($oldMedia) {
+                    // Insertar directamente el registro en la nueva tabla de media
+                    DB::connection('mysql')->table('media')->insert([
+                        'id' => $oldMedia->id, // Usar el ID antiguo para mantener la ruta de la carpeta
+                        'model_type' => Product::class,
+                        'model_id' => $newProduct->id,
+                        'uuid' => $oldMedia->uuid ?? (string) Str::uuid(),
+                        'collection_name' => 'product-general-images',
+                        'name' => pathinfo($oldMedia->file_name, PATHINFO_FILENAME),
+                        'file_name' => $oldMedia->file_name,
+                        'mime_type' => $oldMedia->mime_type,
+                        'disk' => 'public',
+                        'conversions_disk' => $oldMedia->conversions_disk ?? 'public',
+                        'size' => $oldMedia->size,
+                        'manipulations' => '[]',
+                        'custom_properties' => '[]',
+                        'generated_conversions' => $oldMedia->generated_conversions ?? '[]',
+                        'responsive_images' => '[]',
+                        'order_column' => $oldMedia->order_column ?? 1,
+                        'created_at' => $oldMedia->created_at,
+                        'updated_at' => $oldMedia->updated_at,
+                    ]);
+                }
+                // --- FIN: Lógica modificada ---
+
 
                 if ($isVariantProduct) {
                     $attributesForVariant = [];
@@ -185,8 +216,7 @@ class MigrateProducts extends Command
             $progressBar->finish();
         });
         
-        $this->info("\n¡Migración completada exitosamente!");
+        $this->info("\n¡Migración de productos e imágenes completada exitosamente!");
         return 0;
     }
 }
-

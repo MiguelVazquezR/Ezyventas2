@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use App\Models\Expense; // Asegúrate de que este es tu nuevo modelo de Gasto
 use Carbon\Carbon;
+use Illuminate\Support\Str;
 
 class MigrateExpenses extends Command
 {
@@ -36,7 +37,7 @@ class MigrateExpenses extends Command
         $branchMap = [
             24 => 2,
             25 => 3,
-            30 => 3, // Como en categorías, 30 también apunta a 3
+            30 => 4,
         ];
 
         // 1. Filtramos los gastos que pertenecen a las sucursales que estamos migrando
@@ -49,50 +50,61 @@ class MigrateExpenses extends Command
             return 0;
         }
 
+        $this->line('Limpiando la tabla de gastos para evitar duplicados...');
+        Expense::truncate();
+
         $progressBar = $this->output->createProgressBar($oldExpenses->count());
         $progressBar->start();
 
         foreach ($oldExpenses as $oldExpense) {
-            // 2. Generamos un folio único basado en el ID antiguo para mantener la trazabilidad
+            // --- CORREGIDO: Usar el 'concept' original directamente como folio ---
             $folio = $oldExpense->concept;
 
-            // 3. Mapeamos el método de pago a un valor estandarizado (puedes ajustar esto si es necesario)
+            // 3. Mapeamos el método de pago a un valor estandarizado
             $paymentMethod = match (strtolower($oldExpense->payment_method)) {
                 'tarjeta' => 'tarjeta',
                 'transferencia' => 'transferencia',
-                default => 'efectivo', // 'Efectivo' y cualquier otro caso se convierte en 'cash'
+                default => 'efectivo',
             };
 
-            // --- NUEVA LÓGICA ---
             // Mapeamos el branch_id y luego asignamos el user_id basado en él.
             $newBranchId = $branchMap[$oldExpense->store_id];
             $newUserId = match ($newBranchId) {
                 2 => 2,
                 3 => 3,
-                default => null, // Fallback por si acaso
+                default => null,
             };
-            // --- FIN DE LA NUEVA LÓGICA ---
+
+            // Lógica para asignar categoría de gasto
+            $conceptLower = strtolower($oldExpense->concept ?? '');
+            $categoryId = 1; // Categoría por defecto
+
+            if (Str::contains($conceptLower, 'mandadito')) {
+                $categoryId = 2;
+            } elseif (Str::contains($conceptLower, ['nomina', 'comision'])) {
+                $categoryId = 3;
+            } elseif (Str::contains($conceptLower, 'compra')) {
+                $categoryId = 4;
+            }
 
             // 4. Creamos el array de datos para el nuevo gasto
             $expenseData = [
-                'user_id' => $newUserId, // Se asigna el usuario correspondiente
+                'folio' => $folio, // Guardar el folio/concepto original
+                'user_id' => $newUserId,
                 'branch_id' => $newBranchId,
-                'expense_category_id' => null, // No hay categoría en la versión antigua
-                'amount' => $oldExpense->current_price, // El monto principal del gasto
+                'expense_category_id' => $categoryId,
+                'amount' => $oldExpense->current_price,
                 'expense_date' => Carbon::parse($oldExpense->created_at)->toDateString(),
-                'status' => 'pagado', // Asumimos que todos los gastos migrados están pagados
+                'status' => 'pagado',
                 'payment_method' => $paymentMethod,
                 'bank_account_id' => null,
                 'session_cash_movement_id' => null,
-                'created_at' => $oldExpense->created_at,
-                'updated_at' => $oldExpense->updated_at,
+                'created_at' => Carbon::parse($oldExpense->created_at),
+                'updated_at' => Carbon::parse($oldExpense->updated_at),
             ];
 
-            // 5. Usamos updateOrCreate con el folio único para evitar duplicados
-            Expense::updateOrCreate(
-                ['folio' => $folio],
-                $expenseData
-            );
+            // 5. Usamos create() ya que la tabla se limpia al inicio y se permiten folios duplicados.
+            Expense::create($expenseData);
 
             $progressBar->advance();
         }

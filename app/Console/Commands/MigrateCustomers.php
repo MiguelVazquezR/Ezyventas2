@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use App\Models\Customer; // Asegúrate de que este es tu nuevo modelo de cliente
+use Carbon\Carbon;
 
 class MigrateCustomers extends Command
 {
@@ -68,8 +69,8 @@ class MigrateCustomers extends Command
                 'phone' => $oldClient->phone,
                 // 'tax_id' => $oldClient->rfc,
                 'balance' => -1 * ($oldClient->debt ?? 0.00), // La deuda se convierte en saldo negativo
-                'created_at' => $oldClient->created_at,
-                'updated_at' => $oldClient->updated_at,
+                'created_at' => Carbon::parse($oldClient->created_at),
+                'updated_at' => Carbon::parse($oldClient->updated_at),
             ];
 
             // 5. Usamos updateOrCreate para evitar duplicados.

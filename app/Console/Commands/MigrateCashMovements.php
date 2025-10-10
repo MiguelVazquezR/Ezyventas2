@@ -65,7 +65,7 @@ class MigrateCashMovements extends Command
                     continue;
                 }
                 $newCashRegisterId = $cashRegisterMap[$oldMovement->cash_register_id];
-                $movementTimestamp = $oldMovement->created_at;
+                $movementTimestamp = Carbon::parse($oldMovement->created_at);
 
                 // 2. Encontrar la sesión de caja que estaba activa en ese momento
                 $activeSession = DB::connection('mysql')->table('cash_register_sessions')
@@ -89,8 +89,8 @@ class MigrateCashMovements extends Command
                     'type' => $oldMovement->type == "Retiro" ? 'egreso' : 'ingreso', // 'ingreso' o 'egreso'
                     'amount' => $oldMovement->amount,
                     'description' => $oldMovement->notes ?? 'Sin descripción',
-                    'created_at' => $oldMovement->created_at,
-                    'updated_at' => $oldMovement->updated_at,
+                    'created_at' => Carbon::parse($oldMovement->created_at),
+                    'updated_at' => Carbon::parse($oldMovement->updated_at),
                 ]);
                 
                 $progressBar->advance();
