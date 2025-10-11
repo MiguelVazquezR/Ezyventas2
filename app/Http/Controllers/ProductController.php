@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\TemplateContextType;
+use App\Enums\TemplateType;
 use App\Http\Requests\StoreProductRequest;
 use App\Http\Requests\UpdateProductRequest;
 use App\Models\AttributeDefinition;
@@ -69,14 +71,20 @@ class ProductController extends Controller implements HasMiddleware
 
         $products = $query->paginate($request->input('rows', 20))->withQueryString();
 
-        // --- AÑADIDO: Se pasan los datos del límite a la vista ---
-        $limitData = $this->getProductLimitData();
+        // --- AÑADIDO: Se obtienen las plantillas de etiquetas disponibles ---
+        $availableTemplates = $user->branch->printTemplates()
+            ->where('type', TemplateType::LABEL)
+            ->whereIn('context_type', [TemplateContextType::PRODUCT, TemplateContextType::GENERAL])
+            ->get();
+
+        $limitData = $this->getProductLimitData(); // Asumiendo que este método existe en tu controlador
 
         return Inertia::render('Product/Index', [
             'products' => $products,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
             'productLimit' => $limitData['limit'],
             'productUsage' => $limitData['usage'],
+            'availableTemplates' => $availableTemplates, // Se pasan a la vista
         ]);
     }
 
@@ -324,10 +332,17 @@ class ProductController extends Controller implements HasMiddleware
             ];
         });
 
+        // --- AÑADIDO: Se obtienen las plantillas de etiquetas disponibles ---
+        $availableTemplates = Auth::user()->branch->printTemplates()
+            ->where('type', TemplateType::LABEL)
+            ->whereIn('context_type', [TemplateContextType::PRODUCT, TemplateContextType::GENERAL])
+            ->get();
+
         return Inertia::render('Product/Show', [
             'product' => $product,
             'promotions' => $promotions,
             'activities' => $formattedActivities,
+            'availableTemplates' => $availableTemplates, // Se pasan a la vista
         ]);
     }
 

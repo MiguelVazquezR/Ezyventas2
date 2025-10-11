@@ -5,21 +5,21 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import AddBatchStockModal from './Partials/AddBatchStockModal.vue';
 import ImportProductsModal from './Partials/ImportProductsModal.vue';
 import ProductNavigation from './Partials/ProductNavigation.vue';
+import PrintModal from '@/Components/PrintModal.vue'; // <-- 1. Importar el modal
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     products: Object,
     filters: Object,
-    // --- AÑADIDO: Props para manejar los límites ---
     productLimit: Number,
     productUsage: Number,
+    availableTemplates: Array, // <-- 2. Aceptar la nueva prop
 });
 
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
 
-// --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
 const limitReached = computed(() => {
     if (props.productLimit === -1) return false;
     return props.productUsage >= props.productLimit;
@@ -30,16 +30,24 @@ const showAddStockModal = ref(false);
 const showImportModal = ref(false);
 const searchTerm = ref(props.filters.search || '');
 
+// --- 3. Lógica para el Modal de Impresión ---
+const isPrintModalVisible = ref(false);
+const printDataSource = ref(null);
+
+const openPrintModal = (product) => {
+    printDataSource.value = {
+        type: 'product', // Especificamos que la fuente es un producto
+        id: product.id
+    };
+    isPrintModalVisible.value = true;
+};
+// --- Fin de la lógica de impresión ---
+
 const headerMenu = ref();
 const toggleHeaderMenu = (event) => {
     headerMenu.value.toggle(event);
 };
 const splitButtonItems = ref([
-    // {
-    //     label: 'Importar desde Excel',
-    //     icon: 'pi pi-upload',
-    //     command: () => showImportModal.value = true
-    // },
     {
         label: 'Exportar a Excel',
         icon: 'pi pi-download',
@@ -131,7 +139,6 @@ const getStockSeverity = (product) => {
                             <InputText v-model="searchTerm" placeholder="Buscar en mis productos..." class="w-full" />
                         </IconField>
                         <div class="flex items-center gap-2">
-                            <!-- MODIFICADO: Se envuelve en un div para el tooltip y se deshabilita el botón -->
                             <div v-tooltip.bottom="limitReached ? `Límite de ${productLimit} productos alcanzado` : 'Crear nuevo producto'">
                                 <ButtonGroup>
                                     <Button v-if="hasPermission('products.create')" label="Nuevo producto" icon="pi pi-plus"
@@ -176,7 +183,21 @@ const getStockSeverity = (product) => {
                             </div>
                         </template>
                     </Column>
-                    <Column field="sku" header="Código" sortable></Column>
+                    <!-- 4. Columna SKU actualizada con botón de impresión -->
+                    <Column field="sku" header="Código" sortable>
+                        <template #body="{ data }">
+                            <div class="flex items-center gap-2 -ml-2">
+                                <Button
+                                    v-if="data.sku && hasPermission('pos.access')"
+                                    @click="openPrintModal(data)"
+                                    icon="pi pi-print"
+                                    text rounded severity="secondary"
+                                    v-tooltip.bottom="'Imprimir Etiqueta'"
+                                />
+                                <span>{{ data.sku }}</span>
+                            </div>
+                        </template>
+                    </Column>
                     <Column field="name" header="Nombre" sortable></Column>
                     <Column field="current_stock" header="Existencias" sortable>
                         <template #body="{ data }">
@@ -212,5 +233,13 @@ const getStockSeverity = (product) => {
         <AddBatchStockModal :visible="showAddStockModal" :products="selectedProducts"
             @update:visible="showAddStockModal = false" />
         <ImportProductsModal :visible="showImportModal" @update:visible="showImportModal = false" />
+        
+        <!-- 5. Instancia del Modal de Impresión -->
+        <PrintModal 
+            v-if="printDataSource"
+            v-model:visible="isPrintModalVisible"
+            :data-source="printDataSource"
+            :available-templates="availableTemplates"
+        />
     </AppLayout>
 </template>
