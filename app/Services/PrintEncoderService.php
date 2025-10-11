@@ -214,7 +214,7 @@ class PrintEncoderService
             $discount = $subtotal - $dataSource->final_total;
 
             $replacements = [
-                '{{os.folio}}' => $dataSource->id,
+                '{{os.folio}}' => $dataSource->folio,
                 '{{os.fecha_recepcion}}' => Carbon::parse($dataSource->received_at)->format('d/m/Y'),
                 '{{os.hora_recepcion}}' => Carbon::parse($dataSource->received_at)->format('H:i A'),
                 '{{os.fecha_hora_recepcion}}' => Carbon::parse($dataSource->received_at)->format('d/m/Y H:i A'),
