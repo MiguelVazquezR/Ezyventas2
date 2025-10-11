@@ -51,7 +51,7 @@ const getInitialPlaceholderOptions = () => ([
         items: [
             { label: 'Folio', value: '{{os.folio}}' }, { label: 'Fecha recepción', value: '{{os.fecha_recepcion}}' }, { label: 'Hora recepción', value: '{{os.hora_recepcion}}' },
             { label: 'Fecha y Hora recepción', value: '{{os.fecha_hora_recepcion}}' }, { label: 'Cliente', value: '{{os.cliente.nombre}}' }, { label: 'Problemas reportados', value: '{{os.problemas_reportados}}' },
-            { label: 'Equipo/Máquina', value: '{{os.item_description}}' }, { label: 'Total', value: '{{os.final_total}}' },
+            { label: 'Equipo/Máquina', value: '{{os.item_description}}' }, { label: 'Total', value: '{{os.total}}' },
         ]
     },
     {
