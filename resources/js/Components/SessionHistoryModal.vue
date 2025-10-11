@@ -35,8 +35,6 @@ const timelineEvents = computed(() => {
     if (!props.session) return [];
 
     const salesEvents = (props.session.transactions || []).map(tx => {
-        // CORRECCIÓN: Se buscan los pagos para esta transacción en la lista principal de la sesión.
-        // Esto evita el error ya que 'tx.payments' ya no existe en la data que llega.
         const paymentsForTx = (props.session.payments || [])
             .filter(p => p && p.transaction_id === tx.id);
         
@@ -50,7 +48,9 @@ const timelineEvents = computed(() => {
             icon: 'pi pi-shopping-cart',
             data: tx,
             totalSale: parseFloat(tx.total),
-            totalPaid: totalPaid // Usamos el total calculado correctamente.
+            totalPaid: totalPaid,
+            // MEJORA: Añadimos el nombre del cajero que hizo la venta
+            userName: tx.user?.name || 'N/A' 
         };
     });
 
@@ -61,6 +61,8 @@ const timelineEvents = computed(() => {
         color: mv.type === 'ingreso' ? '#3b82f6' : '#ef4444',
         icon: mv.type === 'ingreso' ? 'pi pi-arrow-down-left' : 'pi pi-arrow-up-right',
         data: mv,
+        // MEJORA: Añadimos el nombre del cajero que hizo el movimiento
+        userName: mv.user?.name || 'N/A'
     }));
 
     return [...salesEvents, ...movementEvents].sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -78,11 +80,12 @@ const timelineEvents = computed(() => {
                         <p class="m-0 font-bold text-base">{{ session.cash_register.name }}</p>
                     </div>
                     <div>
-                        <p class="m-0 text-sm text-gray-500">Usuario</p>
-                        <p class="m-0 font-bold text-base">{{ session.user.name }}</p>
+                        <p class="m-0 text-sm text-gray-500">Abierta por</p>
+                        <!-- CORRECCIÓN: Usar 'opener' en lugar de 'user' -->
+                        <p class="m-0 font-bold text-base">{{ session.opener?.name }}</p>
                     </div>
                     <div class="text-right">
-                        <p class="m-0 text-sm text-gray-500">Apertura</p>
+                        <p class="m-0 text-sm text-gray-500">Fecha de Apertura</p>
                         <p class="m-0 font-bold text-base">{{ formatDateTime(session.opened_at) }}</p>
                     </div>
                 </div>
@@ -104,6 +107,7 @@ const timelineEvents = computed(() => {
                                 </div>
                             </template>
                             <template #content>
+                                <!-- Contenido para Ventas -->
                                 <div v-if="slotProps.item.type === 'sale'" class="text-sm space-y-1">
                                     <div class="flex justify-between">
                                         <span class="text-gray-500">Folio:</span>
@@ -113,7 +117,11 @@ const timelineEvents = computed(() => {
                                         <span class="text-gray-500">Cliente:</span>
                                         <span class="font-semibold">{{ slotProps.item.data.customer?.name || 'Público en general' }}</span>
                                     </div>
-                                    
+                                    <!-- MEJORA: Mostrar el cajero de la venta -->
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-500">Cajero:</span>
+                                        <span class="font-semibold">{{ slotProps.item.userName }}</span>
+                                    </div>
                                     <div class="pt-2 border-t mt-2 space-y-1">
                                         <div class="flex justify-between">
                                             <span class="text-gray-500">Total Venta:</span>
@@ -125,7 +133,13 @@ const timelineEvents = computed(() => {
                                         </div>
                                     </div>
                                 </div>
+                                <!-- Contenido para Movimientos de Efectivo -->
                                 <div v-if="slotProps.item.type === 'movement'" class="text-sm space-y-1">
+                                    <!-- MEJORA: Mostrar el cajero del movimiento -->
+                                     <div class="flex justify-between mb-2">
+                                        <span class="text-gray-500">Realizado por:</span>
+                                        <span class="font-semibold">{{ slotProps.item.userName }}</span>
+                                    </div>
                                     <p class="text-gray-600 italic">"{{ slotProps.item.data.description }}"</p>
                                      <div class="flex justify-between font-bold text-base pt-2 border-t mt-2">
                                         <span>Monto:</span>

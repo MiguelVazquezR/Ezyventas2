@@ -112,25 +112,48 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         $cashRegister = CashRegister::findOrFail($request->input('cash_register_id'));
         $user = User::findOrFail($request->input('user_id'));
 
+        // Esta validación sigue siendo correcta. No se puede abrir una caja ya en uso.
         if ($cashRegister->in_use) {
             return redirect()->back()->with(['error' => 'Esta caja ya está en uso.']);
         }
 
+        // CORRECCIÓN: La validación ahora usa la nueva relación "muchos a muchos".
+        // Un usuario no puede abrir una nueva sesión si ya está participando en otra abierta.
         if ($user->cashRegisterSessions()->where('status', 'abierta')->exists()) {
-            return redirect()->back()->with(['error' => 'Este usuario ya tiene una sesión activa.']);
+            return redirect()->back()->with(['error' => 'Este usuario ya tiene una sesión activa en otra caja.']);
         }
 
         DB::transaction(function () use ($request, $cashRegister, $user) {
-            $cashRegister->sessions()->create([
-                'user_id' => $user->id,
+            // Se crea la sesión
+            $session = $cashRegister->sessions()->create([
+                'user_id' => $user->id, // Guardamos quién la abrió
                 'opening_cash_balance' => $request->input('opening_cash_balance'),
                 'status' => CashRegisterSessionStatus::OPEN,
                 'opened_at' => now(),
             ]);
+
+            // CORRECCIÓN: Se asocia el usuario a la sesión en la tabla pivote.
+            $session->users()->attach($user->id);
+
             $cashRegister->update(['in_use' => true]);
         });
 
         return redirect()->back()->with('success', 'La caja ha sido abierta con éxito.');
+    }
+
+    public function join(Request $request, CashRegisterSession $session)
+    {
+        $user = Auth::user();
+
+        // Validar que el usuario no esté ya en otra sesión activa
+        if ($user->cashRegisterSessions()->where('status', 'abierta')->exists()) {
+            return redirect()->back()->with('error', 'Ya tienes una sesión activa.');
+        }
+
+        // Añadir el usuario a la sesión
+        $session->users()->syncWithoutDetaching([$user->id]);
+
+        return redirect()->route('pos.index')->with('success', 'Te has unido a la sesión de caja.');
     }
 
     /**

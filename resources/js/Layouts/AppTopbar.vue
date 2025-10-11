@@ -113,30 +113,41 @@ const mobileUserMenuVisible = ref(false);
         <div class="p-4">
             <div class="flex flex-col items-center">
                 <img class="size-24 rounded-full object-cover mb-4" :src="user.profile_photo_url" :alt="user.name">
-                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">{{ user.name }}</h2>
-                <p class="text-sm text-gray-500 dark:text-gray-400">{{ user.email }}</p>
+                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 m-0">{{ user.name }}</h2>
+                <p class="text-sm text-gray-500 dark:text-gray-400 m-0">{{ user.email }}</p>
+                <p class="text-sm font-bold m-0">{{ subscription.commercial_name }}</p>
             </div>
             <Divider />
 
             <!-- NUEVO: Selector de sucursal para móvil -->
-            <div v-if="availableBranches && availableBranches.length > 1" class="mb-2">
-                <div class="px-3 py-2">
-                    <p class="text-sm font-bold">{{ subscription.commercial_name }}</p>
-                    <p class="text-xs text-gray-500">{{ currentBranch.name }}</p>
+            <div v-if="availableBranches && availableBranches.length > 1 && hasPermission('system.branches.switch')"
+                class="mb-2">
+                <div class="flex items-center gap-2 p-2 rounded-md">
+                    <i class="pi pi-building !text-xl"></i>
+                    <div class="text-left">
+                        <p class="text-sm text-gray-700 m-0">{{ currentBranch.name }}</p>
+                    </div>
                 </div>
                 <ul class="flex flex-col gap-2">
+                    <h2 class="text-base pt-5 mb-0 text-center">Cambiar de sucursal</h2>
                     <li v-for="item in branchMenuItems" :key="item.label">
                         <button @click="item.command(); mobileUserMenuVisible = false;"
-                            class="w-full flex items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left">
-                            <i :class="item.icon" class="text-xl mr-3 text-gray-500 dark:text-gray-400"></i>
-                            <span class="font-medium text-gray-800 dark:text-gray-200">{{ item.label }}</span>
+                            class="w-full flex items-center p-3 rounded-lg bg-gray-100 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-left">
+                            <i :class="item.icon" class="!text-lg mr-3 text-gray-700 dark:text-gray-400"></i>
+                            <span class="text-sm text-gray-700 dark:text-gray-200">{{ item.label }}</span>
                         </button>
                     </li>
                 </ul>
             </div>
+            <div v-else class="flex items-center gap-2 p-2 rounded-md">
+                <i class="pi pi-building !text-xl"></i>
+                <div class="text-left">
+                    <p class="text-sm text-gray-700 m-0">{{ currentBranch.name }}</p>
+                </div>
+            </div>
             <Divider v-if="availableBranches && availableBranches.length > 1" />
 
-            <ul class="flex flex-col gap-2">
+            <ul class="flex flex-col gap-1">
                 <li v-for="item in userMenuItems" :key="item.label">
                     <button @click="item.command(); mobileUserMenuVisible = false;"
                         class="w-full flex items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left">

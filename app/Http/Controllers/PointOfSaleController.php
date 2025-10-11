@@ -46,33 +46,43 @@ class PointOfSaleController extends Controller implements HasMiddleware
     {
         $user = Auth::user();
         $branchId = $user->branch_id;
-        $search = $request->input('search');
-        $categoryId = $request->input('category');
 
-        // CORRECCIÓN #1: Añadir 'payments' a la carga de relaciones.
-        // Esta es la única fuente de verdad para los pagos de la sesión.
-        $activeSession = CashRegisterSession::where('user_id', $user->id)
+        $activeSession = $user->cashRegisterSessions()
             ->where('status', CashRegisterSessionStatus::OPEN)
-            ->whereHas('cashRegister', function ($query) use ($branchId) {
-                $query->where('branch_id', $branchId);
-            })
+            ->whereHas('cashRegister', fn ($q) => $q->where('branch_id', $branchId))
             ->with([
                 'cashRegister:id,name',
-                'user:id,name',
-                'transactions' => function ($query) {
-                    $query->with(['customer:id,name'])->latest();
-                },
-                'cashMovements' => function ($query) {
-                    $query->latest();
-                },
-                'payments' // <- AÑADIDO
+                'users:id,name',
+                'opener:id,name', // <-- CORRECCIÓN 1: Cargar quien abrió la sesión.
+                'transactions' => fn ($q) => $q->with([
+                    'customer:id,name',
+                    'user:id,name' // <-- CORRECCIÓN 2: Cargar el usuario de CADA transacción.
+                ])->latest(),
+                'cashMovements' => fn ($q) => $q->with([
+                    'user:id,name' // <-- CORRECCIÓN 3: Cargar el usuario de CADA movimiento de efectivo.
+                ])->latest(),
+                'payments'
             ])
             ->first();
 
+        $joinableSessions = null;
+        $availableCashRegisters = null;
+
+        if (!$activeSession) {
+            $joinableSessions = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
+                ->whereHas('cashRegister', fn ($q) => $q->where('branch_id', $branchId))
+                ->with('cashRegister:id,name', 'opener:id,name')
+                ->get();
+            
+            if ($joinableSessions->isEmpty()) {
+                $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
+                    ->where('is_active', true)->where('in_use', false)
+                    ->select('id', 'name')->get();
+            }
+        }
+        
         if ($activeSession) {
-            // CORRECCIÓN #2: Calcular los totales usando la relación directa 'payments'.
-            // Esto asegura que se incluyan todos los pagos de la sesión, sin importar la fecha de la transacción.
-            $paymentTotals = $activeSession->payments
+             $paymentTotals = $activeSession->payments
                 ->where('status', 'completado')
                 ->groupBy('payment_method.value')
                 ->map->sum('amount');
@@ -85,17 +95,13 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ];
         }
 
-        $availableCashRegisters = null;
-        if (!$activeSession) {
-            $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
-                ->where('is_active', true)->where('in_use', false)
-                ->select('id', 'name')->get();
-        }
-
+        // ... (El resto del método se mantiene igual)
+        $search = $request->input('search');
+        $categoryId = $request->input('category');
         $availableTemplates = $user->branch->printTemplates()
-            ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
-            ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
-            ->get();
+             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
+             ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
+             ->get();
 
         $props = [
             'products' => $this->getProductsData($search, $categoryId),
@@ -105,6 +111,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'filters' => $request->only(['search', 'category']),
             'activePromotions' => $this->getActivePromotions(),
             'activeSession' => $activeSession,
+            'joinableSessions' => $joinableSessions,
             'availableCashRegisters' => $availableCashRegisters,
             'availableTemplates' => $availableTemplates,
         ];

@@ -9,6 +9,7 @@ import StartSessionModal from '@/Components/StartSessionModal.vue';
 import CloseSessionModal from '@/Components/CloseSessionModal.vue';
 import SessionHistoryModal from '@/Components/SessionHistoryModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
+import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import { v4 as uuidv4 } from 'uuid';
 
 const props = defineProps({
@@ -21,6 +22,7 @@ const props = defineProps({
     activeSession: Object,
     availableCashRegisters: Array,
     availableTemplates: Array,
+    joinableSessions: Array,
 });
 
 const page = usePage();
@@ -218,12 +220,15 @@ const handleCheckout = (checkoutData) => {
         }
     });
 };
+
+const isJoinSessionModalVisible = ref(false);
 </script>
 
 <template>
 
     <Head title="Punto de Venta" />
     <AppLayout>
+        <!-- Vista principal del POS (cuando la sesión está activa) -->
         <template v-if="activeSession">
             <div class="flex flex-col lg:flex-row gap-4 h-[calc(86vh)]">
                 <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden">
@@ -245,30 +250,52 @@ const handleCheckout = (checkoutData) => {
                 </div>
             </div>
         </template>
+
+        <!-- Pantalla de "Lobby" cuando no hay sesión activa -->
         <template v-else>
             <div class="flex items-center justify-center h-[calc(100vh-150px)] dark:bg-gray-900 rounded-lg">
                 <div class="text-center p-8">
                     <div
-                        class="bg-red-100 dark:bg-red-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
-                        <i class="pi pi-lock !text-4xl text-red-500"></i>
+                        class="bg-sky-100 dark:bg-sky-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
+                        <i class="pi pi-inbox !text-4xl text-sky-500"></i>
                     </div>
-                    <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Punto de Venta Bloqueado</h2>
+                    <!-- Mensaje cambia dependiendo de si hay sesiones para unirse o para crear -->
+                    <h2 v-if="joinableSessions && joinableSessions.length > 0"
+                        class="text-2xl font-bold text-gray-800 dark:text-gray-200">
+                        Sesiones de Caja Activas
+                    </h2>
+                    <h2 v-else class="text-2xl font-bold text-gray-800 dark:text-gray-200">
+                        Punto de Venta Bloqueado
+                    </h2>
+
                     <p class="text-gray-600 dark:text-gray-400 mt-2 max-w-md">
-                        Necesitas tener una sesión de caja activa para poder registrar ventas.
+                        <span v-if="joinableSessions && joinableSessions.length > 0">
+                            Hay cajas abiertas por otros usuarios. Únete a una sesión para empezar a vender.
+                        </span>
+                        <span v-else>
+                            Necesitas abrir una nueva sesión de caja para poder registrar ventas.
+                        </span>
                     </p>
-                    <Button @click="isStartSessionModalVisible = true" label="Activar caja" icon="pi pi-inbox"
+
+                    <!-- Botones cambian según el contexto -->
+                    <Button v-if="joinableSessions && joinableSessions.length > 0"
+                        @click="isJoinSessionModalVisible = true" label="Unirse a una sesión" icon="pi pi-users"
                         class="mt-6" />
+                    <Button v-else @click="isStartSessionModalVisible = true" label="Abrir una Caja"
+                        icon="pi pi-lock-open" class="mt-6" />
                 </div>
             </div>
         </template>
 
+        <!-- Modales -->
         <StartSessionModal :visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
             @update:visible="isStartSessionModalVisible = $event" />
-        <CloseSessionModal :visible="isCloseSessionModalVisible" :session="activeSession"
+        <JoinSessionModal :visible="isJoinSessionModalVisible" :sessions="joinableSessions"
+            @update:visible="isJoinSessionModalVisible = $event" />
+        <CloseSessionModal v-if="activeSession" :visible="isCloseSessionModalVisible" :session="activeSession"
             @update:visible="isCloseSessionModalVisible = $event" />
-        <SessionHistoryModal :visible="isHistoryModalVisible" :session="activeSession"
+        <SessionHistoryModal v-if="activeSession" :visible="isHistoryModalVisible" :session="activeSession"
             @update:visible="isHistoryModalVisible = $event" />
-
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
             :available-templates="availableTemplates" />
     </AppLayout>

@@ -6,6 +6,7 @@ use App\Enums\CashRegisterSessionStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CashRegisterSession extends Model
@@ -16,7 +17,7 @@ class CashRegisterSession extends Model
 
     protected $fillable = [
         'cash_register_id',
-        'user_id',
+        'user_id', // usuario que ABRIÓ la sesión
         'opened_at',
         'closed_at',
         'status',
@@ -45,9 +46,20 @@ class CashRegisterSession extends Model
         return $this->belongsTo(CashRegister::class);
     }
 
-    public function user(): BelongsTo
+    /**
+     * El usuario que originalmente abrió la sesión.
+     */
+    public function opener(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /**
+     * CORRECCIÓN: Todos los usuarios (cajeros) asociados a esta sesión.
+     */
+    public function users(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'cash_register_session_user');
     }
 
     public function transactions(): HasMany
