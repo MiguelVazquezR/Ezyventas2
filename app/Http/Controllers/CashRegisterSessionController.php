@@ -35,32 +35,33 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         $user = Auth::user();
         $branchId = $user->branch_id;
 
-        // SOLUCIÓN: Usar JOINs para permitir el ordenamiento y la búsqueda en tablas relacionadas
         $query = CashRegisterSession::query()
-            ->join('users', 'cash_register_sessions.user_id', '=', 'users.id')
+            ->join('users', 'cash_register_sessions.user_id', '=', 'users.id') // El user_id es el opener
             ->join('cash_registers', 'cash_register_sessions.cash_register_id', '=', 'cash_registers.id')
             ->where('cash_register_sessions.status', CashRegisterSessionStatus::CLOSED)
             ->whereHas('cashRegister.branch', function ($q) use ($branchId) {
                 $q->where('id', $branchId);
             })
-            ->with(['user:id,name', 'cashRegister:id,name'])
-            ->select('cash_register_sessions.*'); // Evitar conflictos de columnas 'id'
+            // CORRECCIÓN: Se carga la relación 'opener' en lugar de 'user'
+            ->with(['opener:id,name', 'cashRegister:id,name'])
+            ->select('cash_register_sessions.*');
 
         if ($request->has('search')) {
             $searchTerm = $request->input('search');
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('users.name', 'LIKE', "%{$searchTerm}%")
-                    ->orWhere('cash_registers.name', 'LIKE', "%{$searchTerm}%"); // <-- Búsqueda por caja añadida
+                    ->orWhere('cash_registers.name', 'LIKE', "%{$searchTerm}%");
             });
         }
 
         $sortField = $request->input('sortField', 'closed_at');
         $sortOrder = $request->input('sortOrder', 'desc');
-        // Usar nombres de columna completos para el ordenamiento
+
+        // La lógica de ordenamiento con el JOIN a 'users' sigue siendo válida para el 'opener'.
         $sortColumn = match ($sortField) {
-            'user.name' => 'users.name',
+            'opener.name' => 'users.name', // Se ajusta el nombre del filtro si es necesario en el frontend
             'cash_register.name' => 'cash_registers.name',
-            default => $sortField,
+            default => 'cash_register_sessions.' . $sortField,
         };
         $query->orderBy($sortColumn, $sortOrder);
 
@@ -77,14 +78,17 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
      */
     public function show(CashRegisterSession $cashRegisterSession): Response
     {
+        // CORRECCIÓN: Se cargan las relaciones correctas ('opener', 'users') y las anidadas necesarias.
         $cashRegisterSession->load([
-            'user:id,name',
+            'opener:id,name',
+            'users:id,name',
             'cashRegister:id,name',
-            'transactions.payments',
-            'cashMovements'
+            'payments',
+            'cashMovements.user:id,name',
+            'transactions.user:id,name',
+            'transactions.customer:id,name'
         ]);
 
-        // El cálculo ahora es mucho más simple y preciso
         $paymentTotals = $cashRegisterSession->payments()
             ->where('status', PaymentStatus::COMPLETED)
             ->selectRaw('payment_method, SUM(amount) as total')
@@ -99,6 +103,41 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         ];
 
         return Inertia::render('FinancialControl/CashRegisterSession/Show', [
+            'session' => $cashRegisterSession,
+            'sessionTotals' => $sessionTotals,
+        ]);
+    }
+
+    /**
+     * Muestra una versión imprimible de la sesión de caja.
+     */
+    public function print(CashRegisterSession $cashRegisterSession): Response
+    {
+        // CORRECCIÓN: Se carga 'opener' en lugar de 'user' y se añaden otras relaciones para un reporte completo.
+        $cashRegisterSession->load([
+            'opener:id,name',
+            'users:id,name',
+            'cashRegister.branch.subscription',
+            'payments',
+            'cashMovements.user:id,name',
+            'transactions.user:id,name',
+            'transactions.customer:id,name'
+        ]);
+
+        $paymentTotals = $cashRegisterSession->payments()
+            ->where('status', 'completado')
+            ->selectRaw('payment_method, SUM(amount) as total')
+            ->groupBy('payment_method')
+            ->pluck('total', 'payment_method');
+
+        $sessionTotals = [
+            'cash_total' => $paymentTotals['efectivo'] ?? 0,
+            'card_total' => $paymentTotals['tarjeta'] ?? 0,
+            'transfer_total' => $paymentTotals['transferencia'] ?? 0,
+            'balance_total' => $paymentTotals['saldo'] ?? 0,
+        ];
+
+        return Inertia::render('FinancialControl/CashRegisterSession/PrintReport', [
             'session' => $cashRegisterSession,
             'sessionTotals' => $sessionTotals,
         ]);
@@ -141,7 +180,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         return redirect()->back()->with('success', 'La caja ha sido abierta con éxito.');
     }
 
-    public function join(Request $request, CashRegisterSession $session)
+     public function join(Request $request, CashRegisterSession $session)
     {
         $user = Auth::user();
 
@@ -153,7 +192,22 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         // Añadir el usuario a la sesión
         $session->users()->syncWithoutDetaching([$user->id]);
 
-        return redirect()->route('pos.index')->with('success', 'Te has unido a la sesión de caja.');
+        // CORRECCIÓN: Se redirige a la página anterior para permanecer en la vista de detalles.
+        return redirect()->back()->with('success', 'Te has unido a la sesión de caja.');
+    }
+
+    /**
+     * Permite a un usuario abandonar una sesión de caja sin cerrarla.
+     */
+    public function leave(Request $request, CashRegisterSession $session)
+    {
+        $user = Auth::user();
+
+        // Quitar al usuario de la sesión
+        $session->users()->detach($user->id);
+
+        // CORRECCIÓN: Se redirige a la página anterior para que el usuario permanezca en la vista.
+        return redirect()->back()->with('success', 'Has salido de la sesión de caja.');
     }
 
     /**
@@ -189,37 +243,5 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         });
 
         return redirect()->back()->with('success', 'Corte de caja realizado con éxito.');
-    }
-
-    /**
-     * Muestra una versión imprimible de la sesión de caja.
-     */
-    public function print(CashRegisterSession $cashRegisterSession): Response
-    {
-        $cashRegisterSession->load([
-            'user:id,name',
-            'cashRegister.branch.subscription',
-            'transactions.payments',
-            'cashMovements'
-        ]);
-
-        $transactionIds = $cashRegisterSession->transactions->pluck('id');
-        $paymentTotals = Payment::whereIn('transaction_id', $transactionIds)
-            ->where('status', 'completado')
-            ->selectRaw('payment_method, SUM(amount) as total')
-            ->groupBy('payment_method')
-            ->pluck('total', 'payment_method');
-
-        $sessionTotals = [
-            'cash_total' => $paymentTotals['efectivo'] ?? 0,
-            'card_total' => $paymentTotals['tarjeta'] ?? 0,
-            'transfer_total' => $paymentTotals['transferencia'] ?? 0,
-            'balance_total' => $paymentTotals['saldo'] ?? 0,
-        ];
-
-        return Inertia::render('FinancialControl/CashRegisterSession/PrintReport', [
-            'session' => $cashRegisterSession,
-            'sessionTotals' => $sessionTotals,
-        ]);
     }
 }

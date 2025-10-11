@@ -77,7 +77,7 @@ const timelineEvents = computed(() => {
                 <div class="flex justify-between items-center">
                     <div>
                         <p class="m-0 text-sm text-gray-500">Caja</p>
-                        <p class="m-0 font-bold text-base">{{ session.cash_register.name }}</p>
+                        <p class="m-0 font-bold text-base">{{ session.cash_register?.name }}</p>
                     </div>
                     <div>
                         <p class="m-0 text-sm text-gray-500">Abierta por</p>

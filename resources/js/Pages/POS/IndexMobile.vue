@@ -6,6 +6,8 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import PosLeftPanel from './Partials/PosLeftPanel.vue';
 import ShoppingCart from './Partials/ShoppingCart.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
+// --- NUEVO: Importar el modal para unirse a sesiones ---
+import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import CloseSessionModal from '@/Components/CloseSessionModal.vue';
 import SessionHistoryModal from '@/Components/SessionHistoryModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
@@ -21,6 +23,8 @@ const props = defineProps({
     activeSession: Object,
     availableCashRegisters: Array,
     availableTemplates: Array,
+    // --- NUEVO: Recibir las sesiones a las que se puede unir ---
+    joinableSessions: Array,
 });
 
 const page = usePage();
@@ -29,19 +33,19 @@ const toast = useToast();
 const cartItems = ref([]);
 const selectedClient = ref(null);
 
-// --- Lógica para el Drawer del Carrito ---
 const isCartDrawerVisible = ref(false);
 const cartItemCount = computed(() => cartItems.value.reduce((acc, item) => acc + item.quantity, 0));
 
-
 // --- Lógica para Modales ---
 const isStartSessionModalVisible = ref(false);
+// --- NUEVO: Estado para el nuevo modal ---
+const isJoinSessionModalVisible = ref(false);
 const isCloseSessionModalVisible = ref(false);
 const isHistoryModalVisible = ref(false);
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
 
-// Observa el flash message del backend para activar el modal de impresión
+// ... (El resto del script setup se mantiene sin cambios)
 watch(() => page.props.flash.print_data, (newPrintData) => {
     if (newPrintData) {
         printDataSource.value = newPrintData;
@@ -225,17 +229,24 @@ const handleCheckout = (checkoutData) => {
 </script>
 
 <template>
-
     <Head title="Punto de Venta" />
     <AppLayout>
         <div class="relative h-[calc(100vh-100px)]">
             <template v-if="activeSession">
-                <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
-                    :filters="filters" :active-session="activeSession" @add-to-cart="addToCart"
-                    @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
+                <PosLeftPanel 
+                    :products="products" 
+                    :categories="categories" 
+                    :pending-carts="pendingCarts"
+                    :filters="filters" 
+                    :active-session="activeSession" 
+                    @add-to-cart="addToCart"
+                    @resume-cart="resumePendingCart" 
+                    @delete-cart="deletePendingCart"
                     @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
-                    @refresh-session-data="handleRefreshSessionData" @open-history-modal="isHistoryModalVisible = true"
-                    @open-close-session-modal="isCloseSessionModalVisible = true" />
+                    @refresh-session-data="handleRefreshSessionData" 
+                    @open-history-modal="isHistoryModalVisible = true"
+                    @open-close-session-modal="isCloseSessionModalVisible = true" 
+                />
 
                 <!-- Botón Flotante del Carrito -->
                 <div class="fixed bottom-6 right-6 z-50">
@@ -252,40 +263,90 @@ const handleCheckout = (checkoutData) => {
                     <template #header>
                         <h2 class="text-xl font-bold">Resumen de Venta</h2>
                     </template>
-                    <ShoppingCart :items="cartItems" :client="selectedClient" :customers="localCustomers"
-                        :default-customer="defaultCustomer" :active-promotions="activePromotions"
-                        @update-quantity="updateCartQuantity" @update-price="updateCartPrice"
-                        @remove-item="removeCartItem" @clear-cart="clearCart" @select-customer="handleSelectCustomer"
-                        @customer-created="handleCustomerCreated" @save-cart="saveCartToPending"
-                        @checkout="handleCheckout" class="h-full" />
+                    <ShoppingCart 
+                        :items="cartItems" 
+                        :client="selectedClient" 
+                        :customers="localCustomers"
+                        :default-customer="defaultCustomer" 
+                        :active-promotions="activePromotions"
+                        @update-quantity="updateCartQuantity" 
+                        @update-price="updateCartPrice"
+                        @remove-item="removeCartItem" 
+                        @clear-cart="clearCart" 
+                        @select-customer="handleSelectCustomer"
+                        @customer-created="handleCustomerCreated" 
+                        @save-cart="saveCartToPending"
+                        @checkout="handleCheckout" 
+                        class="h-full" 
+                    />
                 </Drawer>
 
             </template>
+            <!-- --- NUEVO: Lógica del Lobby para cuando no hay sesión activa --- -->
             <template v-else>
                 <div class="flex items-center justify-center h-full dark:bg-gray-900 rounded-lg">
                     <div class="text-center p-8">
-                        <div
-                            class="bg-red-100 dark:bg-red-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
-                            <i class="pi pi-lock !text-4xl text-red-500"></i>
+                        <div class="bg-blue-100 dark:bg-blue-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
+                            <i class="pi pi-inbox !text-4xl text-blue-500"></i>
                         </div>
-                        <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Punto de Venta Bloqueado</h2>
+                        <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Punto de Venta</h2>
                         <p class="text-gray-600 dark:text-gray-400 mt-2 max-w-md">
-                            Necesitas tener una sesión de caja activa para poder registrar ventas.
+                            No tienes una sesión de caja activa. Únete a una existente o abre una nueva para empezar.
                         </p>
-                        <Button @click="isStartSessionModalVisible = true" label="Activar caja" icon="pi pi-inbox"
-                            class="mt-6" />
+                        
+                        <div class="mt-8 space-y-3 flex flex-col items-center">
+                            <!-- Botón para Unirse a Sesión -->
+                            <Button 
+                                v-if="joinableSessions && joinableSessions.length > 0"
+                                @click="isJoinSessionModalVisible = true" 
+                                label="Unirse a una sesión activa" 
+                                icon="pi pi-users"
+                                class="w-full max-w-xs" 
+                            />
+                            <!-- Botón para Abrir Caja -->
+                            <Button 
+                                v-if="availableCashRegisters && availableCashRegisters.length > 0"
+                                @click="isStartSessionModalVisible = true" 
+                                label="Abrir una Caja" 
+                                icon="pi pi-lock-open"
+                                class="w-full max-w-xs" 
+                            />
+                            <!-- Mensaje si no hay opciones -->
+                            <p v-if="(!joinableSessions || joinableSessions.length === 0) && (!availableCashRegisters || availableCashRegisters.length === 0)" class="text-sm text-gray-500 pt-4">
+                                No hay cajas disponibles para unirse o abrir en esta sucursal.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </template>
         </div>
 
-        <StartSessionModal :visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
-            @update:visible="isStartSessionModalVisible = $event" />
-        <CloseSessionModal :visible="isCloseSessionModalVisible" :session="activeSession"
-            @update:visible="isCloseSessionModalVisible = $event" />
-        <SessionHistoryModal :visible="isHistoryModalVisible" :session="activeSession"
-            @update:visible="isHistoryModalVisible = $event" />
-        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
-            :available-templates="availableTemplates" />
+        <StartSessionModal 
+            :visible="isStartSessionModalVisible" 
+            :cash-registers="availableCashRegisters"
+            @update:visible="isStartSessionModalVisible = $event" 
+        />
+        <!-- --- NUEVO: Instancia del nuevo modal --- -->
+        <JoinSessionModal 
+            :visible="isJoinSessionModalVisible"
+            :sessions="joinableSessions"
+            @update:visible="isJoinSessionModalVisible = $event"
+        />
+        <CloseSessionModal 
+            :visible="isCloseSessionModalVisible" 
+            :session="activeSession"
+            @update:visible="isCloseSessionModalVisible = $event" 
+        />
+        <SessionHistoryModal 
+            :visible="isHistoryModalVisible" 
+            :session="activeSession"
+            @update:visible="isHistoryModalVisible = $event" 
+        />
+        <PrintModal 
+            v-if="printDataSource" 
+            v-model:visible="isPrintModalVisible" 
+            :data-source="printDataSource"
+            :available-templates="availableTemplates" 
+        />
     </AppLayout>
 </template>
