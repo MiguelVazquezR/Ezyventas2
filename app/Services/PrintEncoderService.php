@@ -39,7 +39,7 @@ class PrintEncoderService
 
         $tspl = "SIZE {$config['width']} mm,{$config['height']} mm\n";
         $tspl .= "GAP {$config['gap']} mm,0 mm\n";
-        $tspl .= "DENSITY 15\n";
+        $tspl .= "DENSITY 7\n";
         $tspl .= "SPEED 4\n";
         $tspl .= "DIRECTION 1\n";
         $tspl .= "CLS\n";
@@ -53,9 +53,10 @@ class PrintEncoderService
 
             switch ($element['type']) {
                 case 'text':
+                    //TEXT X, Y, "font", rotation, x-multiplication, y-multiplication, "content"
                     $fontSize = $element['data']['font_size'];
                     $text = self::replacePlaceholders($element['data']['value'], $dataSource);
-                    $tspl .= "TEXT {$x},{$y},\"2\",{$rotation},{$fontSize},{$fontSize},\"{$text}\"\n";
+                    $tspl .= "TEXT {$x},{$y},\"{$fontSize}\",{$rotation},1,1,\"{$text}\"\n";
                     break;
                 case 'barcode':
                     $barcodeType = $element['data']['type'];
