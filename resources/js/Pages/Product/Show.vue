@@ -6,12 +6,14 @@ import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import DiffViewer from '@/Components/DiffViewer.vue';
 import AddStockModal from './Partials/AddStockModal.vue';
+import PrintModal from '@/Components/PrintModal.vue'; // <-- 1. Importar el modal
 import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     product: Object,
     activities: Array,
     promotions: Array,
+    availableTemplates: Array, // <-- 2. Aceptar la nueva prop
 });
 
 const toast = useToast();
@@ -29,11 +31,27 @@ const localPromotions = ref([...props.promotions]);
 const promoMenus = ref({});
 const showAddStockModal = ref(false);
 
+// --- Lógica del Modal de Impresión ---
+const isPrintModalVisible = ref(false);
+const printDataSource = ref(null);
+
+const openPrintModal = () => {
+    printDataSource.value = {
+        type: 'product',
+        id: props.product.id
+    };
+    isPrintModalVisible.value = true;
+};
+// --- Fin de la lógica de impresión ---
+
+
 const actionItems = ref([
     { label: 'Crear Nuevo', icon: 'pi pi-plus', command: () => router.get(route('products.create')), visible: hasPermission('products.create') },
     { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('products.edit', props.product.id)), visible: hasPermission('products.edit') },
     { label: 'Agregar Promoción', icon: 'pi pi-tag', command: () => router.get(route('products.promotions.create', props.product.id)), visible: hasPermission('products.manage_promos') },
     { label: 'Dar Entrada a Producto', icon: 'pi pi-arrow-down', command: () => showAddStockModal.value = true, visible: hasPermission('products.manage_stock') },
+    // --- Añadido botón de imprimir al menú de acciones ---
+    { label: 'Imprimir Etiqueta', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
     { label: 'Eliminar Producto', icon: 'pi pi-trash', class: 'text-red-500', command: () => deleteProduct(), visible: hasPermission('products.delete') },
 ]);
@@ -95,7 +113,6 @@ const deletePromotion = (promo) => {
     });
 };
 
-// --- FUNCIÓN MODIFICADA ---
 const getPromotionSummary = (promo) => {
     switch (promo.type) {
         case 'ITEM_DISCOUNT': {
@@ -111,7 +128,6 @@ const getPromotionSummary = (promo) => {
         }
         case 'BUNDLE_PRICE': {
             const effect = promo.effects[0];
-            // Construye el texto con la cantidad de cada producto
             const productDetails = promo.rules.map(rule => `${rule.value} x ${rule.itemable.name}`).join(' + ');
             return `Paquete (${productDetails}) por ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(effect.value)}.`;
         }
@@ -216,21 +232,18 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                             <ul class="space-y-3 text-sm">
                                 <li class="flex items-center">
                                     <span class="text-gray-500 dark:text-gray-400 w-24">SKU</span>
-                                    <span class="font-medium text-gray-800 dark:text-gray-200 mr-2">{{ product.sku ||
-                                        'N/A'
-                                        }}</span>
+                                    <span class="font-medium text-gray-800 dark:text-gray-200 mr-2">{{ product.sku || 'N/A' }}</span>
                                     <Button v-if="product.sku" @click="copyToClipboard(product.sku)" icon="pi pi-copy"
                                         text rounded size="small" v-tooltip.bottom="'Copiar SKU'"></Button>
+                                    <!-- --- Añadido botón de imprimir --- -->
+                                    <Button v-if="product.sku && hasPermission('pos.access')" @click="openPrintModal" icon="pi pi-print"
+                                        text rounded size="small" v-tooltip.bottom="'Imprimir Etiqueta'"></Button>
                                 </li>
                                 <li class="flex"><span class="text-gray-500 dark:text-gray-400 w-24">Categoría</span>
-                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.category?.name
-                                        || 'N/A'
-                                        }}</span>
+                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.category?.name || 'N/A' }}</span>
                                 </li>
                                 <li class="flex"><span class="text-gray-500 dark:text-gray-400 w-24">Marca</span> <span
-                                        class="font-medium text-gray-800 dark:text-gray-200">{{ product.brand?.name ||
-                                            'N/A'
-                                            }}</span></li>
+                                        class="font-medium text-gray-800 dark:text-gray-200">{{ product.brand?.name || 'N/A' }}</span></li>
                             </ul>
                         </div>
                         <div>
@@ -238,30 +251,13 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
                                 Precios</h2>
                             <ul class="space-y-3 text-sm">
-                                <li class="flex justify-between"><span class="text-gray-500 dark:text-gray-400">Precio
-                                        de
-                                        Venta</span> <span
-                                        class="font-medium text-lg text-gray-800 dark:text-gray-200">{{ new
-                                            Intl.NumberFormat('es-MX', {
-                                                style: 'currency', currency: 'MXN'
-                                            }).format(product.selling_price) }}</span></li>
-                                <li v-if="hasPermission('products.see_cost_price')" class="flex justify-between"><span class="text-gray-500 dark:text-gray-400">Precio
-                                        de
-                                        Compra</span> <span class="font-medium text-gray-800 dark:text-gray-200">{{ new
-                                            Intl.NumberFormat('es-MX', {
-                                                style: 'currency', currency: 'MXN'
-                                            }).format(product.cost_price) }}</span></li>
-                                <li class="flex justify-between"><span
-                                        class="text-gray-500 dark:text-gray-400">Proveedor</span>
-                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.provider?.name
-                                        || 'N/A'
-                                        }}</span>
+                                <li class="flex justify-between"><span class="text-gray-500 dark:text-gray-400">Precio de Venta</span> 
+                                    <span class="font-medium text-lg text-gray-800 dark:text-gray-200">{{ new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(product.selling_price) }}</span></li>
+                                <li v-if="hasPermission('products.see_cost_price')" class="flex justify-between"><span class="text-gray-500 dark:text-gray-400">Precio de Compra</span> 
+                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(product.cost_price) }}</span></li>
+                                <li class="flex justify-between"><span class="text-gray-500 dark:text-gray-400">Proveedor</span>
+                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.provider?.name || 'N/A' }}</span>
                                 </li>
-                                <!-- <li class="flex justify-between"><span
-                                        class="text-gray-500 dark:text-gray-400">Impuesto</span>
-                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.tax_rate ?
-                                        `${product.tax_rate}%` : 'Sin impuestos' }}</span>
-                                </li> -->
                             </ul>
                         </div>
                     </div>
@@ -284,13 +280,11 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                         </div>
                         <div>
                             <p class="text-sm text-gray-500 dark:text-gray-400">Stock mínimo</p>
-                            <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.min_stock || 'N/A'
-                                }}</p>
+                            <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.min_stock || 'N/A' }}</p>
                         </div>
                         <div>
                             <p class="text-sm text-gray-500 dark:text-gray-400">Stock máximo</p>
-                            <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.max_stock || 'N/A'
-                                }}</p>
+                            <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.max_stock || 'N/A' }}</p>
                         </div>
                     </div>
 
@@ -433,9 +427,18 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                         No hay actividades registradas para este producto.
                     </div>
                 </div> -->
+
             </div>
         </div>
         <AddStockModal v-if="product" :visible="showAddStockModal" :product="product"
             @update:visible="showAddStockModal = false" />
+            
+        <!-- Instancia del Modal de Impresión -->
+        <PrintModal 
+            v-if="printDataSource"
+            v-model:visible="isPrintModalVisible"
+            :data-source="printDataSource"
+            :available-templates="availableTemplates"
+        />
     </AppLayout>
 </template>
