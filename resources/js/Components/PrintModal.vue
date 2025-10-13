@@ -22,6 +22,9 @@ const isPrinting = ref(false);
 const error = ref(null);
 const isLoadingPrinters = ref(false);
 
+const labelOffsetX = ref(0.0);
+const labelOffsetY = ref(0.0);
+
 const fetchPrinters = async () => {
     isLoadingPrinters.value = true;
     error.value = null;
@@ -87,11 +90,18 @@ const print = async () => {
 
         for (let i = 0; i < job.copies; i++) {
             try {
-                const payloadResponse = await axios.post(route('print.payload'), {
+                const payload = {
                     template_id: job.template.id,
                     data_source_type: props.dataSource.type,
                     data_source_id: props.dataSource.id,
-                });
+                };
+
+                if (job.template.type === 'etiqueta') {
+                    payload.offset_x = labelOffsetX.value;
+                    payload.offset_y = labelOffsetY.value;
+                }
+
+                const payloadResponse = await axios.post(route('print.payload'), payload);
 
                 const printData = payloadResponse.data;
                 const pluginResponse = await fetch("http://localhost:8000/imprimir", {
@@ -123,6 +133,8 @@ const print = async () => {
 const closeModal = () => {
     emit('update:visible', false);
     printJobs.value = [];
+    labelOffsetX.value = 0.0;
+    labelOffsetY.value = 0.0;
 };
 
 // --- Helpers de UI ---
@@ -138,9 +150,73 @@ const getTemplateTypeSeverity = (type) => {
     return 'secondary';
 };
 
+
+// --- INICIO: Lógica de guardado y carga de desfases en localStorage ---
+
+// Función para cargar los desfases de una impresora específica desde localStorage
+const loadOffsetsForPrinter = (printerName) => {
+    if (!printerName) {
+        labelOffsetX.value = 0.0;
+        labelOffsetY.value = 0.0;
+        return;
+    }
+    const offsetKey = `printer_offset_${printerName}`;
+    const savedOffsets = localStorage.getItem(offsetKey);
+    if (savedOffsets) {
+        try {
+            const offsets = JSON.parse(savedOffsets);
+            labelOffsetX.value = offsets.x || 0.0;
+            labelOffsetY.value = offsets.y || 0.0;
+        } catch (e) {
+            console.error("Error al parsear desfases guardados:", e);
+            labelOffsetX.value = 0.0;
+            labelOffsetY.value = 0.0;
+        }
+    } else {
+        labelOffsetX.value = 0.0;
+        labelOffsetY.value = 0.0;
+    }
+};
+
+// Función para guardar los desfases para la impresora de etiquetas actual
+const saveCurrentLabelOffsets = () => {
+    if (selectedLabelPrinter.value) {
+        const offsetKey = `printer_offset_${selectedLabelPrinter.value}`;
+        const offsets = {
+            x: labelOffsetX.value,
+            y: labelOffsetY.value,
+        };
+        localStorage.setItem(offsetKey, JSON.stringify(offsets));
+    }
+};
+
+// Observadores para guardar automáticamente los desfases cuando el usuario los cambia
+watch(labelOffsetX, saveCurrentLabelOffsets);
+watch(labelOffsetY, saveCurrentLabelOffsets);
+
+// Observador para guardar la selección de la impresora de tickets
 watch(selectedTicketPrinter, (newVal) => { if (newVal) localStorage.setItem('selectedTicketPrinter', newVal); });
-watch(selectedLabelPrinter, (newVal) => { if (newVal) localStorage.setItem('selectedLabelPrinter', newVal); });
-watch(() => props.visible, (newVal) => { if (newVal) fetchPrinters(); });
+
+// Observador para guardar la selección de la impresora de etiquetas y cargar sus desfases
+watch(selectedLabelPrinter, (newPrinterName) => {
+    if (newPrinterName) {
+        localStorage.setItem('selectedLabelPrinter', newPrinterName);
+        loadOffsetsForPrinter(newPrinterName);
+    }
+});
+
+// Observador para cuando el modal se hace visible
+watch(() => props.visible, (newVal) => {
+    if (newVal) {
+        // Busca impresoras y, una vez que termina, carga los desfases de la impresora seleccionada
+        fetchPrinters().then(() => {
+            loadOffsetsForPrinter(selectedLabelPrinter.value);
+        });
+    }
+});
+
+// --- FIN: Lógica de guardado y carga de desfases ---
+
 </script>
 
 <template>
@@ -153,7 +229,7 @@ watch(() => props.visible, (newVal) => { if (newVal) fetchPrinters(); });
                         v-tooltip.bottom="'Recargar lista de impresoras'" :loading="isLoadingPrinters" />
                 </div>
                 <div v-else class="mb-1">
-                    <p class="text-sm text-gray-600">
+                    <p class="text-sm text-gray-600 dark:text-gray-400">
                         Puedes imprimir más de una plantilla de ticket y de etiqueta.
                         Selecciona la(s) plantilla(s) y después la(s) impresora(s) para cada tipo. <br>
                         Las plantillas las selecciona el sistema inteligentemente según el contexto.
@@ -167,12 +243,41 @@ watch(() => props.visible, (newVal) => { if (newVal) fetchPrinters(); });
                             class="w-full mt-1" :loading="isLoadingPrinters"
                             :disabled="printers.length === 0 && !isLoadingPrinters" />
                     </div>
+
                     <div v-if="hasLabelJobs">
                         <InputLabel for="label-printer" value="Impresora de Etiquetas" />
                         <Select id="label-printer" v-model="selectedLabelPrinter" :options="printers"
                             :placeholder="isLoadingPrinters ? 'Buscando...' : 'Selecciona una impresora'"
                             class="w-full mt-1" :loading="isLoadingPrinters"
                             :disabled="printers.length === 0 && !isLoadingPrinters" />
+
+                        <!-- INICIO: Entradas de Calibración -->
+                        <div class="mt-3 p-3 border rounded-md bg-gray-50 dark:bg-slate-800">
+                            <div class="flex items-center space-x-2">
+                                <p class="text-sm font-medium text-gray-800 dark:text-gray-200 m-0">
+                                    Ajuste de desface para impresora de etiquetas (mm)</p>
+                                <i class="pi pi-info-circle text-gray-400 cursor-pointer"
+                                    v-tooltip.top="'Si la impresión está desfasada, corrígela aquí. El ajuste se guardará para esta impresora en este navegador.'">
+                                </i>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3 mt-2">
+                                <div>
+                                    <InputLabel for="offset-x" value="Offset Horizontal (X)" class="text-xs" />
+                                    <InputNumber id="offset-x" v-model="labelOffsetX" class="w-full mt-1"
+                                        inputId="horizontal-offset" mode="decimal" :minFractionDigits="1"
+                                        :maxFractionDigits="2" showButtons :step="0.5" />
+                                </div>
+                                <div>
+                                    <InputLabel for="offset-y" value="Offset Vertical (Y)" class="text-xs" />
+                                    <InputNumber id="offset-y" v-model="labelOffsetY" class="w-full mt-1"
+                                        inputId="vertical-offset" mode="decimal" :minFractionDigits="1"
+                                        :maxFractionDigits="2" showButtons :step="0.5" />
+                                </div>
+                            </div>
+                            <small class="text-gray-500 dark:text-gray-400 mt-2 block">Usa valores positivos para mover
+                                a la derecha/abajo y negativos para la izquierda/arriba.</small>
+                        </div>
+                        <!-- FIN: Entradas de Calibración -->
                     </div>
                 </div>
             </div>

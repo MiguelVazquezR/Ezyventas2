@@ -8,22 +8,29 @@ use App\Models\Product;
 use App\Models\ServiceOrder;
 use App\Models\Transaction;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class PrintEncoderService
 {
     /**
      * Actúa como un enrutador para llamar al codificador correcto según el tipo de plantilla y la fuente de datos.
+     * @param PrintTemplate $template
+     * @param mixed $dataSource
+     * @param array $options Contiene opciones adicionales como los desfases de impresión.
+     * @return array
      */
-    public static function encode(PrintTemplate $template, $dataSource): array
+    public static function encode(PrintTemplate $template, $dataSource, array $options = []): array
     {
         // Un ticket puede ser para una Venta o para una Orden de Servicio
         if ($template->type === TemplateType::SALE_TICKET && ($dataSource instanceof Transaction || $dataSource instanceof ServiceOrder)) {
+            // Las opciones no son necesarias para ESC/POS por ahora
             return self::encodeEscPos($template, $dataSource);
         }
 
         // Una etiqueta puede ser para un Producto o una Orden de Servicio
         if ($template->type === TemplateType::LABEL && ($dataSource instanceof Product || $dataSource instanceof ServiceOrder)) {
-            return self::encodeTspl($template, $dataSource);
+            // Pasar las opciones al codificador TSPL
+            return self::encodeTspl($template, $dataSource, $options);
         }
 
         return []; // Devuelve vacío si el tipo no es compatible
@@ -31,8 +38,12 @@ class PrintEncoderService
 
     /**
      * Codifica una plantilla de Etiqueta a un array de operaciones JSON (con comandos TSPL crudos).
+     * @param PrintTemplate $template
+     * @param mixed $dataSource
+     * @param array $options
+     * @return array
      */
-    private static function encodeTspl(PrintTemplate $template, $dataSource): array
+    private static function encodeTspl(PrintTemplate $template, $dataSource, array $options = []): array
     {
         $config = $template->content['config'] ?? [];
         $elements = $template->content['elements'] ?? [];
@@ -41,10 +52,25 @@ class PrintEncoderService
         $tspl .= "GAP {$config['gap']} mm,0 mm\n";
         $tspl .= "DENSITY 7\n";
         $tspl .= "SPEED 4\n";
-        $tspl .= "DIRECTION 1\n";
-        $tspl .= "CLS\n";
+        $tspl .= "DIRECTION 0\n";
 
         $dotsPerMm = $config['dpi'] / 25.4;
+
+        // --- INICIO: Lógica de Calibración ---
+        $offsetX_mm = $options['offset_x'] ?? 0;
+        $offsetY_mm = $options['offset_y'] ?? 0;
+
+        // Solo añadir el comando SHIFT si alguno de los desfases es diferente de cero.
+        if (is_numeric($offsetX_mm) && is_numeric($offsetY_mm) && ($offsetX_mm != 0 || $offsetY_mm != 0)) {
+            $shiftX_dots = round($offsetX_mm * $dotsPerMm);
+            $shiftY_dots = round($offsetY_mm * $dotsPerMm);
+            $tspl .= "SHIFT {$shiftX_dots},{$shiftY_dots}\n";
+        }
+        $tspl .= "OFFSET 0\n";
+        // --- FIN: Lógica de Calibración ---
+
+        // CLS (limpiar búfer de imagen) debe llamarse DESPUÉS de SHIFT para evitar resetear el sistema de coordenadas.
+        $tspl .= "CLS\n";
 
         foreach ($elements as $element) {
             $x = ($element['data']['x'] ?? 0) * $dotsPerMm;
@@ -73,7 +99,6 @@ class PrintEncoderService
         }
 
         $tspl .= "PRINT 1,1\n";
-
         return [['nombre' => 'EscribirTexto', 'argumentos' => [$tspl]]];
     }
 
