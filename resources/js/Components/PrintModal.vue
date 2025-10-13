@@ -252,7 +252,7 @@ watch(() => props.visible, (newVal) => {
                             :disabled="printers.length === 0 && !isLoadingPrinters" />
 
                         <!-- INICIO: Entradas de Calibración -->
-                        <div class="mt-3 p-3 border rounded-md bg-gray-50 dark:bg-slate-800">
+                         <!--<div class="mt-3 p-3 border rounded-md bg-gray-50 dark:bg-slate-800">
                             <div class="flex items-center space-x-2">
                                 <p class="text-sm font-medium text-gray-800 dark:text-gray-200 m-0">
                                     Ajuste de desface para impresora de etiquetas (mm)</p>
@@ -276,7 +276,7 @@ watch(() => props.visible, (newVal) => {
                             </div>
                             <small class="text-gray-500 dark:text-gray-400 mt-2 block">Usa valores positivos para mover
                                 a la derecha/abajo y negativos para la izquierda/arriba.</small>
-                        </div>
+                        </div>-->
                         <!-- FIN: Entradas de Calibración -->
                     </div>
                 </div>
