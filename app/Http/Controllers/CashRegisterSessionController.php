@@ -6,6 +6,7 @@ use App\Enums\CashRegisterSessionStatus;
 use App\Enums\PaymentStatus;
 use App\Http\Requests\StoreCashRegisterSessionRequest;
 use App\Http\Requests\UpdateCashRegisterSessionRequest;
+use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
 use App\Models\Payment;
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -148,33 +151,55 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
      */
     public function store(StoreCashRegisterSessionRequest $request)
     {
-        $cashRegister = CashRegister::findOrFail($request->input('cash_register_id'));
-        $user = User::findOrFail($request->input('user_id'));
+        // Validar los datos de las cuentas bancarias además de los de la sesión
+        $validated = $request->validated();
+        $request->validate([
+            'bank_accounts' => 'nullable|array',
+            'bank_accounts.*.id' => [
+                'required',
+                Rule::exists('bank_accounts', 'id')->where(function ($query) {
+                    $query->where('subscription_id', Auth::user()->branch->subscription_id);
+                }),
+            ],
+            'bank_accounts.*.balance' => 'required|numeric|min:0',
+        ]);
 
-        // Esta validación sigue siendo correcta. No se puede abrir una caja ya en uso.
+        $cashRegister = CashRegister::findOrFail($validated['cash_register_id']);
+        $user = User::findOrFail($validated['user_id']);
+
         if ($cashRegister->in_use) {
             return redirect()->back()->with(['error' => 'Esta caja ya está en uso.']);
         }
 
-        // CORRECCIÓN: La validación ahora usa la nueva relación "muchos a muchos".
-        // Un usuario no puede abrir una nueva sesión si ya está participando en otra abierta.
         if ($user->cashRegisterSessions()->where('status', 'abierta')->exists()) {
             return redirect()->back()->with(['error' => 'Este usuario ya tiene una sesión activa en otra caja.']);
         }
 
-        DB::transaction(function () use ($request, $cashRegister, $user) {
-            // Se crea la sesión
+        DB::transaction(function () use ($request, $validated, $cashRegister, $user) {
+            // 1. Crear la sesión de caja
             $session = $cashRegister->sessions()->create([
                 'user_id' => $user->id, // Guardamos quién la abrió
-                'opening_cash_balance' => $request->input('opening_cash_balance'),
+                'opening_cash_balance' => $validated['opening_cash_balance'],
                 'status' => CashRegisterSessionStatus::OPEN,
                 'opened_at' => now(),
             ]);
 
-            // CORRECCIÓN: Se asocia el usuario a la sesión en la tabla pivote.
+            // 2. Asociar el usuario a la sesión en la tabla pivote
             $session->users()->attach($user->id);
 
+            // 3. Actualizar el estado de la caja
             $cashRegister->update(['in_use' => true]);
+
+            // 4. Actualizar los saldos de las cuentas bancarias
+            if ($request->has('bank_accounts')) {
+                foreach ($request->input('bank_accounts') as $accountData) {
+                    $bankAccount = BankAccount::find($accountData['id']);
+                    // La validación anterior ya confirmó que la cuenta pertenece a la suscripción
+                    if ($bankAccount) {
+                        $bankAccount->update(['balance' => $accountData['balance']]);
+                    }
+                }
+            }
         });
 
         return redirect()->back()->with('success', 'La caja ha sido abierta con éxito.');

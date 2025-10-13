@@ -6,7 +6,6 @@ import { useConfirm } from "primevue/useconfirm";
 import OpenCashRegisterModal from './Partials/OpenCashRegisterModal.vue';
 import CloseSessionModal from '@/Components/CloseSessionModal.vue';
 import AddCashMovementModal from './Partials/AddCashMovementModal.vue';
-// NUEVO: Importar el modal de historial
 import SessionHistoryModal from '@/Components/SessionHistoryModal.vue';
 import { usePermissions } from '@/Composables';
 
@@ -15,6 +14,7 @@ const props = defineProps({
     currentSession: Object,
     closedSessions: Object,
     branchUsers: Array,
+    branchBankAccounts: Array,
 });
 
 const page = usePage();
@@ -30,7 +30,6 @@ const breadcrumbItems = ref([
 const showOpenModal = ref(false);
 const showCloseModal = ref(false);
 const showAddMovementModal = ref(false);
-// NUEVO: Estado para el modal de historial
 const showHistoryModal = ref(false);
 
 const deleteRegister = () => {
@@ -51,14 +50,12 @@ const actionItems = ref([
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteRegister },
 ]);
 
-// NUEVO: Lógica para saber si el usuario actual está en la sesión
 const isCurrentUserInSession = computed(() => {
     if (!props.currentSession || !props.currentSession.users) return false;
     const currentUserId = page.props.auth.user.id;
     return props.currentSession.users.some(user => user.id === currentUserId);
 });
 
-// NUEVO: Lógica para calcular el balance actual
 const currentCashBalance = computed(() => {
     if (!props.currentSession) return 0;
     const openingBalance = parseFloat(props.currentSession.opening_cash_balance) || 0;
@@ -74,7 +71,6 @@ const currentCashBalance = computed(() => {
     return openingBalance + cashSales + inflows - outflows;
 });
 
-// NUEVO: Método para unirse a la sesión
 const joinSession = () => {
     router.post(route('cash-register-sessions.join', props.currentSession.id), {}, {
         preserveScroll: true,
@@ -115,7 +111,7 @@ const formatDate = (dateString) => {
 
                             <div class="mt-4 border-t pt-4">
                                 <h5 class="font-semibold text-left m-0">Usuarios en sesión</h5>
-                                <div v-if="currentSession.users && currentSession.users.length > 0" class="flex justify-center">
+                                <div v-if="currentSession.users && currentSession.users.length > 0" class="flex justify-center mt-2">
                                     <AvatarGroup>
                                         <Avatar v-for="user in currentSession.users" :key="user.id" :label="user.name.charAt(0).toUpperCase()" size="large" shape="circle" v-tooltip.bottom="user.name" />
                                     </AvatarGroup>
@@ -202,7 +198,7 @@ const formatDate = (dateString) => {
         </div>
 
         <!-- Modales -->
-        <OpenCashRegisterModal v-if="cashRegister" :visible="showOpenModal" :cash-register="cashRegister" :branch-users="branchUsers" @update:visible="showOpenModal = false" />
+        <OpenCashRegisterModal v-if="cashRegister" :visible="showOpenModal" :cash-register="cashRegister" :branch-users="branchUsers" :branch-bank-accounts="branchBankAccounts" @update:visible="showOpenModal = false" />
         <CloseSessionModal v-if="currentSession" :visible="showCloseModal" :session="currentSession" @update:visible="showCloseModal = false" />
         <AddCashMovementModal v-if="currentSession" :visible="showAddMovementModal" :session="currentSession" @update:visible="showAddMovementModal = false" />
         <SessionHistoryModal v-if="currentSession" :visible="showHistoryModal" :session="currentSession" @update:visible="showHistoryModal = false" />

@@ -13,7 +13,7 @@ import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import { v4 as uuidv4 } from 'uuid';
 
 const props = defineProps({
-    products: Object, // Ahora es un objeto de paginación
+    products: Object,
     categories: Array,
     customers: Array,
     defaultCustomer: Object,
@@ -23,6 +23,7 @@ const props = defineProps({
     availableCashRegisters: Array,
     availableTemplates: Array,
     joinableSessions: Array,
+    branchBankAccounts: Array,
 });
 
 const page = usePage();
@@ -33,6 +34,7 @@ const selectedClient = ref(null);
 
 // --- Lógica para Modales ---
 const isStartSessionModalVisible = ref(false);
+const isJoinSessionModalVisible = ref(false);
 const isCloseSessionModalVisible = ref(false);
 const isHistoryModalVisible = ref(false);
 const isPrintModalVisible = ref(false);
@@ -53,14 +55,12 @@ const addToCart = (data) => {
     const cartItemId = variant ? `prod-${product.id}-variant-${variant.id}` : `prod-${product.id}`;
     const existingItem = cartItems.value.find(item => item.cartItemId === cartItemId);
 
-    // Permitir agregar incluso si el stock es 0, pero advertir si se intenta aumentar la cantidad más allá del stock.
     const stock = variant ? variant.stock : product.stock;
 
     if (existingItem) {
         if (existingItem.quantity < stock) {
             existingItem.quantity++;
         } else {
-            // Si el stock es 0, permite agregarlo una vez, pero no más.
             if (stock > 0) {
                 toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
             } else {
@@ -108,13 +108,11 @@ const removeCartItem = (itemId) => {
 const clearCart = () => {
     cartItems.value = [];
     selectedClient.value = null;
-    // toast.add({ severity: 'info', summary: 'Carrito Limpio', detail: 'Se han eliminado todos los productos del carrito.', life: 3000 });
 };
 
 const localCustomers = ref([...props.customers]);
 const handleSelectCustomer = (customer) => selectedClient.value = customer;
 
-// CORRECCIÓN 2: Observar cambios en la prop de clientes para mantener la lista local actualizada.
 watch(() => props.customers, (newCustomers) => {
     localCustomers.value = [...newCustomers];
 });
@@ -220,8 +218,6 @@ const handleCheckout = (checkoutData) => {
         }
     });
 };
-
-const isJoinSessionModalVisible = ref(false);
 </script>
 
 <template>
@@ -288,15 +284,34 @@ const isJoinSessionModalVisible = ref(false);
         </template>
 
         <!-- Modales -->
-        <StartSessionModal :visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
-            @update:visible="isStartSessionModalVisible = $event" />
-        <JoinSessionModal :visible="isJoinSessionModalVisible" :sessions="joinableSessions"
-            @update:visible="isJoinSessionModalVisible = $event" />
-        <CloseSessionModal v-if="activeSession" :visible="isCloseSessionModalVisible" :session="activeSession"
-            @update:visible="isCloseSessionModalVisible = $event" />
-        <SessionHistoryModal v-if="activeSession" :visible="isHistoryModalVisible" :session="activeSession"
-            @update:visible="isHistoryModalVisible = $event" />
-        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
-            :available-templates="availableTemplates" />
+        <StartSessionModal 
+            :visible="isStartSessionModalVisible" 
+            :cash-registers="availableCashRegisters"
+            :branch-bank-accounts="branchBankAccounts"
+            @update:visible="isStartSessionModalVisible = $event" 
+        />
+        <JoinSessionModal 
+            :visible="isJoinSessionModalVisible" 
+            :sessions="joinableSessions"
+            @update:visible="isJoinSessionModalVisible = $event" 
+        />
+        <CloseSessionModal 
+            v-if="activeSession" 
+            :visible="isCloseSessionModalVisible" 
+            :session="activeSession"
+            @update:visible="isCloseSessionModalVisible = $event" 
+        />
+        <SessionHistoryModal 
+            v-if="activeSession" 
+            :visible="isHistoryModalVisible" 
+            :session="activeSession"
+            @update:visible="isHistoryModalVisible = $event" 
+        />
+        <PrintModal 
+            v-if="printDataSource" 
+            v-model:visible="isPrintModalVisible" 
+            :data-source="printDataSource"
+            :available-templates="availableTemplates" 
+        />
     </AppLayout>
 </template>

@@ -1,6 +1,9 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { useForm, router, usePage } from '@inertiajs/vue3';
+import Dialog from 'primevue/dialog';
+import Button from 'primevue/button';
+import Textarea from 'primevue/textarea';
 import InputNumber from 'primevue/inputnumber';
 import InputLabel from './InputLabel.vue';
 import InputError from './InputError.vue';
@@ -32,12 +35,29 @@ const form = useForm({
     notes: '',
 });
 
+// --- Payment Calculations ---
 const cashSales = computed(() => {
     if (!props.session?.payments) return 0;
     return (props.session.payments || [])
         .filter(p => p && p.payment_method === 'efectivo' && p.status === 'completado')
         .reduce((sum, p) => sum + parseFloat(p.amount), 0);
 });
+
+// AÑADIDO: Propiedades computadas para ventas con tarjeta y transferencia
+const cardSales = computed(() => {
+    if (!props.session?.payments) return 0;
+    return (props.session.payments || [])
+        .filter(p => p && p.payment_method === 'tarjeta' && p.status === 'completado')
+        .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+});
+
+const transferSales = computed(() => {
+    if (!props.session?.payments) return 0;
+    return (props.session.payments || [])
+        .filter(p => p && p.payment_method === 'transferencia' && p.status === 'completado')
+        .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+});
+
 
 const inflows = computed(() => (props.session?.cash_movements || []).filter(m => m.type === 'ingreso').reduce((sum, m) => sum + parseFloat(m.amount), 0));
 const outflows = computed(() => (props.session?.cash_movements || []).filter(m => m.type === 'egreso').reduce((sum, m) => sum + parseFloat(m.amount), 0));
@@ -54,19 +74,24 @@ const formatCurrency = (value) => {
 // --- ACTIONS ---
 const closeModal = () => {
     emit('update:visible', false);
-    form.reset();
-    view.value = 'initial'; // Reset view on close
+    // Se espera a que la transición del modal termine antes de resetear, para evitar parpadeos.
+    setTimeout(() => {
+        form.reset();
+        view.value = 'initial';
+    }, 300);
 };
 
 const leaveSession = () => {
     router.post(route('cash-register-sessions.leave', props.session.id), {}, {
         onSuccess: () => closeModal(),
+        preserveScroll: true,
     });
 };
 
 const submitFinalClose = () => {
     form.put(route('cash-register-sessions.update', props.session.id), {
         onSuccess: () => closeModal(),
+        preserveScroll: true,
     });
 };
 
@@ -86,16 +111,22 @@ const submitFinalClose = () => {
                     </p>
                 </div>
                 <div class="mt-6 space-y-3">
-                    <Button @click="view = 'confirmClose'" label="1. Realizar Corte de Caja" icon="pi pi-power-off" severity="danger" outlined class="w-full text-left p-button-lg" >
-                        <div class="ml-4 text-left">
-                            <span class="font-bold">Realizar Corte de Caja</span>
-                            <p class="font-normal text-sm whitespace-normal">Esto cerrará la sesión para TODOS y requerirá el conteo de efectivo.</p>
+                     <Button @click="view = 'confirmClose'" severity="danger" outlined class="w-full text-left p-button-lg" >
+                        <div class="flex items-center">
+                            <i class="pi pi-power-off text-xl"></i>
+                            <div class="ml-4 text-left">
+                                <span class="font-bold">Realizar Corte de Caja</span>
+                                <p class="font-normal text-sm whitespace-normal">Esto cerrará la sesión para TODOS y requerirá el conteo de efectivo.</p>
+                            </div>
                         </div>
                     </Button>
-                    <Button @click="leaveSession" label="2. Solo Salir de la Sesión" icon="pi pi-sign-out" severity="secondary" class="w-full text-left p-button-lg">
-                        <div class="ml-4 text-left">
-                            <span class="font-bold">Solo Salir de la Sesión</span>
-                            <p class="font-normal text-sm whitespace-normal">La caja seguirá abierta para los demás. Podrás unirte a otra caja.</p>
+                    <Button @click="leaveSession" severity="secondary" class="w-full text-left p-button-lg">
+                         <div class="flex items-center">
+                            <i class="pi pi-sign-out text-xl"></i>
+                            <div class="ml-4 text-left">
+                                <span class="font-bold">Solo Salir de la Sesión</span>
+                                <p class="font-normal text-sm whitespace-normal">La caja seguirá abierta para los demás. Podrás unirte a otra caja.</p>
+                            </div>
                         </div>
                     </Button>
                 </div>
@@ -104,31 +135,49 @@ const submitFinalClose = () => {
             <!-- VISTA 2: Confirmación antes del corte final -->
              <div v-if="!isLastUser && view === 'confirmClose'">
                  <div class="text-center p-4 bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 rounded">
-                    <i class="pi pi-exclamation-triangle !text-3xl text-red-500 mb-3"></i>
-                    <h3 class="text-lg font-bold">Confirmación de Cierre Total</h3>
-                    <p>Estás a punto de hacer el corte de caja. Esta acción <strong>expulsará a todos los demás usuarios</strong> de la sesión actual.
-                    </p>
-                </div>
-                <div class="flex justify-end gap-2 mt-6">
-                    <Button label="Regresar" icon="pi pi-arrow-left" @click="view = 'initial'" text />
-                    <Button label="Continuar con el Corte" @click="view = 'finalClose'" severity="danger" />
-                </div>
-            </div>
+                     <i class="pi pi-exclamation-triangle !text-3xl text-red-500 mb-3"></i>
+                     <h3 class="text-lg font-bold">Confirmación de Cierre Total</h3>
+                     <p>Estás a punto de hacer el corte de caja. Esta acción <strong>expulsará a todos los demás usuarios</strong> de la sesión actual.
+                     </p>
+                 </div>
+                 <div class="flex justify-end gap-2 mt-6">
+                     <Button label="Regresar" icon="pi pi-arrow-left" @click="view = 'initial'" text />
+                     <Button label="Continuar con el Corte" @click="view = 'finalClose'" severity="danger" />
+                 </div>
+             </div>
 
             <!-- VISTA 3: El Corte de Caja Final (para el último usuario o después de confirmar) -->
             <div v-if="isLastUser || view === 'finalClose'">
-                <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg mb-4">
-                    <h3 class="font-bold text-lg mb-2 text-center">Resumen de Efectivo</h3>
-                    <div class="space-y-2 text-sm">
-                        <div class="flex justify-between"><span>Fondo Inicial:</span> <span class="font-semibold">{{ formatCurrency(session.opening_cash_balance) }}</span></div>
-                        <div class="flex justify-between"><span>(+) Ventas en Efectivo:</span> <span class="font-semibold text-green-600">+ {{ formatCurrency(cashSales) }}</span></div>
-                        <div class="flex justify-between"><span>(+) Entradas:</span> <span class="font-semibold text-green-600">+ {{ formatCurrency(inflows) }}</span></div>
-                        <div class="flex justify-between"><span>(-) Salidas:</span> <span class="font-semibold text-red-500">- {{ formatCurrency(outflows) }}</span></div>
-                        <div class="flex justify-between font-bold border-t pt-2 mt-2"><span>Total Esperado:</span> <span>{{ formatCurrency(expectedCashTotal) }}</span></div>
+                <div class="space-y-4">
+                    <!-- Resumen de Efectivo -->
+                    <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                        <h3 class="font-bold text-lg mb-2 text-center">Resumen de Efectivo</h3>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between"><span>Fondo Inicial:</span> <span class="font-semibold">{{ formatCurrency(session.opening_cash_balance) }}</span></div>
+                            <div class="flex justify-between"><span>(+) Ventas en Efectivo:</span> <span class="font-semibold text-green-600">+ {{ formatCurrency(cashSales) }}</span></div>
+                            <div class="flex justify-between"><span>(+) Entradas:</span> <span class="font-semibold text-green-600">+ {{ formatCurrency(inflows) }}</span></div>
+                            <div class="flex justify-between"><span>(-) Salidas:</span> <span class="font-semibold text-red-500">- {{ formatCurrency(outflows) }}</span></div>
+                            <div class="flex justify-between font-bold border-t pt-2 mt-2"><span>Total Esperado:</span> <span>{{ formatCurrency(expectedCashTotal) }}</span></div>
+                        </div>
+                    </div>
+                    
+                    <!-- AÑADIDO: Resumen de otros métodos de pago -->
+                    <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                        <h5 class="font-semibold text-center text-md mb-2">Otros métodos de pago (informativo)</h5>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between">
+                                <span><i class="pi pi-credit-card mr-2 text-blue-500"></i>Ventas con tarjeta:</span> 
+                                <span class="font-semibold">{{ formatCurrency(cardSales) }}</span>
+                            </div>
+                             <div class="flex justify-between">
+                                <span><i class="pi pi-arrows-h mr-2 text-orange-500"></i>Ventas por transferencia:</span> 
+                                <span class="font-semibold">{{ formatCurrency(transferSales) }}</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <form @submit.prevent="submitFinalClose" class="space-y-4">
+                <form @submit.prevent="submitFinalClose" class="space-y-4 mt-6">
                     <div>
                         <InputLabel for="closing-balance" value="Monto Final en Caja (Conteo Físico) *" />
                         <InputNumber id="closing-balance" v-model="form.closing_cash_balance" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" inputClass="w-full" />
@@ -144,7 +193,7 @@ const submitFinalClose = () => {
                     </div>
                      <div class="flex justify-end gap-2 mt-4">
                          <Button v-if="!isLastUser" type="button" label="Regresar" severity="secondary" @click="view = 'confirmClose'" text></Button>
-                         <Button type="submit" label="Confirmar Cierre" :loading="form.processing" severity="danger"></Button>
+                         <Button type="submit" label="Confirmar cierre" :loading="form.processing" severity="danger"></Button>
                      </div>
                 </form>
             </div>
@@ -154,4 +203,3 @@ const submitFinalClose = () => {
          </template>
     </Dialog>
 </template>
-

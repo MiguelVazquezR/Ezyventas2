@@ -6,7 +6,6 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import PosLeftPanel from './Partials/PosLeftPanel.vue';
 import ShoppingCart from './Partials/ShoppingCart.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
-// --- NUEVO: Importar el modal para unirse a sesiones ---
 import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import CloseSessionModal from '@/Components/CloseSessionModal.vue';
 import SessionHistoryModal from '@/Components/SessionHistoryModal.vue';
@@ -23,8 +22,8 @@ const props = defineProps({
     activeSession: Object,
     availableCashRegisters: Array,
     availableTemplates: Array,
-    // --- NUEVO: Recibir las sesiones a las que se puede unir ---
     joinableSessions: Array,
+    branchBankAccounts: Array,
 });
 
 const page = usePage();
@@ -324,6 +323,7 @@ const handleCheckout = (checkoutData) => {
         <StartSessionModal 
             :visible="isStartSessionModalVisible" 
             :cash-registers="availableCashRegisters"
+            :branch-bank-accounts="branchBankAccounts"
             @update:visible="isStartSessionModalVisible = $event" 
         />
         <!-- --- NUEVO: Instancia del nuevo modal --- -->

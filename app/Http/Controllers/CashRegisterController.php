@@ -101,12 +101,10 @@ class CashRegisterController extends Controller implements HasMiddleware
         return redirect()->route('cash-registers.index')->with('success', 'Caja registradora actualizada con éxito.');
     }
 
-    public function show(CashRegister $cashRegister): Response
+   public function show(CashRegister $cashRegister): Response
     {
         $branch = $cashRegister->branch;
 
-        // CORRECCIÓN: Se añade la relación 'transactions.customer'
-        // para que el modal de historial funcione correctamente.
         $currentSession = $cashRegister->sessions()
             ->where('status', 'abierta')
             ->with([
@@ -115,7 +113,7 @@ class CashRegisterController extends Controller implements HasMiddleware
                 'cashMovements.user:id,name',
                 'payments',
                 'transactions.user:id,name',
-                'transactions.customer:id,name' // <-- RELACIÓN AÑADIDA
+                'transactions.customer:id,name'
             ])
             ->first();
 
@@ -137,11 +135,15 @@ class CashRegisterController extends Controller implements HasMiddleware
             return $branchUser;
         });
 
+        // Obtener las cuentas bancarias de la sucursal.
+        $branchBankAccounts = $branch->bankAccounts()->get();
+
         return Inertia::render('FinancialControl/CashRegister/Show', [
             'cashRegister' => $cashRegister->load('branch'),
             'currentSession' => $currentSession,
             'closedSessions' => $closedSessions,
             'branchUsers' => $branchUsers,
+            'branchBankAccounts' => $branchBankAccounts, // Se pasan a la vista
         ]);
     }
 

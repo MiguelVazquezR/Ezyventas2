@@ -144,7 +144,7 @@ const safeCashMovements = computed(() => props.session?.cash_movements || []);
                     </template>
                 </Card>
                 <Card>
-                    <template #title>Transacciones de la Sesión</template>
+                    <template #title>Ventas de la Sesión</template>
                     <template #content>
                         <div class="max-h-[350px] overflow-y-auto">
                              <DataTable 
@@ -155,7 +155,7 @@ const safeCashMovements = computed(() => props.session?.cash_movements || []);
                                 :sortField="sort.field"
                                 :sortOrder="sort.order"
                              >
-                                 <template #empty><div class="text-center py-4">No hay transacciones en esta sesión.</div></template>
+                                 <template #empty><div class="text-center py-4">No hay ventas en esta sesión.</div></template>
                                  <Column field="folio" header="Folio" sortable></Column>
                                  <Column field="created_at" header="Hora" sortable>
                                      <template #body="{ data }">{{ formatTime(data.created_at) }}</template>

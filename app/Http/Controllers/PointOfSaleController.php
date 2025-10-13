@@ -49,16 +49,16 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
         $activeSession = $user->cashRegisterSessions()
             ->where('status', CashRegisterSessionStatus::OPEN)
-            ->whereHas('cashRegister', fn ($q) => $q->where('branch_id', $branchId))
+            ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $branchId))
             ->with([
                 'cashRegister:id,name',
                 'users:id,name',
                 'opener:id,name', // <-- CORRECCIÓN 1: Cargar quien abrió la sesión.
-                'transactions' => fn ($q) => $q->with([
+                'transactions' => fn($q) => $q->with([
                     'customer:id,name',
                     'user:id,name' // <-- CORRECCIÓN 2: Cargar el usuario de CADA transacción.
                 ])->latest(),
-                'cashMovements' => fn ($q) => $q->with([
+                'cashMovements' => fn($q) => $q->with([
                     'user:id,name' // <-- CORRECCIÓN 3: Cargar el usuario de CADA movimiento de efectivo.
                 ])->latest(),
                 'payments'
@@ -68,21 +68,24 @@ class PointOfSaleController extends Controller implements HasMiddleware
         $joinableSessions = null;
         $availableCashRegisters = null;
 
+        $branchBankAccounts = null;
         if (!$activeSession) {
             $joinableSessions = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
-                ->whereHas('cashRegister', fn ($q) => $q->where('branch_id', $branchId))
+                ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $branchId))
                 ->with('cashRegister:id,name', 'opener:id,name')
                 ->get();
-            
+
             if ($joinableSessions->isEmpty()) {
                 $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
                     ->where('is_active', true)->where('in_use', false)
                     ->select('id', 'name')->get();
             }
+            // --- Obtener las cuentas bancarias de la sucursal actual ---
+            $branchBankAccounts = Auth::user()->branch->bankAccounts()->get();
         }
-        
+
         if ($activeSession) {
-             $paymentTotals = $activeSession->payments
+            $paymentTotals = $activeSession->payments
                 ->where('status', 'completado')
                 ->groupBy('payment_method.value')
                 ->map->sum('amount');
@@ -99,9 +102,9 @@ class PointOfSaleController extends Controller implements HasMiddleware
         $search = $request->input('search');
         $categoryId = $request->input('category');
         $availableTemplates = $user->branch->printTemplates()
-             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
-             ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
-             ->get();
+            ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
+            ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
+            ->get();
 
         $props = [
             'products' => $this->getProductsData($search, $categoryId),
@@ -114,6 +117,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'joinableSessions' => $joinableSessions,
             'availableCashRegisters' => $availableCashRegisters,
             'availableTemplates' => $availableTemplates,
+            'branchBankAccounts' => $branchBankAccounts,
         ];
 
         $agent = new Agent();
@@ -198,7 +202,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 if ($customer && $customer->balance > 0) {
                     $balanceToUse = min($totalSale, (float) $customer->balance);
                     if ($balanceToUse > 0) {
-                        
+
                         $balancePaymentData = [[
                             'amount' => $balanceToUse,
                             'method' => PaymentMethod::BALANCE->value,
@@ -246,7 +250,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         'balance_after' => $customer->balance,
                         'notes' => "Cargo a crédito por venta POS #{$newTransaction->folio}",
                     ]);
-                    
                 } else { // VENTA PAGADA POR COMPLETO
                     $newTransaction->update(['status' => TransactionStatus::COMPLETED]);
                 }
@@ -453,15 +456,15 @@ class PointOfSaleController extends Controller implements HasMiddleware
         return ['id' => null, 'name' => 'Público en General', 'phone' => '', 'balance' => 0.0, 'credit_limit' => 0.0, 'available_credit' => 0.0];
     }
 
-   private function generateFolio(): string
+    private function generateFolio(): string
     {
         // Obtener la suscripción del usuario actual
         $subscriptionId = Auth::user()->branch->subscription_id;
 
         // Buscar la última transacción para esta suscripción que siga el formato V-
         $lastTransaction = Transaction::whereHas('branch', function ($query) use ($subscriptionId) {
-                $query->where('subscription_id', $subscriptionId);
-            })
+            $query->where('subscription_id', $subscriptionId);
+        })
             ->where('folio', 'LIKE', 'V-%')
             ->orderBy('id', 'desc') // Ordenar por ID para obtener la más reciente de forma fiable
             ->first();
