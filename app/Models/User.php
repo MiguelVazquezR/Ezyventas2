@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -117,11 +118,11 @@ class User extends Authenticatable
     }
 
     /**
-     * Obtiene todas las sesiones de caja asociadas a este usuario.
+     * CORRECCIÓN: Obtiene todas las sesiones de caja en las que este usuario ha participado.
      */
-    public function cashRegisterSessions(): HasMany
+    public function cashRegisterSessions(): BelongsToMany
     {
-        return $this->hasMany(CashRegisterSession::class);
+        return $this->belongsToMany(CashRegisterSession::class, 'cash_register_session_user');
     }
 
     /**

@@ -10,7 +10,6 @@ const props = defineProps({
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
-    { label: 'Control Financiero', url: route('financial-control.index') },
     { label: 'Historial de Cortes de Caja' }
 ]);
 
@@ -33,7 +32,7 @@ const fetchData = (options = {}) => {
         page: options.page || 1,
         rows: options.rows || props.sessions.per_page,
         sortField: options.sortField || props.filters.sortField,
-        sortOrder: options.sortOrder === 1 ? 'asc' : 'desc',
+        sortOrder: options.sortOrder === 1 ? 'asc' : (options.sortOrder === -1 ? 'desc' : props.filters.sortOrder),
         search: searchTerm.value,
     };
     router.get(route('cash-register-sessions.index'), queryParams, { preserveState: true, replace: true });
@@ -58,8 +57,8 @@ const formatDate = (dateString) => {
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
                 <!-- Header -->
                 <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-                     <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Historial de Cortes de Caja</h1>
-                     <IconField iconPosition="left" class="w-full md:w-1/3">
+                    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Historial de Cortes de Caja</h1>
+                    <IconField iconPosition="left" class="w-full md:w-1/3">
                         <InputIcon class="pi pi-search"></InputIcon>
                         <InputText v-model="searchTerm" placeholder="Buscar por cajero o caja..." class="w-full" />
                     </IconField>
@@ -80,7 +79,8 @@ const formatDate = (dateString) => {
                     <Column field="closed_at" header="Fecha de Cierre" sortable>
                         <template #body="{ data }"> {{ formatDate(data.closed_at) }} </template>
                     </Column>
-                    <Column field="user.name" header="Cajero" sortable></Column>
+                    <!-- CORRECCIÓN: Se cambió 'user.name' por 'opener.name' y se ajustó el header -->
+                    <Column field="opener.name" header="Abrió Sesión" sortable></Column>
                     <Column field="opening_cash_balance" header="Fondo Inicial" sortable>
                         <template #body="{ data }"> {{ formatCurrency(data.opening_cash_balance) }} </template>
                     </Column>

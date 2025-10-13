@@ -46,32 +46,45 @@ class PointOfSaleController extends Controller implements HasMiddleware
     {
         $user = Auth::user();
         $branchId = $user->branch_id;
-        $search = $request->input('search');
-        $categoryId = $request->input('category');
 
-        // CORRECCIÓN #1: Añadir 'payments' a la carga de relaciones.
-        // Esta es la única fuente de verdad para los pagos de la sesión.
-        $activeSession = CashRegisterSession::where('user_id', $user->id)
+        $activeSession = $user->cashRegisterSessions()
             ->where('status', CashRegisterSessionStatus::OPEN)
-            ->whereHas('cashRegister', function ($query) use ($branchId) {
-                $query->where('branch_id', $branchId);
-            })
+            ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $branchId))
             ->with([
                 'cashRegister:id,name',
-                'user:id,name',
-                'transactions' => function ($query) {
-                    $query->with(['customer:id,name'])->latest();
-                },
-                'cashMovements' => function ($query) {
-                    $query->latest();
-                },
-                'payments' // <- AÑADIDO
+                'users:id,name',
+                'opener:id,name', // <-- CORRECCIÓN 1: Cargar quien abrió la sesión.
+                'transactions' => fn($q) => $q->with([
+                    'customer:id,name',
+                    'user:id,name' // <-- CORRECCIÓN 2: Cargar el usuario de CADA transacción.
+                ])->latest(),
+                'cashMovements' => fn($q) => $q->with([
+                    'user:id,name' // <-- CORRECCIÓN 3: Cargar el usuario de CADA movimiento de efectivo.
+                ])->latest(),
+                'payments'
             ])
             ->first();
 
+        $joinableSessions = null;
+        $availableCashRegisters = null;
+
+        $branchBankAccounts = null;
+        if (!$activeSession) {
+            $joinableSessions = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
+                ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $branchId))
+                ->with('cashRegister:id,name', 'opener:id,name')
+                ->get();
+
+            if ($joinableSessions->isEmpty()) {
+                $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
+                    ->where('is_active', true)->where('in_use', false)
+                    ->select('id', 'name')->get();
+            }
+            // --- Obtener las cuentas bancarias de la sucursal actual ---
+            $branchBankAccounts = Auth::user()->branch->bankAccounts()->get();
+        }
+
         if ($activeSession) {
-            // CORRECCIÓN #2: Calcular los totales usando la relación directa 'payments'.
-            // Esto asegura que se incluyan todos los pagos de la sesión, sin importar la fecha de la transacción.
             $paymentTotals = $activeSession->payments
                 ->where('status', 'completado')
                 ->groupBy('payment_method.value')
@@ -85,13 +98,9 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ];
         }
 
-        $availableCashRegisters = null;
-        if (!$activeSession) {
-            $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
-                ->where('is_active', true)->where('in_use', false)
-                ->select('id', 'name')->get();
-        }
-
+        // ... (El resto del método se mantiene igual)
+        $search = $request->input('search');
+        $categoryId = $request->input('category');
         $availableTemplates = $user->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
             ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
@@ -105,8 +114,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'filters' => $request->only(['search', 'category']),
             'activePromotions' => $this->getActivePromotions(),
             'activeSession' => $activeSession,
+            'joinableSessions' => $joinableSessions,
             'availableCashRegisters' => $availableCashRegisters,
             'availableTemplates' => $availableTemplates,
+            'branchBankAccounts' => $branchBankAccounts,
         ];
 
         $agent = new Agent();
@@ -191,7 +202,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 if ($customer && $customer->balance > 0) {
                     $balanceToUse = min($totalSale, (float) $customer->balance);
                     if ($balanceToUse > 0) {
-                        
+
                         $balancePaymentData = [[
                             'amount' => $balanceToUse,
                             'method' => PaymentMethod::BALANCE->value,
@@ -239,7 +250,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         'balance_after' => $customer->balance,
                         'notes' => "Cargo a crédito por venta POS #{$newTransaction->folio}",
                     ]);
-                    
                 } else { // VENTA PAGADA POR COMPLETO
                     $newTransaction->update(['status' => TransactionStatus::COMPLETED]);
                 }
@@ -446,15 +456,15 @@ class PointOfSaleController extends Controller implements HasMiddleware
         return ['id' => null, 'name' => 'Público en General', 'phone' => '', 'balance' => 0.0, 'credit_limit' => 0.0, 'available_credit' => 0.0];
     }
 
-   private function generateFolio(): string
+    private function generateFolio(): string
     {
         // Obtener la suscripción del usuario actual
         $subscriptionId = Auth::user()->branch->subscription_id;
 
         // Buscar la última transacción para esta suscripción que siga el formato V-
         $lastTransaction = Transaction::whereHas('branch', function ($query) use ($subscriptionId) {
-                $query->where('subscription_id', $subscriptionId);
-            })
+            $query->where('subscription_id', $subscriptionId);
+        })
             ->where('folio', 'LIKE', 'V-%')
             ->orderBy('id', 'desc') // Ordenar por ID para obtener la más reciente de forma fiable
             ->first();

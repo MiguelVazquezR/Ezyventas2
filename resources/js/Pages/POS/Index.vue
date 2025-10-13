@@ -9,10 +9,11 @@ import StartSessionModal from '@/Components/StartSessionModal.vue';
 import CloseSessionModal from '@/Components/CloseSessionModal.vue';
 import SessionHistoryModal from '@/Components/SessionHistoryModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
+import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import { v4 as uuidv4 } from 'uuid';
 
 const props = defineProps({
-    products: Object, // Ahora es un objeto de paginación
+    products: Object,
     categories: Array,
     customers: Array,
     defaultCustomer: Object,
@@ -21,6 +22,8 @@ const props = defineProps({
     activeSession: Object,
     availableCashRegisters: Array,
     availableTemplates: Array,
+    joinableSessions: Array,
+    branchBankAccounts: Array,
 });
 
 const page = usePage();
@@ -31,6 +34,7 @@ const selectedClient = ref(null);
 
 // --- Lógica para Modales ---
 const isStartSessionModalVisible = ref(false);
+const isJoinSessionModalVisible = ref(false);
 const isCloseSessionModalVisible = ref(false);
 const isHistoryModalVisible = ref(false);
 const isPrintModalVisible = ref(false);
@@ -51,14 +55,12 @@ const addToCart = (data) => {
     const cartItemId = variant ? `prod-${product.id}-variant-${variant.id}` : `prod-${product.id}`;
     const existingItem = cartItems.value.find(item => item.cartItemId === cartItemId);
 
-    // Permitir agregar incluso si el stock es 0, pero advertir si se intenta aumentar la cantidad más allá del stock.
     const stock = variant ? variant.stock : product.stock;
 
     if (existingItem) {
         if (existingItem.quantity < stock) {
             existingItem.quantity++;
         } else {
-            // Si el stock es 0, permite agregarlo una vez, pero no más.
             if (stock > 0) {
                 toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
             } else {
@@ -106,13 +108,11 @@ const removeCartItem = (itemId) => {
 const clearCart = () => {
     cartItems.value = [];
     selectedClient.value = null;
-    // toast.add({ severity: 'info', summary: 'Carrito Limpio', detail: 'Se han eliminado todos los productos del carrito.', life: 3000 });
 };
 
 const localCustomers = ref([...props.customers]);
 const handleSelectCustomer = (customer) => selectedClient.value = customer;
 
-// CORRECCIÓN 2: Observar cambios en la prop de clientes para mantener la lista local actualizada.
 watch(() => props.customers, (newCustomers) => {
     localCustomers.value = [...newCustomers];
 });
@@ -224,6 +224,7 @@ const handleCheckout = (checkoutData) => {
 
     <Head title="Punto de Venta" />
     <AppLayout>
+        <!-- Vista principal del POS (cuando la sesión está activa) -->
         <template v-if="activeSession">
             <div class="flex flex-col lg:flex-row gap-4 h-[calc(86vh)]">
                 <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden">
@@ -245,31 +246,72 @@ const handleCheckout = (checkoutData) => {
                 </div>
             </div>
         </template>
+
+        <!-- Pantalla de "Lobby" cuando no hay sesión activa -->
         <template v-else>
             <div class="flex items-center justify-center h-[calc(100vh-150px)] dark:bg-gray-900 rounded-lg">
                 <div class="text-center p-8">
                     <div
-                        class="bg-red-100 dark:bg-red-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
-                        <i class="pi pi-lock !text-4xl text-red-500"></i>
+                        class="bg-sky-100 dark:bg-sky-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
+                        <i class="pi pi-inbox !text-4xl text-sky-500"></i>
                     </div>
-                    <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Punto de Venta Bloqueado</h2>
+                    <!-- Mensaje cambia dependiendo de si hay sesiones para unirse o para crear -->
+                    <h2 v-if="joinableSessions && joinableSessions.length > 0"
+                        class="text-2xl font-bold text-gray-800 dark:text-gray-200">
+                        Sesiones de Caja Activas
+                    </h2>
+                    <h2 v-else class="text-2xl font-bold text-gray-800 dark:text-gray-200">
+                        Punto de Venta Bloqueado
+                    </h2>
+
                     <p class="text-gray-600 dark:text-gray-400 mt-2 max-w-md">
-                        Necesitas tener una sesión de caja activa para poder registrar ventas.
+                        <span v-if="joinableSessions && joinableSessions.length > 0">
+                            Hay cajas abiertas por otros usuarios. Únete a una sesión para empezar a vender.
+                        </span>
+                        <span v-else>
+                            Necesitas abrir una nueva sesión de caja para poder registrar ventas.
+                        </span>
                     </p>
-                    <Button @click="isStartSessionModalVisible = true" label="Activar caja" icon="pi pi-inbox"
+
+                    <!-- Botones cambian según el contexto -->
+                    <Button v-if="joinableSessions && joinableSessions.length > 0"
+                        @click="isJoinSessionModalVisible = true" label="Unirse a una sesión" icon="pi pi-users"
                         class="mt-6" />
+                    <Button v-else @click="isStartSessionModalVisible = true" label="Abrir una Caja"
+                        icon="pi pi-lock-open" class="mt-6" />
                 </div>
             </div>
         </template>
 
-        <StartSessionModal :visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
-            @update:visible="isStartSessionModalVisible = $event" />
-        <CloseSessionModal :visible="isCloseSessionModalVisible" :session="activeSession"
-            @update:visible="isCloseSessionModalVisible = $event" />
-        <SessionHistoryModal :visible="isHistoryModalVisible" :session="activeSession"
-            @update:visible="isHistoryModalVisible = $event" />
-
-        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
-            :available-templates="availableTemplates" />
+        <!-- Modales -->
+        <StartSessionModal 
+            :visible="isStartSessionModalVisible" 
+            :cash-registers="availableCashRegisters"
+            :branch-bank-accounts="branchBankAccounts"
+            @update:visible="isStartSessionModalVisible = $event" 
+        />
+        <JoinSessionModal 
+            :visible="isJoinSessionModalVisible" 
+            :sessions="joinableSessions"
+            @update:visible="isJoinSessionModalVisible = $event" 
+        />
+        <CloseSessionModal 
+            v-if="activeSession" 
+            :visible="isCloseSessionModalVisible" 
+            :session="activeSession"
+            @update:visible="isCloseSessionModalVisible = $event" 
+        />
+        <SessionHistoryModal 
+            v-if="activeSession" 
+            :visible="isHistoryModalVisible" 
+            :session="activeSession"
+            @update:visible="isHistoryModalVisible = $event" 
+        />
+        <PrintModal 
+            v-if="printDataSource" 
+            v-model:visible="isPrintModalVisible" 
+            :data-source="printDataSource"
+            :available-templates="availableTemplates" 
+        />
     </AppLayout>
 </template>

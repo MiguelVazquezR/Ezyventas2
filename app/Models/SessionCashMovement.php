@@ -14,7 +14,10 @@ class SessionCashMovement extends Model
 
     protected $table = 'session_cash_movements';
 
-    protected $fillable = ['cash_register_session_id', 'type', 'amount', 'description', 'created_at', 'updated_at'];
+    /**
+     * CORRECCIÓN: Se añade 'user_id' para poder asociar el movimiento a un usuario.
+     */
+    protected $fillable = ['cash_register_session_id', 'user_id', 'type', 'amount', 'description', 'created_at', 'updated_at'];
 
     protected $casts = [
         'type' => SessionCashMovementType::class,
@@ -24,6 +27,14 @@ class SessionCashMovement extends Model
     public function cashRegisterSession(): BelongsTo
     {
         return $this->belongsTo(CashRegisterSession::class);
+    }
+
+    /**
+     * CORRECCIÓN: Se añade la relación para obtener el usuario que registró el movimiento.
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     public function expense(): HasOne

@@ -14,35 +14,28 @@ const breadcrumbItems = ref([
     { label: `Detalle de Corte #${props.session.id}` }
 ]);
 
-// --- CORRECCIÓN: Se añade una guarda para evitar errores si las transacciones no existen ---
 const totalInflows = computed(() => {
-    if (!props.session || !Array.isArray(props.session.cash_movements)) {
-        return 0;
-    }
+    if (!props.session?.cash_movements) return 0;
     return props.session.cash_movements
         .filter(m => m.type === 'ingreso')
         .reduce((sum, m) => sum + parseFloat(m.amount), 0);
 });
 
-// --- CORRECCIÓN: Se añade una guarda para evitar errores si las transacciones no existen ---
 const totalOutflows = computed(() => {
-    if (!props.session || !Array.isArray(props.session.cash_movements)) {
-        return 0;
-    }
+    if (!props.session?.cash_movements) return 0;
     return props.session.cash_movements
         .filter(m => m.type === 'egreso')
         .reduce((sum, m) => sum + parseFloat(m.amount), 0);
 });
-
 
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 const formatDate = (dateString) => new Date(dateString).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
 const formatTime = (dateString) => new Date(dateString).toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit' });
 
 const paymentMethodIcons = {
-    efectivo: { icon: 'pi pi-money-bill', color: 'text-[#37672B]' },
-    tarjeta: { icon: 'pi pi-credit-card', color: 'text-[#063C53]' },
-    transferencia: { icon: 'pi pi-arrows-h', color: 'text-[#D2D880]' },
+    efectivo: { icon: 'pi pi-money-bill', color: 'text-green-600' },
+    tarjeta: { icon: 'pi pi-credit-card', color: 'text-blue-600' },
+    transferencia: { icon: 'pi pi-arrows-h', color: 'text-orange-500' },
     saldo: { icon: 'pi pi-wallet', color: 'text-purple-500' },
 };
 
@@ -50,63 +43,49 @@ const printReport = () => {
     window.open(route('cash-register-sessions.print', props.session.id), '_blank');
 };
 
-// --- Lógica de Ordenamiento ---
-const sort = ref({
-    field: 'created_at', // Campo inicial de ordenamiento
-    order: -1, // Orden inicial (1 para asc, -1 para desc)
-});
+const getPaymentsForTransaction = (transactionId) => {
+    return (props.session.payments || []).filter(p => p.transaction_id === transactionId);
+};
 
+// Lógica de Ordenamiento
+const sort = ref({
+    field: 'created_at',
+    order: -1,
+});
 const onSort = (event) => {
     sort.value.field = event.sortField;
     sort.value.order = event.sortOrder;
 };
 
-// --- CORRECCIÓN: Se añade una guarda para evitar errores si las transacciones no existen ---
 const sortedTransactions = computed(() => {
-    if (!props.session || !Array.isArray(props.session.transactions)) {
-        return []; // Devuelve un array vacío si no hay transacciones
-    }
+    if (!props.session?.transactions) return [];
 
-    const transactions = [...props.session.transactions];
-    transactions.sort((a, b) => {
+    return [...props.session.transactions].sort((a, b) => {
         let valA, valB;
-        
-        // Asignar valores para la comparación
-        if (sort.value.field === 'created_at') {
+        const field = sort.value.field;
+
+        if (field === 'created_at') {
             valA = new Date(a.created_at);
             valB = new Date(b.created_at);
-        } else if (sort.value.field === 'total') {
+        } else if (field === 'total') {
             valA = parseFloat(a.total);
             valB = parseFloat(b.total);
-        } else if (sort.value.field === 'payments') {
-            // Para ordenar por método de pago, se crea una cadena ordenada de los métodos.
-            valA = a.payments.map(p => p.payment_method).sort().join(', ');
-            valB = b.payments.map(p => p.payment_method).sort().join(', ');
+        } else if (field === 'payments') {
+            valA = getPaymentsForTransaction(a.id).map(p => p.payment_method).sort().join(', ');
+            valB = getPaymentsForTransaction(b.id).map(p => p.payment_method).sort().join(', ');
         } else {
-            valA = a[sort.value.field];
-            valB = b[sort.value.field];
+            // Acceso anidado seguro, por ejemplo 'user.name'
+            valA = field.split('.').reduce((o, i) => o?.[i], a);
+            valB = field.split('.').reduce((o, i) => o?.[i], b);
         }
 
-        // Comparación
-        if (valA < valB) {
-            return -1 * sort.value.order;
-        }
-        if (valA > valB) {
-            return 1 * sort.value.order;
-        }
+        if (valA < valB) return -1 * sort.value.order;
+        if (valA > valB) return 1 * sort.value.order;
         return 0;
     });
-    return transactions;
 });
 
-// --- CORRECCIÓN: Se crea una propiedad computada segura para los movimientos de caja ---
-const safeCashMovements = computed(() => {
-    if (!props.session || !Array.isArray(props.session.cash_movements)) {
-        return [];
-    }
-    return props.session.cash_movements;
-});
-
+const safeCashMovements = computed(() => props.session?.cash_movements || []);
 </script>
 
 <template>
@@ -118,7 +97,18 @@ const safeCashMovements = computed(() => {
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <div>
                 <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Detalle de corte de caja #{{ session.id }}</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Realizado por: {{ session.user.name }} en la caja "{{ session.cash_register.name }}"</p>
+                <!-- CORRECCIÓN: Se usa 'opener.name' y se muestra la lista de participantes -->
+                <div class="flex items-center gap-4 mt-1">
+                    <p class="text-gray-500 dark:text-gray-400 m-0">
+                        Abierto por: <span class="font-semibold">{{ session.opener.name }}</span> en la caja "{{ session.cash_register.name }}"
+                    </p>
+                    <div class="flex items-center gap-2">
+                        <span class="text-gray-500 dark:text-gray-400">Participantes:</span>
+                        <AvatarGroup>
+                            <Avatar v-for="user in session.users" :key="user.id" :label="user.name.charAt(0).toUpperCase()" v-tooltip.bottom="user.name" shape="circle" />
+                        </AvatarGroup>
+                    </div>
+                </div>
             </div>
             <Button 
                 label="Imprimir reporte" 
@@ -126,6 +116,7 @@ const safeCashMovements = computed(() => {
                 severity="secondary" 
                 outlined 
                 @click="printReport"
+                class="mt-4 sm:mt-0"
             />
         </div>
 
@@ -153,7 +144,7 @@ const safeCashMovements = computed(() => {
                     </template>
                 </Card>
                 <Card>
-                    <template #title>Transacciones de la Sesión</template>
+                    <template #title>Ventas de la Sesión</template>
                     <template #content>
                         <div class="max-h-[350px] overflow-y-auto">
                              <DataTable 
@@ -164,24 +155,26 @@ const safeCashMovements = computed(() => {
                                 :sortField="sort.field"
                                 :sortOrder="sort.order"
                              >
-                                 <template #empty><div class="text-center py-4">No hay transacciones en esta sesión.</div></template>
+                                 <template #empty><div class="text-center py-4">No hay ventas en esta sesión.</div></template>
                                  <Column field="folio" header="Folio" sortable></Column>
                                  <Column field="created_at" header="Hora" sortable>
-                                    <template #body="{ data }">{{ formatTime(data.created_at) }}</template>
+                                     <template #body="{ data }">{{ formatTime(data.created_at) }}</template>
                                  </Column>
-                                 <Column field="channel" header="Canal" class="capitalize" sortable></Column>
+                                 <!-- MEJORA: Se muestra el nombre del usuario de la transacción -->
+                                 <Column field="user.name" header="Cajero" sortable></Column>
                                  <Column field="total" header="Monto" sortable>
                                       <template #body="{data}">{{ formatCurrency(data.total) }}</template>
                                  </Column>
                                  <Column header="Métodos de Pago" sortable sortField="payments">
-                                       <template #body="{ data }">
-                                            <div class="flex flex-col gap-1">
-                                                <div v-for="payment in data.payments" :key="payment.id" class="flex items-center gap-2">
-                                                    <i class="pi" :class="paymentMethodIcons[payment.payment_method].icon + ' ' + paymentMethodIcons[payment.payment_method].color"></i>
-                                                    <span class="text-xs capitalize">{{ payment.payment_method }}</span>
-                                                </div>
-                                           </div>
-                                       </template>
+                                     <template #body="{ data }">
+                                         <!-- CORRECCIÓN: Se usa el helper para obtener los pagos -->
+                                         <div class="flex flex-col gap-1">
+                                             <div v-for="payment in getPaymentsForTransaction(data.id)" :key="payment.id" class="flex items-center gap-2">
+                                                 <i class="pi" :class="paymentMethodIcons[payment.payment_method]?.icon + ' ' + paymentMethodIcons[payment.payment_method]?.color"></i>
+                                                 <span class="text-xs capitalize">{{ payment.payment_method }}</span>
+                                             </div>
+                                        </div>
+                                     </template>
                                  </Column>
                              </DataTable>
                         </div>
@@ -195,15 +188,15 @@ const safeCashMovements = computed(() => {
                     <template #content>
                         <ul class="space-y-3 text-sm">
                              <li class="flex justify-between items-center">
-                                 <span><i class="pi pi-money-bill mr-2 text-[#37672B]"></i>Efectivo</span>
+                                 <span><i class="pi pi-money-bill mr-2 text-green-600"></i>Efectivo</span>
                                  <span class="font-mono font-semibold">{{ formatCurrency(sessionTotals.cash_total) }}</span>
                             </li>
                             <li class="flex justify-between items-center">
-                                <span><i class="pi pi-credit-card mr-2 text-[#063C53]"></i>Tarjeta</span>
+                                <span><i class="pi pi-credit-card mr-2 text-blue-600"></i>Tarjeta</span>
                                 <span class="font-mono font-semibold">{{ formatCurrency(sessionTotals.card_total) }}</span>
                             </li>
                             <li class="flex justify-between items-center">
-                                <span><i class="pi pi-arrows-h mr-2 text-[#D2D880]"></i>Transferencia</span>
+                                <span><i class="pi pi-arrows-h mr-2 text-orange-500"></i>Transferencia</span>
                                 <span class="font-mono font-semibold">{{ formatCurrency(sessionTotals.transfer_total) }}</span>
                             </li>
                             <li class="flex justify-between items-center">
@@ -217,11 +210,13 @@ const safeCashMovements = computed(() => {
                     <template #title>Movimientos de Efectivo</template>
                     <template #content>
                          <DataTable :value="safeCashMovements" class="p-datatable-sm">
-                               <template #empty><div class="text-center py-4">No hubo movimientos.</div></template>
-                               <Column field="description" header="Descripción"></Column>
-                               <Column field="amount" header="Monto">
-                                 <template #body="{data}"><span :class="data.type === 'ingreso' ? 'text-green-500' : 'text-red-500'">{{ formatCurrency(data.amount) }}</span></template>
-                               </Column>
+                             <template #empty><div class="text-center py-4">No hubo movimientos.</div></template>
+                             <Column field="description" header="Descripción"></Column>
+                             <!-- MEJORA: Se muestra el nombre del usuario del movimiento -->
+                             <Column field="user.name" header="Realizado por"></Column>
+                             <Column field="amount" header="Monto">
+                               <template #body="{data}"><span :class="data.type === 'ingreso' ? 'text-green-500' : 'text-red-500'">{{ formatCurrency(data.amount) }}</span></template>
+                             </Column>
                          </DataTable>
                     </template>
                 </Card>

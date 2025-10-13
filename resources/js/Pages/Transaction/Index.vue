@@ -5,14 +5,6 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
 import PrintModal from '@/Components/PrintModal.vue';
-import DataTable from 'primevue/datatable';
-import Column from 'primevue/column';
-import Button from 'primevue/button';
-import InputText from 'primevue/inputtext';
-import IconField from 'primevue/iconfield';
-import InputIcon from 'primevue/inputicon';
-import Tag from 'primevue/tag';
-import Menu from 'primevue/menu';
 
 const props = defineProps({
     transactions: Object,
