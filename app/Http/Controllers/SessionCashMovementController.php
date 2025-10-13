@@ -6,6 +6,7 @@ use App\Http\Requests\StoreSessionCashMovementRequest;
 use App\Models\CashRegisterSession;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Facades\Auth; // <-- Importante: Añadir Auth
 
 class SessionCashMovementController extends Controller //implements HasMiddleware
 {
@@ -25,7 +26,12 @@ class SessionCashMovementController extends Controller //implements HasMiddlewar
             return back()->with(['error' => 'No se pueden agregar movimientos a una sesión cerrada.']);
         }
 
-        $session->cashMovements()->create($request->validated());
+        // CORRECCIÓN: Fusionamos los datos validados con el ID del usuario actual.
+        $data = array_merge($request->validated(), [
+            'user_id' => Auth::id() 
+        ]);
+
+        $session->cashMovements()->create($data);
 
         return redirect()->back()->with('success', 'Movimiento de efectivo registrado con éxito.');
     }

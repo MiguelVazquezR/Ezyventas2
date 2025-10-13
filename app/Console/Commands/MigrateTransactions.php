@@ -167,7 +167,9 @@ class MigrateTransactions extends Command
                     continue;
                 }
 
-                $newServiceOrder = ServiceOrder::where('folio', 'OS-' . str_pad($report->folio, 3, '0', STR_PAD_LEFT))->first();
+                $newServiceOrder = ServiceOrder::where('folio', 'OS-' . str_pad($report->folio, 3, '0', STR_PAD_LEFT))
+                ->where('branch_id', $storeToBranchMap[$report->store_id])
+                ->first();
 
                 $transactionStatus = TransactionStatus::PENDING;
                 if (trim($report->status) === 'Entregado/Pagado') {

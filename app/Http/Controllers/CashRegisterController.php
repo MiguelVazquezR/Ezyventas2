@@ -101,27 +101,25 @@ class CashRegisterController extends Controller implements HasMiddleware
         return redirect()->route('cash-registers.index')->with('success', 'Caja registradora actualizada con éxito.');
     }
 
-    public function show(CashRegister $cashRegister): Response
+   public function show(CashRegister $cashRegister): Response
     {
         $branch = $cashRegister->branch;
 
-        // CORRECCIÓN DEFINITIVA: Simplificamos la consulta.
-        // La relación `payments` es la única fuente de verdad para los pagos recibidos
-        // durante esta sesión. Se eliminó `transactions.payments` para evitar confusiones
-        // y la posibilidad de contar pagos de otras sesiones.
         $currentSession = $cashRegister->sessions()
             ->where('status', 'abierta')
             ->with([
-                'user:id,name',
-                'cashMovements',
-                'transactions', // Se mantiene por si se necesita mostrar las transacciones de la sesión
-                'payments'      // ÚNICA FUENTE DE VERDAD para los pagos de esta sesión.
+                'opener:id,name',
+                'users:id,name',
+                'cashMovements.user:id,name',
+                'payments',
+                'transactions.user:id,name',
+                'transactions.customer:id,name'
             ])
             ->first();
 
         $closedSessions = $cashRegister->sessions()
             ->where('status', 'cerrada')
-            ->with('user:id,name')
+            ->with('opener:id,name')
             ->latest('closed_at')
             ->paginate(10);
 
@@ -129,18 +127,23 @@ class CashRegisterController extends Controller implements HasMiddleware
             ->whereHas('cashRegister.branch.subscription', function ($query) use ($branch) {
                 $query->where('id', $branch->subscription_id);
             })
-            ->pluck('user_id');
+            ->join('cash_register_session_user', 'cash_register_sessions.id', '=', 'cash_register_session_user.cash_register_session_id')
+            ->pluck('cash_register_session_user.user_id');
 
         $branchUsers = $branch->users->map(function ($branchUser) use ($busyUserIds) {
             $branchUser->is_busy = $busyUserIds->contains($branchUser->id);
             return $branchUser;
         });
 
+        // Obtener las cuentas bancarias de la sucursal.
+        $branchBankAccounts = $branch->bankAccounts()->get();
+
         return Inertia::render('FinancialControl/CashRegister/Show', [
             'cashRegister' => $cashRegister->load('branch'),
             'currentSession' => $currentSession,
             'closedSessions' => $closedSessions,
             'branchUsers' => $branchUsers,
+            'branchBankAccounts' => $branchBankAccounts, // Se pasan a la vista
         ]);
     }
 

@@ -11,6 +11,9 @@ return new class extends Migration
         Schema::create('session_cash_movements', function (Blueprint $table) {
             $table->id();
             $table->foreignId('cash_register_session_id')->constrained('cash_register_sessions')->onDelete('cascade');
+            $table->foreignId('user_id')
+                  ->constrained('users')
+                  ->onDelete('cascade');
             $table->string('type'); // ingreso, egreso
             $table->decimal('amount', 10, 2);
             $table->string('description');
