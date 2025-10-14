@@ -43,7 +43,8 @@ class ExpenseController extends Controller implements HasMiddleware
             ->join('users', 'expenses.user_id', '=', 'users.id')
             ->join('expense_categories', 'expenses.expense_category_id', '=', 'expense_categories.id')
             ->where('expenses.branch_id', $branchId)
-            ->with(['user:id,name', 'category:id,name', 'branch:id,name', 'bankAccount:id,account_name'])
+            // MODIFICACIÓN: Se añade 'bank_name' para tenerlo disponible en la tabla
+            ->with(['user:id,name', 'category:id,name', 'branch:id,name', 'bankAccount:id,account_name,bank_name'])
             ->select('expenses.*');
 
         if ($request->has('search')) {

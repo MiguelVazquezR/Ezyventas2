@@ -76,7 +76,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
     public function show(ServiceOrder $serviceOrder): Response
     {
-        $serviceOrder->load(['branch', 'user', 'customer', 'items.itemable', 'activities.causer', 'media', 'transaction.payments']);
+        $serviceOrder->load(['branch', 'user', 'customer', 'items.itemable', 'activities.causer', 'media', 'transaction.payments.bankAccount']);
 
         $translations = config('log_translations.ServiceOrder', []);
 
