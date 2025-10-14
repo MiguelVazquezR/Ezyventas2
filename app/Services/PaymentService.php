@@ -37,7 +37,8 @@ class PaymentService
                 'payment_date' => now(),
                 'status' => PaymentStatus::COMPLETED,
                 'notes' => $paymentData['notes'] ?? null,
-                'cash_register_session_id' => $sessionId, // ¡Aquí se asocia la sesión!
+                'cash_register_session_id' => $sessionId,
+                'bank_account_id' => $paymentData['bank_account_id'] ?? null, // <-- AÑADIDO
             ]);
 
             // Si el pago es con tarjeta o transferencia, se incrementa el saldo de la cuenta bancaria.

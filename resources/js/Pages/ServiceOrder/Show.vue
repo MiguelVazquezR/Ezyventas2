@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, provide } from 'vue';
-import { Head, router, usePage, useForm } from '@inertiajs/vue3'; // Added useForm
+import { Head, router, usePage, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from "primevue/usetoast";
@@ -31,11 +31,11 @@ provide('activeSession', computed(() => props.activeSession));
 const isPrintModalVisible = ref(false);
 const isPaymentModalVisible = ref(false);
 const isInPostCreationFlow = ref(false);
-const isDiagnosisModalVisible = ref(false); // NEW: Diagnosis modal visibility
+const isDiagnosisModalVisible = ref(false);
 
 const openPrintModal = () => isPrintModalVisible.value = true;
 const openPaymentModal = () => isPaymentModalVisible.value = true;
-const openDiagnosisModal = () => { // NEW: Method to open diagnosis modal
+const openDiagnosisModal = () => {
     diagnosisForm.technician_diagnosis = props.serviceOrder.technician_diagnosis || '';
     diagnosisForm.closing_evidence_images = [];
     isDiagnosisModalVisible.value = true;
@@ -78,7 +78,6 @@ const handlePrintModalClosed = () => {
     }
 };
 
-// NEW: Diagnosis Form and submission logic
 const MAX_CLOSING_EVIDENCE_IMAGES = 5;
 const diagnosisForm = useForm({
     technician_diagnosis: props.serviceOrder.technician_diagnosis || '',
@@ -302,7 +301,6 @@ const closingEvidenceImages = computed(() => {
     return props.serviceOrder.media?.filter(m => m.collection_name === 'closing-service-order-evidence') || [];
 });
 
-// --- NUEVA FUNCIÓN AUXILIAR ---
 const getItemType = (itemableType) => {
     if (itemableType === 'App\\Models\\Product') {
         return { text: 'Refacción', severity: 'info' };
@@ -311,6 +309,15 @@ const getItemType = (itemableType) => {
         return { text: 'Servicio', severity: 'success' };
     }
     return { text: 'Otro', severity: 'secondary' };
+};
+
+const getPaymentMethodIcon = (method) => {
+    const icons = {
+        efectivo: 'pi pi-money-bill',
+        tarjeta: 'pi pi-credit-card',
+        transferencia: 'pi pi-arrows-h',
+    };
+    return icons[method] || 'pi pi-question-circle';
 };
 
 </script>
@@ -540,9 +547,19 @@ const getItemType = (itemableType) => {
                         responsiveLayout="scroll">
                         <Column field="payment_date" header="Fecha"><template #body="{ data }">{{
                             formatDate(data.payment_date) }}</template></Column>
-                        <Column field="payment_method" header="Método" style="width: 8rem"><template #body="{ data }">
-                                <Tag :value="data.payment_method" class="capitalize" />
-                            </template></Column>
+                        <Column field="payment_method" header="Método" style="width: 10rem">
+                            <template #body="{ data }">
+                                <div class="flex flex-col">
+                                    <div class="flex items-center gap-2">
+                                        <i :class="getPaymentMethodIcon(data.payment_method)" class="text-gray-500"></i>
+                                        <span class="capitalize font-medium">{{ data.payment_method }}</span>
+                                    </div>
+                                    <small v-if="data.bank_account" class="text-gray-500 dark:text-gray-400 mt-1 pl-1 truncate" v-tooltip.bottom="data.bank_account.account_name">
+                                        {{ data.bank_account.account_name }}
+                                    </small>
+                                </div>
+                            </template>
+                        </Column>
                         <Column field="amount" header="Monto" style="width: 8rem" class="text-right"><template
                                 #body="{ data }">{{ formatCurrency(data.amount) }}</template></Column>
                         <template #empty>
@@ -576,7 +593,7 @@ const getItemType = (itemableType) => {
                         adjuntaron imágenes
                         de cierre.</div>
                 </div>
-                <!-- <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                 <!-- <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-6">Historial de Actividad</h2>
                     <div v-if="activities && activities.length > 0" class="relative max-h-[300px] overflow-y-auto pr-2">
                         <div class="relative pl-6">

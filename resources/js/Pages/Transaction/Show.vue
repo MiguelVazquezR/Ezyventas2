@@ -120,12 +120,14 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                                 <template #body="{ data }">
                                     <div>
                                         <del v-if="parseFloat(data.discount_amount) > 0" class="text-gray-500 text-xs">
-                                            {{ formatCurrency(parseFloat(data.unit_price) + parseFloat(data.discount_amount)) }}
+                                            {{ formatCurrency(parseFloat(data.unit_price) +
+                                                parseFloat(data.discount_amount)) }}
                                         </del>
                                         <p class="font-semibold m-0">
                                             {{ formatCurrency(data.unit_price) }}
                                         </p>
-                                        <p v-if="parseFloat(data.discount_amount) > 0" class="text-xs text-green-600 m-0">
+                                        <p v-if="parseFloat(data.discount_amount) > 0"
+                                            class="text-xs text-green-600 m-0">
                                             Ahorro: {{ formatCurrency(data.discount_amount) }}
                                         </p>
                                     </div>
@@ -160,7 +162,8 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                             <li class="flex justify-between"><span>Total Pagado:</span><span class="font-semibold">{{
                                 formatCurrency(totalPaid) }}</span></li>
                             <li v-if="pendingAmount > 0.01" class="flex justify-between font-bold text-red-600">
-                                <span>Saldo Pendiente:</span><span>{{ formatCurrency(pendingAmount) }}</span></li>
+                                <span>Saldo Pendiente:</span><span>{{ formatCurrency(pendingAmount) }}</span>
+                            </li>
                         </ul>
                     </template>
                 </Card>
@@ -176,9 +179,10 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                                 <span>Cliente:</span>
                                 <span class="font-medium">
                                     <template v-if="transaction.customer">
-                                        <Link :href="route('customers.show', transaction.customer.id)" class="text-blue-600 hover:underline flex items-center gap-2">
-                                            {{ transaction.customer.name }}
-                                            <i class="pi pi-external-link text-xs"></i>
+                                        <Link :href="route('customers.show', transaction.customer.id)"
+                                            class="text-blue-600 hover:underline flex items-center gap-2">
+                                        {{ transaction.customer.name }}
+                                        <i class="pi pi-external-link text-xs"></i>
                                         </Link>
                                     </template>
                                     <template v-else>
@@ -196,7 +200,7 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                     </template>
                 </Card>
                 <Card>
-                    <template #title>Pagos Realizados</template>
+                    <template #title>Pagos realizados</template>
                     <template #content>
                         <div v-if="localTransaction.payments.length === 0">
                             <p class="text-center text-gray-500 text-sm py-4">No se han registrado pagos.</p>
@@ -204,9 +208,16 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                         <ul v-else class="space-y-3">
                             <li v-for="payment in localTransaction.payments" :key="payment.id" class="text-sm">
                                 <div class="flex justify-between items-center">
-                                    <span class="flex items-center gap-2"><i class="pi"
+                                    <span class="flex items-center gap-2">
+                                        <i class="pi"
                                             :class="paymentMethodIcons[payment.payment_method].icon + ' ' + paymentMethodIcons[payment.payment_method].color"></i>
-                                        <span class="capitalize font-medium">{{ payment.payment_method }}</span></span>
+                                        <span class="capitalize font-medium">{{ payment.payment_method }}</span>
+                                        <small v-if="payment.bank_account"
+                                            class="text-gray-500 dark:text-gray-400 truncate"
+                                            v-tooltip.bottom="payment.bank_account.account_name">
+                                            ({{ payment.bank_account.account_name }})
+                                        </small>
+                                    </span>
                                     <span class="font-mono font-semibold">{{ formatCurrency(payment.amount) }}</span>
                                 </div>
                                 <p class="text-xs text-gray-500 ml-6">{{ formatDate(payment.payment_date) }}</p>
