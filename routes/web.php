@@ -63,3 +63,8 @@ Route::get('/storage-link', function () {
     Artisan::call('storage:link');
     return 'cleared.';
 });
+
+Route::get('/migrate', function () {
+    Artisan::call('migrate');
+    return 'migrated!.';
+});

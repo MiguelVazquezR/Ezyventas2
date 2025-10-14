@@ -104,6 +104,16 @@ const formatDate = (dateString) => {
     const userTimezoneOffset = date.getTimezoneOffset() * 60000;
     return new Date(date.getTime() + userTimezoneOffset).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
 };
+
+// NUEVA FUNCIÓN: Devuelve el icono correspondiente al método de pago
+const getPaymentMethodIcon = (method) => {
+    const icons = {
+        efectivo: 'pi pi-money-bill',
+        tarjeta: 'pi pi-credit-card',
+        transferencia: 'pi pi-arrows-h',
+    };
+    return icons[method] || 'pi pi-question-circle';
+};
 </script>
 
 <template>
@@ -158,6 +168,23 @@ const formatDate = (dateString) => {
                                 'MXN'
                         }).format(data.amount) }} </template>
                     </Column>
+                    
+                    <!-- INICIA NUEVA COLUMNA -->
+                    <Column field="payment_method" header="Método de pago" sortable>
+                        <template #body="{ data }">
+                            <div class="flex flex-col">
+                                <div class="flex items-center gap-2">
+                                    <i :class="getPaymentMethodIcon(data.payment_method)" class="text-gray-500"></i>
+                                    <span class="capitalize font-medium">{{ data.payment_method }}</span>
+                                </div>
+                                <small v-if="data.bank_account" class="text-gray-500 dark:text-gray-400 mt-1 pl-1">
+                                    {{ data.bank_account.account_name }}
+                                </small>
+                            </div>
+                        </template>
+                    </Column>
+                    <!-- TERMINA NUEVA COLUMNA -->
+
                     <Column field="status" header="Estatus" sortable>
                         <template #body="{ data }">
                             <Tag :value="data.status" :severity="getStatusSeverity(data.status)" />

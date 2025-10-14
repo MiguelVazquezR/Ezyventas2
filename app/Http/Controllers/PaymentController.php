@@ -22,7 +22,22 @@ class PaymentController extends Controller
             'payments.*.amount' => 'required|numeric|min:0.01',
             'payments.*.method' => ['required', Rule::in(['efectivo', 'tarjeta', 'transferencia'])],
             'payments.*.notes' => 'nullable|string',
-            // Valida que la sesión de caja exista y esté abierta (si se envía)
+            // <-- INICIA VALIDACIÓN
+            'payments.*.bank_account_id' => [
+                'nullable',
+                'integer',
+                'exists:bank_accounts,id',
+                Rule::requiredIf(function () use ($request) {
+                    // Requerido si algún pago es por tarjeta o transferencia
+                    foreach ($request->input('payments', []) as $payment) {
+                        if (in_array($payment['method'], ['tarjeta', 'transferencia'])) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }),
+            ],
+            // <-- TERMINA VALIDACIÓN
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id,status,abierta',
         ]);
 

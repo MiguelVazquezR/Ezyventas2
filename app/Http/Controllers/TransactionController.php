@@ -82,7 +82,7 @@ class TransactionController extends Controller implements HasMiddleware
             'user:id,name',
             'branch:id,name',
             'items.itemable',
-            'payments',
+            'payments.bankAccount',
             // 'customerBalanceMovements' // Ya no es necesario
         ]);
 
