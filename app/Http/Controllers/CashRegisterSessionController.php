@@ -26,7 +26,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('can:cash_registers_sessions.access', only: ['index', 'print', 'show']),
+            new Middleware('can:cash_registers.sessions.access', only: ['index', 'print', 'show']),
         ];
     }
 
