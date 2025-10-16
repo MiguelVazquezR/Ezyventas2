@@ -257,24 +257,42 @@ class PrintEncoderService
                 '{{os.item_description}}' => $dataSource->item_description,
             ];
 
-            // --- Lógica para campos personalizados ---
+            // --- Lógica mejorada para campos personalizados ---
             if (!empty($dataSource->custom_fields)) {
-                foreach ($dataSource->custom_fields as $key => $fieldData) {
-                    // Nos aseguramos de que el campo tenga un valor que mostrar
-                    if (isset($fieldData['value'])) {
-                        $printValue = $fieldData['value'];
-                        // Si el valor es un array (como en el caso de 'pattern'), lo convertimos a texto
-                        if (is_array($printValue)) {
-                            $printValue = implode(', ', $printValue);
+                foreach ($dataSource->custom_fields as $key => $value) {
+                    $printValue = ''; // Valor por defecto
+                    
+                    if (is_null($value)) {
+                        $printValue = ''; // Imprime nada para valores nulos
+                    } elseif (is_bool($value)) {
+                        $printValue = $value ? 'Si' : 'No'; // Convierte booleano a Si/No
+                    } elseif (is_array($value)) {
+                        // Si es un objeto complejo (como 'desbloqueo') que tiene una clave 'value'
+                        if (isset($value['value'])) {
+                            $actualValue = $value['value'];
+                            // Si el valor interno también es un array (como en 'pattern')
+                            if (is_array($actualValue)) {
+                                $printValue = implode(', ', $actualValue);
+                            } else {
+                                $printValue = (string) $actualValue;
+                            }
+                        } else {
+                            // Si es un array simple (p. ej. de checkboxes o accesorios)
+                            $printValue = implode(', ', $value);
                         }
-                        $replacements["{{os.custom.{$key}}}"] = $printValue ?? '';
+                    } else {
+                        // Para valores simples como texto, números, etc.
+                        $printValue = (string) $value;
                     }
+
+                    $replacements["{{os.custom.{$key}}}"] = $printValue;
                 }
             }
         }
 
-        // Reemplazar cualquier placeholder de campo personalizado que no tuviera valor para evitar que se imprima la variable
-        $text = preg_replace('/{{os\.custom\.(.*?)}}/', '', $text);
-        return str_replace(array_keys($replacements), array_values($replacements), $text);
+        // Reemplaza los placeholders y luego limpia los que no se encontraron
+        $text = str_replace(array_keys($replacements), array_values($replacements), $text);
+        // Limpia cualquier placeholder de {{os.custom.*}} que no tuvo un valor
+        return preg_replace('/{{os\.custom\.(.*?)}}/', '', $text);
     }
 }

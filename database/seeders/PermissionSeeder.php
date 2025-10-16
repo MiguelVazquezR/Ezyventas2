@@ -43,6 +43,7 @@ class PermissionSeeder extends Seeder
             ],
             'Gastos' => [
                 'expenses.access' => 'Ver listado de gastos',
+                'expenses.see_all' => 'Ver todos los gastos registrados (propios y de otros usuarios)',
                 'expenses.see_details' => 'Ver detalles de gastos',
                 'expenses.create' => 'Crear nuevos gastos',
                 'expenses.edit' => 'Editar gastos existentes',
