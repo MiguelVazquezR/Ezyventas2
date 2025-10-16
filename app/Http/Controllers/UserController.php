@@ -67,7 +67,6 @@ class UserController extends Controller implements HasMiddleware
 
         $users = $query->paginate($request->input('rows', 20))->withQueryString();
 
-        // --- AÑADIDO: Se obtienen y pasan los datos del límite ---
         $limitData = $this->getUserLimitData();
 
         return Inertia::render('User/Index', [
@@ -80,7 +79,6 @@ class UserController extends Controller implements HasMiddleware
 
     public function destroy(User $user)
     {
-        // Regla de negocio: No se puede eliminar al suscriptor principal (sin rol)
         if (!$user->roles()->exists()) {
             return redirect()->back()->with('error', 'No se puede eliminar al administrador principal.');
         }
@@ -91,7 +89,6 @@ class UserController extends Controller implements HasMiddleware
 
     public function toggleStatus(User $user)
     {
-        // Regla de negocio: No se puede desactivar al suscriptor principal
         if (!$user->roles()->exists()) {
             return redirect()->back()->with('error', 'No se puede desactivar al administrador principal.');
         }
@@ -105,10 +102,13 @@ class UserController extends Controller implements HasMiddleware
 
     public function create(): Response
     {
-        // --- AÑADIDO: Se obtienen y pasan los datos del límite ---
         $limitData = $this->getUserLimitData();
+        $user = Auth::user();
+        $subscription = $user->branch->subscription;
 
-        $roles = Role::with('permissions')->get()->map(fn($role) => [
+        $roles = Role::where('branch_id', $user->branch_id)
+            ->with('permissions')
+            ->get()->map(fn($role) => [
             'id' => $role->id,
             'name' => $role->name,
             'permissions' => $role->permissions->map(fn($p) => [
@@ -119,7 +119,12 @@ class UserController extends Controller implements HasMiddleware
             ])->all(),
         ]);
 
-        $permissions = Permission::all()->groupBy('module');
+        $availableModuleNames = $subscription->getAvailableModuleNames();
+        $permissions = Permission::query()
+            ->whereIn('module', $availableModuleNames)
+            ->orWhere('module', 'Sistema')
+            ->get()
+            ->groupBy('module');
 
         return Inertia::render('User/Create', [
             'roles' => $roles,
@@ -131,7 +136,6 @@ class UserController extends Controller implements HasMiddleware
 
     public function store(Request $request)
     {
-        // --- AÑADIDO: Validación del límite de usuarios ---
         $limitData = $this->getUserLimitData();
         if ($limitData['limit'] !== -1 && $limitData['usage'] >= $limitData['limit']) {
             throw ValidationException::withMessages([
@@ -159,13 +163,16 @@ class UserController extends Controller implements HasMiddleware
         return redirect()->route('users.index')->with('success', 'Usuario creado con éxito.');
     }
 
-    public function edit(User $user): Response
+    public function edit(User $userToEdit): Response
     {
-        // Cargar el usuario con su rol actual
-        $user->load('roles.permissions');
+        $user = Auth::user();
+        $subscription = $user->branch->subscription;
 
-        // Obtener todos los roles con sus permisos (en el formato correcto)
-        $roles = Role::with('permissions')->get()->map(fn($role) => [
+        $userToEdit->load('roles.permissions');
+
+        $roles = Role::where('branch_id', $user->branch_id)
+            ->with('permissions')
+            ->get()->map(fn($role) => [
             'id' => $role->id,
             'name' => $role->name,
             'permissions' => $role->permissions->map(fn($p) => [
@@ -176,11 +183,15 @@ class UserController extends Controller implements HasMiddleware
             ])->all(),
         ]);
 
-        // Obtener todos los permisos agrupados por módulo
-        $permissions = Permission::all()->groupBy('module');
+        $availableModuleNames = $subscription->getAvailableModuleNames();
+        $permissions = Permission::query()
+            ->whereIn('module', $availableModuleNames)
+            ->orWhere('module', 'Sistema')
+            ->get()
+            ->groupBy('module');
 
         return Inertia::render('User/Edit', [
-            'user' => $user,
+            'user' => $userToEdit,
             'roles' => $roles,
             'permissions' => $permissions,
         ]);

@@ -118,6 +118,7 @@ class PermissionSeeder extends Seeder
             ],
             'Sistema' => [
                 'system.branches.switch' => 'Cambiar entre sucursales',
+                'system.bank_accounts.manage' => 'Administrar cuentas bancarias. Ver y editar saldos al abrir caja',
             ],
         ];
 

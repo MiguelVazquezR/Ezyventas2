@@ -3,6 +3,7 @@ import { useForm, usePage } from '@inertiajs/vue3';
 import { watch } from 'vue'; // Se importa 'watch'
 import InputLabel from './InputLabel.vue';
 import InputError from './InputError.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     visible: Boolean,
@@ -11,6 +12,9 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:visible']);
+
+// composables
+const { hasPermission } = usePermissions();
 
 const user = usePage().props.auth.user;
 
@@ -86,15 +90,14 @@ const closeModal = () => {
                         <InputNumber id="opening-balance" v-model="form.opening_cash_balance" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" inputClass="w-full" />
                         <InputError :message="form.errors.opening_cash_balance" class="mt-1" />
                     </div>
-
                     <!-- Sección de Cuentas Bancarias -->
-                    <!-- <div v-if="form.bank_accounts && form.bank_accounts.length > 0">
+                    <div v-if="form.bank_accounts && form.bank_accounts.length > 0 && hasPermission('system.bank_accounts.manage')">
                          <div v-for="(account, index) in form.bank_accounts" :key="account.id" class="mt-4">
                             <InputLabel :for="'bank-balance-' + account.id" :value="`Saldo en ${account.bank_name} (${account.account_name})`" />
                             <InputNumber :id="'bank-balance-' + account.id" v-model="account.balance" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" inputClass="w-full" />
                             <InputError :message="form.errors[`bank_accounts.${index}.balance`]" class="mt-1" />
                         </div>
-                    </div> -->
+                    </div>
                 </div>
             </div>
 

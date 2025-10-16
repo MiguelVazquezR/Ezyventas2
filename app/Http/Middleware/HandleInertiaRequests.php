@@ -48,13 +48,18 @@ class HandleInertiaRequests extends Middleware
                 }
 
                 $isOwner = !$user->roles()->exists();
-
-                // Si es el propietario/admin, obtiene todos los permisos; de lo contrario, solo los suyos.
-                $permissions = $isOwner
-                    ? Permission::all()->pluck('name')
-                    : $user->getAllPermissions()->pluck('name');
-
                 $subscription = $user->branch->subscription;
+
+                // Si es propietario, obtiene los permisos de su plan. Si no, los de su rol.
+                if ($isOwner) {
+                    $availableModuleNames = $subscription->getAvailableModuleNames();
+                    $permissions = Permission::query()
+                        ->whereIn('module', $availableModuleNames) // Permisos de módulos del plan
+                        ->orWhere('module', 'Sistema')             // Permisos del sistema
+                        ->pluck('name');
+                } else {
+                    $permissions = $user->getAllPermissions()->pluck('name');
+                }
 
                 return [
                     'user' => $user,
@@ -93,7 +98,7 @@ class HandleInertiaRequests extends Middleware
                     return false;
                 }
                 return CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
-                    ->whereHas('cashRegister', function($q) use ($user) {
+                    ->whereHas('cashRegister', function ($q) use ($user) {
                         $q->where('branch_id', $user->branch_id);
                     })
                     ->exists();

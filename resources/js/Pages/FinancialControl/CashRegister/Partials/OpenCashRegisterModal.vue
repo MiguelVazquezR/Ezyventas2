@@ -3,12 +3,7 @@ import { useForm } from '@inertiajs/vue3';
 import { watch } from 'vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
-import Dialog from 'primevue/dialog';
-import Select from 'primevue/select';
-import InputNumber from 'primevue/inputnumber';
-import Button from 'primevue/button';
-import Tag from 'primevue/tag';
-import Divider from 'primevue/divider';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     visible: Boolean,
@@ -19,6 +14,9 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:visible']);
+
+// composables
+const { hasPermission } = usePermissions();
 
 const form = useForm({
     cash_register_id: props.cashRegister?.id,
@@ -101,7 +99,7 @@ const submit = () => {
                 </div>
                 
                 <!--  Sección para Cuentas Bancarias -->
-                <div v-if="form.bank_accounts && form.bank_accounts.length > 0" class="space-y-4">
+                <div v-if="form.bank_accounts && form.bank_accounts.length > 0 && hasPermission('system.bank_accounts.manage')" class="space-y-4">
                     <div v-for="(account, index) in form.bank_accounts" :key="account.id">
                         <InputLabel :for="'bank-balance-' + account.id" :value="`Saldo en ${account.bank_name} (${account.account_name})`" />
                         <InputNumber :id="'bank-balance-' + account.id" v-model="account.balance" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" />
