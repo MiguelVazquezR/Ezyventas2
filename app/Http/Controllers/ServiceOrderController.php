@@ -52,7 +52,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
             $searchTerm = $request->input('search');
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('customer_name', 'LIKE', "%{$searchTerm}%")
-                    ->orWhere('item_description', 'LIKE', "%{$searchTerm}%");
+                    ->orWhere('item_description', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('folio', 'LIKE', "%{$searchTerm}%");
             });
         }
 

@@ -38,14 +38,20 @@ class ExpenseController extends Controller implements HasMiddleware
     {
         $user = Auth::user();
         $branchId = $user->branch_id;
+        $isOwner = !$user->roles()->exists(); // Propietario de la suscripción no tiene roles
 
         $query = Expense::query()
             ->join('users', 'expenses.user_id', '=', 'users.id')
             ->join('expense_categories', 'expenses.expense_category_id', '=', 'expense_categories.id')
             ->where('expenses.branch_id', $branchId)
-            // MODIFICACIÓN: Se añade 'bank_name' para tenerlo disponible en la tabla
             ->with(['user:id,name', 'category:id,name', 'branch:id,name', 'bankAccount:id,account_name,bank_name'])
             ->select('expenses.*');
+
+        // Si el usuario no es el dueño Y no tiene permiso para ver todos los gastos,
+        // solo se le muestran los que ha registrado él mismo.
+        if (!$isOwner && !$user->can('expenses.see_all')) {
+            $query->where('expenses.user_id', $user->id);
+        }
 
         if ($request->has('search')) {
             $searchTerm = $request->input('search');

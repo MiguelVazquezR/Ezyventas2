@@ -79,7 +79,7 @@ const closeModal = () => {
             <Divider />
 
             <div>
-                <h3 class="font-semibold mb-3 text-gray-700 dark:text-gray-300">Saldos Iniciales</h3>
+                <h5 class="font-semibold mb-3 text-gray-700 dark:text-gray-300">Saldos Iniciales</h5>
                 <div class="space-y-4 max-h-[40vh] overflow-y-auto pr-2">
                     <div>
                         <InputLabel for="opening-balance" value="Fondo de Caja Inicial (Efectivo) *" />
@@ -88,14 +88,13 @@ const closeModal = () => {
                     </div>
 
                     <!-- Sección de Cuentas Bancarias -->
-                    <div v-if="form.bank_accounts && form.bank_accounts.length > 0">
+                    <!-- <div v-if="form.bank_accounts && form.bank_accounts.length > 0">
                          <div v-for="(account, index) in form.bank_accounts" :key="account.id" class="mt-4">
-                            <!-- CORRECCIÓN: La etiqueta ahora usa los datos del objeto 'account' del formulario, que ya contiene los nombres. -->
                             <InputLabel :for="'bank-balance-' + account.id" :value="`Saldo en ${account.bank_name} (${account.account_name})`" />
                             <InputNumber :id="'bank-balance-' + account.id" v-model="account.balance" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" inputClass="w-full" />
                             <InputError :message="form.errors[`bank_accounts.${index}.balance`]" class="mt-1" />
                         </div>
-                    </div>
+                    </div> -->
                 </div>
             </div>
 
