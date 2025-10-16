@@ -137,7 +137,7 @@ const getStatusSeverity = (status) => {
                     <div class="flex items-center gap-2">
                         <IconField iconPosition="left" class="w-full md:w-auto">
                             <InputIcon class="pi pi-search"></InputIcon>
-                            <InputText v-model="searchTerm" placeholder="Buscar por cliente o equipo..."
+                            <InputText v-model="searchTerm" placeholder="Buscar por folio, cliente o equipo..."
                                 class="w-full" />
                         </IconField>
                         <ButtonGroup>
