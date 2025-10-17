@@ -13,14 +13,22 @@ use Illuminate\Validation\ValidationException;
 class BankAccountController extends Controller
 {
     /**
-     * Obtiene las cuentas bancarias asignadas a la sucursal del usuario actual.
+     * Obtiene las cuentas bancarias para el usuario actual.
+     * Propietarios: Todas las de la sucursal.
+     * Empleados: Solo las asignadas.
      */
     public function getForBranch()
     {
-        $branchId = Auth::user()->branch_id;
-        $bankAccounts = BankAccount::whereHas('branches', function ($query) use ($branchId) {
-            $query->where('branch_id', $branchId);
-        })->get();
+        $user = Auth::user();
+        $isOwner = !$user->roles()->exists();
+
+        if ($isOwner) {
+            $bankAccounts = BankAccount::whereHas('branches', function ($query) use ($user) {
+                $query->where('branch_id', $user->branch_id);
+            })->get();
+        } else {
+            $bankAccounts = $user->bankAccounts()->get();
+        }
 
         return response()->json($bankAccounts);
     }
@@ -170,7 +178,7 @@ class BankAccountController extends Controller
                 'related_url' => null,
             ];
         });
-        
+
         $allMovements = $inflows->concat($outflows)->concat($transfersIn)->concat($transfersOut)->sortByDesc('date');
 
         $runningBalance = (float) $bankAccount->balance;
@@ -199,7 +207,7 @@ class BankAccountController extends Controller
         if ($fromAccount->subscription_id !== $subscriptionId || $toAccount->subscription_id !== $subscriptionId) {
             abort(403);
         }
-        
+
         if ($fromAccount->balance < $validated['amount']) {
             throw ValidationException::withMessages([
                 'amount' => 'Saldo insuficiente en la cuenta de origen.',

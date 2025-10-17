@@ -108,22 +108,22 @@ class ExpenseController extends Controller implements HasMiddleware
         ]);
     }
 
-     public function create(): Response
+    public function create(): Response
     {
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
-        $branchId = $user->branch_id;
-        
-        // Obtiene las cuentas asignadas a la sucursal actual y carga la información pivote (is_favorite).
-        $bankAccounts = BankAccount::whereHas('branches', function ($query) use ($branchId) {
-                $query->where('branch_id', $branchId);
-            })
-            ->with(['branches' => function ($query) use ($branchId) {
-                // Limita la carga de la relación a solo la sucursal actual para acceder a 'pivot'
-                $query->where('branch_id', $branchId);
-            }])
-            ->get();
-        
+        $isOwner = !$user->roles()->exists();
+
+        // Si es propietario, obtiene todas las cuentas de la sucursal.
+        // Si no, solo las que tiene asignadas.
+        if ($isOwner) {
+            $bankAccounts = BankAccount::whereHas('branches', function ($query) use ($user) {
+                $query->where('branch_id', $user->branch_id);
+            })->get();
+        } else {
+            $bankAccounts = $user->bankAccounts()->get();
+        }
+
         $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
             ->where('is_active', true)
             ->where('in_use', false)
@@ -187,22 +187,24 @@ class ExpenseController extends Controller implements HasMiddleware
         return redirect()->route('expenses.index')->with('success', 'Gasto creado con éxito.');
     }
 
-     public function edit(Expense $expense): Response
+    public function edit(Expense $expense): Response
     {
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
-        $branchId = $user->branch_id;
-        
+        $isOwner = !$user->roles()->exists();
+
         $expense->load('sessionCashMovement');
 
-        $bankAccounts = BankAccount::whereHas('branches', function ($query) use ($branchId) {
-                $query->where('branch_id', $branchId);
-            })
-            ->with(['branches' => function ($query) use ($branchId) {
-                $query->where('branch_id', $branchId);
-            }])
-            ->get();
-            
+        // Si es propietario, obtiene todas las cuentas de la sucursal.
+        // Si no, solo las que tiene asignadas.
+        if ($isOwner) {
+            $bankAccounts = BankAccount::whereHas('branches', function ($query) use ($user) {
+                $query->where('branch_id', $user->branch_id);
+            })->get();
+        } else {
+            $bankAccounts = $user->bankAccounts()->get();
+        }
+
         $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
             ->where('is_active', true)
             ->where('in_use', false)
@@ -222,7 +224,7 @@ class ExpenseController extends Controller implements HasMiddleware
             $validated = $request->validated();
             $user = Auth::user();
             $takeFromCashRegister = $validated['take_from_cash_register'] ?? false;
-            
+
             // --- 1. REVERTIR ESTADO ANTERIOR ---
             // Revertir movimiento de caja si existía
             if ($expense->sessionCashMovement) {
@@ -239,7 +241,7 @@ class ExpenseController extends Controller implements HasMiddleware
             // --- 2. ACTUALIZAR EL GASTO ---
             $expense->update($validated);
             // Asegurarse de que el enlace al movimiento se borra antes de crear uno nuevo
-            $expense->session_cash_movement_id = null; 
+            $expense->session_cash_movement_id = null;
             $expense->save();
 
             // --- 3. APLICAR NUEVO ESTADO ---
@@ -260,7 +262,7 @@ class ExpenseController extends Controller implements HasMiddleware
                     ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $user->branch_id))
                     ->latest('opened_at')
                     ->first();
-                
+
                 if (!$activeSession) {
                     throw ValidationException::withMessages([
                         'take_from_cash_register' => 'No hay una sesión de caja activa para registrar la salida de efectivo.',
@@ -276,7 +278,7 @@ class ExpenseController extends Controller implements HasMiddleware
                 $expense->update(['session_cash_movement_id' => $movement->id]);
             }
         });
-        
+
         return redirect()->route('expenses.index')->with('success', 'Gasto actualizado con éxito.');
     }
 
@@ -308,18 +310,22 @@ class ExpenseController extends Controller implements HasMiddleware
 
     public function destroy(Expense $expense)
     {
-        DB::transaction(function () use ($expense) {
+        $message = 'Gasto eliminado con éxito.';
+
+        DB::transaction(function () use ($expense, &$message) {
             // Si el gasto estaba pagado desde una cuenta, restaurar el saldo.
             if ($expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
                 $bankAccount = BankAccount::find($expense->bank_account_id);
                 if ($bankAccount) {
                     $bankAccount->increment('balance', $expense->amount);
+                    $formattedAmount = number_format($expense->amount, 2);
+                    $message = "Gasto eliminado. Se regresaron $$formattedAmount a la cuenta '{$bankAccount->account_name}'.";
                 }
             }
             $expense->delete();
         });
 
-        return redirect()->route('expenses.index')->with('success', 'Gasto eliminado con éxito.');
+        return redirect()->route('expenses.index')->with('success', $message);
     }
 
     public function batchDestroy(Request $request)
@@ -329,19 +335,27 @@ class ExpenseController extends Controller implements HasMiddleware
             'ids.*' => 'exists:expenses,id',
         ]);
 
-        DB::transaction(function () use ($validated) {
+        $restoredBalance = false;
+
+        DB::transaction(function () use ($validated, &$restoredBalance) {
             $expenses = Expense::whereIn('id', $validated['ids'])->get();
             foreach ($expenses as $expense) {
                 if ($expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
                     $bankAccount = BankAccount::find($expense->bank_account_id);
                     if ($bankAccount) {
                         $bankAccount->increment('balance', $expense->amount);
+                        $restoredBalance = true;
                     }
                 }
                 $expense->delete();
             }
         });
 
-        return redirect()->route('expenses.index')->with('success', 'Gastos seleccionados eliminados con éxito.');
+        $message = 'Gastos seleccionados eliminados con éxito.';
+        if ($restoredBalance) {
+            $message .= ' Se restauró el saldo de las cuentas bancarias afectadas.';
+        }
+
+        return redirect()->route('expenses.index')->with('success', $message);
     }
 }

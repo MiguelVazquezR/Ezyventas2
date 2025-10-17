@@ -87,7 +87,7 @@ const openTransferModal = (account) => {
 // Se añade la nueva opción al menú
 const getAccountMenuItems = (account) => [
     { label: 'Historial de movimientos', icon: 'pi pi-history', command: () => openHistoryModal(account) },
-    { label: 'Realizar Transferencia', icon: 'pi pi-send', command: () => openTransferModal(account) },
+    { label: 'Realizar Transferencia', icon: 'pi pi-arrows-h', command: () => openTransferModal(account) },
     { separator: true },
     { label: 'Editar', icon: 'pi pi-pencil', command: () => openEditBankAccountModal(account) },
     { label: 'Eliminar', icon: 'pi pi-trash', command: () => confirmDeleteAccount(account) }

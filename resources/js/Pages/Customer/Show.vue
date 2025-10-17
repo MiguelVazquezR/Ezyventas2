@@ -5,39 +5,48 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
+import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
-
 
 const props = defineProps({
     customer: Object,
-    availableCashRegisters: Array,
-    historicalMovements: Array, // <--- Nueva prop para el historial unificado
+    historicalMovements: Array,
 });
 
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
 const page = usePage();
+
+// --- LÓGICA DE SESIÓN CORREGIDA ---
 const activeSession = computed(() => page.props.activeSession);
+const joinableSessions = computed(() => page.props.joinableSessions);
+const availableCashRegisters = computed(() => page.props.availableCashRegisters);
 
 const isPaymentModalVisible = ref(false);
 const isStartSessionModalVisible = ref(false);
+const isJoinSessionModalVisible = ref(false);
 const sessionModalAwaitingPaymentModal = ref(false);
 
 const handleOpenAddBalanceFlow = () => {
-    if (!activeSession.value) {
+    if (activeSession.value) {
+        isPaymentModalVisible.value = true;
+    } else if (joinableSessions.value && joinableSessions.value.length > 0) {
+        sessionModalAwaitingPaymentModal.value = true;
+        isJoinSessionModalVisible.value = true;
+    } else {
         sessionModalAwaitingPaymentModal.value = true;
         isStartSessionModalVisible.value = true;
-    } else {
-        isPaymentModalVisible.value = true;
     }
 };
 
+// Este watcher ahora funciona correctamente para ambos flujos (iniciar y unirse)
 watch(activeSession, (newSession) => {
     if (newSession && sessionModalAwaitingPaymentModal.value) {
         sessionModalAwaitingPaymentModal.value = false;
         isPaymentModalVisible.value = true;
     }
 });
+
 
 const handleBalancePaymentSubmit = (paymentData) => {
     router.post(route('customers.payments.store', props.customer.id), paymentData, {
@@ -81,7 +90,6 @@ const actionItems = computed(() => [
 ]);
 
 
-// --- Helpers de Formato (con un pequeño ajuste) ---
 const formatCurrency = (value) => {
     if (value === null || value === undefined) return 'N/A';
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
@@ -170,7 +178,6 @@ const getTransactionStatusSeverity = (status) => {
                                 </Link>
                             </template>
                         </Column>
-                        <!-- Columna de Fecha ahora es ordenable -->
                         <Column field="created_at" header="Fecha" sortable>
                             <template #body="{ data }"> {{ formatDate(data.created_at) }}</template>
                         </Column>
@@ -191,11 +198,9 @@ const getTransactionStatusSeverity = (status) => {
                         </template>
                     </DataTable>
                 </div>
-                <!-- Tabla de Historial de Movimientos -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Historial de movimientos</h2>
                     <DataTable :value="historicalMovements" class="p-datatable-sm" responsiveLayout="scroll" :paginator="historicalMovements?.length > 5" :rows="5" sortField="date" :sortOrder="-1">
-                        <!-- Columna de Fecha ahora es ordenable -->
                         <Column field="date" header="Fecha" sortable>
                              <template #body="{ data }"> {{ formatDate(data.date) }}</template>
                         </Column>
@@ -233,12 +238,15 @@ const getTransactionStatusSeverity = (status) => {
             </div>
         </div>
 
+        <!-- Modales -->
         <StartSessionModal 
-            :visible="isStartSessionModalVisible"
+            v-model:visible="isStartSessionModalVisible"
             :cash-registers="availableCashRegisters"
-            @update:visible="isStartSessionModalVisible = $event"
         />
-
+        <JoinSessionModal
+            v-model:visible="isJoinSessionModalVisible"
+            :sessions="joinableSessions"
+        />
         <PaymentModal
             v-if="isPaymentModalVisible"
             v-model:visible="isPaymentModalVisible"

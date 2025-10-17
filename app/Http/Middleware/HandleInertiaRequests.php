@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Enums\CashRegisterSessionStatus;
+use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -11,98 +12,89 @@ use Tightenco\Ziggy\Ziggy;
 
 class HandleInertiaRequests extends Middleware
 {
-    /**
-     * The root template that's loaded on the first page visit.
-     *
-     * @see https://inertiajs.com/server-side-setup#root-template
-     *
-     * @var string
-     */
     protected $rootView = 'app';
 
-    /**
-     * Determines the current asset version.
-     *
-     * @see https://inertiajs.com/asset-versioning
-     */
     public function version(Request $request): ?string
     {
         return parent::version($request);
     }
 
-    /**
-     * Define the props that are shared by default.
-     *
-     * @see https://inertiajs.com/shared-data
-     *
-     * @return array<string, mixed>
-     */
     public function share(Request $request): array
     {
         return array_merge(parent::share($request), [
             'auth' => function () use ($request) {
                 $user = $request->user();
-
-                if (!$user) {
-                    return null;
-                }
-
+                if (!$user) return null;
                 $isOwner = !$user->roles()->exists();
                 $subscription = $user->branch->subscription;
-
-                // Si es propietario, obtiene los permisos de su plan. Si no, los de su rol.
-                if ($isOwner) {
-                    $availableModuleNames = $subscription->getAvailableModuleNames();
-                    $permissions = Permission::query()
-                        ->whereIn('module', $availableModuleNames) // Permisos de módulos del plan
-                        ->orWhere('module', 'Sistema')             // Permisos del sistema
-                        ->pluck('name');
-                } else {
-                    $permissions = $user->getAllPermissions()->pluck('name');
-                }
-
+                $availableModuleNames = $subscription->getAvailableModuleNames();
+                $permissions = $isOwner
+                    ? Permission::query()
+                        ->whereIn('module', $availableModuleNames)
+                        ->orWhere('module', 'Sistema')
+                        ->pluck('name')
+                    : $user->getAllPermissions()->pluck('name');
                 return [
                     'user' => $user,
                     'permissions' => $permissions,
                     'is_subscription_owner' => $isOwner,
-                    'subscription' => [
-                        'commercial_name' => $subscription->commercial_name,
-                    ],
+                    'subscription' => ['commercial_name' => $subscription->commercial_name],
                     'current_branch' => $user->branch,
                     'available_branches' => $subscription->branches()->get(['id', 'name']),
                 ];
             },
-            // Mensajes flash para notificaciones (toasts).
-            'flash' => function () use ($request) {
-                return [
-                    'success' => $request->session()->get('success'),
-                    'error' => $request->session()->get('error'),
-                    'warning' => $request->session()->get('warning'),
-                    'info' => $request->session()->get('info'),
-                    'print_data' => $request->session()->get('print_data'),
-                    'show_payment_modal' => $request->session()->get('show_payment_modal'),
-                ];
-            },
+            'flash' => fn() => [
+                'success' => $request->session()->get('success'),
+                'error' => $request->session()->get('error'),
+                'warning' => $request->session()->get('warning'),
+                'info' => $request->session()->get('info'),
+                'print_data' => $request->session()->get('print_data'),
+            ],
+            
+            // CORREGIDO: Busca la sesión en la que el usuario es participante, no solo el que la abrió.
             'activeSession' => function () use ($request) {
                 $user = $request->user();
-                if (!$user) {
-                    return null;
-                }
-                return CashRegisterSession::where('user_id', $user->id)
+                if (!$user) return null;
+
+                return $user->cashRegisterSessions()
                     ->where('status', CashRegisterSessionStatus::OPEN)
+                    ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $user->branch_id))
                     ->first();
             },
-            'branchHasActiveSession' => function () use ($request) {
+            
+            // AÑADIDO: Busca sesiones a las que el usuario se puede unir si no está en una.
+            'joinableSessions' => function () use ($request) {
                 $user = $request->user();
-                if (!$user) {
-                    return false;
+                if (!$user || $user->cashRegisterSessions()->where('status', CashRegisterSessionStatus::OPEN)->exists()) {
+                    return [];
                 }
+
                 return CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
-                    ->whereHas('cashRegister', function ($q) use ($user) {
-                        $q->where('branch_id', $user->branch_id);
-                    })
-                    ->exists();
+                    ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $user->branch_id))
+                    ->with('cashRegister:id,name', 'opener:id,name')
+                    ->get();
             },
+
+            // CORREGIDO: Solo muestra cajas para ABRIR si el usuario no está en una sesión Y no hay otras a las que unirse.
+            'availableCashRegisters' => function () use ($request) {
+                $user = $request->user();
+                if (!$user) return [];
+
+                $userHasSession = $user->cashRegisterSessions()->where('status', CashRegisterSessionStatus::OPEN)->exists();
+
+                $branchHasAnySession = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
+                    ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $user->branch_id))
+                    ->exists();
+
+                if (!$userHasSession && !$branchHasAnySession) {
+                    return CashRegister::where('branch_id', $user->branch_id)
+                        ->where('is_active', true)
+                        ->where('in_use', false)
+                        ->get(['id', 'name']);
+                }
+
+                return [];
+            }
         ]);
     }
 }
