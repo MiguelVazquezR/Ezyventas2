@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CashRegisterSessionStatus;
+use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
 use App\Models\Customer;
@@ -81,8 +82,24 @@ class DashboardController extends Controller
                 ->orderByDesc('transactions_count')->limit(5)->get(['id', 'name', 'transactions_count']);
         }
 
+        // --- Panel de Cuentas Bancarias ---
+        $userBankAccounts = null;
+        $allSubscriptionBankAccounts = null;
+
+        if ($isAdmin) {
+            $userBankAccounts = BankAccount::whereHas('branches', function ($query) use ($branchId) {
+                $query->where('branch_id', $branchId);
+            })->get();
+        } else {
+            $userBankAccounts = $user->bankAccounts()->get();
+        }
+        // Para el modal de transferencias, se necesitan todas las cuentas de la suscripción.
+        $allSubscriptionBankAccounts = BankAccount::where('subscription_id', $user->branch->subscription_id)->get();
+
         return Inertia::render('Dashboard', [
-            'stats' => $stats
+            'stats' => $stats,
+            'userBankAccounts' => $userBankAccounts,
+            'allSubscriptionBankAccounts' => $allSubscriptionBankAccounts,
         ]);
     }
 
@@ -99,16 +116,16 @@ class DashboardController extends Controller
             ->where(function ($query) {
                 // Condición 1: El item vendido es el producto base.
                 $query->where('transactions_items.itemable_type', Product::class)
-                      ->whereColumn('transactions_items.itemable_id', 'products.id');
+                    ->whereColumn('transactions_items.itemable_id', 'products.id');
             })
             ->orWhere(function ($query) {
                 // Condición 2: El item vendido es una de las variantes de este producto.
                 $query->where('transactions_items.itemable_type', ProductAttribute::class)
-                      ->whereIn('transactions_items.itemable_id', function ($subQuery) {
-                          $subQuery->select('id')
-                                   ->from('product_attributes')
-                                   ->whereColumn('product_attributes.product_id', 'products.id');
-                      });
+                    ->whereIn('transactions_items.itemable_id', function ($subQuery) {
+                        $subQuery->select('id')
+                            ->from('product_attributes')
+                            ->whereColumn('product_attributes.product_id', 'products.id');
+                    });
             })
             ->latest('transactions.created_at')
             ->limit(1);
@@ -151,25 +168,25 @@ class DashboardController extends Controller
             ->orderByDesc('total_sold')
             ->limit(5)
             ->get();
-    
+
         if ($topItems->isEmpty()) {
             return collect();
         }
-    
+
         // Separar IDs por tipo
         $productIds = $topItems->where('itemable_type', Product::class)->pluck('itemable_id');
         $attributeIds = $topItems->where('itemable_type', ProductAttribute::class)->pluck('itemable_id');
-    
+
         // Cargar los modelos necesarios con sus relaciones
         $products = Product::with('media')->whereIn('id', $productIds)->get()->keyBy('id');
         $attributes = ProductAttribute::with(['product.media'])->whereIn('id', $attributeIds)->get()->keyBy('id');
-    
+
         // Unir y formatear los resultados
         return $topItems->map(function ($item) use ($products, $attributes) {
             if ($item->itemable_type === Product::class) {
                 $product = $products->get($item->itemable_id);
                 if (!$product) return null;
-    
+
                 return [
                     'id' => $product->id, // ID del producto padre para el enlace
                     'name' => $product->name,
@@ -179,16 +196,16 @@ class DashboardController extends Controller
                     'image' => $product->getFirstMediaUrl('product-general-images') ?: 'https://placehold.co/100x100?text=' . urlencode($product->name),
                 ];
             }
-    
+
             if ($item->itemable_type === ProductAttribute::class) {
                 $attribute = $attributes->get($item->itemable_id);
                 if (!$attribute || !$attribute->product) return null;
-    
+
                 // Formatear la descripción de la variante
                 $variantDescription = collect($attribute->attributes)->map(function ($value, $key) {
                     return Str::ucfirst($key) . ': ' . $value;
                 })->implode(' / ');
-    
+
                 return [
                     'id' => $attribute->product->id, // ID del producto padre para el enlace
                     'name' => $attribute->product->name,
@@ -198,7 +215,7 @@ class DashboardController extends Controller
                     'image' => $attribute->product->getFirstMediaUrl('product-general-images') ?: 'https://placehold.co/100x100?text=' . urlencode($attribute->product->name),
                 ];
             }
-    
+
             return null;
         })->filter()->sortByDesc('total_sold')->values(); // Limpiar nulos, reordenar por si acaso y resetear keys
     }
@@ -262,9 +279,9 @@ class DashboardController extends Controller
             // CORRECCIÓN: El ciclo ahora genera los días de Lunes a Domingo.
             $date = now()->startOfWeek(Carbon::MONDAY)->addDays($i);
             $dateString = $date->format('Y-m-d');
-            
+
             $dayData = $trendData->get($dateString);
-            
+
             $total = 0;
             if ($dayData) {
                 // Se realiza el cálculo en PHP para mayor seguridad.
@@ -272,7 +289,7 @@ class DashboardController extends Controller
             }
 
             $weekSales[] = [
-                'day' => $date->translatedFormat('D'), 
+                'day' => $date->translatedFormat('D'),
                 'total' => (float) $total
             ];
         }

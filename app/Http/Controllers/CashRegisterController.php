@@ -136,14 +136,22 @@ class CashRegisterController extends Controller implements HasMiddleware
         });
 
         // Obtener las cuentas bancarias de la sucursal.
-        $branchBankAccounts = $branch->bankAccounts()->get();
+        $user = auth()->user();
+        $isOwner = !$user->roles()->exists();
+        $userBankAccounts = null;
+
+        if ($isOwner) {
+            $userBankAccounts = $user->branch->bankAccounts()->get();
+        } else {
+            $userBankAccounts = $user->bankAccounts()->get();
+        }
 
         return Inertia::render('FinancialControl/CashRegister/Show', [
             'cashRegister' => $cashRegister->load('branch'),
             'currentSession' => $currentSession,
             'closedSessions' => $closedSessions,
             'branchUsers' => $branchUsers,
-            'branchBankAccounts' => $branchBankAccounts, // Se pasan a la vista
+            'userBankAccounts' => $userBankAccounts,
         ]);
     }
 

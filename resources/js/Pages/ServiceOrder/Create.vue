@@ -7,7 +7,7 @@ import InputError from '@/Components/InputError.vue';
 import PatternLock from '@/Components/PatternLock.vue';
 import ManageCustomFields from '@/Components/ManageCustomFields.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
-import JoinSessionModal from '@/Components/JoinSessionModal.vue'; // <-- AÑADIDO
+import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import { usePermissions } from '@/Composables';
 import { useConfirm } from "primevue/useconfirm";
 
@@ -17,19 +17,19 @@ const props = defineProps({
     products: Array,
     services: Array,
     errors: Object,
+    userBankAccounts: Array, // Se añade la nueva prop
 });
 
 const page = usePage();
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
 
-// --- LÓGICA DE SESIÓN CORREGIDA ---
 const activeSession = computed(() => page.props.activeSession);
 const joinableSessions = computed(() => page.props.joinableSessions);
 const availableCashRegisters = computed(() => page.props.availableCashRegisters);
 
 const isStartSessionModalVisible = ref(false);
-const isJoinSessionModalVisible = ref(false); // <-- AÑADIDO
+const isJoinSessionModalVisible = ref(false);
 const sessionModalAwaitingSubmit = ref(false);
 
 
@@ -40,14 +40,12 @@ const breadcrumbItems = ref([
 ]);
 
 const form = useForm({
-    // --- Campos de Cliente ---
     customer_id: '',
     customer_name: '',
     customer_phone: '',
     customer_email: '',
     create_customer: false,
     credit_limit: 0,
-    // --- Otros campos ---
     item_description: '',
     reported_problems: '',
     promised_at: null,
@@ -83,7 +81,7 @@ const searchItems = (event) => {
 const addItem = () => {
     let itemToAdd = {
         itemable_id: null,
-        itemable_type: 'App\\Models\\Service', // Default a Servicio para entradas manuales
+        itemable_type: 'App\\Models\\Service',
         description: '',
         quantity: 1,
         unit_price: 0,
@@ -100,7 +98,7 @@ const addItem = () => {
     } else if (typeof selectedItem.value === 'string') {
         itemToAdd = {
             ...itemToAdd,
-            itemable_id: 0, // Se mantiene 0 para indicar que es manual
+            itemable_id: 0,
             description: selectedItem.value
         };
     } else { return; }
@@ -202,7 +200,6 @@ const openCustomFieldManager = () => {
 const onSelectImages = (event) => form.initial_evidence_images = event.files;
 const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evidence_images.filter(img => img.objectURL !== event.file.objectURL);
 
-// --- LÓGICA DE ENVÍO Y SESIÓN CORREGIDA ---
 const submit = () => {
     if (activeSession.value) {
         form.cash_register_session_id = activeSession.value.id;
@@ -278,7 +275,7 @@ watch(activeSession, (newSession) => {
                     </div>
                     <div>
                         <InputLabel for="promised_at" value="Fecha Promesa de Entrega" />
-                        <Calendar id="promised_at" v-model="form.promised_at" class="w-full mt-1"
+                        <DatePicker id="promised_at" v-model="form.promised_at" class="w-full mt-1"
                             dateFormat="dd/mm/yy" />
                         <InputError :message="form.errors.promised_at" class="mt-2" />
                     </div>
@@ -448,6 +445,7 @@ watch(activeSession, (newSession) => {
         <StartSessionModal 
             v-model:visible="isStartSessionModalVisible"
             :cash-registers="availableCashRegisters"
+            :user-bank-accounts="userBankAccounts"
         />
         <JoinSessionModal
             v-model:visible="isJoinSessionModalVisible"
