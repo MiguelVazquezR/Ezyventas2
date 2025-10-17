@@ -161,7 +161,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
                     $query->where('subscription_id', Auth::user()->branch->subscription_id);
                 }),
             ],
-            'bank_accounts.*.balance' => 'required|numeric|min:0',
+            // 'bank_accounts.*.balance' => 'required|numeric|min:0',
         ]);
 
         $cashRegister = CashRegister::findOrFail($validated['cash_register_id']);
