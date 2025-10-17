@@ -6,6 +6,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import CreateExpenseCategoryModal from './Partials/CreateExpenseCategoryModal.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
+import { format } from 'date-fns'; // Importar la función de formato
 
 const props = defineProps({
     categories: Array,
@@ -27,7 +28,7 @@ const form = useForm({
     folio: '',
     amount: null,
     expense_category_id: null,
-    expense_date: new Date(),
+    expense_date: new Date(), // Mantenemos el objeto Date para el componente Calendar
     status: 'pagado',
     description: '',
     payment_method: 'efectivo',
@@ -46,21 +47,14 @@ const paymentMethodOptions = ref([
     { label: 'Transferencia', value: 'transferencia', icon: 'pi pi-arrows-h' },
 ]);
 
-// --- LÓGICA MEJORADA ---
-// Observa el método de pago para preseleccionar la cuenta favorita.
 watch(() => form.payment_method, (newMethod) => {
     if (newMethod === 'efectivo') {
         form.bank_account_id = null;
-    } else { // 'tarjeta' or 'transferencia'
+    } else {
         form.take_from_cash_register = false;
-
-        // Busca la cuenta marcada como favorita para la sucursal actual.
-        // La consulta en el controlador asegura que `branches[0]` contiene la info de la sucursal actual.
         const favoriteAccount = props.bankAccounts.find(account =>
             account.branches?.[0]?.pivot?.is_favorite
         );
-
-        // Si se encuentra una cuenta favorita, se preselecciona. Si no, se limpia la selección.
         form.bank_account_id = favoriteAccount ? favoriteAccount.id : null;
     }
 });
@@ -75,13 +69,15 @@ const handleNewCategory = (newCategory) => {
 const showStartSessionModal = ref(false);
 
 const submit = () => {
-    form.post(route('expenses.store'));
+    // Transformar la fecha a un string YYYY-MM-DD antes de enviar
+    form.transform((data) => ({
+        ...data,
+        expense_date: data.expense_date ? format(data.expense_date, 'yyyy-MM-dd') : null,
+    })).post(route('expenses.store'));
 };
 </script>
 
 <template>
-    <!-- El template se mantiene igual, no necesita cambios -->
-
     <Head title="Crear Gasto" />
     <AppLayout>
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
@@ -97,13 +93,13 @@ const submit = () => {
                     <InputText id="folio" v-model="form.folio" class="mt-1 w-full" />
                     <InputError :message="form.errors.folio" class="mt-2" />
                 </div>
-                <!-- <div>
+                <div>
                     <InputLabel for="expense_date" value="Fecha del Gasto *" />
-                    <DatePicker id="expense_date" v-model="form.expense_date" class="w-full mt-1"
+                    <Calendar id="expense_date" v-model="form.expense_date" class="w-full mt-1"
                         dateFormat="dd/mm/yy" />
                     <InputError :message="form.errors.expense_date" class="mt-2" />
-                </div> -->
-                <div class="mt-0">
+                </div>
+                <div class="md:col-span-2">
                     <InputLabel for="amount" value="Monto *" />
                     <InputNumber id="amount" v-model="form.amount" mode="currency" currency="MXN" locale="es-MX"
                         class="w-full mt-1" />

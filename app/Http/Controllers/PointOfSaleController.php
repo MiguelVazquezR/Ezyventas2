@@ -46,6 +46,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
     {
         $user = Auth::user();
         $branchId = $user->branch_id;
+        $isOwner = !$user->roles()->exists();
 
         $activeSession = $user->cashRegisterSessions()
             ->where('status', CashRegisterSessionStatus::OPEN)
@@ -53,13 +54,13 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ->with([
                 'cashRegister:id,name',
                 'users:id,name',
-                'opener:id,name', // <-- CORRECCIÓN 1: Cargar quien abrió la sesión.
+                'opener:id,name',
                 'transactions' => fn($q) => $q->with([
                     'customer:id,name',
-                    'user:id,name' // <-- CORRECCIÓN 2: Cargar el usuario de CADA transacción.
+                    'user:id,name'
                 ])->latest(),
                 'cashMovements' => fn($q) => $q->with([
-                    'user:id,name' // <-- CORRECCIÓN 3: Cargar el usuario de CADA movimiento de efectivo.
+                    'user:id,name'
                 ])->latest(),
                 'payments'
             ])
@@ -67,8 +68,8 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
         $joinableSessions = null;
         $availableCashRegisters = null;
+        $userBankAccounts = null; // Cambiado de branchBankAccounts
 
-        $branchBankAccounts = null;
         if (!$activeSession) {
             $joinableSessions = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
                 ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $branchId))
@@ -80,8 +81,15 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     ->where('is_active', true)->where('in_use', false)
                     ->select('id', 'name')->get();
             }
-            // --- Obtener las cuentas bancarias de la sucursal actual ---
-            $branchBankAccounts = Auth::user()->branch->bankAccounts()->get();
+
+            // --- LÓGICA DE CUENTAS BANCARIAS CORREGIDA ---
+            if ($isOwner) {
+                // Si es propietario, obtiene todas las cuentas de la sucursal.
+                $userBankAccounts = Auth::user()->branch->bankAccounts()->get();
+            } else {
+                // Si no es propietario, obtiene solo las cuentas asignadas.
+                $userBankAccounts = $user->bankAccounts()->get();
+            }
         }
 
         if ($activeSession) {
@@ -98,7 +106,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ];
         }
 
-        // ... (El resto del método se mantiene igual)
         $search = $request->input('search');
         $categoryId = $request->input('category');
         $availableTemplates = $user->branch->printTemplates()
@@ -117,7 +124,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'joinableSessions' => $joinableSessions,
             'availableCashRegisters' => $availableCashRegisters,
             'availableTemplates' => $availableTemplates,
-            'branchBankAccounts' => $branchBankAccounts,
+            'userBankAccounts' => $userBankAccounts, // Se pasa la nueva variable
         ];
 
         $agent = new Agent();

@@ -23,7 +23,7 @@ const props = defineProps({
     availableCashRegisters: Array,
     availableTemplates: Array,
     joinableSessions: Array,
-    branchBankAccounts: Array,
+    userBankAccounts: Array,
 });
 
 const page = usePage();
@@ -287,7 +287,7 @@ const handleCheckout = (checkoutData) => {
         <StartSessionModal 
             :visible="isStartSessionModalVisible" 
             :cash-registers="availableCashRegisters"
-            :branch-bank-accounts="branchBankAccounts"
+            :user-bank-accounts="userBankAccounts"
             @update:visible="isStartSessionModalVisible = $event" 
         />
         <JoinSessionModal 

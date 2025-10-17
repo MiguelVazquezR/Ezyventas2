@@ -1,10 +1,14 @@
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import BankAccountHistoryModal from '@/Components/BankAccountHistoryModal.vue';
+import BankAccountTransferModal from '@/Components/BankAccountTransferModal.vue';
 
 const props = defineProps({
     stats: Object,
+    userBankAccounts: Array,
+    allSubscriptionBankAccounts: Array,
 });
 
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
@@ -43,6 +47,32 @@ const inventoryPercentages = computed(() => {
 });
 
 const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[status] || 0;
+
+// --- Lógica para Panel de Cuentas Bancarias ---
+const menu = ref();
+const isHistoryModalVisible = ref(false);
+const isTransferModalVisible = ref(false);
+const selectedAccount = ref(null);
+
+const totalBalance = computed(() => {
+    if (!props.userBankAccounts) return 0;
+    return props.userBankAccounts.reduce((sum, account) => sum + parseFloat(account.balance), 0);
+});
+
+const toggleMenu = (event, account) => {
+    selectedAccount.value = account;
+    menu.value.toggle(event);
+};
+
+const menuItems = ref([
+    { label: 'Ver Historial', icon: 'pi pi-history', command: () => { isHistoryModalVisible.value = true; } },
+    { label: 'Realizar Transferencia', icon: 'pi pi-arrows-h', command: () => { isTransferModalVisible.value = true; } }
+]);
+
+const onTransferSuccess = () => {
+    isTransferModalVisible.value = false;
+    router.reload({ preserveState: false });
+};
 
 </script>
 
@@ -170,6 +200,38 @@ const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[st
                     </div>
                 </div>
 
+                <!-- NUEVO: Fila de Cuentas Bancarias -->
+                <div v-if="userBankAccounts" class="mt-6">
+                    <Card>
+                        <template #title>Cuentas bancarias</template>
+                        <template #subtitle>Balance actual y acciones rápidas.</template>
+                        <template #content>
+                            <div v-if="userBankAccounts.length > 0">
+                                <div
+                                    class="flex justify-between items-center mb-4 pb-2 border-b border-dashed dark:border-gray-700">
+                                    <span class="font-bold">Balance Total</span>
+                                    <span class="font-bold text-lg">{{ formatCurrency(totalBalance) }}</span>
+                                </div>
+                                <ul class="space-y-3 max-h-60 overflow-y-auto pr-2">
+                                    <li v-for="account in userBankAccounts" :key="account.id"
+                                        class="flex justify-between items-center">
+                                        <div>
+                                            <p class="font-semibold">{{ account.account_name }}</p>
+                                            <p class="text-sm text-gray-500">{{ account.bank_name }}</p>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                             <span class="font-mono font-bold">{{ formatCurrency(account.balance) }}</span>
+                                             <Button icon="pi pi-ellipsis-v" text rounded @click="toggleMenu($event, account)" />
+                                        </div>
+                                    </li>
+                                </ul>
+                                <Menu ref="menu" :model="menuItems" :popup="true" />
+                            </div>
+                            <p v-else class="text-center text-gray-500 py-4">No tienes cuentas bancarias asignadas para administrar.</p>
+                        </template>
+                    </Card>
+                </div>
+
                 <!-- Fila 3: Productos y Clientes -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
                     <div v-if="stats.top_selling_products && stats.top_selling_products.length > 0"
@@ -185,14 +247,10 @@ const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[st
                                     class="w-12 h-12 rounded-md object-contain">
                                 <div class="flex-grow">
                                     <p class="font-semibold text-sm m-0">{{ product.name }}</p>
-
-                                    <!-- CORRECCIÓN: Mostrar detalles de la variante si existen -->
                                     <p v-if="product.variant_description"
                                         class="text-xs text-orange-500 m-0 font-medium">
                                         {{ product.variant_description }}
                                     </p>
-                                    <!-- FIN DE LA CORRECCIÓN -->
-
                                     <p class="text-xs text-gray-500 m-0">{{ product.total_sold }} unidades</p>
                                 </div>
                                 <p class="font-semibold text-sm">{{ formatCurrency(product.selling_price) }}</p>
@@ -318,5 +376,19 @@ const getServiceOrderStatus = (status) => props.stats.service_orders_status?.[st
                 <p class="text-gray-500 mt-2">¡Que tengas un excelente día de trabajo!</p>
             </div>
         </div>
+
+        <!-- Modales -->
+        <BankAccountHistoryModal
+            v-if="selectedAccount"
+            v-model:visible="isHistoryModalVisible"
+            :account="selectedAccount"
+        />
+        <BankAccountTransferModal
+            v-if="selectedAccount"
+            v-model:visible="isTransferModalVisible"
+            :account="selectedAccount"
+            :all-accounts="allSubscriptionBankAccounts"
+            @transfer-success="onTransferSuccess"
+        />
     </AppLayout>
 </template>

@@ -203,7 +203,7 @@ const submit = () => {
                     </div>
                     <div>
                         <InputLabel for="promised_at" value="Fecha Promesa de Entrega" />
-                        <Calendar id="promised_at" v-model="form.promised_at" class="w-full mt-1"
+                        <DatePicker id="promised_at" v-model="form.promised_at" class="w-full mt-1"
                             dateFormat="dd/mm/yy" />
                         <InputError :message="form.errors.promised_at" class="mt-2" />
                     </div>

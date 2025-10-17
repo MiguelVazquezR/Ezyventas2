@@ -11,7 +11,7 @@ const props = defineProps({
     user: Object,
     roles: Array,
     permissions: Object, // Se recibe la nueva prop de permisos
-    allBankAccounts: Array,
+    bankAccounts: Array,
 });
 
 const form = useForm({
@@ -99,8 +99,12 @@ const handleRoleCreated = (newRole) => {
                         </div>
 
                         <div>
-                            <InputLabel for="bank_accounts" value="Cuentas Bancarias Permitidas" />
-                            <MultiSelect v-model="form.bank_account_ids" :options="allBankAccounts"
+                            <div class="flex items-center gap-2">
+                                <InputLabel for="bank_accounts" value="Cuentas Bancarias Permitidas" />
+                                <i class="pi pi-info-circle text-gray-400"
+                                    v-tooltip.right="'Son las cuentas que el usuario puede administrar (Ver y editar saldo, registrar gastos y pagos).'" />
+                            </div>
+                            <MultiSelect v-model="form.bank_account_ids" :options="bankAccounts"
                                 optionLabel="account_name" optionValue="id" placeholder="Selecciona las cuentas"
                                 class="w-full mt-1">
                                 <template #option="slotProps">

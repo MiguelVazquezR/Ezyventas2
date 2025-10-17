@@ -14,7 +14,7 @@ const props = defineProps({
     currentSession: Object,
     closedSessions: Object,
     branchUsers: Array,
-    branchBankAccounts: Array,
+    userBankAccounts: Array,
 });
 
 const page = usePage();
@@ -198,7 +198,7 @@ const formatDate = (dateString) => {
         </div>
 
         <!-- Modales -->
-        <OpenCashRegisterModal v-if="cashRegister" :visible="showOpenModal" :cash-register="cashRegister" :branch-users="branchUsers" :branch-bank-accounts="branchBankAccounts" @update:visible="showOpenModal = false" />
+        <OpenCashRegisterModal v-if="cashRegister" :visible="showOpenModal" :cash-register="cashRegister" :branch-users="branchUsers" :user-bank-accounts="userBankAccounts" @update:visible="showOpenModal = false" />
         <CloseSessionModal v-if="currentSession" :visible="showCloseModal" :session="currentSession" @update:visible="showCloseModal = false" />
         <AddCashMovementModal v-if="currentSession" :visible="showAddMovementModal" :session="currentSession" @update:visible="showAddMovementModal = false" />
         <SessionHistoryModal v-if="currentSession" :visible="showHistoryModal" :session="currentSession" @update:visible="showHistoryModal = false" />
