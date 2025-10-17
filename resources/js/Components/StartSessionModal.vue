@@ -1,20 +1,16 @@
 <script setup>
 import { useForm, usePage } from '@inertiajs/vue3';
-import { watch } from 'vue'; // Se importa 'watch'
+import { watch } from 'vue';
 import InputLabel from './InputLabel.vue';
 import InputError from './InputError.vue';
-import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     visible: Boolean,
     cashRegisters: Array,
-    branchBankAccounts: Array,
+    userBankAccounts: Array,
 });
 
 const emit = defineEmits(['update:visible']);
-
-// composables
-const { hasPermission } = usePermissions();
 
 const user = usePage().props.auth.user;
 
@@ -25,15 +21,11 @@ const form = useForm({
     bank_accounts: [],
 });
 
-// CORRECCIÓN: Se reemplaza watchEffect por un watch en la visibilidad del modal.
-// Esto asegura que los datos se carguen solo una vez al abrir el modal,
-// evitando que se sobrescriban los cambios del usuario.
 watch(() => props.visible, (isVisible) => {
     if (isVisible) {
-        if (props.branchBankAccounts) {
-            // Se cargan los datos de las cuentas bancarias en el formulario.
-            // Se incluyen los nombres para usarlos en las etiquetas del template.
-            form.bank_accounts = props.branchBankAccounts.map(account => ({
+        // La lógica ahora usa la nueva prop userBankAccounts
+        if (props.userBankAccounts) {
+            form.bank_accounts = props.userBankAccounts.map(account => ({
                 id: account.id,
                 bank_name: account.bank_name,
                 account_name: account.account_name,
@@ -57,7 +49,7 @@ const submit = () => {
 
 const closeModal = () => {
     emit('update:visible', false);
-    form.reset(); // reset() limpia el formulario al cerrar.
+    form.reset();
 };
 </script>
 
@@ -76,7 +68,7 @@ const closeModal = () => {
         <form v-if="cashRegisters && cashRegisters.length > 0" @submit.prevent="submit" class="p-2 space-y-6">
             <div>
                 <InputLabel for="cash-register" value="Caja Registradora *" />
-                <Dropdown v-model="form.cash_register_id" :options="cashRegisters" optionLabel="name" optionValue="id" placeholder="Selecciona una caja disponible" class="w-full mt-1" />
+                <Select v-model="form.cash_register_id" :options="cashRegisters" optionLabel="name" optionValue="id" placeholder="Selecciona una caja disponible" class="w-full mt-1" />
                 <InputError :message="form.errors.cash_register_id" class="mt-1" />
             </div>
             
@@ -90,8 +82,7 @@ const closeModal = () => {
                         <InputNumber id="opening-balance" v-model="form.opening_cash_balance" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" inputClass="w-full" />
                         <InputError :message="form.errors.opening_cash_balance" class="mt-1" />
                     </div>
-                    <!-- Sección de Cuentas Bancarias -->
-                    <div v-if="form.bank_accounts && form.bank_accounts.length > 0 && hasPermission('system.bank_accounts.manage')">
+                    <div v-if="form.bank_accounts && form.bank_accounts.length > 0">
                          <div v-for="(account, index) in form.bank_accounts" :key="account.id" class="mt-4">
                             <InputLabel :for="'bank-balance-' + account.id" :value="`Saldo en ${account.bank_name} (${account.account_name})`" />
                             <InputNumber :id="'bank-balance-' + account.id" v-model="account.balance" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" inputClass="w-full" />

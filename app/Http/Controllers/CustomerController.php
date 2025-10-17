@@ -25,7 +25,7 @@ class CustomerController extends Controller implements HasMiddleware
             new Middleware('can:customers.delete', only: ['destroy', 'batchDestroy']),
         ];
     }
-    
+
     public function index(Request $request): Response
     {
         $user = Auth::user();
@@ -38,9 +38,9 @@ class CustomerController extends Controller implements HasMiddleware
             $searchTerm = $request->input('search');
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('name', 'LIKE', "%{$searchTerm}%")
-                  ->orWhere('company_name', 'LIKE', "%{$searchTerm}%")
-                  ->orWhere('email', 'LIKE', "%{$searchTerm}%")
-                  ->orWhere('phone', 'LIKE', "%{$searchTerm}%");
+                    ->orWhere('company_name', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('email', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('phone', 'LIKE', "%{$searchTerm}%");
             });
         }
 
@@ -74,9 +74,9 @@ class CustomerController extends Controller implements HasMiddleware
     {
         // Se cargan las transacciones por separado para la primera tabla.
         $customer->load([
-            'transactions' => fn ($query) => $query->orderBy('created_at', 'desc'),
+            'transactions' => fn($query) => $query->orderBy('created_at', 'desc'),
         ]);
-        
+
         // Se obtienen las cajas registradoras disponibles para el modal de apertura de sesión.
         $user = Auth::user();
         $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
@@ -84,11 +84,21 @@ class CustomerController extends Controller implements HasMiddleware
             ->where('in_use', false)
             ->get(['id', 'name']);
 
+        $isOwner = !$user->roles()->exists();
+        $userBankAccounts = null;
+
+        if ($isOwner) {
+            $userBankAccounts = $user->branch->bankAccounts()->get();
+        } else {
+            $userBankAccounts = $user->bankAccounts()->get();
+        }
+
         return Inertia::render('Customer/Show', [
             'customer' => $customer,
             // Se pasa el nuevo historial de movimientos calculado a través del accesor en el modelo Customer.
             'historicalMovements' => $customer->historical_movements,
             'availableCashRegisters' => $availableCashRegisters,
+            'userBankAccounts' => $userBankAccounts,
         ]);
     }
 

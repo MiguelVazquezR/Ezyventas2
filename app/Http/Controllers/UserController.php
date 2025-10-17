@@ -122,7 +122,7 @@ class UserController extends Controller implements HasMiddleware
             ->get()->groupBy('module');
 
         // Obtener las cuentas bancarias de la suscripción
-        $bankAccounts = $subscription->bankAccounts()->get(['id', 'account_name', 'bank_name']);
+         $bankAccounts = auth()->user()->branch->bankAccounts()->get();
 
         return Inertia::render('User/Create', [
             'roles' => $roles,
@@ -189,13 +189,13 @@ class UserController extends Controller implements HasMiddleware
             ->get()->groupBy('module');
 
         // Obtener todas las cuentas de la suscripción
-        $bankAccounts = $subscription->bankAccounts()->get(['id', 'account_name', 'bank_name']);
+        $bankAccounts = $user->branch->bankAccounts()->get();
 
         return Inertia::render('User/Edit', [
             'user' => $user,
             'roles' => $roles,
             'permissions' => $permissions,
-            'allBankAccounts' => $bankAccounts, // Todas las cuentas disponibles
+            'bankAccounts' => $bankAccounts, // Todas las cuentas disponibles
         ]);
     }
 

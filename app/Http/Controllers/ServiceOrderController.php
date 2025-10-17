@@ -374,20 +374,25 @@ class ServiceOrderController extends Controller implements HasMiddleware
         return redirect()->route('service-orders.index')->with('success', 'Órdenes seleccionadas eliminadas.');
     }
 
-    private function getFormData(): array
+   private function getFormData(): array
     {
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
+        $isOwner = !$user->roles()->exists();
+        $userBankAccounts = null;
+
+        if ($isOwner) {
+            $userBankAccounts = $user->branch->bankAccounts()->get();
+        } else {
+            $userBankAccounts = $user->bankAccounts()->get();
+        }
 
         return [
             'customers' => Customer::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))->get(),
             'products' => Product::where('branch_id', $user->branch_id)->with('productAttributes')->get(),
             'services' => Service::where('branch_id', $user->branch_id)->get(['id', 'name', 'base_price']),
             'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'service_orders')->get(),
-            'availableCashRegisters' => CashRegister::where('branch_id', $user->branch_id)
-                ->where('is_active', true)
-                ->where('in_use', false)
-                ->get(['id', 'name']),
+            'userBankAccounts' => $userBankAccounts, // Se añade la nueva variable
         ];
     }
 }

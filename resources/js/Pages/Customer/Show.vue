@@ -11,6 +11,7 @@ import PaymentModal from '@/Components/PaymentModal.vue';
 const props = defineProps({
     customer: Object,
     historicalMovements: Array,
+    userBankAccounts: Array,
 });
 
 const confirm = useConfirm();
@@ -242,6 +243,7 @@ const getTransactionStatusSeverity = (status) => {
         <StartSessionModal 
             v-model:visible="isStartSessionModalVisible"
             :cash-registers="availableCashRegisters"
+            :user-bank-accounts="userBankAccounts"
         />
         <JoinSessionModal
             v-model:visible="isJoinSessionModalVisible"
