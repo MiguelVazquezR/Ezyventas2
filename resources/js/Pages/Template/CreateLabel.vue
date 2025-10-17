@@ -1,6 +1,6 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputError from '@/Components/InputError.vue';
@@ -13,7 +13,6 @@ const props = defineProps({
     customFieldDefinitions: Array,
 });
 
-// --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
 const limitReached = computed(() => {
     if (props.templateLimit === -1) return false;
     return props.templateUsage >= props.templateLimit;
@@ -108,7 +107,6 @@ const placeholderOptions = computed(() => {
     const options = getInitialPlaceholderOptions();
     const customFieldsByModule = {};
 
-    // Agrupar campos personalizados por módulo
     props.customFieldDefinitions.forEach(field => {
         if (!customFieldsByModule[field.module]) {
             customFieldsByModule[field.module] = [];
@@ -116,7 +114,6 @@ const placeholderOptions = computed(() => {
         customFieldsByModule[field.module].push(field);
     });
 
-    // Crear grupos de placeholders para cada módulo con campos personalizados
     for (const moduleKey in customFieldsByModule) {
         if (moduleKey === 'service_orders') {
             options.push({
@@ -127,7 +124,6 @@ const placeholderOptions = computed(() => {
                 }))
             });
         }
-        // Aquí podrías añadir más `if` para otros módulos si es necesario
     }
 
     return options;
@@ -144,12 +140,12 @@ const addElement = (type) => {
         newElement.data.font_size = 1;
     }
     if (type === 'barcode') {
-        newElement.data.value = '{{producto.sku}}';
+        newElement.data.value = '{{p.sku}}';
         newElement.data.type = '128';
         newElement.data.height = 50;
     }
     if (type === 'qr') {
-        newElement.data.value = '{{producto.url}}';
+        newElement.data.value = '{{p.url}}';
         newElement.data.magnification = 4;
     }
     templateElements.value.push(newElement);
@@ -163,30 +159,79 @@ const removeElement = (elementId) => {
     }
 };
 
-const scale = 4;
+const previewContainerRef = ref(null);
+const previewContainerSize = ref({ width: 0, height: 0 });
+let resizeObserver = null;
+
+onMounted(() => {
+    if (previewContainerRef.value) {
+        resizeObserver = new ResizeObserver(entries => {
+            const entry = entries[0];
+            previewContainerSize.value = {
+                width: entry.contentRect.width - 32,
+                height: entry.contentRect.height - 32,
+            };
+        });
+        resizeObserver.observe(previewContainerRef.value);
+    }
+});
+
+onUnmounted(() => {
+    if (resizeObserver && previewContainerRef.value) {
+        resizeObserver.unobserve(previewContainerRef.value);
+    }
+});
+
 const dotsPerMm = computed(() => form.content.config.dpi / 25.4);
+
+const displayScale = computed(() => {
+    if (!previewContainerSize.value.width || !form.content.config.width || !form.content.config.height) {
+        return 4;
+    }
+    const scaleX = previewContainerSize.value.width / form.content.config.width;
+    const scaleY = previewContainerSize.value.height / form.content.config.height;
+    return Math.min(scaleX, scaleY);
+});
+
+const previewStyle = computed(() => {
+    return {
+        width: `${form.content.config.width * displayScale.value}px`,
+        height: `${form.content.config.height * displayScale.value}px`,
+    };
+});
+
+const tsplFontDotHeights = { 1: 12, 2: 20, 3: 24, 4: 32, 5: 48, 6: 64, 7: 80, 8: 96 };
 
 const getElementStyle = (element) => {
     const baseStyle = {
         position: 'absolute',
-        left: `${element.data.x * scale}px`,
-        top: `${element.data.y * scale}px`,
+        left: `${element.data.x * displayScale.value}px`,
+        top: `${element.data.y * displayScale.value}px`,
         transform: `rotate(${element.data.rotation}deg)`,
         transformOrigin: 'top left',
         border: '1px dashed #9ca3af',
         padding: '2px',
-        whiteSpace: 'nowrap',
         cursor: 'grab',
+        overflow: 'hidden',
     };
 
     if (element.type === 'text') {
-        const fontSizes = { 1: 12, 2: 16, 3: 20, 4: 24, 5: 28, 6: 32, 7: 36, 8: 40 };
-        baseStyle.fontSize = `${(fontSizes[element.data.font_size] || 12) * (scale / 4)}px`;
+        const fontDotHeight = tsplFontDotHeights[element.data.font_size] || 12;
+        const fontHeightMm = fontDotHeight / dotsPerMm.value;
+        const fontHeightPx = fontHeightMm * displayScale.value;
+        baseStyle.fontSize = `${fontHeightPx}px`;
+        baseStyle.lineHeight = '1';
+        baseStyle.whiteSpace = 'nowrap';
     }
     if (element.type === 'barcode') {
-        const heightInMm = element.data.height / dotsPerMm.value;
-        baseStyle.height = `${heightInMm * scale}px`;
-        baseStyle.width = '80%';
+        const heightMm = element.data.height / dotsPerMm.value;
+        baseStyle.height = `${heightMm * displayScale.value}px`;
+        const widthMm = form.content.config.width - element.data.x;
+        baseStyle.width = `${widthMm * displayScale.value}px`;
+    }
+    if (element.type === 'qr') {
+        const size = element.data.magnification * 3 * (displayScale.value / 4);
+        baseStyle.fontSize = `${Math.max(12, size)}px`;
     }
     return baseStyle;
 };
@@ -209,11 +254,11 @@ const onDragMove = (event) => {
     const deltaX = event.clientX - dragStart.value.x;
     const deltaY = event.clientY - dragStart.value.y;
 
-    const newX = elementStart.value.x + (deltaX / scale);
-    const newY = elementStart.value.y + (deltaY / scale);
+    const newX = elementStart.value.x + (deltaX / displayScale.value);
+    const newY = elementStart.value.y + (deltaY / displayScale.value);
 
-    selectedElement.value.data.x = Math.max(0, Math.min(newX, form.content.config.width));
-    selectedElement.value.data.y = Math.max(0, Math.min(newY, form.content.config.height));
+    selectedElement.value.data.x = Math.max(0, newX);
+    selectedElement.value.data.y = Math.max(0, newY);
 };
 
 const onDragEnd = () => {
@@ -229,7 +274,6 @@ const dpiOptions = ref([203, 300, 600]);
 
     <Head title="Crear Plantilla de Etiqueta" />
     <AppLayout>
-        <!-- AÑADIDO: Contenido condicional basado en el límite -->
         <div v-if="limitReached" class="h-[calc(100vh-6rem)] flex items-center justify-center p-4">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
                 <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>
@@ -249,9 +293,7 @@ const dpiOptions = ref([203, 300, 600]);
             </div>
         </div>
 
-        <!-- Editor de plantillas original -->
         <div v-else class="flex h-[calc(100vh-6rem)]">
-            <!-- Columna de Herramientas -->
             <div class="w-1/4 border-r dark:border-gray-700 p-4 overflow-y-auto">
                 <h3 class="font-bold mb-4">Configuración de Etiqueta</h3>
                 <div class="space-y-4">
@@ -300,10 +342,9 @@ const dpiOptions = ref([203, 300, 600]);
                 </div>
             </div>
 
-            <!-- Vista Previa de la Etiqueta -->
-            <div class="w-1/2 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-                <div class="bg-white rounded-md shadow-lg relative border"
-                    :style="{ width: `${form.content.config.width * 4}px`, height: `${form.content.config.height * 4}px` }">
+            <div ref="previewContainerRef"
+                class="w-1/2 p-4 overflow-auto bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+                <div class="bg-white rounded-md shadow-lg relative border shrink-0" :style="previewStyle">
                     <p v-if="templateElements.length === 0"
                         class="text-center text-gray-400 absolute inset-0 flex items-center justify-center">Vista Previa
                         de Etiqueta</p>
@@ -312,21 +353,23 @@ const dpiOptions = ref([203, 300, 600]);
                         @mousedown.prevent="onDragStart($event, element)" :style="getElementStyle(element)"
                         class="flex items-center"
                         :class="{ '!border-blue-500 !border-solid': selectedElement?.id === element.id }">
-                        <div v-if="element.type === 'text'" class="whitespace-pre-line text-[10px]">{{
-                            element.data.value }}</div>
+
+                        <div v-if="element.type === 'text'" class="h-full w-full flex items-center">
+                            <span>{{ element.data.value }}</span>
+                        </div>
                         <div v-if="element.type === 'barcode'"
                             class="w-full h-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
                             <i class="pi pi-barcode text-xl text-gray-500"></i>
                         </div>
-                        <div v-if="element.type === 'qr'" class="w-full h-full flex items-center justify-center">
+                        <div v-if="element.type === 'qr'"
+                            class="w-full h-full flex items-center justify-center">
                             <i class="pi pi-qrcode text-gray-500"
-                                :style="{ fontSize: `${element.data.magnification * 8}px` }"></i>
+                                :style="{ fontSize: getElementStyle(element).fontSize }"></i>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Panel de Propiedades -->
             <div class="w-1/4 border-l dark:border-gray-700 p-4 overflow-y-auto">
                 <h3 class="font-bold mb-4">Propiedades</h3>
                 <div v-if="selectedElement" class="space-y-4">
@@ -334,12 +377,12 @@ const dpiOptions = ref([203, 300, 600]);
                         <div>
                             <InputLabel value="X (mm)" />
                             <InputNumber v-model="selectedElement.data.x" class="w-full mt-1" showButtons
-                                inputClass="w-full" :step="0.1" />
+                                inputClass="w-full" :step="0.1" :min="0" :minFractionDigits="1" :maxFractionDigits="2" />
                         </div>
                         <div>
                             <InputLabel value="Y (mm)" />
                             <InputNumber v-model="selectedElement.data.y" class="w-full mt-1" showButtons
-                                inputClass="w-full" :step="0.1" />
+                                inputClass="w-full" :step="0.1" :min="0" :minFractionDigits="1" :maxFractionDigits="2" />
                         </div>
                     </div>
                     <div>
@@ -355,7 +398,7 @@ const dpiOptions = ref([203, 300, 600]);
                         </div>
                         <div>
                             <InputLabel value="Tamaño de Fuente" />
-                            <InputNumber v-model="selectedElement.data.font_size" class="w-full mt-1" showButtons />
+                            <InputNumber v-model="selectedElement.data.font_size" class="w-full mt-1" showButtons :min="1" :max="8" />
                         </div>
                         <Accordion :activeIndex="null">
                             <AccordionTab header="Insertar variable">
@@ -378,7 +421,7 @@ const dpiOptions = ref([203, 300, 600]);
                             <InputText v-model="selectedElement.data.value" class="w-full mt-1" />
                         </div>
                         <div>
-                            <InputLabel value="Altura (px)" />
+                            <InputLabel value="Altura (dots)" />
                             <InputNumber v-model="selectedElement.data.height" class="w-full mt-1" showButtons />
                         </div>
                     </div>
@@ -389,7 +432,7 @@ const dpiOptions = ref([203, 300, 600]);
                         </div>
                         <div>
                             <InputLabel value="Magnificación" />
-                            <InputNumber v-model="selectedElement.data.magnification" class="w-full mt-1" showButtons />
+                            <InputNumber v-model="selectedElement.data.magnification" class="w-full mt-1" showButtons :min="1" :max="10" />
                         </div>
                     </div>
                     <Button @click="removeElement(selectedElement.id)" label="Eliminar Elemento" icon="pi pi-trash"

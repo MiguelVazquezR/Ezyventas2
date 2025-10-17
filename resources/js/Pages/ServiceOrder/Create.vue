@@ -7,8 +7,9 @@ import InputError from '@/Components/InputError.vue';
 import PatternLock from '@/Components/PatternLock.vue';
 import ManageCustomFields from '@/Components/ManageCustomFields.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
+import JoinSessionModal from '@/Components/JoinSessionModal.vue'; // <-- AÑADIDO
 import { usePermissions } from '@/Composables';
-import { useConfirm } from "primevue/useconfirm"; // <-- 1. IMPORTAR useConfirm
+import { useConfirm } from "primevue/useconfirm";
 
 const props = defineProps({
     customFieldDefinitions: Array,
@@ -16,17 +17,21 @@ const props = defineProps({
     products: Array,
     services: Array,
     errors: Object,
-    availableCashRegisters: Array,
 });
 
 const page = usePage();
-const activeSession = computed(() => page.props.activeSession);
-const isStartSessionModalVisible = ref(false);
-const sessionModalAwaitingSubmit = ref(false);
-const confirm = useConfirm(); // <-- 2. INICIALIZAR confirm
-
-// composables
+const confirm = useConfirm();
 const { hasPermission } = usePermissions();
+
+// --- LÓGICA DE SESIÓN CORREGIDA ---
+const activeSession = computed(() => page.props.activeSession);
+const joinableSessions = computed(() => page.props.joinableSessions);
+const availableCashRegisters = computed(() => page.props.availableCashRegisters);
+
+const isStartSessionModalVisible = ref(false);
+const isJoinSessionModalVisible = ref(false); // <-- AÑADIDO
+const sessionModalAwaitingSubmit = ref(false);
+
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -103,7 +108,6 @@ const addItem = () => {
     selectedItem.value = null;
 };
 
-// --- 3. LÓGICA DE CONFIRMACIÓN DE ELIMINACIÓN ---
 const removeItem = (index) => form.items.splice(index, 1);
 const confirmRemoveItem = (event, index) => {
     confirm.require({
@@ -118,10 +122,7 @@ const confirmRemoveItem = (event, index) => {
         }
     });
 };
-// --- 4. LÓGICA PARA PRECIO UNITARIO POR DEFECTO ---
 const checkUnitPrice = (index) => {
-    // Se usa setTimeout para esperar que v-model actualice el valor en el formulario
-    // antes de hacer la comprobación, solucionando el problema del valor "atrasado".
     setTimeout(() => {
         if (form.items[index].unit_price === null || form.items[index].unit_price === undefined) {
             form.items[index].unit_price = 0;
@@ -201,15 +202,18 @@ const openCustomFieldManager = () => {
 const onSelectImages = (event) => form.initial_evidence_images = event.files;
 const onRemoveImage = (event) => form.initial_evidence_images = form.initial_evidence_images.filter(img => img.objectURL !== event.file.objectURL);
 
+// --- LÓGICA DE ENVÍO Y SESIÓN CORREGIDA ---
 const submit = () => {
-    if (!activeSession.value) {
+    if (activeSession.value) {
+        form.cash_register_session_id = activeSession.value.id;
+        form.post(route('service-orders.store'));
+    } else if (joinableSessions.value && joinableSessions.value.length > 0) {
+        sessionModalAwaitingSubmit.value = true;
+        isJoinSessionModalVisible.value = true;
+    } else {
         sessionModalAwaitingSubmit.value = true;
         isStartSessionModalVisible.value = true;
-        return;
     }
-
-    form.cash_register_session_id = activeSession.value.id;
-    form.post(route('service-orders.store'));
 };
 
 watch(activeSession, (newSession) => {
@@ -440,8 +444,15 @@ watch(activeSession, (newSession) => {
         <ManageCustomFields ref="manageFieldsComponent" module="service_orders"
             :definitions="props.customFieldDefinitions" />
 
-        <StartSessionModal :visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
-            @update:visible="isStartSessionModalVisible = $event" />
+        <!-- MODALES DE SESIÓN -->
+        <StartSessionModal 
+            v-model:visible="isStartSessionModalVisible"
+            :cash-registers="availableCashRegisters"
+        />
+        <JoinSessionModal
+            v-model:visible="isJoinSessionModalVisible"
+            :sessions="joinableSessions"
+        />
 
         <ConfirmPopup group="concept-delete" />
 

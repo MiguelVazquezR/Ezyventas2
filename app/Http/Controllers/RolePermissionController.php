@@ -36,10 +36,16 @@ class RolePermissionController extends Controller implements HasMiddleware
         // 1. Obtener los nombres de los módulos disponibles en la suscripción actual.
         $availableModuleNames = $subscription->getAvailableModuleNames();
 
-        // 2. Filtrar los permisos para mostrar solo los de los módulos disponibles.
-        $permissions = Permission::whereIn('module', $availableModuleNames)
+        // 2. Obtener permisos de los módulos del plan Y los permisos del sistema (module = 'Sistema').
+        $permissions = Permission::query()
+            ->whereIn('module', $availableModuleNames) // Permisos de módulos del plan
+            ->orWhere('module', 'Sistema')          // Permisos del sistema
             ->get()
-            ->groupBy('module');
+            ->groupBy(function ($item, $key) {
+                // Agrupa los permisos. Si un permiso no tiene módulo, lo asigna al grupo "Sistema".
+                // Esta lógica se mantiene por robustez, aunque ahora siempre debería haber un módulo.
+                return $item['module'] ?? 'Sistema';
+            });
 
         return Inertia::render('Role/Index', [
             'roles' => $roles,
