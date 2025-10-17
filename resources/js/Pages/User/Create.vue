@@ -10,9 +10,9 @@ import CreateRoleModal from '@/Components/CreateRoleModal.vue';
 const props = defineProps({
     roles: Array,
     permissions: Object,
-    // --- AÑADIDO: Props para manejar los límites ---
     userLimit: Number,
     userUsage: Number,
+    bankAccounts: Array,
 });
 
 // --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
@@ -27,6 +27,7 @@ const form = useForm({
     password: '',
     password_confirmation: '',
     role_id: null,
+    bank_account_ids: [],
 });
 
 // --- Lógica para el modal de roles ---
@@ -61,24 +62,27 @@ const showRolePermissions = (roleId) => {
 </script>
 
 <template>
+
     <Head title="Crear Usuario" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8">
             <!-- AÑADIDO: Mensaje cuando se alcanza el límite -->
-            <div v-if="limitReached" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
-                 <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>
-                 <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Límite de Usuarios Alcanzado</h1>
-                 <p class="text-gray-600 dark:text-gray-300 mb-6">
-                     Has alcanzado el límite de <strong>{{ userLimit }} usuarios</strong> permitido por tu plan actual. Para agregar más usuarios, por favor mejora tu plan.
-                 </p>
-                 <div class="flex justify-center items-center gap-4">
-                     <Link :href="route('users.index')">
-                         <Button label="Volver a Usuarios" severity="secondary" outlined />
-                     </Link>
-                     <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer">
-                          <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
-                     </a>
-                 </div>
+            <div v-if="limitReached"
+                class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
+                <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>
+                <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Límite de Usuarios Alcanzado</h1>
+                <p class="text-gray-600 dark:text-gray-300 mb-6">
+                    Has alcanzado el límite de <strong>{{ userLimit }} usuarios</strong> permitido por tu plan actual.
+                    Para agregar más usuarios, por favor mejora tu plan.
+                </p>
+                <div class="flex justify-center items-center gap-4">
+                    <Link :href="route('users.index')">
+                    <Button label="Volver a Usuarios" severity="secondary" outlined />
+                    </Link>
+                    <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer">
+                        <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
+                    </a>
+                </div>
             </div>
 
             <!-- Formulario de creación original -->
@@ -120,7 +124,20 @@ const showRolePermissions = (roleId) => {
                             </div>
                             <InputError :message="form.errors.role_id" />
                         </div>
-
+                        <div>
+                            <InputLabel for="bank_accounts" value="Cuentas Bancarias Permitidas" />
+                            <MultiSelect v-model="form.bank_account_ids" :options="bankAccounts"
+                                optionLabel="account_name" optionValue="id" placeholder="Selecciona las cuentas"
+                                class="w-full mt-1">
+                                <template #option="slotProps">
+                                    <div class="flex flex-col">
+                                        <span>{{ slotProps.option.account_name }}</span>
+                                        <small class="text-gray-500">{{ slotProps.option.bank_name }}</small>
+                                    </div>
+                                </template>
+                            </MultiSelect>
+                            <InputError :message="form.errors.bank_account_ids" />
+                        </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                                 <InputLabel for="password" value="Contraseña *" />

@@ -4,6 +4,8 @@ import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, isSameDay, isToday, format } from 'date-fns';
 import axios from 'axios';
+import BankAccountHistoryModal from '@/Components/BankAccountHistoryModal.vue';
+import BankAccountTransferModal from '@/Components/BankAccountTransferModal.vue';
 
 const props = defineProps({
     kpis: Object,
@@ -12,6 +14,7 @@ const props = defineProps({
     salesByChannel: Array,
     expensesByCategory: Array,
     bankAccounts: Array,
+    allBankAccounts: Array,
     filters: Object,
 });
 
@@ -20,7 +23,41 @@ const dates = ref();
 const selectedRange = ref('day');
 const mainChartOptions = ref();
 const sparklineChartOptions = ref();
-const isExporting = ref(false); // Estado para el botón de carga
+const isExporting = ref(false);
+const menu = ref();
+
+// --- Lógica para modales de Cuentas Bancarias ---
+const isHistoryModalVisible = ref(false);
+const isTransferModalVisible = ref(false);
+const selectedAccount = ref(null);
+
+const toggleMenu = (event, account) => {
+    selectedAccount.value = account;
+    menu.value.toggle(event);
+};
+
+const menuItems = ref([
+    {
+        label: 'Ver Historial',
+        icon: 'pi pi-history',
+        command: () => {
+            isHistoryModalVisible.value = true;
+        }
+    },
+    {
+        label: 'Realizar Transferencia',
+        icon: 'pi pi-arrows-h',
+        command: () => {
+            isTransferModalVisible.value = true;
+        }
+    }
+]);
+
+const onTransferSuccess = () => {
+    isTransferModalVisible.value = false;
+    router.reload({ preserveState: false });
+};
+
 
 // --- EXPORTACIÓN ---
 const exportUrl = computed(() => {
@@ -37,15 +74,14 @@ const handleExport = async () => {
     isExporting.value = true;
     try {
         const response = await axios.get(exportUrl.value, {
-            responseType: 'blob', // Importante para la descarga de archivos
+            responseType: 'blob',
         });
 
         const url = window.URL.createObjectURL(new Blob([response.data]));
         const link = document.createElement('a');
         link.href = url;
 
-        // Extraer el nombre del archivo del header
-        let fileName = 'ReporteFinanciero.xlsx'; // Nombre por defecto
+        let fileName = 'ReporteFinanciero.xlsx';
         const contentDisposition = response.headers['content-disposition'];
         if (contentDisposition) {
             const fileNameMatch = contentDisposition.match(/filename="(.+)"/);
@@ -57,14 +93,11 @@ const handleExport = async () => {
         link.setAttribute('download', fileName);
         document.body.appendChild(link);
         link.click();
-
-        // Limpieza
         link.remove();
         window.URL.revokeObjectURL(url);
 
     } catch (error) {
         console.error("Error al exportar el reporte:", error);
-        // Opcional: Mostrar una notificación de error al usuario
     } finally {
         isExporting.value = false;
     }
@@ -80,15 +113,14 @@ const rangeOptions = ref([
     { label: 'Personalizado', value: 'custom' },
 ]);
 
-// Función para establecer los atajos de fecha
 const setDateRange = (period) => {
     const today = new Date();
     let startDate, endDate;
 
     switch (period) {
         case 'week':
-            startDate = startOfWeek(today, { weekStartsOn: 1 }); // Lunes
-            endDate = endOfWeek(today, { weekStartsOn: 1 }); // Domingo
+            startDate = startOfWeek(today, { weekStartsOn: 1 });
+            endDate = endOfWeek(today, { weekStartsOn: 1 });
             break;
         case 'month':
             startDate = startOfMonth(today);
@@ -107,7 +139,6 @@ const setDateRange = (period) => {
     dates.value = [startDate, endDate];
 };
 
-// Observador para los botones de atajo
 watch(selectedRange, (newPeriod) => {
     if (newPeriod !== 'custom') {
         setDateRange(newPeriod);
@@ -127,7 +158,6 @@ const fetchData = () => {
     }
 };
 
-// Observador del DatePicker
 watch(dates, (newDates, oldDates) => {
     if (newDates && newDates[0] && newDates[1]) {
         if (!oldDates || !isSameDay(newDates[0], oldDates[0]) || !isSameDay(newDates[1], oldDates[1])) {
@@ -178,7 +208,6 @@ onMounted(() => {
     const initialEndDate = new Date(props.filters.endDate.replace(/-/g, '/'));
     dates.value = [initialStartDate, initialEndDate];
 
-    // La comparación ahora se basa en las fechas iniciales, no en "today"
     if (isSameDay(initialStartDate, initialEndDate) && isToday(initialStartDate)) {
         selectedRange.value = 'day';
     } else if (isSameDay(initialStartDate, startOfWeek(initialStartDate, { weekStartsOn: 1 })) && isSameDay(initialEndDate, endOfWeek(initialStartDate, { weekStartsOn: 1 }))) {
@@ -209,23 +238,16 @@ onMounted(() => {
         aspectRatio: 3,
         plugins: {
             legend: { display: false },
-            tooltip: {
-                enabled: false, // Se deshabilita el tooltip por defecto
-            }
+            tooltip: { enabled: false }
         },
         scales: { x: { display: false }, y: { display: false } },
-        elements: {
-            point: {
-                radius: 0 // Se quitan los puntos
-            }
-        }
+        elements: { point: { radius: 0 } }
     };
 });
 
 
 // --- HELPERS ---
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
-
 const getPaymentMethodDetails = (method) => {
     const details = {
         efectivo: { name: 'Efectivo', icon: 'pi pi-money-bill', color: 'bg-[#37672B]' },
@@ -235,7 +257,6 @@ const getPaymentMethodDetails = (method) => {
     };
     return details[method] || { name: method, icon: 'pi pi-question-circle', color: 'bg-gray-500' };
 };
-
 const getChannelDetails = (channel) => {
     const details = {
         punto_de_venta: { name: 'Ventas en tienda', icon: 'pi pi-shopping-cart', verb: 'Ventas realizadas' },
@@ -247,7 +268,6 @@ const getChannelDetails = (channel) => {
     };
     return details[channel] || { name: channel, icon: 'pi pi-question-circle', verb: 'Transacciones' };
 };
-
 const getExpenseCategoryIcon = (categoryName) => {
     const name = categoryName.toLowerCase();
     if (name.includes('servicio')) return 'pi pi-file';
@@ -258,13 +278,11 @@ const getExpenseCategoryIcon = (categoryName) => {
     if (name.includes('administrativo')) return 'pi pi-cog';
     if (name.includes('mantenimiento')) return 'pi pi-wrench';
     if (name.includes('otro')) return 'pi pi-box';
-    return 'pi pi-tag'; // Icono por defecto
+    return 'pi pi-tag';
 };
-
 </script>
 
 <template>
-
     <Head title="Reporte Financiero" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 space-y-6">
@@ -283,7 +301,7 @@ const getExpenseCategoryIcon = (categoryName) => {
 
             <!-- KPIs -->
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-                <Card> <template #content>
+                 <Card> <template #content>
                         <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Ventas
                                 totales</span> <i
                                 class="pi pi-shopping-cart p-2 bg-purple-100 text-purple-600 rounded-full"></i> </div>
@@ -364,7 +382,7 @@ const getExpenseCategoryIcon = (categoryName) => {
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div class="lg:col-span-2 space-y-6">
                     <!-- Métodos de Pago -->
-                    <Card>
+                     <Card>
                         <template #title>Métodos de pago</template>
                         <template #subtitle>Visualiza los métodos de pago más usados en los pagos.</template>
                         <template #content>
@@ -411,9 +429,10 @@ const getExpenseCategoryIcon = (categoryName) => {
                         </template>
                     </Card>
 
+                    <!-- Panel de Cuentas Bancarias con acciones -->
                     <Card>
                         <template #title>Cuentas bancarias</template>
-                        <template #subtitle>Balance actual de tus cuentas registradas.</template>
+                        <template #subtitle>Balance actual y acciones rápidas.</template>
                         <template #content>
                             <div v-if="bankAccounts && bankAccounts.length > 0">
                                 <div
@@ -428,14 +447,17 @@ const getExpenseCategoryIcon = (categoryName) => {
                                             <p class="font-semibold">{{ account.account_name }}</p>
                                             <p class="text-sm text-gray-500">{{ account.bank_name }}</p>
                                         </div>
-                                        <span class="font-mono font-bold">{{ formatCurrency(account.balance) }}</span>
+                                        <div class="flex items-center gap-2">
+                                             <span class="font-mono font-bold">{{ formatCurrency(account.balance) }}</span>
+                                             <Button icon="pi pi-ellipsis-v" text rounded @click="toggleMenu($event, account)" />
+                                        </div>
                                     </li>
                                 </ul>
+                                <Menu ref="menu" :model="menuItems" :popup="true" />
                             </div>
                             <p v-else class="text-center text-gray-500 py-4">No hay cuentas bancarias registradas.</p>
                         </template>
                     </Card>
-
                 </div>
 
                 <!-- Ventas por Módulo -->
@@ -468,5 +490,19 @@ const getExpenseCategoryIcon = (categoryName) => {
                 </Card>
             </div>
         </div>
+
+        <!-- Modales -->
+        <BankAccountHistoryModal
+            v-if="selectedAccount"
+            v-model:visible="isHistoryModalVisible"
+            :account="selectedAccount"
+        />
+        <BankAccountTransferModal
+            v-if="selectedAccount"
+            v-model:visible="isTransferModalVisible"
+            :account="selectedAccount"
+            :all-accounts="allBankAccounts"
+            @transfer-success="onTransferSuccess"
+        />
     </AppLayout>
 </template>

@@ -4,10 +4,12 @@ import { Head, useForm, router, Link } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import InputError from '@/Components/InputError.vue';
 import BankAccountModal from '@/Components/BankAccountModal.vue';
 import BranchModal from '@/Components/BranchModal.vue';
+import BankAccountHistoryModal from '@/Components/BankAccountHistoryModal.vue';
+import BankAccountTransferModal from '@/Components/BankAccountTransferModal.vue';
+import InputError from '@/Components/InputError.vue';
+import InputLabel from '@/Components/InputLabel.vue';
 
 const props = defineProps({
     subscription: Object,
@@ -43,6 +45,9 @@ const confirmDeleteBranch = (branch) => {
 // --- Lógica de Cuentas Bancarias ---
 const isBankAccountModalVisible = ref(false);
 const selectedBankAccount = ref(null);
+const menu = ref();
+const accountMenuItems = ref([]);
+
 const openCreateBankAccountModal = () => {
     selectedBankAccount.value = null;
     isBankAccountModalVisible.value = true;
@@ -62,50 +67,68 @@ const confirmDeleteAccount = (account) => {
     });
 };
 
+
+// --- Lógica para el modal de historial ---
+const isHistoryModalVisible = ref(false);
+const selectedAccountForHistory = ref(null);
+const openHistoryModal = (account) => {
+    selectedAccountForHistory.value = account;
+    isHistoryModalVisible.value = true;
+};
+
+// --- Lógica para el nuevo modal de transferencia ---
+const isTransferModalVisible = ref(false);
+const selectedAccountForTransfer = ref(null);
+const openTransferModal = (account) => {
+    selectedAccountForTransfer.value = account;
+    isTransferModalVisible.value = true;
+};
+
+// Se añade la nueva opción al menú
+const getAccountMenuItems = (account) => [
+    { label: 'Historial de movimientos', icon: 'pi pi-history', command: () => openHistoryModal(account) },
+    { label: 'Realizar Transferencia', icon: 'pi pi-arrows-h', command: () => openTransferModal(account) },
+    { separator: true },
+    { label: 'Editar', icon: 'pi pi-pencil', command: () => openEditBankAccountModal(account) },
+    { label: 'Eliminar', icon: 'pi pi-trash', command: () => confirmDeleteAccount(account) }
+];
+
+const toggleAccountMenu = (event, account) => {
+    accountMenuItems.value = getAccountMenuItems(account);
+    menu.value.toggle(event);
+};
+
+
 const currentVersion = computed(() => props.subscription?.versions?.[0] || null);
-
-// --- Lógica para combinar el plan actual con el catálogo disponible ---
 const displayPlanItems = computed(() => {
-    const activeItemKeys = new Set(currentVersion.value?.items.map(item => item.item_key) || []);
-
+    if (!currentVersion.value) return [];
+    const activeItemKeys = new Set(currentVersion.value.items.map(item => item.item_key));
     return props.planItems.map(planItem => ({
         ...planItem,
         is_active: activeItemKeys.has(planItem.key),
     }));
 });
-
 const activeModules = computed(() => displayPlanItems.value.filter(item => item.type === 'module'));
-
-// Muestra los límites que vienen de la versión actual de la suscripción
 const activeLimits = computed(() => {
     if (!currentVersion.value) return [];
     return currentVersion.value.items.filter(item => item.item_type === 'limit');
 });
-
 const getUsage = (limit) => {
     if (!props.usageData || !limit.item_key) return 0;
     const resourceKey = limit.item_key.replace('limit_', '');
     return props.usageData[resourceKey] ?? 0;
 };
-
-
-// --- AÑADIDO: Lógica específica para el límite de sucursales ---
 const branchLimit = computed(() => {
     if (!activeLimits.value) return null;
     return activeLimits.value.find(l => l.item_key === 'limit_branches');
 });
-
 const branchUsage = computed(() => props.usageData?.branches ?? 0);
-
 const branchLimitReached = computed(() => {
     if (!branchLimit.value || branchLimit.value.quantity === -1) {
-        return false; // No hay límite o es ilimitado
+        return false;
     }
     return branchUsage.value >= branchLimit.value.quantity;
 });
-
-
-// --- Lógica de Edición de Información ---
 const isEditModalVisible = ref(false);
 const infoForm = useForm({
     commercial_name: props.subscription.commercial_name,
@@ -116,8 +139,6 @@ const submitInfoForm = () => {
         onSuccess: () => isEditModalVisible.value = false,
     });
 };
-
-// --- Lógica de Documento Fiscal ---
 const fiscalDocumentUrl = computed(() => props.subscription.media[0]?.original_url || null);
 const docForm = useForm({ fiscal_document: null });
 const fileUploadRef = ref(null);
@@ -131,8 +152,6 @@ const uploadDocument = () => {
         }
     });
 };
-
-// --- Lógica de Solicitud de Factura ---
 const isInvoiceModalVisible = ref(false);
 const paymentToRequest = ref(null);
 const confirmRequestInvoice = (paymentId) => {
@@ -150,8 +169,6 @@ const requestInvoice = () => {
         });
     }
 };
-
-// --- Helpers ---
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 const formatDate = (dateString) => new Date(dateString).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
 const getStatusTagSeverity = (status) => ({ activo: 'success', expirado: 'warning', suspendido: 'danger' })[status] || 'info';
@@ -167,10 +184,10 @@ const getInvoiceStatusTag = (status) => {
         'generada': { text: 'Generada', severity: 'success' },
     }[status] || { text: status, severity: 'secondary' };
 };
+
 </script>
 
 <template>
-
     <Head title="Mi Suscripción" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8">
@@ -181,7 +198,7 @@ const getInvoiceStatusTag = (status) => {
                     pagos, gestion de sucursales, cuentas bancarias e información fiscal.
                 </p>
             </header>
-
+            
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- Columna Izquierda -->
                 <div class="lg:col-span-1 space-y-6">
@@ -309,7 +326,6 @@ const getInvoiceStatusTag = (status) => {
                         <template #title>
                             <div class="flex justify-between items-center">
                                 <span>Sucursales</span>
-                                <!-- MODIFICADO: Se deshabilita el botón si se alcanza el límite -->
                                 <Button @click="openCreateBranchModal" icon="pi pi-plus" size="small"
                                     v-tooltip.bottom="branchLimitReached ? 'Límite de sucursales alcanzado' : 'Nueva Sucursal'" />
                             </div>
@@ -339,7 +355,7 @@ const getInvoiceStatusTag = (status) => {
                             </DataTable>
                         </template>
                     </Card>
-                    <!-- Panel de Cuentas Bancarias por Sucursal -->
+                    <!-- Panel de Cuentas Bancarias -->
                     <Card>
                         <template #title>
                             <div class="flex justify-between items-center">
@@ -373,13 +389,10 @@ const getInvoiceStatusTag = (status) => {
                                         </div>
                                     </template>
                                 </Column>
-                                <Column>
+                                <Column headerStyle="width: 5rem; text-align: right">
                                     <template #body="slotProps">
-                                        <div class="flex justify-end gap-2">
-                                            <Button @click="openEditBankAccountModal(slotProps.data)"
-                                                icon="pi pi-pencil" text rounded size="small" />
-                                            <Button @click="confirmDeleteAccount(slotProps.data)" icon="pi pi-trash"
-                                                text rounded severity="danger" size="small" />
+                                        <div class="flex justify-end">
+                                            <Button @click="toggleAccountMenu($event, slotProps.data)" icon="pi pi-ellipsis-v" text rounded size="small" />
                                         </div>
                                     </template>
                                 </Column>
@@ -389,6 +402,7 @@ const getInvoiceStatusTag = (status) => {
                                     </div>
                                 </template>
                             </DataTable>
+                            <Menu ref="menu" :model="accountMenuItems" :popup="true" />
                         </template>
                     </Card>
                     <Card>
@@ -493,11 +507,21 @@ const getInvoiceStatusTag = (status) => {
             </template>
         </Dialog>
 
-        <!-- MODIFICADO: Se pasan las props de límite y uso al modal -->
         <BranchModal :visible="isBranchModalVisible" :branch="selectedBranch" :limit="branchLimit?.quantity"
             :usage="branchUsage" @update:visible="isBranchModalVisible = $event" />
 
         <BankAccountModal :visible="isBankAccountModalVisible" :account="selectedBankAccount"
             :branches="subscription.branches" @update:visible="isBankAccountModalVisible = $event" />
+
+        <BankAccountHistoryModal 
+            v-model:visible="isHistoryModalVisible"
+            :account="selectedAccountForHistory" 
+        />
+
+        <BankAccountTransferModal 
+            v-model:visible="isTransferModalVisible"
+            :account="selectedAccountForTransfer"
+            :all-accounts="subscription.bank_accounts"
+        />
     </AppLayout>
 </template>

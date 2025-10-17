@@ -214,7 +214,12 @@ watch(() => props.paymentMode, () => {
                     <div v-else class="text-center">
                         <i class="pi pi-exclamation-triangle !text-4xl text-yellow-500 mb-4"></i>
                         <p class="font-semibold">No hay cuentas bancarias</p>
-                        <Button label="Registrar Cuenta" icon="pi pi-plus" @click="emit('add-account')" />
+                        <p class="text-sm text-gray-500 mb-4">
+                            Para aceptar este tipo de pago, debe registrar una cuenta. <br>
+                            Si no eres administrador de la suscripción, pidele a uno que registre una cuenta bancaria y 
+                            te la asigne para poder continuar con este proceso.
+                        </p>
+                        <Button v-if="$page.props.auth.is_subscription_owner" label="Registrar Cuenta" icon="pi pi-plus" @click="emit('add-account')" />
                     </div>
                 </div>
             </div>

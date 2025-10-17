@@ -11,6 +11,7 @@ const props = defineProps({
     user: Object,
     roles: Array,
     permissions: Object, // Se recibe la nueva prop de permisos
+    allBankAccounts: Array,
 });
 
 const form = useForm({
@@ -20,6 +21,7 @@ const form = useForm({
     password: '',
     password_confirmation: '',
     role_id: props.user.roles[0]?.id || null,
+    bank_account_ids: props.user.bank_accounts?.map(acc => acc.id) || [],
 });
 
 const submit = () => {
@@ -87,13 +89,28 @@ const handleRoleCreated = (newRole) => {
                                     <Select v-model="form.role_id" :options="localRoles" optionLabel="name"
                                         optionValue="id" placeholder="Selecciona un rol" class="w-full mt-1" />
                                 </div>
-                                <Button @click="isCreateRoleModalVisible = true" type="button" icon="pi pi-plus" 
-                                    severity="secondary" v-tooltip.bottom="'Crear nuevo rol'"/>
+                                <Button @click="isCreateRoleModalVisible = true" type="button" icon="pi pi-plus"
+                                    severity="secondary" v-tooltip.bottom="'Crear nuevo rol'" />
                                 <Button @click="showRolePermissions(form.role_id)" type="button" icon="pi pi-book"
                                     severity="secondary" outlined :disabled="!form.role_id"
                                     v-tooltip.bottom="'Ver permisos del rol'" />
                             </div>
                             <InputError class="mt-2" :message="form.errors.role_id" />
+                        </div>
+
+                        <div>
+                            <InputLabel for="bank_accounts" value="Cuentas Bancarias Permitidas" />
+                            <MultiSelect v-model="form.bank_account_ids" :options="allBankAccounts"
+                                optionLabel="account_name" optionValue="id" placeholder="Selecciona las cuentas"
+                                class="w-full mt-1">
+                                <template #option="slotProps">
+                                    <div class="flex flex-col">
+                                        <span>{{ slotProps.option.account_name }}</span>
+                                        <small class="text-gray-500">{{ slotProps.option.bank_name }}</small>
+                                    </div>
+                                </template>
+                            </MultiSelect>
+                            <InputError :message="form.errors.bank_account_ids" />
                         </div>
 
                         <Divider />
@@ -123,6 +140,7 @@ const handleRoleCreated = (newRole) => {
             </div>
         </div>
         <RolePermissionsModal v-model:visible="isPermissionsModalVisible" :role="selectedRoleForPermissions" />
-        <CreateRoleModal v-model:visible="isCreateRoleModalVisible" :permissions="permissions" @created="handleRoleCreated" />
+        <CreateRoleModal v-model:visible="isCreateRoleModalVisible" :permissions="permissions"
+            @created="handleRoleCreated" />
     </AppLayout>
 </template>

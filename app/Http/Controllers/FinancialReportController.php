@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exports\FinancialReportExport;
+use App\Models\BankAccount;
 use App\Services\FinancialReportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -25,6 +26,12 @@ class FinancialReportController extends Controller
         
         $reportData = $reportService->generateReportData();
 
+        // AÑADIDO: Cargar todas las cuentas de la suscripción para el modal de transferencias
+        $subscriptionId = $user->branch->subscription_id;
+        $allBankAccounts = BankAccount::where('subscription_id', $subscriptionId)->get();
+        $reportData['allBankAccounts'] = $allBankAccounts;
+
+
         return Inertia::render('FinancialControl/Index', $reportData);
     }
 
@@ -38,9 +45,6 @@ class FinancialReportController extends Controller
             'end_date' => 'required|date_format:Y-m-d',
         ]);
 
-        // --- CORRECCIÓN ---
-        // Se ajusta la fecha de inicio al principio del día y la de fin, al final del día.
-        // Esto asegura que la consulta `whereBetween` en columnas `datetime` incluya todo el rango.
         $startDate = Carbon::parse($validated['start_date'])->startOfDay();
         $endDate = Carbon::parse($validated['end_date'])->endOfDay();
         

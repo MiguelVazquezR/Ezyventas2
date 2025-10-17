@@ -100,7 +100,7 @@ class User extends Authenticatable
             'subscription_id' // Local key on branches table...
         );
     }
-    
+
     /**
      * // Obtiene las transacciones registradas por este usuario.
      */
@@ -144,7 +144,7 @@ class User extends Authenticatable
         }
 
         // La clave del caché es única para cada usuario. Se almacena por 1 hora.
-        return Cache::remember('user_'.$this->id.'_module_prefixes', 3600, function () {
+        return Cache::remember('user_' . $this->id . '_module_prefixes', 3600, function () {
             // Usamos la nueva relación `currentVersion` para obtener el plan activo.
             $currentVersion = $this->branch->subscription->currentVersion;
 
@@ -156,7 +156,15 @@ class User extends Authenticatable
             return $currentVersion->items
                 ->where('item_type', 'module')
                 ->pluck('item_key')
-                ->map(fn ($key) => str_replace('module_', '', $key));
+                ->map(fn($key) => str_replace('module_', '', $key));
         });
+    }
+
+    /**
+     * The bank accounts that the user has access to.
+     */
+    public function bankAccounts(): BelongsToMany
+    {
+        return $this->belongsToMany(BankAccount::class);
     }
 }

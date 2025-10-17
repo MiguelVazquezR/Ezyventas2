@@ -67,7 +67,6 @@ class UserController extends Controller implements HasMiddleware
 
         $users = $query->paginate($request->input('rows', 20))->withQueryString();
 
-        // --- AÑADIDO: Se obtienen y pasan los datos del límite ---
         $limitData = $this->getUserLimitData();
 
         return Inertia::render('User/Index', [
@@ -80,7 +79,6 @@ class UserController extends Controller implements HasMiddleware
 
     public function destroy(User $user)
     {
-        // Regla de negocio: No se puede eliminar al suscriptor principal (sin rol)
         if (!$user->roles()->exists()) {
             return redirect()->back()->with('error', 'No se puede eliminar al administrador principal.');
         }
@@ -91,7 +89,6 @@ class UserController extends Controller implements HasMiddleware
 
     public function toggleStatus(User $user)
     {
-        // Regla de negocio: No se puede desactivar al suscriptor principal
         if (!$user->roles()->exists()) {
             return redirect()->back()->with('error', 'No se puede desactivar al administrador principal.');
         }
@@ -105,10 +102,10 @@ class UserController extends Controller implements HasMiddleware
 
     public function create(): Response
     {
-        // --- AÑADIDO: Se obtienen y pasan los datos del límite ---
         $limitData = $this->getUserLimitData();
+        $subscription = Auth::user()->branch->subscription;
 
-        $roles = Role::with('permissions')->get()->map(fn($role) => [
+        $roles = Role::where('branch_id', Auth::user()->branch_id)->with('permissions')->get()->map(fn($role) => [
             'id' => $role->id,
             'name' => $role->name,
             'permissions' => $role->permissions->map(fn($p) => [
@@ -118,20 +115,26 @@ class UserController extends Controller implements HasMiddleware
                 'module' => $p->module
             ])->all(),
         ]);
+        $availableModuleNames = $subscription->getAvailableModuleNames();
+        $permissions = Permission::query()
+            ->whereIn('module', $availableModuleNames)
+            ->orWhere('module', 'Sistema')
+            ->get()->groupBy('module');
 
-        $permissions = Permission::all()->groupBy('module');
+        // Obtener las cuentas bancarias de la suscripción
+        $bankAccounts = $subscription->bankAccounts()->get(['id', 'account_name', 'bank_name']);
 
         return Inertia::render('User/Create', [
             'roles' => $roles,
             'permissions' => $permissions,
             'userLimit' => $limitData['limit'],
             'userUsage' => $limitData['usage'],
+            'bankAccounts' => $bankAccounts, // Pasar a la vista
         ]);
     }
 
     public function store(Request $request)
     {
-        // --- AÑADIDO: Validación del límite de usuarios ---
         $limitData = $this->getUserLimitData();
         if ($limitData['limit'] !== -1 && $limitData['usage'] >= $limitData['limit']) {
             throw ValidationException::withMessages([
@@ -144,6 +147,8 @@ class UserController extends Controller implements HasMiddleware
             'email' => 'required|string|email|max:255|unique:' . User::class,
             'password' => 'required',
             'role_id' => 'required|exists:roles,id',
+            'bank_account_ids' => 'nullable|array', // Validar
+            'bank_account_ids.*' => 'exists:bank_accounts,id', // Validar
         ]);
 
         $user = User::create([
@@ -156,16 +161,18 @@ class UserController extends Controller implements HasMiddleware
         $role = Role::find($request->role_id);
         $user->assignRole($role);
 
+        // Sincronizar las cuentas bancarias asignadas
+        $user->bankAccounts()->sync($request->input('bank_account_ids', []));
+
         return redirect()->route('users.index')->with('success', 'Usuario creado con éxito.');
     }
 
     public function edit(User $user): Response
     {
-        // Cargar el usuario con su rol actual
-        $user->load('roles.permissions');
+        $user->load('roles.permissions', 'bankAccounts:id'); // Cargar cuentas asignadas
+        $subscription = Auth::user()->branch->subscription;
 
-        // Obtener todos los roles con sus permisos (en el formato correcto)
-        $roles = Role::with('permissions')->get()->map(fn($role) => [
+        $roles = Role::where('branch_id', Auth::user()->branch_id)->with('permissions')->get()->map(fn($role) => [
             'id' => $role->id,
             'name' => $role->name,
             'permissions' => $role->permissions->map(fn($p) => [
@@ -175,14 +182,20 @@ class UserController extends Controller implements HasMiddleware
                 'module' => $p->module
             ])->all(),
         ]);
+        $availableModuleNames = $subscription->getAvailableModuleNames();
+        $permissions = Permission::query()
+            ->whereIn('module', $availableModuleNames)
+            ->orWhere('module', 'Sistema')
+            ->get()->groupBy('module');
 
-        // Obtener todos los permisos agrupados por módulo
-        $permissions = Permission::all()->groupBy('module');
+        // Obtener todas las cuentas de la suscripción
+        $bankAccounts = $subscription->bankAccounts()->get(['id', 'account_name', 'bank_name']);
 
         return Inertia::render('User/Edit', [
             'user' => $user,
             'roles' => $roles,
             'permissions' => $permissions,
+            'allBankAccounts' => $bankAccounts, // Todas las cuentas disponibles
         ]);
     }
 
@@ -197,6 +210,8 @@ class UserController extends Controller implements HasMiddleware
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique(User::class)->ignore($user->id)],
             'password' => 'nullable',
             'role_id' => 'required|exists:roles,id',
+            'bank_account_ids' => 'nullable|array', // Validar
+            'bank_account_ids.*' => 'exists:bank_accounts,id', // Validar
         ]);
 
         $user->update([
@@ -210,6 +225,9 @@ class UserController extends Controller implements HasMiddleware
 
         $role = Role::find($request->role_id);
         $user->syncRoles($role);
+        
+        // Sincronizar las cuentas bancarias asignadas
+        $user->bankAccounts()->sync($request->input('bank_account_ids', []));
 
         return redirect()->route('users.index')->with('success', 'Usuario actualizado con éxito.');
     }
