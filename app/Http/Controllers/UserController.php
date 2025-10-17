@@ -105,7 +105,16 @@ class UserController extends Controller implements HasMiddleware
         $limitData = $this->getUserLimitData();
         $subscription = Auth::user()->branch->subscription;
 
-        $roles = Role::where('branch_id', Auth::user()->branch_id)->with('permissions')->get()->map(/* ... */);
+        $roles = Role::where('branch_id', Auth::user()->branch_id)->with('permissions')->get()->map(fn($role) => [
+            'id' => $role->id,
+            'name' => $role->name,
+            'permissions' => $role->permissions->map(fn($p) => [
+                'id' => $p->id,
+                'name' => $p->name,
+                'description' => $p->description,
+                'module' => $p->module
+            ])->all(),
+        ]);
         $availableModuleNames = $subscription->getAvailableModuleNames();
         $permissions = Permission::query()
             ->whereIn('module', $availableModuleNames)
