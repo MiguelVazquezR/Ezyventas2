@@ -108,31 +108,21 @@ class ExpenseController extends Controller implements HasMiddleware
         ]);
     }
 
-    public function create(): Response
+   public function create(): Response
     {
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
         $isOwner = !$user->roles()->exists();
 
-        // Si es propietario, obtiene todas las cuentas de la sucursal.
-        // Si no, solo las que tiene asignadas.
         if ($isOwner) {
-            $bankAccounts = BankAccount::whereHas('branches', function ($query) use ($user) {
-                $query->where('branch_id', $user->branch_id);
-            })->get();
+            $userBankAccounts = $user->branch->bankAccounts()->get();
         } else {
-            $bankAccounts = $user->bankAccounts()->get();
+            $userBankAccounts = $user->bankAccounts()->get();
         }
-
-        $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
-            ->where('is_active', true)
-            ->where('in_use', false)
-            ->get(['id', 'name']);
-
+        
         return Inertia::render('Expense/Create', [
             'categories' => ExpenseCategory::where('subscription_id', $subscriptionId)->get(['id', 'name']),
-            'bankAccounts' => $bankAccounts,
-            'availableCashRegisters' => $availableCashRegisters,
+            'userBankAccounts' => $userBankAccounts,
         ]);
     }
 

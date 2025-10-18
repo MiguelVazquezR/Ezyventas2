@@ -6,17 +6,24 @@ import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import CreateExpenseCategoryModal from './Partials/CreateExpenseCategoryModal.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
-import { format } from 'date-fns'; // Importar la función de formato
+import JoinSessionModal from '@/Components/JoinSessionModal.vue';
+import { format } from 'date-fns';
 
 const props = defineProps({
     categories: Array,
-    bankAccounts: Array,
-    availableCashRegisters: Array,
+    userBankAccounts: Array,
 });
 
 const page = usePage();
-const hasActiveBranchSession = computed(() => page.props.branchHasActiveSession);
 
+// --- LÓGICA DE SESIÓN ---
+const activeSession = computed(() => page.props.activeSession);
+const joinableSessions = computed(() => page.props.joinableSessions);
+const availableCashRegisters = computed(() => page.props.availableCashRegisters);
+
+const isStartSessionModalVisible = ref(false);
+const isJoinSessionModalVisible = ref(false);
+const sessionModalAwaitingSubmit = ref(false);
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -28,12 +35,13 @@ const form = useForm({
     folio: '',
     amount: null,
     expense_category_id: null,
-    expense_date: new Date(), // Mantenemos el objeto Date para el componente Calendar
+    expense_date: new Date(),
     status: 'pagado',
     description: '',
     payment_method: 'efectivo',
     bank_account_id: null,
     take_from_cash_register: false,
+    cash_register_session_id: null,
 });
 
 const statusOptions = ref([
@@ -52,7 +60,7 @@ watch(() => form.payment_method, (newMethod) => {
         form.bank_account_id = null;
     } else {
         form.take_from_cash_register = false;
-        const favoriteAccount = props.bankAccounts.find(account =>
+        const favoriteAccount = props.userBankAccounts.find(account =>
             account.branches?.[0]?.pivot?.is_favorite
         );
         form.bank_account_id = favoriteAccount ? favoriteAccount.id : null;
@@ -66,15 +74,37 @@ const handleNewCategory = (newCategory) => {
     form.expense_category_id = newCategory.id;
 };
 
-const showStartSessionModal = ref(false);
-
 const submit = () => {
-    // Transformar la fecha a un string YYYY-MM-DD antes de enviar
+    if (form.take_from_cash_register) {
+        if (activeSession.value) {
+            form.cash_register_session_id = activeSession.value.id;
+            postForm();
+        } else if (joinableSessions.value && joinableSessions.value.length > 0) {
+            sessionModalAwaitingSubmit.value = true;
+            isJoinSessionModalVisible.value = true;
+        } else {
+            sessionModalAwaitingSubmit.value = true;
+            isStartSessionModalVisible.value = true;
+        }
+    } else {
+        postForm();
+    }
+};
+
+const postForm = () => {
     form.transform((data) => ({
         ...data,
         expense_date: data.expense_date ? format(data.expense_date, 'yyyy-MM-dd') : null,
     })).post(route('expenses.store'));
-};
+}
+
+watch(activeSession, (newSession) => {
+    if (newSession && sessionModalAwaitingSubmit.value) {
+        sessionModalAwaitingSubmit.value = false;
+        submit();
+    }
+});
+
 </script>
 
 <template>
@@ -131,29 +161,19 @@ const submit = () => {
                     </div>
 
                     <div v-if="form.payment_method === 'efectivo'">
-                        <div v-if="hasActiveBranchSession" class="flex items-center gap-3">
+                        <div class="flex items-center gap-3">
                             <ToggleSwitch v-model="form.take_from_cash_register" inputId="take_from_cash_register" />
                             <InputLabel for="take_from_cash_register">
                                 ¿Tomar efectivo de la caja activa?
                             </InputLabel>
                         </div>
-                        <div v-else
-                            class="flex items-start justify-between p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                            <div class="flex items-start gap-3 w-[70%]">
-                                <i class="pi pi-info-circle text-yellow-500 !text-xl"></i>
-                                <span class="text-sm text-yellow-700 dark:text-yellow-300">
-                                    Se requiere una sesión de caja activa para indicar que el dinero se toma de ahí.
-                                </span>
-                            </div>
-                            <Button label="Abrir caja" icon="pi pi-inbox" size="small"
-                                @click="showStartSessionModal = true" />
-                        </div>
-                        <InputError :message="form.errors.take_from_cash_register" class="mt-2" />
+                         <InputError :message="form.errors.take_from_cash_register" class="mt-2" />
+                         <InputError :message="form.errors.cash_register_session_id" class="mt-2" />
                     </div>
 
                     <div v-if="form.payment_method === 'tarjeta' || form.payment_method === 'transferencia'">
                         <InputLabel for="bank_account_id" value="Cuenta de Origen *" />
-                        <Select size="large" id="bank_account_id" v-model="form.bank_account_id" :options="bankAccounts"
+                        <Select size="large" id="bank_account_id" v-model="form.bank_account_id" :options="userBankAccounts"
                             optionLabel="account_name" optionValue="id" placeholder="Selecciona una cuenta"
                             class="w-full mt-1">
                             <template #option="slotProps">
@@ -186,7 +206,15 @@ const submit = () => {
         </form>
 
         <CreateExpenseCategoryModal v-model:visible="showCategoryModal" @created="handleNewCategory" />
-
-        <StartSessionModal v-model:visible="showStartSessionModal" :cash-registers="availableCashRegisters" />
+        
+        <StartSessionModal 
+            v-model:visible="isStartSessionModalVisible" 
+            :cash-registers="availableCashRegisters"
+            :user-bank-accounts="userBankAccounts"
+        />
+        <JoinSessionModal 
+            v-model:visible="isJoinSessionModalVisible"
+            :sessions="joinableSessions"
+        />
     </AppLayout>
 </template>
