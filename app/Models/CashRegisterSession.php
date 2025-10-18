@@ -22,6 +22,7 @@ class CashRegisterSession extends Model
         'closed_at',
         'status',
         'opening_cash_balance',
+        'opening_bank_balances',
         'closing_cash_balance',
         'calculated_cash_total',
         'cash_difference',
@@ -35,6 +36,7 @@ class CashRegisterSession extends Model
             'opened_at' => 'datetime',
             'closed_at' => 'datetime',
             'opening_cash_balance' => 'decimal:2',
+            'opening_bank_balances' => 'array',
             'closing_cash_balance' => 'decimal:2',
             'calculated_cash_total' => 'decimal:2',
             'cash_difference' => 'decimal:2',
@@ -55,7 +57,7 @@ class CashRegisterSession extends Model
     }
 
     /**
-     * CORRECCIÓN: Todos los usuarios (cajeros) asociados a esta sesión.
+     * Todos los usuarios (cajeros) asociados a esta sesión.
      */
     public function users(): BelongsToMany
     {
