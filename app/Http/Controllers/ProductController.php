@@ -77,14 +77,30 @@ class ProductController extends Controller implements HasMiddleware
             ->whereIn('context_type', [TemplateContextType::PRODUCT, TemplateContextType::GENERAL])
             ->get();
 
-        $limitData = $this->getProductLimitData(); // Asumiendo que este método existe en tu controlador
+        $limitData = $this->getProductLimitData();
+
+        // --- NUEVO: CÁLCULO DE STOCK TOTAL POR CATEGORÍA ---
+        $stockByCategory = Category::query()
+            ->where('type', 'product')
+            ->where('subscription_id', $user->branch->subscription_id)
+            ->withSum(['products' => function ($query) use ($user) {
+                $query->where('branch_id', $user->branch_id);
+            }], 'current_stock')
+            ->get()
+            ->filter(function ($category) {
+                // Filtramos para mostrar solo categorías con stock
+                return $category->products_sum_current_stock > 0;
+            })
+            ->sortBy('name')
+            ->values(); // Resetea las llaves del array para Vue
 
         return Inertia::render('Product/Index', [
             'products' => $products,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
             'productLimit' => $limitData['limit'],
             'productUsage' => $limitData['usage'],
-            'availableTemplates' => $availableTemplates, // Se pasan a la vista
+            'availableTemplates' => $availableTemplates,
+            'stockByCategory' => $stockByCategory, // <-- Se pasa a la vista
         ]);
     }
 
@@ -111,8 +127,8 @@ class ProductController extends Controller implements HasMiddleware
             'brands' => $formattedBrands,
             'providers' => $providers,
             'attributeDefinitions' => $attributeDefinitions,
-            'productLimit' => $limitData['limit'], // <-- Nuevo
-            'productUsage' => $limitData['usage'],   // <-- Nuevo
+            'productLimit' => $limitData['limit'],
+            'productUsage' => $limitData['usage'],
         ]);
     }
 
@@ -184,10 +200,8 @@ class ProductController extends Controller implements HasMiddleware
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
 
-        // Cargar el producto con sus relaciones
         $product->load('productAttributes', 'media');
 
-        // Lógica para obtener marcas (propias y globales)
         $subscriberBrands = Brand::where('subscription_id', $subscriptionId)->get(['id', 'name']);
         $globalBrands = Brand::whereNull('subscription_id')
             ->whereHas('businessTypes', function ($query) use ($user) {
@@ -211,15 +225,11 @@ class ProductController extends Controller implements HasMiddleware
         ]);
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(UpdateProductRequest $request, Product $product)
     {
         DB::transaction(function () use ($request, $product) {
             $validatedData = $request->validated();
 
-            // Lógica para slug y stock similar a la de store
             if ($product->name !== $validatedData['name']) {
                 $baseSlug = Str::slug($validatedData['name']);
                 $slug = $baseSlug;
@@ -235,16 +245,13 @@ class ProductController extends Controller implements HasMiddleware
                 $validatedData['current_stock'] = collect($variantsMatrix)->where('selected', true)->sum('current_stock');
             }
 
-            // Actualizar producto principal
             $productData = collect($validatedData)->except(['general_images', 'variant_images', 'variants_matrix', 'deleted_media_ids'])->all();
             $product->update($productData);
 
-            // Eliminar imágenes marcadas
             if (!empty($validatedData['deleted_media_ids'])) {
                 $product->media()->whereIn('id', $validatedData['deleted_media_ids'])->delete();
             }
 
-            // Añadir nuevas imágenes
             if ($request->hasFile('general_images')) {
                 foreach (array_keys($request->file('general_images')) as $key) {
                     $product->addMediaFromRequest("general_images.{$key}")->toMediaCollection('product-general-images');
@@ -256,10 +263,9 @@ class ProductController extends Controller implements HasMiddleware
                 }
             }
 
-            // Sincronizar variantes
             if ($validatedData['product_type'] === 'variant') {
                 $variantsMatrix = $validatedData['variants_matrix'];
-                $product->productAttributes()->delete(); // Simple: borrar y recrear
+                $product->productAttributes()->delete();
                 foreach ($variantsMatrix as $combination) {
                     if (empty($combination['selected'])) continue;
                     $attributes = collect($combination)->except(['selected', 'sku_suffix', 'current_stock', 'min_stock', 'max_stock', 'selling_price', 'row_id'])->all();
@@ -280,17 +286,15 @@ class ProductController extends Controller implements HasMiddleware
 
     public function show(Product $product): Response
     {
-        // Cargar relaciones y el historial de actividad
         $product->load([
             'category',
             'brand',
             'provider',
             'productAttributes',
             'media',
-            'activities.causer' // Cargar actividades y el usuario que las causó
+            'activities.causer'
         ]);
 
-        // Cargar TODAS las promociones asociadas a este producto (activas e inactivas)
         $promotions = Promotion::query()
             ->where(function ($query) use ($product) {
                 $query->whereHas('rules', function ($subQuery) use ($product) {
@@ -306,22 +310,18 @@ class ProductController extends Controller implements HasMiddleware
 
         $translations = config('log-translations.Product');
 
-        // Formatear el historial para el frontend
         $formattedActivities = $product->activities->map(function ($activity) use ($translations) {
             $changes = ['before' => [], 'after' => []];
-
             if (isset($activity->properties['old'])) {
                 foreach ($activity->properties['old'] as $key => $value) {
                     $changes['before'][($translations[$key] ?? $key)] = $value;
                 }
             }
-
             if (isset($activity->properties['attributes'])) {
                 foreach ($activity->properties['attributes'] as $key => $value) {
                     $changes['after'][($translations[$key] ?? $key)] = $value;
                 }
             }
-
             return [
                 'id' => $activity->id,
                 'description' => $activity->description,
@@ -332,7 +332,6 @@ class ProductController extends Controller implements HasMiddleware
             ];
         });
 
-        // --- AÑADIDO: Se obtienen las plantillas de etiquetas disponibles ---
         $availableTemplates = Auth::user()->branch->printTemplates()
             ->where('type', TemplateType::LABEL)
             ->whereIn('context_type', [TemplateContextType::PRODUCT, TemplateContextType::GENERAL])
@@ -342,36 +341,23 @@ class ProductController extends Controller implements HasMiddleware
             'product' => $product,
             'promotions' => $promotions,
             'activities' => $formattedActivities,
-            'availableTemplates' => $availableTemplates, // Se pasan a la vista
+            'availableTemplates' => $availableTemplates,
         ]);
     }
 
     public function destroy(Product $product)
     {
-        // Opcional: Autorización
-        // $this->authorize('delete', $product);
-
         $product->delete();
-
         return redirect()->route('products.index')->with('success', 'Producto eliminado con éxito.');
     }
 
-    /**
-     * Elimina múltiples productos de la base de datos.
-     */
     public function batchDestroy(Request $request)
     {
         $validated = $request->validate([
             'ids' => 'required|array',
             'ids.*' => 'exists:products,id',
         ]);
-
-        // Opcional: Autorización para asegurar que todos los IDs pertenecen al usuario
-        // $products = Product::whereIn('id', $validated['ids'])->get();
-        // $this->authorize('delete-multiple', $products);
-
         Product::whereIn('id', $validated['ids'])->delete();
-
         return redirect()->route('products.index')->with('success', 'Productos seleccionados eliminados con éxito.');
     }
 }

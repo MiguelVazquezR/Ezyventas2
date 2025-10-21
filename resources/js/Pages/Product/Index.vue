@@ -5,7 +5,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import AddBatchStockModal from './Partials/AddBatchStockModal.vue';
 import ImportProductsModal from './Partials/ImportProductsModal.vue';
 import ProductNavigation from './Partials/ProductNavigation.vue';
-import PrintModal from '@/Components/PrintModal.vue'; // <-- 1. Importar el modal
+import PrintModal from '@/Components/PrintModal.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
 
@@ -14,7 +14,8 @@ const props = defineProps({
     filters: Object,
     productLimit: Number,
     productUsage: Number,
-    availableTemplates: Array, // <-- 2. Aceptar la nueva prop
+    availableTemplates: Array,
+    stockByCategory: Array,
 });
 
 const confirm = useConfirm();
@@ -25,23 +26,33 @@ const limitReached = computed(() => {
     return props.productUsage >= props.productLimit;
 });
 
+// --- NUEVO: Cálculo del total de unidades ---
+const totalStock = computed(() => {
+    if (!props.stockByCategory || props.stockByCategory.length === 0) {
+        return 0;
+    }
+    return props.stockByCategory.reduce((total, category) => {
+        // Aseguramos que el valor es numérico antes de sumar
+        return total + (Number(category.products_sum_current_stock) || 0);
+    }, 0);
+});
+
+
 const selectedProducts = ref([]);
 const showAddStockModal = ref(false);
 const showImportModal = ref(false);
 const searchTerm = ref(props.filters.search || '');
 
-// --- 3. Lógica para el Modal de Impresión ---
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
 
 const openPrintModal = (product) => {
     printDataSource.value = {
-        type: 'product', // Especificamos que la fuente es un producto
+        type: 'product',
         id: product.id
     };
     isPrintModalVisible.value = true;
 };
-// --- Fin de la lógica de impresión ---
 
 const headerMenu = ref();
 const toggleHeaderMenu = (event) => {
@@ -152,13 +163,39 @@ const getStockSeverity = (product) => {
                     </div>
                 </div>
 
+                <!-- MEJORADO: Resumen de Stock por Categoría -->
+                <Panel v-if="stockByCategory && stockByCategory.length > 0" toggleable collapsed class="mb-6 !shadow-none border dark:border-gray-700">
+                    <template #header>
+                        <div class="flex items-center gap-2 text-gray-800 dark:text-gray-200">
+                            <i class="pi pi-chart-bar"></i>
+                            <span class="font-semibold">Resumen de Inventario</span>
+                        </div>
+                    </template>
+
+                    <div class="text-sm text-gray-700 dark:text-gray-300">
+                        <ul class="space-y-3">
+                            <li v-for="cat in stockByCategory" :key="cat.id" class="flex justify-between items-baseline">
+                                <span class="text-gray-600 dark:text-gray-400">{{ cat.name }}</span>
+                                <span class="flex-grow border-b border-dashed border-gray-300 dark:border-gray-600 mx-2"></span>
+                                <span class="font-medium text-gray-900 dark:text-gray-100">{{ cat.products_sum_current_stock }} unidades</span>
+                            </li>
+                        </ul>
+                        <Divider />
+                        <div class="flex justify-between items-center font-bold text-base mt-2">
+                            <span>Total General</span>
+                            <span class="text-primary-500">{{ new Intl.NumberFormat().format(totalStock) }} unidades</span>
+                        </div>
+                    </div>
+                </Panel>
+
+
                 <!-- Barra de Acciones Masivas Contextual -->
                 <div v-if="selectedProducts.length > 0"
-                    class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-2 mb-4 flex justify-between items-center transition-all duration-300">
-                    <span class="font-semibold text-sm text-blue-800 dark:text-blue-200">{{ selectedProducts.length }}
+                    class="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700 rounded-lg p-2 mb-4 flex justify-between items-center transition-all duration-300">
+                    <span class="font-semibold text-sm text-[#373737] dark:text-gray-200">{{ selectedProducts.length }}
                         producto(s) seleccionado(s)</span>
                     <div class="flex items-center gap-2">
-                        <Button v-if="hasPermission('products.manage_stock')" @click="showAddStockModal = true" label="Dar Entrada" icon="pi pi-arrow-down"
+                        <Button v-if="hasPermission('products.manage_stock')" @click="showAddStockModal = true" label="Dar entrada" icon="pi pi-arrow-down"
                             size="small" severity="secondary" outlined />
                         <Button v-if="hasPermission('products.delete')" @click="deleteSelectedProducts" label="Eliminar" icon="pi pi-trash" size="small"
                             severity="danger" outlined />
@@ -183,7 +220,6 @@ const getStockSeverity = (product) => {
                             </div>
                         </template>
                     </Column>
-                    <!-- 4. Columna SKU actualizada con botón de impresión -->
                     <Column field="sku" header="Código" sortable>
                         <template #body="{ data }">
                             <div class="flex items-center gap-2 -ml-2">
@@ -234,7 +270,6 @@ const getStockSeverity = (product) => {
             @update:visible="showAddStockModal = false" />
         <ImportProductsModal :visible="showImportModal" @update:visible="showImportModal = false" />
         
-        <!-- 5. Instancia del Modal de Impresión -->
         <PrintModal 
             v-if="printDataSource"
             v-model:visible="isPrintModalVisible"

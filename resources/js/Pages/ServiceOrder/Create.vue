@@ -17,7 +17,7 @@ const props = defineProps({
     products: Array,
     services: Array,
     errors: Object,
-    userBankAccounts: Array, // Se añade la nueva prop
+    userBankAccounts: Array,
 });
 
 const page = usePage();
@@ -31,7 +31,6 @@ const availableCashRegisters = computed(() => page.props.availableCashRegisters)
 const isStartSessionModalVisible = ref(false);
 const isJoinSessionModalVisible = ref(false);
 const sessionModalAwaitingSubmit = ref(false);
-
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -49,16 +48,71 @@ const form = useForm({
     item_description: '',
     reported_problems: '',
     promised_at: null,
+    items: [],
+    subtotal: 0,
+    discount_type: 'fixed',
+    discount_value: 0,
+    discount_amount: 0,
     final_total: 0,
     custom_fields: {},
     initial_evidence_images: [],
-    items: [],
     assign_technician: false,
     technician_name: '',
     technician_commission_type: 'percentage',
     technician_commission_value: null,
     cash_register_session_id: null,
 });
+
+// --- LÓGICA MEJORADA PARA CÁLCULOS Y SUBTOTAL MANUAL ---
+const manualSubtotalMode = ref(false);
+
+const recalculateSubtotal = () => {
+    let subtotal = 0;
+    form.items.forEach(item => {
+        const lineTotal = (item.quantity || 0) * (item.unit_price || 0);
+        item.line_total = lineTotal;
+        subtotal += lineTotal;
+    });
+    form.subtotal = subtotal;
+};
+
+const toggleSubtotalMode = () => {
+    manualSubtotalMode.value = !manualSubtotalMode.value;
+    if (!manualSubtotalMode.value) {
+        recalculateSubtotal();
+    }
+};
+
+// Watcher #1: Recalcula automáticamente el subtotal si cambian los items y no está en modo manual.
+watch(() => form.items, () => {
+    if (!manualSubtotalMode.value) {
+        recalculateSubtotal();
+    }
+}, { deep: true });
+
+// Watcher #2: Recalcula siempre el descuento y el total final cuando cambia el subtotal o el descuento.
+watch([() => form.subtotal, () => form.discount_type, () => form.discount_value], ([subtotal, discountType, discountValue]) => {
+    const sub = subtotal || 0;
+    const val = discountValue || 0;
+    let discountAmount = 0;
+
+    if (discountType === 'percentage') {
+        discountAmount = (sub * val) / 100;
+    } else { // fixed
+        discountAmount = val;
+    }
+
+    if (discountAmount > sub) {
+        discountAmount = sub;
+        if (discountType === 'fixed') form.discount_value = sub;
+        else if (discountType === 'percentage') form.discount_value = 100;
+    }
+
+    form.discount_amount = discountAmount;
+    form.final_total = sub - discountAmount;
+}, { immediate: true });
+// --- FIN DE LA LÓGICA MEJORADA ---
+
 
 const itemTypeOptions = ref([
     { label: 'Refacción', value: 'App\\Models\\Product' },
@@ -128,12 +182,6 @@ const checkUnitPrice = (index) => {
     }, 0);
 };
 
-watch(() => form.items, (newItems) => {
-    let total = 0;
-    newItems.forEach(item => { total += (item.quantity || 0) * (item.unit_price || 0); item.line_total = (item.quantity || 0) * (item.unit_price || 0); });
-    form.final_total = total;
-}, { deep: true });
-
 const filteredCustomers = ref();
 const searchCustomer = (event) => {
     setTimeout(() => {
@@ -170,6 +218,8 @@ watch(() => form.create_customer, (newValue) => {
 });
 
 const commissionOptions = ref([{ label: 'Porcentaje (%)', value: 'percentage' }, { label: 'Monto Fijo ($)', value: 'fixed' }]);
+const discountTypeOptions = ref([{ label: 'Fijo ($)', value: 'fixed' }, { label: 'Porcentaje (%)', value: 'percentage' }]);
+
 watch(() => form.assign_technician, (newValue) => {
     if (!newValue) { form.technician_name = ''; form.technician_commission_type = 'percentage'; form.technician_commission_value = null; }
 });
@@ -219,7 +269,6 @@ watch(activeSession, (newSession) => {
         submit();
     }
 });
-
 </script>
 
 <template>
@@ -312,7 +361,6 @@ watch(activeSession, (newSession) => {
                     <template #empty>
                         <div class="text-center p-4">No se han agregado refacciones o servicios.</div>
                     </template>
-
                     <Column header="Tipo" style="width: 15rem">
                         <template #body="{ data, index }">
                             <SelectButton v-model="form.items[index].itemable_type" :options="itemTypeOptions"
@@ -320,14 +368,13 @@ watch(activeSession, (newSession) => {
                                 :disabled="data.itemable_id !== 0 && data.itemable_id !== null" class="w-full" />
                         </template>
                     </Column>
-
                     <Column field="description" header="Descripción"><template #body="{ index }">
                             <InputText v-model="form.items[index].description" fluid class="w-full" />
                         </template>
                     </Column>
                     <Column field="quantity" header="Cantidad" style="width: 9.5rem"><template #body="{ index }">
                             <InputNumber v-model="form.items[index].quantity" fluid class="w-full" showButtons
-                                buttonLayout="horizontal" :step="1" :min="0" />
+                                buttonLayout="horizontal" :step="1" :min="1" />
                         </template>
                     </Column>
                     <Column field="unit_price" header="Precio Unit." style="width: 9.5rem"><template #body="{ index }">
@@ -345,12 +392,47 @@ watch(activeSession, (newSession) => {
                     </Column>
                 </DataTable>
                 <InputError :message="form.errors.items" class="mt-2" />
-                <div class="flex justify-end mt-4">
-                    <div class="w-full max-w-xs">
-                        <InputLabel for="final_total" value="Costo total del servicio" class="font-bold" />
-                        <InputNumber id="final_total" v-model="form.final_total" mode="currency" currency="MXN"
-                            locale="es-MX" class="w-full mt-1" inputClass="!font-bold" />
-                        <InputError :message="form.errors.final_total" class="mt-2" />
+
+                <!-- SECCIÓN DE TOTALES Y DESCUENTOS MEJORADA -->
+                <div class="flex justify-end mt-6">
+                    <div class="w-full max-w-xl bg-gray-50 dark:bg-gray-700/20 p-4 rounded-lg space-y-3">
+                        <!-- Subtotal -->
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center gap-2">
+                                <Button :icon="manualSubtotalMode ? 'pi pi-lock' : 'pi pi-lock-open'"
+                                    @click="toggleSubtotalMode"
+                                    :severity="manualSubtotalMode ? 'secondary' : 'success'" text rounded size="small"
+                                    v-tooltip.left="manualSubtotalMode ? 'Cambiar a cálculo automático' : 'Cambiar a subtotal manual'" />
+                                <label class="font-semibold text-gray-700 dark:text-gray-300">Subtotal</label>
+                            </div>
+                            <InputNumber v-model="form.subtotal" mode="currency" currency="MXN" locale="es-MX"
+                                :disabled="!manualSubtotalMode" inputClass="font-semibold text-right !w-[120px]" />
+                        </div>
+                        <!-- Descuento -->
+                        <div class="flex justify-between items-center">
+                            <label class="font-semibold text-gray-700 dark:text-gray-300 pl-10">Descuento</label>
+                            <div class="flex items-center gap-2">
+                                <SelectButton v-model="form.discount_type" :options="discountTypeOptions"
+                                    optionLabel="label" optionValue="value" />
+                                <InputNumber fluid v-model="form.discount_value" class="max-w-[120px]" :min="0"
+                                    :max="form.discount_type === 'percentage' ? 100 : form.subtotal"
+                                    :prefix="form.discount_type === 'fixed' ? '$' : null"
+                                    :suffix="form.discount_type === 'percentage' ? '%' : null" />
+                            </div>
+                        </div>
+                        <!-- Monto Descontado (solo si hay descuento) -->
+                        <div v-if="form.discount_amount > 0"
+                            class="flex justify-end items-center text-sm text-red-600 dark:text-red-400 pr-1">
+                            <span>- {{ new Intl.NumberFormat('es-MX', { style: 'currency', currency:
+                            'MXN' }).format(form.discount_amount) }}</span>
+                        </div>
+                        <Divider class="!my-2" />
+                        <!-- Total Final -->
+                        <div class="flex justify-between items-center text-xl font-bold">
+                            <span class="text-gray-800 dark:text-gray-200">TOTAL:</span>
+                            <span>{{ new Intl.NumberFormat('es-MX', { style: 'currency',
+                                currency: 'MXN' }).format(form.final_total) }}</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -441,7 +523,6 @@ watch(activeSession, (newSession) => {
         <ManageCustomFields ref="manageFieldsComponent" module="service_orders"
             :definitions="props.customFieldDefinitions" />
 
-        <!-- MODALES DE SESIÓN -->
         <StartSessionModal 
             v-model:visible="isStartSessionModalVisible"
             :cash-registers="availableCashRegisters"
@@ -453,6 +534,5 @@ watch(activeSession, (newSession) => {
         />
 
         <ConfirmPopup group="concept-delete" />
-
     </AppLayout>
 </template>
