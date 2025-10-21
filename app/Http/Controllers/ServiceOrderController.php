@@ -9,6 +9,7 @@ use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Http\Requests\StoreServiceOrderRequest;
 use App\Http\Requests\UpdateServiceOrderRequest;
+use App\Models\CashRegister;
 use App\Models\Customer;
 use App\Models\CustomFieldDefinition;
 use App\Models\Product;
@@ -123,6 +124,9 @@ class ServiceOrderController extends Controller implements HasMiddleware
         return Inertia::render('ServiceOrder/Create', $this->getFormData());
     }
 
+    /**
+     * Almacena una nueva orden de servicio.
+     */
     public function store(StoreServiceOrderRequest $request)
     {
         $validated = array_merge($request->validated(), $request->validate([
@@ -130,17 +134,18 @@ class ServiceOrderController extends Controller implements HasMiddleware
             'credit_limit' => 'required_if:create_customer,true|numeric|min:0',
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id,status,abierta',
         ]));
-    
+
         $newServiceOrder = null;
-    
+
         DB::transaction(function () use ($validated, &$newServiceOrder, $request) {
             $user = Auth::user();
             $customer = null;
-    
+
+            // --- Se generan ambos folios consecutivos ---
             $folio = $this->generateServiceOrderFolio();
             $transactionFolio = $this->generateTransactionFolio();
-    
-            if (!empty($validated['customer_id'])) {
+
+            if (! empty($validated['customer_id'])) {
                 $customer = Customer::find($validated['customer_id']);
             } elseif ($validated['create_customer']) {
                 $customer = Customer::create([
@@ -153,7 +158,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     'balance' => 0,
                 ]);
             }
-    
+
             $serviceOrder = ServiceOrder::create(array_merge($validated, [
                 'folio' => $folio,
                 'user_id' => $user->id,
@@ -161,20 +166,20 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'customer_id' => $customer?->id,
                 'status' => ServiceOrderStatus::PENDING,
             ]));
-    
+
             $transaction = $serviceOrder->transaction()->create([
                 'folio' => $transactionFolio,
                 'customer_id' => $customer?->id,
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
                 'cash_register_session_id' => $validated['cash_register_session_id'],
-                'subtotal' => $serviceOrder->subtotal, // Usar el subtotal
-                'total_discount' => $serviceOrder->discount_amount, // Guardar el descuento
+                'subtotal' => $serviceOrder->subtotal,
+                'total_discount' => $serviceOrder->discount_amount,
                 'total_tax' => 0,
                 'channel' => TransactionChannel::SERVICE_ORDER,
                 'status' => $serviceOrder->final_total > 0 ? TransactionStatus::PENDING : TransactionStatus::COMPLETED,
             ]);
-    
+
             if (!empty($validated['items'])) {
                 foreach ($validated['items'] as $item) {
                     if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
@@ -183,55 +188,76 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     $serviceOrder->items()->create($item);
                 }
             }
-    
+
             if ($request->hasFile('initial_evidence_images')) {
                 foreach ($request->file('initial_evidence_images') as $file) {
                     $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
                 }
             }
-    
+
             $newServiceOrder = $serviceOrder;
         });
-    
+
         return redirect()->route('service-orders.show', $newServiceOrder->id)
             ->with('success', 'Orden de servicio creada.')
             ->with('show_payment_modal', true);
     }
 
+    /**
+     * Genera un folio consecutivo para las órdenes de servicio, único por suscripción.
+     *
+     * @return string
+     */
     private function generateServiceOrderFolio(): string
     {
         $subscriptionId = Auth::user()->branch->subscription_id;
+
+        // Busca la última orden de servicio de la suscripción con el formato de folio específico
         $lastOrder = ServiceOrder::whereHas('branch', function ($query) use ($subscriptionId) {
             $query->where('subscription_id', $subscriptionId);
         })
             ->where('folio', 'like', 'OS-%')
+            // Ordena por el valor numérico del folio para encontrar el más alto, no por ID.
             ->orderByRaw('CAST(SUBSTRING(folio, 4) AS UNSIGNED) DESC')
             ->first();
 
         $sequence = 1;
         if ($lastOrder) {
+            // Extrae la parte numérica del folio (después de "OS-") y le suma 1
             $lastSequence = (int) substr($lastOrder->folio, 3);
             $sequence = $lastSequence + 1;
         }
 
+        // Retorna el nuevo folio formateado con 3 dígitos (ej: OS-001)
         return 'OS-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
     }
 
+    /**
+     * Genera un folio consecutivo para la transacción de la orden de servicio.
+     *
+     * @return string
+     */
     private function generateTransactionFolio(): string
     {
         $subscriptionId = Auth::user()->branch->subscription_id;
+
+        // Busca la última transacción de la suscripción con el formato de folio específico
         $lastTransaction = Transaction::whereHas('branch', function ($query) use ($subscriptionId) {
             $query->where('subscription_id', $subscriptionId);
         })
             ->where('folio', 'like', 'OS-V-%')
+            // Ordena por el valor numérico del folio para encontrar el más alto
             ->orderByRaw('CAST(SUBSTRING(folio, 6) AS UNSIGNED) DESC')
             ->first();
 
         $sequence = 1;
         if ($lastTransaction) {
+            // Extrae la parte numérica del folio (después de "OS-V-") y le suma 1
             $lastSequence = (int) substr($lastTransaction->folio, 5);
             $sequence = $lastSequence + 1;
         }
+
+        // Retorna el nuevo folio formateado
         return 'OS-V-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
     }
 
@@ -245,11 +271,11 @@ class ServiceOrderController extends Controller implements HasMiddleware
     {
         DB::transaction(function () use ($request, $serviceOrder) {
             $validated = $request->validated();
-    
+
             $serviceOrder->update($validated);
-    
+
             $serviceOrder->items()->delete();
-    
+
             if (!empty($validated['items'])) {
                 foreach ($validated['items'] as $item) {
                     if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
@@ -258,26 +284,26 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     $serviceOrder->items()->create($item);
                 }
             }
-    
+
             $serviceOrder->load('transaction');
             if ($serviceOrder->transaction) {
                 $serviceOrder->transaction->update([
-                    'subtotal' => $serviceOrder->subtotal, // Actualizar subtotal
-                    'total_discount' => $serviceOrder->discount_amount, // Actualizar descuento
+                    'subtotal' => $validated['subtotal'],
+                    'total_discount' => $validated['discount_amount'],
                 ]);
             }
-    
+
             if ($request->input('deleted_media_ids')) {
                 $serviceOrder->media()->whereIn('id', $request->input('deleted_media_ids'))->delete();
             }
-    
+
             if ($request->hasFile('initial_evidence_images')) {
                 foreach ($request->file('initial_evidence_images') as $file) {
                     $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
                 }
             }
         });
-    
+
         return redirect()->route('service-orders.show', $serviceOrder->id)->with('success', 'Orden de servicio actualizada.');
     }
 
@@ -286,7 +312,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'technician_diagnosis' => 'nullable|string|max:1000',
             'closing_evidence_images' => 'nullable|array|max:5',
-            'closing_evidence_images.*' => 'image|max:2048',
+            'closing_evidence_images.*' => 'image',
         ]);
 
         DB::transaction(function () use ($validated, $serviceOrder, $request) {
