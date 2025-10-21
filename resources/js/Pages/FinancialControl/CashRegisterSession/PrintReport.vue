@@ -138,7 +138,7 @@ const paymentMethodDetails = {
                         <tbody>
                             <tr v-for="movement in session.cash_movements" :key="movement.id">
                                 <td class="py-1 pr-2">{{ movement.description }}</td>
-                                <td class="py-1 pr-2">{{ movement.user.name }}</td>
+                                <td class="py-1 pr-2">{{ movement.user?.name }}</td>
                                 <td class="py-1 text-right font-mono" :class="movement.type === 'ingreso' ? 'text-green-600' : 'text-red-500'">{{ formatCurrency(movement.amount) }}</td>
                             </tr>
                             <tr v-if="!session.cash_movements || session.cash_movements.length === 0"><td colspan="3" class="py-4 text-center text-gray-400">Sin movimientos.</td></tr>
