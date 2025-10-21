@@ -161,7 +161,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
             ->whereIn('payment_method', [PaymentMethod::CARD->value, PaymentMethod::TRANSFER->value])
             ->whereIn('bank_account_id', $accountIdsInSession)
             // Se usa el rango de fechas de la sesión para encontrar los gastos correspondientes
-            ->whereBetween('expense_date', [$session->opened_at->toDateString(), $session->closed_at->toDateString()])
+            ->whereBetween('expense_date', [$session->opened_at?->toDateString(), $session->closed_at?->toDateString()])
             ->select('bank_account_id', DB::raw('SUM(amount) as total_spent'))
             ->groupBy('bank_account_id')
             ->get()
