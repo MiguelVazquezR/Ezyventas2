@@ -119,16 +119,17 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                             <Column header="Precio Unitario">
                                 <template #body="{ data }">
                                     <div>
-                                        <del v-if="parseFloat(data.discount_amount) > 0" class="text-gray-500 text-xs">
-                                            {{ formatCurrency(parseFloat(data.unit_price) +
-                                                parseFloat(data.discount_amount)) }}
+                                        <del v-if="parseFloat(data.discount_amount) !== 0" class="text-gray-500 text-xs">
+                                            {{ formatCurrency(parseFloat(data.unit_price) + parseFloat(data.discount_amount)) }}
                                         </del>
                                         <p class="font-semibold m-0">
                                             {{ formatCurrency(data.unit_price) }}
                                         </p>
-                                        <p v-if="parseFloat(data.discount_amount) > 0"
-                                            class="text-xs text-green-600 m-0">
+                                        <p v-if="parseFloat(data.discount_amount) > 0" class="text-xs text-green-600 m-0">
                                             Ahorro: {{ formatCurrency(data.discount_amount) }}
+                                        </p>
+                                         <p v-else-if="parseFloat(data.discount_amount) < 0" class="text-xs text-red-600 m-0">
+                                            Aumento: {{ formatCurrency(Math.abs(data.discount_amount)) }}
                                         </p>
                                     </div>
                                 </template>
@@ -155,8 +156,12 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                         <ul class="space-y-3 text-sm">
                             <li class="flex justify-between"><span>Subtotal:</span><span>{{
                                 formatCurrency(transaction.subtotal) }}</span></li>
-                            <li class="flex justify-between"><span>Descuento:</span><span class="text-red-500">- {{
-                                formatCurrency(transaction.total_discount) }}</span></li>
+                            <li v-if="parseFloat(transaction.total_discount) > 0" class="flex justify-between">
+                                <span>Descuento Total:</span><span class="text-green-500">- {{ formatCurrency(transaction.total_discount) }}</span>
+                            </li>
+                             <li v-else-if="parseFloat(transaction.total_discount) < 0" class="flex justify-between">
+                                <span>Aumento Total:</span><span class="text-red-500">+ {{ formatCurrency(Math.abs(transaction.total_discount)) }}</span>
+                            </li>
                             <li class="flex justify-between font-bold text-base border-t pt-2 mt-2"><span>Total de la
                                     Venta:</span><span>{{ formatCurrency(totalAmount) }}</span></li>
                             <li class="flex justify-between"><span>Total Pagado:</span><span class="font-semibold">{{

@@ -3,21 +3,20 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CashRegisterSessionStatus;
+use App\Enums\ExpenseStatus;
+use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Http\Requests\StoreCashRegisterSessionRequest;
 use App\Http\Requests\UpdateCashRegisterSessionRequest;
 use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
-use App\Models\Payment;
+use App\Models\Expense;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use App\Models\User;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -80,7 +79,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
             'opener:id,name',
             'users:id,name',
             'cashRegister:id,name',
-            'payments.bankAccount', // Cargar la relación para obtener el saldo actual
+            'payments.bankAccount',
             'cashMovements.user:id,name',
             'transactions.user:id,name',
             'transactions.customer:id,name'
@@ -92,43 +91,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
             ->groupBy('payment_method')
             ->pluck('total', 'payment_method');
 
-        // --- CÁLCULO DE SALDOS DE CUENTAS BANCARIAS ---
-        $bankAccountSummary = [];
-        if (!empty($cashRegisterSession->opening_bank_balances)) {
-            $openingBalances = collect($cashRegisterSession->opening_bank_balances);
-            $accountIdsInSession = $openingBalances->pluck('id');
-
-            // Pagos hechos a cuentas bancarias durante esta sesión
-            $paymentsToAccounts = $cashRegisterSession->payments()
-                ->whereIn('payment_method', ['tarjeta', 'transferencia'])
-                ->where('status', 'completado')
-                ->whereIn('bank_account_id', $accountIdsInSession)
-                ->select('bank_account_id', DB::raw('SUM(amount) as total_received'))
-                ->groupBy('bank_account_id')
-                ->get()
-                ->keyBy('bank_account_id');
-
-            // Filtrar por permisos del usuario que está viendo el reporte
-            $allowedAccountIds = $isOwner ? $accountIdsInSession : $user->bankAccounts()->pluck('id');
-
-            foreach ($openingBalances as $openingData) {
-                if ($allowedAccountIds->contains($openingData['id'])) {
-                    $received = $paymentsToAccounts->get($openingData['id'])?->total_received ?? 0;
-                    $initialBalance = (float) $openingData['balance'];
-                    
-                    // El saldo final es el inicial más lo que se recibió en esta sesión
-                    $finalBalance = $initialBalance + $received;
-
-                    $bankAccountSummary[] = [
-                        'id' => $openingData['id'],
-                        'account_name' => $openingData['account_name'],
-                        'bank_name' => $openingData['bank_name'],
-                        'initial_balance' => $initialBalance,
-                        'final_balance' => $finalBalance,
-                    ];
-                }
-            }
-        }
+        $bankAccountSummary = $this->calculateBankAccountSummary($cashRegisterSession, $user, $isOwner);
 
         return Inertia::render('FinancialControl/CashRegisterSession/Show', [
             'session' => $cashRegisterSession,
@@ -143,7 +106,6 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         $user = Auth::user();
         $isOwner = !$user->roles()->exists();
 
-        // CORRECCIÓN: Se carga 'opener' en lugar de 'user' y se añaden otras relaciones para un reporte completo.
         $cashRegisterSession->load([
             'opener:id,name',
             'users:id,name',
@@ -160,45 +122,75 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
             ->groupBy('payment_method')
             ->pluck('total', 'payment_method');
 
-        // --- CÁLCULO DE SALDOS DE CUENTAS BANCARIAS (AÑADIDO) ---
-        $bankAccountSummary = [];
-        if (!empty($cashRegisterSession->opening_bank_balances)) {
-            $openingBalances = collect($cashRegisterSession->opening_bank_balances);
-            $accountIdsInSession = $openingBalances->pluck('id');
-
-            $paymentsToAccounts = $cashRegisterSession->payments()
-                ->whereIn('payment_method', ['tarjeta', 'transferencia'])
-                ->where('status', 'completado')
-                ->whereIn('bank_account_id', $accountIdsInSession)
-                ->select('bank_account_id', DB::raw('SUM(amount) as total_received'))
-                ->groupBy('bank_account_id')
-                ->get()
-                ->keyBy('bank_account_id');
-
-            $allowedAccountIds = $isOwner ? $accountIdsInSession : $user->bankAccounts()->pluck('id');
-
-            foreach ($openingBalances as $openingData) {
-                if ($allowedAccountIds->contains($openingData['id'])) {
-                    $received = $paymentsToAccounts->get($openingData['id'])?->total_received ?? 0;
-                    $initialBalance = (float) $openingData['balance'];
-                    $finalBalance = $initialBalance + $received;
-
-                    $bankAccountSummary[] = [
-                        'id' => $openingData['id'],
-                        'account_name' => $openingData['account_name'],
-                        'bank_name' => $openingData['bank_name'],
-                        'initial_balance' => $initialBalance,
-                        'final_balance' => $finalBalance,
-                    ];
-                }
-            }
-        }
+        $bankAccountSummary = $this->calculateBankAccountSummary($cashRegisterSession, $user, $isOwner);
 
         return Inertia::render('FinancialControl/CashRegisterSession/PrintReport', [
             'session' => $cashRegisterSession,
             'sessionTotals' => $paymentTotals,
-            'bankAccountSummary' => $bankAccountSummary, // Se pasa a la vista de impresión
+            'bankAccountSummary' => $bankAccountSummary,
         ]);
+    }
+
+    /**
+     * --- NUEVO MÉTODO CENTRALIZADO PARA CALCULAR EL RESUMEN BANCARIO ---
+     * Calcula los saldos iniciales y finales de las cuentas bancarias para una sesión,
+     * considerando tanto los ingresos por pagos como los egresos por gastos.
+     */
+    private function calculateBankAccountSummary(CashRegisterSession $session, $user, bool $isOwner): array
+    {
+        $summary = [];
+        if (empty($session->opening_bank_balances)) {
+            return $summary;
+        }
+
+        $openingBalances = collect($session->opening_bank_balances);
+        $accountIdsInSession = $openingBalances->pluck('id');
+
+        // 1. Obtener INGRESOS a cuentas bancarias durante esta sesión
+        $paymentsToAccounts = $session->payments()
+            ->whereIn('payment_method', [PaymentMethod::CARD->value, PaymentMethod::TRANSFER->value])
+            ->where('status', PaymentStatus::COMPLETED->value)
+            ->whereIn('bank_account_id', $accountIdsInSession)
+            ->select('bank_account_id', DB::raw('SUM(amount) as total_received'))
+            ->groupBy('bank_account_id')
+            ->get()
+            ->keyBy('bank_account_id');
+
+        // 2. CORRECCIÓN: Obtener GASTOS desde cuentas bancarias durante esta sesión
+        $expensesFromAccounts = Expense::where('status', ExpenseStatus::PAID->value)
+            ->whereIn('payment_method', [PaymentMethod::CARD->value, PaymentMethod::TRANSFER->value])
+            ->whereIn('bank_account_id', $accountIdsInSession)
+            // Se usa el rango de fechas de la sesión para encontrar los gastos correspondientes
+            ->whereBetween('expense_date', [$session->opened_at->toDateString(), $session->closed_at->toDateString()])
+            ->select('bank_account_id', DB::raw('SUM(amount) as total_spent'))
+            ->groupBy('bank_account_id')
+            ->get()
+            ->keyBy('bank_account_id');
+
+        // 3. Filtrar por permisos del usuario que está viendo el reporte
+        $allowedAccountIds = $isOwner ? $accountIdsInSession : $user->bankAccounts()->pluck('id');
+
+        // 4. Calcular el resumen final
+        foreach ($openingBalances as $openingData) {
+            if ($allowedAccountIds->contains($openingData['id'])) {
+                $received = $paymentsToAccounts->get($openingData['id'])?->total_received ?? 0;
+                // Se obtiene el total de gastos para la cuenta
+                $spent = $expensesFromAccounts->get($openingData['id'])?->total_spent ?? 0;
+                $initialBalance = (float) $openingData['balance'];
+                
+                // CORRECCIÓN: El saldo final es el inicial + ingresos - gastos
+                $finalBalance = $initialBalance + $received - $spent;
+
+                $summary[] = [
+                    'id' => $openingData['id'],
+                    'account_name' => $openingData['account_name'],
+                    'bank_name' => $openingData['bank_name'],
+                    'initial_balance' => $initialBalance,
+                    'final_balance' => $finalBalance,
+                ];
+            }
+        }
+        return $summary;
     }
 
     public function store(StoreCashRegisterSessionRequest $request)
@@ -215,14 +207,10 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         }
 
         DB::transaction(function () use ($request, $validated, $cashRegister, $user) {
-            
-            // --- LÓGICA MEJORADA ---
-            // 1. Obtener TODAS las cuentas bancarias de la sucursal.
             $allBranchAccounts = BankAccount::whereHas('branches', function ($query) use ($cashRegister) {
                 $query->where('branch_id', $cashRegister->branch_id);
             })->get();
 
-            // 2. Crear la "foto" del estado inicial de TODAS las cuentas.
             $openingBankBalances = $allBranchAccounts->map(function ($account) {
                 return [
                     'id' => $account->id,
@@ -232,7 +220,6 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
                 ];
             });
 
-            // 3. (Opcional) Si el usuario ajustó saldos en el modal, actualizarlos en la BD.
             if ($request->has('bank_accounts')) {
                 foreach ($request->input('bank_accounts') as $accountData) {
                     $bankAccount = BankAccount::find($accountData['id']);
@@ -242,7 +229,6 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
                 }
             }
 
-            // 4. Crear la sesión de caja con la "foto" completa.
             $session = $cashRegister->sessions()->create([
                 'user_id' => $user->id,
                 'opening_cash_balance' => $validated['opening_cash_balance'],

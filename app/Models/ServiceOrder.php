@@ -44,6 +44,11 @@ class ServiceOrder extends Model implements HasMedia
         'custom_fields',
         'created_at',
         'updated_at',
+        // --- CAMPOS NUEVOS PARA DESCUENTOS ---
+        'subtotal',
+        'discount_type',
+        'discount_value',
+        'discount_amount',
     ];
 
     protected function casts(): array
@@ -52,6 +57,9 @@ class ServiceOrder extends Model implements HasMedia
             'status' => ServiceOrderStatus::class,
             'received_at' => 'datetime',
             'promised_at' => 'datetime',
+            'subtotal' => 'decimal:2',
+            'discount_value' => 'decimal:2',
+            'discount_amount' => 'decimal:2',
             'final_total' => 'decimal:2',
             'custom_fields' => 'array',
             'customer_address' => 'array',
@@ -81,7 +89,7 @@ class ServiceOrder extends Model implements HasMedia
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['status', 'technician_name', 'technician_diagnosis', 'final_total'])
+            ->logOnly(['status', 'technician_name', 'technician_diagnosis', 'final_total', 'discount_amount']) // <-- Añadido
             ->setDescriptionForEvent(fn(string $eventName) => "La orden de servicio ha sido {$this->translateEventName($eventName)}")
             ->logOnlyDirty()->dontSubmitEmptyLogs();
     }

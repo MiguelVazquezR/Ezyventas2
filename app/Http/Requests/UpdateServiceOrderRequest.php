@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateServiceOrderRequest extends FormRequest
 {
@@ -17,7 +18,7 @@ class UpdateServiceOrderRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array|string>
+     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
@@ -32,7 +33,6 @@ class UpdateServiceOrderRequest extends FormRequest
             'item_description' => 'required|string|max:255',
             'reported_problems' => 'required|string',
             'promised_at' => 'nullable|date',
-            'final_total' => 'required|numeric|min:0',
             'custom_fields' => 'nullable|array',
             'initial_evidence_images' => 'nullable|array|max:5',
             'initial_evidence_images.*' => 'image|max:2048',
@@ -47,8 +47,15 @@ class UpdateServiceOrderRequest extends FormRequest
             'items.*.line_total' => 'required|numeric|min:0',
             'assign_technician' => ['required', 'boolean'],
             'technician_name' => ['required_if:assign_technician,true', 'nullable', 'string', 'max:255'],
-            'technician_commission_type' => ['required_if:assign_technician,true', 'nullable', 'in:percentage,fixed'],
+            'technician_commission_type' => ['required_if:assign_technician,true', 'nullable', Rule::in(['percentage', 'fixed'])],
             'technician_commission_value' => ['required_if:assign_technician,true', 'nullable', 'numeric', 'min:0'],
+
+            // --- REGLAS PARA DESCUENTOS ---
+            'subtotal' => 'required|numeric|min:0',
+            'discount_type' => ['required', Rule::in(['fixed', 'percentage'])],
+            'discount_value' => 'nullable|numeric|min:0',
+            'discount_amount' => 'required|numeric|min:0',
+            'final_total' => 'required|numeric|min:0',
         ];
     }
 }

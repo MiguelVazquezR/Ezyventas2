@@ -173,8 +173,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
                 'cash_register_session_id' => $validated['cash_register_session_id'],
-                'subtotal' => $serviceOrder->final_total,
-                'total_discount' => 0,
+                'subtotal' => $serviceOrder->subtotal,
+                'total_discount' => $serviceOrder->discount_amount,
                 'total_tax' => 0,
                 'channel' => TransactionChannel::SERVICE_ORDER,
                 'status' => $serviceOrder->final_total > 0 ? TransactionStatus::PENDING : TransactionStatus::COMPLETED,
@@ -276,12 +276,10 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
             $serviceOrder->items()->delete();
 
-            // El controlador procesará los items tal como lleguen del frontend.
-            // El frontend ahora es responsable de asignar el 'itemable_type' correcto.
             if (!empty($validated['items'])) {
                 foreach ($validated['items'] as $item) {
                     if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
-                        unset($item['itemable_id']); // Es mejor quitar el id si es 0
+                        unset($item['itemable_id']);
                     }
                     $serviceOrder->items()->create($item);
                 }
@@ -290,7 +288,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
             $serviceOrder->load('transaction');
             if ($serviceOrder->transaction) {
                 $serviceOrder->transaction->update([
-                    'subtotal' => $serviceOrder->final_total,
+                    'subtotal' => $validated['subtotal'],
+                    'total_discount' => $validated['discount_amount'],
                 ]);
             }
 
@@ -313,7 +312,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'technician_diagnosis' => 'nullable|string|max:1000',
             'closing_evidence_images' => 'nullable|array|max:5',
-            'closing_evidence_images.*' => 'image|max:2048', // Max 2MB per image
+            'closing_evidence_images.*' => 'image',
         ]);
 
         DB::transaction(function () use ($validated, $serviceOrder, $request) {
@@ -392,7 +391,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
             'products' => Product::where('branch_id', $user->branch_id)->with('productAttributes')->get(),
             'services' => Service::where('branch_id', $user->branch_id)->get(['id', 'name', 'base_price']),
             'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'service_orders')->get(),
-            'userBankAccounts' => $userBankAccounts, // Se añade la nueva variable
+            'userBankAccounts' => $userBankAccounts,
         ];
     }
 }
