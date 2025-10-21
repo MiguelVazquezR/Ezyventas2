@@ -168,6 +168,7 @@ class ExpenseController extends Controller implements HasMiddleware
                     'type' => SessionCashMovementType::OUTFLOW,
                     'amount' => $expense->amount,
                     'description' => "Gasto: " . ($expense->folio ?: $expense->description),
+                    'user_id' => $user->id
                 ]);
 
                 $expense->update(['session_cash_movement_id' => $movement->id]);
@@ -262,7 +263,7 @@ class ExpenseController extends Controller implements HasMiddleware
                 $movement = $activeSession->cashMovements()->create([
                     'type' => SessionCashMovementType::OUTFLOW,
                     'amount' => $expense->amount,
-                    'description' => "Gasto (act.): " . ($expense->folio ?: $expense->description),
+                    'description' => "Gasto (actualizado): " . ($expense->folio ?: $expense->description),
                 ]);
 
                 $expense->update(['session_cash_movement_id' => $movement->id]);

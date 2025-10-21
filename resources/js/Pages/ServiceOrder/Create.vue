@@ -64,7 +64,7 @@ const form = useForm({
 });
 
 // --- LÓGICA MEJORADA PARA CÁLCULOS Y SUBTOTAL MANUAL ---
-const manualSubtotalMode = ref(false);
+const manualSubtotalMode = ref(true);
 
 const recalculateSubtotal = () => {
     let subtotal = 0;
