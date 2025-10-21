@@ -236,16 +236,14 @@ class PrintEncoderService
             ];
         } elseif ($dataSource instanceof ServiceOrder) {
             $dataSource->loadMissing(['branch.subscription', 'user']);
-            $subtotal = $dataSource->items->sum('line_total');
-            $discount = $subtotal - $dataSource->final_total;
 
             $replacements = [
                 '{{os.folio}}' => $dataSource->folio,
                 '{{os.fecha_recepcion}}' => Carbon::parse($dataSource->received_at)->format('d/m/Y'),
                 '{{os.hora_recepcion}}' => Carbon::parse($dataSource->received_at)->format('H:i A'),
                 '{{os.fecha_hora_recepcion}}' => Carbon::parse($dataSource->received_at)->format('d/m/Y H:i A'),
-                '{{os.subtotal}}' => number_format($subtotal, 2),
-                '{{os.descuentos}}' => number_format($discount, 2),
+                '{{os.subtotal}}' => number_format($dataSource->subtotal, 2),
+                '{{os.descuento}}' => number_format($dataSource->discount_amount, 2),
                 '{{os.total}}' => number_format($dataSource->final_total, 2),
                 '{{os.cliente.nombre}}' => $dataSource->customer_name ?? ($dataSource->customer->name ?? 'N/A'),
                 '{{os.cliente.telefono}}' => $dataSource->customer_phone ?? ($dataSource->customer->phone ?? ''),
@@ -292,6 +290,7 @@ class PrintEncoderService
 
         // Reemplaza los placeholders y luego limpia los que no se encontraron
         $text = str_replace(array_keys($replacements), array_values($replacements), $text);
+
         // Limpia cualquier placeholder de {{os.custom.*}} que no tuvo un valor
         return preg_replace('/{{os\.custom\.(.*?)}}/', '', $text);
     }

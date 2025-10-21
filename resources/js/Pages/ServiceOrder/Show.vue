@@ -15,7 +15,6 @@ const props = defineProps({
     activities: Array,
     availableTemplates: Array,
     customFieldDefinitions: Array,
-    // Se recibe la sesión activa desde el controlador.
     activeSession: Object,
 });
 
@@ -24,10 +23,8 @@ const confirm = useConfirm();
 const toast = useToast();
 const { hasPermission } = usePermissions();
 
-// Se provee la sesión activa para que componentes anidados (como PaymentModal) puedan inyectarla.
 provide('activeSession', computed(() => props.activeSession));
 
-// --- Lógica de Modales ---
 const isPrintModalVisible = ref(false);
 const isPaymentModalVisible = ref(false);
 const isInPostCreationFlow = ref(false);
@@ -41,7 +38,6 @@ const openDiagnosisModal = () => {
     isDiagnosisModalVisible.value = true;
 };
 
-// Watch for initial payment modal show from flash message
 watch(() => page.props.flash.show_payment_modal, (showModal) => {
     if (showModal) {
         isInPostCreationFlow.value = true;
@@ -51,7 +47,6 @@ watch(() => page.props.flash.show_payment_modal, (showModal) => {
 }, { immediate: true });
 
 const handlePaymentSubmit = (payload) => {
-    // Se cambia la ruta y se envía el payload completo, que ahora incluye cash_register_session_id.
     router.post(route('payments.store', props.serviceOrder.transaction.id), payload, {
         preserveScroll: true,
         onSuccess: () => {
@@ -88,7 +83,7 @@ const handleDiagnosisSubmit = () => {
     diagnosisForm.post(route('service-orders.saveDiagnosis', props.serviceOrder.id), {
         onSuccess: () => {
             isDiagnosisModalVisible.value = false;
-            router.reload({ only: ['serviceOrder'] }); // Reload serviceOrder prop to update diagnosis/media
+            router.reload({ only: ['serviceOrder'] });
         },
         onError: (errors) => {
             const errorMsg = Object.values(errors)[0] || 'No se pudo guardar el diagnóstico.';
@@ -138,27 +133,25 @@ const amountDue = computed(() => {
 });
 
 const deliveryDate = computed(() => {
-    // Verifica que el estatus sea 'entregado' y que existan pagos.
     if (props.serviceOrder.status === 'entregado' && props.serviceOrder.transaction?.payments?.length > 0) {
-        // Encuentra el pago más reciente comparando las fechas.
         const latestPayment = props.serviceOrder.transaction.payments.reduce((latest, current) => {
             return new Date(current.payment_date) > new Date(latest.payment_date) ? current : latest;
         });
         return latestPayment.payment_date;
     }
-    return null; // Devuelve null si no se cumplen las condiciones.
+    return null;
 });
 
-// --- INICIO: LÓGICA DE GANANCIA ---
+// --- LÓGICA DE GANANCIA MEJORADA ---
 const technicianCommissionCostNumeric = computed(() => {
     if (!props.serviceOrder.technician_name || !props.serviceOrder.technician_commission_value) {
         return 0;
     }
     const value = parseFloat(props.serviceOrder.technician_commission_value);
-    const total = parseFloat(props.serviceOrder.final_total);
+    const subtotal = parseFloat(props.serviceOrder.subtotal); // Comisión sobre subtotal
 
     if (props.serviceOrder.technician_commission_type === 'percentage') {
-        return (total * value) / 100;
+        return (subtotal * value) / 100;
     } else if (props.serviceOrder.technician_commission_type === 'fixed') {
         return value;
     }
@@ -170,9 +163,8 @@ const partsCost = computed(() => {
         return 0;
     }
     return props.serviceOrder.items.reduce((total, item) => {
-        // Suma el costo solo si el item es un producto (refacción)
+        // CORRECCIÓN: Volver a la lógica original que usa el precio de venta de la refacción.
         if (item.itemable_type === 'App\\Models\\Product') {
-            // Usa '|| 0' para manejar casos donde cost_price es null o undefined, evitando NaN.
             const cost = parseFloat(item.unit_price) || 0;
             const quantity = parseFloat(item.quantity) || 0;
             return total + (cost * quantity);
@@ -182,16 +174,20 @@ const partsCost = computed(() => {
 });
 
 const profitAnalysis = computed(() => {
-    const totalRevenue = parseFloat(props.serviceOrder.final_total) || 0;
+    const subtotal = parseFloat(props.serviceOrder.subtotal) || 0;
+    const discount = parseFloat(props.serviceOrder.discount_amount) || 0;
+    const netRevenue = parseFloat(props.serviceOrder.final_total) || 0;
     const commission = technicianCommissionCostNumeric.value;
     const parts = partsCost.value;
 
     const totalCosts = commission + parts;
-    const netProfit = totalRevenue - totalCosts;
-    const margin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+    const netProfit = netRevenue - totalCosts;
+    const margin = netRevenue > 0 ? (netProfit / netRevenue) * 100 : 0;
 
     return {
-        totalRevenue,
+        subtotal,
+        discount,
+        netRevenue,
         commission,
         parts,
         totalCosts,
@@ -199,7 +195,6 @@ const profitAnalysis = computed(() => {
         margin,
     };
 });
-// --- FIN: LÓGICA DE GANANCIA ---
 
 const technicianCommission = computed(() => {
     if (technicianCommissionCostNumeric.value === 0 && (!props.serviceOrder.technician_name || !props.serviceOrder.technician_commission_value)) {
@@ -330,7 +325,8 @@ const getPaymentMethodIcon = (method) => {
 
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <div>
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Orden de Servicio #{{ serviceOrder.folio || serviceOrder.id }}
+                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Orden de Servicio #{{ serviceOrder.folio
+                    || serviceOrder.id }}
                 </h1>
                 <p class="text-gray-500 dark:text-gray-400 mt-1">Cliente: {{ serviceOrder.customer_name }}</p>
             </div>
@@ -449,7 +445,8 @@ const getPaymentMethodIcon = (method) => {
                     <DataTable :value="serviceOrder.items" class="p-datatable-sm">
                         <Column header="Tipo" style="width: 8rem">
                             <template #body="{ data }">
-                                <Tag :value="getItemType(data.itemable_type).text" :severity="getItemType(data.itemable_type).severity" />
+                                <Tag :value="getItemType(data.itemable_type).text"
+                                    :severity="getItemType(data.itemable_type).severity" />
                             </template>
                         </Column>
                         <Column field="description" header="Descripción"></Column>
@@ -457,7 +454,8 @@ const getPaymentMethodIcon = (method) => {
                         <Column field="unit_price" header="Precio Unit." style="width: 10rem" class="text-right">
                             <template #body="{ data }">{{ formatCurrency(data.unit_price) }}</template>
                         </Column>
-                        <Column field="line_total" header="Total" style="width: 10rem" class="text-right font-semibold">
+                        <Column field="line_total" header="Total" style="width: 10rem"
+                            class="text-right font-semibold">
                             <template #body="{ data }">{{ formatCurrency(data.line_total) }}</template>
                         </Column>
                         <template #empty>
@@ -467,9 +465,19 @@ const getPaymentMethodIcon = (method) => {
                         </template>
                     </DataTable>
                     <div class="flex justify-end mt-4">
-                        <div class="w-full max-w-xs text-right space-y-2">
+                        <div class="w-full max-w-xs text-right space-y-2 text-sm">
+                            <div class="flex justify-between">
+                                <span>Subtotal:</span>
+                                <span class="font-semibold">{{ formatCurrency(serviceOrder.subtotal) }}</span>
+                            </div>
+                            <div v-if="serviceOrder.discount_amount > 0" class="flex justify-between text-red-600">
+                                <span>Descuento ({{ serviceOrder.discount_type === 'percentage' ?
+                                    `${serviceOrder.discount_value}%` : 'Fijo' }}):</span>
+                                <span class="font-semibold">(-) {{ formatCurrency(serviceOrder.discount_amount)
+                                }}</span>
+                            </div>
                             <div class="flex justify-between font-bold text-lg border-t pt-2 mt-2">
-                                <span>Total cobrado:</span>
+                                <span>Total:</span>
                                 <span>{{ formatCurrency(serviceOrder.final_total) }}</span>
                             </div>
                         </div>
@@ -498,7 +506,12 @@ const getPaymentMethodIcon = (method) => {
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Estado de cuenta</h2>
                     <ul class="space-y-2 text-sm">
-                        <li class="flex justify-between"><span>Total de la orden:</span><span class="font-semibold">{{
+                        <li class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">{{
+                            formatCurrency(serviceOrder.subtotal) }}</span></li>
+                        <li v-if="serviceOrder.discount_amount > 0" class="flex justify-between">
+                            <span>Descuento:</span><span class="font-semibold text-red-500">(-) {{
+                                formatCurrency(serviceOrder.discount_amount) }}</span></li>
+                        <li class="flex justify-between font-bold"><span>Total de la orden:</span><span>{{
                             formatCurrency(serviceOrder.final_total) }}</span></li>
                         <li class="flex justify-between"><span>Total pagado:</span><span
                                 class="font-semibold text-green-600">{{
@@ -510,15 +523,23 @@ const getPaymentMethodIcon = (method) => {
                         </li>
                     </ul>
                 </div>
-                
+
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Análisis de ganancia</h2>
                     <ul class="space-y-2 text-sm">
                         <li class="flex justify-between">
-                            <span>Total cobrado:</span>
-                            <span class="font-semibold">{{ formatCurrency(profitAnalysis.totalRevenue) }}</span>
+                            <span>Ingresos (Subtotal):</span>
+                            <span class="font-semibold">{{ formatCurrency(profitAnalysis.subtotal) }}</span>
                         </li>
-                        <li class="flex justify-between">
+                         <li v-if="profitAnalysis.discount > 0" class="flex justify-between">
+                            <span>Descuento aplicado:</span>
+                            <span class="text-red-500">(-) {{ formatCurrency(profitAnalysis.discount) }}</span>
+                        </li>
+                        <li class="flex justify-between font-semibold border-t pt-2 mt-2">
+                            <span>Ingresos netos:</span>
+                            <span>{{ formatCurrency(profitAnalysis.netRevenue) }}</span>
+                        </li>
+                        <li class="flex justify-between mt-4">
                             <span>Costo de refacciones:</span>
                             <span class="text-red-500">(-) {{ formatCurrency(profitAnalysis.parts) }}</span>
                         </li>
@@ -551,10 +572,13 @@ const getPaymentMethodIcon = (method) => {
                             <template #body="{ data }">
                                 <div class="flex flex-col">
                                     <div class="flex items-center gap-2">
-                                        <i :class="getPaymentMethodIcon(data.payment_method)" class="text-gray-500"></i>
+                                        <i :class="getPaymentMethodIcon(data.payment_method)"
+                                            class="text-gray-500"></i>
                                         <span class="capitalize font-medium">{{ data.payment_method }}</span>
                                     </div>
-                                    <small v-if="data.bank_account" class="text-gray-500 dark:text-gray-400 mt-1 pl-1 truncate" v-tooltip.bottom="data.bank_account.account_name">
+                                    <small v-if="data.bank_account"
+                                        class="text-gray-500 dark:text-gray-400 mt-1 pl-1 truncate"
+                                        v-tooltip.bottom="data.bank_account.account_name">
                                         {{ data.bank_account.account_name }}
                                     </small>
                                 </div>
@@ -593,57 +617,12 @@ const getPaymentMethodIcon = (method) => {
                         adjuntaron imágenes
                         de cierre.</div>
                 </div>
-                 <!-- <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-6">Historial de Actividad</h2>
-                    <div v-if="activities && activities.length > 0" class="relative max-h-[300px] overflow-y-auto pr-2">
-                        <div class="relative pl-6">
-                            <div class="absolute left-10 top-0 h-full border-l-2 border-gray-200 dark:border-gray-700">
-                            </div>
-                            <div class="space-y-8">
-                                <div v-for="activity in activities" :key="activity.id" class="relative">
-                                    <div class="absolute left-0 top-1.5 -translate-x-1/2">
-                                        <span
-                                            class="flex w-8 h-8 items-center justify-center text-white rounded-full z-10 shadow-md"
-                                            :class="{ 'bg-blue-400': activity.event === 'created', 'bg-orange-400': activity.event === 'updated', 'bg-red-400': activity.event === 'deleted', 'bg-indigo-400': activity.event === 'status_changed' }">
-                                            <i
-                                                :class="{ 'pi pi-plus': activity.event === 'created', 'pi pi-pencil': activity.event === 'updated', 'pi pi-trash': activity.event === 'deleted', 'pi pi-refresh': activity.event === 'status_changed' }"></i>
-                                        </span>
-                                    </div>
-                                    <div class="ml-10">
-                                        <h3 class="font-semibold text-gray-800 dark:text-gray-200 text-lg m-0">{{
-                                            activity.description }}</h3>
-                                        <p class="text-xs text-gray-500 dark:text-gray-400">Por {{ activity.causer }} -
-                                            {{
-                                                activity.timestamp }}</p>
-                                        <div v-if="activity.event === 'updated' && Object.keys(activity.changes.after).length > 0"
-                                            class="mt-3 text-sm space-y-2">
-                                            <div v-for="(value, key) in activity.changes.after" :key="key">
-                                                <p class="font-medium text-gray-700 dark:text-gray-300">{{ key }}</p>
-                                                <DiffViewer v-if="key === 'Descripción'"
-                                                    :oldValue="activity.changes.before[key]" :newValue="value" />
-                                                <div v-else class="flex items-center gap-2 text-xs">
-                                                    <span
-                                                        class="bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 px-2 py-0.5 rounded line-through">{{
-                                                            activity.changes.before[key] || 'Vacío' }}</span>
-                                                    <i class="pi pi-arrow-right text-gray-400"></i>
-                                                    <span
-                                                        class="bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 px-2 py-0.5 rounded font-medium">{{
-                                                            value }}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div v-else class="text-center text-gray-500 py-8"> No hay actividades registradas. </div>
-                </div> -->
             </div>
         </div>
 
-        <PaymentModal v-if="serviceOrder.transaction" v-model:visible="isPaymentModalVisible" :total-amount="amountDue"
-            :client="serviceOrder.customer" :active-session="activeSession" payment-mode="flexible" @submit="handlePaymentSubmit"
+        <PaymentModal v-if="serviceOrder.transaction" v-model:visible="isPaymentModalVisible"
+            :total-amount="amountDue" :client="serviceOrder.customer" :active-session="activeSession"
+            payment-mode="flexible" @submit="handlePaymentSubmit"
             @update:visible="(val) => { if (!val) handlePaymentModalClosed(); }" />
         <PrintModal v-if="serviceOrder" v-model:visible="isPrintModalVisible"
             :data-source="{ type: 'service_order', id: serviceOrder.id }" :available-templates="availableTemplates"
