@@ -68,6 +68,7 @@ class TinifyService
 
     /**
      * Gets the number of compressions performed this month.
+     * Forces API validation if the count hasn't been fetched yet.
      * Returns null if there's an error retrieving the count.
      *
      * @return int|null The compression count or null on error.
@@ -79,12 +80,37 @@ class TinifyService
             Log::error('Cannot get compression count: TINIFY_API_KEY is missing.');
             return null;
         }
+
         try {
-            // *** CORRECTION: Return the value ***
-            return Tinify::getCompressionCount();
+            // 1. Obtener el conteo actual (puede ser null si no se ha hecho request)
+            $count = Tinify::getCompressionCount();
+
+            // 2. Si es null, forzar una validación de API.
+            // Esto hace una llamada a la API, y la librería de Tinify
+            // (internamente) leerá el header 'Compression-Count' de la respuesta
+            // y actualizará la variable estática.
+            if ($count === null) {
+                Log::info('Tinify compression count is null, running validation to fetch count...');
+                
+                // Usamos \Tinify\validate() para llamar a la función en el namespace raíz de Tinify
+                // (basado en el archivo que pegaste)
+                \Tinify\validate(); 
+
+                // 3. Volver a obtener el conteo, que ahora debería estar poblado.
+                $count = Tinify::getCompressionCount();
+            }
+
+            return $count;
+
+        } catch (AccountException $e) {
+             // Si la validación falla por límite (429), la librería no lanza excepción,
+             // pero sí actualiza el conteo. Si es otro error de cuenta (ej. API Key inválida), loguear.
+            Log::error("Tinify Account Error while validating: " . $e->getMessage());
+            return null; // Retorna null si la API key es inválida, etc.
         } catch (Exception $e) {
-            Log::error("Error retrieving Tinify compression count: " . $e->getMessage());
-            return null; // Return null on error
+            // Capturar cualquier otro error (conexión, etc.) durante la validación
+            Log::error("Error retrieving/validating Tinify compression count: " . $e->getMessage());
+            return null;
         }
     }
 }

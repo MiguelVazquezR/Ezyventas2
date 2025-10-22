@@ -23,9 +23,20 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Services\TinifyService;
+use App\Traits\OptimizeMediaWithTinify;
 
 class ServiceOrderController extends Controller implements HasMiddleware
 {
+    use OptimizeMediaWithTinify;
+
+    protected $tinifyService;
+
+    public function __construct(TinifyService $tinifyService)
+    {
+        $this->tinifyService = $tinifyService;
+    }
+
     public static function middleware(): array
     {
         return [
@@ -190,7 +201,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
             if ($request->hasFile('initial_evidence_images')) {
                 foreach ($request->file('initial_evidence_images') as $file) {
-                    $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
+                    $mediaItem = $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
+                    $this->optimizeAndTrackMedia($mediaItem);
                 }
             }
 
@@ -294,7 +306,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
             if ($request->hasFile('initial_evidence_images')) {
                 foreach ($request->file('initial_evidence_images') as $file) {
-                    $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
+                    $mediaItem = $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
+                    $this->optimizeAndTrackMedia($mediaItem);
                 }
             }
         });
@@ -317,7 +330,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
             if ($request->hasFile('closing_evidence_images')) {
                 foreach ($request->file('closing_evidence_images') as $file) {
-                    $serviceOrder->addMedia($file)->toMediaCollection('closing-service-order-evidence');
+                    $mediaItem = $serviceOrder->addMedia($file)->toMediaCollection('closing-service-order-evidence');
+                    $this->optimizeAndTrackMedia($mediaItem);
                 }
             }
         });

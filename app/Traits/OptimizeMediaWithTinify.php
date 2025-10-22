@@ -26,8 +26,6 @@ trait OptimizeMediaWithTinify
         }
 
         try {
-            // <-- INICIO DE LA CORRECCIÓN -->
-
             // 1. Obtener la ruta del objeto Media.
             // El método getPath() te dará la ruta completa al archivo en el disco.
             $path = $mediaItem->getPath();
@@ -38,14 +36,13 @@ trait OptimizeMediaWithTinify
                 Log::warning("Media file does not exist for optimization: ID {$mediaItem->id}. Path attempt: '{$path}'");
                 return;
             }
-            // <-- FIN DE LA CORRECCIÓN -->
             
             // Ahora que sabemos que el archivo existe, podemos obtener su tamaño.
             $fileSizeInKB = filesize($path) / 1024;
             
             // Check size, environment
             // (Tu lógica de optimización)
-            if ($fileSizeInKB > $sizeLimitKB && app()->environment('local')) {
+            if ($fileSizeInKB > $sizeLimitKB && app()->environment('production')) {
                 // Optional: Check Tinify compression limit
                 $currentCompressions = $this->tinifyService->totalCompressions();
                 Log::info($currentCompressions);
