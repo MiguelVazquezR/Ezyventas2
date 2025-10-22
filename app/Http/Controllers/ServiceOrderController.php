@@ -9,7 +9,6 @@ use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Http\Requests\StoreServiceOrderRequest;
 use App\Http\Requests\UpdateServiceOrderRequest;
-use App\Models\CashRegister;
 use App\Models\Customer;
 use App\Models\CustomFieldDefinition;
 use App\Models\Product;
@@ -239,12 +238,10 @@ class ServiceOrderController extends Controller implements HasMiddleware
      */
     private function generateTransactionFolio(): string
     {
-        $subscriptionId = Auth::user()->branch->subscription_id;
+        $branchId = Auth::user()->branch_id;
 
         // Busca la última transacción de la suscripción con el formato de folio específico
-        $lastTransaction = Transaction::whereHas('branch', function ($query) use ($subscriptionId) {
-            $query->where('subscription_id', $subscriptionId);
-        })
+        $lastTransaction = Transaction::whereHas('branch_id', $branchId)
             ->where('folio', 'like', 'OS-V-%')
             // Ordena por el valor numérico del folio para encontrar el más alto
             ->orderByRaw('CAST(SUBSTRING(folio, 6) AS UNSIGNED) DESC')

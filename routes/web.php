@@ -68,3 +68,8 @@ Route::get('/migrate', function () {
     Artisan::call('migrate');
     return 'migrated!.';
 });
+
+Route::get('/fix-so', function () {
+    Artisan::call('app:fix-service-order-folios');
+    return 'fixed!.';
+});
