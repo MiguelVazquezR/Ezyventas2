@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ExpenseStatus;
+use App\Enums\PaymentMethod; // Asegúrate de importar PaymentMethod
 use App\Enums\PaymentStatus;
 use App\Enums\TransactionStatus;
 use App\Exports\FinancialReportExport;
@@ -13,10 +14,10 @@ use App\Models\Transaction;
 use App\Services\FinancialReportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB; // Asegúrate de importar DB
 use Inertia\Inertia;
 use Inertia\Response;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
 
 class FinancialReportController extends Controller
@@ -29,8 +30,12 @@ class FinancialReportController extends Controller
         $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : Carbon::today()->startOfDay();
         $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : Carbon::today()->endOfDay();
 
-        $reportService = new FinancialReportService($branchId, $startDate, $endDate);
+        // --- Calcular periodos para comparación ---
+        $diffInDays = $startDate->diffInDays($endDate);
+        $previousStartDate = $startDate->copy()->subDays($diffInDays + 1);
+        $previousEndDate = $startDate->copy()->subDay()->endOfDay();
 
+        $reportService = new FinancialReportService($branchId, $startDate, $endDate);
         $reportData = $reportService->generateReportData();
 
         // --- Calcular Ganancia Neta ---
@@ -39,78 +44,88 @@ class FinancialReportController extends Controller
         $netProfitMonetaryChange = $netProfitCurrent - $netProfitPrevious;
         $netProfitPercentageChange = $netProfitPrevious != 0
             ? ($netProfitMonetaryChange / $netProfitPrevious) * 100
-            : ($netProfitCurrent > 0 ? 100 : 0);
+            : ($netProfitCurrent != 0 ? 100 : 0);
 
         $reportData['kpis']['netProfit'] = [
             'current' => $netProfitCurrent,
-            'previous' => $netProfitPrevious, // Nota: El cálculo del periodo anterior aquí asume que los datos base ya están ajustados.
+            'previous' => $netProfitPrevious,
             'monetary_change' => $netProfitMonetaryChange,
             'percentage_change' => round($netProfitPercentageChange, 2),
         ];
 
-        // --- Calcular Saldos Pendientes (Nuevo KPI) ---
-        $pendingBalanceCurrent = Transaction::where('branch_id', $branchId)
+        // --- Calcular Ticket Promedio (Nuevo KPI) ---
+        $salesCountCurrent = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$startDate, $endDate])
-            ->where('status', TransactionStatus::PENDING)
-            ->sum(DB::raw('subtotal - total_discount + total_tax')); // Suma del total calculado para pendientes
+            ->where('status', '!=', TransactionStatus::CANCELLED) // Excluir canceladas
+            ->count();
+        $averageTicketCurrent = $salesCountCurrent > 0 ? $reportData['kpis']['sales']['current'] / $salesCountCurrent : 0;
 
-        // (Opcional: Calcular periodo anterior para comparación)
-        // Necesitarías replicar la lógica de FinancialReportService para el rango anterior
-        $pendingBalancePrevious = 0; // Simplificado por ahora
-        $pendingBalanceMonetaryChange = $pendingBalanceCurrent - $pendingBalancePrevious;
-        $pendingBalancePercentageChange = $pendingBalancePrevious != 0
-            ? ($pendingBalanceMonetaryChange / $pendingBalancePrevious) * 100
-            : ($pendingBalanceCurrent > 0 ? 100 : 0);
+        $salesCountPrevious = Transaction::where('branch_id', $branchId)
+            ->whereBetween('created_at', [$previousStartDate, $previousEndDate])
+            ->where('status', '!=', TransactionStatus::CANCELLED)
+            ->count();
+        $averageTicketPrevious = $salesCountPrevious > 0 ? $reportData['kpis']['sales']['previous'] / $salesCountPrevious : 0;
 
-        $reportData['kpis']['pendingBalance'] = [
-            'current' => $pendingBalanceCurrent,
-            'previous' => $pendingBalancePrevious,
-            'monetary_change' => $pendingBalanceMonetaryChange,
-            'percentage_change' => round($pendingBalancePercentageChange, 2),
+        $averageTicketMonetaryChange = $averageTicketCurrent - $averageTicketPrevious;
+        $averageTicketPercentageChange = $averageTicketPrevious != 0
+            ? ($averageTicketMonetaryChange / $averageTicketPrevious) * 100
+            : ($averageTicketCurrent != 0 ? 100 : 0);
+
+        $reportData['kpis']['averageTicket'] = [
+            'current' => $averageTicketCurrent,
+            'previous' => $averageTicketPrevious,
+            'monetary_change' => $averageTicketMonetaryChange,
+            'percentage_change' => round($averageTicketPercentageChange, 2),
         ];
-        // --- Fin Saldos Pendientes ---
+        // --- Fin Ticket Promedio ---
 
 
         // --- Obtener Datos Detallados para Modales ---
-        // Gastos (Ya estaba)
+        // Gastos
         $detailedExpenses = Expense::where('branch_id', $branchId)
-            ->where('status', ExpenseStatus::PAID)
+            ->where('status', ExpenseStatus::PAID->value) // Usar ->value para Enums
             ->whereBetween('expense_date', [$startDate, $endDate])
             ->with(['category:id,name', 'bankAccount:id,account_name,bank_name'])
             ->orderBy('expense_date', 'desc')
             ->get();
-        $reportData['detailedExpensesByCategory'] = $detailedExpenses->groupBy('category.name');
+        // $reportData['detailedExpensesByCategory'] = $detailedExpenses->groupBy('category.name'); // Ya no se necesita agrupar para el modal eliminado
+        $reportData['detailedExpenses'] = $detailedExpenses;
 
         // Ventas (Transacciones)
         $reportData['detailedTransactions'] = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$startDate, $endDate])
-            ->with(['customer:id,name']) // Cargar cliente para mostrar en modal
+            ->with(['customer:id,name'])
             ->orderBy('created_at', 'desc')
             ->get();
 
         // Pagos
-        $reportData['detailedPayments'] = Payment::whereHas('transaction', function ($query) use ($branchId, $startDate, $endDate) {
-            $query->where('branch_id', $branchId)
-                ->whereBetween('created_at', [$startDate, $endDate]);
+        $reportData['detailedPayments'] = Payment::whereHas('transaction', function ($query) use ($branchId) {
+            $query->where('branch_id', $branchId);
         })
-            ->where('status', PaymentStatus::COMPLETED) // Solo pagos completados
-            ->with(['transaction:id,folio', 'transaction.customer:id,name', 'bankAccount:id,account_name,bank_name']) // Cargar relaciones
+            ->whereBetween('payment_date', [$startDate, $endDate])
+            ->where('payment_method', '!=', PaymentMethod::BALANCE->value)
+            ->where('status', PaymentStatus::COMPLETED->value) // Usar ->value para Enums
+            ->with(['transaction:id,folio', 'transaction.customer:id,name', 'bankAccount:id,account_name,bank_name'])
             ->orderBy('payment_date', 'desc')
             ->get();
         // --- Fin Datos Detallados ---
 
-
         $subscriptionId = $user->branch->subscription_id;
-        $allBankAccounts = BankAccount::where('subscription_id', $subscriptionId)->get();
-        $reportData['allBankAccounts'] = $allBankAccounts;
 
+        // *** CORRECCIÓN: Filtrar cuentas por sucursal actual ***
+        $reportData['bankAccounts'] = BankAccount::where('subscription_id', $subscriptionId)
+            ->whereHas('branches', function ($query) use ($branchId) {
+                $query->where('branch_id', $branchId); // Solo cuentas asignadas a esta sucursal
+            })
+            ->get();
+        // *** FIN CORRECCIÓN ***
+
+        // Se siguen necesitando todas para el modal de transferencias
+        $reportData['allBankAccounts'] = BankAccount::where('subscription_id', $subscriptionId)->get();
 
         return Inertia::render('FinancialControl/Index', $reportData);
     }
 
-    /**
-     * Genera y descarga el reporte financiero en formato Excel.
-     */
     public function export(Request $request)
     {
         $validated = $request->validate([
