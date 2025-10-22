@@ -12,18 +12,32 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\Promotion;
 use App\Models\Provider;
+use App\Services\TinifyService;
+use App\Traits\OptimizeMediaWithTinify; // <-- 1. Importar el Trait
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 class ProductController extends Controller implements HasMiddleware
 {
+    use OptimizeMediaWithTinify; // <-- 2. Usar el Trait
+
+    protected $tinifyService; // El Trait necesita esta propiedad
+
+    // Inyección de TinifyService sigue siendo necesaria para el Trait
+    public function __construct(TinifyService $tinifyService)
+    {
+        $this->tinifyService = $tinifyService;
+    }
+
     public static function middleware(): array
     {
         return [
@@ -34,21 +48,22 @@ class ProductController extends Controller implements HasMiddleware
             new Middleware('can:products.delete', only: ['destroy', 'batchDestroy']),
         ];
     }
-     /**
-     * --- AÑADIDO: Función auxiliar para obtener datos del límite de productos. ---
-     */
+
     private function getProductLimitData()
     {
         $subscription = Auth::user()->branch->subscription;
         $currentVersion = $subscription->versions()->latest('start_date')->first();
-        $limit = -1; // -1 significa ilimitado
+        $limit = -1;
         if ($currentVersion) {
             $limitItem = $currentVersion->items()->where('item_key', 'limit_products')->first();
             if ($limitItem) {
                 $limit = $limitItem->quantity;
             }
         }
-        $usage = $subscription->products()->count();
+        // Count products specifically for the current subscription
+        $usage = Product::whereHas('branch.subscription', function ($q) use ($subscription) {
+            $q->where('id', $subscription->id);
+        })->count();
         return ['limit' => $limit, 'usage' => $usage];
     }
 
@@ -71,7 +86,6 @@ class ProductController extends Controller implements HasMiddleware
 
         $products = $query->paginate($request->input('rows', 20))->withQueryString();
 
-        // --- AÑADIDO: Se obtienen las plantillas de etiquetas disponibles ---
         $availableTemplates = $user->branch->printTemplates()
             ->where('type', TemplateType::LABEL)
             ->whereIn('context_type', [TemplateContextType::PRODUCT, TemplateContextType::GENERAL])
@@ -79,7 +93,6 @@ class ProductController extends Controller implements HasMiddleware
 
         $limitData = $this->getProductLimitData();
 
-        // --- NUEVO: CÁLCULO DE STOCK TOTAL POR CATEGORÍA ---
         $stockByCategory = Category::query()
             ->where('type', 'product')
             ->where('subscription_id', $user->branch->subscription_id)
@@ -87,12 +100,9 @@ class ProductController extends Controller implements HasMiddleware
                 $query->where('branch_id', $user->branch_id);
             }], 'current_stock')
             ->get()
-            ->filter(function ($category) {
-                // Filtramos para mostrar solo categorías con stock
-                return $category->products_sum_current_stock > 0;
-            })
+            ->filter(fn($category) => $category->products_sum_current_stock > 0)
             ->sortBy('name')
-            ->values(); // Resetea las llaves del array para Vue
+            ->values();
 
         return Inertia::render('Product/Index', [
             'products' => $products,
@@ -100,7 +110,7 @@ class ProductController extends Controller implements HasMiddleware
             'productLimit' => $limitData['limit'],
             'productUsage' => $limitData['usage'],
             'availableTemplates' => $availableTemplates,
-            'stockByCategory' => $stockByCategory, // <-- Se pasa a la vista
+            'stockByCategory' => $stockByCategory,
         ]);
     }
 
@@ -108,12 +118,17 @@ class ProductController extends Controller implements HasMiddleware
     {
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
-
-        // --- AÑADIDO: Se pasan los datos del límite a la vista ---
         $limitData = $this->getProductLimitData();
 
+        $globalBrands = Brand::whereNull('subscription_id')
+            ->whereHas('businessTypes', function ($query) use ($user) {
+                if ($user->branch && $user->branch->subscription) {
+                    $query->where('business_type_id', $user->branch->subscription->business_type_id);
+                }
+            })->get(['id', 'name']);
+
         $subscriberBrands = Brand::where('subscription_id', $subscriptionId)->get(['id', 'name']);
-        $globalBrands = Brand::whereNull('subscription_id')->get(['id', 'name']);
+
         $formattedBrands = [
             ['label' => 'Mis Marcas', 'items' => $subscriberBrands],
             ['label' => 'Marcas del Catálogo', 'items' => $globalBrands],
@@ -134,7 +149,6 @@ class ProductController extends Controller implements HasMiddleware
 
     public function store(StoreProductRequest $request)
     {
-        // --- AÑADIDO: Validación del límite de productos ---
         $limitData = $this->getProductLimitData();
         if ($limitData['limit'] !== -1 && $limitData['usage'] >= $limitData['limit']) {
             throw ValidationException::withMessages([
@@ -163,22 +177,26 @@ class ProductController extends Controller implements HasMiddleware
 
             if ($request->hasFile('general_images')) {
                 foreach (array_keys($request->file('general_images')) as $key) {
-                    $product->addMediaFromRequest("general_images.{$key}")
+                    $mediaItem = $product->addMediaFromRequest("general_images.{$key}")
                         ->toMediaCollection('product-general-images');
+                    // <-- 3. Usar método del Trait -->
+                    $this->optimizeAndTrackMedia($mediaItem);
                 }
             }
             if ($request->hasFile('variant_images')) {
                 foreach (array_keys($request->file('variant_images')) as $optionValue) {
-                    $product->addMediaFromRequest("variant_images.{$optionValue}")
+                    $mediaItem = $product->addMediaFromRequest("variant_images.{$optionValue}")
                         ->withCustomProperties(['variant_option' => $optionValue])
                         ->toMediaCollection('product-variant-images');
+                     // <-- 3. Usar método del Trait -->
+                    $this->optimizeAndTrackMedia($mediaItem);
                 }
             }
+
             if ($validatedData['product_type'] === 'variant') {
                 $variantsMatrix = $validatedData['variants_matrix'];
                 foreach ($variantsMatrix as $combination) {
                     if (empty($combination['selected'])) continue;
-
                     $attributes = collect($combination)->except(['selected', 'sku_suffix', 'current_stock', 'min_stock', 'max_stock', 'selling_price', 'row_id'])->all();
                     $product->productAttributes()->create([
                         'attributes' => $attributes,
@@ -202,11 +220,26 @@ class ProductController extends Controller implements HasMiddleware
 
         $product->load('productAttributes', 'media');
 
-        $subscriberBrands = Brand::where('subscription_id', $subscriptionId)->get(['id', 'name']);
+        $formattedAttributes = $product->productAttributes->mapWithKeys(function ($attr) use ($product) {
+            $key = collect($attr->attributes)->sortKeys()->implode('-');
+            return [$key => [
+                'attributes' => $attr->attributes,
+                'sku_suffix' => $attr->sku_suffix,
+                'current_stock' => $attr->current_stock,
+                'min_stock' => $attr->min_stock,
+                'max_stock' => $attr->max_stock,
+                'selling_price' => $product->selling_price + $attr->selling_price_modifier,
+            ]];
+        });
+
         $globalBrands = Brand::whereNull('subscription_id')
             ->whereHas('businessTypes', function ($query) use ($user) {
-                $query->where('business_type_id', $user->branch->subscription->business_type_id);
+                if ($user->branch && $user->branch->subscription) {
+                    $query->where('business_type_id', $user->branch->subscription->business_type_id);
+                }
             })->get(['id', 'name']);
+
+        $subscriberBrands = Brand::where('subscription_id', $subscriptionId)->get(['id', 'name']);
 
         $formattedBrands = [
             ['label' => 'Mis Marcas', 'items' => $subscriberBrands],
@@ -214,11 +247,8 @@ class ProductController extends Controller implements HasMiddleware
         ];
 
         return Inertia::render('Product/Edit', [
-            'product' => $product,
-            'categories' => Category::where([
-                'subscription_id' => $subscriptionId,
-                'type' => 'product',
-            ])->get(['id', 'name']),
+            'product' => $product->toArray() + ['formatted_attributes' => $formattedAttributes],
+            'categories' => Category::where(['subscription_id' => $subscriptionId, 'type' => 'product'])->get(['id', 'name']),
             'brands' => $formattedBrands,
             'providers' => Provider::where('subscription_id', $subscriptionId)->get(['id', 'name']),
             'attributeDefinitions' => AttributeDefinition::with('options')->where('subscription_id', $subscriptionId)->get(),
@@ -238,7 +268,10 @@ class ProductController extends Controller implements HasMiddleware
                     $slug = $baseSlug . '-' . $counter++;
                 }
                 $validatedData['slug'] = $slug;
+            } else {
+                unset($validatedData['slug']);
             }
+
 
             if ($validatedData['product_type'] === 'variant') {
                 $variantsMatrix = $validatedData['variants_matrix'];
@@ -249,17 +282,24 @@ class ProductController extends Controller implements HasMiddleware
             $product->update($productData);
 
             if (!empty($validatedData['deleted_media_ids'])) {
-                $product->media()->whereIn('id', $validatedData['deleted_media_ids'])->delete();
+                 // Use Spatie's method to delete media by ID
+                $product->media()->whereIn('id', $validatedData['deleted_media_ids'])->each(function (Media $media) {
+                    $media->delete();
+                });
             }
 
             if ($request->hasFile('general_images')) {
                 foreach (array_keys($request->file('general_images')) as $key) {
-                    $product->addMediaFromRequest("general_images.{$key}")->toMediaCollection('product-general-images');
+                    $mediaItem = $product->addMediaFromRequest("general_images.{$key}")->toMediaCollection('product-general-images');
+                    // <-- 3. Usar método del Trait -->
+                    $this->optimizeAndTrackMedia($mediaItem);
                 }
             }
             if ($request->hasFile('variant_images')) {
                 foreach (array_keys($request->file('variant_images')) as $optionValue) {
-                    $product->addMediaFromRequest("variant_images.{$optionValue}")->withCustomProperties(['variant_option' => $optionValue])->toMediaCollection('product-variant-images');
+                   $mediaItem = $product->addMediaFromRequest("variant_images.{$optionValue}")->withCustomProperties(['variant_option' => $optionValue])->toMediaCollection('product-variant-images');
+                   // <-- 3. Usar método del Trait -->
+                   $this->optimizeAndTrackMedia($mediaItem);
                 }
             }
 
@@ -278,7 +318,10 @@ class ProductController extends Controller implements HasMiddleware
                         'selling_price_modifier' => $combination['selling_price'] - $product->selling_price,
                     ]);
                 }
+            } elseif ($product->product_type === 'simple') {
+                 $product->productAttributes()->delete();
             }
+
         });
 
         return redirect()->route('products.index')->with('success', 'Producto actualizado con éxito.');
@@ -296,41 +339,51 @@ class ProductController extends Controller implements HasMiddleware
         ]);
 
         $promotions = Promotion::query()
+             // Check if the product is directly involved in rules or effects
             ->where(function ($query) use ($product) {
-                $query->whereHas('rules', function ($subQuery) use ($product) {
-                    $subQuery->where('itemable_type', Product::class)
-                        ->where('itemable_id', $product->id);
-                })->orWhereHas('effects', function ($subQuery) use ($product) {
-                    $subQuery->where('itemable_type', Product::class)
-                        ->where('itemable_id', $product->id);
-                });
+                $query->whereHas('rules', fn($subQuery) => $subQuery->whereMorphedTo('itemable', $product))
+                      ->orWhereHas('effects', fn($subQuery) => $subQuery->whereMorphedTo('itemable', $product));
             })
+             // Also include promotions that apply globally or by category/brand if needed
+             // ->orWhere(function ($query) use ($product) { ... add logic for broader promotion applicability ... })
             ->with(['rules.itemable', 'effects.itemable'])
             ->get();
 
-        $translations = config('log-translations.Product');
+
+        $translations = config('log_translations.Product', []);
 
         $formattedActivities = $product->activities->map(function ($activity) use ($translations) {
             $changes = ['before' => [], 'after' => []];
-            if (isset($activity->properties['old'])) {
-                foreach ($activity->properties['old'] as $key => $value) {
+            $oldProps = $activity->properties->get('old', []);
+            $newProps = $activity->properties->get('attributes', []);
+
+             if (is_array($oldProps)) {
+                foreach ($oldProps as $key => $value) {
                     $changes['before'][($translations[$key] ?? $key)] = $value;
                 }
             }
-            if (isset($activity->properties['attributes'])) {
-                foreach ($activity->properties['attributes'] as $key => $value) {
-                    $changes['after'][($translations[$key] ?? $key)] = $value;
+            if (is_array($newProps)) {
+                foreach ($newProps as $key => $value) {
+                    if (!isset($oldProps[$key]) || $oldProps[$key] !== $value) {
+                        $changes['after'][($translations[$key] ?? $key)] = $value;
+                    }
                 }
             }
+            // Ensure 'before' only contains keys that actually changed or were removed
+            $changes['before'] = array_intersect_key($changes['before'], $changes['after']);
+
+
             return [
                 'id' => $activity->id,
                 'description' => $activity->description,
                 'event' => $activity->event,
                 'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
                 'timestamp' => $activity->created_at->diffForHumans(),
-                'changes' => $changes,
+                // Only include changes if there are actual differences
+                'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
             ];
-        });
+        })->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes'])); // Filter out 'updated' events with no changes shown
+
 
         $availableTemplates = Auth::user()->branch->printTemplates()
             ->where('type', TemplateType::LABEL)
@@ -347,6 +400,7 @@ class ProductController extends Controller implements HasMiddleware
 
     public function destroy(Product $product)
     {
+        // Add authorization check if needed: $this->authorize('delete', $product);
         $product->delete();
         return redirect()->route('products.index')->with('success', 'Producto eliminado con éxito.');
     }
@@ -357,6 +411,7 @@ class ProductController extends Controller implements HasMiddleware
             'ids' => 'required|array',
             'ids.*' => 'exists:products,id',
         ]);
+        // Add authorization check if needed: $this->authorize('delete-multiple', Product::class);
         Product::whereIn('id', $validated['ids'])->delete();
         return redirect()->route('products.index')->with('success', 'Productos seleccionados eliminados con éxito.');
     }

@@ -211,13 +211,13 @@ class PrintTemplateController extends Controller implements HasMiddleware
     {
         $contentString = json_encode($elements);
 
-        if (str_contains($contentString, '{{orden.')) {
+        if (str_contains($contentString, '{{os.')) {
             return TemplateContextType::SERVICE_ORDER->value;
         }
         if (str_contains($contentString, '{{folio') || str_contains($contentString, '{{cliente.')) {
             return TemplateContextType::TRANSACTION->value;
         }
-        if (str_contains($contentString, '{{producto.')) {
+        if (str_contains($contentString, '{{p.')) {
             return TemplateContextType::PRODUCT->value;
         }
 

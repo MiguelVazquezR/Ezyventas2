@@ -209,12 +209,10 @@ class ServiceOrderController extends Controller implements HasMiddleware
      */
     private function generateServiceOrderFolio(): string
     {
-        $subscriptionId = Auth::user()->branch->subscription_id;
+        $branchId = Auth::user()->branch_id;
 
         // Busca la última orden de servicio de la suscripción con el formato de folio específico
-        $lastOrder = ServiceOrder::whereHas('branch', function ($query) use ($subscriptionId) {
-            $query->where('subscription_id', $subscriptionId);
-        })
+        $lastOrder = ServiceOrder::where('branch_id', $branchId)
             ->where('folio', 'like', 'OS-%')
             // Ordena por el valor numérico del folio para encontrar el más alto, no por ID.
             ->orderByRaw('CAST(SUBSTRING(folio, 4) AS UNSIGNED) DESC')
@@ -241,7 +239,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
         $branchId = Auth::user()->branch_id;
 
         // Busca la última transacción de la suscripción con el formato de folio específico
-        $lastTransaction = Transaction::whereHas('branch_id', $branchId)
+        $lastTransaction = Transaction::where('branch_id', $branchId)
             ->where('folio', 'like', 'OS-V-%')
             // Ordena por el valor numérico del folio para encontrar el más alto
             ->orderByRaw('CAST(SUBSTRING(folio, 6) AS UNSIGNED) DESC')
