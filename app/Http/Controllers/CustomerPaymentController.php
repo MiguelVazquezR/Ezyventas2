@@ -132,12 +132,10 @@ class CustomerPaymentController extends Controller
      */
     private function generateBalancePaymentFolio(): string
     {
-        $subscriptionId = Auth::user()->branch->subscription_id;
+        $branchId = Auth::user()->branch_id;
 
         // Busca la última transacción con un folio 'ABONO-' para esta suscripción
-        $lastTransaction = Transaction::whereHas('branch', function ($query) use ($subscriptionId) {
-                $query->where('subscription_id', $subscriptionId);
-            })
+        $lastTransaction = Transaction::where('branch', $branchId)
             ->where('folio', 'like', 'ABONO-%')
             ->orderByRaw('CAST(SUBSTRING(folio, 7) AS UNSIGNED) DESC') // 'ABONO-' tiene 6 caracteres
             ->first();
