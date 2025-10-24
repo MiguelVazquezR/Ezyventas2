@@ -190,7 +190,7 @@ const barcodeTypeOptions = ref(['CODE128', 'CODE39', 'EAN13', 'UPC-A']);
                          <Link :href="route('print-templates.index')">
                                <Button label="Volver a Plantillas" severity="secondary" outlined />
                          </Link>
-                         <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer">
+                         <a :href="route('subscription.manage')" target="_blank" rel="noopener noreferrer">
                                 <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
                          </a>
                    </div>

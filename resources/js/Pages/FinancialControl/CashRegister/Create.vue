@@ -48,7 +48,7 @@ const submit = () => {
                      <Link :href="route('cash-registers.index')">
                          <Button label="Volver a Cajas" severity="secondary" outlined />
                      </Link>
-                     <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer">
+                     <a :href="route('subscription.manage')" target="_blank" rel="noopener noreferrer">
                           <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
                      </a>
                  </div>
