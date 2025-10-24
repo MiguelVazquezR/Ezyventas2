@@ -68,6 +68,12 @@ const formatDate = (dateString) => {
     return date.toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
 };
 
+// --- AÑADIDO: Función para formatear moneda ---
+const formatCurrency = (value) => {
+    if (value === null || value === undefined) return 'N/A';
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+};
+
 const togglePromotionStatus = (promo) => {
     router.patch(route('promotions.update', promo.id), {}, {
         preserveScroll: true,
@@ -118,7 +124,7 @@ const getPromotionSummary = (promo) => {
         case 'ITEM_DISCOUNT': {
             const effect = promo.effects[0];
             if (effect.type === 'PERCENTAGE_DISCOUNT') return `Aplica un ${effect.value}% de descuento.`;
-            if (effect.type === 'FIXED_DISCOUNT') return `Aplica un descuento de ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(effect.value)}.`;
+            if (effect.type === 'FIXED_DISCOUNT') return `Aplica un descuento de ${formatCurrency(effect.value)}.`;
             return 'Descuento especial aplicado.';
         }
         case 'BOGO': {
@@ -129,7 +135,7 @@ const getPromotionSummary = (promo) => {
         case 'BUNDLE_PRICE': {
             const effect = promo.effects[0];
             const productDetails = promo.rules.map(rule => `${rule.value} x ${rule.itemable.name}`).join(' + ');
-            return `Paquete (${productDetails}) por ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(effect.value)}.`;
+            return `Paquete (${productDetails}) por ${formatCurrency(effect.value)}.`;
         }
         default:
             return promo.description || 'Promoción especial.';
@@ -153,6 +159,16 @@ const variantImages = computed(() => {
 });
 
 const isVariantProduct = computed(() => props.product.product_attributes.length > 0);
+
+// --- AÑADIDO: Computed property para los niveles de precio ---
+const priceTiers = computed(() => {
+    // Asegurarse de que exista y sea un array antes de ordenar
+    if (!props.product.price_tiers || !Array.isArray(props.product.price_tiers)) {
+        return [];
+    }
+    // Ordenar por cantidad mínima ascendente
+    return [...props.product.price_tiers].sort((a, b) => a.min_quantity - b.min_quantity);
+});
 
 </script>
 
@@ -228,14 +244,13 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                         <div>
                             <h2
                                 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
-                                Información General</h2>
+                                Información general</h2>
                             <ul class="space-y-3 text-sm">
                                 <li class="flex items-center">
                                     <span class="text-gray-500 dark:text-gray-400 w-24">SKU</span>
                                     <span class="font-medium text-gray-800 dark:text-gray-200 mr-2">{{ product.sku || 'N/A' }}</span>
                                     <Button v-if="product.sku" @click="copyToClipboard(product.sku)" icon="pi pi-copy"
                                         text rounded size="small" v-tooltip.bottom="'Copiar SKU'"></Button>
-                                    <!-- --- Añadido botón de imprimir --- -->
                                     <Button v-if="product.sku && hasPermission('pos.access')" @click="openPrintModal" icon="pi pi-print"
                                         text rounded size="small" v-tooltip.bottom="'Imprimir Etiqueta'"></Button>
                                 </li>
@@ -251,11 +266,35 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                                 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
                                 Precios</h2>
                             <ul class="space-y-3 text-sm">
-                                <li class="flex justify-between"><span class="text-gray-500 dark:text-gray-400">Precio de Venta</span> 
-                                    <span class="font-medium text-lg text-gray-800 dark:text-gray-200">{{ new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(product.selling_price) }}</span></li>
-                                <li v-if="hasPermission('products.see_cost_price')" class="flex justify-between"><span class="text-gray-500 dark:text-gray-400">Precio de Compra</span> 
-                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(product.cost_price) }}</span></li>
-                                <li class="flex justify-between"><span class="text-gray-500 dark:text-gray-400">Proveedor</span>
+                                <li class="flex justify-between items-center">
+                                    <span class="text-gray-500 dark:text-gray-400">Precio (1 pieza)</span> 
+                                    <span class="font-medium text-lg text-gray-800 dark:text-gray-200">{{ formatCurrency(product.selling_price) }}</span>
+                                </li>
+                                <!-- --- INICIO: Mostrar Precios de Mayoreo --- -->
+                                <li v-if="priceTiers.length > 0" class="pt-3 border-t border-gray-200 dark:border-gray-700">
+                                    <span class="text-gray-500 dark:text-gray-400 block mb-2 font-medium">Precios de mayoreo:</span>
+                                    <table class="w-full text-xs text-left">
+                                        <thead class="text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700">
+                                            <tr>
+                                                <th class="px-2 py-1">Desde (cant.)</th>
+                                                <th class="px-2 py-1 text-right">Precio unitario</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="(tier, index) in priceTiers" :key="index" class="border-b dark:border-gray-700">
+                                                <td class="px-2 py-1">{{ tier.min_quantity }}</td>
+                                                <td class="px-2 py-1 text-right font-semibold">{{ formatCurrency(tier.price) }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </li>
+                                <!-- --- FIN: Mostrar Precios de Mayoreo --- -->
+                                <li v-if="hasPermission('products.see_cost_price')" class="flex justify-between pt-3 mt-3">
+                                    <span class="text-gray-500 dark:text-gray-400">Precio de Compra</span> 
+                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatCurrency(product.cost_price) }}</span>
+                                </li>
+                                <li class="flex justify-between">
+                                    <span class="text-gray-500 dark:text-gray-400">Proveedor</span>
                                     <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.provider?.name || 'N/A' }}</span>
                                 </li>
                             </ul>
@@ -306,10 +345,7 @@ const isVariantProduct = computed(() => props.product.product_attributes.length 
                             <Column field="current_stock" header="Stock"></Column>
                             <Column header="Precio">
                                 <template #body="{ data }">
-                                    {{ new Intl.NumberFormat('es-MX', {
-                                        style: 'currency', currency: 'MXN'
-                                    }).format(parseFloat(product.selling_price) +
-                                        parseFloat(data.selling_price_modifier)) }}
+                                    {{ formatCurrency(parseFloat(product.selling_price) + parseFloat(data.selling_price_modifier)) }}
                                 </template>
                             </Column>
                         </DataTable>

@@ -8,16 +8,18 @@ import CreateProviderModal from './Partials/CreateProviderModal.vue';
 import ManageAttributesModal from './Partials/ManageAttributesModal.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
+import { useConfirm } from 'primevue/useconfirm';
 
 const props = defineProps({
     categories: Array,
     brands: Array,
     providers: Array,
     attributeDefinitions: Array,
-    // --- AÑADIDO: Props para manejar los límites ---
     productLimit: Number,
     productUsage: Number,
 });
+
+const confirm = useConfirm();
 
 // --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
 const limitReached = computed(() => {
@@ -40,6 +42,7 @@ const form = useForm({
     cost_price: null,
     provider_id: null,
     selling_price: null,
+    price_tiers: [],
     product_type: 'simple',
     current_stock: null,
     min_stock: null,
@@ -193,26 +196,55 @@ const refreshAttributes = () => {
         preserveScroll: true,
     });
 };
+
+// --- Funciones para manejar niveles de precio ---
+const addPriceTier = () => {
+    form.price_tiers.push({
+        min_quantity: null,
+        price: null
+    });
+};
+
+const removePriceTier = (index) => {
+    form.price_tiers.splice(index, 1);
+};
+
+const confirmRemoveItem = (event, index) => {
+    confirm.require({
+        target: event.currentTarget,
+        message: '¿Estás seguro de que quieres eliminar este elemento?',
+        group: 'price-tiers-delete',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Sí',
+        rejectLabel: 'No',
+        accept: () => {
+           removePriceTier(index);
+        }
+    });
+};
 </script>
 
 <template>
-    <Head title="Agregar Nuevo Producto" />
+
+    <Head title="Agregar nuevo producto" />
     <AppLayout>
         <Breadcrumb :home="home" :model="items" class="!bg-transparent" />
         <div class="p-4 md:p-6 lg:p-8">
             <!-- AÑADIDO: Mensaje cuando se alcanza el límite -->
-            <div v-if="limitReached" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
+            <div v-if="limitReached"
+                class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
                 <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>
                 <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Límite de Productos Alcanzado</h1>
                 <p class="text-gray-600 dark:text-gray-300 mb-6">
-                    Has alcanzado el límite de <strong>{{ productLimit }} productos</strong> permitido por tu plan actual. Para agregar más productos, por favor mejora tu plan.
+                    Has alcanzado el límite de <strong>{{ productLimit }} productos</strong> permitido por tu plan
+                    actual. Para agregar más productos, por favor mejora tu plan.
                 </p>
                 <div class="flex justify-center items-center gap-4">
                     <Link :href="route('products.index')">
-                        <Button label="Volver a Productos" severity="secondary" outlined />
+                    <Button label="Volver a Productos" severity="secondary" outlined />
                     </Link>
                     <a :href="route('subscription.manage')" target="_blank" rel="noopener noreferrer">
-                        <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
+                        <Button label="Mejorar mi plan" icon="pi pi-arrow-up" />
                     </a>
                 </div>
             </div>
@@ -223,7 +255,8 @@ const refreshAttributes = () => {
                 <form @submit.prevent="submit">
                     <!-- Sección de Información General -->
                     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-                        <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
+                        <h2
+                            class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
                             Información general
                         </h2>
                         <div class="grid grid-cols-1 gap-6">
@@ -264,7 +297,8 @@ const refreshAttributes = () => {
                                         filter optionLabel="name" optionValue="id" placeholder="Selecciona una marca"
                                         class="w-full" optionGroupLabel="label" optionGroupChildren="items">
                                         <template #optiongroup="{ option }">
-                                            <div class="flex items-center font-bold px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
+                                            <div
+                                                class="flex items-center font-bold px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200">
                                                 {{ option.label }}
                                             </div>
                                         </template>
@@ -277,9 +311,10 @@ const refreshAttributes = () => {
                             </div>
                         </div>
                     </div>
-                    <!-- Sección de Precios -->
+                    <!-- Sección de Precios (MODIFICADA) -->
                     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-                        <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
+                        <h2
+                            class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
                             Precios
                         </h2>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -300,17 +335,56 @@ const refreshAttributes = () => {
                                     placeholder="Selecciona un proveedor" class="w-full" />
                                 <InputError class="mt-2" :message="form.errors.provider_id" />
                             </div>
-                            <div>
-                                <InputLabel for="selling_price" value="Precio de venta al público*" />
+                            <div class="md:col-span-2">
+                                <InputLabel for="selling_price" value="Precio de venta al público (1 Pieza)*" />
                                 <InputNumber v-model="form.selling_price" id="selling_price" mode="currency"
                                     currency="MXN" locale="es-MX" class="w-full mt-1" />
                                 <InputError class="mt-2" :message="form.errors.selling_price" />
                             </div>
                         </div>
+
+                        <!-- --- INICIO: SECCIÓN DE PRECIOS POR MAYOREO --- -->
+                        <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                            <h4 class="text-md font-semibold text-gray-800 dark:text-gray-200 m-0">
+                                Precios de mayoreo (opcional)
+                            </h4>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                                Define precios especiales para compras de mayor volumen. El precio de 1 pieza se toma
+                                del campo de arriba.
+                            </p>
+
+                            <div v-if="form.price_tiers.length > 0" class="space-y-4">
+                                <div v-for="(tier, index) in form.price_tiers" :key="index"
+                                    class="flex items-end gap-4 p-4 rounded-md bg-gray-50 dark:bg-gray-700/50 border dark:border-gray-700">
+                                    <div class="flex-1">
+                                        <InputLabel :for="`tier_min_${index}`" value="A partir de (cant.)" />
+                                        <InputNumber v-model="tier.min_quantity" :id="`tier_min_${index}`"
+                                            class="w-full mt-1" :min="2" placeholder="Ej: 6" />
+                                        <InputError class="mt-1"
+                                            :message="form.errors[`price_tiers.${index}.min_quantity`]" />
+                                    </div>
+                                    <div class="flex-1">
+                                        <InputLabel :for="`tier_price_${index}`" value="Precio unitario" />
+                                        <InputNumber v-model="tier.price" :id="`tier_price_${index}`" mode="currency"
+                                            currency="MXN" locale="es-MX" class="w-full mt-1" />
+                                        <InputError class="mt-1" :message="form.errors[`price_tiers.${index}.price`]" />
+                                    </div>
+                                    <Button @click="confirmRemoveItem($event, index)" icon="pi pi-trash" severity="danger" text
+                                        rounded v-tooltip.bottom="'Eliminar nivel'" />
+                                </div>
+                            </div>
+                            <InputError class="mt-2" :message="form.errors.price_tiers" />
+
+                            <Button @click="addPriceTier" label="Añadir nivel de precio" icon="pi pi-plus"
+                                severity="secondary" outlined class="mt-4" />
+                        </div>
+                        <!-- --- FIN: SECCIÓN DE PRECIOS POR MAYOREO --- -->
+
                     </div>
                     <!-- Sección de Inventario y Variantes -->
                     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-                        <div class="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
+                        <div
+                            class="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
                             <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-200 m-0">
                                 Inventario y variantes
                             </h2>
@@ -348,7 +422,8 @@ const refreshAttributes = () => {
                             </div>
                             <div v-if="form.variant_attributes.length > 0"
                                 class="mt-4 space-y-4 p-4 border dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-800/50">
-                                <h4 class="font-medium text-gray-700 dark:text-gray-300">Selecciona las opciones a usar:</h4>
+                                <h4 class="font-medium text-gray-700 dark:text-gray-300">Selecciona las opciones a usar:
+                                </h4>
                                 <div v-for="attrId in form.variant_attributes" :key="attrId">
                                     <template v-if="availableAttributes.find(a => a.id === attrId)">
                                         <InputLabel :value="availableAttributes.find(a => a.id === attrId).name"
@@ -384,7 +459,8 @@ const refreshAttributes = () => {
                                 </Column>
                             </DataTable>
                         </div>
-                        <div v-if="form.product_type === 'variant' && !form.category_id" class="mt-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 rounded-md">
+                        <div v-if="form.product_type === 'variant' && !form.category_id"
+                            class="mt-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 rounded-md">
                             Por favor, selecciona una categoría para gestionar sus variantes.
                         </div>
                         <div class="mt-6">
@@ -516,5 +592,7 @@ const refreshAttributes = () => {
         <CreateProviderModal v-model:visible="showProviderModal" @created="handleNewProvider" />
         <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal"
             :category-id="form.category_id" @updated="refreshAttributes" />
+
+        <ConfirmPopup group="price-tiers-delete" />
     </AppLayout>
 </template>

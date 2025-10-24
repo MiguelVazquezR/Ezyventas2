@@ -62,7 +62,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'cashMovements' => fn($q) => $q->with([
                     'user:id,name'
                 ])->latest(),
-                 'payments.transaction' => function ($query) {
+                'payments.transaction' => function ($query) {
                     $query->with(['customer:id,name', 'user:id,name']);
                 },
             ])
@@ -288,10 +288,9 @@ class PointOfSaleController extends Controller implements HasMiddleware
             $query->where('category_id', $categoryId);
         }
 
-        // --- MEJORA: Se usa paginate() en lugar de get() ---
+        // --- Cargar price_tiers explícitamente ---
         $paginatedProducts = $query->with(['media', 'category:id,name', 'productAttributes'])->paginate(20)->withQueryString();
 
-        // Se usa through() para transformar la colección dentro del paginador
         $paginatedProducts->through(function ($product) {
             $promotionData = $this->getPromotionData($product);
             $variantImages = $product->getMedia('product-variant-images');
@@ -301,7 +300,9 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'id' => $product->id,
                 'name' => $product->name,
                 'price' => $promotionData['price'],
-                'original_price' => $promotionData['original_price'],
+                'original_price' => $promotionData['original_price'], // Precio base antes de promos/tiers
+                'selling_price' => (float) $product->selling_price, // Precio de venta (1 pieza)
+                'price_tiers' => $product->price_tiers ?? [], // <-- AÑADIDO: Incluir price_tiers
                 'stock' => $product->current_stock,
                 'category' => $product->category->name ?? 'Sin categoría',
                 'image' => $generalImages->first() ?: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' . urlencode($product->name),
@@ -317,10 +318,15 @@ class PointOfSaleController extends Controller implements HasMiddleware
         return $paginatedProducts;
     }
 
+    /**
+     * Calcula el precio base considerando promociones de descuento directo.
+     * NO considera precios por volumen aquí, eso se hará en el frontend.
+     */
     private function getPromotionData(Product $product): array
     {
         $now = Carbon::now();
-        $originalPrice = (float)$product->selling_price;
+        // Usar selling_price como base SIEMPRE para descuentos
+        $basePrice = (float)$product->selling_price; // Precio de 1 pieza
 
         $promotions = Promotion::where('is_active', true)
             ->where(fn($q) => $q->where('start_date', '<=', $now)->orWhereNull('start_date'))
@@ -337,30 +343,34 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ->get();
 
         if ($promotions->isEmpty()) {
-            return ['price' => $originalPrice, 'original_price' => $originalPrice, 'promotions' => []];
+            // Devolver el precio base (1 pieza)
+            return ['price' => $basePrice, 'original_price' => $basePrice, 'promotions' => []];
         }
 
-        $bestPrice = $originalPrice;
+        $bestPriceAfterDiscount = $basePrice; // Empezar con el precio base
 
+        // Calcular SOLO descuentos directos (ITEM_DISCOUNT)
         foreach ($promotions->where('type', PromotionType::ITEM_DISCOUNT) as $promo) {
             $effect = $promo->effects->where('itemable_id', $product->id)->first();
             if (!$effect) continue;
 
-            $promoPrice = $originalPrice;
+            $promoPrice = $basePrice; // Aplicar descuento sobre el precio base
             switch ($effect->type) {
                 case PromotionEffectType::FIXED_DISCOUNT:
-                    $promoPrice = $originalPrice - $effect->value;
+                    $promoPrice = $basePrice - $effect->value;
                     break;
                 case PromotionEffectType::PERCENTAGE_DISCOUNT:
-                    $promoPrice = $originalPrice * (1 - ($effect->value / 100));
+                    $promoPrice = $basePrice * (1 - ($effect->value / 100));
                     break;
                 case PromotionEffectType::SET_PRICE:
-                    $promoPrice = $effect->value;
+                    // Si la promo establece un precio fijo, usarlo si es menor
+                    $promoPrice = (float)$effect->value < $basePrice ? (float)$effect->value : $basePrice;
                     break;
             }
             $promoPrice = max(0, (float)$promoPrice);
-            if ($promoPrice < $bestPrice) {
-                $bestPrice = $promoPrice;
+            // Actualizar el mejor precio encontrado *después de descuentos*
+            if ($promoPrice < $bestPriceAfterDiscount) {
+                $bestPriceAfterDiscount = $promoPrice;
             }
         }
 
@@ -375,8 +385,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
         })->values()->all();
 
         return [
-            'price' => $bestPrice,
-            'original_price' => ($bestPrice < $originalPrice) ? $originalPrice : $bestPrice,
+            // 'price' es el mejor precio DESPUÉS de descuentos (para 1 pieza)
+            'price' => $bestPriceAfterDiscount,
+            // 'original_price' es el precio ANTES de descuentos (para 1 pieza)
+            'original_price' => $basePrice,
             'promotions' => $formattedPromotions,
         ];
     }
@@ -471,7 +483,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         $branchId = Auth::user()->branch_id;
 
         // Buscar la última transacción para esta suscripción que siga el formato V-
-        $lastTransaction = Transaction::where('branch', $branchId)
+        $lastTransaction = Transaction::where('branch_id', $branchId)
             ->where('folio', 'LIKE', 'V-%')
             ->orderBy('id', 'desc') // Ordenar por ID para obtener la más reciente de forma fiable
             ->first();

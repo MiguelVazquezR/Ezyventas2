@@ -33,7 +33,19 @@ class StoreProductRequest extends FormRequest
             'cost_price' => 'nullable|numeric|min:0',
             'provider_id' => 'nullable|exists:providers,id',
             'selling_price' => 'required|numeric|min:0',
-            
+            'price_tiers' => 'nullable|array',
+            'price_tiers.*.min_quantity' => [
+                'required',
+                'integer',
+                'min:2', // El min 1 es el selling_price
+                'distinct' // No permite dos niveles con la misma cantidad
+            ],
+            'price_tiers.*.price' => [
+                'required',
+                'numeric',
+                'min:0.01'
+            ],
+
             // Inventario y Variantes
             'product_type' => 'required|in:simple,variant',
             'current_stock' => 'required_if:product_type,simple|nullable|integer|min:0',

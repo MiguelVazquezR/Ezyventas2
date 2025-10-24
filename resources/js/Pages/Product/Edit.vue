@@ -8,6 +8,7 @@ import CreateProviderModal from './Partials/CreateProviderModal.vue';
 import ManageAttributesModal from './Partials/ManageAttributesModal.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
+import { useConfirm } from 'primevue/useconfirm';
 
 const props = defineProps({
     product: Object,
@@ -16,6 +17,8 @@ const props = defineProps({
     providers: Array,
     attributeDefinitions: Array,
 });
+
+const confirm = useConfirm();
 
 // --- Refs and State ---
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
@@ -35,6 +38,7 @@ const form = useForm({
     cost_price: props.product.cost_price ? parseFloat(props.product.cost_price) : null,
     provider_id: props.product.provider_id,
     selling_price: props.product.selling_price ? parseFloat(props.product.selling_price) : null,
+    price_tiers: props.product.price_tiers || [], // <-- AÑADIDO
     product_type: props.product.product_attributes.length > 0 ? 'variant' : 'simple',
     current_stock: props.product.current_stock,
     min_stock: props.product.min_stock,
@@ -65,11 +69,13 @@ const productTypeOptions = ref([
 const savedAttributesMap = computed(() => {
     const map = new Map();
     props.product.product_attributes.forEach(pa => {
+        // CORRECCIÓN: Usar 'attributes' que es el JSON, no 'pa.attributes'
         const key = Object.entries(pa.attributes).sort().map(entry => entry.join(':')).join('|');
         map.set(key, pa);
     });
     return map;
 });
+
 
 // --- MEJORA: Lógica de combinaciones basada en opciones seleccionadas, manteniendo datos guardados ---
 const variantCombinations = computed(() => {
@@ -91,7 +97,10 @@ const variantCombinations = computed(() => {
 
     const generate = (attrs, index = 0, current = {}) => {
         if (index === attrs.length) {
-            const key = Object.entries(current).sort().map(entry => entry.join(':')).join('|');
+            // CORRECCIÓN: Generar la clave con los nombres de atributo
+            const sortedEntries = Object.entries(current).sort((a, b) => a[0].localeCompare(b[0]));
+            const key = sortedEntries.map(entry => entry.join(':')).join('|');
+
             const savedData = savedAttributesMap.value.get(key);
             let combination;
             if (savedData) {
@@ -106,7 +115,7 @@ const variantCombinations = computed(() => {
             } else {
                 combination = { ...current, sku_suffix: '', current_stock: 0, min_stock: 0, max_stock: 0, selling_price: form.selling_price };
             }
-            combination.row_id = key;
+            combination.row_id = key; // Usar la clave generada como row_id
             return [combination];
         }
         let results = [];
@@ -120,6 +129,7 @@ const variantCombinations = computed(() => {
     };
     return generate(selectedAttrsWithOptions);
 });
+
 
 // --- Estado e Inicialización de Variantes ---
 const selectedVariants = ref([]);
@@ -146,7 +156,10 @@ if (form.product_type === 'variant' && props.product.product_attributes.length >
         }
     });
     for (const attrId in initialSelectedOptions) {
-        form.selected_variant_options[attrId] = Array.from(initialSelectedOptions[attrId]);
+        // Asegurarse de que el attrId todavía existe en las definiciones (por si se cambió de categoría)
+        if (props.attributeDefinitions.some(def => def.id == attrId)) {
+            form.selected_variant_options[attrId] = Array.from(initialSelectedOptions[attrId]);
+        }
     }
 }
 
@@ -183,6 +196,12 @@ const submit = () => {
         selected: selectedVariants.value.some(sel => sel.row_id === combo.row_id)
     }));
     form.variants_matrix = matrixWithSelection;
+
+    // --- AÑADIDO: Limpiar y ordenar price_tiers ---
+    form.price_tiers = (form.price_tiers || [])
+        .filter(tier => tier.min_quantity > 1 && tier.price > 0)
+        .sort((a, b) => a.min_quantity - b.min_quantity);
+
     form.post(route('products.update', props.product.id));
 };
 
@@ -195,7 +214,7 @@ const availableAttributes = computed(() => { if (!form.category_id) return []; r
 const imageRequiringAttributes = computed(() => { if (form.product_type !== 'variant') return []; return availableAttributes.value.filter(attr => form.variant_attributes.includes(attr.id) && attr.requires_image); });
 const deleteExistingImage = (mediaId) => { form.deleted_media_ids.push(mediaId); existingGeneralImages.value = existingGeneralImages.value.filter(img => img.id !== mediaId); };
 const deleteExistingVariantImage = (mediaId, optionValue) => { form.deleted_media_ids.push(mediaId); existingVariantImages.value = existingVariantImages.value.filter(img => img.id !== mediaId); delete variantImagePreviews.value[optionValue]; };
-const onSelectGeneralImages = (event) => { form.general_images = event.files;  };
+const onSelectGeneralImages = (event) => { form.general_images = event.files; };
 const onRemoveGeneralImage = (event) => { form.general_images = form.general_images.filter(img => img.objectURL !== event.file.objectURL); };
 const onSelectVariantImage = (event, optionValue) => { const file = event.files[0]; form.variant_images[optionValue] = file; variantImagePreviews.value[optionValue] = URL.createObjectURL(file); };
 const onRemoveVariantImage = (optionValue) => { delete form.variant_images[optionValue]; URL.revokeObjectURL(variantImagePreviews.value[optionValue]); delete variantImagePreviews.value[optionValue]; };
@@ -221,6 +240,35 @@ const refreshAttributes = () => {
                 .filter(def => def.category_id === form.category_id)
                 .map(def => def.id);
             form.variant_attributes = form.variant_attributes.filter(id => validAttributeIds.includes(id));
+        }
+    });
+};
+
+// --- AÑADIDO: Funciones para manejar niveles de precio ---
+const addPriceTier = () => {
+    if (!form.price_tiers) {
+        form.price_tiers = [];
+    }
+    form.price_tiers.push({
+        min_quantity: null,
+        price: null
+    });
+};
+
+const removePriceTier = (index) => {
+    form.price_tiers.splice(index, 1);
+};
+
+const confirmRemoveItem = (event, index) => {
+    confirm.require({
+        target: event.currentTarget,
+        message: '¿Estás seguro de que quieres eliminar este elemento?',
+        group: 'price-tiers-delete',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Sí',
+        rejectLabel: 'No',
+        accept: () => {
+            removePriceTier(index);
         }
     });
 };
@@ -292,7 +340,8 @@ const refreshAttributes = () => {
                             </div>
                         </div>
                     </div>
-                    <!-- Sección de Precios -->
+
+                    <!-- Sección de Precios (MODIFICADA) -->
                     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
                         <h2
                             class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
@@ -315,26 +364,67 @@ const refreshAttributes = () => {
                                     placeholder="Selecciona un proveedor" class="w-full" />
                                 <InputError class="mt-2" :message="form.errors.provider_id" />
                             </div>
-                            <div>
-                                <InputLabel for="selling_price" value="Precio de venta al público*" />
+                            <div class="md:col-span-2">
+                                <InputLabel for="selling_price" value="Precio de venta al público (1 Pieza)*" />
                                 <InputNumber v-model="form.selling_price" id="selling_price" mode="currency"
                                     currency="MXN" locale="es-MX" class="w-full mt-1" />
                                 <InputError class="mt-2" :message="form.errors.selling_price" />
                             </div>
                         </div>
+
+                        <!-- --- INICIO: SECCIÓN DE PRECIOS POR MAYOREO (AÑADIDA) --- -->
+                        <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                            <h4 class="text-md font-semibold text-gray-800 dark:text-gray-200 m-0">
+                                Precios de mayoreo (opcional)
+                            </h4>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                                Define precios especiales para compras de mayor volumen. El precio de 1 pieza se toma
+                                del campo de arriba.
+                            </p>
+
+                            <div v-if="form.price_tiers && form.price_tiers.length > 0" class="space-y-4">
+                                <div v-for="(tier, index) in form.price_tiers" :key="index"
+                                    class="flex items-end gap-4 p-4 rounded-md bg-gray-50 dark:bg-gray-700/50 border dark:border-gray-700">
+                                    <div class="flex-1">
+                                        <InputLabel :for="`tier_min_${index}`" value="A partir de (cant.)" />
+                                        <InputNumber v-model="tier.min_quantity" :id="`tier_min_${index}`"
+                                            class="w-full mt-1" :min="2" placeholder="Ej: 6" />
+                                        <InputError class="mt-1"
+                                            :message="form.errors[`price_tiers.${index}.min_quantity`]" />
+                                    </div>
+                                    <div class="flex-1">
+                                        <InputLabel :for="`tier_price_${index}`" value="Precio unitario" />
+                                        <InputNumber v-model="tier.price" :id="`tier_price_${index}`" mode="currency"
+                                            currency="MXN" locale="es-MX" class="w-full mt-1" />
+                                        <InputError class="mt-1" :message="form.errors[`price_tiers.${index}.price`]" />
+                                    </div>
+                                    <Button @click="confirmRemoveItem($event, index)" icon="pi pi-trash"
+                                        severity="danger" text rounded v-tooltip.bottom="'Eliminar nivel'" />
+                                </div>
+                            </div>
+                            <InputError class="mt-2" :message="form.errors.price_tiers" />
+
+                            <Button @click="addPriceTier" label="Añadir nivel de precio" icon="pi pi-plus"
+                                severity="secondary" outlined class="mt-4" />
+                        </div>
+                        <!-- --- FIN: SECCIÓN DE PRECIOS POR MAYOREO --- -->
                     </div>
+
                     <!-- Sección de Inventario y Variantes -->
                     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-                        <div class="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
+                        <div
+                            class="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
                             <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-200 m-0">
                                 Inventario y variantes
                             </h2>
-                            <Button v-if="form.category_id" icon="pi pi-cog" text rounded v-tooltip.left="'Gestionar atributos de la categoría'" @click="showAttributesModal = true" />
+                            <Button v-if="form.category_id" icon="pi pi-cog" text rounded
+                                v-tooltip.left="'Gestionar atributos de la categoría'"
+                                @click="showAttributesModal = true" />
                         </div>
                         <div>
                             <InputLabel value="Tipo de producto" class="mb-2" />
-                            <SelectButton v-model="form.product_type" :options="productTypeOptions" :allowEmpty="false" optionLabel="label"
-                                optionValue="value" />
+                            <SelectButton v-model="form.product_type" :options="productTypeOptions" :allowEmpty="false"
+                                optionLabel="label" optionValue="value" />
                         </div>
                         <div v-if="form.product_type === 'simple'" class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div>
@@ -352,7 +442,7 @@ const refreshAttributes = () => {
                                 <InputNumber v-model="form.max_stock" id="max_stock_simple" class="w-full mt-1" />
                             </div>
                         </div>
-                        
+
                         <div v-if="form.product_type === 'variant' && form.category_id" class="mt-6 space-y-4">
                             <div>
                                 <InputLabel for="variant_attributes" value="Atributos para variantes" />
@@ -402,7 +492,7 @@ const refreshAttributes = () => {
                             </DataTable>
                         </div>
                         <div class="mt-6">
-                             <Tabs value="0">
+                            <Tabs value="0">
                                 <TabList>
                                     <Tab value="0">Imágenes generales</Tab>
                                     <Tab value="1">Imágenes por variante</Tab>
@@ -413,8 +503,8 @@ const refreshAttributes = () => {
                                             <div v-for="img in existingGeneralImages" :key="img.id" class="relative">
                                                 <img :src="img.original_url"
                                                     class="w-24 h-24 object-cover rounded-md border">
-                                                <Button @click="deleteExistingImage(img.id)" icon="pi pi-times" rounded text
-                                                    severity="danger"
+                                                <Button @click="deleteExistingImage(img.id)" icon="pi pi-times" rounded
+                                                    text severity="danger"
                                                     class="!absolute -top-2 -right-2 bg-white/70 dark:bg-gray-800/70" />
                                             </div>
                                         </div>
@@ -430,7 +520,8 @@ const refreshAttributes = () => {
                                     <TabPanel value="1" :disabled="imageRequiringAttributes.length === 0">
                                         <div v-if="imageRequiringAttributes.length > 0" class="space-y-4">
                                             <div v-for="attr in imageRequiringAttributes" :key="attr.id">
-                                                <h4 class="font-medium text-gray-700 dark:text-gray-300 mb-2">Imágenes para
+                                                <h4 class="font-medium text-gray-700 dark:text-gray-300 mb-2">Imágenes
+                                                    para
                                                     {{ attr.name }}</h4>
                                                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                                     <template v-for="option in attr.options" :key="option.id">
@@ -446,8 +537,7 @@ const refreshAttributes = () => {
                                                                         class="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center justify-center text-gray-400">
                                                                         <i class="pi pi-image text-2xl"></i>
                                                                     </div>
-                                                                    <Button
-                                                                        v-if="variantImagePreviews[option.value]"
+                                                                    <Button vD-if="variantImagePreviews[option.value]"
                                                                         @click="() => {
                                                                             const existingImg = existingVariantImages.find(i => i.custom_properties.variant_option === option.value);
                                                                             if (existingImg) {
@@ -455,15 +545,16 @@ const refreshAttributes = () => {
                                                                             } else {
                                                                                 onRemoveVariantImage(option.value);
                                                                             }
-                                                                        }"
-                                                                        icon="pi pi-times" rounded text severity="danger"
+                                                                        }" icon="pi pi-times" rounded text
+                                                                        severity="danger"
                                                                         class="!absolute !top-[-8px] !right-[-8px] bg-white dark:bg-gray-800"
                                                                         v-tooltip.bottom="'Eliminar imagen'" />
                                                                 </div>
-                                                                 <FileUpload v-if="!variantImagePreviews[option.value]"
-                                                                    :show-upload-button="false"
-                                                                    mode="basic" :name="`variant_images[${option.value}]`" accept="image/*"
-                                                                    :maxFileSize="1000000" :auto="true" :customUpload="true"
+                                                                <FileUpload v-if="!variantImagePreviews[option.value]"
+                                                                    :show-upload-button="false" mode="basic"
+                                                                    :name="`variant_images[${option.value}]`"
+                                                                    accept="image/*" :maxFileSize="1000000" :auto="true"
+                                                                    :customUpload="true"
                                                                     @uploader="onSelectVariantImage($event, option.value)"
                                                                     chooseLabel="Elegir" class="p-button-sm !w-20" />
                                                             </div>
@@ -531,6 +622,7 @@ const refreshAttributes = () => {
                             </div>
                         </div>
                     </div> -->
+
                     <div class="flex justify-end sticky bottom-4">
                         <Button type="submit" label="Actualizar producto" icon="pi pi-check" severity="warning"
                             :loading="form.processing" />
@@ -539,9 +631,11 @@ const refreshAttributes = () => {
             </div>
         </div>
         <!-- Modales -->
-        <CreateCategoryModal v-model:visible="showCategoryModal" tyoe="product" @created="handleNewCategory" />
+        <CreateCategoryModal v-model:visible="showCategoryModal" type="product" @created="handleNewCategory" />
         <CreateBrandModal v-model:visible="showBrandModal" @created="handleNewBrand" />
         <CreateProviderModal v-model:visible="showProviderModal" @created="handleNewProvider" />
-        <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal" :category-id="form.category_id" @updated="refreshAttributes" />
+        <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal"
+            :category-id="form.category_id" @updated="refreshAttributes" />
+        <ConfirmPopup group="price-tiers-delete" />
     </AppLayout>
 </template>

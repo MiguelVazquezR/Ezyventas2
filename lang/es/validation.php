@@ -231,5 +231,8 @@ return [
         'initial_evidence_images' => 'imagenes de evidencia',
         'commercial_name' => 'nombre comercial',
         'business_name' => 'razón social',
+        'price_tiers' => 'niveles de precio',
+        'price_tiers.*.min_quantity' => 'cantidad mínima',
+        'price_tiers.*.price' => 'precio unitario',
     ],
 ];
