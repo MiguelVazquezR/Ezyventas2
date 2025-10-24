@@ -15,6 +15,9 @@ const props = defineProps({
     subscription: Object,
     planItems: Array,
     usageData: Object,
+    // AÑADIDO: Recibe el estado de la suscripción desde el controlador
+    // Ahora incluye: isExpired (bool), daysUntilExpiry (int|null), currentBillingPeriod
+    subscriptionStatus: Object,
 });
 
 const toast = useToast();
@@ -98,8 +101,35 @@ const toggleAccountMenu = (event, account) => {
     menu.value.toggle(event);
 };
 
-
+// --- Lógica de Plan y Botón de Gestión ---
 const currentVersion = computed(() => props.subscription?.versions?.[0] || null);
+
+// AÑADIDO: Lógica para el botón de acción principal
+const manageButton = computed(() => {
+    // --- LÓGICA MODIFICADA ---
+    // Checa si está expirada O si faltan 5 días o menos para expirar
+    const isRenewalTime = props.subscriptionStatus.isExpired ||
+                          (props.subscriptionStatus.daysUntilExpiry !== null && props.subscriptionStatus.daysUntilExpiry <= 5);
+
+    if (isRenewalTime) {
+        return {
+            label: 'Renovar Suscripción',
+            icon: 'pi pi-refresh',
+            route: route('subscription.manage'),
+            disabled: false
+        };
+    }
+
+    // Si no es tiempo de renovar (es decir, está activa y faltan más de 5 días),
+    // entonces se puede mejorar.
+    return {
+        label: 'Mejorar Suscripción',
+        icon: 'pi pi-arrow-up',
+        route: route('subscription.manage'),
+        disabled: false
+    };
+});
+
 const displayPlanItems = computed(() => {
     if (!currentVersion.value) return [];
     const activeItemKeys = new Set(currentVersion.value.items.map(item => item.item_key));
@@ -274,10 +304,16 @@ const getInvoiceStatusTag = (status) => {
                         <template #title>
                             <div class="flex justify-between items-center">
                                 <span>Plan actual y módulos</span>
-                                <!-- <Link :href="route('subscription.upgrade.show')"> -->
-                                <Button label="Mejorar Suscripción" icon="pi pi-arrow-up" :disabled="true"
-                                    size="small" />
-                                <!-- </Link> -->
+                                <!-- BOTÓN MODIFICADO -->
+                                <Link :href="manageButton.route">
+                                    <Button 
+                                        :label="manageButton.label" 
+                                        :icon="manageButton.icon" 
+                                        :disabled="manageButton.disabled || true"
+                                        size="small" 
+                                        :severity="manageButton.label === 'Renovar Suscripción' ? 'primary' : 'secondary'"
+                                    />
+                                </Link>
                             </div>
                         </template>
                         <template #subtitle>
@@ -285,6 +321,18 @@ const getInvoiceStatusTag = (status) => {
                                 formatDate(currentVersion.end_date) }}
                         </template>
                         <template #content>
+                            <!-- NUEVO: Mensaje de proximidad de expiración -->
+                            <Message 
+                                v-if="!subscriptionStatus.isExpired && subscriptionStatus.daysUntilExpiry !== null && subscriptionStatus.daysUntilExpiry <= 5" 
+                                severity="warn" 
+                                :closable="false" 
+                                class="mb-4"
+                            >
+                                Tu suscripción expira en {{ subscriptionStatus.daysUntilExpiry }} 
+                                {{ subscriptionStatus.daysUntilExpiry === 1 ? 'día' : 'días' }}. 
+                                ¡Renueva ahora para no perder acceso!
+                            </Message>
+
                             <div class="mb-6">
                                 <h3 class="font-bold mb-4 text-gray-800 dark:text-gray-200">Módulos</h3>
                                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
