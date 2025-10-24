@@ -31,29 +31,77 @@ const formatTime = (dateTimeString) => {
     return new Date(dateTimeString).toLocaleTimeString('es-MX', options);
 }
 
+// --- COMPUTED PARA RESUMEN DE PAGOS (Sin cambios) ---
+const paymentSummary = computed(() => {
+    if (!props.session || !props.session.payments) {
+        return { cash: 0, card: 0, transfer: 0 };
+    }
+
+    return (props.session.payments || [])
+        .filter(p => p.status === 'completado' && p.payment_method !== 'saldo') // Excluir 'saldo'
+        .reduce((totals, p) => {
+            const amount = parseFloat(p.amount) || 0;
+            if (p.payment_method === 'efectivo') {
+                totals.cash += amount;
+            } else if (p.payment_method === 'tarjeta') {
+                totals.card += amount;
+            } else if (p.payment_method === 'transferencia') {
+                totals.transfer += amount;
+            }
+            return totals;
+        }, { cash: 0, card: 0, transfer: 0 });
+});
+
+// --- INICIO: NUEVO COMPUTED PARA DESGLOSE DE EFECTIVO ---
+const cashBreakdown = computed(() => {
+    if (!props.session || !props.session.cash_movements) {
+        return { inflows: 0, outflows: 0 };
+    }
+
+    // Suma todos los movimientos de 'ingreso'
+    const inflows = (props.session.cash_movements || [])
+        .filter(m => m.type === 'ingreso')
+        .reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0);
+
+    // Suma todos los movimientos de 'egreso'
+    const outflows = (props.session.cash_movements || [])
+        .filter(m => m.type === 'egreso')
+        .reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0);
+        
+    return { inflows, outflows };
+});
+
+// Calcula el total neto en efectivo
+const totalCash = computed(() => {
+    return (paymentSummary.value.cash || 0) + (cashBreakdown.value.inflows || 0) - (cashBreakdown.value.outflows || 0);
+});
+// --- FIN: NUEVO COMPUTED PARA DESGLOSE DE EFECTIVO ---
+
+
 const timelineEvents = computed(() => {
     if (!props.session) return [];
 
-    const salesEvents = (props.session.transactions || []).map(tx => {
-        const paymentsForTx = (props.session.payments || [])
-            .filter(p => p && p.transaction_id === tx.id);
-        
-        const totalPaid = paymentsForTx.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    // --- LÓGICA DE VENTAS (Sin cambios) ---
+    const salesEvents = (props.session.transactions || [])
+        .filter(tx => !tx.folio.startsWith('ABONO-')) 
+        .map(tx => {
+            const paymentsForTx = (props.session.payments || [])
+                .filter(p => p && p.transaction_id === tx.id);
+            const totalPaid = paymentsForTx.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+            return {
+                type: 'sale',
+                date: tx.created_at,
+                status: tx.status === 'completado' ? 'Venta' : 'Venta (pendiente)',
+                color: tx.status === 'completado' ? '#22c55e' : '#f59e0b',
+                icon: 'pi pi-shopping-cart',
+                data: tx,
+                totalSale: parseFloat(tx.total),
+                totalPaid: totalPaid,
+                userName: tx.user?.name || 'N/A' 
+            };
+        });
 
-        return {
-            type: 'sale',
-            date: tx.created_at,
-            status: tx.status === 'completado' ? 'Venta' : 'Venta (pendiente)',
-            color: tx.status === 'completado' ? '#22c55e' : '#f59e0b',
-            icon: 'pi pi-shopping-cart',
-            data: tx,
-            totalSale: parseFloat(tx.total),
-            totalPaid: totalPaid,
-            // MEJORA: Añadimos el nombre del cajero que hizo la venta
-            userName: tx.user?.name || 'N/A' 
-        };
-    });
-
+    // --- LÓGICA DE MOVIMIENTOS (Sin cambios) ---
     const movementEvents = (props.session.cash_movements || []).map(mv => ({
         type: 'movement',
         date: mv.created_at,
@@ -61,19 +109,56 @@ const timelineEvents = computed(() => {
         color: mv.type === 'ingreso' ? '#3b82f6' : '#ef4444',
         icon: mv.type === 'ingreso' ? 'pi pi-arrow-down-left' : 'pi pi-arrow-up-right',
         data: mv,
-        // MEJORA: Añadimos el nombre del cajero que hizo el movimiento
         userName: mv.user?.name || 'N/A'
     }));
 
-    return [...salesEvents, ...movementEvents].sort((a, b) => new Date(b.date) - new Date(a.date));
+    // --- LÓGICA DE PAGOS EXTERNOS (Sin cambios) ---
+    const sessionTransactionIds = new Set((props.session.transactions || []).map(tx => tx.id));
+    const paymentEvents = (props.session.payments || [])
+        .filter(p => p.status === 'completado' && !sessionTransactionIds.has(p.transaction_id))
+        .map(p => {
+            const tx = p.transaction; 
+            return {
+                type: 'payment',
+                date: p.payment_date || p.created_at,
+                status: `Pago (${p.payment_method})`,
+                color: '#8b5cf6',
+                icon: 'pi pi-dollar',
+                data: p,
+                userName: tx?.user?.name || 'N/A', 
+                customerName: tx?.customer?.name || 'Público en general',
+                folio: tx?.folio || 'N/A'
+            };
+        });
+
+    // --- LÓGICA PARA ABONOS (Sin cambios) ---
+    const abonoEvents = (props.session.transactions || [])
+        .filter(tx => tx.folio.startsWith('ABONO-')) 
+        .map(tx => {
+            return {
+                type: 'abono', 
+                date: tx.created_at,
+                status: 'Abono a Saldo',
+                color: '#0ea5e9',
+                icon: 'pi pi-user-plus',
+                data: tx,
+                totalAbono: parseFloat(tx.total),
+                userName: tx.user?.name || 'N/A',
+                customerName: tx.customer?.name || 'N/A'
+            };
+        });
+
+    // Combinar todos los eventos y ordenar
+    return [...salesEvents, ...movementEvents, ...paymentEvents, ...abonoEvents].sort((a, b) => new Date(b.date) - new Date(a.date));
 });
 
 </script>
 
 <template>
     <Dialog :visible="visible" @update:visible="closeModal" modal header="Historial de la sesión actual" :style="{ width: '50rem' }">
-        <div v-if="session" class="p-2">
-            <div class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg mb-6">
+        <div v-if="session" class="p-1">
+            <!-- Sección de Info y Apertura (Sin cambios) -->
+            <div class="bg-gray-100 dark:bg-gray-800 p-3 rounded-lg mb-1">
                 <div class="flex justify-between items-center">
                     <div>
                         <p class="m-0 text-sm text-gray-500">Caja</p>
@@ -81,7 +166,6 @@ const timelineEvents = computed(() => {
                     </div>
                     <div>
                         <p class="m-0 text-sm text-gray-500">Abierta por</p>
-                        <!-- CORRECCIÓN: Usar 'opener' en lugar de 'user' -->
                         <p class="m-0 font-bold text-base">{{ session.opener?.name }}</p>
                     </div>
                     <div class="text-right">
@@ -91,7 +175,57 @@ const timelineEvents = computed(() => {
                 </div>
             </div>
 
-            <div class="max-h-[55vh] overflow-y-auto pr-2">
+            <!-- --- INICIO: RESUMEN DE PAGOS (Convertido a Fieldset colapsable) --- -->
+            <Fieldset legend="Resumen de ingresos" :toggleable="true" class="text-sm">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Columna de Efectivo -->
+                    <div>
+                        <h6 class="font-medium text-gray-800 dark:text-gray-200 m-0">Efectivo</h6>
+                        <dl class="text-gray-600 dark:text-gray-400">
+                            <div class="flex justify-between">
+                                <dt>Ventas:</dt>
+                                <dd class="font-mono text-green-500">{{ formatCurrency(paymentSummary.cash) }}</dd>
+                            </div>
+                            <div class="flex justify-between">
+                                <dt>Ingresos:</dt>
+                                <dd class="font-mono text-green-500">{{ formatCurrency(cashBreakdown.inflows) }}</dd>
+                            </div>
+                            <div class="flex justify-between">
+                                <dt>Retiros:</dt>
+                                <dd class="font-mono text-red-500">-{{ formatCurrency(cashBreakdown.outflows) }}</dd>
+                            </div>
+                            <div class="flex justify-between font-bold text-gray-900 dark:text-white border-t mt-1 pt-1">
+                                <dt>Total efectivo:</dt>
+                                <dd class="font-mono">{{ formatCurrency(totalCash) }}</dd>
+                            </div>
+                        </dl>
+                    </div>
+
+                    <!-- Columna de Tarjeta -->
+                    <div>
+                        <h6 class="font-medium text-gray-800 dark:text-gray-200 m-0">Tarjeta</h6>
+                        <dl class="text-gray-600 dark:text-gray-400">
+                            <div class="flex justify-between font-bold text-gray-900 dark:text-white">
+                                <dd class="font-mono">{{ formatCurrency(paymentSummary.card) }}</dd>
+                            </div>
+                        </dl>
+                    </div>
+
+                    <!-- Columna de Transferencia -->
+                    <div>
+                        <h6 class="font-medium text-gray-800 dark:text-gray-200 m-0">Transferencia</h6>
+                        <dl class="text-gray-600 dark:text-gray-400">
+                            <div class="flex justify-between font-bold text-gray-900 dark:text-white">
+                                <dd class="font-mono">{{ formatCurrency(paymentSummary.transfer) }}</dd>
+                            </div>
+                        </dl>
+                    </div>
+                </div>
+            </Fieldset>
+            <!-- --- FIN: RESUMEN DE PAGOS --- -->
+
+            <!-- Historial de Timeline -->
+            <div class="max-h-[51vh] overflow-y-auto pr-2 mt-3">
                  <Timeline v-if="timelineEvents.length > 0" :value="timelineEvents" align="alternate" class="customized-timeline">
                     <template #marker="slotProps">
                         <span class="flex w-8 h-8 items-center justify-center text-white rounded-full z-10 shadow-md" :style="{ backgroundColor: slotProps.item.color }">
@@ -101,13 +235,13 @@ const timelineEvents = computed(() => {
                     <template #content="slotProps">
                         <Card class="mt-0 mb-4">
                             <template #title>
-                                <div class="flex justify-between items-center text-md">
+                                <div class="flex justify-between items-center text-base">
                                     <span>{{ slotProps.item.status }}</span>
                                     <span class="font-normal text-sm">{{ formatTime(slotProps.item.date) }}</span>
                                 </div>
                             </template>
                             <template #content>
-                                <!-- Contenido para Ventas -->
+                                <!-- Contenido para Ventas (type === 'sale') -->
                                 <div v-if="slotProps.item.type === 'sale'" class="text-sm space-y-1">
                                     <div class="flex justify-between">
                                         <span class="text-gray-500">Folio:</span>
@@ -117,7 +251,6 @@ const timelineEvents = computed(() => {
                                         <span class="text-gray-500">Cliente:</span>
                                         <span class="font-semibold">{{ slotProps.item.data.customer?.name || 'Público en general' }}</span>
                                     </div>
-                                    <!-- MEJORA: Mostrar el cajero de la venta -->
                                     <div class="flex justify-between">
                                         <span class="text-gray-500">Cajero:</span>
                                         <span class="font-semibold">{{ slotProps.item.userName }}</span>
@@ -133,9 +266,9 @@ const timelineEvents = computed(() => {
                                         </div>
                                     </div>
                                 </div>
-                                <!-- Contenido para Movimientos de Efectivo -->
+                                
+                                <!-- Contenido para Movimientos (type === 'movement') -->
                                 <div v-if="slotProps.item.type === 'movement'" class="text-sm space-y-1">
-                                    <!-- MEJORA: Mostrar el cajero del movimiento -->
                                      <div class="flex justify-between mb-2">
                                         <span class="text-gray-500">Realizado por:</span>
                                         <span class="font-semibold">{{ slotProps.item.userName }}</span>
@@ -143,9 +276,61 @@ const timelineEvents = computed(() => {
                                     <p class="text-gray-600 italic">"{{ slotProps.item.data.description }}"</p>
                                      <div class="flex justify-between font-bold text-base pt-2 border-t mt-2">
                                         <span>Monto:</span>
-                                        <span>{{ formatCurrency(slotProps.item.data.amount) }}</span>
+                                        <span :class="slotProps.item.data.type === 'ingreso' ? 'text-blue-500' : 'text-red-500'">
+                                            {{ formatCurrency(slotProps.item.data.amount) }}
+                                        </span>
                                     </div>
                                 </div>
+
+                                <!-- Contenido para Pagos Externos (type === 'payment') -->
+                                <div v-if="slotProps.item.type === 'payment'" class="text-sm space-y-1">
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-500">Folio O.S.:</span> 
+                                        <span class="font-mono">{{ slotProps.item.folio }}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-500">Cliente:</span>
+                                        <span class="font-semibold">{{ slotProps.item.customerName }}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-500">Registró O.S.:</span>
+                                        <span class="font-semibold">{{ slotProps.item.userName }}</span>
+                                    </div>
+                                    <div class="pt-2 border-t mt-2 space-y-1">
+                                        <div class="flex justify-between font-bold text-base">
+                                            <span>Monto Pagado:</span>
+                                            <span :class="slotProps.item.data.amount >= 0 ? 'text-green-500' : 'text-red-500'">
+                                                {{ formatCurrency(slotProps.item.data.amount) }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- --- INICIO: PLANTILLA PARA ABONOS (Simplificada) --- -->
+                                <div v-if="slotProps.item.type === 'abono'" class="text-sm space-y-1">
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-500">Folio:</span>
+                                        <span class="font-mono">{{ slotProps.item.data.folio }}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-500">Cliente:</span>
+                                        <span class="font-semibold">{{ slotProps.item.customerName }}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-500">Cajero:</span>
+                                        <span class="font-semibold">{{ slotProps.item.userName }}</span>
+                                    </div>
+                                    <div class="pt-2 border-t mt-2 space-y-1">
+                                        <div class="flex justify-between font-bold text-base">
+                                            <span>Monto Abonado:</span>
+                                            <span class="text-green-500">
+                                                {{ formatCurrency(slotProps.item.totalAbono) }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- --- FIN: PLANTILLA PARA ABONOS --- -->
+
                             </template>
                         </Card>
                     </template>

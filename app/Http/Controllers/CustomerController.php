@@ -20,7 +20,8 @@ class CustomerController extends Controller implements HasMiddleware
         return [
             new Middleware('can:customers.access', only: ['index']),
             new Middleware('can:customers.create', only: ['create', 'store']),
-            new Middleware('can:customers.see_details', only: ['show']),
+            // --- MODIFICADO: Añadido printStatement a los permisos de 'see_details' ---
+            new Middleware('can:customers.see_details', only: ['show', 'printStatement']),
             new Middleware('can:customers.edit', only: ['edit', 'update']),
             new Middleware('can:customers.delete', only: ['destroy', 'batchDestroy']),
         ];
@@ -115,6 +116,7 @@ class CustomerController extends Controller implements HasMiddleware
         return redirect()->route('customers.index')->with('success', 'Cliente actualizado con éxito.');
     }
 
+
     public function destroy(Customer $customer)
     {
         $customer->delete();
@@ -126,5 +128,20 @@ class CustomerController extends Controller implements HasMiddleware
         $request->validate(['ids' => 'required|array']);
         Customer::whereIn('id', $request->input('ids'))->delete();
         return redirect()->route('customers.index')->with('success', 'Clientes seleccionados eliminados.');
+    }
+
+    /**
+     * --- NUEVO: Método para generar el estado de cuenta imprimible ---
+     */
+    public function printStatement(Customer $customer): Response
+    {
+        // Cargar la sucursal y la suscripción para los detalles del encabezado
+        $customer->load(['branch.subscription']);
+
+        return Inertia::render('Customer/PrintStatement', [
+            'customer' => $customer,
+            // Usar el accesor que ya define la lógica del historial
+            'movements' => $customer->historical_movements,
+        ]);
     }
 }

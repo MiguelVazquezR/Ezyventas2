@@ -124,7 +124,7 @@ watch(activeSession, (newSession) => {
                     <InputError :message="form.errors.folio" class="mt-2" />
                 </div>
                 <div>
-                    <InputLabel for="expense_date" value="Fecha del Gasto *" />
+                    <InputLabel for="expense_date" value="Fecha del gasto *" />
                     <Calendar id="expense_date" v-model="form.expense_date" class="w-full mt-1"
                         dateFormat="dd/mm/yy" />
                     <InputError :message="form.errors.expense_date" class="mt-2" />
@@ -147,7 +147,7 @@ watch(activeSession, (newSession) => {
                 </div>
 
                 <div class="md:col-span-2 space-y-4 p-4 border rounded-lg bg-gray-50 dark:bg-gray-900/50">
-                    <h3 class="font-semibold text-gray-700 dark:text-gray-300">Detalles del Pago</h3>
+                    <h5 class="font-semibold text-gray-700 dark:text-gray-300">Detalles del pago</h5>
                     <div>
                         <InputLabel for="payment_method" value="Método de Pago *" />
                         <SelectButton id="payment_method" v-model="form.payment_method" :options="paymentMethodOptions"

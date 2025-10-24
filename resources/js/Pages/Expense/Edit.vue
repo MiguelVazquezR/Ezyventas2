@@ -85,7 +85,7 @@ const submit = () => {
     <AppLayout>
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="mt-4">
-            <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Editar Gasto</h1>
+            <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Editar gasto</h1>
         </div>
 
         <form @submit.prevent="submit"
@@ -120,7 +120,7 @@ const submit = () => {
                 </div>
 
                 <div class="md:col-span-2 space-y-4 p-4 border rounded-lg bg-gray-50 dark:bg-gray-900/50">
-                    <h3 class="font-semibold text-gray-700 dark:text-gray-300">Detalles del Pago</h3>
+                    <h5 class="font-semibold text-gray-700 dark:text-gray-300">Detalles del pago</h5>
                     <div>
                         <InputLabel for="payment_method" value="Método de Pago *" />
                         <SelectButton id="payment_method" v-model="form.payment_method" :options="paymentMethodOptions"
@@ -153,7 +153,7 @@ const submit = () => {
                     </div>
 
                     <div v-if="form.payment_method === 'tarjeta' || form.payment_method === 'transferencia'">
-                        <InputLabel for="bank_account_id" value="Cuenta de Origen *" />
+                        <InputLabel for="bank_account_id" value="Cuenta de origen *" />
                         <Select size="large" id="bank_account_id" v-model="form.bank_account_id" :options="bankAccounts"
                             optionLabel="account_name" optionValue="id" placeholder="Selecciona una cuenta"
                             class="w-full mt-1">
@@ -181,7 +181,7 @@ const submit = () => {
                 </div>
             </div>
             <div class="flex justify-end mt-6">
-                <Button type="submit" label="Actualizar Gasto" :loading="form.processing" severity="warning" />
+                <Button type="submit" label="Actualizar gasto" :loading="form.processing" severity="warning" />
             </div>
         </form>
 

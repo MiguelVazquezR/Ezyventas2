@@ -74,9 +74,16 @@ const deleteSelectedCustomers = () => {
     });
 };
 
+// --- MODIFICADO: Añadido "Estado de Cuenta" ---
 const menuItems = ref([
     { label: 'Ver', icon: 'pi pi-eye', command: () => router.get(route('customers.show', selectedCustomerForMenu.value.id)), visible: hasPermission('customers.see_details') },
-    { label: 'Editar Cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', selectedCustomerForMenu.value.id)), visible: hasPermission('customers.edit') },
+    { label: 'Editar cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', selectedCustomerForMenu.value.id)), visible: hasPermission('customers.edit') },
+    { 
+        label: 'Estado de cuenta', 
+        icon: 'pi pi-file-pdf', 
+        command: () => window.open(route('customers.printStatement', selectedCustomerForMenu.value.id), '_blank'), 
+        visible: hasPermission('customers.see_details') 
+    },
     // { label: 'Registrar Venta', icon: 'pi pi-shopping-cart', visible: hasPermission('customers.store_sale') },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleCustomer, visible: hasPermission('customers.delete') },
@@ -168,7 +175,7 @@ const formatCurrency = (value) => {
                     <Column field="phone" header="Contacto" sortable>
                         <template #body="{ data }">
                             <div>
-                                <p v-if="data.phone" class="m-0"><i class="pi pi-phone !text-xs mr-2"></i>{{ data.phone }}</p>
+                                <p vif="data.phone" class="m-0"><i class="pi pi-phone !text-xs mr-2"></i>{{ data.phone }}</p>
                                 <p v-if="data.email" class="m-0"><i class="pi pi-envelope !text-xs mr-2"></i>{{ data.email }}</p>
                             </div>
                         </template>
@@ -180,7 +187,7 @@ const formatCurrency = (value) => {
                             </span>
                         </template>
                     </Column>
-                    <Column v-if="hasPermission('customers.see_financial_info')" field="credit_limit" header="Límite de Crédito" sortable>
+                    <Column v-if="hasPermission('customers.see_financial_info')" field="credit_limit" header="Límite de crédito" sortable>
                         <template #body="{ data }">
                             {{ formatCurrency(data.credit_limit) }}
                         </template>
