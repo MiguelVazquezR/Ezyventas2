@@ -77,7 +77,7 @@ const submit = () => {
              <p class="text-gray-600 dark:text-gray-300 mb-6">
                  Has alcanzado el límite de <strong>{{ limit }} sucursales</strong> permitido por tu plan actual.
              </p>
-             <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer" class="w-full">
+             <a :href="route('subscription.manage')" target="_blank" rel="noopener noreferrer" class="w-full">
                   <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" class="w-full" />
              </a>
         </div>

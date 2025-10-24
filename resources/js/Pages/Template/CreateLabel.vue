@@ -286,7 +286,7 @@ const dpiOptions = ref([203, 300, 600]);
                     <Link :href="route('print-templates.index')">
                     <Button label="Volver a Plantillas" severity="secondary" outlined />
                     </Link>
-                    <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer">
+                    <a :href="route('subscription.manage')" target="_blank" rel="noopener noreferrer">
                         <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
                     </a>
                 </div>
