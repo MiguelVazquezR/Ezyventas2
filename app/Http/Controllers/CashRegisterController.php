@@ -102,7 +102,7 @@ class CashRegisterController extends Controller implements HasMiddleware
         return redirect()->route('cash-registers.index')->with('success', 'Caja registradora actualizada con éxito.');
     }
 
-   public function show(CashRegister $cashRegister): Response
+    public function show(CashRegister $cashRegister): Response
     {
         $branch = $cashRegister->branch;
 
@@ -112,7 +112,10 @@ class CashRegisterController extends Controller implements HasMiddleware
                 'opener:id,name',
                 'users:id,name',
                 'cashMovements.user:id,name',
-                'payments',
+                // Cargar la transacción, cliente y usuario para cada pago.
+                'payments.transaction' => function ($query) {
+                    $query->with(['customer:id,name', 'user:id,name']);
+                },
                 'transactions.user:id,name',
                 'transactions.customer:id,name'
             ])

@@ -62,7 +62,9 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'cashMovements' => fn($q) => $q->with([
                     'user:id,name'
                 ])->latest(),
-                'payments'
+                 'payments.transaction' => function ($query) {
+                    $query->with(['customer:id,name', 'user:id,name']);
+                },
             ])
             ->first();
 
@@ -466,12 +468,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
     private function generateFolio(): string
     {
         // Obtener la suscripción del usuario actual
-        $subscriptionId = Auth::user()->branch->subscription_id;
+        $branchId = Auth::user()->branch_id;
 
         // Buscar la última transacción para esta suscripción que siga el formato V-
-        $lastTransaction = Transaction::whereHas('branch', function ($query) use ($subscriptionId) {
-            $query->where('subscription_id', $subscriptionId);
-        })
+        $lastTransaction = Transaction::where('branch', $branchId)
             ->where('folio', 'LIKE', 'V-%')
             ->orderBy('id', 'desc') // Ordenar por ID para obtener la más reciente de forma fiable
             ->first();

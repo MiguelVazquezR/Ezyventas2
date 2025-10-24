@@ -102,7 +102,6 @@ const onRemoveClosingImage = (event) => {
     diagnosisForm.closing_evidence_images = diagnosisForm.closing_evidence_images.filter(img => img.objectURL !== event.file.objectURL);
 };
 
-
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
     { label: 'Órdenes de Servicio', url: route('service-orders.index') },
@@ -256,8 +255,8 @@ const deleteOrder = () => {
 const actionItems = ref([
     { label: 'Crear nueva orden', icon: 'pi pi-plus', command: () => router.get(route('service-orders.create')), visible: hasPermission('services.orders.create') },
     { label: 'Editar orden', icon: 'pi pi-pencil', command: () => router.get(route('service-orders.edit', props.serviceOrder.id)), visible: hasPermission('services.orders.edit') },
-    { label: 'Registrar Diagnóstico y Evidencia', icon: 'pi pi-file-edit', command: openDiagnosisModal, visible: computed(() => !isCancelled.value && hasPermission('services.orders.edit')) },
-    { label: 'Registrar Pago', icon: 'pi pi-dollar', command: openPaymentModal, visible: computed(() => amountDue.value > 0.01 && props.serviceOrder.final_total > 0) },
+    { label: 'Registrar diagnóstico y evidencia', icon: 'pi pi-file-edit', command: openDiagnosisModal, visible: computed(() => !isCancelled.value && hasPermission('services.orders.edit')) },
+    { label: 'Registrar pago', icon: 'pi pi-dollar', command: openPaymentModal, visible: computed(() => amountDue.value > 0.01 && props.serviceOrder.final_total > 0) },
     { label: 'Imprimir', icon: 'pi pi-print', command: openPrintModal },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteOrder, visible: hasPermission('services.orders.delete') },
@@ -643,8 +642,8 @@ const getPaymentMethodIcon = (method) => {
                     <label class="font-semibold mb-2 block">Evidencia de cierre (Máx. 5 imágenes)</label>
                     <FileUpload name="closing_evidence_images[]" @select="onSelectClosingImages"
                         @remove="onRemoveClosingImage" :multiple="true" :show-upload-button="false" accept="image/*"
-                        :maxFileSize="2000000" :fileLimit="MAX_CLOSING_EVIDENCE_IMAGES"
-                        :invalidFileSizeMessage="'{0}: El tamaño del archivo excede el límite de 2MB.'"
+                        :maxFileSize="10000000" :fileLimit="MAX_CLOSING_EVIDENCE_IMAGES"
+                        :invalidFileSizeMessage="'{0}: El tamaño del archivo excede el límite de 10MB.'"
                         :invalidFileLimitMessage="'Máximo {0} archivos permitidos.'">
                         <template #empty>
                             <p>Arrastra y suelta las imágenes finales del servicio aquí.</p>
@@ -656,7 +655,7 @@ const getPaymentMethodIcon = (method) => {
             </div>
             <template #footer>
                 <Button label="Cancelar" text @click="isDiagnosisModalVisible = false" />
-                <Button label="Guardar Diagnóstico" @click="handleDiagnosisSubmit"
+                <Button label="Guardar diagnóstico" @click="handleDiagnosisSubmit"
                     :loading="diagnosisForm.processing" />
             </template>
         </Dialog>
