@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue';
 import { usePermissions } from '@/Composables';
 import { FireIcon, StarIcon } from '@heroicons/vue/24/solid'; // <-- Importar StarIcon
+import { useConfirm } from 'primevue/useconfirm';
 
 const props = defineProps({
     item: Object,
@@ -10,6 +11,8 @@ const props = defineProps({
         default: () => new Set(),
     }
 });
+
+const confirm = useConfirm();
 
 const emit = defineEmits(['updateQuantity', 'updatePrice', 'removeItem']);
 
@@ -143,6 +146,19 @@ const getPromotionSummary = (promo) => {
     }
 };
 
+const confirmRemoveItem = (event, itemId) => {
+    confirm.require({
+        target: event.currentTarget,
+        message: '¿Estás seguro de que quieres eliminar este elemento?',
+        group: 'cart-item-delete',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Sí',
+        rejectLabel: 'No',
+        accept: () => {
+           emit('removeItem', itemId)
+        }
+    });
+};
 </script>
 
 <template>
@@ -234,7 +250,8 @@ const getPromotionSummary = (promo) => {
             </div>
         </div>
         <!-- Botón Eliminar -->
-        <Button @click="$emit('removeItem', item.cartItemId)" icon="pi pi-trash" rounded variant="outlined" severity="danger"
+        <Button @click="confirmRemoveItem($event, item.cartItemId)" icon="pi pi-trash" rounded variant="outlined" severity="danger"
             size="small" class="!size-7 !absolute top-1 right-1" />
     </div>
+    <ConfirmPopup group="cart-item-delete" />
 </template>

@@ -1,13 +1,30 @@
 <script setup>
 import { usePage } from '@inertiajs/vue3';
+import { useConfirm } from 'primevue/useconfirm';
 
 const props = defineProps({
     carts: Array,
 });
 
+const confirm = useConfirm();
+
 const emit = defineEmits(['resumeCart', 'deleteCart']);
 
 const currentUser = usePage().props.auth.user;
+
+const confirmRemoveItem = (event, cartId) => {
+    confirm.require({
+        target: event.currentTarget,
+        message: '¿Estás seguro de que quieres eliminar este elemento?',
+        group: 'pendent-carts-delete',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Sí',
+        rejectLabel: 'No',
+        accept: () => {
+           emit('deleteCart', cartId)
+        }
+    });
+};
 </script>
 <template>
     <div class="w-80 md:w-96 p-4">
@@ -19,7 +36,7 @@ const currentUser = usePage().props.auth.user;
         </div>
         <div v-else class="space-y-3 max-h-96 overflow-y-auto">
             <div v-for="cart in carts" :key="cart.id" class="border rounded-lg p-4 flex flex-col gap-3 relative">
-                 <Button @click="$emit('deleteCart', cart.id)" icon="pi pi-trash" rounded text severity="danger" class="!absolute top-2 right-2"/>
+                 <Button @click="confirmRemoveItem($event, cart.id)" icon="pi pi-trash" rounded text severity="danger" class="!absolute top-2 right-2"/>
                  <div>
                      <p class="text-xs text-gray-500 m-0">Cliente</p>
                      <p class="font-bold m-0">{{ cart.client.name }}</p>
@@ -39,4 +56,5 @@ const currentUser = usePage().props.auth.user;
             </div>
         </div>
     </div>
+    <ConfirmPopup group="pendent-carts-delete" />
 </template>
