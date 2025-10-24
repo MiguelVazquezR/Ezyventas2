@@ -79,7 +79,7 @@ const showRolePermissions = (roleId) => {
                     <Link :href="route('users.index')">
                     <Button label="Volver a Usuarios" severity="secondary" outlined />
                     </Link>
-                    <a :href="route('subscription.upgrade.show')" target="_blank" rel="noopener noreferrer">
+                    <a :href="route('subscription.manage')" target="_blank" rel="noopener noreferrer">
                         <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
                     </a>
                 </div>
