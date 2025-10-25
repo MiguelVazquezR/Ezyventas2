@@ -318,7 +318,7 @@ const handleCheckout = (checkoutData) => {
 
 <template>
 
-    <Head title="Punto de Venta" />
+    <Head title="Punto de venta" />
     <AppLayout>
         <!-- Vista principal del POS (cuando la sesión está activa) -->
         <template v-if="activeSession">
@@ -354,10 +354,10 @@ const handleCheckout = (checkoutData) => {
                     <!-- Mensaje cambia dependiendo de si hay sesiones para unirse o para crear -->
                     <h2 v-if="joinableSessions && joinableSessions.length > 0"
                         class="text-2xl font-bold text-gray-800 dark:text-gray-200">
-                        Sesiones de Caja Activas
+                        Sesiones de caja activas
                     </h2>
                     <h2 v-else class="text-2xl font-bold text-gray-800 dark:text-gray-200">
-                        Punto de Venta Bloqueado
+                        Punto de venta bloqueado
                     </h2>
 
                     <p class="text-gray-600 dark:text-gray-400 mt-2 max-w-md">
@@ -374,7 +374,7 @@ const handleCheckout = (checkoutData) => {
                         @click="isJoinSessionModalVisible = true" label="Unirse a una sesión" icon="pi pi-users"
                         class="mt-6" />
                     <Button v-else-if="availableCashRegisters && availableCashRegisters.length > 0"
-                         @click="isStartSessionModalVisible = true" label="Abrir una Caja"
+                         @click="isStartSessionModalVisible = true" label="Abrir una caja"
                         icon="pi pi-lock-open" class="mt-6" />
                      <p v-else class="text-sm text-gray-500 pt-4 mt-8">
                                 No hay cajas disponibles para unirse o abrir en esta sucursal.

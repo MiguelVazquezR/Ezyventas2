@@ -8,5 +8,9 @@ Route::middleware('auth')->group(function () {
     Route::post('cash-register-sessions/{session}/join', [CashRegisterSessionController::class, 'join'])->name('cash-register-sessions.join');
     Route::post('cash-register-sessions/{session}/leave', [CashRegisterSessionController::class, 'leave'])
         ->name('cash-register-sessions.leave');
+        // Debe ir ANTES de 'resource' para que sea reconocida correctamente
+    Route::post('cash-register-sessions/rejoin-or-start', [CashRegisterSessionController::class, 'rejoinOrStart'])
+        ->name('cash-register-sessions.rejoinOrStart');
+        
     Route::resource('cash-register-sessions', CashRegisterSessionController::class);
 });

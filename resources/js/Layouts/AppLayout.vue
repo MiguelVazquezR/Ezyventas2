@@ -6,9 +6,8 @@ import AppFooter from './AppFooter.vue';
 import AppSidebar from './AppSidebar.vue';
 import AppTopbar from './AppTopbar.vue';
 import { useToast } from 'primevue/usetoast';
-// --- INICIO: Añadidos para el banner ---
 import { Link } from '@inertiajs/vue3';
-// --- FIN: Añadidos para el banner ---
+import SessionClosedModal from '@/Components/SessionClosedModal.vue';
 
 defineProps({
     title: String,
@@ -16,32 +15,27 @@ defineProps({
 
 const page = usePage();
 
-// --- INICIO: Lógica del Banner de Suscripción ---
+// --- Lógica del Banner de Suscripción ---
 const subscriptionWarning = computed(() => page.props.auth.subscriptionWarning);
 const isOwner = computed(() => page.props.auth.is_subscription_owner);
-
-// NUEVO: Clases dinámicas para el banner (rojo si expira, amarillo si está por vencer)
 const bannerClasses = computed(() => {
     if (!subscriptionWarning.value) return '';
     return subscriptionWarning.value.isExpired
-        ? 'bg-red-50 border-red-500 text-red-700' // Rojo para expirado
-        : 'bg-yellow-50 border-yellow-500 text-yellow-700'; // Amarillo para advertencia
+        ? 'bg-red-50 border-red-500 text-red-700'
+        : 'bg-yellow-50 border-yellow-500 text-yellow-700';
 });
-
 const bannerIcon = computed(() => {
     if (!subscriptionWarning.value) return '';
     return subscriptionWarning.value.isExpired
-        ? 'pi pi-ban' // Icono de "prohibido" o "expirado"
-        : 'pi pi-exclamation-triangle'; // Icono de advertencia
+        ? 'pi pi-ban'
+        : 'pi pi-exclamation-triangle';
 });
-
 const bannerTitle = computed(() => {
     if (!subscriptionWarning.value) return '';
     return subscriptionWarning.value.isExpired
         ? 'Suscripción Expirada'
         : 'Suscripción por Vencer';
 });
-
 const bannerButtonSeverity = computed(() => {
     if (!subscriptionWarning.value) return 'secondary';
     return subscriptionWarning.value.isExpired
@@ -71,30 +65,35 @@ const handleFlashMessages = (event) => {
     const flash = event.detail.page.props.flash;
     if (flash) {
         if (flash.success) {
-            toast.add({ severity: 'success', summary: 'Éxito', detail: flash.success, life: 5000 });
+            toast.add({ severity: 'success', summary: 'Éxito', detail: flash.success, life: 6000 });
         }
         if (flash.error) {
-            toast.add({ severity: 'error', summary: 'Error', detail: flash.error, life: 5000 });
+            toast.add({ severity: 'error', summary: 'Error', detail: flash.error, life: 6000 });
         }
         if (flash.warning) {
-            toast.add({ severity: 'warn', summary: 'Advertencia', detail: flash.warning, life: 5000 });
+            toast.add({ severity: 'warn', summary: 'Advertencia', detail: flash.warning, life: 6000 });
         }
         if (flash.info) {
-            toast.add({ severity: 'info', summary: 'Información', detail: flash.info, life: 5000 });
+            toast.add({ severity: 'info', summary: 'Información', detail: flash.info, life: 6000 });
         }
     }
 };
 
 onMounted(() => {
     removeFlashListener = router.on('success', handleFlashMessages);
+    // --- AÑADIDO: Escuchar eventos al montar ---
+    listenForSessionEvents(activeSession.value);
 });
 
 onUnmounted(() => {
     if (removeFlashListener) {
         removeFlashListener();
     }
+    // --- AÑADIDO: Dejar de escuchar al desmontar ---
+    leaveSessionChannel(activeSession.value);
 });
 
+// ... (resto de funciones de layout: containerClass, bindOutsideClickListener, etc. sin cambios) ...
 const containerClass = computed(() => {
     return {
         'layout-overlay': layoutConfig.menuMode === 'overlay',
@@ -104,7 +103,6 @@ const containerClass = computed(() => {
         'layout-mobile-active': layoutState.staticMenuMobileActive
     };
 });
-
 function bindOutsideClickListener() {
     if (!outsideClickListener.value) {
         outsideClickListener.value = (event) => {
@@ -117,20 +115,79 @@ function bindOutsideClickListener() {
         document.addEventListener('click', outsideClickListener.value);
     }
 }
-
 function unbindOutsideClickListener() {
     if (outsideClickListener.value) {
         document.removeEventListener('click', outsideClickListener);
         outsideClickListener.value = null;
     }
 }
-
 function isOutsideClicked(event) {
     const sidebarEl = document.querySelector('.layout-sidebar');
     const topbarEl = document.querySelector('.layout-menu-button');
 
     return !(sidebarEl.isSameNode(event.target) || sidebarEl.contains(event.target) || topbarEl.isSameNode(event.target) || topbarEl.contains(event.target));
 }
+
+// --- INICIO: NUEVA LÓGICA DE BROADCASTING ---
+
+const sessionClosedModalVisible = ref(false);
+const closedSessionData = ref(null);
+
+// La sesión activa que viene de Inertia
+const activeSession = computed(() => page.props.activeSession);
+
+/**
+ * Se suscribe al canal privado de la sesión activa.
+ */
+const listenForSessionEvents = (session) => {
+    if (!session || !window.Echo) return;
+    
+    console.log(`[Echo] Subscribing to cash-register-session.${session.id}`);
+    window.Echo.private(`cash-register-session.${session.id}`)
+        .listen('.session.closed', (event) => {
+            console.log('[Echo] Received session.closed event:', event);
+            
+            // Guardamos los datos del evento y mostramos el modal
+            closedSessionData.value = event;
+            sessionClosedModalVisible.value = true;
+            
+            // Forzamos una recarga de Inertia para actualizar el estado global.
+            // Esto hará que `page.props.activeSession` se vuelva `null`
+            // y el resto de la UI reaccione (ej. el AppTopbar).
+            router.reload({ 
+                preserveScroll: true,
+                preserveState: true, // Evita que se pierda el estado de los componentes (ej. filtros)
+                onSuccess: () => {
+                    console.log('Inertia reloaded after session close.');
+                }
+            });
+        });
+};
+
+/**
+ * Abandona el canal de la sesión.
+ */
+const leaveSessionChannel = (session) => {
+    if (!session || !window.Echo) return;
+    console.log(`[Echo] Leaving cash-register-session.${session.id}`);
+    window.Echo.leave(`cash-register-session.${session.id}`);
+};
+
+/**
+ * Observa cambios en la sesión activa (ej. si el usuario se une o sale)
+ * y actualiza las suscripciones de Echo.
+ */
+watch(activeSession, (newSession, oldSession) => {
+    if (oldSession) {
+        leaveSessionChannel(oldSession);
+    }
+    if (newSession) {
+        listenForSessionEvents(newSession);
+    }
+});
+
+// --- FIN: NUEVA LÓGICA DE BROADCASTING ---
+
 </script>
 
 <template>
@@ -140,7 +197,7 @@ function isOutsideClicked(event) {
         <app-topbar></app-topbar>
         <app-sidebar></app-sidebar>
         <div class="layout-main-container">
-            <!-- --- INICIO: Banner de Advertencia de Suscripción (MODIFICADO) --- -->
+            <!-- Banner de Suscripción (sin cambios) -->
             <div v-if="subscriptionWarning && isOwner" 
                  :class="bannerClasses"
                  class="border-l-4 p-1 sticky top-0 z-50 shadow-md mb-2 rounded-lg" 
@@ -160,15 +217,21 @@ function isOutsideClicked(event) {
                     </Link>
                 </div>
             </div>
-            <!-- --- FIN: Banner de Advertencia de Suscripción --- -->
 
             <main class="layout-main">
                 <slot />
             </main>
-            <!-- <app-footer></app-footer> -->
         </div>
         <div class="layout-mask animate-fadein"></div>
     </div>
     <Toast />
     <ConfirmDialog />
+
+    <!-- --- INICIO: NUEVO MODAL AÑADIDO --- -->
+    <SessionClosedModal 
+        :visible="sessionClosedModalVisible" 
+        :event-data="closedSessionData"
+        @update:visible="sessionClosedModalVisible = $event"
+    />
+    <!-- --- FIN: NUEVO MODAL AÑADIDO --- -->
 </template>

@@ -59,7 +59,7 @@ const closeModal = () => {
             <div class="bg-blue-100 dark:bg-blue-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
                 <i class="pi pi-inbox !text-4xl text-blue-500"></i>
             </div>
-            <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200">Apertura de Caja Requerida</h2>
+            <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200">Apertura de caja requerida</h2>
             <p class="text-gray-600 dark:text-gray-400 mt-2">
                 Selecciona una caja, confirma los saldos iniciales y comienza a registrar ventas.
             </p>
@@ -67,7 +67,7 @@ const closeModal = () => {
 
         <form v-if="cashRegisters && cashRegisters.length > 0" @submit.prevent="submit" class="p-2 space-y-6">
             <div>
-                <InputLabel for="cash-register" value="Caja Registradora *" />
+                <InputLabel for="cash-register" value="Caja registradora *" />
                 <Select v-model="form.cash_register_id" :options="cashRegisters" optionLabel="name" optionValue="id" placeholder="Selecciona una caja disponible" class="w-full mt-1" />
                 <InputError :message="form.errors.cash_register_id" class="mt-1" />
             </div>
@@ -75,10 +75,10 @@ const closeModal = () => {
             <Divider />
 
             <div>
-                <h5 class="font-semibold mb-3 text-gray-700 dark:text-gray-300">Saldos Iniciales</h5>
+                <h5 class="font-semibold mb-3 text-gray-700 dark:text-gray-300">Saldos iniciales</h5>
                 <div class="space-y-4 max-h-[40vh] overflow-y-auto pr-2">
                     <div>
-                        <InputLabel for="opening-balance" value="Fondo de Caja Inicial (Efectivo) *" />
+                        <InputLabel for="opening-balance" value="Fondo de caja inicial (efectivo) *" />
                         <InputNumber id="opening-balance" v-model="form.opening_cash_balance" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" inputClass="w-full" />
                         <InputError :message="form.errors.opening_cash_balance" class="mt-1" />
                     </div>
@@ -94,7 +94,7 @@ const closeModal = () => {
 
              <div class="flex justify-end gap-2 pt-4 border-t dark:border-gray-700">
                 <Button type="button" label="Cancelar" severity="secondary" @click="closeModal" text></Button>
-                <Button type="submit" label="Iniciar Sesión" icon="pi pi-check" :loading="form.processing"></Button>
+                <Button type="submit" label="Iniciar sesión" icon="pi pi-check" :loading="form.processing"></Button>
             </div>
         </form>
         <div v-else class="p-4">

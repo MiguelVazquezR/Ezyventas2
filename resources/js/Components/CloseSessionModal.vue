@@ -98,7 +98,7 @@ const submitFinalClose = () => {
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" modal header="Cerrar Sesión de Caja" :style="{ width: '35rem' }">
+    <Dialog :visible="visible" @update:visible="closeModal" modal header="Cerrar sesión de caja" :style="{ width: '35rem' }">
         <div v-if="session" class="p-2">
 
             <!-- VISTA 1: Elección para Múltiples Usuarios -->
@@ -110,12 +110,12 @@ const submitFinalClose = () => {
                         Además de ti, <strong>{{ otherUsers.map(u => u.name).join(', ') }}</strong> también está(n) en esta sesión. ¿Qué deseas hacer?
                     </p>
                 </div>
-                <div class="mt-6 space-y-3">
+                <div class="mt-4 space-y-3">
                      <Button @click="view = 'confirmClose'" severity="danger" outlined class="w-full text-left p-button-lg" >
                         <div class="flex items-center">
                             <i class="pi pi-power-off text-xl"></i>
                             <div class="ml-4 text-left">
-                                <span class="font-bold">Realizar Corte de Caja</span>
+                                <span class="font-bold">Realizar corte de caja</span>
                                 <p class="font-normal text-sm whitespace-normal">Esto cerrará la sesión para TODOS y requerirá el conteo de efectivo.</p>
                             </div>
                         </div>
@@ -124,7 +124,7 @@ const submitFinalClose = () => {
                          <div class="flex items-center">
                             <i class="pi pi-sign-out text-xl"></i>
                             <div class="ml-4 text-left">
-                                <span class="font-bold">Solo Salir de la Sesión</span>
+                                <span class="font-bold">Solo salir de la sesión</span>
                                 <p class="font-normal text-sm whitespace-normal">La caja seguirá abierta para los demás. Podrás unirte a otra caja.</p>
                             </div>
                         </div>
@@ -134,36 +134,36 @@ const submitFinalClose = () => {
 
             <!-- VISTA 2: Confirmación antes del corte final -->
              <div v-if="!isLastUser && view === 'confirmClose'">
-                 <div class="text-center p-4 bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 rounded">
+                 <div class="text-center p-3 bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 rounded">
                      <i class="pi pi-exclamation-triangle !text-3xl text-red-500 mb-3"></i>
-                     <h3 class="text-lg font-bold">Confirmación de Cierre Total</h3>
+                     <h3 class="text-lg font-bold">Confirmación de cierre total</h3>
                      <p>Estás a punto de hacer el corte de caja. Esta acción <strong>expulsará a todos los demás usuarios</strong> de la sesión actual.
                      </p>
                  </div>
-                 <div class="flex justify-end gap-2 mt-6">
+                 <div class="flex justify-end gap-2 mt-4">
                      <Button label="Regresar" icon="pi pi-arrow-left" @click="view = 'initial'" text />
-                     <Button label="Continuar con el Corte" @click="view = 'finalClose'" severity="danger" />
+                     <Button label="Continuar con el corte" @click="view = 'finalClose'" severity="danger" />
                  </div>
              </div>
 
             <!-- VISTA 3: El Corte de Caja Final (para el último usuario o después de confirmar) -->
             <div v-if="isLastUser || view === 'finalClose'">
-                <div class="space-y-4">
+                <div class="space-y-2">
                     <!-- Resumen de Efectivo -->
-                    <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                        <h3 class="font-bold text-lg mb-2 text-center">Resumen de Efectivo</h3>
+                    <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
+                        <h6 class="font-bold mb-2 text-center">Resumen de efectivo</h6>
                         <div class="space-y-2 text-sm">
-                            <div class="flex justify-between"><span>Fondo Inicial:</span> <span class="font-semibold">{{ formatCurrency(session.opening_cash_balance) }}</span></div>
-                            <div class="flex justify-between"><span>(+) Ventas en Efectivo:</span> <span class="font-semibold text-green-600">+ {{ formatCurrency(cashSales) }}</span></div>
+                            <div class="flex justify-between"><span>Fondo inicial:</span> <span class="font-semibold">{{ formatCurrency(session.opening_cash_balance) }}</span></div>
+                            <div class="flex justify-between"><span>(+) Ventas en efectivo:</span> <span class="font-semibold text-green-600">+ {{ formatCurrency(cashSales) }}</span></div>
                             <div class="flex justify-between"><span>(+) Entradas:</span> <span class="font-semibold text-green-600">+ {{ formatCurrency(inflows) }}</span></div>
                             <div class="flex justify-between"><span>(-) Salidas:</span> <span class="font-semibold text-red-500">- {{ formatCurrency(outflows) }}</span></div>
-                            <div class="flex justify-between font-bold border-t pt-2 mt-2"><span>Total Esperado:</span> <span>{{ formatCurrency(expectedCashTotal) }}</span></div>
+                            <div class="flex justify-between font-bold border-t pt-2 mt-2"><span>Total esperado:</span> <span>{{ formatCurrency(expectedCashTotal) }}</span></div>
                         </div>
                     </div>
                     
                     <!-- AÑADIDO: Resumen de otros métodos de pago -->
-                    <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-                        <h5 class="font-semibold text-center text-md mb-2">Otros métodos de pago (informativo)</h5>
+                    <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
+                        <h6 class="font-semibold text-center text-md mb-2">Otros métodos de pago (informativo)</h6>
                         <div class="space-y-2 text-sm">
                             <div class="flex justify-between">
                                 <span><i class="pi pi-credit-card mr-2 text-blue-500"></i>Ventas con tarjeta:</span> 
@@ -177,9 +177,9 @@ const submitFinalClose = () => {
                     </div>
                 </div>
 
-                <form @submit.prevent="submitFinalClose" class="space-y-4 mt-6">
+                <form @submit.prevent="submitFinalClose" class="space-y-2 mt-4">
                     <div>
-                        <InputLabel for="closing-balance" value="Monto Final en Caja (Conteo Físico) *" />
+                        <InputLabel for="closing-balance" value="Monto final en caja (conteo físico) *" />
                         <InputNumber id="closing-balance" v-model="form.closing_cash_balance" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" inputClass="w-full" />
                         <InputError :message="form.errors.closing_cash_balance" class="mt-1" />
                     </div>
@@ -188,7 +188,7 @@ const submitFinalClose = () => {
                         <span>{{ formatCurrency(cashDifference) }}</span>
                     </div>
                     <div>
-                        <InputLabel for="notes" value="Notas de Cierre" />
+                        <InputLabel for="notes" value="Notas de cierre" />
                         <Textarea id="notes" v-model="form.notes" rows="3" class="w-full mt-1" />
                     </div>
                      <div class="flex justify-end gap-2 mt-4">
