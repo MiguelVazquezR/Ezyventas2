@@ -42,6 +42,7 @@ class User extends Authenticatable
         'phone',
         'is_active',
         'branch_id',
+        'onboarding_completed_at',
     ];
 
     /**
@@ -75,6 +76,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'onboarding_completed_at' => 'datetime',
         ];
     }
 

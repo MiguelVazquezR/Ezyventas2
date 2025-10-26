@@ -39,7 +39,7 @@ createInertiaApp({
                                 monthNamesShort: ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'],
                                 today: 'Hoy',
                                 weekHeader: 'Sm',
-                                weak: 'Semana',
+                                weak: 'Débil',
                                 passwordPrompt: 'Ingrese una contraseña',
                                 emptyMessage: 'No se encontraron resultados',
                                 pending: 'Pendiente'
