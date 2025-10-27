@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Link, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Card from 'primevue/card';
 import Checkbox from 'primevue/checkbox';
@@ -95,9 +95,7 @@ const submit = () => {
 </script>
 
 <template>
-
-    <Head title="Mejorar Suscripción" />
-    <AppLayout>
+    <AppLayout title="Mejorar suscripción">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6">

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { Head, useForm, router, Link } from '@inertiajs/vue3';
+import { useForm, router, Link } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -218,8 +218,7 @@ const getInvoiceStatusTag = (status) => {
 </script>
 
 <template>
-    <Head title="Mi Suscripción" />
-    <AppLayout>
+    <AppLayout title="Mi suscripción">
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6">
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Mi suscripción</h1>

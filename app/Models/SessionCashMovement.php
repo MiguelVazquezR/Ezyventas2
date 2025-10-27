@@ -15,7 +15,7 @@ class SessionCashMovement extends Model
     protected $table = 'session_cash_movements';
 
     /**
-     * CORRECCIÓN: Se añade 'user_id' para poder asociar el movimiento a un usuario.
+     * Se añade 'user_id' para poder asociar el movimiento a un usuario.
      */
     protected $fillable = ['cash_register_session_id', 'user_id', 'type', 'amount', 'description', 'created_at', 'updated_at'];
 
@@ -30,7 +30,7 @@ class SessionCashMovement extends Model
     }
 
     /**
-     * CORRECCIÓN: Se añade la relación para obtener el usuario que registró el movimiento.
+     * Se añade la relación para obtener el usuario que registró el movimiento.
      */
     public function user(): BelongsTo
     {

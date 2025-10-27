@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Link, useForm } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { v4 as uuidv4 } from 'uuid';
@@ -169,8 +169,7 @@ const barcodeTypeOptions = ref(['CODE128', 'CODE39', 'EAN13', 'UPC-A']);
 </script>
 
 <template>
-    <Head title="Editar Plantilla de Ticket" />
-    <AppLayout>
+    <AppLayout title="Editar plantilla de ticket">
         <div class="flex h-[calc(100vh-8rem)]">
             <!-- Columna de Herramientas -->
             <div class="w-1/4 border-r dark:border-gray-700 p-4 overflow-y-auto">

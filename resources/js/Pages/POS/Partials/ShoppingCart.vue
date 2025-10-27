@@ -1,12 +1,12 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { useConfirm } from "primevue/useconfirm";
-import CartItem from './CartItem.vue';
+import CartItem from './CartItem.vue'; // <-- Importado correctamente
 import CreateCustomerModal from '@/Components/CreateCustomerModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
 
 const props = defineProps({
-    items: Array,
+    items: Array, // <-- Recibe los items con precio ya calculado y flags (isTierPrice, isManualPrice)
     client: Object,
     customers: Array,
     defaultCustomer: Object,
@@ -37,13 +37,19 @@ const handleCustomerCreated = (newCustomer) => emit('customerCreated', newCustom
 
 // --- LÓGICA DE CÁLCULO DE TOTALES Y PROMOCIONES ---
 
-// Descuentos aplicados a nivel de ítem (ITEM_DISCOUNT)
+// Descuentos aplicados a nivel de ítem (ITEM_DISCOUNT o manual)
+// Se calcula usando la diferencia entre el precio original base y el precio final del item
 const itemsDiscount = computed(() => {
     return props.items.reduce((total, item) => {
-        const discountPerItem = (item.original_price || item.price) - item.price;
-        return total + (discountPerItem * item.quantity);
+        // Usar original_price del item si existe, si no, el precio actual como base
+        // Esto asegura que si no hubo promo ni tier, el original_price = price
+        const basePrice = item.original_price ?? item.price;
+        const discountPerItem = basePrice - item.price;
+        // Solo sumar si el descuento es positivo (evitar sumar si el precio manual es mayor que el original)
+        return total + (discountPerItem > 0 ? (discountPerItem * item.quantity) : 0);
     }, 0);
 });
+
 
 // Descuentos dinámicos aplicados a nivel de carrito (BOGO, BUNDLE)
 const cartLevelDiscounts = computed(() => {
@@ -62,8 +68,10 @@ const cartLevelDiscounts = computed(() => {
                 const freeItemInCart = props.items.find(i => i.id === effect.itemable_id);
                 if (freeItemInCart) {
                     const timesApplied = Math.floor(itemInCart.quantity / parseInt(rule.value, 10));
+                    // Cantidad real gratuita no puede exceder la cantidad en carrito
                     const actualFreeQty = Math.min(timesApplied * parseInt(effect.value, 10), freeItemInCart.quantity);
                     if (actualFreeQty > 0) {
+                         // El descuento es el precio actual del item gratuito por la cantidad gratuita
                         applied.push({ name: promo.name, amount: freeItemInCart.price * actualFreeQty });
                     }
                 }
@@ -72,34 +80,38 @@ const cartLevelDiscounts = computed(() => {
 
         // Lógica para BUNDLE_PRICE (Paquete por precio fijo)
         if (promo.type === 'BUNDLE_PRICE') {
-            // CORRECCIÓN: Se cambió 'REQUIRES_PRODUCT_QUANTITY' por 'REQUIRES_PRODUCT'
             const rules = promo.rules.filter(r => r.type === 'REQUIRES_PRODUCT');
             const effect = promo.effects.find(e => e.type === 'SET_PRICE');
             if (rules.length === 0 || !effect) return;
 
+            // Calcular cuántas veces se puede aplicar el paquete completo
             const canApplyBundleTimes = rules.reduce((minTimes, rule) => {
                 const itemInCart = props.items.find(cartItem => cartItem.id === rule.itemable_id);
                 const requiredQty = parseInt(rule.value, 10);
                 if (!itemInCart || itemInCart.quantity < requiredQty) {
-                    return 0; // Si falta un producto o la cantidad no es suficiente, no se puede aplicar el paquete.
+                    return 0; // No se puede aplicar si falta un item o cantidad
                 }
-                // Calcula cuántas veces se podría aplicar el paquete basado en este único producto.
                 const possibleApplications = Math.floor(itemInCart.quantity / requiredQty);
-                // Nos quedamos con el número mínimo de aplicaciones posibles entre todos los productos.
                 return Math.min(minTimes, possibleApplications);
-            }, Infinity);
+            }, Infinity); // Empezar con infinito para que el primer min funcione
 
+            // Si se puede aplicar al menos una vez
             if (canApplyBundleTimes > 0 && canApplyBundleTimes !== Infinity) {
+                // Calcular el precio original SUMANDO los precios ORIGINALES BASE de los items del paquete
                 const originalBundlePrice = rules.reduce((sum, rule) => {
                     const item = props.items.find(cartItem => cartItem.id === rule.itemable_id);
-                    // El precio original se multiplica por la cantidad requerida para UN solo paquete.
-                    return sum + (item.original_price || item.price) * parseInt(rule.value, 10);
+                    // Usar original_price del item (que es el precio base antes de promos/tiers)
+                    const basePrice = item.original_price ?? item.price;
+                    return sum + basePrice * parseInt(rule.value, 10); // Multiplicar por cantidad requerida para UN paquete
                 }, 0);
 
-                const discountAmount = originalBundlePrice - parseFloat(effect.value);
-                if (discountAmount > 0) {
-                    // El descuento total es el ahorro de un paquete por el número de veces que se puede aplicar.
-                    applied.push({ name: promo.name, amount: discountAmount * canApplyBundleTimes });
+                // Calcular el descuento por paquete
+                const bundleSetPrice = parseFloat(effect.value);
+                const discountAmountPerBundle = originalBundlePrice - bundleSetPrice;
+
+                if (discountAmountPerBundle > 0) {
+                     // El descuento total es el ahorro por paquete * número de veces aplicado
+                    applied.push({ name: promo.name, amount: discountAmountPerBundle * canApplyBundleTimes });
                 }
             }
         }
@@ -107,29 +119,42 @@ const cartLevelDiscounts = computed(() => {
     return applied;
 });
 
+// Nombres únicos de las promociones de carrito aplicadas
 const appliedCartPromoNames = computed(() => {
     return new Set(cartLevelDiscounts.value.map(d => d.name));
 });
 
-
+// Suma de todos los descuentos de nivel carrito
 const cartDiscountAmount = computed(() => cartLevelDiscounts.value.reduce((sum, promo) => sum + promo.amount, 0));
-const subtotal = computed(() => props.items.reduce((total, item) => total + ((item.original_price || item.price) * item.quantity), 0));
-const manualDiscount = ref(0);
+
+// Subtotal bruto ANTES de cualquier descuento (usa original_price)
+const subtotal = computed(() => props.items.reduce((total, item) => total + ((item.original_price ?? item.price) * item.quantity), 0));
+
+// Descuento manual (opcional, si lo implementas)
+const manualDiscount = ref(0); // Podrías añadir un input para esto si quieres
+
+// Descuento total (suma de descuentos de item + descuentos de carrito + manual)
 const totalDiscount = computed(() => itemsDiscount.value + cartDiscountAmount.value + manualDiscount.value);
+
+// Total final a pagar
 const total = computed(() => subtotal.value - totalDiscount.value);
 
+
+// --- Lógica Modal Pago ---
 const isPaymentModalVisible = ref(false);
 
+// Emitir datos de checkout (sin cambios)
 const handlePaymentSubmit = (paymentData) => {
     isPaymentModalVisible.value = false;
     emit('checkout', {
         ...paymentData,
         subtotal: subtotal.value,
         total: total.value,
-        total_discount: totalDiscount.value,
+        total_discount: totalDiscount.value, // Asegurarse de enviar el total de descuentos
     });
 };
 
+// Formateador de moneda (sin cambios)
 const formatCurrency = (value) => {
     return new Intl.NumberFormat('es-MX', {
         style: 'currency',
@@ -142,17 +167,17 @@ const formatCurrency = (value) => {
     <div>
         <ConfirmPopup group="cart-actions"></ConfirmPopup>
         <div
-            class="bg-[#E6E6E6] p-3 rounded-xl shadow-md border border-[#D9D9D9] h-full flex flex-col dark:bg-gray-800">
+            class="bg-[#E6E6E6] p-3 rounded-xl shadow-md border border-[#D9D9D9] h-full flex flex-col dark:bg-gray-800 dark:border-gray-700">
             <!-- Header -->
             <div class="flex justify-between items-center pb-4 border-b border-gray-200 dark:border-gray-700">
                 <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Carrito</h2>
                 <div class="flex items-center gap-2">
                     <Button @click="$emit('saveCart', { total: total })" :disabled="items.length === 0"
                         icon="pi pi-save" rounded variant="outlined" severity="secondary"
-                        v-tooltip.bottom="'Guardar para después'" size="small" class="!bg-white !size-7" />
+                        v-tooltip.bottom="'Guardar para después'" size="small" class="!bg-white dark:!bg-gray-700 !size-7" />
                     <Button @click="requireConfirmation($event)" :disabled="items.length === 0" icon="pi pi-trash"
                         rounded variant="outlined" severity="danger" v-tooltip.bottom="'Limpiar carrito'" size="small"
-                        class="!bg-white !size-7" />
+                        class="!bg-white dark:!bg-gray-700 !size-7" />
                 </div>
             </div>
 
@@ -164,6 +189,7 @@ const formatCurrency = (value) => {
                     <Button @click="isCreateCustomerModalVisible = true" rounded icon="pi pi-plus" size="small"
                         severity="contrast" />
                 </div>
+                <!-- Detalles del Cliente Seleccionado -->
                 <div class="bg-white dark:bg-gray-700 p-2 rounded-[10px]">
                     <div v-if="displayedCustomer" class="flex items-center justify-between pb-2">
                         <div class="flex items-center gap-3">
@@ -179,23 +205,19 @@ const formatCurrency = (value) => {
                         <Button v-if="client" @click="clearCustomer" icon="pi pi-times" rounded variant="outlined"
                             severity="secondary" size="small" class="!size-6" />
                     </div>
-                    <div v-if="client" class="py-2 border-t space-y-2">
+                    <!-- Saldo y Crédito (si hay cliente seleccionado) -->
+                    <div v-if="client" class="py-2 border-t dark:border-gray-600 space-y-2">
                         <div class="flex justify-between text-sm">
                             <span class="text-gray-600 dark:text-gray-300">Saldo:</span>
-                            <span :class="(client.balance || 0) >= 0 ? 'text-green-600' : 'text-red-600'"
+                            <span :class="(client.balance || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
                                 class="font-bold">
-                                {{ new Intl.NumberFormat('es-MX', {
-                                    style: 'currency', currency: 'MXN'
-                                }).format(client.balance
-                                    || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' : '' }}
+                                {{ formatCurrency(client.balance || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' : '' }}
                             </span>
                         </div>
                         <div class="flex justify-between text-sm">
                             <span class="text-gray-600 dark:text-gray-300">Crédito Disponible:</span>
-                            <span class="font-bold text-blue-600">
-                                {{ new Intl.NumberFormat('es-MX', {
-                                    style: 'currency', currency: 'MXN'
-                                }).format(client.available_credit || 0) }}
+                            <span class="font-bold text-blue-600 dark:text-blue-400">
+                                {{ formatCurrency(client.available_credit || 0) }}
                             </span>
                         </div>
                     </div>
@@ -210,50 +232,63 @@ const formatCurrency = (value) => {
             <div class="flex-grow py-1 overflow-y-auto space-y-2">
                 <p v-if="items.length === 0" class="text-gray-500 dark:text-gray-400 text-center mt-8">El carrito está
                     vacío</p>
-                <CartItem v-for="item in items" :key="item.cartItemId" :item="item"
-                    :applied-cart-promo-names="appliedCartPromoNames" @update-quantity="$emit('updateQuantity', $event)"
-                    @update-price="$emit('updatePrice', $event)" @remove-item="$emit('removeItem', $event)" />
+                <!-- Pasar el item completo a CartItem, incluyendo isTierPrice y isManualPrice -->
+                <CartItem
+                    v-for="item in items"
+                    :key="item.cartItemId"
+                    :item="item"
+                    :applied-cart-promo-names="appliedCartPromoNames"
+                    @update-quantity="$emit('updateQuantity', $event)"
+                    @update-price="$emit('updatePrice', $event)"
+                    @remove-item="$emit('removeItem', $event)" />
             </div>
 
             <!-- Detalles del Pago -->
-            <div class="mt-4 p-2 rounded-[10px] border border-[#D9D9D9] bg-white dark:bg-gray-900 space-y-1">
+            <div class="mt-4 p-2 rounded-[10px] border border-[#D9D9D9] bg-white dark:bg-gray-900 dark:border-gray-700 space-y-1">
+                <!-- Subtotal -->
                 <div class="flex justify-between items-center text-gray-600 dark:text-gray-300">
                     <span>Subtotal</span><span class="font-medium">{{ formatCurrency(subtotal) }}</span>
                 </div>
 
-                <div v-if="totalDiscount > 0" class="text-red-500">
+                <!-- Descuentos (si hay) -->
+                <div v-if="totalDiscount > 0" class="text-red-500 dark:text-red-400">
                     <div class="flex justify-between items-center">
                         <span>Descuentos</span>
                         <span class="font-medium">-{{ formatCurrency(totalDiscount) }}</span>
                     </div>
+                    <!-- Detalle de descuentos de carrito -->
                     <div v-for="promo in cartLevelDiscounts" :key="promo.name"
                         class="flex justify-between items-center pl-4 text-xs">
                         <span>{{ promo.name }}</span>
                         <span>-{{ formatCurrency(promo.amount) }}</span>
                     </div>
+                     <!-- Podrías añadir aquí un detalle del descuento manual si lo implementas -->
                 </div>
-                
+
+                <!-- Total Final -->
                 <div
-                    class="flex justify-between items-center font-bold text-lg text-gray-800 dark:text-gray-100 border-t border-dashed border-[#D9D9D9] pt-1">
+                    class="flex justify-between items-center font-bold text-lg text-gray-800 dark:text-gray-100 border-t border-dashed border-[#D9D9D9] dark:border-gray-700 pt-1">
                     <span>Total</span><span>{{ formatCurrency(total) }}</span>
                 </div>
 
+                <!-- Botón Pagar/Finalizar -->
                 <Button @click="isPaymentModalVisible = true" :disabled="items.length === 0"
-                    :label="client && total <= (client.available_credit || 0) ? 'Finalizar' : 'Pagar'"
+                     :label="(client && total <= 0 && client.balance >= total) || total === 0 ? 'Finalizar' : 'Pagar'"
                     icon="pi pi-arrow-right" iconPos="right"
                     class="w-full mt-2 bg-orange-500 hover:bg-orange-600 border-none" />
             </div>
         </div>
 
+        <!-- Modales -->
         <CreateCustomerModal v-model:visible="isCreateCustomerModalVisible" @created="handleCustomerCreated" />
-        <PaymentModal 
-            v-model:visible="isPaymentModalVisible" 
-            :total-amount="total" 
+        <PaymentModal
+            v-model:visible="isPaymentModalVisible"
+            :total-amount="total"
             :client="client"
             :customers="customers"
             @update:client="$emit('selectCustomer', $event)"
             @customer-created="$emit('customerCreated', $event)"
-            @submit="handlePaymentSubmit" 
+            @submit="handlePaymentSubmit"
         />
     </div>
 </template>

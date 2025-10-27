@@ -8,7 +8,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
@@ -27,10 +26,12 @@ class Subscription extends Model implements HasMedia
         'tax_id',
         'address',
         'slug',
+        'onboarding_completed_at',
     ];
 
     protected $casts = [
         'address' => 'array',
+        'onboarding_completed_at' => 'datetime',
         'status' => SubscriptionStatus::class,
     ];
 

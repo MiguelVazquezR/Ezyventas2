@@ -12,8 +12,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\Promotion;
 use App\Models\Provider;
-use App\Services\TinifyService;
-use App\Traits\OptimizeMediaWithTinify; // <-- 1. Importar el Trait
+use App\Traits\OptimizeMediaLocal;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -28,15 +27,7 @@ use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 class ProductController extends Controller implements HasMiddleware
 {
-    use OptimizeMediaWithTinify; // <-- 2. Usar el Trait
-
-    protected $tinifyService; // El Trait necesita esta propiedad
-
-    // Inyección de TinifyService sigue siendo necesaria para el Trait
-    public function __construct(TinifyService $tinifyService)
-    {
-        $this->tinifyService = $tinifyService;
-    }
+    use OptimizeMediaLocal;
 
     public static function middleware(): array
     {
@@ -114,7 +105,7 @@ class ProductController extends Controller implements HasMiddleware
         ]);
     }
 
-   public function create(): Response
+    public function create(): Response
     {
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
@@ -180,7 +171,7 @@ class ProductController extends Controller implements HasMiddleware
                     $mediaItem = $product->addMediaFromRequest("general_images.{$key}")
                         ->toMediaCollection('product-general-images');
                     // <-- 3. Usar método del Trait -->
-                    $this->optimizeAndTrackMedia($mediaItem);
+                    $this->optimizeMediaLocal($mediaItem);
                 }
             }
             if ($request->hasFile('variant_images')) {
@@ -188,8 +179,8 @@ class ProductController extends Controller implements HasMiddleware
                     $mediaItem = $product->addMediaFromRequest("variant_images.{$optionValue}")
                         ->withCustomProperties(['variant_option' => $optionValue])
                         ->toMediaCollection('product-variant-images');
-                     // <-- 3. Usar método del Trait -->
-                    $this->optimizeAndTrackMedia($mediaItem);
+                    // <-- 3. Usar método del Trait -->
+                    $this->optimizeMediaLocal($mediaItem);
                 }
             }
 
@@ -282,7 +273,7 @@ class ProductController extends Controller implements HasMiddleware
             $product->update($productData);
 
             if (!empty($validatedData['deleted_media_ids'])) {
-                 // Use Spatie's method to delete media by ID
+                // Use Spatie's method to delete media by ID
                 $product->media()->whereIn('id', $validatedData['deleted_media_ids'])->each(function (Media $media) {
                     $media->delete();
                 });
@@ -292,14 +283,14 @@ class ProductController extends Controller implements HasMiddleware
                 foreach (array_keys($request->file('general_images')) as $key) {
                     $mediaItem = $product->addMediaFromRequest("general_images.{$key}")->toMediaCollection('product-general-images');
                     // <-- 3. Usar método del Trait -->
-                    $this->optimizeAndTrackMedia($mediaItem);
+                    $this->optimizeMediaLocal($mediaItem);
                 }
             }
             if ($request->hasFile('variant_images')) {
                 foreach (array_keys($request->file('variant_images')) as $optionValue) {
-                   $mediaItem = $product->addMediaFromRequest("variant_images.{$optionValue}")->withCustomProperties(['variant_option' => $optionValue])->toMediaCollection('product-variant-images');
-                   // <-- 3. Usar método del Trait -->
-                   $this->optimizeAndTrackMedia($mediaItem);
+                    $mediaItem = $product->addMediaFromRequest("variant_images.{$optionValue}")->withCustomProperties(['variant_option' => $optionValue])->toMediaCollection('product-variant-images');
+                    // <-- 3. Usar método del Trait -->
+                    $this->optimizeMediaLocal($mediaItem);
                 }
             }
 
@@ -319,9 +310,8 @@ class ProductController extends Controller implements HasMiddleware
                     ]);
                 }
             } elseif ($product->product_type === 'simple') {
-                 $product->productAttributes()->delete();
+                $product->productAttributes()->delete();
             }
-
         });
 
         return redirect()->route('products.index')->with('success', 'Producto actualizado con éxito.');
@@ -339,13 +329,13 @@ class ProductController extends Controller implements HasMiddleware
         ]);
 
         $promotions = Promotion::query()
-             // Check if the product is directly involved in rules or effects
+            // Check if the product is directly involved in rules or effects
             ->where(function ($query) use ($product) {
                 $query->whereHas('rules', fn($subQuery) => $subQuery->whereMorphedTo('itemable', $product))
-                      ->orWhereHas('effects', fn($subQuery) => $subQuery->whereMorphedTo('itemable', $product));
+                    ->orWhereHas('effects', fn($subQuery) => $subQuery->whereMorphedTo('itemable', $product));
             })
-             // Also include promotions that apply globally or by category/brand if needed
-             // ->orWhere(function ($query) use ($product) { ... add logic for broader promotion applicability ... })
+            // Also include promotions that apply globally or by category/brand if needed
+            // ->orWhere(function ($query) use ($product) { ... add logic for broader promotion applicability ... })
             ->with(['rules.itemable', 'effects.itemable'])
             ->get();
 
@@ -357,7 +347,7 @@ class ProductController extends Controller implements HasMiddleware
             $oldProps = $activity->properties->get('old', []);
             $newProps = $activity->properties->get('attributes', []);
 
-             if (is_array($oldProps)) {
+            if (is_array($oldProps)) {
                 foreach ($oldProps as $key => $value) {
                     $changes['before'][($translations[$key] ?? $key)] = $value;
                 }

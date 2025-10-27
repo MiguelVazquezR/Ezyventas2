@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Link, useForm } from '@inertiajs/vue3';
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -271,9 +271,7 @@ const dpiOptions = ref([203, 300, 600]);
 </script>
 
 <template>
-
-    <Head title="Crear Plantilla de Etiqueta" />
-    <AppLayout>
+    <AppLayout title="Crear plantilla de etiqueta">
         <div v-if="limitReached" class="h-[calc(100vh-6rem)] flex items-center justify-center p-4">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
                 <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>

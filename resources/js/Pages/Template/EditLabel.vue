@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Link, useForm } from '@inertiajs/vue3';
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -257,8 +257,7 @@ const dpiOptions = ref([203, 300, 600]);
 </script>
 
 <template>
-    <Head title="Editar Plantilla de Etiqueta" />
-    <AppLayout>
+    <AppLayout title="Editar plantilla de etiqueta">
         <div class="flex h-[calc(100vh-6rem)]">
             <!-- Columna de Herramientas -->
             <div class="w-1/4 border-r dark:border-gray-700 p-4 overflow-y-auto">

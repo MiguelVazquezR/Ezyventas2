@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
@@ -272,9 +272,7 @@ watch(activeSession, (newSession) => {
 </script>
 
 <template>
-
-    <Head title="Crear Orden de Servicio" />
-    <AppLayout>
+    <AppLayout title="Crear orden de servicio">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="mt-4">
             <h1 class="text-2xl font-bold">Registrar Nueva Orden de Servicio</h1>

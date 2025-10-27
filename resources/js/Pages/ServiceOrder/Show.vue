@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, provide } from 'vue';
-import { Head, router, usePage, useForm } from '@inertiajs/vue3';
+import { router, usePage, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from "primevue/usetoast";
@@ -317,9 +317,7 @@ const getPaymentMethodIcon = (method) => {
 </script>
 
 <template>
-
-    <Head :title="`Orden de Servicio #${serviceOrder.folio || serviceOrder.id}`" />
-    <AppLayout>
+    <AppLayout :title="`Orden de servicio #${serviceOrder.folio || serviceOrder.id}`">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
 
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">

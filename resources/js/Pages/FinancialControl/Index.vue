@@ -498,6 +498,9 @@ const getTransactionStatusTagSeverity = (status) => {
                         <Tag :value="data.status" :severity="getTransactionStatusTagSeverity(data.status)" />
                     </template>
                 </Column>
+                <template #empty>
+                    <div class="p-4 text-center text-gray-500"> No hay ventas registradas en este periodo. </div>
+                </template>
             </DataTable>
         </Dialog>
 
@@ -528,12 +531,15 @@ const getTransactionStatusTagSeverity = (status) => {
                 <Column field="amount" header="Monto" sortable> <template #body="{ data }"> <span
                             class="font-mono font-semibold">{{ formatCurrency(data.amount) }}</span> </template>
                 </Column>
+                 <template #empty>
+                    <div class="p-4 text-center text-gray-500"> No hay pagos registrados en este periodo. </div>
+                </template>
             </DataTable>
         </Dialog>
 
         <!-- MODAL: Detalle de Gastos Totales -->
         <Dialog v-model:visible="isAllExpensesModalVisible" header="Detalle de gastos totales del periodo" modal
-            class="w-full max-w-4xl mx-4">
+            class="w-full max-w-5xl mx-4">
             <DataTable :value="detailedExpenses" paginator :rows="10" class="p-datatable-sm" sortMode="multiple"
                 :multiSortMeta="[{ field: 'expense_date', order: -1 }]"
                 emptyMessage="No hay gastos registrados en este periodo." responsiveLayout="scroll">
@@ -558,6 +564,9 @@ const getTransactionStatusTagSeverity = (status) => {
                 <Column field="amount" header="Monto" sortable> <template #body="{ data }"> <span
                             class="font-mono font-semibold">{{ formatCurrency(data.amount) }}</span> </template>
                 </Column>
+                 <template #empty>
+                    <div class="p-4 text-center text-gray-500"> No hay gastos registrados en este periodo. </div>
+                </template>
             </DataTable>
         </Dialog>
 

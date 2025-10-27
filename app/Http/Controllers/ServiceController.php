@@ -13,19 +13,11 @@ use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Support\Str;
-use App\Services\TinifyService;
-use App\Traits\OptimizeMediaWithTinify;
+use App\Traits\OptimizeMediaLocal;
 
 class ServiceController extends Controller implements HasMiddleware
 {
-    use OptimizeMediaWithTinify;
-
-    protected $tinifyService;
-
-    public function __construct(TinifyService $tinifyService)
-    {
-        $this->tinifyService = $tinifyService;
-    }
+    use OptimizeMediaLocal;
 
     public static function middleware(): array
     {
@@ -100,7 +92,7 @@ class ServiceController extends Controller implements HasMiddleware
 
         if ($request->hasFile('image')) {
             $mediaItem = $service->addMediaFromRequest('image')->toMediaCollection('service-image');
-            $this->optimizeAndTrackMedia($mediaItem);
+            $this->optimizeMediaLocal($mediaItem);
         }
 
         return redirect()->route('services.index')->with('success', 'Servicio creado con éxito.');
@@ -136,7 +128,7 @@ class ServiceController extends Controller implements HasMiddleware
         if ($request->hasFile('image')) {
             $service->clearMediaCollection('service-image');
             $mediaItem = $service->addMediaFromRequest('image')->toMediaCollection('service-image');
-            $this->optimizeAndTrackMedia($mediaItem);
+            $this->optimizeMediaLocal($mediaItem);
         }
 
         return redirect()->route('services.index')->with('success', 'Servicio actualizado con éxito.');

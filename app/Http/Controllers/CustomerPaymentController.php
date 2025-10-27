@@ -135,7 +135,7 @@ class CustomerPaymentController extends Controller
         $branchId = Auth::user()->branch_id;
 
         // Busca la última transacción con un folio 'ABONO-' para esta suscripción
-        $lastTransaction = Transaction::where('branch', $branchId)
+        $lastTransaction = Transaction::where('branch_id', $branchId)
             ->where('folio', 'like', 'ABONO-%')
             ->orderByRaw('CAST(SUBSTRING(folio, 7) AS UNSIGNED) DESC') // 'ABONO-' tiene 6 caracteres
             ->first();

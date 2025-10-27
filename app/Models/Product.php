@@ -22,6 +22,7 @@ class Product extends Model implements HasMedia
         'description',
         'sku',
         'selling_price',
+        'price_tiers',
         'cost_price',
         'current_stock',
         'min_stock',
@@ -58,6 +59,7 @@ class Product extends Model implements HasMedia
     {
         return [
             'selling_price' => 'decimal:2',
+            'price_tiers' => 'array',
             'cost_price' => 'decimal:2',
             'online_price' => 'decimal:2',
             'sale_price' => 'decimal:2',
@@ -85,6 +87,7 @@ class Product extends Model implements HasMedia
                 'description',
                 'sku',
                 'selling_price',
+                'price_tiers',
                 'cost_price',
                 'current_stock',
                 'min_stock',
