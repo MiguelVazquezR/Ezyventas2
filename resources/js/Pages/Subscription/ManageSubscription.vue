@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
-import { Head, Link, useForm, router } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 // --- Props ---
@@ -209,12 +209,11 @@ const submit = () => {
 </script>
 
 <template>
-    <Head :title="mode === 'upgrade' ? 'Mejorar Suscripción' : 'Renovar Suscripción'" />
-    <AppLayout>
+    <AppLayout :title="mode === 'upgrade' ? 'Mejorar suscripción' : 'Renovar suscripción'">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6">
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{{ mode === 'upgrade' ? 'Mejorar Suscripción' : 'Renovar Suscripción' }}</h1>
+                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{{ mode === 'upgrade' ? 'Mejorar suscripción' : 'Renovar suscripción' }}</h1>
                 <p v-if="mode === 'upgrade'" class="text-gray-500 dark:text-gray-400 mt-1">
                     Añade módulos o incrementa los límites de tu plan actual.
                 </p>
@@ -229,7 +228,7 @@ const submit = () => {
                     
                     <!-- Selector de Periodo (solo en renovación) -->
                     <Card v-if="mode === 'renew'">
-                        <template #title>Periodo de Facturación</template>
+                        <template #title>Periodo de facturación</template>
                         <template #content>
                             <SelectButton 
                                 v-model="billingPeriod" 
@@ -295,7 +294,7 @@ const submit = () => {
                 <!-- Columna de Resumen -->
                 <div class="lg:col-span-1">
                     <Card class="sticky top-24">
-                        <template #title>Resumen de Pago</template>
+                        <template #title>Resumen de pago</template>
                         <template #content>
                             <div class="space-y-3">
                                 <!-- Mensaje de Prorrateo -->
@@ -328,7 +327,7 @@ const submit = () => {
                                 
                                 <Divider />
                                 <div class="flex justify-between items-center font-bold text-lg">
-                                    <span>{{ mode === 'upgrade' ? 'Total a Pagar Hoy' : 'Total del Periodo' }}:</span>
+                                    <span>{{ mode === 'upgrade' ? 'Total a pagar hoy' : 'Total del periodo' }}:</span>
                                     <span>{{ formatCurrency(form.total_amount) }}</span>
                                 </div>
                                 <Button 

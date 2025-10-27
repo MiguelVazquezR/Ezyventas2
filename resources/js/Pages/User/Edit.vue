@@ -1,6 +1,6 @@
 <script setup>
 import { ref, nextTick, markRaw } from 'vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Link, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -56,9 +56,7 @@ const handleRoleCreated = (newRole) => {
 </script>
 
 <template>
-
-    <Head title="Editar Usuario" />
-    <AppLayout>
+    <AppLayout title="Editar usuario">
         <div class="p-4 md:p-6 lg:p-8">
             <div class="max-w-2xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-md">
                 <div class="p-6 border-b dark:border-gray-700">

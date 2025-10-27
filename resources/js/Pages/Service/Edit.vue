@@ -1,7 +1,7 @@
 <script setup>
 // Script muy similar a Create.vue, pero inicializando el formulario con los datos existentes
 import { ref } from 'vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
@@ -39,9 +39,7 @@ const submit = () => {
 </script>
 
 <template>
-
-    <Head :title="`Editar Servicio: ${form.name}`" />
-    <AppLayout>
+    <AppLayout :title="`Editar servicio: ${form.name}`">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="mt-4">
             <h1 class="text-2xl font-bold">Editar Servicio</h1>

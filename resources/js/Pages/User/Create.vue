@@ -1,6 +1,6 @@
 <script setup>
 import { ref, markRaw, nextTick, computed } from 'vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Link, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -62,9 +62,7 @@ const showRolePermissions = (roleId) => {
 </script>
 
 <template>
-
-    <Head title="Crear Usuario" />
-    <AppLayout>
+    <AppLayout title="Crear usuario">
         <div class="p-4 md:p-6 lg:p-8">
             <!-- AÑADIDO: Mensaje cuando se alcanza el límite -->
             <div v-if="limitReached"

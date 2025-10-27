@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
@@ -36,8 +36,7 @@ const submit = () => {
 </script>
 
 <template>
-    <Head title="Crear Servicio" />
-    <AppLayout>
+    <AppLayout title="Crear servicio">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="mt-4"><h1 class="text-2xl font-bold">Registrar Nuevo Servicio</h1></div>
 

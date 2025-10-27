@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
@@ -78,9 +78,7 @@ const getLevelLabel = (level) => ({ subscription: 'Suscripción', branch: 'Sucur
 </script>
 
 <template>
-
-    <Head title="Configuraciones" />
-    <AppLayout>
+    <AppLayout title="Configuraciones">
         <div class="p-4 md:p-6 lg:p-8">
             <div class="max-w-4xl mx-auto">
                 <header class="mb-6 flex justify-between space-x-3 items-center">

@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import BankAccountHistoryModal from '@/Components/BankAccountHistoryModal.vue';
@@ -77,9 +77,7 @@ const onTransferSuccess = () => {
 </script>
 
 <template>
-
-    <Head title="Dashboard" />
-    <AppLayout>
+    <AppLayout title="Dashboard">
         <div class="p-4 md:p-6 lg:p-8 space-y-6">
             <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Inicio</h1>
 
