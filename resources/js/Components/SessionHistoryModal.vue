@@ -67,7 +67,7 @@ const cashBreakdown = computed(() => {
     const outflows = (props.session.cash_movements || [])
         .filter(m => m.type === 'egreso')
         .reduce((sum, m) => sum + (parseFloat(m.amount) || 0), 0);
-        
+
     return { inflows, outflows };
 });
 
@@ -81,23 +81,50 @@ const totalCash = computed(() => {
 const timelineEvents = computed(() => {
     if (!props.session) return [];
 
-    // --- LÓGICA DE VENTAS (Sin cambios) ---
+    // --- LÓGICA DE VENTAS ---
     const salesEvents = (props.session.transactions || [])
-        .filter(tx => !tx.folio.startsWith('ABONO-')) 
+        .filter(tx => !tx.folio.startsWith('ABONO-'))
         .map(tx => {
             const paymentsForTx = (props.session.payments || [])
                 .filter(p => p && p.transaction_id === tx.id);
             const totalPaid = paymentsForTx.reduce((sum, p) => sum + parseFloat(p.amount), 0);
+
+            // Determinar estado y color basado en tx.status
+            let statusText = 'Venta (Desconocido)';
+            let statusColor = '#64748b'; // Gris por defecto
+            let statusIcon = 'pi pi-shopping-cart'; // Icono por defecto
+
+            switch (tx.status) {
+                case 'completado':
+                    statusText = 'Venta';
+                    statusColor = '#22c55e'; // Verde
+                    break;
+                case 'pendiente':
+                    statusText = 'Venta (Pendiente)';
+                    statusColor = '#f59e0b'; // Amarillo
+                    break;
+                case 'cancelado':
+                    statusText = 'Venta (Cancelada)';
+                    statusColor = '#ef4444'; // Rojo
+                    statusIcon = 'pi pi-times-circle'; // Icono de cancelación
+                    break;
+                case 'reembolsado':
+                    statusText = 'Venta (Reembolsada)';
+                    statusColor = '#3b82f6'; // Azul
+                    statusIcon = 'pi pi-replay'; // Icono de reembolso/replay
+                    break;
+            }
+
             return {
                 type: 'sale',
                 date: tx.created_at,
-                status: tx.status === 'completado' ? 'Venta' : 'Venta (pendiente)',
-                color: tx.status === 'completado' ? '#22c55e' : '#f59e0b',
-                icon: 'pi pi-shopping-cart',
+                status: statusText, // Texto corregido
+                color: statusColor, // Color corregido
+                icon: statusIcon,   // Icono corregido/añadido
                 data: tx,
                 totalSale: parseFloat(tx.total),
                 totalPaid: totalPaid,
-                userName: tx.user?.name || 'N/A' 
+                userName: tx.user?.name || 'N/A'
             };
         });
 
@@ -117,7 +144,7 @@ const timelineEvents = computed(() => {
     const paymentEvents = (props.session.payments || [])
         .filter(p => p.status === 'completado' && !sessionTransactionIds.has(p.transaction_id))
         .map(p => {
-            const tx = p.transaction; 
+            const tx = p.transaction;
             return {
                 type: 'payment',
                 date: p.payment_date || p.created_at,
@@ -125,7 +152,7 @@ const timelineEvents = computed(() => {
                 color: '#8b5cf6',
                 icon: 'pi pi-dollar',
                 data: p,
-                userName: tx?.user?.name || 'N/A', 
+                userName: tx?.user?.name || 'N/A',
                 customerName: tx?.customer?.name || 'Público en general',
                 folio: tx?.folio || 'N/A'
             };
@@ -133,10 +160,10 @@ const timelineEvents = computed(() => {
 
     // --- LÓGICA PARA ABONOS (Sin cambios) ---
     const abonoEvents = (props.session.transactions || [])
-        .filter(tx => tx.folio.startsWith('ABONO-')) 
+        .filter(tx => tx.folio.startsWith('ABONO-'))
         .map(tx => {
             return {
-                type: 'abono', 
+                type: 'abono',
                 date: tx.created_at,
                 status: 'Abono a Saldo',
                 color: '#0ea5e9',
@@ -155,7 +182,8 @@ const timelineEvents = computed(() => {
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" modal header="Historial de la sesión actual" :style="{ width: '50rem' }">
+    <Dialog :visible="visible" @update:visible="closeModal" modal header="Historial de la sesión actual"
+        :style="{ width: '50rem' }">
         <div v-if="session" class="p-1">
             <!-- Sección de Info y Apertura (Sin cambios) -->
             <div class="bg-gray-100 dark:bg-gray-800 p-3 rounded-lg mb-1">
@@ -194,7 +222,8 @@ const timelineEvents = computed(() => {
                                 <dt>Retiros:</dt>
                                 <dd class="font-mono text-red-500">-{{ formatCurrency(cashBreakdown.outflows) }}</dd>
                             </div>
-                            <div class="flex justify-between font-bold text-gray-900 dark:text-white border-t mt-1 pt-1">
+                            <div
+                                class="flex justify-between font-bold text-gray-900 dark:text-white border-t mt-1 pt-1">
                                 <dt>Total efectivo:</dt>
                                 <dd class="font-mono">{{ formatCurrency(totalCash) }}</dd>
                             </div>
@@ -226,9 +255,11 @@ const timelineEvents = computed(() => {
 
             <!-- Historial de Timeline -->
             <div class="max-h-[51vh] overflow-y-auto pr-2 mt-3">
-                 <Timeline v-if="timelineEvents.length > 0" :value="timelineEvents" align="alternate" class="customized-timeline">
+                <Timeline v-if="timelineEvents.length > 0" :value="timelineEvents" align="alternate"
+                    class="customized-timeline">
                     <template #marker="slotProps">
-                        <span class="flex w-8 h-8 items-center justify-center text-white rounded-full z-10 shadow-md" :style="{ backgroundColor: slotProps.item.color }">
+                        <span class="flex w-8 h-8 items-center justify-center text-white rounded-full z-10 shadow-md"
+                            :style="{ backgroundColor: slotProps.item.color }">
                             <i :class="slotProps.item.icon"></i>
                         </span>
                     </template>
@@ -249,7 +280,11 @@ const timelineEvents = computed(() => {
                                     </div>
                                     <div class="flex justify-between">
                                         <span class="text-gray-500">Cliente:</span>
-                                        <span class="font-semibold">{{ slotProps.item.data.customer?.name || 'Público en general' }}</span>
+                                        <span class="font-semibold">
+                                            {{
+                                                slotProps.item.data.customer?.name || 'Público en general'
+                                            }}
+                                        </span>
                                     </div>
                                     <div class="flex justify-between">
                                         <span class="text-gray-500">Cajero:</span>
@@ -258,7 +293,8 @@ const timelineEvents = computed(() => {
                                     <div class="pt-2 border-t mt-2 space-y-1">
                                         <div class="flex justify-between">
                                             <span class="text-gray-500">Total Venta:</span>
-                                            <span class="font-semibold">{{ formatCurrency(slotProps.item.totalSale) }}</span>
+                                            <span class="font-semibold">{{ formatCurrency(slotProps.item.totalSale)
+                                            }}</span>
                                         </div>
                                         <div class="flex justify-between font-bold">
                                             <span>Total Pagado:</span>
@@ -266,17 +302,18 @@ const timelineEvents = computed(() => {
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 <!-- Contenido para Movimientos (type === 'movement') -->
                                 <div v-if="slotProps.item.type === 'movement'" class="text-sm space-y-1">
-                                     <div class="flex justify-between mb-2">
+                                    <div class="flex justify-between mb-2">
                                         <span class="text-gray-500">Realizado por:</span>
                                         <span class="font-semibold">{{ slotProps.item.userName }}</span>
                                     </div>
                                     <p class="text-gray-600 italic">"{{ slotProps.item.data.description }}"</p>
-                                     <div class="flex justify-between font-bold text-base pt-2 border-t mt-2">
+                                    <div class="flex justify-between font-bold text-base pt-2 border-t mt-2">
                                         <span>Monto:</span>
-                                        <span :class="slotProps.item.data.type === 'ingreso' ? 'text-blue-500' : 'text-red-500'">
+                                        <span
+                                            :class="slotProps.item.data.type === 'ingreso' ? 'text-blue-500' : 'text-red-500'">
                                             {{ formatCurrency(slotProps.item.data.amount) }}
                                         </span>
                                     </div>
@@ -285,7 +322,7 @@ const timelineEvents = computed(() => {
                                 <!-- Contenido para Pagos Externos (type === 'payment') -->
                                 <div v-if="slotProps.item.type === 'payment'" class="text-sm space-y-1">
                                     <div class="flex justify-between">
-                                        <span class="text-gray-500">Folio O.S.:</span> 
+                                        <span class="text-gray-500">Folio O.S.:</span>
                                         <span class="font-mono">{{ slotProps.item.folio }}</span>
                                     </div>
                                     <div class="flex justify-between">
@@ -299,7 +336,8 @@ const timelineEvents = computed(() => {
                                     <div class="pt-2 border-t mt-2 space-y-1">
                                         <div class="flex justify-between font-bold text-base">
                                             <span>Monto Pagado:</span>
-                                            <span :class="slotProps.item.data.amount >= 0 ? 'text-green-500' : 'text-red-500'">
+                                            <span
+                                                :class="slotProps.item.data.amount >= 0 ? 'text-green-500' : 'text-red-500'">
                                                 {{ formatCurrency(slotProps.item.data.amount) }}
                                             </span>
                                         </div>
@@ -335,7 +373,7 @@ const timelineEvents = computed(() => {
                         </Card>
                     </template>
                 </Timeline>
-                 <div v-else class="text-center py-12 text-gray-500">
+                <div v-else class="text-center py-12 text-gray-500">
                     <i class="pi pi-history !text-4xl mb-3"></i>
                     <p>No hay transacciones ni movimientos en esta sesión.</p>
                 </div>

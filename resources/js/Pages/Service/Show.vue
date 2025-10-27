@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import DiffViewer from '@/Components/DiffViewer.vue';
 import { useConfirm } from "primevue/useconfirm";
@@ -48,11 +48,8 @@ const mainImage = computed(() =>
 </script>
 
 <template>
-
-    <Head :title="`Servicio: ${service.name}`" />
-    <AppLayout>
+    <AppLayout :title="`Servicio: ${service.name}`">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
-
         <!-- Header -->
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{{ service.name }}</h1>

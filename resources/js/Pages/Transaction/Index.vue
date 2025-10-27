@@ -1,10 +1,11 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
 import PrintModal from '@/Components/PrintModal.vue';
+import { usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
     transactions: Object,
@@ -14,6 +15,7 @@ const props = defineProps({
 
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
+const page = usePage();
 
 const selectedTransactions = ref([]);
 const searchTerm = ref(props.filters.search || '');
@@ -24,6 +26,16 @@ const selectedTransactionForMenu = ref(null);
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
 
+// --- Refs para el modal de reembolso ---
+const isRefundModalVisible = ref(false);
+const refundMethod = ref('cash');
+const refundingTransaction = ref(null);
+const refundProcessing = ref(false);
+const amountToRefund = ref(0); // <-- AÑADIDO: Ref para guardar el monto a devolver
+
+// --- Computado para sesión activa ---
+const activeSession = computed(() => page.props.activeSession);
+
 const openPrintModal = (transaction) => {
     printDataSource.value = {
         type: 'transaction',
@@ -32,41 +44,59 @@ const openPrintModal = (transaction) => {
     isPrintModalVisible.value = true;
 };
 
+// --- LÓGICA DE CANCEL/REFUND (Corregida) ---
 const menuItems = computed(() => {
     const transaction = selectedTransactionForMenu.value;
     if (!transaction) return [];
 
-    const canCancel = ['pendiente', 'completado'].includes(transaction.status);
-    const canRefund = transaction.status === 'completado';
+    // Calcular total pagado para la transacción seleccionada
+    const totalPaid = (Array.isArray(transaction.payments) ? transaction.payments : [])
+        .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+
+    const canCancelComputed = (() => {
+        if (!transaction || !transaction.status) return false;
+        const isValidStatus = !['cancelado', 'reembolsado'].includes(transaction.status);
+        const hasNoPayments = totalPaid === 0;
+        return isValidStatus && hasNoPayments;
+    })();
+
+    const canRefundComputed = (() => {
+        if (!transaction || !transaction.status) return false;
+        const isCompleted = transaction.status === 'completado';
+        const isPendingWithPayments = transaction.status === 'pendiente' && totalPaid > 0;
+        // Solo se puede reembolsar si hay algo pagado
+        return (isCompleted || isPendingWithPayments) && totalPaid > 0;
+    })();
+
 
     return [
         {
-            label: 'Ver Detalle',
+            label: 'Ver detalle',
             icon: 'pi pi-eye',
             command: () => router.get(route('transactions.show', selectedTransactionForMenu.value.id)),
             visible: hasPermission('transactions.see_details')
         },
         {
-            label: 'Generar Devolución',
+            label: 'Generar devolución',
             icon: 'pi pi-replay',
-            disabled: !canRefund,
-            command: generateReturn,
+            disabled: !canRefundComputed,
+            command: () => openRefundModal(selectedTransactionForMenu.value),
             visible: hasPermission('transactions.refund')
         },
         {
             label: 'Imprimir',
             icon: 'pi pi-print',
             command: () => openPrintModal(selectedTransactionForMenu.value),
-            visible: hasPermission('pos.access') // Se asume que si puede vender, puede imprimir
+            visible: hasPermission('pos.access')
         },
         {
             separator: true
         },
         {
-            label: 'Cancelar Venta',
+            label: 'Cancelar venta',
             icon: 'pi pi-times-circle',
             class: 'text-red-500',
-            disabled: !canCancel,
+            disabled: !canCancelComputed,
             command: cancelSale,
             visible: hasPermission('transactions.cancel')
         },
@@ -80,32 +110,58 @@ const toggleMenu = (event, data) => {
 
 const cancelSale = () => {
     confirm.require({
-        message: `¿Estás seguro de que quieres cancelar la venta #${selectedTransactionForMenu.value.folio}? Esta acción repondrá el stock.`,
-        header: 'Confirmar Cancelación',
+        message: `¿Estás seguro? Esta venta no tiene pagos registrados (#${selectedTransactionForMenu.value.folio}). El stock será repuesto y el saldo del cliente ajustado si fue a crédito.`,
+        header: 'Confirmar cancelación',
         icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Sí, cancelar',
+        rejectLabel: 'No',
         accept: () => {
             router.patch(route('transactions.cancel', selectedTransactionForMenu.value.id), {}, { preserveScroll: true });
         }
     });
 };
 
-const generateReturn = () => {
-    confirm.require({
-        message: `¿Estás seguro de que quieres generar una devolución para la venta #${selectedTransactionForMenu.value.folio}? El stock será repuesto.`,
-        header: 'Confirmar Devolución',
-        icon: 'pi pi-replay',
-        accept: () => {
-            router.patch(route('transactions.refund', selectedTransactionForMenu.value.id), {}, { preserveScroll: true });
-        }
-    });
+// --- LÓGICA DE REEMBOLSO ---
+const openRefundModal = (transaction) => {
+    refundingTransaction.value = transaction;
+    refundMethod.value = transaction.customer_id ? 'cash' : 'cash';
+    // --- INICIO: Calcular y guardar el monto a devolver ---
+    amountToRefund.value = (Array.isArray(transaction.payments) ? transaction.payments : [])
+        .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+    // --- FIN: Calcular y guardar el monto a devolver ---
+    isRefundModalVisible.value = true;
 };
 
+
+const confirmRefund = () => {
+    if (!refundingTransaction.value) return;
+
+    refundProcessing.value = true;
+    router.patch(route('transactions.refund', refundingTransaction.value.id),
+        { refund_method: refundMethod.value },
+        {
+            preserveScroll: true,
+            onSuccess: () => {
+                isRefundModalVisible.value = false;
+                refundingTransaction.value = null;
+                amountToRefund.value = 0; // Resetear monto
+            },
+            onError: () => {
+                // Podrías añadir un toast de error aquí si lo deseas
+            },
+            onFinish: () => {
+                refundProcessing.value = false;
+            }
+        });
+};
+
+// --- FUNCIONES DE TABLA Y FORMATO ---
 const fetchData = (options = {}) => {
     const queryParams = {
         page: options.page || 1,
         rows: options.rows || props.transactions.per_page,
         sortField: options.sortField || props.filters.sortField,
-        sortOrder: options.sortOrder === 1 ? 'asc' : 'desc',
+        sortOrder: options.sortOrder === 1 ? 'asc' : (options.sortOrder === -1 ? 'desc' : (props.filters.sortOrder || 'desc')),
         search: searchTerm.value,
     };
     router.get(route('transactions.index'), queryParams, { preserveState: true, replace: true });
@@ -121,20 +177,27 @@ const getStatusSeverity = (status) => {
 };
 
 const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+    if (!dateString) return '';
+    try {
+        return new Date(dateString).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+    } catch (e) { console.error("Error formatting date:", dateString, e); return dateString; }
 };
 
-const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+const formatCurrency = (value) => {
+     if (value === null || value === undefined) return '';
+     const numberValue = Number(value);
+     if (isNaN(numberValue)) return '';
+     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(numberValue);
+};
 </script>
 
 <template>
-    <Head title="Historial de Ventas" />
-    <AppLayout>
-        <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
+    <AppLayout title="Historial de ventas">
+        <div class="p-4 md:p-6 lg:p-8 bg-surface-100 dark:bg-surface-900 min-h-full">
+            <div class="bg-white dark:bg-surface-800 rounded-lg shadow-md p-4 md:p-6">
                 <!-- Header -->
                 <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-                     <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Historial de Ventas</h1>
+                     <h1 class="text-2xl font-bold text-surface-800 dark:text-surface-200">Historial de Ventas</h1>
                      <IconField iconPosition="left" class="w-full md:w-1/3">
                         <InputIcon class="pi pi-search"></InputIcon>
                         <InputText v-model="searchTerm" placeholder="Buscar por folio o cliente..." class="w-full" />
@@ -155,15 +218,18 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     </Column>
                     <Column field="customer.name" header="Cliente" sortable>
                         <template #body="{ data }">
-                            {{ data.customer ? data.customer.name : 'Público en general' }}
+                            <Link v-if="data.customer" :href="route('customers.show', data.customer.id)" class="text-primary-600 hover:underline">
+                                {{ data.customer.name }}
+                            </Link>
+                            <span v-else>Público en general</span>
                         </template>
                     </Column>
                     <Column field="channel" header="Canal" sortable>
                          <template #body="{ data }">
-                            <span class="capitalize">{{ data.channel.replace(/_/g, ' ') }}</span>
+                            <span class="capitalize">{{ (data.channel || '').replace(/_/g, ' ') }}</span>
                         </template>
                     </Column>
-                     <Column field="total" header="Total" sortable>
+                     <Column field="total" header="Total Venta" sortable class="text-right">
                         <template #body="{ data }"> {{ formatCurrency(data.total) }}
                         </template>
                     </Column>
@@ -172,26 +238,70 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                             <Tag :value="data.status" :severity="getStatusSeverity(data.status)" class="capitalize" />
                         </template>
                     </Column>
-                    <Column field="user.name" header="Cajero" sortable></Column>
+                    <Column field="user.name" header="Cajero" sortable>
+                         <template #body="{ data }">
+                            {{ data.user?.name || 'N/A' }}
+                        </template>
+                    </Column>
                     <Column headerStyle="width: 5rem; text-align: center">
                         <template #body="{ data }"> <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
                                 text rounded severity="secondary" /> </template>
                     </Column>
                     <template #empty>
-                        <div class="text-center py-4">No hay ventas registradas.</div>
+                        <div class="text-center py-4">No hay ventas registradas que coincidan con la búsqueda.</div>
                     </template>
                 </DataTable>
-                
+
                 <Menu ref="menu" :model="menuItems" :popup="true" />
             </div>
         </div>
-        
+
         <!-- Modal de Impresión -->
-        <PrintModal 
+        <PrintModal
             v-if="printDataSource"
             v-model:visible="isPrintModalVisible"
             :data-source="printDataSource"
             :available-templates="availableTemplates"
         />
+
+        <!-- INICIO: Modal para Confirmar Reembolso (Mensaje Corregido) -->
+        <Dialog v-model:visible="isRefundModalVisible" modal header="Confirmar devolución" :style="{ width: '30rem' }">
+            <div v-if="refundingTransaction" class="p-fluid">
+                <p class="mb-4">
+                    Estás a punto de generar una devolución para la venta <strong>#{{ refundingTransaction.folio }}</strong>
+                    <!-- --- INICIO: CORRECCIÓN DEL MENSAJE --- -->
+                    por un total pagado de <strong>{{ formatCurrency(amountToRefund) }}</strong>.
+                    <!-- --- FIN: CORRECCIÓN DEL MENSAJE --- -->
+                    El stock de los productos será repuesto.
+                </p>
+
+                <p class="mb-2 font-semibold">¿Cómo deseas procesar el reembolso?</p>
+                <div class="flex flex-col gap-3">
+                     <div v-if="refundingTransaction.customer_id" class="flex items-center">
+                        <RadioButton v-model="refundMethod" inputId="refundBalance" name="refundMethod" value="balance" />
+                        <label for="refundBalance" class="ml-2">Abonar al saldo del cliente</label>
+                    </div>
+                    <div class="flex items-center">
+                        <RadioButton v-model="refundMethod" inputId="refundCash" name="refundMethod" value="cash" :disabled="!activeSession" />
+                        <label for="refundCash" class="ml-2">Retirar efectivo de la caja actual</label>
+                        <small v-if="!activeSession" class="ml-2 text-orange-500">(Necesitas una sesión de caja activa)</small>
+                    </div>
+                </div>
+
+                 <Message v-if="refundMethod === 'cash' && activeSession" severity="warn" :closable="false" class="mt-4">
+                    Asegúrate de entregar el efectivo al cliente. Se registrará una salida en tu sesión de caja actual.
+                 </Message>
+                  <Message v-if="refundMethod === 'balance'" severity="info" :closable="false" class="mt-4">
+                    El monto se sumará al saldo a favor del cliente.
+                 </Message>
+            </div>
+
+            <template #footer>
+                <Button label="Cancelar" severity="secondary" @click="isRefundModalVisible = false; amountToRefund = 0;" text />
+                <Button label="Confirmar devolución" icon="pi pi-check" @click="confirmRefund" :loading="refundProcessing" :disabled="refundMethod === 'cash' && !activeSession" />
+            </template>
+        </Dialog>
+        <!-- FIN: Modal -->
+
     </AppLayout>
 </template>

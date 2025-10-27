@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
-import { Head, router, Link } from '@inertiajs/vue3';
+import { router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
@@ -86,8 +86,7 @@ const formatDate = (dateString) => {
 </script>
 
 <template>
-    <Head title="Usuarios" />
-    <AppLayout>
+    <AppLayout title="Usuarios">
         <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
                 <!-- Header -->

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\OnboardingController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Artisan;
@@ -19,6 +20,15 @@ Route::get('/', function () {
 
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+
+    // --- INICIO: RUTAS DE ONBOARDING ---
+    Route::prefix('onboarding')->name('onboarding.')->group(function () {
+        Route::get('/setup', [OnboardingController::class, 'show'])->name('setup');
+        Route::post('/step-1', [OnboardingController::class, 'storeStep1'])->name('store.step1');
+        Route::post('/step-2', [OnboardingController::class, 'storeStep2'])->name('store.step2');
+        Route::post('/step-3', [OnboardingController::class, 'storeStep3'])->name('store.step3');
+        Route::post('/finish', [OnboardingController::class, 'finish'])->name('finish');
+    });
 });
 
 require __DIR__ . '/web/POS.php';

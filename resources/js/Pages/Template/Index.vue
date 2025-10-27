@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
 import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermissions } from '@/Composables';
@@ -34,12 +34,12 @@ const confirmDelete = (template) => {
 
 const newTemplateOptions = [
     {
-        label: 'Nuevo Ticket de Venta',
+        label: 'Nuevo ticket de venta',
         icon: 'pi pi-receipt',
         command: () => router.get(route('print-templates.create', { type: 'ticket_venta' }))
     },
     {
-        label: 'Nueva Etiqueta',
+        label: 'Nueva etiqueta',
         icon: 'pi pi-tags',
         command: () => router.get(route('print-templates.create', { type: 'etiqueta' }))
     }
@@ -47,8 +47,7 @@ const newTemplateOptions = [
 </script>
 
 <template>
-    <Head title="Plantillas Personalizadas" />
-    <AppLayout>
+    <AppLayout title="Plantillas personalizadas">
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6 flex justify-between items-center">
                 <div>

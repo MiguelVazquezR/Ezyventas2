@@ -6,17 +6,20 @@ use App\Enums\CashRegisterSessionStatus;
 use App\Enums\ExpenseStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
+use App\Events\SessionClosed;
 use App\Http\Requests\StoreCashRegisterSessionRequest;
 use App\Http\Requests\UpdateCashRegisterSessionRequest;
 use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
 use App\Models\Expense;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -177,7 +180,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
                 // Se obtiene el total de gastos para la cuenta
                 $spent = $expensesFromAccounts->get($openingData['id'])?->total_spent ?? 0;
                 $initialBalance = (float) $openingData['balance'];
-                
+
                 // CORRECCIÓN: El saldo final es el inicial + ingresos - gastos
                 $finalBalance = $initialBalance + $received - $spent;
 
@@ -200,7 +203,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         $cashRegister = CashRegister::findOrFail($validated['cash_register_id']);
 
         if ($cashRegister->in_use) {
-            return redirect()->back()->with(['error' => 'Esta caja ya está en uso.']);
+            return redirect()->back()->with(['warning' => 'Parece que otro usuario abrió caja antes que tu, puedes unirte a la sesión.']);
         }
         if ($user->cashRegisterSessions()->where('status', 'abierta')->exists()) {
             return redirect()->back()->with(['error' => 'Este usuario ya tiene una sesión activa en otra caja.']);
@@ -267,7 +270,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
     {
         DB::transaction(function () use ($request, $cashRegisterSession) {
             $validated = $request->validated();
-            
+
             $cashSales = $cashRegisterSession->payments()
                 ->where('payment_method', 'efectivo')
                 ->where('status', 'completado')
@@ -289,8 +292,95 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
             ]);
 
             $cashRegisterSession->cashRegister->update(['in_use' => false]);
+
+            // --- INICIO DE LA LÓGICA DE BROADCAST ---
+
+            // Guardamos las variables ANTES de que termine la transacción
+            $closingUser = Auth::user();
+            $session = $cashRegisterSession;
+
+            // Usamos DB::afterCommit para asegurar que el evento solo se envíe
+            // si la transacción de la base de datos fue exitosa.
+            DB::afterCommit(function () use ($session, $closingUser) {
+                // Usamos toOthers() para no enviar el evento al usuario
+                // que acaba de cerrar la caja (él ya lo sabe).
+                Log::info('Broadcasting SessionClosed event for session ID: ' . $session->id);
+                broadcast(new SessionClosed($session, $closingUser))->toOthers();
+            });
+            // --- FIN DE LA LÓGICA DE BROADCAST ---
+
         });
 
         return redirect()->back()->with('success', 'Corte de caja realizado con éxito.');
+    }
+
+    /**
+     * Inicia o se une a una nueva sesión para una caja registradora específica.
+     * Pensado para ser usado después de un cierre forzado.
+     */
+    public function rejoinOrStart(Request $request)
+    {
+        $request->validate([
+            'cash_register_id' => 'required|integer|exists:cash_registers,id',
+            'original_opener_id' => 'required|integer|exists:users,id',
+        ]);
+
+        $user = Auth::user();
+        $cashRegisterId = $request->input('cash_register_id');
+        $originalOpenerId = $request->input('original_opener_id');
+
+        // Validar que el usuario no esté ya en otra sesión
+        if ($user->cashRegisterSessions()->where('status', 'abierta')->exists()) {
+            return redirect()->back()->with('error', 'Ya tienes una sesión activa.');
+        }
+
+        $cashRegister = CashRegister::findOrFail($cashRegisterId);
+
+        // 1. Buscar si ya existe una sesión abierta para esta caja
+        // (quizás otro usuario ya la creó)
+        $existingSession = $cashRegister->sessions()
+            ->where('status', CashRegisterSessionStatus::OPEN)
+            ->first();
+
+        if ($existingSession) {
+            // Si ya existe, simplemente unimos al usuario
+            $existingSession->users()->syncWithoutDetaching([$user->id]);
+            return redirect()->back()->with('success', 'Te has unido a la nueva sesión.');
+        }
+
+        // 2. Si no existe, crear una nueva
+        // Usamos el abridor original como el "dueño" de la sesión
+        $opener = User::findOrFail($originalOpenerId);
+
+        $allBranchAccounts = BankAccount::whereHas('branches', function ($query) use ($cashRegister) {
+            $query->where('branch_id', $cashRegister->branch_id);
+        })->get();
+
+        $openingBankBalances = $allBranchAccounts->map(function ($account) {
+            return [
+                'id' => $account->id,
+                'account_name' => $account->account_name,
+                'bank_name' => $account->bank_name,
+                'balance' => (float) $account->balance, // Saldo actual
+            ];
+        });
+
+        $session = DB::transaction(function () use ($cashRegister, $opener, $user, $openingBankBalances) {
+            $newSession = $cashRegister->sessions()->create([
+                'user_id' => $opener->id,
+                'opening_cash_balance' => 0.00, // Se asume 0 para una reapertura rápida
+                'opening_bank_balances' => $openingBankBalances,
+                'status' => CashRegisterSessionStatus::OPEN,
+                'opened_at' => now(),
+            ]);
+
+            // Unimos al abridor original Y al usuario actual
+            $newSession->users()->attach(array_unique([$opener->id, $user->id]));
+            $cashRegister->update(['in_use' => true]);
+
+            return $newSession;
+        });
+
+        return redirect()->back()->with('success', 'Se ha creado una nueva sesión y te has unido.');
     }
 }

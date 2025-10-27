@@ -2,6 +2,7 @@
 
 namespace App\Traits;
 
+use App\Services\LocalImageOptimizerService;
 use App\Services\TinifyService;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Illuminate\Support\Facades\Log;
@@ -41,16 +42,33 @@ trait OptimizeMediaWithTinify
             $fileSizeInKB = filesize($path) / 1024;
             
             // Check size, environment
-            // (Tu lógica de optimización)
             if ($fileSizeInKB > $sizeLimitKB && app()->environment('production')) {
                 // Optional: Check Tinify compression limit
                 $currentCompressions = $this->tinifyService->totalCompressions();
-                Log::info($currentCompressions);
+                Log::info("Conteo de compresiones Tinify: {$currentCompressions}");
+
                 if ($currentCompressions !== null && $currentCompressions < 500) {
-                    Log::info("OptimizeMediaWithTinify: Optimizing image via Tinify: {$path}");
+                    Log::info("OptimizeMediaWithTinify: Optimizando imagen vía Tinify: {$path}");
                     $this->tinifyService->optimizeImage($path); // Se optimiza en el mismo lugar
+
                 } else if ($currentCompressions !== null) {
-                    Log::warning("OptimizeMediaWithTinify: Tinify compression limit reached ({$currentCompressions}). Image not optimized: {$path}");
+                    // --- INICIO DE LA MODIFICACIÓN ---
+                    Log::warning("OptimizeMediaWithTinify: Límite de Tinify alcanzado ({$currentCompressions}). Usando optimizador local como fallback...");
+
+                    // Comprobar si el controlador inyectó el servicio local
+                    if (isset($this->localImageOptimizerService) && $this->localImageOptimizerService instanceof LocalImageOptimizerService) {
+                        
+                        $this->localImageOptimizerService->optimizeImage($path); // ¡Usando el fallback!
+
+                    } else {
+                        // Error si el límite de Tinify se alcanzó pero el fallback no está configurado en el controlador
+                        Log::error("OptimizeMediaWithTinify: Límite de Tinify alcanzado, pero LocalImageOptimizerService no está disponible en el controlador.");
+                    }
+                    // --- FIN DE LA MODIFICACIÓN ---
+
+                } else {
+                    // Esto puede pasar si $currentCompressions es null (ej. API key inválida)
+                    Log::error("OptimizeMediaWithTinify: No se pudo obtener el conteo de Tinify. No se optimizó la imagen: {$path}");
                 }
             }
         } catch (\Throwable $e) {
