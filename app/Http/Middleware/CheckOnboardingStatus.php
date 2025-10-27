@@ -20,7 +20,7 @@ class CheckOnboardingStatus
         $user = Auth::user();
 
         // 1. Si el usuario está logueado Y no ha completado el onboarding
-        if ($user && !$user->onboarding_completed_at) {
+        if ($user && !$user->subscription->onboarding_completed_at) {
             
             // 2. Y NO está ya en la página de onboarding o deslogueándose
             if (!$request->routeIs('onboarding.*') && !$request->routeIs('logout')) {

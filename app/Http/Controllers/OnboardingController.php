@@ -198,8 +198,6 @@ class OnboardingController extends Controller
             // Eliminar cuentas que el usuario borró de la UI
             $subscription->bankAccounts()->whereNotIn('id', $existingIds)->delete();
         });
-
-        return redirect()->back();
     }
 
     /**
@@ -207,7 +205,9 @@ class OnboardingController extends Controller
      */
     public function finish(Request $request)
     {
-        Auth::user()->update([
+        $this->storeStep3($request);
+
+        Auth::user()->subscription->update([
             'onboarding_completed_at' => now()
         ]);
 

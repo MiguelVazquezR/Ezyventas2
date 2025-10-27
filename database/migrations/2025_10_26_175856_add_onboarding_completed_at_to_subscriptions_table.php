@@ -11,8 +11,8 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->timestamp('onboarding_completed_at')->nullable()->after('remember_token');
+        Schema::table('subscriptions', function (Blueprint $table) {
+             $table->timestamp('onboarding_completed_at')->nullable()->after('slug');
         });
     }
 
@@ -21,8 +21,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('onboarding_completed_at');
+        Schema::table('subscriptions', function (Blueprint $table) {
+             $table->dropColumn('onboarding_completed_at');
         });
     }
 };
