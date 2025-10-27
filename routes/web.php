@@ -61,6 +61,7 @@ require __DIR__ . '/web/print-templates.php';
 require __DIR__ . '/web/print.php';
 require __DIR__ . '/web/custom-field-definitions.php';
 require __DIR__ . '/web/reports.php';
+require __DIR__ . '/web/google-auth.php';
 
 
 //artisan commands -------------------

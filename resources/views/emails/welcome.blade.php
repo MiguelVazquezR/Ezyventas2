@@ -35,7 +35,7 @@
         }
         .button {
             display: inline-block;
-            background-color: #007bff; /* Color primario de tu app */
+            background-color: #f68c0f; /* Color primario de tu app */
             color: #ffffff;
             padding: 12px 25px;
             text-decoration: none;
@@ -59,8 +59,9 @@
         <div class="content">
             <p>Hola, {{ $user->name }}:</p>
             <p>¡Tu cuenta para <strong>{{ $user->branch->subscription->business_name }}</strong> ha sido creada con éxito!</p>
-            <p>Estamos emocionados de ayudarte a gestionar y hacer crecer tu negocio. Hemos activado un plan de prueba de 7 días con acceso a todas las funciones iniciales.</p>
+            <p>Estamos emocionados de ayudarte a gestionar y hacer crecer tu negocio. Hemos activado un plan de prueba de 30 días con acceso a todas las funciones iniciales.</p>
             <p>Para comenzar, simplemente haz clic en el botón de abajo e inicia sesión con el correo y la contraseña que registraste.</p>
+            <p>Si has iniciado con Google, tu contraseña es el mismo correo que registraste. La contraseña la puedes cambiar desde tu perfil.</p>
             <p style="text-align: center; margin-top: 30px;">
                 <a href="{{ route('login') }}" class="button">Ir a mi cuenta</a>
             </p>

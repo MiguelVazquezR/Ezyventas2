@@ -47,7 +47,7 @@ class OnboardingController extends Controller
         $subscription = $user->subscription;
 
         $validated = $request->validate([
-            'subscription.business_name' => 'nullable|string|max:20', // Razón Social (RFC en México)
+            'subscription.business_name' => 'nullable|string|max:35', // Razón Social (RFC en México)
             'subscription.commercial_name' => 'required|string|max:255',
 
             'branches' => 'required|array|min:1',
