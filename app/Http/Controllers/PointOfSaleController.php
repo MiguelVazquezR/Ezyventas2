@@ -146,6 +146,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'cartItems.*.unit_price' => 'required|numeric|min:0',
             'cartItems.*.description' => 'required|string',
             'cartItems.*.discount' => 'required|numeric',
+            'cartItems.*.discount_reason' => 'nullable|string|max:255',
             'customerId' => 'nullable|exists:customers,id',
             'subtotal' => 'required|numeric',
             'total_discount' => 'nullable|numeric',
@@ -171,7 +172,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     'customer_id' => $customer?->id,
                     'branch_id' => $user->branch_id,
                     'user_id' => $user->id,
-                    // CORRECCIÓN: Se crea como PENDIENTE y se actualiza al final si se paga por completo.
+                    // Se crea como PENDIENTE y se actualiza al final si se paga por completo.
                     'status' => TransactionStatus::PENDING,
                     'channel' => TransactionChannel::POS,
                     'subtotal' => $validated['subtotal'],
@@ -198,6 +199,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         'quantity' => $item['quantity'],
                         'unit_price' => $item['unit_price'],
                         'discount_amount' => $item['discount'],
+                        'discount_reason' => $item['discount_reason'] ?? null,
                         'line_total' => $item['quantity'] * $item['unit_price'],
                     ]);
 

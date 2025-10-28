@@ -328,7 +328,20 @@ const handleCheckout = (checkoutData) => {
         unit_price: item.price, // Precio final unitario
         description: item.name + (item.selectedVariant ? ` (${Object.values(item.selectedVariant).join('/')})` : ''),
         // Usar original_price (base + modif) para calcular descuento
-        discount: Math.max(0, (item.original_price ?? item.price) - item.price),
+        discount: (item.original_price ?? item.price) - item.price,
+        discount_reason: (() => {
+            const originalPrice = item.original_price ?? item.price;
+            if (item.isManualPrice) {
+                return item.price < originalPrice ? 'Descuento manual' : (item.price > originalPrice ? 'Aumento manual' : null);
+            }
+            if (item.isTierPrice) {
+                return 'Precio de mayoreo';
+            }
+            if (item.price < originalPrice) {
+                return 'Promoción de item';
+            }
+            return null; // Sin descuento o motivo específico
+        })()
     }));
     form.customerId = selectedClient.value ? selectedClient.value.id : null;
     form.subtotal = checkoutData.subtotal;

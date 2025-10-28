@@ -35,18 +35,22 @@ const displayedCustomer = computed(() => props.client || props.defaultCustomer);
 const handleCustomerCreated = (newCustomer) => emit('customerCreated', newCustomer);
 
 
-// --- LÓGICA DE CÁLCULO DE TOTALES Y PROMOCIONES ---
-
 // Descuentos aplicados a nivel de ítem (ITEM_DISCOUNT o manual)
 // Se calcula usando la diferencia entre el precio original base y el precio final del item
 const itemsDiscount = computed(() => {
     return props.items.reduce((total, item) => {
-        // Usar original_price del item si existe, si no, el precio actual como base
-        // Esto asegura que si no hubo promo ni tier, el original_price = price
+        // Usar original_price del item si existe. Este es el precio "base" ANTES de cualquier descuento o ajuste manual.
+        // Si original_price no está (aunque debería), usamos el precio actual como fallback.
         const basePrice = item.original_price ?? item.price;
+        
+        // discountPerItem será:
+        // Positivo si hay descuento (base > final)
+        // Negativo si hay aumento (base < final)
         const discountPerItem = basePrice - item.price;
-        // Solo sumar si el descuento es positivo (evitar sumar si el precio manual es mayor que el original)
-        return total + (discountPerItem > 0 ? (discountPerItem * item.quantity) : 0);
+
+        // Sumar el descuento (o restar el aumento)
+        // ESTA ES LA LÍNEA CORREGIDA: Se eliminó el (discountPerItem > 0 ? ... : 0)
+        return total + (discountPerItem * item.quantity);
     }, 0);
 });
 
@@ -250,7 +254,7 @@ const formatCurrency = (value) => {
                     <span>Subtotal</span><span class="font-medium">{{ formatCurrency(subtotal) }}</span>
                 </div>
 
-                <!-- Descuentos (si hay) -->
+                <!-- Caso 1: Mostrar Descuentos (si totalDiscount es positivo) -->
                 <div v-if="totalDiscount > 0" class="text-red-500 dark:text-red-400">
                     <div class="flex justify-between items-center">
                         <span>Descuentos</span>
@@ -264,6 +268,16 @@ const formatCurrency = (value) => {
                     </div>
                      <!-- Podrías añadir aquí un detalle del descuento manual si lo implementas -->
                 </div>
+
+                <!-- Caso 2: Mostrar Aumento (si totalDiscount es negativo) -->
+                <div v-else-if="totalDiscount < 0" class="text-green-600 dark:text-green-400">
+                    <div class="flex justify-between items-center">
+                        <span>Aumento (edición)</span>
+                        <!-- Usamos -totalDiscount para mostrar el valor absoluto (positivo) del aumento -->
+                        <span class="font-medium">+{{ formatCurrency(-totalDiscount) }}</span>
+                    </div>
+                </div>
+                <!-- Si totalDiscount es 0, no se mostrará nada, lo cual es correcto -->
 
                 <!-- Total Final -->
                 <div

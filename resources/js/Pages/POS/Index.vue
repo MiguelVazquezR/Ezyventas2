@@ -291,7 +291,20 @@ const handleCheckout = (checkoutData) => {
         quantity: item.quantity,
         unit_price: item.price,
         description: item.name + (item.selectedVariant ? ` (${Object.values(item.selectedVariant).join('/')})` : ''),
-        discount: Math.max(0, (item.original_price ?? item.price) - item.price),
+        discount: (item.original_price ?? item.price) - item.price,
+        discount_reason: (() => {
+            const originalPrice = item.original_price ?? item.price;
+            if (item.isManualPrice) {
+                return item.price < originalPrice ? 'Descuento manual' : (item.price > originalPrice ? 'Aumento manual' : null);
+            }
+            if (item.isTierPrice) {
+                return 'Precio de mayoreo';
+            }
+            if (item.price < originalPrice) {
+                return 'Promoción de producto';
+            }
+            return null; // Sin descuento o motivo específico
+        })()
     }));
     form.customerId = selectedClient.value ? selectedClient.value.id : null;
     form.subtotal = checkoutData.subtotal;
@@ -378,7 +391,8 @@ const handleCheckout = (checkoutData) => {
                         class="mt-6" />
                     <div v-else class="text-sm text-gray-500 pt-4 mt-8">
                         <p>No hay cajas disponibles para unirse o abrir en esta sucursal.</p>
-                        <Button @click="$inertia.visit(route('cash-registers.create'))" label="Crear una caja" icon="pi pi-inbox" />
+                        <Button @click="$inertia.visit(route('cash-registers.create'))" label="Crear una caja"
+                            icon="pi pi-inbox" />
                     </div>
                 </div>
             </div>

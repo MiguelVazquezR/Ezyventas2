@@ -21,6 +21,7 @@ class TransactionItem extends Model
         'quantity',
         'unit_price',
         'discount_amount',
+        'discount_reason',
         'tax_amount',
         'line_total',
     ];
