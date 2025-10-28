@@ -55,7 +55,7 @@ const getPriceForQuantity = (productData, quantity) => {
     const basePriceAfterDirectPromo = parseFloat(productData.price);
 
     if (!productData.price_tiers || productData.price_tiers.length === 0 || quantity <= 1) {
-         return {
+        return {
             price: basePriceAfterDirectPromo,
             original_price_base: absoluteOriginalPrice,
             isTierPrice: false
@@ -102,26 +102,26 @@ const addToCart = (data) => {
 
     if (existingItem) {
         if (targetQuantity <= stock || stock < 0) {
-             existingItem.quantity = targetQuantity;
-             if (!existingItem.isManualPrice) {
-                 const itemBaseDataForCalc = {
-                     selling_price: existingItem.selling_price,
-                     price: existingItem.price_qty_1_promo,
-                     price_tiers: existingItem.price_tiers
-                 };
-                 const { price: updatedPrice, isTierPrice: updatedIsTier } = getPriceForQuantity(itemBaseDataForCalc, existingItem.quantity);
-                 let variantModifier = 0;
-                 if (existingItem.product_attribute_id) {
-                     variantModifier = (existingItem.original_price ?? existingItem.selling_price) - existingItem.selling_price;
-                 }
-                 existingItem.price = updatedPrice + variantModifier;
-                 existingItem.isTierPrice = updatedIsTier;
-             }
+            existingItem.quantity = targetQuantity;
+            if (!existingItem.isManualPrice) {
+                const itemBaseDataForCalc = {
+                    selling_price: existingItem.selling_price,
+                    price: existingItem.price_qty_1_promo,
+                    price_tiers: existingItem.price_tiers
+                };
+                const { price: updatedPrice, isTierPrice: updatedIsTier } = getPriceForQuantity(itemBaseDataForCalc, existingItem.quantity);
+                let variantModifier = 0;
+                if (existingItem.product_attribute_id) {
+                    variantModifier = (existingItem.original_price ?? existingItem.selling_price) - existingItem.selling_price;
+                }
+                existingItem.price = updatedPrice + variantModifier;
+                existingItem.isTierPrice = updatedIsTier;
+            }
         } else {
-             toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
+            toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
         }
     } else {
-         const newItem = {
+        const newItem = {
             ...product,
             cartItemId: cartItemId,
             quantity: quantityToAdd,
@@ -141,7 +141,7 @@ const addToCart = (data) => {
                 image: variant.image_url || product.image,
             })
         };
-         // Asegurar que original_price en variante sume el modificador
+        // Asegurar que original_price en variante sume el modificador
         if (variant) {
             newItem.original_price = baseOriginalPrice + variant.price_modifier;
         }
@@ -172,14 +172,14 @@ const updateCartQuantity = ({ itemId, quantity }) => {
                 const { price: updatedPrice, isTierPrice: updatedIsTier } = getPriceForQuantity(itemBaseDataForCalc, validQuantity);
                 let variantModifier = 0;
                 if (item.product_attribute_id) {
-                     variantModifier = (item.original_price ?? item.selling_price) - item.selling_price;
+                    variantModifier = (item.original_price ?? item.selling_price) - item.selling_price;
                 }
                 item.price = updatedPrice + variantModifier;
                 item.isTierPrice = updatedIsTier;
             } else {
-                 console.error("Faltan datos base en el item para recalcular precio:", item);
-                 item.quantity = oldQuantity;
-                 toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo recalcular el precio.', life: 3000 });
+                console.error("Faltan datos base en el item para recalcular precio:", item);
+                item.quantity = oldQuantity;
+                toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo recalcular el precio.', life: 3000 });
             }
         }
     }
@@ -374,44 +374,26 @@ const handleCheckout = (checkoutData) => {
                         @click="isJoinSessionModalVisible = true" label="Unirse a una sesión" icon="pi pi-users"
                         class="mt-6" />
                     <Button v-else-if="availableCashRegisters && availableCashRegisters.length > 0"
-                         @click="isStartSessionModalVisible = true" label="Abrir una caja"
-                        icon="pi pi-lock-open" class="mt-6" />
-                     <p v-else class="text-sm text-gray-500 pt-4 mt-8">
-                                No hay cajas disponibles para unirse o abrir en esta sucursal.
-                    </p>
+                        @click="isStartSessionModalVisible = true" label="Abrir una caja" icon="pi pi-lock-open"
+                        class="mt-6" />
+                    <div v-else class="text-sm text-gray-500 pt-4 mt-8">
+                        <p>No hay cajas disponibles para unirse o abrir en esta sucursal.</p>
+                        <Button @click="$inertia.visit(route('cash-registers.create'))" label="Crear una caja" icon="pi pi-inbox" />
+                    </div>
                 </div>
             </div>
         </template>
 
         <!-- Modales -->
-        <StartSessionModal
-            :visible="isStartSessionModalVisible"
-            :cash-registers="availableCashRegisters"
-            :user-bank-accounts="userBankAccounts"
-            @update:visible="isStartSessionModalVisible = $event"
-        />
-        <JoinSessionModal
-            :visible="isJoinSessionModalVisible"
-            :sessions="joinableSessions"
-            @update:visible="isJoinSessionModalVisible = $event"
-        />
-        <CloseSessionModal
-            v-if="activeSession"
-            :visible="isCloseSessionModalVisible"
-            :session="activeSession"
-            @update:visible="isCloseSessionModalVisible = $event"
-        />
-        <SessionHistoryModal
-            v-if="activeSession"
-            :visible="isHistoryModalVisible"
-            :session="activeSession"
-            @update:visible="isHistoryModalVisible = $event"
-        />
-        <PrintModal
-            v-if="printDataSource"
-            v-model:visible="isPrintModalVisible"
-            :data-source="printDataSource"
-            :available-templates="availableTemplates"
-        />
+        <StartSessionModal :visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
+            :user-bank-accounts="userBankAccounts" @update:visible="isStartSessionModalVisible = $event" />
+        <JoinSessionModal :visible="isJoinSessionModalVisible" :sessions="joinableSessions"
+            @update:visible="isJoinSessionModalVisible = $event" />
+        <CloseSessionModal v-if="activeSession" :visible="isCloseSessionModalVisible" :session="activeSession"
+            @update:visible="isCloseSessionModalVisible = $event" />
+        <SessionHistoryModal v-if="activeSession" :visible="isHistoryModalVisible" :session="activeSession"
+            @update:visible="isHistoryModalVisible = $event" />
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
+            :available-templates="availableTemplates" />
     </AppLayout>
 </template>

@@ -36,8 +36,13 @@ class WelcomeEmail extends Mailable
      */
     public function content(): Content
     {
+        // Laravel buscará el archivo: resources/views/emails/welcome.blade.php
         return new Content(
-            view: 'emails.welcome',
+            markdown: 'emails.welcome',
+            with: [
+                'name' => $this->user->name,
+                'email' => $this->user->email,
+            ],
         );
     }
 

@@ -235,13 +235,15 @@ img {
     text-decoration: none;
 }
 
+/* ESTE ES EL CAMBIO */
 .button-blue,
 .button-primary {
-    background-color: #2d3748;
-    border-bottom: 8px solid #2d3748;
-    border-left: 18px solid #2d3748;
-    border-right: 18px solid #2d3748;
-    border-top: 8px solid #2d3748;
+    background-color: #f68c0f; /* Tu color de marca */
+    border-bottom: 8px solid #f68c0f;
+    border-left: 18px solid #f68c0f;
+    border-right: 18px solid #f68c0f;
+    border-top: 8px solid #f68c0f;
+    color: #1A1A1A; /* Texto oscuro para mejor contraste */
 }
 
 .button-green,
