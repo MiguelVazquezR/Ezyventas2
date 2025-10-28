@@ -85,7 +85,7 @@ const AppleIcon = ref(`
                 </div>
 
                 <div>
-                    <h4 class="text-xl font-bold tracking-tight text-surface-900 dark:text-surface-0 m-0">
+                    <h4 class="text-xl font-bold tracking-tight text-surface-900 dark:text-surface-0 m-0 pt-5">
                         Bienvenido de nuevo
                     </h4>
                     <p class="mt-2 text-sm text-surface-600 dark:text-surface-400">
@@ -96,7 +96,6 @@ const AppleIcon = ref(`
                 <Message v-if="status" severity="success" :closable="false">{{ status }}</Message>
 
                 <form @submit.prevent="submit" class="space-y-6">
-                    <!-- Campo de Email (Sin FloatLabel) -->
                     <div>
                         <label for="email" class="block text-sm font-medium text-surface-700 dark:text-surface-300">
                             Correo electrónico

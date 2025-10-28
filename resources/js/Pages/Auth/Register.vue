@@ -67,7 +67,7 @@ const redirectToGoogle = () => {
                 </div>
 
                 <div>
-                    <h2 class="text-xl font-bold tracking-tight text-surface-900 dark:text-surface-0 m-0">
+                    <h2 class="text-xl font-bold tracking-tight text-surface-900 dark:text-surface-0 m-0 pt-2">
                         Crea tu cuenta gratis
                     </h2>
                     <p class="mt-1 text-sm text-surface-600 dark:text-surface-400">
