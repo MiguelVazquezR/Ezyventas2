@@ -4,12 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\BankAccount;
 use App\Models\Branch;
-use App\Models\SubscriptionItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
-use Illuminate\Validation\Rule;
+use App\Mail\WelcomeEmail;
+use Illuminate\Support\Facades\Mail;
 
 class OnboardingController extends Controller
 {
@@ -206,10 +206,19 @@ class OnboardingController extends Controller
     public function finish(Request $request)
     {
         $this->storeStep3($request);
-
-        Auth::user()->subscription->update([
+        $user = Auth::user();
+        $user->subscription->update([
             'onboarding_completed_at' => now()
         ]);
+
+        // Enviar email de bienvenida
+        try {
+            Mail::to($user->email)->send(new WelcomeEmail($user));
+        } catch (\Exception $e) {
+            // Si el email falla (ej. Mailgun no configurado), no revertir la transacción.
+            // Solo registrar el error.
+            \Illuminate\Support\Facades\Log::error("Error al enviar email de bienvenida: " . $e->getMessage());
+        }
 
         return redirect()->route('dashboard')->with('success', '¡Configuración completada! Te damos la bienvenida.');
     }

@@ -205,9 +205,9 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         if ($cashRegister->in_use) {
             return redirect()->back()->with(['warning' => 'Parece que otro usuario abrió caja antes que tu, puedes unirte a la sesión.']);
         }
-        if ($user->cashRegisterSessions()->where('status', 'abierta')->exists()) {
-            return redirect()->back()->with(['error' => 'Este usuario ya tiene una sesión activa en otra caja.']);
-        }
+        // if ($user->cashRegisterSessions()->where('status', 'abierta')->exists()) {
+        //     return redirect()->back()->with(['error' => 'Este usuario ya tiene una sesión activa en otra caja.']);
+        // }
 
         DB::transaction(function () use ($request, $validated, $cashRegister, $user) {
             $allBranchAccounts = BankAccount::whereHas('branches', function ($query) use ($cashRegister) {
@@ -251,9 +251,9 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
     {
         $user = Auth::user();
 
-        if ($user->cashRegisterSessions()->where('status', 'abierta')->exists()) {
-            return redirect()->back()->with('error', 'Ya tienes una sesión activa.');
-        }
+        // if ($user->cashRegisterSessions()->where('status', 'abierta')->exists()) {
+        //     return redirect()->back()->with('error', 'Ya tienes una sesión activa.');
+        // }
 
         $session->users()->syncWithoutDetaching([$user->id]);
         return redirect()->back()->with('success', 'Te has unido a la sesión de caja.');
