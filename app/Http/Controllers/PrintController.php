@@ -18,10 +18,10 @@ class PrintController extends Controller
             'template_id' => 'required|exists:print_templates,id',
             'data_source_type' => 'required|in:transaction,product,service_order',
             'data_source_id' => 'required|integer',
-            // --- INICIO: Añadir validación para los desfases opcionales ---
+            // --- Añadir validación para los desfases opcionales ---
             'offset_x' => 'nullable|numeric',
             'offset_y' => 'nullable|numeric',
-            // --- FIN: Añadir validación para los desfases opcionales ---
+            // --- Añadir validación para los desfases opcionales ---
         ]);
 
         $template = PrintTemplate::find($validated['template_id']);

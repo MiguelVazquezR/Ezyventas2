@@ -212,11 +212,11 @@ const formatCurrency = (value) => {
                 </button>
                 <Popover ref="promoPopover">
                     <div class="p-3 w-64">
-                        <h4 class="font-bold text-md mb-2 border-b pb-2">Promociones Disponibles</h4>
+                        <h4 class="font-bold text-lg mb-2 border-b pb-2">Promociones Disponibles</h4>
                         <div class="space-y-3 max-h-48 overflow-y-auto">
                             <div v-for="promo in product.promotions" :key="promo.name" class="text-sm">
-                                <p class="font-semibold">{{ promo.name }}</p>
-                                <p class="text-xs text-gray-600">{{ getPromotionSummary(promo) }}</p>
+                                <p class="font-semibold m-0">{{ promo.name }}</p>
+                                <p class="text-xs text-gray-600 m-0">{{ getPromotionSummary(promo) }}</p>
                             </div>
                         </div>
                     </div>

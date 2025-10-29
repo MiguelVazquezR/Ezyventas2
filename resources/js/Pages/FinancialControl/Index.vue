@@ -41,6 +41,12 @@ const isSalesModalVisible = ref(false);
 const isPaymentsModalVisible = ref(false);
 // const selectedCategoryData = ref({ name: '', expenses: [] }); // Ya no se necesita
 
+// +++ NUEVA LÓGICA PARA MODAL DE AYUDA +++
+const isHelpModalVisible = ref(false);
+const openHelpModal = () => { isHelpModalVisible.value = true; };
+// +++ FIN NUEVA LÓGICA +++
+
+
 // Funciones para modales de KPIs
 const openSalesModal = () => isSalesModalVisible.value = true;
 const openPaymentsModal = () => isPaymentsModalVisible.value = true;
@@ -226,13 +232,19 @@ const getTransactionStatusTagSeverity = (status) => {
         <div class="p-4 md:p-6 lg:p-8 space-y-6">
             <!-- Header con Filtros -->
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Inicio</h1>
+                <!-- +++ TÍTULO CON BOTÓN DE AYUDA +++ -->
+                <div class="flex items-center gap-2">
+                    <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200 m-0">Inicio</h1>
+                    <Button icon="pi pi-question-circle" text aria-label="Ayuda" @click="openHelpModal"
+                        label="¿Qué significan estas métricas?" />
+                </div>
+                <!-- +++ FIN TÍTULO CON BOTÓN DE AYUDA +++ -->
                 <div class="flex items-center gap-2 flex-wrap">
                     <SelectButton v-model="selectedRange" :options="rangeOptions" optionLabel="label"
                         optionValue="value" />
                     <DatePicker v-if="selectedRange === 'custom'" v-model="dates" selectionMode="range"
                         dateFormat="dd/mm/yy" class="!w-64" @update:modelValue="selectedRange = 'custom'" />
-                    <Button label="Crear Reporte" icon="pi pi-file-excel" severity="success" outlined
+                    <Button label="Crear reporte" icon="pi pi-file-excel" severity="success" outlined
                         @click="handleExport" :loading="isExporting" />
                 </div>
             </div>
@@ -243,7 +255,7 @@ const getTransactionStatusTagSeverity = (status) => {
                 <Card @click="openSalesModal" class="cursor-pointer hover:shadow-lg transition-shadow duration-150">
                     <template #content>
                         <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Ventas
-                                totales</span> <i
+                                totales (clic para detalles)</span> <i
                                 class="pi pi-shopping-cart p-2 bg-purple-100 text-purple-600 rounded-full"></i> </div>
                         <p class="text-2xl font-bold">{{ formatCurrency(kpis.sales.current) }}</p>
                         <div class="flex items-center text-sm mt-1"
@@ -260,7 +272,7 @@ const getTransactionStatusTagSeverity = (status) => {
                 <Card @click="openPaymentsModal" class="cursor-pointer hover:shadow-lg transition-shadow duration-150">
                     <template #content>
                         <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Total de
-                                pagos</span> <i class="pi pi-dollar p-2 bg-cyan-100 text-cyan-600 rounded-full"></i>
+                                pagos (clic para detalles)</span> <i class="pi pi-dollar p-2 bg-cyan-100 text-cyan-600 rounded-full"></i>
                         </div>
                         <p class="text-2xl font-bold">{{ formatCurrency(kpis.payments.current) }}</p>
                         <div class="flex items-center text-sm mt-1"
@@ -278,7 +290,7 @@ const getTransactionStatusTagSeverity = (status) => {
                     class="cursor-pointer hover:shadow-lg transition-shadow duration-150">
                     <template #content>
                         <div class="flex items-center justify-between mb-2"> <span class="text-gray-500">Total de
-                                gastos</span> <i
+                                gastos (clic para detalles)</span> <i
                                 class="pi pi-arrow-up-right p-2 bg-yellow-100 text-yellow-600 rounded-full"></i> </div>
                         <p class="text-2xl font-bold">{{ formatCurrency(kpis.expenses.current) }}</p>
                         <div class="flex items-center text-sm mt-1"
@@ -295,9 +307,9 @@ const getTransactionStatusTagSeverity = (status) => {
                 <!-- Ganancia Neta -->
                 <Card> <template #content>
                         <div class="flex items-center justify-between mb-2">
-                            <span class="text-gray-500">Ganancia neta</span>
-                            <i class="pi pi-info-circle text-gray-400 cursor-help"
-                                v-tooltip.top="'Rentabilidad (Ventas - Gastos)'"></i>
+                            <span class="text-gray-500">Ganancia neta (ventas totales - gastos)</span>
+                            <!-- +++ ICONO ORIGINAL CAMBIADO POR EL DEL MODAL DE AYUDA GENERAL +++ -->
+                            <i class="pi pi-chart-line p-2 bg-teal-100 text-teal-600 rounded-full"></i>
                         </div>
                         <p class="text-2xl font-bold"
                             :class="kpis.netProfit.current >= 0 ? 'text-gray-800 dark:text-gray-200' : 'text-red-600'">
@@ -315,9 +327,9 @@ const getTransactionStatusTagSeverity = (status) => {
                 <!-- Flujo de Dinero Neto -->
                 <Card> <template #content>
                         <div class="flex items-center justify-between mb-2">
-                            <span class="text-gray-500">Flujo de dinero neto</span>
-                            <i class="pi pi-info-circle text-gray-400 cursor-help"
-                                v-tooltip.top="'Dinero real (Pagos - Gastos)'"></i>
+                            <span class="text-gray-500">Flujo de dinero neto (total de pagos - gastos)</span>
+                             <!-- +++ ICONO ORIGINAL CAMBIADO POR EL DEL MODAL DE AYUDA GENERAL +++ -->
+                            <i class="pi pi-wallet p-2 bg-green-100 text-green-600 rounded-full"></i>
                         </div>
                         <p class="text-2xl font-bold"
                             :class="kpis.profit.current >= 0 ? 'text-gray-800 dark:text-gray-200' : 'text-red-600'">{{
@@ -569,6 +581,112 @@ const getTransactionStatusTagSeverity = (status) => {
                 </template>
             </DataTable>
         </Dialog>
+
+        <!-- +++ NUEVO MODAL DE AYUDA (Corregido) +++ -->
+        <Dialog v-model:visible="isHelpModalVisible" header="Glosario de métricas financieras" modal
+            class="w-full max-w-3xl mx-4">
+            <Accordion value="0">
+                <AccordionPanel value="0">
+                    <AccordionHeader>Ganancia neta</AccordionHeader>
+                    <AccordionContent>
+                        <div class="p-4 space-y-3">
+                            <p class="text-lg m-0">
+                                Mide la <strong>rentabilidad</strong> de tu negocio después de restar todos los gastos de tus
+                                ventas totales.
+                            </p>
+                            <div class="text-center">
+                                <Tag severity="warn" class="!text-lg !bg-teal-100 !text-teal-600 font-mono">
+                                    (Ventas Totales) - (Total de Gastos)
+                                </Tag>
+                            </div>
+                            <div>
+                                <p class="font-semibold text-gray-700 dark:text-gray-300 m-0">Utilidad para el negocio:</p>
+                                <p>
+                                    Responde a la pregunta: <strong>"¿Mi negocio es rentable?"</strong>.
+                                </p>
+                                <ul class="list-disc pl-5 mt-2 space-y-1">
+                                    <li>
+                                        Te dice si tus precios de venta son suficientes para cubrir tus costos operativos y
+                                        aún dejar un margen de ganancia.
+                                    </li>
+                                    <li>
+                                        <strong>Importante:</strong> Se basa en las <Tag class="!bg-purple-100 !text-purple-600">Ventas</Tag>, no en los pagos. Una
+                                        venta a crédito cuenta aquí, aunque no hayas recibido el dinero.
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </AccordionContent>
+                </AccordionPanel>
+                <AccordionPanel value="1">
+                    <AccordionHeader>Flujo de dinero neto</AccordionHeader>
+                    <AccordionContent>
+                        <div class="p-4 space-y-3">
+                            <p class="text-lg m-0">
+                                Mide la <strong>liquidez</strong> real de tu negocio. Es la cantidad de dinero
+                                que entró y salió.
+                            </p>
+                            <div class="text-center">
+                                <Tag severity="success" class="!text-lg font-mono">
+                                    (Total de Pagos Recibidos) - (Total de Gastos Pagados)
+                                </Tag>
+                            </div>
+                            <div>
+                                <p class="font-semibold text-gray-700 dark:text-gray-300 m-0">Utilidad para el negocio:</p>
+                                <p>
+                                    Responde a la pregunta: <strong>"¿Tengo dinero para operar y pagar mis
+                                        cuentas?"</strong>.
+                                </p>
+                                <ul class="list-disc pl-5 mt-2 space-y-1">
+                                    <li>
+                                        Un negocio puede ser "rentable" (Ganancia Neta positiva) pero quebrar por falta de
+                                        liquidez (Flujo de Dinero negativo) si los clientes no pagan a tiempo.
+                                    </li>
+                                    <li>
+                                        Este indicador es vital para la operación diaria. Te aseguras de tener efectivo en
+                                        tus cuentas bancarias.
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </AccordionContent>
+                </AccordionPanel>
+                <AccordionPanel value="2">
+                    <AccordionHeader>Monto promedio por venta (Ticket promedio)</AccordionHeader>
+                    <AccordionContent>
+                        <div class="p-4 space-y-3">
+                            <p class="text-lg m-0">
+                                Mide cuánto gasta un cliente en promedio en cada transacción que realiza.
+                            </p>
+                            <div class="text-center">
+                                <Tag severity="info" class="!text-lg font-mono">
+                                    (Ventas Totales) / (Número Total de Ventas)
+                                </Tag>
+                            </div>
+                            <div>
+                                <p class="font-semibold text-gray-700 dark:text-gray-300 m-0">Utilidad para el negocio:</p>
+                                <p>
+                                    Responde a la pregunta: <strong>"¿Cuánto gastan mis clientes en promedio por
+                                        compra?"</strong>.
+                                </p>
+                                <ul class="list-disc pl-5 mt-2 space-y-1">
+                                    <li>
+                                        Es un indicador clave para el crecimiento. Aumentar el ticket promedio (con
+                                        estrategias de *upselling* o paquetes) puede ser más fácil que conseguir nuevos
+                                        clientes.
+                                    </li>
+                                    <li>
+                                        Te ayuda a entender el poder adquisitivo de tus clientes y a probar el impacto de
+                                        nuevas estrategias de precios o promociones.
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </AccordionContent>
+                </AccordionPanel>
+            </Accordion>
+        </Dialog>
+        <!-- +++ FIN NUEVO MODAL DE AYUDA +++ -->
 
     </AppLayout>
 </template>

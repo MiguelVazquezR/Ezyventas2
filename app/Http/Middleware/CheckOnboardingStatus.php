@@ -21,15 +21,20 @@ class CheckOnboardingStatus
 
         // 1. Si el usuario está logueado Y no ha completado el onboarding
         if ($user && !$user->subscription->onboarding_completed_at) {
-            
-            // 2. Y NO está ya en la página de onboarding o deslogueándose
-            if (!$request->routeIs('onboarding.*') && !$request->routeIs('logout')) {
-                
+
+            // 2. Y NO está ya en la página de onboarding, deslogueándose, verificando correo o editando perfil
+            if (
+                !$request->routeIs('onboarding.*') &&
+                !$request->routeIs('logout') &&
+                !$request->routeIs('verification.*') &&
+                !$request->routeIs('profile.*')
+            ) {
+
                 // 3. Redirigir a la página de onboarding
                 return redirect()->route('onboarding.setup');
             }
         }
-        
+
         // 4. Si no, continuar normalmente
         return $next($request);
     }

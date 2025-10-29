@@ -40,6 +40,8 @@ createInertiaApp({
                                 today: 'Hoy',
                                 weekHeader: 'Sm',
                                 weak: 'Débil',
+                                medium: 'Medio',
+                                strong: 'Fuerte',
                                 passwordPrompt: 'Ingrese una contraseña',
                                 emptyMessage: 'No se encontraron resultados',
                                 pending: 'Pendiente'
