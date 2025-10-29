@@ -25,31 +25,39 @@ export function useWebBluetooth() {
     });
 
     // Intenta encontrar la característica correcta para enviar datos
-    async function findWritableCharacteristic(server) {
-        // (Misma lógica que antes)
+    async function findWritableCharacteristic(server, serviceUuid) { // <-- Se añade serviceUuid
         try {
-            const services = await server.getPrimaryServices();
-            logger.info('Servicios GATT encontrados:', services.map(s => s.uuid));
+            // const services = await server.getPrimaryServices(); // <-- Se quita
+            // logger.info('Servicios GATT encontrados:', services.map(s => s.uuid)); // <-- Se quita
 
-            for (const service of services) {
-                const characteristics = await service.getCharacteristics();
-                // Priorizar 'writeWithoutResponse'
-                const writeWithoutResponseChar = characteristics.find(c => c.properties.writeWithoutResponse);
-                if (writeWithoutResponseChar) {
-                    logger.info('Característica encontrada (writeWithoutResponse):', writeWithoutResponseChar.uuid);
-                    return writeWithoutResponseChar;
-                }
-                // Luego buscar 'write'
-                 const writeChar = characteristics.find(c => c.properties.write);
-                 if (writeChar) {
-                    logger.info('Característica encontrada (write):', writeChar.uuid);
-                    return writeChar;
-                }
+            // +++ INICIO CORRECCIÓN "No service found" +++
+            // Pedimos el servicio primario específico por su UUID
+            // Esto es más directo y soluciona el error "No service found"
+            logger.info(`Buscando servicio primario: ${serviceUuid}`);
+            const service = await server.getPrimaryService(serviceUuid);
+            logger.info('Servicio GATT encontrado:', service.uuid);
+            // +++ FIN CORRECCIÓN +++
+
+            // for (const service of services) { // <-- Se quita el loop
+            const characteristics = await service.getCharacteristics();
+            // Priorizar 'writeWithoutResponse'
+            const writeWithoutResponseChar = characteristics.find(c => c.properties.writeWithoutResponse);
+            if (writeWithoutResponseChar) {
+                logger.info('Característica encontrada (writeWithoutResponse):', writeWithoutResponseChar.uuid);
+                return writeWithoutResponseChar;
             }
+            // Luego buscar 'write'
+            const writeChar = characteristics.find(c => c.properties.write);
+            if (writeChar) {
+                logger.info('Característica encontrada (write):', writeChar.uuid);
+                return writeChar;
+            }
+            // } // <-- Se quita el fin del loop
             throw new Error("No se encontró ninguna característica escribible.");
         } catch (e) {
             logger.error("Error al buscar características:", e);
-            throw new Error(`Error buscando característica: ${e.message}`);
+            // El error "No service found in device" del navegador será capturado aquí.
+            throw new Error(`Error buscando servicio/característica: ${e.message}`);
         }
     }
 
@@ -75,13 +83,20 @@ export function useWebBluetooth() {
         bluetoothDevice.value = null;
         writableCharacteristic.value = null;
 
+        // +++ INICIO CORRECCIÓN "No service found" +++
+        // Definimos el UUID de la impresora (de nRF Connect) como constante
+        const PRINTER_SERVICE_UUID = '0000af30-0000-1000-8000-00805f9b34fb';
+        // +++ FIN CORRECCIÓN +++
 
         try {
             logger.info("Solicitando dispositivo Bluetooth...");
             const device = await navigator.bluetooth.requestDevice({
-                 acceptAllDevices: true, // Empezar más amplio
-                // filters: [ /* ... tus filtros ... */ ],
-                // optionalServices: ['...']
+                // Filtramos por el Service UUID '0xAF30'
+                filters: [
+                    { services: [PRINTER_SERVICE_UUID] } // <-- Usamos la constante
+                ],
+                // Y pedimos permiso explícitamente para ESE servicio.
+                optionalServices: [PRINTER_SERVICE_UUID] // <-- Usamos la constante
             });
 
             logger.info('Dispositivo seleccionado:', device.name);
@@ -95,7 +110,10 @@ export function useWebBluetooth() {
             logger.info('Servidor GATT conectado.');
 
             logger.info('Buscando característica escribible...');
-            writableCharacteristic.value = await findWritableCharacteristic(server);
+            // +++ INICIO CORRECCIÓN "No service found" +++
+            // Pasamos el UUID a la función para que busque ESE servicio
+            writableCharacteristic.value = await findWritableCharacteristic(server, PRINTER_SERVICE_UUID);
+            // +++ FIN CORRECCIÓN +++
 
             if (!writableCharacteristic.value) {
                 throw new Error("No se pudo encontrar característica adecuada para escribir.");

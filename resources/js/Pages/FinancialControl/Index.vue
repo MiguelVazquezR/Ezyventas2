@@ -623,7 +623,7 @@ const getTransactionStatusTagSeverity = (status) => {
                     <AccordionContent>
                         <div class="p-4 space-y-3">
                             <p class="text-lg m-0">
-                                Mide la <strong>liquidez</strong> real de tu negocio. Es la cantidad de dinero en efectivo
+                                Mide la <strong>liquidez</strong> real de tu negocio. Es la cantidad de dinero
                                 que entró y salió.
                             </p>
                             <div class="text-center">

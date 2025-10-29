@@ -441,7 +441,7 @@ const getTemplateTypeSeverity = (type) => {
                             aria-label="Desconectar" v-tooltip.bottom="'Desconectar'" class="w-8 h-8" />
                     </div>
                     <div v-else class="flex items-center gap-2 mt-1">
-                        <Button label="Buscar y Conectar Impresora Bluetooth"
+                        <Button label="Buscar y conectar impresora Bluetooth"
                             :icon="isScanningBluetooth || isConnectingBluetooth ? 'pi pi-spin pi-spinner' : 'pi pi-bluetooth'"
                             @click="scanAndConnectBluetooth" :loading="isScanningBluetooth || isConnectingBluetooth"
                             severity="info" outlined class="flex-grow"
