@@ -4,13 +4,11 @@ namespace App\Actions\Fortify;
 
 use App\Enums\BillingPeriod;
 use App\Enums\PlanItemType;
-use App\Mail\WelcomeEmail;
 use App\Models\PlanItem;
 use App\Models\Subscription;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Laravel\Fortify\Contracts\CreatesNewUsers;
@@ -88,15 +86,6 @@ class CreateNewUser implements CreatesNewUsers
             });
 
             $version->items()->createMany($itemsData->toArray());
-
-            // 7. Enviar email de bienvenida
-            try {
-                Mail::to($user->email)->send(new WelcomeEmail($user));
-            } catch (\Exception $e) {
-                // Si el email falla (ej. Mailgun no configurado), no revertir la transacción.
-                // Solo registrar el error.
-                \Illuminate\Support\Facades\Log::error("Error al enviar email de bienvenida: " . $e->getMessage());
-            }
 
             return $user;
         });

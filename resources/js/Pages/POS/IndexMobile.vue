@@ -65,7 +65,7 @@ const getPriceForQuantity = (productData, quantity) => {
     // Si no hay tiers, la cantidad es 1, o los tiers están vacíos
     if (!productData.price_tiers || productData.price_tiers.length === 0 || quantity <= 1) {
         // Devolver el precio base (con promo directa si aplica) y el original puro
-         return {
+        return {
             price: basePriceAfterDirectPromo,
             original_price_base: absoluteOriginalPrice, // El precio original sin promos ni tiers
             isTierPrice: false
@@ -121,33 +121,33 @@ const addToCart = (data) => {
 
     if (existingItem) {
         if (targetQuantity <= stock || stock < 0) {
-             existingItem.quantity = targetQuantity;
-             // Recalcular solo si no es manual
-             if (!existingItem.isManualPrice) {
-                 // Usar los datos base guardados en el item existente para recalcular
-                 const itemBaseDataForCalc = {
-                     selling_price: existingItem.selling_price, // Original base guardado
-                     price: existingItem.price_qty_1_promo, // Precio qty 1 con promo guardado
-                     price_tiers: existingItem.price_tiers
-                 };
-                 const { price: updatedPrice, original_price_base: updatedOriginalBase, isTierPrice: updatedIsTier } = getPriceForQuantity(itemBaseDataForCalc, existingItem.quantity);
+            existingItem.quantity = targetQuantity;
+            // Recalcular solo si no es manual
+            if (!existingItem.isManualPrice) {
+                // Usar los datos base guardados en el item existente para recalcular
+                const itemBaseDataForCalc = {
+                    selling_price: existingItem.selling_price, // Original base guardado
+                    price: existingItem.price_qty_1_promo, // Precio qty 1 con promo guardado
+                    price_tiers: existingItem.price_tiers
+                };
+                const { price: updatedPrice, original_price_base: updatedOriginalBase, isTierPrice: updatedIsTier } = getPriceForQuantity(itemBaseDataForCalc, existingItem.quantity);
 
-                 // Calcular modificador de variante basado en los originales guardados
-                 let variantModifier = 0;
-                 if (existingItem.product_attribute_id) {
-                     variantModifier = (existingItem.original_price ?? existingItem.selling_price) - existingItem.selling_price;
-                 }
+                // Calcular modificador de variante basado en los originales guardados
+                let variantModifier = 0;
+                if (existingItem.product_attribute_id) {
+                    variantModifier = (existingItem.original_price ?? existingItem.selling_price) - existingItem.selling_price;
+                }
 
-                 existingItem.price = updatedPrice + variantModifier; // Aplicar modificador DESPUÉS
-                 // original_price_base no cambia, ya lo tenemos en existingItem.selling_price
-                 existingItem.isTierPrice = updatedIsTier;
-             }
+                existingItem.price = updatedPrice + variantModifier; // Aplicar modificador DESPUÉS
+                // original_price_base no cambia, ya lo tenemos en existingItem.selling_price
+                existingItem.isTierPrice = updatedIsTier;
+            }
         } else {
-             toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
+            toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
         }
     } else {
-         // Guardar los precios base importantes en el nuevo item
-         const newItem = {
+        // Guardar los precios base importantes en el nuevo item
+        const newItem = {
             ...product, // Copia datos del producto (incluye price_tiers)
             cartItemId: cartItemId,
             quantity: quantityToAdd,
@@ -206,15 +206,15 @@ const updateCartQuantity = ({ itemId, quantity }) => {
                 let variantModifier = 0;
                 if (item.product_attribute_id) {
                     // Usar original_price (base + modif) y selling_price (base) para obtener modificador
-                     variantModifier = (item.original_price ?? item.selling_price) - item.selling_price;
+                    variantModifier = (item.original_price ?? item.selling_price) - item.selling_price;
                 }
 
                 item.price = updatedPrice + variantModifier; // Aplicar modificador DESPUÉS
                 item.isTierPrice = updatedIsTier; // Actualizar flag
             } else {
-                 console.error("Faltan datos base en el item para recalcular precio:", item);
-                 item.quantity = oldQuantity; // Revertir cantidad si hubo error
-                 toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo recalcular el precio.', life: 3000 });
+                console.error("Faltan datos base en el item para recalcular precio:", item);
+                item.quantity = oldQuantity; // Revertir cantidad si hubo error
+                toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo recalcular el precio.', life: 3000 });
             }
         }
         // Si es precio manual, solo se actualiza la cantidad, el precio no cambia
@@ -328,7 +328,20 @@ const handleCheckout = (checkoutData) => {
         unit_price: item.price, // Precio final unitario
         description: item.name + (item.selectedVariant ? ` (${Object.values(item.selectedVariant).join('/')})` : ''),
         // Usar original_price (base + modif) para calcular descuento
-        discount: Math.max(0, (item.original_price ?? item.price) - item.price),
+        discount: (item.original_price ?? item.price) - item.price,
+        discount_reason: (() => {
+            const originalPrice = item.original_price ?? item.price;
+            if (item.isManualPrice) {
+                return item.price < originalPrice ? 'Descuento manual' : (item.price > originalPrice ? 'Aumento manual' : null);
+            }
+            if (item.isTierPrice) {
+                return 'Precio de mayoreo';
+            }
+            if (item.price < originalPrice) {
+                return 'Promoción de item';
+            }
+            return null; // Sin descuento o motivo específico
+        })()
     }));
     form.customerId = selectedClient.value ? selectedClient.value.id : null;
     form.subtotal = checkoutData.subtotal;
@@ -355,30 +368,22 @@ const handleCheckout = (checkoutData) => {
 </script>
 
 <template>
+
     <Head title="Punto de Venta" />
     <AppLayout>
         <div class="relative h-[calc(100vh-100px)]">
             <!-- Vista principal del POS (si hay sesión activa) -->
             <template v-if="activeSession">
-                <PosLeftPanel
-                    :products="products"
-                    :categories="categories"
-                    :pending-carts="pendingCarts"
-                    :filters="filters"
-                    :active-session="activeSession"
-                    @add-to-cart="addToCart"
-                    @resume-cart="resumePendingCart"
-                    @delete-cart="deletePendingCart"
+                <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
+                    :filters="filters" :active-session="activeSession" @add-to-cart="addToCart"
+                    @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
                     @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
-                    @refresh-session-data="handleRefreshSessionData"
-                    @open-history-modal="isHistoryModalVisible = true"
-                    @open-close-session-modal="isCloseSessionModalVisible = true"
-                    class="h-full"
-                />
+                    @refresh-session-data="handleRefreshSessionData" @open-history-modal="isHistoryModalVisible = true"
+                    @open-close-session-modal="isCloseSessionModalVisible = true" class="h-full" />
 
                 <!-- Botón Flotante del Carrito -->
                 <div class="fixed bottom-6 right-6 z-50">
-                     <Button @click="isCartDrawerVisible = true" rounded
+                    <Button @click="isCartDrawerVisible = true" rounded
                         class="!size-16 shadow-lg !bg-white dark:!bg-gray-700 !border !border-[#D9D9D9] dark:!border-gray-600">
                         <i class="pi pi-shopping-cart !text-2xl text-black dark:text-white"></i>
                         <Badge v-if="cartItemCount > 0" :value="cartItemCount" severity="contrast"
@@ -391,22 +396,12 @@ const handleCheckout = (checkoutData) => {
                     <template #header>
                         <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Resumen de Venta</h2>
                     </template>
-                    <ShoppingCart
-                        :items="cartItems"
-                        :client="selectedClient"
-                        :customers="localCustomers"
-                        :default-customer="defaultCustomer"
-                        :active-promotions="activePromotions"
-                        @update-quantity="updateCartQuantity"
-                        @update-price="updateCartPrice"
-                        @remove-item="removeCartItem"
-                        @clear-cart="clearCart"
-                        @select-customer="handleSelectCustomer"
-                        @customer-created="handleCustomerCreated"
-                        @save-cart="saveCartToPending"
-                        @checkout="handleCheckout"
-                        class="h-full"
-                    />
+                    <ShoppingCart :items="cartItems" :client="selectedClient" :customers="localCustomers"
+                        :default-customer="defaultCustomer" :active-promotions="activePromotions"
+                        @update-quantity="updateCartQuantity" @update-price="updateCartPrice"
+                        @remove-item="removeCartItem" @clear-cart="clearCart" @select-customer="handleSelectCustomer"
+                        @customer-created="handleCustomerCreated" @save-cart="saveCartToPending"
+                        @checkout="handleCheckout" class="h-full" />
                 </Drawer>
 
             </template>
@@ -414,64 +409,40 @@ const handleCheckout = (checkoutData) => {
             <template v-else>
                 <div class="flex items-center justify-center h-full dark:bg-gray-900 rounded-lg">
                     <div class="text-center p-8">
-                         <div class="bg-blue-100 dark:bg-blue-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
+                        <div
+                            class="bg-blue-100 dark:bg-blue-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
                             <i class="pi pi-inbox !text-4xl text-blue-500"></i>
                         </div>
                         <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Punto de Venta</h2>
                         <p class="text-gray-600 dark:text-gray-400 mt-2 max-w-md">
                             No tienes una sesión de caja activa. Únete a una existente o abre una nueva para empezar.
                         </p>
-                        <Button
-                            v-if="joinableSessions && joinableSessions.length > 0"
-                            @click="isJoinSessionModalVisible = true"
-                            label="Unirse a una sesión activa"
-                            icon="pi pi-users"
-                            class="w-full max-w-xs mt-8"
-                        />
-                        <Button
-                            v-else-if="availableCashRegisters && availableCashRegisters.length > 0"
-                            @click="isStartSessionModalVisible = true"
-                            label="Abrir una Caja"
-                            icon="pi pi-lock-open"
-                            class="w-full max-w-xs mt-8"
-                        />
-                         <p v-else class="text-sm text-gray-500 pt-4 mt-8">
-                                No hay cajas disponibles para unirse o abrir en esta sucursal.
-                        </p>
+                        <Button v-if="joinableSessions && joinableSessions.length > 0"
+                            @click="isJoinSessionModalVisible = true" label="Unirse a una sesión activa"
+                            icon="pi pi-users" class="w-full max-w-xs mt-8" />
+                        <Button v-else-if="availableCashRegisters && availableCashRegisters.length > 0"
+                            @click="isStartSessionModalVisible = true" label="Abrir una Caja" icon="pi pi-lock-open"
+                            class="w-full max-w-xs mt-8" />
+                        <div v-else class="text-sm text-gray-500 pt-4 mt-8">
+                            <p>No hay cajas disponibles para unirse o abrir en esta sucursal.</p>
+                            <Button @click="$inertia.visit(route('cash-registers.create'))" label="Crear una caja"
+                                icon="pi pi-inbox" />
+                        </div>
                     </div>
                 </div>
             </template>
         </div>
 
         <!-- Modales -->
-        <StartSessionModal
-            :visible="isStartSessionModalVisible"
-            :cash-registers="availableCashRegisters"
-            :user-bank-accounts="userBankAccounts"
-            @update:visible="isStartSessionModalVisible = $event"
-        />
-        <JoinSessionModal
-            :visible="isJoinSessionModalVisible"
-            :sessions="joinableSessions"
-            @update:visible="isJoinSessionModalVisible = $event"
-        />
-        <CloseSessionModal
-            v-if="activeSession"
-            :visible="isCloseSessionModalVisible"
-            :session="activeSession"
-            @update:visible="isCloseSessionModalVisible = $event"
-        />
-        <SessionHistoryModal
-            v-if="activeSession"
-            :visible="isHistoryModalVisible"
-            :session="activeSession"
-            @update:visible="isHistoryModalVisible = $event"
-        />
-        <PrintModal
-            v-if="printDataSource"
-            v-model:visible="isPrintModalVisible"
-            :data-source="printDataSource"
-            :available-templates="availableTemplates"
-        />
+        <StartSessionModal :visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
+            :user-bank-accounts="userBankAccounts" @update:visible="isStartSessionModalVisible = $event" />
+        <JoinSessionModal :visible="isJoinSessionModalVisible" :sessions="joinableSessions"
+            @update:visible="isJoinSessionModalVisible = $event" />
+        <CloseSessionModal v-if="activeSession" :visible="isCloseSessionModalVisible" :session="activeSession"
+            @update:visible="isCloseSessionModalVisible = $event" />
+        <SessionHistoryModal v-if="activeSession" :visible="isHistoryModalVisible" :session="activeSession"
+            @update:visible="isHistoryModalVisible = $event" />
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
+            :available-templates="availableTemplates" />
     </AppLayout>
 </template>

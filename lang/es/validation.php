@@ -234,5 +234,6 @@ return [
         'price_tiers' => 'niveles de precio',
         'price_tiers.*.min_quantity' => 'cantidad mínima',
         'price_tiers.*.price' => 'precio unitario',
+        'subscription.business_name' => 'razón social',
     ],
 ];

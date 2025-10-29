@@ -33,7 +33,7 @@ trait OptimizeMediaLocal
 
             // No optimizar si está por debajo del límite o no estamos en producción
             // --- NOTA: Revertido a 'production' para uso normal ---
-            if ($fileSizeInKB <= $sizeLimitKB || app()->environment('production')) {
+            if ($fileSizeInKB <= $sizeLimitKB || !app()->environment('production')) {
                  // Nota: Si necesitas probar en local, cambia 'production' a 'development' temporalmente
                 return;
             }

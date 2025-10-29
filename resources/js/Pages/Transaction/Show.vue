@@ -203,7 +203,7 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                                             class="text-gray-500 text-xs">
                                             <!-- Corregido: Sumar correctamente -->
                                             {{ formatCurrency(parseFloat(data.unit_price || 0) +
-                                            parseFloat(data.discount_amount || 0)) }}
+                                                parseFloat(data.discount_amount || 0)) }}
                                         </del>
                                         <p class="font-semibold m-0">
                                             {{ formatCurrency(data.unit_price) }}
@@ -211,10 +211,16 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                                         <p v-if="parseFloat(data.discount_amount || 0) > 0"
                                             class="text-xs text-green-600 m-0">
                                             Ahorro: {{ formatCurrency(data.discount_amount) }}
+                                            <span v-if="data.discount_reason" class="text-gray-500 dark:text-gray-400">
+                                                ({{ data.discount_reason }})
+                                            </span>
                                         </p>
                                         <p v-else-if="parseFloat(data.discount_amount || 0) < 0"
                                             class="text-xs text-red-600 m-0">
                                             Aumento: {{ formatCurrency(Math.abs(data.discount_amount)) }}
+                                            <span v-if="data.discount_reason" class="text-gray-500 dark:text-gray-400">
+                                                ({{ data.discount_reason }})
+                                            </span>
                                         </p>
                                     </div>
                                 </template>

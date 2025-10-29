@@ -394,8 +394,8 @@ const finishOnboarding = () => {
                                     </div>
                                     <div>
                                         <InputLabel for="limit_products" value="Productos" class="font-semibold" />
-                                        <p class="text-sm text-gray-500 mb-2">Cantidad de productos que puedes registrar
-                                            en tu inventario.</p>
+                                        <p class="text-sm text-gray-500 mb-2">
+                                            Cantidad requerida para registrar todo tu inventario.</p>
                                         <InputNumber id="limit_products" v-model="form.limits.limit_products" :min="1"
                                             showButtons fluid />
                                         <InputError class="mt-2" :message="form.errors['limits.limit_products']" />
@@ -444,7 +444,7 @@ const finishOnboarding = () => {
                                 <div v-for="(account, index) in form.bank_accounts" :key="index"
                                     class="p-4 border rounded-lg space-y-4 relative">
                                     <Button icon="pi pi-trash" severity="danger" text rounded
-                                        @click="removeBankAccount(index)" class="absolute top-2 right-2" />
+                                        @click="removeBankAccount(index)" class="!absolute top-2 right-2" />
 
                                     <!-- --- CAMBIO: FloatLabel a InputLabel --- -->
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
