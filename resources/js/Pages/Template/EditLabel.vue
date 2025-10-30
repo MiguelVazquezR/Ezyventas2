@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
+import { useTemplateVariables } from '@/Composables/useTemplateVariables';
 
 const props = defineProps({
     template: Object,
@@ -32,87 +33,11 @@ const submit = () => {
 
 const availableElements = ref([
     { id: 'text', name: 'Texto', icon: 'pi pi-align-left' },
-    { id: 'barcode', name: 'Código de Barras', icon: 'pi pi-barcode' },
+    { id: 'barcode', name: 'Código de barras', icon: 'pi pi-barcode' },
     { id: 'qr', name: 'Código QR', icon: 'pi pi-qrcode' },
 ]);
 
-const getInitialPlaceholderOptions = () => ([
-    {
-        group: 'Venta',
-        items: [
-            { label: 'Folio', value: '{{v.folio}}' }, { label: 'Fecha', value: '{{v.fecha}}' }, { label: 'Hora', value: '{{v.hora}}' },
-            { label: 'Fecha y Hora', value: '{{v.fecha_hora}}' }, { label: 'Subtotal', value: '{{v.subtotal}}' }, { label: 'Descuentos', value: '{{v.descuentos}}' },
-            { label: 'Impuestos', value: '{{v.impuestos}}' }, { label: 'Total', value: '{{v.total}}' }, { label: 'Métodos de Pago', value: '{{v.metodos_pago}}' },
-            { label: 'Notas de Venta', value: '{{v.notas_venta}}' },
-        ]
-    },
-    {
-        group: 'Orden de servicio',
-        items: [
-            { label: 'Folio', value: '{{os.folio}}' }, { label: 'Fecha recepción', value: '{{os.fecha_recepcion}}' }, { label: 'Hora recepción', value: '{{os.hora_recepcion}}' },
-            { label: 'Fecha y Hora recepción', value: '{{os.fecha_hora_recepcion}}' }, { label: 'Cliente', value: '{{os.cliente.nombre}}' }, { label: 'Problemas reportados', value: '{{os.problemas_reportados}}' },
-            { label: 'Equipo/Máquina', value: '{{os.item_description}}' }, { label: 'Subtotal', value: '{{os.subtotal}}' }, { label: 'Descuento', value: '{{os.descuento}}' }, { label: 'Total', value: '{{os.total}}' },
-        ]
-    },
-    {
-        group: 'Negocio',
-        items: [
-            { label: 'Nombre del Negocio', value: '{{negocio.nombre}}' }, { label: 'Razón Social', value: '{{negocio.razon_social}}' },
-            { label: 'Dirección del Negocio', value: '{{negocio.direccion}}' }, { label: 'Teléfono del Negocio', value: '{{negocio.telefono}}' },
-        ]
-    },
-    {
-        group: 'Sucursal',
-        items: [
-            { label: 'Nombre Sucursal', value: '{{sucursal.nombre}}' }, { label: 'Dirección Sucursal', value: '{{sucursal.direccion}}' },
-            { label: 'Teléfono Sucursal', value: '{{sucursal.telefono}}' },
-        ]
-    },
-    {
-        group: 'Cliente',
-        items: [
-            { label: 'Nombre del Cliente', value: '{{cliente.nombre}}' }, { label: 'Teléfono del Cliente', value: '{{cliente.telefono}}' },
-            { label: 'Email del Cliente', value: '{{cliente.email}}' }, { label: 'Empresa del Cliente', value: '{{cliente.empresa}}' },
-        ]
-    },
-    {
-        group: 'Vendedor',
-        items: [{ label: 'Nombre del Vendedor', value: '{{vendedor.nombre}}' }]
-    },
-    {
-        group: 'Productos (para bucles)',
-        items: [
-            { label: 'Nombre Producto', value: '{{p.nombre}}' }, { label: 'Cantidad', value: '{{p.cantidad}}' },
-            { label: 'Precio Unitario', value: '{{p.precio}}' }, { label: 'Total Producto', value: '{{p.total}}' }
-        ]
-    },
-]);
-
-const placeholderOptions = computed(() => {
-    const options = getInitialPlaceholderOptions();
-    const customFieldsByModule = {};
-
-    props.customFieldDefinitions.forEach(field => {
-        if (!customFieldsByModule[field.module]) {
-            customFieldsByModule[field.module] = [];
-        }
-        customFieldsByModule[field.module].push(field);
-    });
-
-    for (const moduleKey in customFieldsByModule) {
-        if (moduleKey === 'service_orders') {
-            options.push({
-                group: 'Campos Personalizados (Orden de Servicio)',
-                items: customFieldsByModule[moduleKey].map(field => ({
-                    label: field.name,
-                    value: `{{os.custom.${field.key}}}`
-                }))
-            });
-        }
-    }
-
-    return options;
-});
+const { placeholderOptions } = useTemplateVariables(() => props.customFieldDefinitions);
 
 const addElement = (type) => {
     const newElement = {
@@ -121,7 +46,7 @@ const addElement = (type) => {
         data: { x: 5, y: 5, rotation: 0 }
     };
     if (type === 'text') {
-        newElement.data.value = 'Texto de Ejemplo';
+        newElement.data.value = 'Texto de ejemplo';
         newElement.data.font_size = 1;
     }
     if (type === 'barcode') {
@@ -365,19 +290,22 @@ const dpiOptions = ref([203, 300, 600]);
                             <InputLabel value="Tamaño de Fuente" />
                             <InputNumber v-model="selectedElement.data.font_size" class="w-full mt-1" showButtons :min="1" :max="8" />
                         </div>
-                        <Accordion :activeIndex="null">
-                            <AccordionTab header="Insertar Variable">
-                                <div class="space-y-2 max-h-64 overflow-y-auto">
-                                    <div v-for="group in placeholderOptions" :key="group.group">
-                                        <p class="text-xs font-bold text-gray-500 mb-1">{{ group.group }}</p>
-                                        <div class="flex flex-wrap gap-1">
-                                            <Button v-for="item in group.items" :key="item.value"
-                                                @click="selectedElement.data.value = (selectedElement.data.value || '') + item.value"
-                                                :label="item.label" severity="secondary" outlined size="small" />
+                        <Accordion>
+                            <AccordionPanel value="0">
+                                <AccordionHeader>Insertar variable</AccordionHeader>
+                                <AccordionContent>
+                                    <div class="space-y-2 max-h-72 overflow-y-auto">
+                                        <div v-for="group in placeholderOptions" :key="group.group">
+                                            <p class="text-xs font-bold text-gray-500 mb-1">{{ group.group }}</p>
+                                            <div class="flex flex-wrap gap-1">
+                                                <Button v-for="item in group.items" :key="item.value"
+                                                    @click="selectedElement.data.value = (selectedElement.data.value || '') + item.value"
+                                                    :label="item.label" severity="secondary" outlined size="small" />
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            </AccordionTab>
+                                </AccordionContent>
+                            </AccordionPanel>
                         </Accordion>
                     </div>
                     <div v-if="selectedElement.type === 'barcode'" class="space-y-4">

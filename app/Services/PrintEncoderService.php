@@ -3,10 +3,14 @@
 namespace App\Services;
 
 use App\Enums\TemplateType;
+use App\Models\Branch;
+use App\Models\Customer;
 use App\Models\PrintTemplate;
 use App\Models\Product;
 use App\Models\ServiceOrder;
+use App\Models\Subscription;
 use App\Models\Transaction;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -54,7 +58,7 @@ class PrintEncoderService
         $tspl .= "SPEED 4\n";
         $tspl .= "DIRECTION 0\n";
 
-        $dotsPerMm = $config['dpi'] / 25.4;
+        $dotsPerMm = ($config['dpi'] ?? 203) / 25.4; // Default a 203 dpi si no está seteado
 
         // --- INICIO: Lógica de Calibración ---
         $offsetX_mm = $options['offset_x'] ?? 0;
@@ -159,16 +163,20 @@ class PrintEncoderService
                 case 'line_break':
                     $fullText .= "\n";
                     break;
-                case 'barcode':
+               case 'barcode':
                     $barcodeData = self::replacePlaceholders($element['data']['value'], $dataSource);
-                    $fullText .= $gs . 'h' . chr(80) . $gs . 'w' . chr(2) . $gs . 'k' . chr(73) . chr(strlen($barcodeData)) . $barcodeData . "\n";
+                    $height = $element['data']['height'] ?? 80; // Get height, default 80
+                    $height = max(1, min(255, (int)$height));    // Clamp value
+                    $fullText .= $gs . 'h' . chr($height) . $gs . 'w' . chr(2) . $gs . 'k' . chr(73) . chr(strlen($barcodeData)) . $barcodeData . "\n"; // Use $height
                     break;
                 case 'qr':
                     $qrData = self::replacePlaceholders($element['data']['value'], $dataSource);
+                    $size = $element['data']['size'] ?? 5; // Get size, default 5
+                    $size = max(1, min(16, (int)$size));   // Clamp value
                     $len = strlen($qrData) + 3;
                     $pL = chr($len % 256);
                     $pH = chr($len / 256);
-                    $fullText .= $gs . '(k' . chr(4) . chr(0) . '1A' . chr(50) . chr(0) . $gs . '(k' . chr(3) . chr(0) . '1C' . chr(5) . $gs . '(k' . chr(3) . chr(0) . '1E' . chr(48) . $gs . '(k' . $pL . $pH . '1P0' . $qrData . $gs . '(k' . chr(3) . chr(0) . '1Q0' . "\n";
+                    $fullText .= $gs . '(k' . chr(4) . chr(0) . '1A' . chr(50) . chr(0) . $gs . '(k' . chr(3) . chr(0) . '1C' . chr($size) . $gs . '(k' . chr(3) . chr(0) . '1E' . chr(48) . $gs . '(k' . $pL . $pH . '1P0' . $qrData . $gs . '(k' . chr(3) . chr(0) . '1Q0' . "\n"; // Use $size
                     break;
                 case 'sales_table':
                     if ($dataSource->items()->exists()) {
@@ -194,97 +202,193 @@ class PrintEncoderService
         return $fullText;
     }
 
+    // --- MÉTODOS AUXILIARES REFACTORIZADOS ---
+
+    /**
+     * Obtiene los reemplazos para las variables del Negocio (Suscripción).
+     */
+    private static function getNegocioReplacements(Subscription $subscription): array
+    {
+        return [
+            '{{negocio.nombre}}' => $subscription->commercial_name,
+            '{{negocio.razon_social}}' => $subscription->business_name,
+            '{{negocio.direccion}}' => implode(', ', array_filter((array)($subscription->address ?? []))),
+            '{{negocio.telefono}}' => $subscription->contact_phone,
+        ];
+    }
+
+    /**
+     * Obtiene los reemplazos para las variables de la Sucursal.
+     */
+    private static function getSucursalReplacements(Branch $branch): array
+    {
+        return [
+            '{{sucursal.nombre}}' => $branch->name,
+            '{{sucursal.direccion}}' => implode(', ', array_filter((array)($branch->address ?? []))),
+            '{{sucursal.telefono}}' => $branch->contact_phone,
+        ];
+    }
+
+    /**
+     * Obtiene los reemplazos para las variables del Cliente.
+     * Usa la ServiceOrder como fallback para datos de cliente si no existe un Customer.
+     */
+    private static function getClienteReplacements(?Customer $customer, ?ServiceOrder $serviceOrder = null): array
+    {
+        if ($customer) {
+            return [
+                '{{cliente.nombre}}' => $customer->name ?? 'Público en General',
+                '{{cliente.telefono}}' => $customer->phone ?? '',
+                '{{cliente.email}}' => $customer->email ?? '',
+                '{{cliente.empresa}}' => $customer->company_name ?? '',
+            ];
+        }
+        if ($serviceOrder) {
+            return [
+                '{{cliente.nombre}}' => $serviceOrder->customer_name ?? 'N/A',
+                '{{cliente.telefono}}' => $serviceOrder->customer_phone ?? '',
+                '{{cliente.email}}' => $serviceOrder->customer_email ?? '',
+                '{{cliente.empresa}}' => '', // ServiceOrder no tiene "empresa"
+            ];
+        }
+        return [
+            '{{cliente.nombre}}' => 'Público en General',
+            '{{cliente.telefono}}' => '',
+            '{{cliente.email}}' => '',
+            '{{cliente.empresa}}' => '',
+        ];
+    }
+
+    /**
+     * Obtiene los reemplazos para las variables del Vendedor (Usuario).
+     */
+    private static function getVendedorReplacements(User $user): array
+    {
+        return [
+            '{{vendedor.nombre}}' => $user->name,
+        ];
+    }
+
+    /**
+     * Obtiene los reemplazos para las variables de Producto (para etiquetas).
+     */
+    private static function getProductoReplacements(Product $product): array
+    {
+        return [
+            '{{p.nombre}}' => $product->name,
+            '{{p.precio}}' => number_format($product->selling_price, 2),
+            '{{p.sku}}' => $product->sku,
+        ];
+    }
+
+    /**
+     * Obtiene los reemplazos para las variables de Transacción (Venta).
+     */
+    private static function getTransactionReplacements(Transaction $transaction): array
+    {
+        $transaction->loadMissing('payments');
+        $paymentMethods = $transaction->payments->pluck('payment_method.value')->unique()->map(fn($method) => ucfirst($method))->implode(', ');
+        $totalPaid = $transaction->payments->sum('amount');
+
+        return [
+            '{{v.folio}}' => $transaction->folio,
+            '{{v.fecha}}' => Carbon::parse($transaction->created_at)->format('d/m/Y'),
+            '{{v.hora}}' => Carbon::parse($transaction->created_at)->format('H:i A'),
+            '{{v.fecha_hora}}' => Carbon::parse($transaction->created_at)->format('d/m/Y H:i A'),
+            '{{v.subtotal}}' => number_format($transaction->subtotal, 2),
+            '{{v.descuentos}}' => number_format($transaction->total_discount, 2),
+            '{{v.impuestos}}' => number_format($transaction->total_tax, 2),
+            '{{v.total}}' => number_format($transaction->subtotal - $transaction->total_discount + $transaction->total_tax, 2),
+            '{{v.metodos_pago}}' => $paymentMethods,
+            '{{v.total_pagado}}' => number_format($totalPaid, 2),
+            '{{v.notas_venta}}' => $transaction->notes,
+        ];
+    }
+
+    /**
+     * Obtiene los reemplazos para las variables de Orden de Servicio.
+     */
+    private static function getServiceOrderReplacements(ServiceOrder $serviceOrder): array
+    {
+        $replacements = [
+            '{{os.folio}}' => $serviceOrder->folio,
+            '{{os.fecha_recepcion}}' => Carbon::parse($serviceOrder->received_at)->format('d/m/Y'),
+            '{{os.hora_recepcion}}' => Carbon::parse($serviceOrder->received_at)->format('H:i A'),
+            '{{os.fecha_hora_recepcion}}' => Carbon::parse($serviceOrder->received_at)->format('d/m/Y H:i A'),
+            '{{os.subtotal}}' => number_format($serviceOrder->subtotal, 2),
+            '{{os.descuento}}' => number_format($serviceOrder->discount_amount, 2),
+            '{{os.total}}' => number_format($serviceOrder->final_total, 2),
+            '{{os.problemas_reportados}}' => $serviceOrder->reported_problems,
+            '{{os.item_description}}' => $serviceOrder->item_description,
+        ];
+
+        // --- Lógica mejorada para campos personalizados ---
+        if (!empty($serviceOrder->custom_fields)) {
+            foreach ($serviceOrder->custom_fields as $key => $value) {
+                $printValue = ''; // Valor por defecto
+                
+                if (is_null($value)) {
+                    $printValue = ''; // Imprime nada para valores nulos
+                } elseif (is_bool($value)) {
+                    $printValue = $value ? 'Si' : 'No'; // Convierte booleano a Si/No
+                } elseif (is_array($value)) {
+                    // Si es un objeto complejo (como 'desbloqueo') que tiene una clave 'value'
+                    if (isset($value['value'])) {
+                        $actualValue = $value['value'];
+                        // Si el valor interno también es un array (como en 'pattern')
+                        if (is_array($actualValue)) {
+                            $printValue = implode(', ', $actualValue);
+                        } else {
+                            $printValue = (string) $actualValue;
+                        }
+                    } else {
+                        // Si es un array simple (p. ej. de checkboxes o accesorios)
+                        $printValue = implode(', ', $value);
+                    }
+                } else {
+                    // Para valores simples como texto, números, etc.
+                    $printValue = (string) $value;
+                }
+
+                $replacements["{{os.custom.{$key}}}"] = $printValue;
+            }
+        }
+        return $replacements;
+    }
+
+    /**
+     * Método principal refactorizado para construir el array de reemplazos.
+     */
     private static function replacePlaceholders(string $text, $dataSource): string
     {
         $replacements = [];
 
         if ($dataSource instanceof Product) {
             $dataSource->loadMissing(['branch.subscription']);
-            $replacements = [
-                '{{p.nombre}}' => $dataSource->name,
-                '{{p.precio}}' => number_format($dataSource->selling_price, 2),
-                '{{p.sku}}' => $dataSource->sku,
-                '{{negocio.nombre}}' => $dataSource->branch->subscription->commercial_name,
-                '{{sucursal.nombre}}' => $dataSource->branch->name,
-            ];
+            $replacements += self::getProductoReplacements($dataSource);
+            $replacements += self::getNegocioReplacements($dataSource->branch->subscription);
+            $replacements += self::getSucursalReplacements($dataSource->branch);
+
         } elseif ($dataSource instanceof Transaction) {
             $dataSource->loadMissing(['customer', 'branch.subscription', 'user', 'payments']);
-            $paymentMethods = $dataSource->payments->pluck('payment_method.value')->unique()->map(fn($method) => ucfirst($method))->implode(', ');
-            $replacements = [
-                '{{v.folio}}' => $dataSource->folio,
-                '{{v.fecha}}' => Carbon::parse($dataSource->created_at)->format('d/m/Y'),
-                '{{v.hora}}' => Carbon::parse($dataSource->created_at)->format('H:i A'),
-                '{{v.fecha_hora}}' => Carbon::parse($dataSource->created_at)->format('d/m/Y H:i A'),
-                '{{v.subtotal}}' => number_format($dataSource->subtotal, 2),
-                '{{v.descuentos}}' => number_format($dataSource->total_discount, 2),
-                '{{v.impuestos}}' => number_format($dataSource->total_tax, 2),
-                '{{v.total}}' => number_format($dataSource->subtotal - $dataSource->total_discount + $dataSource->total_tax, 2),
-                '{{v.metodos_pago}}' => $paymentMethods,
-                '{{v.notas_venta}}' => $dataSource->notes,
-                '{{v.cliente.nombre}}' => $dataSource->customer->name ?? 'Público en General',
-                '{{v.cliente.telefono}}' => $dataSource->customer->phone ?? '',
-                '{{v.cliente.email}}' => $dataSource->customer->email ?? '',
-                '{{v.cliente.empresa}}' => $dataSource->customer->company_name ?? '',
-                '{{v.negocio.nombre}}' => $dataSource->branch->subscription->commercial_name,
-                '{{v.negocio.razon_social}}' => $dataSource->branch->subscription->business_name,
-                '{{v.negocio.direccion}}' => implode(', ', array_filter((array)($dataSource->branch->subscription->address ?? []))),
-                '{{v.negocio.telefono}}' => $dataSource->branch->subscription->contact_phone,
-                '{{v.sucursal.nombre}}' => $dataSource->branch->name,
-                '{{v.sucursal.direccion}}' => implode(', ', array_filter((array)($dataSource->branch->address ?? []))),
-                '{{v.sucursal.telefono}}' => $dataSource->branch->contact_phone,
-                '{{v.vendedor.nombre}}' => $dataSource->user->name,
-            ];
+            $replacements += self::getTransactionReplacements($dataSource);
+            $replacements += self::getNegocioReplacements($dataSource->branch->subscription);
+            $replacements += self::getSucursalReplacements($dataSource->branch);
+            $replacements += self::getClienteReplacements($dataSource->customer);
+            $replacements += self::getVendedorReplacements($dataSource->user);
+
         } elseif ($dataSource instanceof ServiceOrder) {
-            $dataSource->loadMissing(['branch.subscription', 'user']);
+            $dataSource->loadMissing(['branch.subscription', 'user', 'customer', 'transaction.payments']);
+            
+            $replacements += self::getServiceOrderReplacements($dataSource);
+            $replacements += self::getNegocioReplacements($dataSource->branch->subscription);
+            $replacements += self::getSucursalReplacements($dataSource->branch);
+            $replacements += self::getClienteReplacements($dataSource->customer, $dataSource);
+            $replacements += self::getVendedorReplacements($dataSource->user);
 
-            $replacements = [
-                '{{os.folio}}' => $dataSource->folio,
-                '{{os.fecha_recepcion}}' => Carbon::parse($dataSource->received_at)->format('d/m/Y'),
-                '{{os.hora_recepcion}}' => Carbon::parse($dataSource->received_at)->format('H:i A'),
-                '{{os.fecha_hora_recepcion}}' => Carbon::parse($dataSource->received_at)->format('d/m/Y H:i A'),
-                '{{os.subtotal}}' => number_format($dataSource->subtotal, 2),
-                '{{os.descuento}}' => number_format($dataSource->discount_amount, 2),
-                '{{os.total}}' => number_format($dataSource->final_total, 2),
-                '{{os.cliente.nombre}}' => $dataSource->customer_name ?? ($dataSource->customer->name ?? 'N/A'),
-                '{{os.cliente.telefono}}' => $dataSource->customer_phone ?? ($dataSource->customer->phone ?? ''),
-                '{{os.cliente.email}}' => $dataSource->customer_email ?? ($dataSource->customer->email ?? ''),
-                '{{os.negocio.nombre}}' => $dataSource->branch->subscription->commercial_name,
-                '{{os.sucursal.nombre}}' => $dataSource->branch->name,
-                '{{os.vendedor.nombre}}' => $dataSource->user->name,
-                '{{os.problemas_reportados}}' => $dataSource->reported_problems,
-                '{{os.item_description}}' => $dataSource->item_description,
-            ];
-
-            // --- Lógica mejorada para campos personalizados ---
-            if (!empty($dataSource->custom_fields)) {
-                foreach ($dataSource->custom_fields as $key => $value) {
-                    $printValue = ''; // Valor por defecto
-                    
-                    if (is_null($value)) {
-                        $printValue = ''; // Imprime nada para valores nulos
-                    } elseif (is_bool($value)) {
-                        $printValue = $value ? 'Si' : 'No'; // Convierte booleano a Si/No
-                    } elseif (is_array($value)) {
-                        // Si es un objeto complejo (como 'desbloqueo') que tiene una clave 'value'
-                        if (isset($value['value'])) {
-                            $actualValue = $value['value'];
-                            // Si el valor interno también es un array (como en 'pattern')
-                            if (is_array($actualValue)) {
-                                $printValue = implode(', ', $actualValue);
-                            } else {
-                                $printValue = (string) $actualValue;
-                            }
-                        } else {
-                            // Si es un array simple (p. ej. de checkboxes o accesorios)
-                            $printValue = implode(', ', $value);
-                        }
-                    } else {
-                        // Para valores simples como texto, números, etc.
-                        $printValue = (string) $value;
-                    }
-
-                    $replacements["{{os.custom.{$key}}}"] = $printValue;
-                }
+            // Si la OS tiene una transacción asociada, carga también las variables de transacción (v.*)
+            if ($dataSource->transaction) {
+                $replacements += self::getTransactionReplacements($dataSource->transaction);
             }
         }
 
@@ -292,6 +396,10 @@ class PrintEncoderService
         $text = str_replace(array_keys($replacements), array_values($replacements), $text);
 
         // Limpia cualquier placeholder de {{os.custom.*}} que no tuvo un valor
-        return preg_replace('/{{os\.custom\.(.*?)}}/', '', $text);
+        // y cualquier variable 'v.*' si no había transacción (ej. en una OS sin pagar)
+        $text = preg_replace('/{{os\.custom\.(.*?)}}/', '', $text);
+        $text = preg_replace('/{{v\.(.*?)}}/', '', $text);
+        
+        return $text;
     }
 }
