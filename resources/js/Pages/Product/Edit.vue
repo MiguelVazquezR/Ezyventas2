@@ -2,7 +2,7 @@
 import { ref, computed, nextTick, markRaw, watch } from 'vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import CreateCategoryModal from '@/Components/CreateCategoryModal.vue';
+import ManageCategoriesModal from '@/Components/ManageCategoriesModal.vue';
 import CreateBrandModal from './Partials/CreateBrandModal.vue';
 import CreateProviderModal from './Partials/CreateProviderModal.vue';
 import ManageAttributesModal from './Partials/ManageAttributesModal.vue';
@@ -631,7 +631,7 @@ const confirmRemoveItem = (event, index) => {
             </div>
         </div>
         <!-- Modales -->
-        <CreateCategoryModal v-model:visible="showCategoryModal" type="product" @created="handleNewCategory" />
+        <ManageCategoriesModal v-model:visible="showCategoryModal" categoryType="product" @created="handleNewCategory" />
         <CreateBrandModal v-model:visible="showBrandModal" @created="handleNewBrand" />
         <CreateProviderModal v-model:visible="showProviderModal" @created="handleNewProvider" />
         <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal"

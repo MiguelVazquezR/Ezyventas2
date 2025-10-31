@@ -2,7 +2,7 @@
 import { ref, computed, nextTick, markRaw, watch } from 'vue';
 import { Head, useForm, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import CreateCategoryModal from '@/Components/CreateCategoryModal.vue';
+import ManageCategoriesModal from '@/Components/ManageCategoriesModal.vue';
 import CreateBrandModal from './Partials/CreateBrandModal.vue';
 import CreateProviderModal from './Partials/CreateProviderModal.vue';
 import ManageAttributesModal from './Partials/ManageAttributesModal.vue';
@@ -178,7 +178,23 @@ const showAttributesModal = ref(false);
 const handleNewCategory = (newCategory) => {
     localCategories.value.push(markRaw(newCategory));
     nextTick(() => { form.category_id = newCategory.id; });
+    showCategoryModal.value = false;
 };
+
+const handleCategoryUpdate = (updatedCategory) => {
+    const index = localCategories.value.findIndex(c => c.id === updatedCategory.id);
+    if (index !== -1) {
+        localCategories.value[index] = markRaw(updatedCategory);
+    }
+};
+
+const handleCategoryDelete = (deletedCategoryId) => {
+    localCategories.value = localCategories.value.filter(c => c.id !== deletedCategoryId);
+    if (form.category_id === deletedCategoryId) {
+        form.category_id = null;
+    }
+};
+
 const handleNewBrand = (newBrand) => {
     const myBrandsGroup = localBrands.value.find(g => g.label === 'Mis Marcas');
     if (myBrandsGroup) { myBrandsGroup.items.push(markRaw(newBrand)); }
@@ -218,7 +234,7 @@ const confirmRemoveItem = (event, index) => {
         acceptLabel: 'Sí',
         rejectLabel: 'No',
         accept: () => {
-           removePriceTier(index);
+            removePriceTier(index);
         }
     });
 };
@@ -279,8 +295,8 @@ const confirmRemoveItem = (event, index) => {
                                 <div>
                                     <div class="flex justify-between items-center mb-1">
                                         <InputLabel for="category_id" value="Categoría*" />
-                                        <Button @click="showCategoryModal = true" icon="pi pi-plus" label="Nueva" text
-                                            size="small" />
+                                        <Button @click="showCategoryModal = true" icon="pi pi-cog" label="Gestionar"
+                                            text size="small" />
                                     </div>
                                     <Select v-model="form.category_id" id="category_id" size="large"
                                         :options="localCategories" filter optionLabel="name" optionValue="id"
@@ -345,9 +361,9 @@ const confirmRemoveItem = (event, index) => {
 
                         <!-- --- INICIO: SECCIÓN DE PRECIOS POR MAYOREO --- -->
                         <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                            <h4 class="text-md font-semibold text-gray-800 dark:text-gray-200 m-0">
+                            <h5 class="font-semibold text-gray-800 dark:text-gray-200 m-0">
                                 Precios de mayoreo (opcional)
-                            </h4>
+                            </h5>
                             <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
                                 Define precios especiales para compras de mayor volumen. El precio de 1 pieza se toma
                                 del campo de arriba.
@@ -369,8 +385,8 @@ const confirmRemoveItem = (event, index) => {
                                             currency="MXN" locale="es-MX" class="w-full mt-1" />
                                         <InputError class="mt-1" :message="form.errors[`price_tiers.${index}.price`]" />
                                     </div>
-                                    <Button @click="confirmRemoveItem($event, index)" icon="pi pi-trash" severity="danger" text
-                                        rounded v-tooltip.bottom="'Eliminar nivel'" />
+                                    <Button @click="confirmRemoveItem($event, index)" icon="pi pi-trash"
+                                        severity="danger" text rounded v-tooltip.bottom="'Eliminar nivel'" />
                                 </div>
                             </div>
                             <InputError class="mt-2" :message="form.errors.price_tiers" />
@@ -587,7 +603,8 @@ const confirmRemoveItem = (event, index) => {
             </div>
         </div>
         <!-- Modales -->
-        <CreateCategoryModal v-model:visible="showCategoryModal" type="product" @created="handleNewCategory" />
+        <ManageCategoriesModal v-model:visible="showCategoryModal" categoryType="product" @created="handleNewCategory"
+            @updated="handleCategoryUpdate" @deleted="handleCategoryDelete" />
         <CreateBrandModal v-model:visible="showBrandModal" @created="handleNewBrand" />
         <CreateProviderModal v-model:visible="showProviderModal" @created="handleNewProvider" />
         <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal"
