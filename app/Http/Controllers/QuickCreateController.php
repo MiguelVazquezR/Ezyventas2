@@ -46,11 +46,19 @@ class QuickCreateController extends Controller
 
     public function storeProvider(Request $request)
     {
-        $validated = $request->validate(['name' => 'required|string|max:255']);
-        $provider = Provider::create([
-            'name' => $validated['name'],
-            'subscription_id' => Auth::user()->subscription->id,
+        // --- MODIFICACIÓN: Añadir validación para los nuevos campos ---
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'contact_name' => 'nullable|string|max:255',
+            'contact_email' => 'nullable|email|max:255',
+            'contact_phone' => 'nullable|string|max:255',
         ]);
+
+        // --- MODIFICACIÓN: Pasar todos los datos validados a la creación ---
+        $provider = Provider::create(array_merge($validated, [
+            'subscription_id' => Auth::user()->subscription->id,
+        ]));
+
         return response()->json($provider);
     }
 

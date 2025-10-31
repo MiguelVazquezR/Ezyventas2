@@ -3,8 +3,8 @@ import { ref, computed, nextTick, markRaw, watch } from 'vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import ManageCategoriesModal from '@/Components/ManageCategoriesModal.vue';
-import CreateBrandModal from './Partials/CreateBrandModal.vue';
-import CreateProviderModal from './Partials/CreateProviderModal.vue';
+import ManageBrandsModal from '@/Components/ManageBrandsModal.vue';
+import ManageProvidersModal from '@/Components/ManageProvidersModal.vue';
 import ManageAttributesModal from './Partials/ManageAttributesModal.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
@@ -242,7 +242,51 @@ const handleCategoryDelete = (deletedCategoryId) => {
     }
 };
 const handleNewBrand = (newBrand) => { const myBrandsGroup = localBrands.value.find(g => g.label === 'Mis Marcas'); if (myBrandsGroup) { myBrandsGroup.items.push(markRaw(newBrand)); } nextTick(() => { form.brand_id = newBrand.id; }); };
-const handleNewProvider = (newProvider) => { localProviders.value.push(markRaw(newProvider)); nextTick(() => { form.provider_id = newProvider.id; }); };
+
+// --- AÑADIDO: Manejador de actualización de marca ---
+const handleBrandUpdate = (updatedBrand) => {
+    // Itera por los grupos para encontrar y actualizar la marca
+    for (const group of localBrands.value) {
+        const index = group.items.findIndex(b => b.id === updatedBrand.id);
+        if (index !== -1) {
+            group.items[index] = markRaw(updatedBrand);
+            break; // Salir del bucle una vez encontrada
+        }
+    }
+};
+
+// --- AÑADIDO: Manejador de eliminación de marca ---
+const handleBrandDelete = (deletedBrandId) => {
+    // Itera por los grupos para encontrar y eliminar la marca
+    for (const group of localBrands.value) {
+        const index = group.items.findIndex(b => b.id === deletedBrandId);
+        if (index !== -1) {
+            group.items.splice(index, 1);
+            break; // Salir del bucle
+        }
+    }
+    // Si la marca eliminada es la que estaba seleccionada, deseleccionarla
+    if (form.brand_id === deletedBrandId) {
+        form.brand_id = null;
+    }
+};
+
+const handleNewProvider = (newProvider) => {
+    localProviders.value.push(markRaw(newProvider));
+    nextTick(() => { form.provider_id = newProvider.id; });
+};
+const handleProviderUpdate = (updatedProvider) => {
+    const index = localProviders.value.findIndex(p => p.id === updatedProvider.id);
+    if (index !== -1) {
+        localProviders.value[index] = markRaw(updatedProvider);
+    }
+};
+const handleProviderDelete = (deletedProviderId) => {
+    localProviders.value = localProviders.value.filter(p => p.id !== deletedProviderId);
+    if (form.provider_id === deletedProviderId) {
+        form.provider_id = null;
+    }
+};
 const refreshAttributes = () => {
     router.reload({
         only: ['attributeDefinitions'],
@@ -333,7 +377,7 @@ const confirmRemoveItem = (event, index) => {
                                 <div>
                                     <div class="flex justify-between items-center mb-1">
                                         <InputLabel for="brand_id" value="Marca" />
-                                        <Button @click="showBrandModal = true" icon="pi pi-plus" label="Nueva" text
+                                        <Button @click="showBrandModal = true" icon="pi pi-cog" label="Gestionar" text
                                             size="small" />
                                     </div>
                                     <Select v-model="form.brand_id" id="brand_id" size="large" :options="localBrands"
@@ -369,7 +413,7 @@ const confirmRemoveItem = (event, index) => {
                             <div>
                                 <div class="flex justify-between items-center mb-1">
                                     <InputLabel for="provider_id" value="Proveedor" />
-                                    <Button @click="showProviderModal = true" icon="pi pi-plus" label="Nuevo" text
+                                    <Button @click="showProviderModal = true" icon="pi pi-cog" label="Gestionar" text
                                         size="small" />
                                 </div>
                                 <Select v-model="form.provider_id" id="provider_id" size="large"
@@ -378,7 +422,7 @@ const confirmRemoveItem = (event, index) => {
                                 <InputError class="mt-2" :message="form.errors.provider_id" />
                             </div>
                             <div class="md:col-span-2">
-                                <InputLabel for="selling_price" value="Precio de venta al público (1 Pieza)*" />
+                                <InputLabel for="selling_price" value="Precio de venta al público (1 pieza)*" />
                                 <InputNumber v-model="form.selling_price" id="selling_price" mode="currency"
                                     currency="MXN" locale="es-MX" class="w-full mt-1" />
                                 <InputError class="mt-2" :message="form.errors.selling_price" />
@@ -387,9 +431,9 @@ const confirmRemoveItem = (event, index) => {
 
                         <!-- --- INICIO: SECCIÓN DE PRECIOS POR MAYOREO (AÑADIDA) --- -->
                         <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-                            <h4 class="text-md font-semibold text-gray-800 dark:text-gray-200 m-0">
+                            <h5 class="font-semibold text-gray-800 dark:text-gray-200 m-0">
                                 Precios de mayoreo (opcional)
-                            </h4>
+                            </h5>
                             <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
                                 Define precios especiales para compras de mayor volumen. El precio de 1 pieza se toma
                                 del campo de arriba.
@@ -646,8 +690,18 @@ const confirmRemoveItem = (event, index) => {
         <!-- Modales -->
         <ManageCategoriesModal v-model:visible="showCategoryModal" categoryType="product" @created="handleNewCategory"
             @updated="handleCategoryUpdate" @deleted="handleCategoryDelete" />
-        <CreateBrandModal v-model:visible="showBrandModal" @created="handleNewBrand" />
-        <CreateProviderModal v-model:visible="showProviderModal" @created="handleNewProvider" />
+        <ManageBrandsModal 
+            v-model:visible="showBrandModal" 
+            @created="handleNewBrand"
+            @updated="handleBrandUpdate"
+            @deleted="handleBrandDelete" 
+        />
+        <ManageProvidersModal 
+            v-model:visible="showProviderModal" 
+            @created="handleNewProvider"
+            @updated="handleProviderUpdate"
+            @deleted="handleProviderDelete"
+        />
         <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal"
             :category-id="form.category_id" @updated="refreshAttributes" />
         <ConfirmPopup group="price-tiers-delete" />
