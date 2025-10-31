@@ -228,6 +228,19 @@ const showBrandModal = ref(false);
 const showProviderModal = ref(false);
 const showAttributesModal = ref(false);
 const handleNewCategory = (newCategory) => { localCategories.value.push(markRaw(newCategory)); nextTick(() => { form.category_id = newCategory.id; }); };
+const handleCategoryUpdate = (updatedCategory) => {
+    const index = localCategories.value.findIndex(c => c.id === updatedCategory.id);
+    if (index !== -1) {
+        localCategories.value[index] = markRaw(updatedCategory);
+    }
+};
+
+const handleCategoryDelete = (deletedCategoryId) => {
+    localCategories.value = localCategories.value.filter(c => c.id !== deletedCategoryId);
+    if (form.category_id === deletedCategoryId) {
+        form.category_id = null;
+    }
+};
 const handleNewBrand = (newBrand) => { const myBrandsGroup = localBrands.value.find(g => g.label === 'Mis Marcas'); if (myBrandsGroup) { myBrandsGroup.items.push(markRaw(newBrand)); } nextTick(() => { form.brand_id = newBrand.id; }); };
 const handleNewProvider = (newProvider) => { localProviders.value.push(markRaw(newProvider)); nextTick(() => { form.provider_id = newProvider.id; }); };
 const refreshAttributes = () => {
@@ -309,8 +322,8 @@ const confirmRemoveItem = (event, index) => {
                                 <div>
                                     <div class="flex justify-between items-center mb-1">
                                         <InputLabel for="category_id" value="Categoría*" />
-                                        <Button @click="showCategoryModal = true" icon="pi pi-plus" label="Nueva" text
-                                            size="small" />
+                                        <Button @click="showCategoryModal = true" icon="pi pi-cog" label="Gestionar"
+                                            text size="small" />
                                     </div>
                                     <Select v-model="form.category_id" id="category_id" size="large"
                                         :options="localCategories" filter optionLabel="name" optionValue="id"
@@ -631,7 +644,8 @@ const confirmRemoveItem = (event, index) => {
             </div>
         </div>
         <!-- Modales -->
-        <ManageCategoriesModal v-model:visible="showCategoryModal" categoryType="product" @created="handleNewCategory" />
+        <ManageCategoriesModal v-model:visible="showCategoryModal" categoryType="product" @created="handleNewCategory"
+            @updated="handleCategoryUpdate" @deleted="handleCategoryDelete" />
         <CreateBrandModal v-model:visible="showBrandModal" @created="handleNewBrand" />
         <CreateProviderModal v-model:visible="showProviderModal" @created="handleNewProvider" />
         <ManageAttributesModal v-if="form.category_id" v-model:visible="showAttributesModal"
