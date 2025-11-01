@@ -1,36 +1,28 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
-import { useForm } from '@inertiajs/vue3';
+import { useForm, router } from '@inertiajs/vue3'; // AÑADIDO: router
 import AppLayout from '@/Layouts/AppLayout.vue';
-// --- AÑADIDO: Importar componentes de PrimeVue ---
-import Card from 'primevue/card';
-import Checkbox from 'primevue/checkbox';
-import InputNumber from 'primevue/inputnumber';
-import Button from 'primevue/button';
-import Divider from 'primevue/divider';
-import SelectButton from 'primevue/selectbutton';
-import FileUpload from 'primevue/fileupload';
-import Message from 'primevue/message';
-import Accordion from 'primevue/accordion';
-import AccordionPanel from 'primevue/accordionpanel';
-import Breadcrumb from 'primevue/breadcrumb';
-// ---
+import { useConfirm } from 'primevue/useconfirm'; // AÑADIDO: useConfirm
 
 // --- Props ---
 const props = defineProps({
     subscription: Object,
-    currentVersion: Object, // Puede ser null si es una renovación desde cero
+    currentVersion: Object, // La versión a "mostrar" (puede ser la rechazada)
+    previousVersion: Object, // La versión "anterior" real (para comparar)
+    isRetry: Boolean, // Flag que indica si es un reintento
     allPlanItems: Array,
     mode: String, // 'upgrade' o 'renew'
     currentBillingPeriod: String, // 'anual' o 'mensual'
-    adminBankAccounts: Array, // AÑADIDO: Cuentas bancarias del admin
+    ourBankAccounts: Array, // CORREGIDO: de adminBankAccounts a ourBankAccounts
+    hasPendingPayment: Boolean, // AÑADIDO: Para bloquear el botón
 });
 
 // --- Estado Básico ---
+const confirm = useConfirm(); // AÑADIDO
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
     { label: 'Suscripción', url: route('subscription.show') },
-    { label: props.mode === 'upgrade' ? 'Mejorar Suscripción' : 'Renovar Suscripción' }
+    { label: props.mode === 'upgrade' ? 'Mejorar suscripción' : 'Renovar suscripción' }
 ]);
 
 // --- Estado del Formulario ---
@@ -44,13 +36,21 @@ const form = useForm({
     items: [],
     total_amount: 0,
     mode: props.mode,
-    payment_method: 'transfer', // 'card' o 'transfer'
+    payment_method: 'transferencia', // 'tarjeta' o 'transferencia'
     proof_of_payment: null, // Archivo del comprobante
 });
 
+// --- Lógica de Versión de Comparación ---
+// Esta es la clave: decidimos contra qué versión calcular el costo.
+// Si es reintento, comparamos contra la ANTERIOR (previousVersion).
+// Si no, comparamos contra la ACTUAL (currentVersion).
+const versionToCompare = computed(() =>
+    props.isRetry ? props.previousVersion : props.currentVersion
+);
+
 // --- Listas de Items ---
 const activeItemKeys = computed(() =>
-    new Set(props.currentVersion?.items.map(item => item.item_key) || [])
+    new Set(versionToCompare.value?.items.map(item => item.item_key) || [])
 );
 const availableModules = computed(() =>
     props.allPlanItems.filter(item => item.type === 'module') // Mostrar todos en renovación
@@ -61,7 +61,7 @@ const allLimitItems = computed(() =>
 
 // --- Inicialización del Estado ---
 onMounted(() => {
-    // Pre-seleccionar items de la versión actual
+    // Pre-seleccionar items de la versión actual (la rechazada si es reintento)
     if (props.currentVersion) {
         const currentModules = props.currentVersion.items
             .filter(item => item.item_type === 'module')
@@ -70,6 +70,7 @@ onMounted(() => {
 
         allLimitItems.value.forEach(limit => {
             const currentItem = props.currentVersion.items.find(item => item.item_key === limit.key);
+            // Pre-llena con los valores de la versión rechazada (ej. 8 usuarios)
             limitValues.value[limit.key] = currentItem ? currentItem.quantity : 0;
         });
     } else {
@@ -101,14 +102,15 @@ const getPrice = (item) => {
 
 // --- Lógica de Costos (Upgrade vs Renew) ---
 const remainingDays = computed(() => {
-    if (props.mode !== 'upgrade' || !props.currentVersion) return 0;
-    const endDate = new Date(props.currentVersion.end_date);
+    // La lógica de días restantes se basa en la versión de comparación
+    if (props.mode !== 'upgrade' || !versionToCompare.value) return 0;
+    const endDate = new Date(versionToCompare.value.end_date);
     const today = new Date();
     return Math.max(0, Math.ceil((endDate - today) / (1000 * 60 * 60 * 24)));
 });
 
 const totalDaysInPeriod = computed(() => {
-    if (props.mode !== 'upgrade' || !props.currentVersion) return 365;
+    if (props.mode !== 'upgrade' || !versionToCompare.value) return 365;
     // Simplificación (anual = 365, mensual = 30)
     return props.currentBillingPeriod === 'anual' ? 365 : 30;
 });
@@ -127,6 +129,7 @@ watch([selectedModules, limitValues, billingPeriod], () => {
         newItems.push({ key: planItem.key, quantity: 1 });
 
         if (props.mode === 'upgrade') {
+            // Comparamos con activeItemKeys (que usa versionToCompare)
             if (!activeItemKeys.value.has(key)) {
                 const periodPrice = props.currentBillingPeriod === 'anual' ? (planItem.monthly_price * 10) : planItem.monthly_price;
                 const proratedCost = (periodPrice / totalDaysInPeriod.value) * remainingDays.value;
@@ -148,9 +151,10 @@ watch([selectedModules, limitValues, billingPeriod], () => {
         const pricePerUnit = unitPricePerPackage / (limitItem.meta.quantity || 1);
 
         if (props.mode === 'upgrade') {
-            const currentItem = props.currentVersion.items.find(item => item.item_key === limitItem.key);
+            // Usamos versionToCompare para obtener la cantidad "actual"
+            const currentItem = versionToCompare.value?.items.find(item => item.item_key === limitItem.key);
             const currentQuantity = currentItem ? currentItem.quantity : 0;
-            const addedQuantity = newQuantity - currentQuantity;
+            const addedQuantity = newQuantity - currentQuantity; // Ej: 8 - 5 = 3
 
             if (addedQuantity > 0) {
                 // Precio prorrateado de las unidades añadidas
@@ -175,7 +179,8 @@ watch([selectedModules, limitValues, billingPeriod], () => {
 // Resumen de items (diferencia en 'upgrade', total en 'renew')
 const itemsForSummary = computed(() => {
     const summary = [];
-    const currentItemsMap = new Map(props.currentVersion?.items.map(i => [i.item_key, i.quantity]) || []);
+    // Usamos versionToCompare para el mapa
+    const currentItemsMap = new Map(versionToCompare.value?.items.map(i => [i.item_key, i.quantity]) || []);
 
     form.items.forEach(item => {
         const planItem = props.allPlanItems.find(i => i.key === item.key);
@@ -200,9 +205,45 @@ const itemsForSummary = computed(() => {
     return summary;
 });
 
+// --- AÑADIDO: Lógica del botón Revertir ---
+const confirmRevert = () => {
+    confirm.require({
+        message: '¿Estás seguro de que quieres cancelar esta actualización y volver a tu plan anterior? Se eliminará este intento de pago.',
+        header: 'Confirmar Cancelación',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Sí, cancelar',
+        rejectLabel: 'No',
+        acceptClass: 'p-button-danger',
+        accept: () => {
+            // Usamos la nueva ruta que creamos
+            router.delete(route('subscription.revert'), {
+                preserveScroll: true
+            });
+        }
+    });
+};
+
 
 // --- Helpers ---
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+
+// AÑADIDO: Helper para obtener el mínimo del InputNumber
+const getMinLimit = (limitKey) => {
+    const baseVersion = versionToCompare.value;
+    if (!baseVersion || props.mode === 'renew') {
+        // Valores mínimos si es suscripción nueva
+        if (limitKey === 'limit_branches') return 1;
+        if (limitKey === 'limit_users') return 1;
+        if (limitKey === 'limit_cash_registers') return 1;
+        if (limitKey === 'limit_products') return 500;
+        if (limitKey === 'limit_print_templates') return 2;
+        return 0;
+    }
+    const item = baseVersion.items.find(i => i.item_key === limitKey);
+    // El mínimo es lo que ya tenían (ej. 5 usuarios)
+    return item ? item.quantity : 0;
+};
+
 
 // --- AÑADIDO: Manejo de subida de archivo ---
 const onFileSelect = (event) => {
@@ -229,17 +270,28 @@ const submit = () => {
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0 mb-6" />
 
         <div class="p-4 md:p-6 lg:p-8">
-            <header class="mb-6">
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">
-                    {{ mode === 'upgrade' ? 'Mejorar suscripción' : 'Renovar suscripción' }}
-                </h1>
-                <p v-if="mode === 'upgrade'" class="text-gray-500 dark:text-gray-400 mt-1">
-                    Añade módulos o incrementa los límites de tu plan actual.
-                </p>
-                <p v-else class="text-gray-500 dark:text-gray-400 mt-1">
-                    Tu plan ha vencido o está por vencer. Selecciona tus módulos y límites para el nuevo periodo.
-                </p>
+            <header class="mb-6 flex justify-between items-center">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">
+                        {{ mode === 'upgrade' ? 'Mejorar suscripción' : 'Renovar suscripción' }}
+                    </h1>
+                    <p v-if="mode === 'upgrade'" class="text-gray-500 dark:text-gray-400 mt-1">
+                        Añade módulos o incrementa los límites de tu plan actual.
+                    </p>
+                    <p v-else class="text-gray-500 dark:text-gray-400 mt-1">
+                        Tu plan ha vencido o está por vencer. Selecciona tus módulos y límites para el nuevo periodo.
+                    </p>
+                </div>
             </header>
+
+            <!-- AÑADIDO: Mensaje de Reintento -->
+             <Message v-if="isRetry" severity="warn" :closable="false" class="mb-6">
+                Tu pago anterior fue rechazado. Por favor, verifica tus items y vuelve a enviar el comprobante de pago.
+            </Message>
+            <!-- AÑADIDO: Mensaje de Pago Pendiente -->
+             <Message v-if="hasPendingPayment" severity="info" :closable="false" class="mb-6">
+                Ya tienes un pago pendiente de aprobación. No puedes realizar una nueva solicitud hasta que se procese.
+            </Message>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- Columna de Selección -->
@@ -268,7 +320,7 @@ const submit = () => {
                                     class="border dark:border-gray-700 rounded-lg p-4 flex items-center gap-4 transition-all"
                                     :class="{ 'bg-gray-50 dark:bg-gray-700/30': selectedModules.includes(module.key) }">
                                     <Checkbox v-model="selectedModules" :inputId="module.key" :value="module.key"
-                                        :disabled="mode === 'upgrade' && activeItemKeys.has(module.key)" />
+                                        :disabled="(mode === 'upgrade' && activeItemKeys.has(module.key)) || hasPendingPayment" />
                                     <label :for="module.key" class="flex-grow cursor-pointer">
                                         <div class="flex items-center gap-2">
                                             <i :class="module.meta.icon" class="text-orange-500"></i>
@@ -295,13 +347,16 @@ const submit = () => {
                                             (limit.meta.quantity || 1)) }} por c/u / {{ billingPeriod === 'anual' ?
                                                 'año' : 'mes' }}</p>
                                     </div>
+                                    <!-- ACTUALIZADO: :min usa la nueva función y se deshabilita si hay pago pendiente -->
                                     <InputNumber v-model="limitValues[limit.key]"
-                                        :min="mode === 'upgrade' ? (currentVersion.items.find(i => i.item_key === limit.key)?.quantity || 0) : 0"
+                                        :min="getMinLimit(limit.key)"
                                         :step="limit.key === 'limit_products' ? 50 : 1" showButtons
                                         buttonLayout="horizontal" decrementButtonClass="p-button-secondary"
                                         incrementButtonClass="p-button-secondary" incrementButtonIcon="pi pi-plus"
                                         decrementButtonIcon="pi pi-minus"
-                                        :inputStyle="{width: '5rem', textAlign: 'center'}" />
+                                        :inputStyle="{width: '5rem', textAlign: 'center'}"
+                                        :disabled="hasPendingPayment"
+                                        />
                                 </div>
                             </div>
                         </template>
@@ -354,20 +409,20 @@ const submit = () => {
                                 <h5 class="font-semibold text-gray-800 dark:text-gray-200 pt-2">Método de pago</h5>
 
                                 <SelectButton v-model="form.payment_method"
-                                    :options="[{ label: 'Transferencia Bancaria', value: 'transfer' }, { label: 'Tarjeta (Próximamente)', value: 'card' }]"
+                                    :options="[{ label: 'Transferencia Bancaria', value: 'transferencia' }, { label: 'Tarjeta (Próximamente)', value: 'card' }]"
                                     optionLabel="label" optionValue="value" aria-labelledby="payment-method"
                                     class="w-full" :disabled="true" />
 
                                 <!-- Detalles para Transferencia -->
-                                <div v-if="form.payment_method === 'transfer'" class="mt-4 space-y-4">
+                                <div v-if="form.payment_method === 'transferencia'" class="mt-4 space-y-4">
                                     <Message severity="info" :closable="false">
                                         Realiza tu pago a cualquiera de las siguientes cuentas y sube tu comprobante. Tu
                                         plan se activará una vez que validemos el pago (usualmente 1 hora hábil).
                                     </Message>
 
-                                    <!-- Cuentas Bancarias del Admin -->
+                                    <!-- Cuentas Bancarias del Admin (CORREGIDO prop) -->
                                     <Accordion :activeIndex="0">
-                                        <AccordionPanel v-for="account in adminBankAccounts" :key="account.id">
+                                        <AccordionPanel v-for="account in ourBankAccounts" :key="account.id">
                                             <AccordionHeader>
                                                 <span class="flex items-center gap-2 w-full">
                                                     <i class="pi pi-building-columns"></i>
@@ -392,7 +447,8 @@ const submit = () => {
                                         <h5 class="font-semibold mb-2 text-sm">Sube tu comprobante*</h5>
                                         <FileUpload name="proof_of_payment" @select="onFileSelect"
                                             @remove="onFileRemove" :showUploadButton="false" :showCancelButton="false"
-                                            :multiple="false" accept="image/*,application/pdf" :maxFileSize="10000000">
+                                            :multiple="false" accept="image/*,application/pdf" :maxFileSize="10000000"
+                                            :disabled="hasPendingPayment">
                                             <template #empty>
                                                 <p class="text-sm text-center text-gray-500 p-4">Arrastra y suelta tu
                                                     archivo (PDF, JPG, PNG).</p>
@@ -411,11 +467,15 @@ const submit = () => {
                                 </div>
                                 <!-- --- FIN SECCIÓN MOVIDA --- -->
 
+                                <!-- AÑADIDO: Botón de Cancelar/Revertir -->
+                                <Button v-if="isRetry && !hasPendingPayment" @click="confirmRevert" label="Cancelar y volver al plan anterior"
+                                    severity="danger" outlined class="w-full mt-2" />
+
                                 <Button @click="submit"
-                                    :disabled="form.items.length === 0 || form.processing || form.total_amount <= 0 || (form.payment_method === 'transfer' && !form.proof_of_payment) || form.payment_method === 'card'"
+                                    :disabled="form.items.length === 0 || form.processing || form.total_amount <= 0 || (form.payment_method === 'transferencia' && !form.proof_of_payment) || form.payment_method === 'card' || hasPendingPayment"
                                     :loading="form.processing"
-                                    :label="mode === 'upgrade' ? 'Confirmar y pagar' : 'Enviar comprobante'"
-                                    class="w-full mt-6" />
+                                    :label="isRetry ? 'Reintentar Pago' : (mode === 'upgrade' ? 'Confirmar y pagar' : 'Enviar comprobante')"
+                                    class="w-full mt-2" />
                             </div>
                         </template>
                     </Card>

@@ -6,17 +6,19 @@ namespace App\Http\Controllers;
 use App\Enums\BillingPeriod;
 use App\Enums\InvoiceStatus;
 use App\Enums\SubscriptionPaymentStatus;
+use App\Mail\AdminNewPaymentNotification;
 use App\Models\BankAccount;
 use App\Models\PlanItem;
 use App\Models\Subscription;
 use App\Models\SubscriptionPayment;
-
+use App\Models\User;
 // Imports de Laravel
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -39,7 +41,7 @@ class SubscriptionController extends Controller
             'bankAccounts.branches:id,name',
             'versions' => function ($query) {
                 // REGLA 3: Cargar todos los pagos (incluidos rechazados) para el historial
-                $query->with(['items', 'payments'])->latest('start_date');
+                $query->with(['items', 'payments'])->latest('id');
             },
             'media'
         ])->withCount([
@@ -52,7 +54,7 @@ class SubscriptionController extends Controller
         ])->firstOrFail();
 
         // --- INICIO: Lógica para determinar el estado de la versión ---
-        $currentVersion = $subscription->versions->first(); // Ya viene ordenada por latest('start_date')
+        $currentVersion = $subscription->versions->first(); // Ya viene ordenada por latest('id')
         $isExpired = true;
         $daysUntilExpiry = null;
         $currentBillingPeriod = BillingPeriod::ANNUALLY; // Default
@@ -106,8 +108,58 @@ class SubscriptionController extends Controller
             'print_templates' => $subscription->print_templates_count,
         ];
 
+        // --- INICIO: Lógica de Comparación de Items del Historial ---
+        // Obtenemos la colección de versiones ya cargada
+        $versions = $subscription->versions;
+
+        // Iteramos sobre la colección y añadimos los 'processed_items'
+        $versions->map(function ($version, $index) use ($versions) {
+            // La versión "anterior" (cronológicamente) es la siguiente en el array
+            // porque están ordenadas por latest('id') (descendente).
+            $previousVersion = $versions->get($index + 1);
+
+            // Creamos un mapa de los items anteriores para búsqueda rápida
+            $previousItemsMap = $previousVersion ? $previousVersion->items->keyBy('item_key') : collect();
+
+            // Procesamos los items de la versión actual
+            $processedItems = $version->items->map(function ($newItem) use ($previousItemsMap) {
+                $previousItem = $previousItemsMap->get($newItem->item_key);
+                $previousQuantity = $previousItem ? $previousItem->quantity : 0;
+                $newQuantity = $newItem->quantity;
+                $status = 'unchanged'; // Default
+
+                if (!$previousItem) {
+                    // El item no existía en la versión anterior
+                    $status = 'new';
+                } elseif ($newQuantity > $previousQuantity) {
+                    // La cantidad aumentó
+                    $status = 'upgraded';
+                } elseif ($newQuantity < $previousQuantity) {
+                    // La cantidad disminuyó
+                    $status = 'downgraded';
+                }
+
+                // Devolvemos un array simple con la info necesaria para la vista
+                return [
+                    'name' => $newItem->name,
+                    'quantity' => $newQuantity,
+                    'billing_period' => $newItem->billing_period,
+                    'unit_price' => $newItem->unit_price,
+                    'status' => $status,
+                    'previous_quantity' => $previousQuantity,
+                    'item_key' => $newItem->item_key,
+                    'item_type' => $newItem->item_type,
+                ];
+            });
+
+            // Añadimos la nueva propiedad 'processed_items' a cada objeto de versión
+            $version->processed_items = $processedItems;
+            return $version;
+        });
+        // --- FIN: Lógica de Comparación de Items del Historial ---
+
         return Inertia::render('Subscription/Show', [
-            'subscription' => $subscription,
+            'subscription' => $subscription, // $subscription ahora contiene las versiones con 'processed_items'
             'planItems' => $planItems,
             'usageData' => $usageData,
             'subscriptionStatus' => [
@@ -203,28 +255,65 @@ class SubscriptionController extends Controller
             ->where('status', SubscriptionPaymentStatus::PENDING)
             ->exists();
 
-        $currentVersion = $subscription->versions()
+        // --- INICIO: Lógica de Detección de Reintento ---
+        $versionToDisplay = $subscription->versions()
             ->with('items')
-            ->latest('start_date')
+            ->latest('id')
             ->first();
+
+        $previousVersion = null;
+        $isRetry = false;
+        $versionForLogic = $versionToDisplay; // Por defecto, la lógica se basa en la versión actual
+
+        if ($versionToDisplay) {
+            $lastPayment = $versionToDisplay->payments()->latest('id')->first();
+            $isRetry = $lastPayment?->status === SubscriptionPaymentStatus::REJECTED;
+
+            if ($isRetry) {
+                // Es un reintento. Necesitamos la versión ANTERIOR para la lógica.
+                $previousVersion = $subscription->versions()
+                    ->with('items')
+                    ->where('id', '!=', $versionToDisplay->id)
+                    ->latest('id')
+                    ->first();
+
+                $versionForLogic = $previousVersion; // La lógica (cálculo de modo, etc.) se basará en el plan anterior.
+            }
+        }
+        // --- FIN: Lógica de Detección de Reintento ---
 
         $mode = 'renew';
         $currentBillingPeriod = BillingPeriod::ANNUALLY;
 
-        if ($currentVersion) {
-            $endDate = Carbon::parse($currentVersion->end_date);
+        // --- INICIO: Lógica de Modo MODIFICADA ---
+        if ($isRetry) {
+            // PUNTO 1: Si es reintento, FORZAMOS el modo 'upgrade'.
+            // Esto asegura que la vista calcule la diferencia de costos.
+            $mode = 'upgrade';
+
+            // Usamos el periodo de la versión anterior para los cálculos prorrateados
+            if ($versionForLogic) {
+                $firstItem = $versionForLogic->items->first();
+                if ($firstItem && $firstItem->billing_period) {
+                    $currentBillingPeriod = $firstItem->billing_period;
+                }
+            }
+        } else if ($versionForLogic) {
+            // Lógica normal si NO es reintento
+            $endDate = Carbon::parse($versionForLogic->end_date);
 
             // Definimos "modo mejora" solo si falta MÁS de 5 días.
-            // Si faltan 5 días o menos, ya se considera "modo renovación".
             if ($endDate->isFuture() && now()->diffInDays($endDate) > 5) {
                 $mode = 'upgrade';
             }
 
-            $firstItem = $currentVersion->items->first();
+            $firstItem = $versionForLogic->items->first();
             if ($firstItem && $firstItem->billing_period) {
                 $currentBillingPeriod = $firstItem->billing_period;
             }
         }
+        // --- FIN: Lógica de Modo MODIFICADA ---
+
 
         // Obtenemos las cuentas favoritas de la SUCURSAL 1 (la nuestra) para mostrarlas al cliente
         $ourBankAccounts = BankAccount::whereHas('branches', function ($query) {
@@ -233,13 +322,50 @@ class SubscriptionController extends Controller
 
         return Inertia::render('Subscription/ManageSubscription', [
             'subscription' => $subscription,
-            'currentVersion' => $currentVersion,
+            'currentVersion' => $versionToDisplay, // La versión para "mostrar" (puede ser la rechazada)
+            'previousVersion' => $previousVersion, // La versión "anterior" (para comparar costos)
+            'isRetry' => $isRetry, // Flag para la vista
             'allPlanItems' => $allPlanItems,
             'mode' => $mode, // 'upgrade' o 'renew'
             'currentBillingPeriod' => $currentBillingPeriod,
-            'ourBankAccounts' => $ourBankAccounts, // Se envían nuestras cuentas bancarias
-            'hasPendingPayment' => $hasPendingPayment, // Se informa a la vista si ya hay un pago en revisión
+            'ourBankAccounts' => $ourBankAccounts,
+            'hasPendingPayment' => $hasPendingPayment,
         ]);
+    }
+
+    /**
+     * AÑADIDO: Revierte una versión rechazada.
+     */
+    public function revert(Request $request)
+    {
+        $subscription = $request->user()->branch->subscription;
+
+        // Obtener la última versión (la que debería estar rechazada)
+        $latestVersion = $subscription->versions()->latest('id')->first();
+
+        if ($latestVersion) {
+            $lastPayment = $latestVersion->payments()->latest('id')->first();
+
+            // Asegurarnos que solo borramos si el último pago fue RECHAZADO
+            if ($lastPayment && $lastPayment->status === SubscriptionPaymentStatus::REJECTED) {
+
+                try {
+                    DB::transaction(function () use ($latestVersion) {
+                        // Borrar la versión. Los items y pagos se borrarán por 'cascade'
+                        $latestVersion->delete();
+
+                        // PUNTO 2: La fecha de la versión anterior ya no se modifica,
+                        // así que no necesitamos hacer nada para restaurarla.
+                    });
+                    return redirect()->route('subscription.show')->with('success', 'Tu plan ha sido revertido a la versión anterior.');
+                } catch (\Exception $e) {
+                    Log::error("Error al revertir la versión {$latestVersion->id}: " . $e->getMessage());
+                    return redirect()->back()->with('error', 'No se pudo revertir el plan. Intenta de nuevo.');
+                }
+            }
+        }
+
+        return redirect()->back()->with('error', 'No se encontró una versión fallida para revertir.');
     }
 
     /**
@@ -257,9 +383,9 @@ class SubscriptionController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
             'total_amount' => 'required|numeric|min:0',
             'mode' => 'required|string|in:upgrade,renew',
-            'payment_method' => ['required', Rule::in(['transfer', 'stripe', 'card_mock'])],
-            // El comprobante es requerido solo si el método es 'transfer'
-            'proof_of_payment' => ['nullable', 'required_if:payment_method,transfer', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:2048'],
+            'payment_method' => ['required', Rule::in(['transferencia', 'stripe', 'card_mock', 'tarjeta'])],
+            // El comprobante es requerido solo si el método es 'transferencia'
+            'proof_of_payment' => ['nullable', 'required_if:payment_method,transferencia', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:2048'],
         ]);
 
         $subscription = $user->branch->subscription;
@@ -279,7 +405,7 @@ class SubscriptionController extends Controller
 
         try {
             // Se delega la lógica al método correspondiente
-            if ($validated['payment_method'] === 'transfer') {
+            if ($validated['payment_method'] === 'transferencia') {
                 $this->handleTransferPayment($request, $subscription, $validated, $allPlanItems);
             } else {
                 // Aquí iría la lógica de Stripe u otros métodos (card_mock)
@@ -292,7 +418,7 @@ class SubscriptionController extends Controller
         }
 
         // Mensaje de éxito específico para transferencia
-        if ($validated['payment_method'] === 'transfer') {
+        if ($validated['payment_method'] === 'transferencia') {
             return redirect()->route('subscription.show')->with('success', '¡Tu pago ha sido enviado! Está en revisión y se activará pronto.');
         }
 
@@ -310,26 +436,33 @@ class SubscriptionController extends Controller
             $startDate = null;
             $endDate = null;
 
-            $currentVersion = $subscription->versions()->latest('start_date')->first();
+            // --- Lógica de Versión Anterior/Actual MODIFICADA ---
+            $latestVersion = $subscription->versions()->latest('id')->first();
+            $baseVersion = $latestVersion; // La versión sobre la que se calcula el tiempo
+
+            if ($latestVersion) {
+                $lastPayment = $latestVersion->payments()->latest('id')->first();
+                if ($lastPayment && $lastPayment->status === SubscriptionPaymentStatus::REJECTED) {
+                    // Es un reintento. La lógica de fechas se basa en la versión ANTERIOR.
+                    $baseVersion = $subscription->versions()
+                        ->where('id', '!=', $latestVersion->id)
+                        ->latest('id')
+                        ->first();
+                }
+            }
+            // --- Fin Lógica de Versión ---
+
 
             // --- LÓGICA DE FECHAS (ESTIMACIÓN) ---
-            // El admin recalculará las fechas en la aprobación, esto es una estimación
-
             if ($mode === 'upgrade') {
                 // REGLA 1: MODO MEJORA
-                // La nueva versión empieza HOY y termina CUANDO LA ACTUAL TERMINABA.
                 $startDate = now();
-                $endDate = $currentVersion ? $currentVersion->end_date : now()->addMonth(); // Fallback por si no hay versión
-
-                // Cortamos la versión anterior HOY
-                if ($currentVersion) {
-                    $currentVersion->update(['end_date' => now()]);
-                }
+                $endDate = $baseVersion ? $baseVersion->end_date : now()->addMonth(); // Fallback
             } else {
                 // MODO RENOVACIÓN (REGLA 4)
-                if ($currentVersion && $currentVersion->end_date->isFuture()) {
+                if ($baseVersion && $baseVersion->end_date->isFuture()) {
                     // Si paga ANTES, la nueva versión empieza cuando la actual TERMINA
-                    $startDate = $currentVersion->end_date;
+                    $startDate = $baseVersion->end_date;
                 } else {
                     // Si paga DESPUÉS (o es nueva), la nueva empieza HOY
                     $startDate = now();
@@ -341,7 +474,7 @@ class SubscriptionController extends Controller
             // --- FIN LÓGICA DE FECHAS ---
 
             // --- INICIO: REGLA 3 - Reutilización de Versión ---
-            // Buscamos una versión "pendiente" (su último pago fue rechazado)
+            // ... (código de reutilización de versión sin cambios) ...
             $pendingVersion = $subscription->versions()
                 ->whereHas('payments', function ($query) {
                     $query->where('status', SubscriptionPaymentStatus::REJECTED);
@@ -350,7 +483,7 @@ class SubscriptionController extends Controller
                     // Asegurarse que no tenga ya un pago aprobado o pendiente
                     $query->whereIn('status', [SubscriptionPaymentStatus::APPROVED, SubscriptionPaymentStatus::PENDING]);
                 })
-                ->latest('start_date')
+                ->latest('id')
                 ->first();
 
             $newVersion = $pendingVersion; // Reutilizar si se encuentra
@@ -371,7 +504,7 @@ class SubscriptionController extends Controller
             }
             // --- FIN: REGLA 3 ---
 
-            // Insertar los nuevos items
+            // ... (código de inserción de items y creación de pago sin cambios) ...
             $subscriptionItems = [];
             foreach ($validated['items'] as $item) {
                 $planItem = $allPlanItems->get($item['key']);
@@ -408,6 +541,33 @@ class SubscriptionController extends Controller
                 $payment->addMediaFromRequest('proof_of_payment')
                     ->toMediaCollection('proof_of_payment');
             }
+
+            // --- INICIO: Notificar al Admin ---
+            // ... (código de notificación sin cambios) ...
+            try {
+                // 1. Buscar al usuario admin (asumiendo que está en la suscripción 1)
+                $adminUser = User::whereHas('branch', fn($q) => $q->where('subscription_id', 1))
+                    ->select('email') // Solo necesitamos el email
+                    ->first();
+
+                if ($adminUser) {
+                    // 2. Preparar los datos para el Mailable
+                    $subscriptionName = $subscription->commercial_name;
+                    $paymentAmount = (float) $payment->amount;
+                    // Generamos la URL para el panel de admin
+                    $reviewUrl = route('admin.payments.show', $payment->id);
+
+                    // 3. Enviar el correo (se encolará si Mailable implementa ShouldQueue)
+                    Mail::to($adminUser->email)
+                        ->send(new AdminNewPaymentNotification($subscriptionName, $paymentAmount, $reviewUrl));
+                } else {
+                    Log::warning("No se encontró un usuario admin (Suscripción ID 1) para notificar el pago pendiente ID: {$payment->id}");
+                }
+            } catch (\Exception $e) {
+                // Capturar error de correo para no romper la transacción del pago
+                Log::error("Fallo al enviar correo de notificación de pago: " . $e->getMessage());
+            }
+            // --- FIN: Notificar al Admin ---
 
             // NO actualizamos el estado de la suscripción (status) hasta la aprobación del admin
         });

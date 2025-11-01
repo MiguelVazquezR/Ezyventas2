@@ -72,7 +72,6 @@ const confirmDeleteAccount = (account) => {
     });
 };
 
-
 // --- Lógica para el modal de historial ---
 const isHistoryModalVisible = ref(false);
 const selectedAccountForHistory = ref(null);
@@ -379,7 +378,7 @@ const getPaymentStatusTag = (status) => {
                             </Message>
 
                             <div class="mb-6">
-                                <h3 class="font-bold mb-4 text-gray-800 dark:text-gray-200">Módulos</h3>
+                                <h4 class="font-bold mb-4 text-gray-800 dark:text-gray-200">Módulos</h4>
                                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                     <div v-for="module in activeModules" :key="module.key"
                                         class="p-4 rounded-lg text-center flex flex-col items-center justify-center transition-all"
@@ -395,7 +394,7 @@ const getPaymentStatusTag = (status) => {
                                 </div>
                             </div>
                             <div>
-                                <h3 class="font-bold mb-4 text-gray-800 dark:text-gray-200">Límites del plan</h3>
+                                <h4 class="font-bold mb-4 text-gray-800 dark:text-gray-200">Límites del plan</h4>
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                     <div v-for="limit in activeLimits" :key="limit.item_key"
                                         class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg text-center flex flex-col justify-between">
@@ -450,7 +449,7 @@ const getPaymentStatusTag = (status) => {
                     <Card>
                         <template #title>
                             <div class="flex justify-between items-center">
-                                <span>Cuentas Bancarias</span>
+                                <span>Cuentas bancarias</span>
                                 <Button @click="openCreateBankAccountModal" icon="pi pi-plus" size="small"
                                     v-tooltip.bottom="'Nueva Cuenta'" />
                             </div>
@@ -498,7 +497,7 @@ const getPaymentStatusTag = (status) => {
                         </template>
                     </Card>
                     <Card>
-                        <template #title>Historial de Versiones y Pagos</template>
+                        <template #title>Historial de versiones y pagos</template>
                         <template #content>
                             <Accordion>
                                 <AccordionPanel v-for="(version, index) in subscription.versions" :key="version.id"
@@ -509,20 +508,46 @@ const getPaymentStatusTag = (status) => {
                                     </AccordionHeader>
                                     <AccordionContent>
                                         <div class="p-4">
-                                            <h4 class="font-bold mb-2">Conceptos del Plan</h4>
-                                            <DataTable :value="version.items" size="small" class="mb-6">
+                                            <h5 class="font-bold mb-2">Conceptos del plan</h5>
+                                            <!-- --- INICIO: Tabla de Conceptos Actualizada --- -->
+                                            <DataTable :value="version.processed_items" size="small" class="mb-6">
                                                 <Column field="name" header="Concepto"></Column>
-                                                <Column field="billing_period" header="Periodo">
-                                                    <template #body="slotProps"><span class="capitalize">{{
-                                                        slotProps.data.billing_period }}</span></template>
+                                                <Column header="Cantidad">
+                                                    <template #body="{ data }">
+                                                        <!-- Muestra "N -> N" si es upgrade o downgrade -->
+                                                        <span v-if="data.status === 'upgraded'">
+                                                            {{ data.previous_quantity }} &rarr; <strong>{{ data.quantity }}</strong>
+                                                        </span>
+                                                         <span v-else-if="data.status === 'downgraded'">
+                                                            {{ data.previous_quantity }} &rarr; <strong>{{ data.quantity }}</strong>
+                                                        </span>
+                                                        <!-- Muestra solo N si es nuevo o sin cambios -->
+                                                        <span v-else>
+                                                            {{ data.quantity }}
+                                                        </span>
+                                                    </template>
                                                 </Column>
-                                                <Column field="unit_price" header="Precio">
-                                                    <template #body="slotProps">{{
-                                                        formatCurrency(slotProps.data.unit_price)
-                                                        }}</template>
+                                                <Column header="Estado">
+                                                    <template #body="{ data }">
+                                                        <Tag v-if="data.status === 'new'" value="Nuevo" severity="success" />
+                                                        <Tag v-if="data.status === 'upgraded'" value="Mejora" severity="info" />
+                                                        <Tag v-if="data.status === 'unchanged'" value="Sin cambio" severity="secondary" />
+                                                        <Tag v-if="data.status === 'downgraded'" value="Reducción" severity="warning" />
+                                                    </template>
+                                                </Column>
+                                                <Column field="billing_period" header="Periodo">
+                                                    <template #body="{ data }">
+                                                        <span class="capitalize">{{ data.billing_period }}</span>
+                                                    </template>
+                                                </Column>
+                                                <Column header="Precio Unitario">
+                                                    <template #body="{ data }">
+                                                        {{ formatCurrency(data.unit_price) }}
+                                                    </template>
                                                 </Column>
                                             </DataTable>
-                                            <h4 class="font-bold mb-2">Pagos Realizados</h4>
+                                            <!-- --- FIN: Tabla de Conceptos Actualizada --- -->
+                                            <h5 class="font-bold mb-2">Pagos realizados</h5>
                                             <DataTable :value="version.payments" size="small">
                                                 <Column field="created_at" header="Fecha de Pago">
                                                     <template #body="slotProps">{{ formatDate(slotProps.data.created_at)
@@ -574,30 +599,30 @@ const getPaymentStatusTag = (status) => {
             </div>
         </div>
 
-        <Dialog v-model:visible="isEditModalVisible" modal header="Editar Información" :style="{ width: '30rem' }">
+        <Dialog v-model:visible="isEditModalVisible" modal header="Editar información" :style="{ width: '30rem' }">
             <form @submit.prevent="submitInfoForm" class="p-2 space-y-4">
                 <div>
-                    <InputLabel for="commercial_name" value="Nombre Comercial *" />
+                    <InputLabel for="commercial_name" value="Nombre comercial *" />
                     <InputText id="commercial_name" v-model="infoForm.commercial_name" class="w-full mt-1" />
                     <InputError :message="infoForm.errors.commercial_name" />
                 </div>
                 <div>
-                    <InputLabel for="business_name" value="Razón Social (opcional)" />
+                    <InputLabel for="business_name" value="Razón social (opcional)" />
                     <InputText id="business_name" v-model="infoForm.business_name" class="w-full mt-1" />
                     <InputError :message="infoForm.errors.business_name" />
                 </div>
                 <div class="flex justify-end gap-2 mt-4">
                     <Button type="button" label="Cancelar" severity="secondary" @click="isEditModalVisible = false"
                         text />
-                    <Button type="submit" label="Guardar Cambios" :loading="infoForm.processing" />
+                    <Button type="submit" label="Guardar cambios" :loading="infoForm.processing" />
                 </div>
             </form>
         </Dialog>
-        <Dialog v-model:visible="isInvoiceModalVisible" modal header="Confirmar Solicitud de Factura"
+        <Dialog v-model:visible="isInvoiceModalVisible" modal header="Confirmar solicitud de factura"
             :style="{ width: '35rem' }">
             <div class="p-4 text-center">
-                <i class="pi pi-info-circle text-5xl text-blue-500 mb-4"></i>
-                <h3 class="text-lg font-bold mb-2">Verifica tu Información Fiscal</h3>
+                <i class="pi pi-info-circle !text-5xl text-blue-500 mb-4"></i>
+                <h4 class="text-lg font-bold mb-2">Verifica tu información fiscal</h4>
                 <p class="text-gray-600 dark:text-gray-300">
                     Antes de continuar, por favor asegúrate de que la Constancia de Situación Fiscal que subiste esté
                     actualizada. La factura se generará con los datos de este documento.
@@ -605,7 +630,7 @@ const getPaymentStatusTag = (status) => {
             </div>
             <template #footer>
                 <Button label="Cancelar" text severity="secondary" @click="isInvoiceModalVisible = false" />
-                <Button label="Confirmar y Solicitar" icon="pi pi-check" @click="requestInvoice" />
+                <Button label="Confirmar y solicitar" icon="pi pi-check" @click="requestInvoice" />
             </template>
         </Dialog>
 

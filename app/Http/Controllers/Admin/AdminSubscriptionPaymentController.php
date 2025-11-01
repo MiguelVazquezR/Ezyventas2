@@ -7,9 +7,11 @@ use App\Models\SubscriptionPayment;
 use App\Enums\SubscriptionStatus;
 use App\Enums\BillingPeriod;
 use App\Enums\SubscriptionPaymentStatus;
+use App\Mail\PaymentStatusNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Inertia\Inertia;
 
 class AdminSubscriptionPaymentController extends Controller
@@ -22,7 +24,7 @@ class AdminSubscriptionPaymentController extends Controller
         $pendingPayments = SubscriptionPayment::with([
             'subscriptionVersion.subscription.branches' // Cargar info de la sucursal
         ])
-            ->where('payment_method', 'transfer')
+            ->where('payment_method', 'transferencia')
             ->where('status', SubscriptionPaymentStatus::PENDING)
             ->latest()
             ->get();
@@ -51,7 +53,7 @@ class AdminSubscriptionPaymentController extends Controller
         // 1. Buscar la versión anterior a la que se está pagando
         $previousVersion = $subscription->versions()
             ->where('id', '!=', $pendingVersion->id) // Excluir la versión pendiente actual
-            ->latest('start_date') // Obtener la más reciente
+            ->latest('id') // Obtener la más reciente
             ->with('items')
             ->first();
 
@@ -110,7 +112,7 @@ class AdminSubscriptionPaymentController extends Controller
      */
     public function approve(SubscriptionPayment $payment)
     {
-        if ($payment->status !== SubscriptionPaymentStatus::PENDING || $payment->payment_method !== 'transfer') {
+        if ($payment->status !== SubscriptionPaymentStatus::PENDING || $payment->payment_method !== 'transferencia') {
             return redirect()->route('admin.payments.index')->with('error', 'Este pago no se puede aprobar.');
         }
 
@@ -123,19 +125,36 @@ class AdminSubscriptionPaymentController extends Controller
                 // Cargar la versión actual "real" (la última activa o vencida)
                 $currentActiveVersion = $subscription->versions()
                     ->where('id', '!=', $version->id) // Excluir la que estamos aprobando
-                    ->latest('start_date')
+                    ->latest('id')
                     ->first();
 
-                // --- INICIO: REGLA 4 - Lógica de Fechas de Renovación ---
+                // --- INICIO: REGLA 4 - Lógica de Fechas de Aprobación MODIFICADA ---
                 $startDate = now()->startOfDay(); // Default: iniciar hoy
+                $mode = 'renew'; // Asumir renovación por defecto
 
-                // Si hay una versión activa Y AÚN NO VENCE (pagó temprano)
+                // Inferir el modo: si la versión anterior aún no vence, es una MEJORA.
                 if ($currentActiveVersion && $currentActiveVersion->end_date->isFuture()) {
-                    // La nueva versión empieza cuando la actual TERMINA
-                    $startDate = $currentActiveVersion->end_date;
+                    $mode = 'upgrade';
                 }
-                // Si ya expiró (pagó tarde) o no hay versión, $startDate se queda como 'now()'.
-                // Esto cumple la regla: si paga el 26 (expiró el 25), empieza el 26.
+
+                if ($mode === 'upgrade') {
+                    // MEJORA: El nuevo plan inicia HOY.
+                    $startDate = now()->startOfDay();
+
+                    // PUNTO 2: Acortamos la versión anterior para que termine HOY.
+                    if ($currentActiveVersion) {
+                        $currentActiveVersion->update(['end_date' => $startDate]);
+                    }
+                } else {
+                    // RENOVACIÓN:
+                    if ($currentActiveVersion && $currentActiveVersion->end_date->isFuture()) {
+                        // Si paga ANTES, la nueva versión empieza cuando la actual TERMINA
+                        $startDate = $currentActiveVersion->end_date;
+                    } else {
+                        // Si paga DESPUÉS (o es nueva), la nueva empieza HOY
+                        $startDate = now()->startOfDay();
+                    }
+                }
                 // --- FIN: REGLA 4 ---
 
                 // Calculamos la fecha de fin basada en el periodo
@@ -166,6 +185,31 @@ class AdminSubscriptionPaymentController extends Controller
             return redirect()->route('admin.payments.index')->with('error', 'Error al aprobar el pago: ' . $e->getMessage());
         }
 
+        // --- INICIO: Notificar al Suscriptor (Aprobado) ---
+        try {
+            // Recargamos las relaciones para obtener los datos del usuario
+            $payment->load('subscriptionVersion.subscription.branches.users');
+            $subscription = $payment->subscriptionVersion->subscription;
+            // Buscamos al primer usuario de la sucursal principal
+            $mainBranch = $subscription->branches->firstWhere('is_main', true);
+            $subscriberUser = $mainBranch?->users->first();
+
+            if ($subscriberUser) {
+                Mail::to($subscriberUser->email)
+                    ->send(new PaymentStatusNotification(
+                        $payment,
+                        'approved',
+                        $subscriberUser->name
+                    ));
+            } else {
+                Log::warning("No se encontró un usuario principal para notificar la aprobación del pago ID: {$payment->id}");
+            }
+        } catch (\Exception $e) {
+            Log::error("Fallo al enviar correo de aprobación al cliente: " . $e->getMessage());
+            // No detenemos la redirección por un fallo de correo
+        }
+        // --- FIN: Notificar al Suscriptor ---
+
         return redirect()->route('admin.payments.index')->with('success', 'Pago aprobado y suscripción activada.');
     }
 
@@ -178,7 +222,7 @@ class AdminSubscriptionPaymentController extends Controller
             'rejection_reason' => 'required|string|max:500',
         ]);
 
-        if ($payment->status !== SubscriptionPaymentStatus::PENDING || $payment->payment_method !== 'transfer') {
+        if ($payment->status !== SubscriptionPaymentStatus::PENDING || $payment->payment_method !== 'transferencia') {
             return redirect()->route('admin.payments.index')->with('error', 'Este pago no se puede rechazar.');
         }
 
@@ -195,6 +239,32 @@ class AdminSubscriptionPaymentController extends Controller
             Log::error("Error al rechazar pago: " . $e->getMessage());
             return redirect()->route('admin.payments.index')->with('error', 'Error al rechazar el pago: ' . $e->getMessage());
         }
+
+        // --- INICIO: Notificar al Suscriptor (Rechazado) ---
+        try {
+            // Recargamos las relaciones para obtener los datos del usuario
+            $payment->load('subscriptionVersion.subscription.branches.users');
+            $subscription = $payment->subscriptionVersion->subscription;
+            // Buscamos al primer usuario de la sucursal principal
+            $mainBranch = $subscription->branches->firstWhere('is_main', true);
+            $subscriberUser = $mainBranch?->users->first();
+
+            if ($subscriberUser) {
+                Mail::to($subscriberUser->email)
+                    ->send(new PaymentStatusNotification(
+                        $payment,
+                        'rejected',
+                        $subscriberUser->name,
+                        $validated['rejection_reason']
+                    ));
+            } else {
+                Log::warning("No se encontró un usuario principal para notificar el rechazo del pago ID: {$payment->id}");
+            }
+        } catch (\Exception $e) {
+            Log::error("Fallo al enviar correo de rechazo al cliente: " . $e->getMessage());
+            // No detenemos la redirección por un fallo de correo
+        }
+        // --- FIN: Notificar al Suscriptor ---
 
         return redirect()->route('admin.payments.index')->with('success', 'Pago rechazado exitosamente.');
     }

@@ -59,7 +59,7 @@ const formatDate = (dateString) => {
 
                         <Column header="Método">
                             <template #body="{ data }">
-                                <Tag v-if="data.payment_method === 'transfer'" value="Transferencia" severity="info" />
+                                <Tag v-if="data.payment_method === 'transferencia'" value="Transferencia" severity="info" />
                             </template>
                         </Column>
 

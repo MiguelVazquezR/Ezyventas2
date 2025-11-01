@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { useForm, router } from '@inertiajs/vue3';
 import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import InputError from '@/Components/InputError.vue';
 
 const props = defineProps({
     payment: Object,
@@ -94,7 +95,6 @@ const formatDateTime = (dateString) => {
                         <template #title>Detalles del pago</template>
                         <template #content>
                             <ul class="space-y-3 text-gray-700 dark:text-gray-300">
-                                <!-- ... li de Negocio, Monto, Método sin cambios ... -->
                                 <li class="flex justify-between">
                                     <span class="font-semibold">Negocio:</span>
                                     <span>{{ payment.subscription_version.subscription.commercial_name }}</span>
@@ -125,8 +125,11 @@ const formatDateTime = (dateString) => {
                                 <Column field="name" header="Concepto"></Column>
                                 <Column header="Cantidad">
                                     <template #body="{ data }">
-                                        <!-- Muestra "N -> N" si es upgrade -->
+                                        <!-- Muestra "N -> N" si es upgrade o downgrade -->
                                         <span v-if="data.status === 'upgraded'">
+                                            {{ data.previous_quantity }} &rarr; <strong>{{ data.quantity }}</strong>
+                                        </span>
+                                        <span v-else-if="data.status === 'downgraded'">
                                             {{ data.previous_quantity }} &rarr; <strong>{{ data.quantity }}</strong>
                                         </span>
                                         <!-- Muestra solo N si es nuevo o sin cambios -->
@@ -139,7 +142,8 @@ const formatDateTime = (dateString) => {
                                     <template #body="{ data }">
                                         <Tag v-if="data.status === 'new'" value="Nuevo" severity="success" />
                                         <Tag v-if="data.status === 'upgraded'" value="Mejora" severity="info" />
-                                        <Tag v-if="data.status === 'unchanged'" value="Sin cambio" severity="secondary" />
+                                        <Tag v-if="data.status === 'unchanged'" value="Sin cambio"
+                                            severity="secondary" />
                                         <Tag v-if="data.status === 'downgraded'" value="Reducción" severity="warning" />
                                     </template>
                                 </Column>
@@ -163,7 +167,6 @@ const formatDateTime = (dateString) => {
                 <!-- Columna de Acciones y Comprobante -->
                 <div class="lg:col-span-1 space-y-6">
                     <Card>
-                        <!-- ... Comprobante de Pago sin cambios ... -->
                         <template #title>Comprobante de pago</template>
                         <template #content>
                             <div v-if="proofUrl" class="space-y-4">
@@ -180,7 +183,6 @@ const formatDateTime = (dateString) => {
                     </Card>
 
                     <Card>
-                        <!-- ... Acciones sin cambios ... -->
                         <template #title>Acciones</template>
                         <template #content>
                             <div class="space-y-4">
