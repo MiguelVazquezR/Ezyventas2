@@ -31,4 +31,10 @@ Route::middleware(['auth'])->prefix('subscription')->name('subscription.')->grou
      */
     Route::post('/manage', [SubscriptionController::class, 'processManagement'])->name('manage.store');
 
+    /**
+     * AÑADIDO: Revierte una versión rechazada.
+     * El cliente puede cancelar la actualización y volver a su plan anterior.
+     */
+    Route::delete('/revert', [SubscriptionController::class, 'revert'])->name('revert');
+
 });

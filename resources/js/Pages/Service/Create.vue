@@ -4,7 +4,7 @@ import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
-import CreateCategoryModal from '@/Components/CreateCategoryModal.vue';
+import ManageCategoriesModal from '@/Components/ManageCategoriesModal.vue';
 
 const props = defineProps({
     categories: Array,
@@ -25,10 +25,28 @@ const form = useForm({
 
 const localCategories = ref([...props.categories]);
 const showCategoryModal = ref(false);
+
 const handleNewCategory = (newCategory) => {
     localCategories.value.push(newCategory);
     form.category_id = newCategory.id;
 };
+
+// --- AÑADIDO ---
+const handleCategoryUpdate = (updatedCategory) => {
+    const index = localCategories.value.findIndex(c => c.id === updatedCategory.id);
+    if (index !== -1) {
+        localCategories.value[index] = updatedCategory;
+    }
+};
+
+const handleCategoryDelete = (deletedCategoryId) => {
+    localCategories.value = localCategories.value.filter(c => c.id !== deletedCategoryId);
+    // Opcional: Si la categoría eliminada era la que estaba seleccionada, deseleccionarla.
+    if (form.category_id === deletedCategoryId) {
+        form.category_id = null;
+    }
+};
+// --- FIN AÑADIDO ---
 
 const submit = () => {
     form.post(route('services.store'));
@@ -54,7 +72,8 @@ const submit = () => {
                 <div>
                     <div class="flex justify-between items-center mb-1">
                         <InputLabel for="category" value="Categoría *" />
-                        <Button @click="showCategoryModal = true" label="Nueva" icon="pi pi-plus" text size="small" />
+                        <!-- Botón ahora dice "Gestionar" para más claridad -->
+                        <Button @click="showCategoryModal = true" label="Gestionar" icon="pi pi-cog" text size="small" />
                     </div>
                     <Select id="category" v-model="form.category_id" :options="localCategories" optionLabel="name" optionValue="id" placeholder="Selecciona una categoría" filter class="w-full" />
                     <InputError :message="form.errors.category_id" class="mt-2" />
@@ -83,6 +102,14 @@ const submit = () => {
                 <Button type="submit" label="Guardar Servicio" :loading="form.processing" severity="warning" />
             </div>
         </form>
-        <CreateCategoryModal v-model:visible="showCategoryModal" type="service" @created="handleNewCategory" />
+        
+        <!-- AÑADIDOS: listeners para @updated y @deleted -->
+        <ManageCategoriesModal 
+            v-model:visible="showCategoryModal" 
+            categoryType="service" 
+            @created="handleNewCategory"
+            @updated="handleCategoryUpdate"
+            @deleted="handleCategoryDelete"
+        />
     </AppLayout>
 </template>

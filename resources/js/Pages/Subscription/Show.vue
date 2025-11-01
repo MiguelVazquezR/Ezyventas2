@@ -15,13 +15,15 @@ const props = defineProps({
     subscription: Object,
     planItems: Array,
     usageData: Object,
-    // AÑADIDO: Recibe el estado de la suscripción desde el controlador
-    // Ahora incluye: isExpired (bool), daysUntilExpiry (int|null), currentBillingPeriod
     subscriptionStatus: Object,
+    pendingPayment: Object, // AÑADIDO
+    lastRejectedPayment: Object, // AÑADIDO
 });
 
 const toast = useToast();
 const confirm = useConfirm();
+const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
+const breadcrumbItems = ref([{ label: 'Mi suscripción' }]);
 
 // --- Lógica de Sucursales ---
 const isBranchModalVisible = ref(false);
@@ -70,7 +72,6 @@ const confirmDeleteAccount = (account) => {
     });
 };
 
-
 // --- Lógica para el modal de historial ---
 const isHistoryModalVisible = ref(false);
 const selectedAccountForHistory = ref(null);
@@ -104,29 +105,47 @@ const toggleAccountMenu = (event, account) => {
 // --- Lógica de Plan y Botón de Gestión ---
 const currentVersion = computed(() => props.subscription?.versions?.[0] || null);
 
-// AÑADIDO: Lógica para el botón de acción principal
 const manageButton = computed(() => {
-    // --- LÓGICA MODIFICADA ---
-    // Checa si está expirada O si faltan 5 días o menos para expirar
-    const isRenewalTime = props.subscriptionStatus.isExpired ||
-                          (props.subscriptionStatus.daysUntilExpiry !== null && props.subscriptionStatus.daysUntilExpiry <= 5);
-
-    if (isRenewalTime) {
+    // AÑADIDO: Si hay un pago pendiente, deshabilitar el botón
+    if (props.pendingPayment) {
         return {
-            label: 'Renovar Suscripción',
-            icon: 'pi pi-refresh',
-            route: route('subscription.manage'),
-            disabled: false
+            label: 'Pago en revisión',
+            icon: 'pi pi-clock',
+            route: '#',
+            disabled: true // Deshabilitado
         };
     }
 
-    // Si no es tiempo de renovar (es decir, está activa y faltan más de 5 días),
-    // entonces se puede mejorar.
+    // Si hay un pago rechazado, el botón debe ser "Reintentar Pago"
+    if (props.lastRejectedPayment) {
+        return {
+            label: 'Reintentar pago',
+            icon: 'pi pi-exclamation-triangle',
+            route: route('subscription.manage'), // Va a la misma página
+            disabled: false,
+            severity: 'danger'
+        };
+    }
+
+    const isRenewalTime = props.subscriptionStatus.isExpired ||
+        (props.subscriptionStatus.daysUntilExpiry !== null && props.subscriptionStatus.daysUntilExpiry <= 5);
+
+    if (isRenewalTime) {
+        return {
+            label: 'Renovar suscripción',
+            icon: 'pi pi-refresh',
+            route: route('subscription.manage'),
+            disabled: false,
+            severity: 'primary'
+        };
+    }
+
     return {
-        label: 'Mejorar Suscripción',
+        label: 'Mejorar suscripción',
         icon: 'pi pi-arrow-up',
         route: route('subscription.manage'),
-        disabled: false
+        disabled: false,
+        severity: 'secondary'
     };
 });
 
@@ -174,7 +193,7 @@ const docForm = useForm({ fiscal_document: null });
 const fileUploadRef = ref(null);
 const onFileSelect = (event) => { docForm.fiscal_document = event.files[0]; };
 const uploadDocument = () => {
-    docForm.post(route('subscription.documents.store'), {
+    docForm.post(route('subscription.document.store'), {
         onSuccess: () => {
             toast.add({ severity: 'success', summary: 'Éxito', detail: 'Documento fiscal actualizado.', life: 3000 });
             docForm.reset();
@@ -190,7 +209,7 @@ const confirmRequestInvoice = (paymentId) => {
 };
 const requestInvoice = () => {
     if (paymentToRequest.value) {
-        router.post(route('subscription.payments.request-invoice', paymentToRequest.value), {}, {
+        router.post(route('subscription.invoice.request', paymentToRequest.value), {}, {
             preserveScroll: true,
             onSuccess: () => {
                 isInvoiceModalVisible.value = false;
@@ -214,11 +233,19 @@ const getInvoiceStatusTag = (status) => {
         'generada': { text: 'Generada', severity: 'success' },
     }[status] || { text: status, severity: 'secondary' };
 };
-
+const getPaymentStatusTag = (status) => {
+    return {
+        'pending': { text: 'Pendiente', severity: 'warn' },
+        'approved': { text: 'Aprobado', severity: 'success' },
+        'rejected': { text: 'Rechazado', severity: 'danger' },
+    }[status] || { text: status, severity: 'secondary' };
+};
 </script>
 
 <template>
     <AppLayout title="Mi suscripción">
+        <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0 mb-6" />
+
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6">
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Mi suscripción</h1>
@@ -227,7 +254,25 @@ const getInvoiceStatusTag = (status) => {
                     pagos, gestion de sucursales, cuentas bancarias e información fiscal.
                 </p>
             </header>
-            
+
+            <!-- AÑADIDO: Alertas de estado de pago -->
+            <Message v-if="pendingPayment" severity="info" :closable="false" class="mb-6">
+                Tu pago de {{ formatCurrency(pendingPayment.amount) }} por transferencia está en revisión.
+                Tu plan se activará automáticamente una vez aprobado.
+            </Message>
+            <Message v-if="lastRejectedPayment" severity="error" :closable="false" class="mb-6">
+                <div class="flex flex-col">
+                    <span class="font-bold">Tu último pago fue rechazado.</span>
+                    <p class="m-0">Motivo: {{ lastRejectedPayment.payment_details.rejection_reason }}</p>
+                    <p class="m-0 mt-2">
+                        Por favor, ve a
+                        <Link :href="route('subscription.manage')" class="font-bold underline">Gestionar suscripción
+                        </Link>
+                        para intentarlo de nuevo.
+                    </p>
+                </div>
+            </Message>
+
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- Columna Izquierda -->
                 <div class="lg:col-span-1 space-y-6">
@@ -251,7 +296,9 @@ const getInvoiceStatusTag = (status) => {
                                 </div>
                                 <div class="flex justify-between items-center">
                                     <span class="text-gray-500">Estatus:</span>
-                                    <Tag :value="subscription.status"
+                                    <!-- AÑADIDO: Si hay pago pendiente, mostrar "Pendiente" -->
+                                    <Tag v-if="pendingPayment" value="Pago pendiente" severity="warn" />
+                                    <Tag v-else :value="subscription.status"
                                         :severity="getStatusTagSeverity(subscription.status)" class="capitalize" />
                                 </div>
                                 <div class="flex justify-between">
@@ -303,37 +350,35 @@ const getInvoiceStatusTag = (status) => {
                         <template #title>
                             <div class="flex justify-between items-center">
                                 <span>Plan actual y módulos</span>
-                                <!-- BOTÓN MODIFICADO -->
-                                <Link :href="manageButton.route">
-                                    <Button 
-                                        :label="manageButton.label" 
-                                        :icon="manageButton.icon" 
-                                        :disabled="manageButton.disabled || true"
-                                        size="small" 
-                                        :severity="manageButton.label === 'Renovar Suscripción' ? 'primary' : 'secondary'"
-                                    />
+                                <!-- BOTÓN MODIFICADO (ahora usa v-bind) -->
+                                <Link :href="manageButton.route" :disabled="manageButton.disabled">
+                                <Button :label="manageButton.label" :icon="manageButton.icon"
+                                    :disabled="manageButton.disabled" size="small"
+                                    :severity="manageButton.severity || 'primary'" />
                                 </Link>
                             </div>
                         </template>
                         <template #subtitle>
-                            Vigencia: {{ formatDate(currentVersion.start_date) }} - {{
-                                formatDate(currentVersion.end_date) }}
+                            <span v-if="!pendingPayment">
+                                Vigencia: {{ formatDate(currentVersion.start_date) }} - {{
+                                    formatDate(currentVersion.end_date) }}
+                            </span>
+                            <span v-else class="text-yellow-600">
+                                Esperando aprobación de pago para iniciar nuevo periodo.
+                            </span>
                         </template>
                         <template #content>
-                            <!-- NUEVO: Mensaje de proximidad de expiración -->
-                            <Message 
-                                v-if="!subscriptionStatus.isExpired && subscriptionStatus.daysUntilExpiry !== null && subscriptionStatus.daysUntilExpiry <= 5" 
-                                severity="warn" 
-                                :closable="false" 
-                                class="mb-4"
-                            >
-                                Tu suscripción expira en {{ subscriptionStatus.daysUntilExpiry }} 
-                                {{ subscriptionStatus.daysUntilExpiry === 1 ? 'día' : 'días' }}. 
+                            <!-- MODIFICADO: Mensaje de expiración (solo si no hay pagos pendientes/rechazados) -->
+                            <Message
+                                v-if="!subscriptionStatus.isExpired && subscriptionStatus.daysUntilExpiry !== null && subscriptionStatus.daysUntilExpiry <= 5 && !pendingPayment && !lastRejectedPayment"
+                                severity="warn" :closable="false" class="mb-4">
+                                Tu suscripción expira en {{ subscriptionStatus.daysUntilExpiry }}
+                                {{ subscriptionStatus.daysUntilExpiry === 1 ? 'día' : 'días' }}.
                                 ¡Renueva ahora para no perder acceso!
                             </Message>
 
                             <div class="mb-6">
-                                <h3 class="font-bold mb-4 text-gray-800 dark:text-gray-200">Módulos</h3>
+                                <h4 class="font-bold mb-4 text-gray-800 dark:text-gray-200">Módulos</h4>
                                 <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                     <div v-for="module in activeModules" :key="module.key"
                                         class="p-4 rounded-lg text-center flex flex-col items-center justify-center transition-all"
@@ -349,7 +394,7 @@ const getInvoiceStatusTag = (status) => {
                                 </div>
                             </div>
                             <div>
-                                <h3 class="font-bold mb-4 text-gray-800 dark:text-gray-200">Límites del plan</h3>
+                                <h4 class="font-bold mb-4 text-gray-800 dark:text-gray-200">Límites del plan</h4>
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                     <div v-for="limit in activeLimits" :key="limit.item_key"
                                         class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg text-center flex flex-col justify-between">
@@ -368,7 +413,6 @@ const getInvoiceStatusTag = (status) => {
                             </div>
                         </template>
                     </Card>
-                    <!-- Panel de Sucursales -->
                     <Card>
                         <template #title>
                             <div class="flex justify-between items-center">
@@ -402,11 +446,10 @@ const getInvoiceStatusTag = (status) => {
                             </DataTable>
                         </template>
                     </Card>
-                    <!-- Panel de Cuentas Bancarias -->
                     <Card>
                         <template #title>
                             <div class="flex justify-between items-center">
-                                <span>Cuentas Bancarias</span>
+                                <span>Cuentas bancarias</span>
                                 <Button @click="openCreateBankAccountModal" icon="pi pi-plus" size="small"
                                     v-tooltip.bottom="'Nueva Cuenta'" />
                             </div>
@@ -439,7 +482,8 @@ const getInvoiceStatusTag = (status) => {
                                 <Column headerStyle="width: 5rem; text-align: right">
                                     <template #body="slotProps">
                                         <div class="flex justify-end">
-                                            <Button @click="toggleAccountMenu($event, slotProps.data)" icon="pi pi-ellipsis-v" text rounded size="small" />
+                                            <Button @click="toggleAccountMenu($event, slotProps.data)"
+                                                icon="pi pi-ellipsis-v" text rounded size="small" />
                                         </div>
                                     </template>
                                 </Column>
@@ -453,31 +497,57 @@ const getInvoiceStatusTag = (status) => {
                         </template>
                     </Card>
                     <Card>
-                        <template #title>Historial de Versiones y Pagos</template>
+                        <template #title>Historial de versiones y pagos</template>
                         <template #content>
                             <Accordion>
                                 <AccordionPanel v-for="(version, index) in subscription.versions" :key="version.id"
                                     :value="index">
                                     <AccordionHeader>
                                         Periodo: {{ formatDate(version.start_date) + ' - ' +
-                                        formatDate(version.end_date) }}
+                                            formatDate(version.end_date) }}
                                     </AccordionHeader>
                                     <AccordionContent>
                                         <div class="p-4">
-                                            <h4 class="font-bold mb-2">Conceptos del Plan</h4>
-                                            <DataTable :value="version.items" size="small" class="mb-6">
+                                            <h5 class="font-bold mb-2">Conceptos del plan</h5>
+                                            <!-- --- INICIO: Tabla de Conceptos Actualizada --- -->
+                                            <DataTable :value="version.processed_items" size="small" class="mb-6">
                                                 <Column field="name" header="Concepto"></Column>
-                                                <Column field="billing_period" header="Periodo">
-                                                    <template #body="slotProps"><span class="capitalize">{{
-                                                        slotProps.data.billing_period }}</span></template>
+                                                <Column header="Cantidad">
+                                                    <template #body="{ data }">
+                                                        <!-- Muestra "N -> N" si es upgrade o downgrade -->
+                                                        <span v-if="data.status === 'upgraded'">
+                                                            {{ data.previous_quantity }} &rarr; <strong>{{ data.quantity }}</strong>
+                                                        </span>
+                                                         <span v-else-if="data.status === 'downgraded'">
+                                                            {{ data.previous_quantity }} &rarr; <strong>{{ data.quantity }}</strong>
+                                                        </span>
+                                                        <!-- Muestra solo N si es nuevo o sin cambios -->
+                                                        <span v-else>
+                                                            {{ data.quantity }}
+                                                        </span>
+                                                    </template>
                                                 </Column>
-                                                <Column field="unit_price" header="Precio">
-                                                    <template #body="slotProps">{{
-                                                        formatCurrency(slotProps.data.unit_price)
-                                                    }}</template>
+                                                <Column header="Estado">
+                                                    <template #body="{ data }">
+                                                        <Tag v-if="data.status === 'new'" value="Nuevo" severity="success" />
+                                                        <Tag v-if="data.status === 'upgraded'" value="Mejora" severity="info" />
+                                                        <Tag v-if="data.status === 'unchanged'" value="Sin cambio" severity="secondary" />
+                                                        <Tag v-if="data.status === 'downgraded'" value="Reducción" severity="warning" />
+                                                    </template>
+                                                </Column>
+                                                <Column field="billing_period" header="Periodo">
+                                                    <template #body="{ data }">
+                                                        <span class="capitalize">{{ data.billing_period }}</span>
+                                                    </template>
+                                                </Column>
+                                                <Column header="Precio Unitario">
+                                                    <template #body="{ data }">
+                                                        {{ formatCurrency(data.unit_price) }}
+                                                    </template>
                                                 </Column>
                                             </DataTable>
-                                            <h4 class="font-bold mb-2">Pagos Realizados</h4>
+                                            <!-- --- FIN: Tabla de Conceptos Actualizada --- -->
+                                            <h5 class="font-bold mb-2">Pagos realizados</h5>
                                             <DataTable :value="version.payments" size="small">
                                                 <Column field="created_at" header="Fecha de Pago">
                                                     <template #body="slotProps">{{ formatDate(slotProps.data.created_at)
@@ -489,21 +559,31 @@ const getInvoiceStatusTag = (status) => {
                                                     <template #body="slotProps">{{ formatCurrency(slotProps.data.amount)
                                                     }}</template>
                                                 </Column>
+                                                <!-- Nueva Columna de Estado -->
+                                                <Column field="status" header="Estado">
+                                                    <template #body="{ data }">
+                                                        <Tag :value="getPaymentStatusTag(data.status).text"
+                                                             :severity="getPaymentStatusTag(data.status).severity"
+                                                             class="capitalize" />
+                                                    </template>
+                                                </Column>
                                                 <Column field="invoice_status" header="Factura">
                                                     <template #body="{ data }">
-                                                        <div v-if="data.invoice_status === 'no_solicitada'">
+                                                        <!-- REGLA 3: Botón solo para pagos APROBADOS -->
+                                                        <div v-if="data.status === 'approved' && data.invoice_status === 'no_solicitada'">
                                                             <Button @click="confirmRequestInvoice(data.id)"
                                                                 label="Solicitar" size="small" outlined
                                                                 :disabled="!fiscalDocumentUrl"
                                                                 v-tooltip.bottom="!fiscalDocumentUrl ? 'Debes subir tu constancia fiscal' : 'Solicitar factura'" />
                                                         </div>
-                                                        <Tag v-else
+                                                        <Tag v-else-if="data.status === 'approved'"
                                                             :value="getInvoiceStatusTag(data.invoice_status).text"
                                                             :severity="getInvoiceStatusTag(data.invoice_status).severity"
                                                             class="capitalize" />
+                                                        <span v-else class="text-gray-400">-</span>
                                                     </template>
                                                 </Column>
-                                                <template #empty>
+                                               <template #empty>
                                                     <div class="text-center text-gray-500 py-4">
                                                         No hay pagos registrados aún.
                                                     </div>
@@ -519,30 +599,30 @@ const getInvoiceStatusTag = (status) => {
             </div>
         </div>
 
-        <Dialog v-model:visible="isEditModalVisible" modal header="Editar Información" :style="{ width: '30rem' }">
+        <Dialog v-model:visible="isEditModalVisible" modal header="Editar información" :style="{ width: '30rem' }">
             <form @submit.prevent="submitInfoForm" class="p-2 space-y-4">
                 <div>
-                    <InputLabel for="commercial_name" value="Nombre Comercial *" />
+                    <InputLabel for="commercial_name" value="Nombre comercial *" />
                     <InputText id="commercial_name" v-model="infoForm.commercial_name" class="w-full mt-1" />
                     <InputError :message="infoForm.errors.commercial_name" />
                 </div>
                 <div>
-                    <InputLabel for="business_name" value="Razón Social (opcional)" />
+                    <InputLabel for="business_name" value="Razón social (opcional)" />
                     <InputText id="business_name" v-model="infoForm.business_name" class="w-full mt-1" />
                     <InputError :message="infoForm.errors.business_name" />
                 </div>
                 <div class="flex justify-end gap-2 mt-4">
                     <Button type="button" label="Cancelar" severity="secondary" @click="isEditModalVisible = false"
                         text />
-                    <Button type="submit" label="Guardar Cambios" :loading="infoForm.processing" />
+                    <Button type="submit" label="Guardar cambios" :loading="infoForm.processing" />
                 </div>
             </form>
         </Dialog>
-        <Dialog v-model:visible="isInvoiceModalVisible" modal header="Confirmar Solicitud de Factura"
+        <Dialog v-model:visible="isInvoiceModalVisible" modal header="Confirmar solicitud de factura"
             :style="{ width: '35rem' }">
             <div class="p-4 text-center">
-                <i class="pi pi-info-circle text-5xl text-blue-500 mb-4"></i>
-                <h3 class="text-lg font-bold mb-2">Verifica tu Información Fiscal</h3>
+                <i class="pi pi-info-circle !text-5xl text-blue-500 mb-4"></i>
+                <h4 class="text-lg font-bold mb-2">Verifica tu información fiscal</h4>
                 <p class="text-gray-600 dark:text-gray-300">
                     Antes de continuar, por favor asegúrate de que la Constancia de Situación Fiscal que subiste esté
                     actualizada. La factura se generará con los datos de este documento.
@@ -550,7 +630,7 @@ const getInvoiceStatusTag = (status) => {
             </div>
             <template #footer>
                 <Button label="Cancelar" text severity="secondary" @click="isInvoiceModalVisible = false" />
-                <Button label="Confirmar y Solicitar" icon="pi pi-check" @click="requestInvoice" />
+                <Button label="Confirmar y solicitar" icon="pi pi-check" @click="requestInvoice" />
             </template>
         </Dialog>
 
@@ -560,15 +640,9 @@ const getInvoiceStatusTag = (status) => {
         <BankAccountModal :visible="isBankAccountModalVisible" :account="selectedBankAccount"
             :branches="subscription.branches" @update:visible="isBankAccountModalVisible = $event" />
 
-        <BankAccountHistoryModal 
-            v-model:visible="isHistoryModalVisible"
-            :account="selectedAccountForHistory" 
-        />
+        <BankAccountHistoryModal v-model:visible="isHistoryModalVisible" :account="selectedAccountForHistory" />
 
-        <BankAccountTransferModal 
-            v-model:visible="isTransferModalVisible"
-            :account="selectedAccountForTransfer"
-            :all-accounts="subscription.bank_accounts"
-        />
+        <BankAccountTransferModal v-model:visible="isTransferModalVisible" :account="selectedAccountForTransfer"
+            :all-accounts="subscription.bank_accounts" />
     </AppLayout>
 </template>
