@@ -17,7 +17,7 @@ const props = defineProps({
     usageData: Object,
     subscriptionStatus: Object,
     pendingPayment: Object, // AÑADIDO
-    rejectedPayment: Object, // AÑADIDO
+    lastRejectedPayment: Object, // AÑADIDO
 });
 
 const toast = useToast();
@@ -118,7 +118,7 @@ const manageButton = computed(() => {
     }
 
     // Si hay un pago rechazado, el botón debe ser "Reintentar Pago"
-    if (props.rejectedPayment) {
+    if (props.lastRejectedPayment) {
         return {
             label: 'Reintentar pago',
             icon: 'pi pi-exclamation-triangle',
@@ -129,7 +129,7 @@ const manageButton = computed(() => {
     }
 
     const isRenewalTime = props.subscriptionStatus.isExpired ||
-                          (props.subscriptionStatus.daysUntilExpiry !== null && props.subscriptionStatus.daysUntilExpiry <= 5);
+        (props.subscriptionStatus.daysUntilExpiry !== null && props.subscriptionStatus.daysUntilExpiry <= 5);
 
     if (isRenewalTime) {
         return {
@@ -234,13 +234,19 @@ const getInvoiceStatusTag = (status) => {
         'generada': { text: 'Generada', severity: 'success' },
     }[status] || { text: status, severity: 'secondary' };
 };
-
+const getPaymentStatusTag = (status) => {
+    return {
+        'pending': { text: 'Pendiente', severity: 'warn' },
+        'approved': { text: 'Aprobado', severity: 'success' },
+        'rejected': { text: 'Rechazado', severity: 'danger' },
+    }[status] || { text: status, severity: 'secondary' };
+};
 </script>
 
 <template>
     <AppLayout title="Mi suscripción">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0 mb-6" />
-        
+
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6">
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Mi suscripción</h1>
@@ -252,20 +258,22 @@ const getInvoiceStatusTag = (status) => {
 
             <!-- AÑADIDO: Alertas de estado de pago -->
             <Message v-if="pendingPayment" severity="info" :closable="false" class="mb-6">
-                Tu pago de {{ formatCurrency(pendingPayment.amount) }} por transferencia está en revisión. 
+                Tu pago de {{ formatCurrency(pendingPayment.amount) }} por transferencia está en revisión.
                 Tu plan se activará automáticamente una vez aprobado.
             </Message>
-            <Message v-if="rejectedPayment" severity="error" :closable="false" class="mb-6">
-                Tu último pago fue rechazado. 
-                <span v-if="rejectedPayment.payment_details?.rejection_reason">
-                    Motivo: <strong>{{ rejectedPayment.payment_details.rejection_reason }}</strong>
-                </span>
-                <span v-else>
-                    Por favor, revisa tu comprobante.
-                </span>
-                <Link :href="route('subscription.manage')" class="font-bold underline ml-2">Haz clic aquí para reintentar el pago.</Link>
+            <Message v-if="lastRejectedPayment" severity="error" :closable="false" class="mb-6">
+                <div class="flex flex-col">
+                    <span class="font-bold">Tu último pago fue rechazado.</span>
+                    <p class="m-0">Motivo: {{ lastRejectedPayment.payment_details.rejection_reason }}</p>
+                    <p class="m-0 mt-2">
+                        Por favor, ve a
+                        <Link :href="route('subscription.manage')" class="font-bold underline">Gestionar suscripción
+                        </Link>
+                        para intentarlo de nuevo.
+                    </p>
+                </div>
             </Message>
-            
+
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- Columna Izquierda -->
                 <div class="lg:col-span-1 space-y-6">
@@ -290,7 +298,7 @@ const getInvoiceStatusTag = (status) => {
                                 <div class="flex justify-between items-center">
                                     <span class="text-gray-500">Estatus:</span>
                                     <!-- AÑADIDO: Si hay pago pendiente, mostrar "Pendiente" -->
-                                    <Tag v-if="pendingPayment" value="Pago Pendiente" severity="warn" />
+                                    <Tag v-if="pendingPayment" value="Pago pendiente" severity="warn" />
                                     <Tag v-else :value="subscription.status"
                                         :severity="getStatusTagSeverity(subscription.status)" class="capitalize" />
                                 </div>
@@ -345,20 +353,16 @@ const getInvoiceStatusTag = (status) => {
                                 <span>Plan actual y módulos</span>
                                 <!-- BOTÓN MODIFICADO (ahora usa v-bind) -->
                                 <Link :href="manageButton.route" :disabled="manageButton.disabled">
-                                    <Button 
-                                        :label="manageButton.label" 
-                                        :icon="manageButton.icon" 
-                                        :disabled="manageButton.disabled"
-                                        size="small" 
-                                        :severity="manageButton.severity || 'primary'"
-                                    />
+                                <Button :label="manageButton.label" :icon="manageButton.icon"
+                                    :disabled="manageButton.disabled" size="small"
+                                    :severity="manageButton.severity || 'primary'" />
                                 </Link>
                             </div>
                         </template>
                         <template #subtitle>
                             <span v-if="!pendingPayment">
                                 Vigencia: {{ formatDate(currentVersion.start_date) }} - {{
-                                formatDate(currentVersion.end_date) }}
+                                    formatDate(currentVersion.end_date) }}
                             </span>
                             <span v-else class="text-yellow-600">
                                 Esperando aprobación de pago para iniciar nuevo periodo.
@@ -366,14 +370,11 @@ const getInvoiceStatusTag = (status) => {
                         </template>
                         <template #content>
                             <!-- MODIFICADO: Mensaje de expiración (solo si no hay pagos pendientes/rechazados) -->
-                            <Message 
-                                v-if="!subscriptionStatus.isExpired && subscriptionStatus.daysUntilExpiry !== null && subscriptionStatus.daysUntilExpiry <= 5 && !pendingPayment && !rejectedPayment" 
-                                severity="warn" 
-                                :closable="false" 
-                                class="mb-4"
-                            >
-                                Tu suscripción expira en {{ subscriptionStatus.daysUntilExpiry }} 
-                                {{ subscriptionStatus.daysUntilExpiry === 1 ? 'día' : 'días' }}. 
+                            <Message
+                                v-if="!subscriptionStatus.isExpired && subscriptionStatus.daysUntilExpiry !== null && subscriptionStatus.daysUntilExpiry <= 5 && !pendingPayment && !lastRejectedPayment"
+                                severity="warn" :closable="false" class="mb-4">
+                                Tu suscripción expira en {{ subscriptionStatus.daysUntilExpiry }}
+                                {{ subscriptionStatus.daysUntilExpiry === 1 ? 'día' : 'días' }}.
                                 ¡Renueva ahora para no perder acceso!
                             </Message>
 
@@ -482,7 +483,8 @@ const getInvoiceStatusTag = (status) => {
                                 <Column headerStyle="width: 5rem; text-align: right">
                                     <template #body="slotProps">
                                         <div class="flex justify-end">
-                                            <Button @click="toggleAccountMenu($event, slotProps.data)" icon="pi pi-ellipsis-v" text rounded size="small" />
+                                            <Button @click="toggleAccountMenu($event, slotProps.data)"
+                                                icon="pi pi-ellipsis-v" text rounded size="small" />
                                         </div>
                                     </template>
                                 </Column>
@@ -503,7 +505,7 @@ const getInvoiceStatusTag = (status) => {
                                     :value="index">
                                     <AccordionHeader>
                                         Periodo: {{ formatDate(version.start_date) + ' - ' +
-                                        formatDate(version.end_date) }}
+                                            formatDate(version.end_date) }}
                                     </AccordionHeader>
                                     <AccordionContent>
                                         <div class="p-4">
@@ -517,7 +519,7 @@ const getInvoiceStatusTag = (status) => {
                                                 <Column field="unit_price" header="Precio">
                                                     <template #body="slotProps">{{
                                                         formatCurrency(slotProps.data.unit_price)
-                                                    }}</template>
+                                                        }}</template>
                                                 </Column>
                                             </DataTable>
                                             <h4 class="font-bold mb-2">Pagos Realizados</h4>
@@ -532,21 +534,31 @@ const getInvoiceStatusTag = (status) => {
                                                     <template #body="slotProps">{{ formatCurrency(slotProps.data.amount)
                                                     }}</template>
                                                 </Column>
+                                                <!-- Nueva Columna de Estado -->
+                                                <Column field="status" header="Estado">
+                                                    <template #body="{ data }">
+                                                        <Tag :value="getPaymentStatusTag(data.status).text"
+                                                             :severity="getPaymentStatusTag(data.status).severity"
+                                                             class="capitalize" />
+                                                    </template>
+                                                </Column>
                                                 <Column field="invoice_status" header="Factura">
                                                     <template #body="{ data }">
-                                                        <div v-if="data.invoice_status === 'no_solicitada'">
+                                                        <!-- REGLA 3: Botón solo para pagos APROBADOS -->
+                                                        <div v-if="data.status === 'approved' && data.invoice_status === 'no_solicitada'">
                                                             <Button @click="confirmRequestInvoice(data.id)"
                                                                 label="Solicitar" size="small" outlined
                                                                 :disabled="!fiscalDocumentUrl"
                                                                 v-tooltip.bottom="!fiscalDocumentUrl ? 'Debes subir tu constancia fiscal' : 'Solicitar factura'" />
                                                         </div>
-                                                        <Tag v-else
+                                                        <Tag v-else-if="data.status === 'approved'"
                                                             :value="getInvoiceStatusTag(data.invoice_status).text"
                                                             :severity="getInvoiceStatusTag(data.invoice_status).severity"
                                                             class="capitalize" />
+                                                        <span v-else class="text-gray-400">-</span>
                                                     </template>
                                                 </Column>
-                                                <template #empty>
+                                               <template #empty>
                                                     <div class="text-center text-gray-500 py-4">
                                                         No hay pagos registrados aún.
                                                     </div>
@@ -603,15 +615,9 @@ const getInvoiceStatusTag = (status) => {
         <BankAccountModal :visible="isBankAccountModalVisible" :account="selectedBankAccount"
             :branches="subscription.branches" @update:visible="isBankAccountModalVisible = $event" />
 
-        <BankAccountHistoryModal 
-            v-model:visible="isHistoryModalVisible"
-            :account="selectedAccountForHistory" 
-        />
+        <BankAccountHistoryModal v-model:visible="isHistoryModalVisible" :account="selectedAccountForHistory" />
 
-        <BankAccountTransferModal 
-            v-model:visible="isTransferModalVisible"
-            :account="selectedAccountForTransfer"
-            :all-accounts="subscription.bank_accounts"
-        />
+        <BankAccountTransferModal v-model:visible="isTransferModalVisible" :account="selectedAccountForTransfer"
+            :all-accounts="subscription.bank_accounts" />
     </AppLayout>
 </template>

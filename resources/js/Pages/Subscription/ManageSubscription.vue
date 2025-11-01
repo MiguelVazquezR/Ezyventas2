@@ -301,7 +301,7 @@ const submit = () => {
                                         buttonLayout="horizontal" decrementButtonClass="p-button-secondary"
                                         incrementButtonClass="p-button-secondary" incrementButtonIcon="pi pi-plus"
                                         decrementButtonIcon="pi pi-minus"
-                                        inputStyle="width: 5rem; text-align: center;" />
+                                        :inputStyle="{width: '5rem', textAlign: 'center'}" />
                                 </div>
                             </div>
                         </template>

@@ -7,26 +7,25 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 const props = defineProps({
     payment: Object,
     proofUrl: String, // URL temporal del comprobante
+    processedItems: Array, // Array de items con estado
 });
 
 const confirm = useConfirm();
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
-    { label: 'Administración' },
     { label: 'Pagos pendientes', url: route('admin.payments.index') },
     { label: 'Revisar pago' }
 ]);
 
-// Formulario para aprobar
+// ... approveForm y approvePayment sin cambios ...
 const approveForm = useForm({});
-
 const approvePayment = () => {
     confirm.require({
         message: '¿Estás seguro de que quieres APROBAR este pago? Esta acción activará la suscripción del cliente.',
-        header: 'Confirmar Aprobación',
+        header: 'Confirmar aprobación',
         icon: 'pi pi-check-circle',
-        acceptLabel: 'Sí, Aprobar',
+        acceptLabel: 'Sí, aprobar',
         rejectLabel: 'Cancelar',
         acceptClass: 'p-button-success',
         accept: () => {
@@ -37,11 +36,11 @@ const approvePayment = () => {
     });
 };
 
-// Formulario para rechazar
+
+// ... rejectForm y rejectPayment sin cambios ...
 const rejectForm = useForm({
     rejection_reason: '',
 });
-
 const rejectPayment = () => {
     confirm.require({
         message: '¿Estás seguro de que quieres RECHAZAR este pago? El cliente será notificado.',
@@ -62,11 +61,15 @@ const formatCurrency = (value) => {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 };
 
-const formatDate = (dateString) => {
+// --- ACTUALIZADO: Formato de Fecha y Hora ---
+const formatDateTime = (dateString) => {
     return new Date(dateString).toLocaleDateString('es-MX', {
         year: 'numeric',
         month: 'long',
-        day: 'numeric'
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
     });
 };
 </script>
@@ -77,6 +80,7 @@ const formatDate = (dateString) => {
 
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6">
+                <!-- ... header sin cambios ... -->
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Revisar pago</h1>
                 <p class="text-gray-500 dark:text-gray-400 mt-1">
                     Verifica los detalles y el comprobante antes de aprobar o rechazar.
@@ -90,6 +94,7 @@ const formatDate = (dateString) => {
                         <template #title>Detalles del pago</template>
                         <template #content>
                             <ul class="space-y-3 text-gray-700 dark:text-gray-300">
+                                <!-- ... li de Negocio, Monto, Método sin cambios ... -->
                                 <li class="flex justify-between">
                                     <span class="font-semibold">Negocio:</span>
                                     <span>{{ payment.subscription_version.subscription.commercial_name }}</span>
@@ -102,20 +107,42 @@ const formatDate = (dateString) => {
                                     <span class="font-semibold">Método:</span>
                                     <span class="capitalize">{{ payment.payment_method }}</span>
                                 </li>
+
+                                <!-- --- ACTUALIZADO: Fecha de Solicitud --- -->
                                 <li class="flex justify-between">
                                     <span class="font-semibold">Fecha de solicitud:</span>
-                                    <span>{{ formatDate(payment.created_at) }}</span>
+                                    <span>{{ formatDateTime(payment.created_at) }}</span>
                                 </li>
                             </ul>
                         </template>
                     </Card>
 
+                    <!-- --- INICIO: Tabla de Conceptos Actualizada --- -->
                     <Card>
                         <template #title>Conceptos del plan</template>
                         <template #content>
-                            <DataTable :value="payment.subscription_version.items" size="small">
+                            <DataTable :value="processedItems" size="small">
                                 <Column field="name" header="Concepto"></Column>
-                                <Column field="quantity" header="Cantidad/Límite"></Column>
+                                <Column header="Cantidad">
+                                    <template #body="{ data }">
+                                        <!-- Muestra "N -> N" si es upgrade -->
+                                        <span v-if="data.status === 'upgraded'">
+                                            {{ data.previous_quantity }} &rarr; <strong>{{ data.quantity }}</strong>
+                                        </span>
+                                        <!-- Muestra solo N si es nuevo o sin cambios -->
+                                        <span v-else>
+                                            {{ data.quantity }}
+                                        </span>
+                                    </template>
+                                </Column>
+                                <Column header="Estado">
+                                    <template #body="{ data }">
+                                        <Tag v-if="data.status === 'new'" value="Nuevo" severity="success" />
+                                        <Tag v-if="data.status === 'upgraded'" value="Mejora" severity="info" />
+                                        <Tag v-if="data.status === 'unchanged'" value="Sin cambio" severity="secondary" />
+                                        <Tag v-if="data.status === 'downgraded'" value="Reducción" severity="warning" />
+                                    </template>
+                                </Column>
                                 <Column field="billing_period" header="Periodo">
                                     <template #body="{ data }">
                                         <span class="capitalize">{{ data.billing_period }}</span>
@@ -129,20 +156,21 @@ const formatDate = (dateString) => {
                             </DataTable>
                         </template>
                     </Card>
+                    <!-- --- FIN: Tabla de Conceptos Actualizada --- -->
+
                 </div>
 
                 <!-- Columna de Acciones y Comprobante -->
                 <div class="lg:col-span-1 space-y-6">
-                    <Card class="sticky top-24">
+                    <Card>
+                        <!-- ... Comprobante de Pago sin cambios ... -->
                         <template #title>Comprobante de pago</template>
                         <template #content>
                             <div v-if="proofUrl" class="space-y-4">
-                                <!-- Vista previa para imágenes -->
                                 <Image :src="proofUrl" alt="Comprobante" preview />
-                                
-                                <!-- Enlace para PDF u otros -->
                                 <a :href="proofUrl" target="_blank" rel="noopener noreferrer">
-                                    <Button label="Ver comprobante (Nueva Pestaña)" icon="pi pi-external-link" outlined class="w-full" />
+                                    <Button label="Ver comprobante (Nueva Pestaña)" icon="pi pi-external-link" outlined
+                                        class="w-full" />
                                 </a>
                             </div>
                             <div v-else>
@@ -152,36 +180,26 @@ const formatDate = (dateString) => {
                     </Card>
 
                     <Card>
+                        <!-- ... Acciones sin cambios ... -->
                         <template #title>Acciones</template>
                         <template #content>
                             <div class="space-y-4">
-                                <Button @click="approvePayment" 
-                                        label="Aprobar Pago" 
-                                        icon="pi pi-check" 
-                                        severity="success" 
-                                        class="w-full"
-                                        :loading="approveForm.processing" />
-                                
+                                <Button @click="approvePayment" label="Aprobar pago" icon="pi pi-check"
+                                    severity="success" class="w-full" :loading="approveForm.processing" />
+
                                 <Divider />
 
                                 <div class="space-y-2">
-                                    <label for="rejection_reason" class="font-semibold">Motivo del rechazo (requerido)</label>
-                                    <Textarea id="rejection_reason" 
-                                              v-model="rejectForm.rejection_reason" 
-                                              rows="3" 
-                                              class="w-full"
-                                              :invalid="!!rejectForm.errors.rejection_reason" />
+                                    <label for="rejection_reason" class="font-semibold">Motivo del rechazo
+                                        (requerido)</label>
+                                    <Textarea id="rejection_reason" v-model="rejectForm.rejection_reason" rows="3"
+                                        class="w-full" :invalid="!!rejectForm.errors.rejection_reason" />
                                     <InputError :message="rejectForm.errors.rejection_reason" />
                                 </div>
-                                
-                                <Button @click="rejectPayment" 
-                                        label="Rechazar pago" 
-                                        icon="pi pi-times" 
-                                        severity="danger" 
-                                        outlined 
-                                        class="w-full"
-                                        :disabled="!rejectForm.rejection_reason"
-                                        :loading="rejectForm.processing" />
+
+                                <Button @click="rejectPayment" label="Rechazar pago" icon="pi pi-times"
+                                    severity="danger" outlined class="w-full" :disabled="!rejectForm.rejection_reason"
+                                    :loading="rejectForm.processing" />
                             </div>
                         </template>
                     </Card>

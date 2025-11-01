@@ -22,10 +22,10 @@ class AdminSubscriptionPaymentController extends Controller
         $pendingPayments = SubscriptionPayment::with([
             'subscriptionVersion.subscription.branches' // Cargar info de la sucursal
         ])
-        ->where('payment_method', 'transfer')
-        ->where('status', SubscriptionPaymentStatus::PENDING)
-        ->latest()
-        ->get();
+            ->where('payment_method', 'transfer')
+            ->where('status', SubscriptionPaymentStatus::PENDING)
+            ->latest()
+            ->get();
 
         return Inertia::render('Admin/Payment/Index', [
             'pendingPayments' => $pendingPayments,
@@ -37,15 +37,60 @@ class AdminSubscriptionPaymentController extends Controller
      */
     public function show(SubscriptionPayment $payment)
     {
+        // Cargamos las relaciones necesarias
         $payment->load([
-            'subscriptionVersion.subscription:id,commercial_name', // Cargar solo info necesaria
+            'subscriptionVersion.subscription:id,commercial_name',
             'subscriptionVersion.items',
-            'media'
+            'media' // Carga la colección de medios
         ]);
 
+        // --- INICIO: Lógica de Comparación de Items ---
+        $pendingVersion = $payment->subscriptionVersion;
+        $subscription = $pendingVersion->subscription;
+
+        // 1. Buscar la versión anterior a la que se está pagando
+        $previousVersion = $subscription->versions()
+            ->where('id', '!=', $pendingVersion->id) // Excluir la versión pendiente actual
+            ->latest('start_date') // Obtener la más reciente
+            ->with('items')
+            ->first();
+
+        // 2. Crear un mapa de los items anteriores para consulta rápida
+        $previousItemsMap = $previousVersion ? $previousVersion->items->keyBy('item_key') : collect();
+
+        // 3. Procesar los items de la versión pendiente para compararlos
+        $processedItems = $pendingVersion->items->map(function ($newItem) use ($previousItemsMap) {
+            $previousItem = $previousItemsMap->get($newItem->item_key);
+            $previousQuantity = $previousItem ? $previousItem->quantity : 0;
+            $newQuantity = $newItem->quantity;
+            $status = 'unchanged'; // Estado por defecto
+
+            if (!$previousItem) {
+                // El item no existía en la versión anterior
+                $status = 'new';
+            } elseif ($newQuantity > $previousQuantity) {
+                // La cantidad del item aumentó
+                $status = 'upgraded';
+            } elseif ($newQuantity < $previousQuantity && $previousQuantity > 0) {
+                // La cantidad disminuyó (raro en este flujo, pero posible)
+                $status = 'downgraded';
+            }
+
+            return [
+                'name' => $newItem->name,
+                'quantity' => $newQuantity,
+                'billing_period' => $newItem->billing_period,
+                'unit_price' => $newItem->unit_price,
+                'status' => $status,
+                'previous_quantity' => $previousQuantity,
+            ];
+        });
+        // --- FIN: Lógica de Comparación de Items ---
+
+
+        // --- Lógica de Comprobante (Corregida) ---
         $proofUrl = null;
         if ($payment->hasMedia('proof_of_payment')) {
-            // --- CORRECCIÓN ---
             // Cambiamos getTemporaryUrl() por getUrl()
             // Esto asume que estás usando el disco 'public' y
             // que ejecutaste `php artisan storage:link`.
@@ -55,6 +100,7 @@ class AdminSubscriptionPaymentController extends Controller
         return Inertia::render('Admin/Payment/Show', [
             'payment' => $payment,
             'proofUrl' => $proofUrl,
+            'processedItems' => $processedItems, // Enviamos los items procesados a la vista
         ]);
     }
 
@@ -70,72 +116,56 @@ class AdminSubscriptionPaymentController extends Controller
 
         try {
             DB::transaction(function () use ($payment) {
-                $newVersion = $payment->subscriptionVersion;
-                $subscription = $newVersion->subscription;
-                
-                // Obtener el periodo de facturación (mes o año) de la NUEVA versión pendiente
-                $billingPeriod = $newVersion->items->first()->billing_period; 
+                $version = $payment->subscriptionVersion;
+                $subscription = $version->subscription;
 
-                // --- INICIO DE LÓGICA DE FECHAS ---
-                
-                // 1. Buscar la última versión VÁLIDA (vigente) de la suscripción
-                $latestActiveVersion = $subscription->versions()
-                    ->where('id', '!=', $newVersion->id) // Excluir la que estamos aprobando
-                    ->where('end_date', '>', now()) // Que esté vigente
-                    ->latest('end_date') // Obtener la que termina más tarde
+                // 1. Determinar las fechas de la versión
+                // Cargar la versión actual "real" (la última activa o vencida)
+                $currentActiveVersion = $subscription->versions()
+                    ->where('id', '!=', $version->id) // Excluir la que estamos aprobando
+                    ->latest('start_date')
                     ->first();
 
-                $startDate = null;
-                $endDate = null;
-                
-                // 2. Determinar fechas basadas en si la suscripción ESTÁ VIGENTE o YA EXPIRÓ
-                
-                if ($latestActiveVersion) {
-                    // REGLA: "Si paga ANTES de que termine su periodo, los días se suman"
-                    // La nueva versión empieza cuando la activa TERMINA.
-                    $startDate = $latestActiveVersion->end_date;
-                    $endDate = ($billingPeriod === BillingPeriod::ANNUALLY)
-                        ? $startDate->copy()->addYear()
-                        : $startDate->copy()->addMonth();
-                    
-                    Log::info("Aprobando renovación para suscripción activa. Nuevo periodo: $startDate a $endDate");
+                // --- INICIO: REGLA 4 - Lógica de Fechas de Renovación ---
+                $startDate = now()->startOfDay(); // Default: iniciar hoy
 
-                } else {
-                    // REGLA: "Si ya expiró, se tomará el inicio el día que pagó (aprobó)"
-                    // La nueva versión empieza HOY (momento de aprobación).
-                    $startDate = now();
-                    $endDate = ($billingPeriod === BillingPeriod::ANNUALLY)
-                        ? $startDate->copy()->addYear()
-                        : $startDate->copy()->addMonth();
-
-                    Log::info("Aprobando renovación para suscripción EXPIRADA. Nuevo periodo: $startDate a $endDate");
+                // Si hay una versión activa Y AÚN NO VENCE (pagó temprano)
+                if ($currentActiveVersion && $currentActiveVersion->end_date->isFuture()) {
+                    // La nueva versión empieza cuando la actual TERMINA
+                    $startDate = $currentActiveVersion->end_date;
                 }
-                // --- FIN DE LÓGICA DE FECHAS ---
+                // Si ya expiró (pagó tarde) o no hay versión, $startDate se queda como 'now()'.
+                // Esto cumple la regla: si paga el 26 (expiró el 25), empieza el 26.
+                // --- FIN: REGLA 4 ---
 
-                // 3. Actualizar la versión PENDIENTE con las fechas correctas
-                $newVersion->update([
+                // Calculamos la fecha de fin basada en el periodo
+                $billingPeriod = $version->items->first()->billing_period; // Asumimos que todos los items tienen el mismo
+                $endDate = $billingPeriod === \App\Enums\BillingPeriod::ANNUALLY
+                    ? $startDate->copy()->addYear()
+                    : $startDate->copy()->addMonth();
+
+                // 2. Actualizar la versión que estamos aprobando
+                $version->update([
                     'start_date' => $startDate,
                     'end_date' => $endDate,
                 ]);
 
-                // 4. Actualizar el pago
-                $payment->update(['status' => SubscriptionPaymentStatus::APPROVED]);
+                // 3. Actualizar el pago
+                $payment->update([
+                    'status' => SubscriptionPaymentStatus::APPROVED,
+                    'payment_details' => null,
+                ]);
 
-                // 5. Activar la suscripción general
-                $subscription->update(['status' => SubscriptionStatus::ACTIVE]);
-
-                // 6. (Opcional pero recomendado) Asegurarse de que no haya traslapes
-                // Si la versión activa se traslapaba, se corta hoy.
-                if ($latestActiveVersion && $latestActiveVersion->end_date > $startDate) {
-                     $latestActiveVersion->update(['end_date' => $startDate]);
-                }
+                // 4. Actualizar el estado general de la suscripción
+                $subscription->update([
+                    'status' => SubscriptionStatus::ACTIVE,
+                ]);
             });
-
         } catch (\Exception $e) {
             Log::error("Error al aprobar pago: " . $e->getMessage());
             return redirect()->route('admin.payments.index')->with('error', 'Error al aprobar el pago: ' . $e->getMessage());
         }
-        
+
         return redirect()->route('admin.payments.index')->with('success', 'Pago aprobado y suscripción activada.');
     }
 
@@ -153,35 +183,19 @@ class AdminSubscriptionPaymentController extends Controller
         }
 
         try {
+            // --- INICIO: REGLA 3 - No borrar versión ---
             DB::transaction(function () use ($payment, $validated) {
-                // 1. Actualizar el pago con el motivo
+                // 1. Marcamos el pago como rechazado
                 $payment->update([
                     'status' => SubscriptionPaymentStatus::REJECTED,
                     'payment_details' => ['rejection_reason' => $validated['rejection_reason']]
                 ]);
-
-                // 2. IMPORTANTE: NO borramos la versión, solo el pago.
-                // PERO SÍ debemos borrar el comprobante para que suba uno nuevo.
-                // El usuario podrá reintentar subir el comprobante sobre este mismo pago.
-                // Opcional: Podrías borrar la versión si prefieres que inicie de cero.
-                
-                // $payment->subscriptionVersion->items()->delete();
-                // $payment->subscriptionVersion->delete();
-
-                // 3. Borrar el comprobante
-                $payment->clearMediaCollection('proof_of_payment');
-
-                // 4. Poner el pago de nuevo en PENDIENTE pero sin archivo
-                // (Esto es un flujo alternativo, si quieres que el usuario VUELVA a subir)
-                // O mejor, lo dejamos en REJECTED, y la vista `Show.vue` le dirá
-                // que inicie el proceso de nuevo. Esto es más limpio.
             });
-
         } catch (\Exception $e) {
             Log::error("Error al rechazar pago: " . $e->getMessage());
             return redirect()->route('admin.payments.index')->with('error', 'Error al rechazar el pago: ' . $e->getMessage());
         }
-        
+
         return redirect()->route('admin.payments.index')->with('success', 'Pago rechazado exitosamente.');
     }
 }
