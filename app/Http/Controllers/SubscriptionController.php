@@ -9,10 +9,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
-// AÑADIDO
-use App\Models\Subscription;
 use App\Enums\BillingPeriod;
-use App\Models\SubscriptionVersion;
+use App\Enums\SubscriptionPaymentStatus;
+use App\Enums\SubscriptionStatus; // AÑADIDO
+use App\Models\BankAccount; // AÑADIDO (Usamos tu modelo)
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -35,7 +35,8 @@ class SubscriptionController extends Controller
             'branches',
             'bankAccounts.branches:id,name',
             'versions' => function ($query) {
-                $query->with(['items', 'payments'])->latest('start_date');
+                // AÑADIDO: Cargar 'payments.media' para ver comprobantes rechazados
+                $query->with(['items', 'payments.media'])->latest('start_date');
             },
             'media'
         ])->withCount([
@@ -47,45 +48,41 @@ class SubscriptionController extends Controller
             'printTemplates',
         ])->firstOrFail();
 
-        // --- INICIO: Lógica para determinar el estado de la versión ---
-        $currentVersion = $subscription->versions->first(); // Ya viene ordenada por latest('start_date')
+        
+        $currentVersion = $subscription->versions->first();
         $isExpired = true;
-        $daysUntilExpiry = null; // NUEVO: Inicializar días restantes
-        $currentBillingPeriod = BillingPeriod::ANNUALLY; // Default
+        $daysUntilExpiry = null;
+        $currentBillingPeriod = BillingPeriod::ANNUALLY;
+        $pendingPayment = null; // AÑADIDO
+        $rejectedPayment = null; // AÑADIDO
 
         if ($currentVersion) {
             $endDate = Carbon::parse($currentVersion->end_date);
             $isExpired = $endDate->isPast();
             
-            // NUEVO: Calcular días restantes. 
-            // `diffInDays` sin `false` da un valor absoluto. 
-            // Usamos `diffInDays(..., false)` para obtener un número negativo si ya pasó.
-            // Solo nos importa si es futuro, así que podemos simplemente calcular la diferencia.
-            // Si $endDate es hoy, diffInDays(now()) dará 0.
-            $daysUntilExpiry = now()->diffInDays($endDate, false);
-
-            // Si no ha expirado, $daysUntilExpiry será positivo o 0.
-            // Si ya expiró, será negativo.
-            // Para la lógica del frontend, es más fácil si solo contamos días positivos.
             if (!$isExpired) {
-                 // Usamos ceil para redondear. Si faltan 2.5 días, cuenta como 3.
-                 // O mejor, usamos `diffInDays` simple, que trunca. 
-                 // Si falta 1 día y 23 horas, es 1 día.
                  $daysUntilExpiry = now()->startOfDay()->diffInDays($endDate->startOfDay(), false);
-            } else {
-                // Si está expirado, lo dejamos en un valor que indique expiración, ej -1 o 0.
-                // $daysUntilExpiry ya será negativo o 0 si es hoy pero pasado.
             }
-
             
-            // Obtener el periodo de facturación de la versión actual (asumimos que todos los items lo comparten)
             $firstItem = $currentVersion->items->first();
             if ($firstItem && $firstItem->billing_period) {
                 $currentBillingPeriod = $firstItem->billing_period;
             }
-        }
-        // --- FIN: Lógica de estado ---
 
+            // AÑADIDO: Buscar pagos pendientes o rechazados
+            // Buscamos en TODOS los pagos de la suscripción, no solo en la versión actual,
+            // por si una versión pendiente aún no es la "actual".
+            $pendingPayment = $subscription->payments()
+                ->where('status', SubscriptionPaymentStatus::PENDING)
+                ->latest('created_at')
+                ->first();
+                
+            $rejectedPayment = $subscription->payments()
+                ->where('status', SubscriptionPaymentStatus::REJECTED)
+                ->with('media') // Cargar el comprobante por si quiere verlo
+                ->latest('created_at')
+                ->first();
+        }
 
         $planItems = PlanItem::where('is_active', true)->get();
 
@@ -104,12 +101,15 @@ class SubscriptionController extends Controller
             'usageData' => $usageData, 
             'subscriptionStatus' => [
                 'isExpired' => $isExpired,
-                'daysUntilExpiry' => $daysUntilExpiry, // NUEVO: Enviar días restantes
+                'daysUntilExpiry' => $daysUntilExpiry,
                 'currentBillingPeriod' => $currentBillingPeriod,
             ],
+            'pendingPayment' => $pendingPayment, // AÑADIDO
+            'rejectedPayment' => $rejectedPayment, // AÑADIDO
         ]);
     }
 
+    // ... (update, requestInvoice, storeDocument methods sin cambios) ...
     public function update(Request $request)
     {
         $user = Auth::user();
@@ -141,9 +141,6 @@ class SubscriptionController extends Controller
         return redirect()->back()->with('info', 'Esta factura ya ha sido solicitada o generada.');
     }
 
-    /**
-     * Almacena el documento fiscal de la suscripción.
-     */
     public function storeDocument(Request $request)
     {
         $request->validate([
@@ -164,8 +161,6 @@ class SubscriptionController extends Controller
 
         return redirect()->back()->with('success', 'Documento fiscal actualizado con éxito.');
     }
-
-    // --- MÉTODOS NUEVOS ---
 
     /**
      * Muestra la página inteligente para Mejorar o Renovar la suscripción.
@@ -189,8 +184,6 @@ class SubscriptionController extends Controller
         if ($currentVersion) {
             $endDate = Carbon::parse($currentVersion->end_date);
             
-            // MODIFICADO: Definimos "modo mejora" solo si falta MÁS de 5 días.
-            // Si faltan 5 días o menos, ya se considera "modo renovación".
             if ($endDate->isFuture() && now()->diffInDays($endDate) > 5) {
                 $mode = 'upgrade'; 
             }
@@ -201,12 +194,19 @@ class SubscriptionController extends Controller
             }
         }
         
+        // AÑADIDO: Obtener cuentas de la Sucursal 1 (Admin) que sean favoritas
+        $adminBankAccounts = BankAccount::whereHas('branches', function ($query) {
+            $query->where('branch_id', 1) // ID 1 = Tu sucursal admin
+                  ->where('bank_account_branch.is_favorite', true); // Pivot table 'is_favorite'
+        })->get();
+
         return Inertia::render('Subscription/ManageSubscription', [
             'subscription' => $subscription,
             'currentVersion' => $currentVersion, 
             'allPlanItems' => $allPlanItems,
             'mode' => $mode, // 'upgrade' o 'renew'
-            'currentBillingPeriod' => $currentBillingPeriod, 
+            'currentBillingPeriod' => $currentBillingPeriod,
+            'adminBankAccounts' => $adminBankAccounts, // AÑADIDO (reemplaza 'companyBankAccounts')
         ]);
     }
 
@@ -225,15 +225,38 @@ class SubscriptionController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
             'total_amount' => 'required|numeric|min:0',
             'mode' => 'required|string|in:upgrade,renew',
+            'payment_method' => 'required|string|in:card,transfer', // AÑADIDO
+            // AÑADIDO: 'proof_of_payment' es requerido solo si el método es 'transfer'
+            'proof_of_payment' => ['nullable', 'required_if:payment_method,transfer', 'file', 'mimes:pdf,jpg,jpeg,png'], 
         ]);
 
+        // Lógica para Stripe (Futuro)
+        if ($validated['payment_method'] === 'card') {
+            Log::info("Intento de pago con tarjeta (Stripe) por {$validated['total_amount']}");
+            // Por ahora, solo devolvemos un error
+            return redirect()->back()->with('error', 'El pago con tarjeta no está disponible por el momento.');
+        }
+
+        // Lógica para Transferencia
+        if ($validated['payment_method'] === 'transfer') {
+            return $this->handleTransferPayment($request, $validated, $user);
+        }
+        
+        return redirect()->back()->with('error', 'Método de pago no reconocido.');
+    }
+
+    /**
+     * AÑADIDO: Lógica separada para manejar el pago por transferencia
+     */
+    private function handleTransferPayment(Request $request, array $validated, $user)
+    {
         $subscription = $user->branch->subscription;
         $allPlanItems = PlanItem::where('is_active', true)->get()->keyBy('key');
         
-        Log::info("Iniciando pago de suscripción por {$validated['total_amount']}");
+        Log::info("Iniciando PAGO POR TRANSFERENCIA de suscripción por {$validated['total_amount']}");
 
         try {
-            DB::transaction(function () use ($subscription, $validated, $allPlanItems) {
+            $newPayment = DB::transaction(function () use ($subscription, $validated, $allPlanItems, $request) {
                 $billingPeriod = BillingPeriod::from($validated['billing_period']);
                 $mode = $validated['mode'];
                 $startDate = null;
@@ -241,31 +264,30 @@ class SubscriptionController extends Controller
 
                 $currentVersion = $subscription->versions()->latest('start_date')->first();
                 
-                // --- LÓGICA DE FECHAS MEJORADA ---
+                // --- LÓGICA DE FECHAS (ESTIMADA) ---
+                // La fecha final se calculará en la APROBACIÓN, pero guardamos una estimada.
                 if ($mode === 'upgrade') {
-                    // MODO MEJORA: La versión anterior se corta hoy, la nueva empieza hoy.
-                    if ($currentVersion) {
-                        $currentVersion->update(['end_date' => now()]);
-                    }
+                    // MODO MEJORA: La fecha de inicio es HOY (cuando se apruebe)
                     $startDate = now();
                     $endDate = $billingPeriod === BillingPeriod::ANNUALLY ? now()->addYear() : now()->addMonth();
 
                 } else { // MODO RENOVACIÓN
-                    // Si hay una versión actual y AÚN NO VENCE (estamos en los 5 días)
+                    // Si hay una versión actual y AÚN NO VENCE
                     if ($currentVersion && $currentVersion->end_date->isFuture()) {
-                        // La nueva versión empieza cuando la actual TERMINA
+                        // La nueva versión (estimada) empieza cuando la actual TERMINA
                         $startDate = $currentVersion->end_date;
                         $endDate = $billingPeriod === BillingPeriod::ANNUALLY 
                             ? $startDate->copy()->addYear() 
                             : $startDate->copy()->addMonth();
                     } else {
-                        // Si no hay versión o YA VENCIÓ, la nueva empieza HOY
+                        // Si no hay versión o YA VENCIÓ, la nueva (estimada) empieza HOY
                         $startDate = now();
                         $endDate = $billingPeriod === BillingPeriod::ANNUALLY ? now()->addYear() : now()->addMonth();
                     }
                 }
-                // --- FIN LÓGICA DE FECHAS ---
+                // --- FIN LÓGICA DE FECHAS (ESTIMADA) ---
 
+                // Creamos la nueva versión (aún no está activa)
                 $newVersion = $subscription->versions()->create([
                     'start_date' => $startDate,
                     'end_date' => $endDate,
@@ -281,8 +303,6 @@ class SubscriptionController extends Controller
                         : $planItem->monthly_price;
                     
                     if ($planItem->type === \App\Enums\PlanItemType::LIMIT && $planItem->meta['quantity'] > 0) {
-                         // El precio se calcula por la cantidad total, no por unidad de límite
-                         // $unitPrice = $unitPrice / $planItem->meta['quantity']; // Esta línea parece incorrecta
                          // El precio unitario debe ser el costo del paquete.
                     }
 
@@ -300,20 +320,31 @@ class SubscriptionController extends Controller
                 }
                 DB::table('subscription_items')->insert($subscriptionItems);
 
-                $newVersion->payments()->create([
+                // Creamos el pago PENDIENTE
+                $newPayment = $newVersion->payments()->create([
                     'amount' => $validated['total_amount'],
-                    'payment_method' => 'card_mock', 
+                    'payment_method' => 'transfer', 
                     'invoice_status' => InvoiceStatus::NOT_REQUESTED,
+                    'status' => SubscriptionPaymentStatus::PENDING, // ESTADO PENDIENTE
                 ]);
                 
-                $subscription->update(['status' => \App\Enums\SubscriptionStatus::ACTIVE]);
+                // NO activamos la suscripción
+                $subscription->update(['status' => SubscriptionStatus::EXPIRED]); // O dejarla como estaba
+                
+                // Adjuntamos el comprobante de pago al PAGO
+                if ($request->hasFile('proof_of_payment')) {
+                    $newPayment->addMediaFromRequest('proof_of_payment')
+                        ->toMediaCollection('proof_of_payment');
+                }
+                
+                return $newPayment;
             });
             
         } catch (\Exception $e) {
-            Log::error("Error al procesar la suscripción: " . $e->getMessage());
+            Log::error("Error al procesar la transferencia de suscripción: " . $e->getMessage());
             return redirect()->back()->with('error', 'Hubo un error al procesar tu pago. Por favor, intenta de nuevo.');
         }
 
-        return redirect()->route('subscription.show')->with('success', '¡Tu suscripción ha sido actualizada con éxito!');
+        return redirect()->route('subscription.show')->with('success', '¡Tu pago por transferencia ha sido recibido! Está en revisión y tu plan se activará pronto.');
     }
 }

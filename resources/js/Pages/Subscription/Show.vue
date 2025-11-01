@@ -15,13 +15,15 @@ const props = defineProps({
     subscription: Object,
     planItems: Array,
     usageData: Object,
-    // AÑADIDO: Recibe el estado de la suscripción desde el controlador
-    // Ahora incluye: isExpired (bool), daysUntilExpiry (int|null), currentBillingPeriod
     subscriptionStatus: Object,
+    pendingPayment: Object, // AÑADIDO
+    rejectedPayment: Object, // AÑADIDO
 });
 
 const toast = useToast();
 const confirm = useConfirm();
+const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
+const breadcrumbItems = ref([{ label: 'Mi suscripción' }]);
 
 // --- Lógica de Sucursales ---
 const isBranchModalVisible = ref(false);
@@ -104,29 +106,47 @@ const toggleAccountMenu = (event, account) => {
 // --- Lógica de Plan y Botón de Gestión ---
 const currentVersion = computed(() => props.subscription?.versions?.[0] || null);
 
-// AÑADIDO: Lógica para el botón de acción principal
 const manageButton = computed(() => {
-    // --- LÓGICA MODIFICADA ---
-    // Checa si está expirada O si faltan 5 días o menos para expirar
+    // AÑADIDO: Si hay un pago pendiente, deshabilitar el botón
+    if (props.pendingPayment) {
+        return {
+            label: 'Pago en revisión',
+            icon: 'pi pi-clock',
+            route: '#',
+            disabled: true // Deshabilitado
+        };
+    }
+
+    // Si hay un pago rechazado, el botón debe ser "Reintentar Pago"
+    if (props.rejectedPayment) {
+        return {
+            label: 'Reintentar pago',
+            icon: 'pi pi-exclamation-triangle',
+            route: route('subscription.manage'), // Va a la misma página
+            disabled: false,
+            severity: 'danger'
+        };
+    }
+
     const isRenewalTime = props.subscriptionStatus.isExpired ||
                           (props.subscriptionStatus.daysUntilExpiry !== null && props.subscriptionStatus.daysUntilExpiry <= 5);
 
     if (isRenewalTime) {
         return {
-            label: 'Renovar Suscripción',
+            label: 'Renovar suscripción',
             icon: 'pi pi-refresh',
             route: route('subscription.manage'),
-            disabled: false
+            disabled: false,
+            severity: 'primary'
         };
     }
 
-    // Si no es tiempo de renovar (es decir, está activa y faltan más de 5 días),
-    // entonces se puede mejorar.
     return {
-        label: 'Mejorar Suscripción',
+        label: 'Mejorar suscripción',
         icon: 'pi pi-arrow-up',
         route: route('subscription.manage'),
-        disabled: false
+        disabled: false,
+        severity: 'secondary'
     };
 });
 
@@ -174,7 +194,7 @@ const docForm = useForm({ fiscal_document: null });
 const fileUploadRef = ref(null);
 const onFileSelect = (event) => { docForm.fiscal_document = event.files[0]; };
 const uploadDocument = () => {
-    docForm.post(route('subscription.documents.store'), {
+    docForm.post(route('subscription.document.store'), {
         onSuccess: () => {
             toast.add({ severity: 'success', summary: 'Éxito', detail: 'Documento fiscal actualizado.', life: 3000 });
             docForm.reset();
@@ -190,7 +210,7 @@ const confirmRequestInvoice = (paymentId) => {
 };
 const requestInvoice = () => {
     if (paymentToRequest.value) {
-        router.post(route('subscription.payments.request-invoice', paymentToRequest.value), {}, {
+        router.post(route('subscription.invoice.request', paymentToRequest.value), {}, {
             preserveScroll: true,
             onSuccess: () => {
                 isInvoiceModalVisible.value = false;
@@ -219,6 +239,8 @@ const getInvoiceStatusTag = (status) => {
 
 <template>
     <AppLayout title="Mi suscripción">
+        <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0 mb-6" />
+        
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6">
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Mi suscripción</h1>
@@ -227,6 +249,22 @@ const getInvoiceStatusTag = (status) => {
                     pagos, gestion de sucursales, cuentas bancarias e información fiscal.
                 </p>
             </header>
+
+            <!-- AÑADIDO: Alertas de estado de pago -->
+            <Message v-if="pendingPayment" severity="info" :closable="false" class="mb-6">
+                Tu pago de {{ formatCurrency(pendingPayment.amount) }} por transferencia está en revisión. 
+                Tu plan se activará automáticamente una vez aprobado.
+            </Message>
+            <Message v-if="rejectedPayment" severity="error" :closable="false" class="mb-6">
+                Tu último pago fue rechazado. 
+                <span v-if="rejectedPayment.payment_details?.rejection_reason">
+                    Motivo: <strong>{{ rejectedPayment.payment_details.rejection_reason }}</strong>
+                </span>
+                <span v-else>
+                    Por favor, revisa tu comprobante.
+                </span>
+                <Link :href="route('subscription.manage')" class="font-bold underline ml-2">Haz clic aquí para reintentar el pago.</Link>
+            </Message>
             
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- Columna Izquierda -->
@@ -251,7 +289,9 @@ const getInvoiceStatusTag = (status) => {
                                 </div>
                                 <div class="flex justify-between items-center">
                                     <span class="text-gray-500">Estatus:</span>
-                                    <Tag :value="subscription.status"
+                                    <!-- AÑADIDO: Si hay pago pendiente, mostrar "Pendiente" -->
+                                    <Tag v-if="pendingPayment" value="Pago Pendiente" severity="warn" />
+                                    <Tag v-else :value="subscription.status"
                                         :severity="getStatusTagSeverity(subscription.status)" class="capitalize" />
                                 </div>
                                 <div class="flex justify-between">
@@ -303,26 +343,31 @@ const getInvoiceStatusTag = (status) => {
                         <template #title>
                             <div class="flex justify-between items-center">
                                 <span>Plan actual y módulos</span>
-                                <!-- BOTÓN MODIFICADO -->
-                                <Link :href="manageButton.route">
+                                <!-- BOTÓN MODIFICADO (ahora usa v-bind) -->
+                                <Link :href="manageButton.route" :disabled="manageButton.disabled">
                                     <Button 
                                         :label="manageButton.label" 
                                         :icon="manageButton.icon" 
-                                        :disabled="manageButton.disabled || true"
+                                        :disabled="manageButton.disabled"
                                         size="small" 
-                                        :severity="manageButton.label === 'Renovar Suscripción' ? 'primary' : 'secondary'"
+                                        :severity="manageButton.severity || 'primary'"
                                     />
                                 </Link>
                             </div>
                         </template>
                         <template #subtitle>
-                            Vigencia: {{ formatDate(currentVersion.start_date) }} - {{
+                            <span v-if="!pendingPayment">
+                                Vigencia: {{ formatDate(currentVersion.start_date) }} - {{
                                 formatDate(currentVersion.end_date) }}
+                            </span>
+                            <span v-else class="text-yellow-600">
+                                Esperando aprobación de pago para iniciar nuevo periodo.
+                            </span>
                         </template>
                         <template #content>
-                            <!-- NUEVO: Mensaje de proximidad de expiración -->
+                            <!-- MODIFICADO: Mensaje de expiración (solo si no hay pagos pendientes/rechazados) -->
                             <Message 
-                                v-if="!subscriptionStatus.isExpired && subscriptionStatus.daysUntilExpiry !== null && subscriptionStatus.daysUntilExpiry <= 5" 
+                                v-if="!subscriptionStatus.isExpired && subscriptionStatus.daysUntilExpiry !== null && subscriptionStatus.daysUntilExpiry <= 5 && !pendingPayment && !rejectedPayment" 
                                 severity="warn" 
                                 :closable="false" 
                                 class="mb-4"
@@ -368,7 +413,6 @@ const getInvoiceStatusTag = (status) => {
                             </div>
                         </template>
                     </Card>
-                    <!-- Panel de Sucursales -->
                     <Card>
                         <template #title>
                             <div class="flex justify-between items-center">
@@ -402,7 +446,6 @@ const getInvoiceStatusTag = (status) => {
                             </DataTable>
                         </template>
                     </Card>
-                    <!-- Panel de Cuentas Bancarias -->
                     <Card>
                         <template #title>
                             <div class="flex justify-between items-center">

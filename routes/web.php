@@ -66,6 +66,7 @@ require __DIR__ . '/web/categories.php';
 require __DIR__ . '/web/brands.php';
 require __DIR__ . '/web/providers.php';
 require __DIR__ . '/web/expense-categories.php';
+require __DIR__ . '/web/super-admin.php';
 
 
 //artisan commands -------------------
