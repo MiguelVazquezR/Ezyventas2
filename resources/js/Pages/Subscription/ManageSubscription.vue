@@ -320,7 +320,7 @@ const submit = () => {
                                     class="border dark:border-gray-700 rounded-lg p-4 flex items-center gap-4 transition-all"
                                     :class="{ 'bg-gray-50 dark:bg-gray-700/30': selectedModules.includes(module.key) }">
                                     <Checkbox v-model="selectedModules" :inputId="module.key" :value="module.key"
-                                        :disabled="(mode === 'upgrade' && activeItemKeys.has(module.key)) || hasPendingPayment" />
+                                        :disabled="(mode === 'upgrade' && activeItemKeys.has(module.key)) || hasPendingPayment || module.monthly_price == 0" />
                                     <label :for="module.key" class="flex-grow cursor-pointer">
                                         <div class="flex items-center gap-2">
                                             <i :class="module.meta.icon" class="text-orange-500"></i>

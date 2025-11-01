@@ -245,16 +245,14 @@ class AdminSubscriptionPaymentController extends Controller
             // Recargamos las relaciones para obtener los datos del usuario
             $payment->load('subscriptionVersion.subscription.branches.users');
             $subscription = $payment->subscriptionVersion->subscription;
-            // Buscamos al primer usuario de la sucursal principal
-            $mainBranch = $subscription->branches->firstWhere('is_main', true);
-            $subscriberUser = $mainBranch?->users->first();
+            $subscriptionEmail = $subscription->contact_email;
 
-            if ($subscriberUser) {
-                Mail::to($subscriberUser->email)
+            if ($subscriptionEmail) {
+                Mail::to($subscriptionEmail)
                     ->send(new PaymentStatusNotification(
                         $payment,
                         'rejected',
-                        $subscriberUser->name,
+                        $subscription->commercial_name,
                         $validated['rejection_reason']
                     ));
             } else {
