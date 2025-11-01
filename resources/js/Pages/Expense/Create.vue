@@ -1,10 +1,10 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
-import CreateExpenseCategoryModal from './Partials/CreateExpenseCategoryModal.vue';
+import ManageExpenseCategoriesModal from '@/Components/ManageExpenseCategoriesModal.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
 import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import { format } from 'date-fns';
@@ -28,7 +28,7 @@ const sessionModalAwaitingSubmit = ref(false);
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
     { label: 'Gastos', url: route('expenses.index') },
-    { label: 'Crear Gasto' }
+    { label: 'Crear gasto' }
 ]);
 
 const form = useForm({
@@ -74,6 +74,20 @@ const handleNewCategory = (newCategory) => {
     form.expense_category_id = newCategory.id;
 };
 
+const handleCategoryUpdate = (updatedCategory) => {
+    const index = localCategories.value.findIndex(c => c.id === updatedCategory.id);
+    if (index !== -1) {
+        localCategories.value[index] = updatedCategory;
+    }
+};
+
+const handleCategoryDelete = (deletedCategoryId) => {
+    localCategories.value = localCategories.value.filter(c => c.id !== deletedCategoryId);
+    if (form.expense_category_id === deletedCategoryId) {
+        form.expense_category_id = null;
+    }
+};
+
 const submit = () => {
     if (form.take_from_cash_register) {
         if (activeSession.value) {
@@ -108,11 +122,10 @@ watch(activeSession, (newSession) => {
 </script>
 
 <template>
-    <Head title="Crear Gasto" />
-    <AppLayout>
+    <AppLayout title="Crear gasto">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="mt-4">
-            <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Registrar Nuevo Gasto</h1>
+            <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Registrar nuevo gasto</h1>
         </div>
 
         <form @submit.prevent="submit"
@@ -125,8 +138,7 @@ watch(activeSession, (newSession) => {
                 </div>
                 <div>
                     <InputLabel for="expense_date" value="Fecha del gasto *" />
-                    <Calendar id="expense_date" v-model="form.expense_date" class="w-full mt-1"
-                        dateFormat="dd/mm/yy" />
+                    <Calendar id="expense_date" v-model="form.expense_date" class="w-full mt-1" dateFormat="dd/mm/yy" />
                     <InputError :message="form.errors.expense_date" class="mt-2" />
                 </div>
                 <div class="md:col-span-2">
@@ -138,7 +150,8 @@ watch(activeSession, (newSession) => {
                 <div>
                     <div class="flex justify-between items-center mb-1">
                         <InputLabel for="category" value="Categoría *" />
-                        <Button @click="showCategoryModal = true" label="Nueva" icon="pi pi-plus" text size="small" />
+                        <Button @click="showCategoryModal = true" label="Gestionar" icon="pi pi-cog" text
+                            size="small" />
                     </div>
                     <Select size="large" id="category" v-model="form.expense_category_id" :options="localCategories"
                         optionLabel="name" optionValue="id" placeholder="Selecciona una categoría" filter
@@ -149,7 +162,7 @@ watch(activeSession, (newSession) => {
                 <div class="md:col-span-2 space-y-4 p-4 border rounded-lg bg-gray-50 dark:bg-gray-900/50">
                     <h5 class="font-semibold text-gray-700 dark:text-gray-300">Detalles del pago</h5>
                     <div>
-                        <InputLabel for="payment_method" value="Método de Pago *" />
+                        <InputLabel for="payment_method" value="Método de pago *" />
                         <SelectButton id="payment_method" v-model="form.payment_method" :options="paymentMethodOptions"
                             optionLabel="label" optionValue="value" class="mt-1 w-full">
                             <template #option="slotProps">
@@ -167,15 +180,15 @@ watch(activeSession, (newSession) => {
                                 ¿Tomar efectivo de la caja activa?
                             </InputLabel>
                         </div>
-                         <InputError :message="form.errors.take_from_cash_register" class="mt-2" />
-                         <InputError :message="form.errors.cash_register_session_id" class="mt-2" />
+                        <InputError :message="form.errors.take_from_cash_register" class="mt-2" />
+                        <InputError :message="form.errors.cash_register_session_id" class="mt-2" />
                     </div>
 
                     <div v-if="form.payment_method === 'tarjeta' || form.payment_method === 'transferencia'">
                         <InputLabel for="bank_account_id" value="Cuenta de Origen *" />
-                        <Select size="large" id="bank_account_id" v-model="form.bank_account_id" :options="userBankAccounts"
-                            optionLabel="account_name" optionValue="id" placeholder="Selecciona una cuenta"
-                            class="w-full mt-1">
+                        <Select size="large" id="bank_account_id" v-model="form.bank_account_id"
+                            :options="userBankAccounts" optionLabel="account_name" optionValue="id"
+                            placeholder="Selecciona una cuenta" class="w-full mt-1">
                             <template #option="slotProps">
                                 <div class="flex flex-col">
                                     <span>{{ slotProps.option.account_name }} ({{ slotProps.option.bank_name }})</span>
@@ -189,8 +202,8 @@ watch(activeSession, (newSession) => {
 
                 <div class="md:col-span-2">
                     <InputLabel for="status" value="Estatus" />
-                    <Select size="large" id="status" v-model="form.status" :disabled="true" :options="statusOptions" optionLabel="label"
-                        optionValue="value" class="w-full mt-1" />
+                    <Select size="large" id="status" v-model="form.status" :disabled="true" :options="statusOptions"
+                        optionLabel="label" optionValue="value" class="w-full mt-1" />
                     <InputError :message="form.errors.status" class="mt-2" />
                 </div>
 
@@ -201,20 +214,15 @@ watch(activeSession, (newSession) => {
                 </div>
             </div>
             <div class="flex justify-end mt-6">
-                <Button type="submit" label="Guardar Gasto" :loading="form.processing" severity="warning" />
+                <Button type="submit" label="Guardar gasto" :loading="form.processing" severity="warning" />
             </div>
         </form>
 
-        <CreateExpenseCategoryModal v-model:visible="showCategoryModal" @created="handleNewCategory" />
-        
-        <StartSessionModal 
-            v-model:visible="isStartSessionModalVisible" 
-            :cash-registers="availableCashRegisters"
-            :user-bank-accounts="userBankAccounts"
-        />
-        <JoinSessionModal 
-            v-model:visible="isJoinSessionModalVisible"
-            :sessions="joinableSessions"
-        />
+        <ManageExpenseCategoriesModal v-model:visible="showCategoryModal" @created="handleNewCategory"
+            @updated="handleCategoryUpdate" @deleted="handleCategoryDelete" />
+
+        <StartSessionModal v-model:visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
+            :user-bank-accounts="userBankAccounts" />
+        <JoinSessionModal v-model:visible="isJoinSessionModalVisible" :sessions="joinableSessions" />
     </AppLayout>
 </template>

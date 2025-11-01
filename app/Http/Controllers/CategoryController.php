@@ -4,47 +4,27 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class CategoryController extends Controller
 {
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
-        //
-    }
+        $validated = $request->validate([
+            'type' => ['required', Rule::in(['product', 'service'])],
+        ]);
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
+        $subscriptionId = Auth::user()->branch->subscription_id;
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        //
-    }
+        $categories = Category::where('subscription_id', $subscriptionId)
+            ->where('type', $validated['type'])
+            ->get();
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Category $category)
-    {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Category $category)
-    {
-        //
+        return response()->json($categories);
     }
 
     /**
@@ -52,7 +32,19 @@ class CategoryController extends Controller
      */
     public function update(Request $request, Category $category)
     {
-        //
+        // Verificar que la categoría pertenece a la suscripción del usuario
+        if ($category->subscription_id !== Auth::user()->branch->subscription_id) {
+            abort(403, 'Acción no autorizada.');
+        }
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'type' => ['required', Rule::in(['product', 'service'])],
+        ]);
+
+        $category->update($validated);
+
+        return response()->json($category);
     }
 
     /**
@@ -60,6 +52,18 @@ class CategoryController extends Controller
      */
     public function destroy(Category $category)
     {
-        //
+        // Verificar que la categoría pertenece a la suscripción del usuario
+        if ($category->subscription_id !== Auth::user()->branch->subscription_id) {
+            abort(403, 'Acción no autorizada.');
+        }
+
+        // Opcional: Verificar si la categoría está en uso antes de eliminar
+        if ($category->products()->exists() || $category->services()->exists()) {
+            return response()->json(['message' => 'No se puede eliminar la categoría porque está en uso.'], 422);
+        }
+
+        $category->delete();
+
+        return response()->json(null, 204);
     }
 }

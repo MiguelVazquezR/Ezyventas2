@@ -43,7 +43,7 @@ class HandleInertiaRequests extends Middleware
                     // MODIFICADO: Obtener la versión MÁS RECIENTE (activa o expirada)
                     // Quitamos el filtro de 'end_date' para encontrar también las expiradas.
                     $currentVersion = $subscription->versions()
-                        ->latest('start_date')
+                        ->latest('id')
                         ->first();
 
                     if ($currentVersion) {

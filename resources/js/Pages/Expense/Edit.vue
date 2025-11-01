@@ -1,10 +1,10 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
-import CreateExpenseCategoryModal from './Partials/CreateExpenseCategoryModal.vue';
+import ManageExpenseCategoriesModal from '@/Components/ManageExpenseCategoriesModal.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
 
 const props = defineProps({
@@ -20,7 +20,7 @@ const hasActiveBranchSession = computed(() => page.props.branchHasActiveSession)
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
     { label: 'Gastos', url: route('expenses.index') },
-    { label: `Editar Gasto: ${props.expense.folio || props.expense.id}` }
+    { label: `Editar gasto: ${props.expense.folio || props.expense.id}` }
 ]);
 
 const form = useForm({
@@ -50,16 +50,16 @@ const paymentMethodOptions = ref([
 watch(() => form.payment_method, (newMethod, oldMethod) => {
     if (newMethod === 'efectivo') {
         form.bank_account_id = null;
-    } else { 
-        form.take_from_cash_register = false; 
-        
+    } else {
+        form.take_from_cash_register = false;
+
         // Solo auto-seleccionar si el usuario está cambiando a este método,
         // no si la página se carga con este método ya seleccionado (oldMethod es null al inicio).
         if (newMethod !== oldMethod && oldMethod !== undefined) {
-            const favoriteAccount = props.bankAccounts.find(account => 
+            const favoriteAccount = props.bankAccounts.find(account =>
                 account.branches?.[0]?.pivot?.is_favorite
             );
-            
+
             form.bank_account_id = favoriteAccount ? favoriteAccount.id : null;
         }
     }
@@ -72,6 +72,20 @@ const handleNewCategory = (newCategory) => {
     form.expense_category_id = newCategory.id;
 };
 
+const handleCategoryUpdate = (updatedCategory) => {
+    const index = localCategories.value.findIndex(c => c.id === updatedCategory.id);
+    if (index !== -1) {
+        localCategories.value[index] = updatedCategory;
+    }
+};
+
+const handleCategoryDelete = (deletedCategoryId) => {
+    localCategories.value = localCategories.value.filter(c => c.id !== deletedCategoryId);
+    if (form.expense_category_id === deletedCategoryId) {
+        form.expense_category_id = null;
+    }
+};
+
 const showStartSessionModal = ref(false);
 
 const submit = () => {
@@ -81,8 +95,7 @@ const submit = () => {
 
 <template>
     <!-- El template se mantiene igual, no necesita cambios -->
-    <Head :title="`Editar Gasto: ${expense.folio || expense.id}`" />
-    <AppLayout>
+    <AppLayout :title="`Editar gasto: ${expense.folio || expense.id}`">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="mt-4">
             <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Editar gasto</h1>
@@ -111,7 +124,8 @@ const submit = () => {
                 <div>
                     <div class="flex justify-between items-center mb-1">
                         <InputLabel for="category" value="Categoría *" />
-                        <Button @click="showCategoryModal = true" label="Nueva" icon="pi pi-plus" text size="small" />
+                        <Button @click="showCategoryModal = true" label="Gestionar" icon="pi pi-cog" text
+                            size="small" />
                     </div>
                     <Select size="large" id="category" v-model="form.expense_category_id" :options="localCategories"
                         optionLabel="name" optionValue="id" placeholder="Selecciona una categoría" filter
@@ -135,19 +149,21 @@ const submit = () => {
 
                     <div v-if="form.payment_method === 'efectivo'">
                         <div v-if="hasActiveBranchSession" class="flex items-center gap-3">
-                             <ToggleSwitch v-model="form.take_from_cash_register" inputId="take_from_cash_register" />
-                             <InputLabel for="take_from_cash_register">
+                            <ToggleSwitch v-model="form.take_from_cash_register" inputId="take_from_cash_register" />
+                            <InputLabel for="take_from_cash_register">
                                 ¿Tomar efectivo de la caja activa?
-                             </InputLabel>
+                            </InputLabel>
                         </div>
-                        <div v-else class="flex items-start justify-between p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                        <div v-else
+                            class="flex items-start justify-between p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                             <div class="flex items-start gap-3 w-[70%]">
                                 <i class="pi pi-info-circle text-yellow-500 !text-xl"></i>
                                 <span class="text-sm text-yellow-700 dark:text-yellow-300">
                                     Se requiere una sesión de caja activa para indicar que el dinero se toma de ahí.
                                 </span>
                             </div>
-                            <Button label="Abrir Caja" icon="pi pi-inbox" size="small" @click="showStartSessionModal = true" />
+                            <Button label="Abrir Caja" icon="pi pi-inbox" size="small"
+                                @click="showStartSessionModal = true" />
                         </div>
                         <InputError :message="form.errors.take_from_cash_register" class="mt-2" />
                     </div>
@@ -168,10 +184,10 @@ const submit = () => {
                     </div>
                 </div>
 
-                 <div class="md:col-span-2">
+                <div class="md:col-span-2">
                     <InputLabel for="status" value="Estatus" />
-                    <Select size="large" id="status" v-model="form.status" :disabled="true" :options="statusOptions" optionLabel="label"
-                        optionValue="value" class="w-full mt-1" />
+                    <Select size="large" id="status" v-model="form.status" :disabled="true" :options="statusOptions"
+                        optionLabel="label" optionValue="value" class="w-full mt-1" />
                     <InputError :message="form.errors.status" class="mt-2" />
                 </div>
                 <div class="md:col-span-2">
@@ -185,11 +201,9 @@ const submit = () => {
             </div>
         </form>
 
-        <CreateExpenseCategoryModal v-model:visible="showCategoryModal" @created="handleNewCategory" />
-        
-        <StartSessionModal
-            v-model:visible="showStartSessionModal"
-            :cash-registers="availableCashRegisters"
-        />
+        <ManageExpenseCategoriesModal v-model:visible="showCategoryModal" @created="handleNewCategory"
+            @updated="handleCategoryUpdate" @deleted="handleCategoryDelete" />
+
+        <StartSessionModal v-model:visible="showStartSessionModal" :cash-registers="availableCashRegisters" />
     </AppLayout>
 </template>

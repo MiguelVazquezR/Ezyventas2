@@ -33,4 +33,12 @@ class Category extends Model
     {
         return $this->hasMany(Product::class);
     }
+    
+    /**
+     * Obtiene todos los servicios que pertenecen a esta categoría.
+     */
+    public function services(): HasMany
+    {
+        return $this->hasMany(Service::class);
+    }
 }

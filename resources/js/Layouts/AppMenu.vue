@@ -116,6 +116,29 @@ const filterMenu = (items) => {
 
 // El menú que se renderizará en el template será este, ya filtrado.
 const filteredModel = computed(() => filterMenu(model.value));
+
+// Obtener el usuario autenticado
+const authUser = computed(() => usePage().props.auth.user);
+
+// Comprobar si es Super Admin (Suscripción 1)
+const isSuperAdmin = computed(() => authUser.value.branch?.subscription_id === 1);
+
+// Definir el modelo del menú de administración
+const adminModel = ref([
+    {
+        label: 'Administración',
+        items: [
+            {
+                label: 'Pagos Pendientes',
+                icon: 'pi pi-clock',
+                to: route('admin.payments.index'),
+                routeName: 'admin.payments.*'
+            },
+            // Aquí puedes añadir más submodulos de admin en el futuro
+            // { label: 'Planes', icon: 'pi pi-tags', to: route('admin.plans.index'), routeName: 'admin.plans.*' },
+        ]
+    },
+]);
 </script>
 
 <template>
@@ -124,6 +147,14 @@ const filteredModel = computed(() => filterMenu(model.value));
         <template v-for="(item, i) in filteredModel" :key="item">
             <app-menu-item v-if="!item.separator" :item="item" :index="i"></app-menu-item>
             <li v-if="item.separator" class="menu-separator"></li>
+        </template>
+        <template v-if="isSuperAdmin">
+            <!-- Separador -->
+            <li class="menu-separator"></li>
+            <!-- Itera sobre el modelo de menú de admin -->
+            <template v-for="(item, i) in adminModel" :key="item">
+                <app-menu-item v-if="!item.separator" :item="item" :index="i"></app-menu-item>
+            </template>
         </template>
     </ul>
 </template>
