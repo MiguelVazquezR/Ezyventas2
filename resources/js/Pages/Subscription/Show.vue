@@ -266,7 +266,8 @@ const getPaymentStatusTag = (status) => {
                     <p class="m-0">Motivo: {{ lastRejectedPayment.payment_details.rejection_reason }}</p>
                     <p class="m-0 mt-2">
                         Por favor, ve a
-                        <Link :href="route('subscription.manage')" class="font-bold underline">Gestionar suscripción
+                        <Link :href="route('subscription.manage')" class="font-bold underline">
+                            Gestionar suscripción
                         </Link>
                         para intentarlo de nuevo.
                     </p>

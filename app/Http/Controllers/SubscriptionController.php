@@ -4,10 +4,14 @@ namespace App\Http\Controllers;
 
 // Imports de Enums y Modelos
 use App\Enums\BillingPeriod;
+use App\Enums\ExpenseStatus;
 use App\Enums\InvoiceStatus;
+use App\Enums\PaymentMethod;
 use App\Enums\SubscriptionPaymentStatus;
 use App\Mail\AdminNewPaymentNotification;
 use App\Models\BankAccount;
+use App\Models\Expense;
+use App\Models\ExpenseCategory;
 use App\Models\PlanItem;
 use App\Models\Subscription;
 use App\Models\SubscriptionPayment;
@@ -320,6 +324,25 @@ class SubscriptionController extends Controller
             $query->where('branch_id', 1)->where('is_favorite', true);
         })->get();
 
+        // --- INICIO: Lógica para Gasto Opcional (NUEVO) ---
+        $isOwner = !$user->roles()->exists();
+        $userBankAccounts = [];
+
+        // Lógica basada en ExpenseController@create
+        if ($isOwner) {
+            // El propietario ve las cuentas de SU sucursal (la principal)
+            // Asumimos que el propietario quiere ver todas las cuentas de la suscripción
+            $userBankAccounts = $subscription->bankAccounts()->get(['bank_accounts.id', 'account_name', 'bank_name']);
+        } else {
+            // El empleado ve solo las cuentas asignadas a ÉL
+            $userBankAccounts = $user->bankAccounts()->get(['bank_accounts.id', 'account_name', 'bank_name']);
+        }
+
+        // Cargar categorías de gasto de la suscripción
+        $expenseCategories = ExpenseCategory::where('subscription_id', $subscription->id)
+            ->get(['id', 'name']);
+        // --- FIN: Lógica para Gasto Opcional ---
+
         return Inertia::render('Subscription/ManageSubscription', [
             'subscription' => $subscription,
             'currentVersion' => $versionToDisplay, // La versión para "mostrar" (puede ser la rechazada)
@@ -330,11 +353,13 @@ class SubscriptionController extends Controller
             'currentBillingPeriod' => $currentBillingPeriod,
             'ourBankAccounts' => $ourBankAccounts,
             'hasPendingPayment' => $hasPendingPayment,
+            'userBankAccounts' => $userBankAccounts,
+            'expenseCategories' => $expenseCategories,
         ]);
     }
 
     /**
-     * AÑADIDO: Revierte una versión rechazada.
+     * Revierte una versión rechazada.
      */
     public function revert(Request $request)
     {
@@ -350,12 +375,25 @@ class SubscriptionController extends Controller
             if ($lastPayment && $lastPayment->status === SubscriptionPaymentStatus::REJECTED) {
 
                 try {
-                    DB::transaction(function () use ($latestVersion) {
-                        // Borrar la versión. Los items y pagos se borrarán por 'cascade'
-                        $latestVersion->delete();
+                    DB::transaction(function () use ($latestVersion, $lastPayment, $subscription) {
 
-                        // PUNTO 2: La fecha de la versión anterior ya no se modifica,
-                        // así que no necesitamos hacer nada para restaurarla.
+                        // --- INICIO: Lógica para borrar Gasto Opcional (NUEVO) ---
+                        // 1. Buscar el gasto 'pendiente' que coincida con este pago
+                        $pendingExpense = Expense::where('status', ExpenseStatus::PENDING)
+                            ->where('amount', $lastPayment->amount) // Coincidir monto
+                            ->where('description', 'like', 'Pago de suscripción%') // Coincidir descripción
+                            ->whereHas('branch.subscription', fn($q) => $q->where('id', $subscription->id)) // Coincidir suscripción
+                            ->latest('created_at')
+                            ->first();
+
+                        // 2. Si se encuentra, eliminarlo
+                        if ($pendingExpense) {
+                            $pendingExpense->delete();
+                        }
+                        // --- FIN: Lógica de Gasto Opcional ---
+
+                        // 3. Borrar la versión. Los items y pagos se borrarán por 'cascade'
+                        $latestVersion->delete();
                     });
                     return redirect()->route('subscription.show')->with('success', 'Tu plan ha sido revertido a la versión anterior.');
                 } catch (\Exception $e) {
@@ -384,8 +422,9 @@ class SubscriptionController extends Controller
             'total_amount' => 'required|numeric|min:0',
             'mode' => 'required|string|in:upgrade,renew',
             'payment_method' => ['required', Rule::in(['transferencia', 'stripe', 'card_mock', 'tarjeta'])],
-            // El comprobante es requerido solo si el método es 'transferencia'
             'proof_of_payment' => ['nullable', 'required_if:payment_method,transferencia', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:2048'],
+            'bank_account_id' => 'nullable|numeric|exists:bank_accounts,id',
+            'expense_category_id' => [Rule::requiredIf($request->bank_account_id != null), 'numeric','exists:expense_categories,id'],
         ]);
 
         $subscription = $user->branch->subscription;
@@ -474,7 +513,6 @@ class SubscriptionController extends Controller
             // --- FIN LÓGICA DE FECHAS ---
 
             // --- INICIO: REGLA 3 - Reutilización de Versión ---
-            // ... (código de reutilización de versión sin cambios) ...
             $pendingVersion = $subscription->versions()
                 ->whereHas('payments', function ($query) {
                     $query->where('status', SubscriptionPaymentStatus::REJECTED);
@@ -504,7 +542,7 @@ class SubscriptionController extends Controller
             }
             // --- FIN: REGLA 3 ---
 
-            // ... (código de inserción de items y creación de pago sin cambios) ...
+            // Insertar los nuevos items
             $subscriptionItems = [];
             foreach ($validated['items'] as $item) {
                 $planItem = $allPlanItems->get($item['key']);
@@ -542,8 +580,36 @@ class SubscriptionController extends Controller
                     ->toMediaCollection('proof_of_payment');
             }
 
+            // --- INICIO: Lógica de Gasto Opcional (NUEVO) ---
+            $bankAccountId = $validated['bank_account_id'] ?? null;
+            $expenseCategoryId = $validated['expense_category_id'] ?? null;
+
+            // Solo crear el gasto si se proporcionaron ambos campos
+            // La validación de que pertenecen al usuario debe estar en processManagement
+            Log::info($bankAccountId);
+            Log::info($expenseCategoryId);
+            if ($bankAccountId && $expenseCategoryId) {
+                $user = $request->user();
+                $folio = $mode === 'upgrade'
+                    ? 'Pago de mejora de suscripción EzyVentas'
+                    : 'Pago de renovación de suscripción EzyVentas';
+
+                Expense::create([
+                    'folio' => $folio,
+                    'user_id' => $user->id,
+                    'branch_id' => $user->branch_id,
+                    'amount' => $validated['total_amount'],
+                    'expense_category_id' => $expenseCategoryId,
+                    'expense_date' => now(),
+                    'status' => ExpenseStatus::PENDING, // PENDIENTE hasta que el admin apruebe
+                    'description' => 'Pago de suscripción ' . config('app.name'),
+                    'payment_method' => PaymentMethod::TRANSFER,
+                    'bank_account_id' => $bankAccountId,
+                ]);
+            }
+            // --- FIN: Lógica de Gasto Opcional ---
+
             // --- INICIO: Notificar al Admin ---
-            // ... (código de notificación sin cambios) ...
             try {
                 // 1. Buscar al usuario admin (asumiendo que está en la suscripción 1)
                 $adminUser = User::whereHas('branch', fn($q) => $q->where('subscription_id', 1))
