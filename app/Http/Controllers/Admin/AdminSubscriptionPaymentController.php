@@ -6,8 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\SubscriptionPayment;
 use App\Enums\SubscriptionStatus;
 use App\Enums\BillingPeriod;
+use App\Enums\ExpenseStatus;
 use App\Enums\SubscriptionPaymentStatus;
 use App\Mail\PaymentStatusNotification;
+use App\Models\BankAccount;
+use App\Models\Expense;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -108,7 +111,6 @@ class AdminSubscriptionPaymentController extends Controller
 
     /**
      * Aprueba un pago por transferencia.
-     * AQUÍ ESTÁ LA LÓGICA DE FECHAS QUE PEDISTE.
      */
     public function approve(SubscriptionPayment $payment)
     {
@@ -179,6 +181,34 @@ class AdminSubscriptionPaymentController extends Controller
                 $subscription->update([
                     'status' => SubscriptionStatus::ACTIVE,
                 ]);
+
+                // --- INICIO: LÓGICA DE GASTO (NUEVO) ---
+                
+                // 5. Buscar el gasto 'pendiente' que coincida con este pago
+                // Lo buscamos por la suscripción, el monto y el estado.
+                $expense = Expense::where('status', ExpenseStatus::PENDING)
+                    ->where('amount', $payment->amount)
+                    ->where('description', 'like', 'Pago de suscripción%')
+                    ->whereHas('branch.subscription', fn($q) => $q->where('id', $subscription->id))
+                    ->latest('created_at') // Tomar el más reciente que coincida
+                    ->first();
+
+                if ($expense) {
+                    // 6. Actualizar el Gasto a 'pagado'
+                    $expense->update(['status' => ExpenseStatus::PAID]);
+
+                    // 7. Descontar el saldo de la cuenta bancaria del *cliente*
+                    if ($expense->bank_account_id) {
+                        // Usar lockForUpdate para evitar condiciones de carrera al restar saldo
+                        $bankAccount = BankAccount::lockForUpdate()->find($expense->bank_account_id);
+                        
+                        if ($bankAccount) {
+                            $bankAccount->decrement('balance', $expense->amount);
+                        }
+                    }
+                }
+                // --- FIN: LÓGICA DE GASTO ---
+
             });
         } catch (\Exception $e) {
             Log::error("Error al aprobar pago: " . $e->getMessage());
@@ -188,9 +218,11 @@ class AdminSubscriptionPaymentController extends Controller
         // --- INICIO: Notificar al Suscriptor (Aprobado) ---
         try {
             // Recargamos las relaciones para obtener los datos del usuario
-            $payment->load('subscriptionVersion.subscription.branches.users');
+            $payment->load('subscriptionVersion.subscription');
             $subscription = $payment->subscriptionVersion->subscription;
-            $subscriptionEmail = $subscription->contact_email;
+            
+            // Usamos el email de contacto principal de la suscripción
+            $subscriptionEmail = $subscription->contact_email; 
 
             if ($subscriptionEmail) {
                 Mail::to($subscriptionEmail)
@@ -200,7 +232,7 @@ class AdminSubscriptionPaymentController extends Controller
                         $subscription->commercial_name,
                     ));
             } else {
-                Log::warning("No se encontró un usuario principal para notificar la aprobación del pago ID: {$payment->id}");
+                Log::warning("No se encontró un email de contacto para notificar la aprobación del pago ID: {$payment->id}");
             }
         } catch (\Exception $e) {
             Log::error("Fallo al enviar correo de aprobación al cliente: " . $e->getMessage());
@@ -225,13 +257,29 @@ class AdminSubscriptionPaymentController extends Controller
         }
 
         try {
-            // --- INICIO: REGLA 3 - No borrar versión ---
-            DB::transaction(function () use ($payment, $validated) {
+            $subscription = $payment->subscriptionVersion->subscription;
+
+            DB::transaction(function () use ($payment, $validated, $subscription) {
                 // 1. Marcamos el pago como rechazado
                 $payment->update([
                     'status' => SubscriptionPaymentStatus::REJECTED,
                     'payment_details' => ['rejection_reason' => $validated['rejection_reason']]
                 ]);
+
+                // --- INICIO: LÓGICA DE GASTO (NUEVO) ---
+                // 2. Buscar el gasto 'pendiente' que coincida con este pago
+                $pendingExpense = Expense::where('status', ExpenseStatus::PENDING)
+                    ->where('amount', $payment->amount) // Coincidir monto
+                    ->where('description', 'like', 'Pago de suscripción%') // Coincidir descripción
+                    ->whereHas('branch.subscription', fn($q) => $q->where('id', $subscription->id)) // Coincidir suscripción
+                    ->latest('created_at')
+                    ->first();
+
+                // 3. Si se encuentra, eliminarlo
+                if ($pendingExpense) {
+                    $pendingExpense->delete();
+                }
+                // --- FIN: LÓGICA DE GASTO ---
             });
         } catch (\Exception $e) {
             Log::error("Error al rechazar pago: " . $e->getMessage());
@@ -240,10 +288,8 @@ class AdminSubscriptionPaymentController extends Controller
 
         // --- INICIO: Notificar al Suscriptor (Rechazado) ---
         try {
-            // Recargamos las relaciones para obtener los datos del usuario
-            $payment->load('subscriptionVersion.subscription.branches.users');
             $subscription = $payment->subscriptionVersion->subscription;
-            $subscriptionEmail = $subscription->contact_email;
+            $subscriptionEmail = $subscription->contact_email; 
 
             if ($subscriptionEmail) {
                 Mail::to($subscriptionEmail)
@@ -254,7 +300,7 @@ class AdminSubscriptionPaymentController extends Controller
                         $validated['rejection_reason']
                     ));
             } else {
-                Log::warning("No se encontró un usuario principal para notificar el rechazo del pago ID: {$payment->id}");
+                Log::warning("No se encontró un email de contacto para notificar el rechazo del pago ID: {$payment->id}");
             }
         } catch (\Exception $e) {
             Log::error("Fallo al enviar correo de rechazo al cliente: " . $e->getMessage());
