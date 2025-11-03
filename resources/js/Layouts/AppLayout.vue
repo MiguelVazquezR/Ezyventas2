@@ -197,22 +197,22 @@ watch(activeSession, (newSession, oldSession) => {
         <app-topbar></app-topbar>
         <app-sidebar></app-sidebar>
         <div class="layout-main-container">
-            <!-- Banner de Suscripción (sin cambios) -->
-            <div v-if="subscriptionWarning && isOwner" 
+            <!-- Banner de Suscripción -->
+            <div v-if="subscriptionWarning" 
                  :class="bannerClasses"
-                 class="border-l-4 p-1 sticky top-0 z-50 shadow-md mb-2 rounded-lg" 
+                 class="border-l-4 p-px sticky top-0 z-50 shadow-md mb-2 rounded-lg" 
                  role="alert">
-                <div class="flex items-center justify-between max-w-7xl mx-auto py-1 px-2">
+                <div class="flex items-center justify-between max-w-7xl mx-auto py-px px-2">
                     <div class="flex items-center">
-                        <i :class="bannerIcon" class="!text-xl mr-3"></i>
+                        <i :class="bannerIcon" class="!text-lg mr-3"></i>
                         <div>
-                            <p class="font-bold m-0">{{ bannerTitle }}</p>
-                            <p class="text-sm m-0">
+                            <p class="font-bold text-sm m-0">{{ bannerTitle }}</p>
+                            <p class="text-xs m-0">
                                 {{ subscriptionWarning.message }}
                             </p>
                         </div>
                     </div>
-                    <Link :href="route('subscription.show')" class="ml-4 flex-shrink-0">
+                    <Link v-if="isOwner" :href="route('subscription.show')" class="ml-4 flex-shrink-0">
                         <Button label="Renovar ahora" :severity="bannerButtonSeverity" size="small" />
                     </Link>
                 </div>
