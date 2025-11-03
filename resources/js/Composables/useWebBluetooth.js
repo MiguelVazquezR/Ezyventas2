@@ -25,35 +25,35 @@ export function useWebBluetooth() {
     });
 
     // Intenta encontrar la característica correcta para enviar datos
-    async function findWritableCharacteristic(server, serviceUuid) { // <-- Se añade serviceUuid
+    async function findWritableCharacteristic(server) { // <-- Quitamos serviceUuid
         try {
-            // const services = await server.getPrimaryServices(); // <-- Se quita
-            // logger.info('Servicios GATT encontrados:', services.map(s => s.uuid)); // <-- Se quita
-
-            // +++ INICIO CORRECCIÓN "No service found" +++
-            // Pedimos el servicio primario específico por su UUID
-            // Esto es más directo y soluciona el error "No service found"
-            logger.info(`Buscando servicio primario: ${serviceUuid}`);
-            const service = await server.getPrimaryService(serviceUuid);
-            logger.info('Servicio GATT encontrado:', service.uuid);
+            // +++ INICIO CORRECCIÓN (Estrategia Exploratoria) +++
+            // Volvemos a pedir TODOS los servicios, ya que el UUID '0xAF30'
+            // parece ser solo de anuncio, pero no el de conexión real.
+            logger.info("Buscando todos los servicios primarios...");
+            const services = await server.getPrimaryServices();
+            logger.info('Servicios GATT encontrados:', services.map(s => s.uuid));
             // +++ FIN CORRECCIÓN +++
 
-            // for (const service of services) { // <-- Se quita el loop
-            const characteristics = await service.getCharacteristics();
-            // Priorizar 'writeWithoutResponse'
-            const writeWithoutResponseChar = characteristics.find(c => c.properties.writeWithoutResponse);
-            if (writeWithoutResponseChar) {
-                logger.info('Característica encontrada (writeWithoutResponse):', writeWithoutResponseChar.uuid);
-                return writeWithoutResponseChar;
+
+            // Recorremos todos los servicios encontrados
+            for (const service of services) {
+                logger.info(`Inspeccionando características del servicio: ${service.uuid}`);
+                const characteristics = await service.getCharacteristics();
+                // Priorizar 'writeWithoutResponse'
+                const writeWithoutResponseChar = characteristics.find(c => c.properties.writeWithoutResponse);
+                if (writeWithoutResponseChar) {
+                    logger.info('Característica encontrada (writeWithoutResponse):', writeWithoutResponseChar.uuid);
+                    return writeWithoutResponseChar;
+                }
+                // Luego buscar 'write'
+                const writeChar = characteristics.find(c => c.properties.write);
+                if (writeChar) {
+                    logger.info('Característica encontrada (write):', writeChar.uuid);
+                    return writeChar;
+                }
             }
-            // Luego buscar 'write'
-            const writeChar = characteristics.find(c => c.properties.write);
-            if (writeChar) {
-                logger.info('Característica encontrada (write):', writeChar.uuid);
-                return writeChar;
-            }
-            // } // <-- Se quita el fin del loop
-            throw new Error("No se encontró ninguna característica escribible.");
+            throw new Error("No se encontró ninguna característica escribible en ningún servicio.");
         } catch (e) {
             logger.error("Error al buscar características:", e);
             // El error "No service found in device" del navegador será capturado aquí.
@@ -83,20 +83,19 @@ export function useWebBluetooth() {
         bluetoothDevice.value = null;
         writableCharacteristic.value = null;
 
-        // +++ INICIO CORRECCIÓN "No service found" +++
         // Definimos el UUID de la impresora (de nRF Connect) como constante
         const PRINTER_SERVICE_UUID = '0000af30-0000-1000-8000-00805f9b34fb';
-        // +++ FIN CORRECCIÓN +++
 
         try {
             logger.info("Solicitando dispositivo Bluetooth...");
             const device = await navigator.bluetooth.requestDevice({
-                // Filtramos por el Service UUID '0xAF30'
-                filters: [
-                    { services: [PRINTER_SERVICE_UUID] } // <-- Usamos la constante
-                ],
-                // Y pedimos permiso explícitamente para ESE servicio.
-                optionalServices: [PRINTER_SERVICE_UUID] // <-- Usamos la constante
+                // +++ INICIO CORRECCIÓN (Estrategia Exploratoria) +++
+                // Volvemos a aceptar todos los dispositivos, ya que el filtro de servicio es erróneo.
+                acceptAllDevices: true,
+                // PERO, seguimos pidiendo permiso para el servicio que 'anuncia',
+                // esto debería darnos permiso para explorar el dispositivo.
+                optionalServices: [PRINTER_SERVICE_UUID]
+                // +++ FIN CORRECCIÓN +++
             });
 
             logger.info('Dispositivo seleccionado:', device.name);
@@ -110,9 +109,9 @@ export function useWebBluetooth() {
             logger.info('Servidor GATT conectado.');
 
             logger.info('Buscando característica escribible...');
-            // +++ INICIO CORRECCIÓN "No service found" +++
-            // Pasamos el UUID a la función para que busque ESE servicio
-            writableCharacteristic.value = await findWritableCharacteristic(server, PRINTER_SERVICE_UUID);
+            // +++ INICIO CORRECCIÓN (Estrategia Exploratoria) +++
+            // Llamamos a la función sin el UUID específico, para que explore todos.
+            writableCharacteristic.value = await findWritableCharacteristic(server);
             // +++ FIN CORRECCIÓN +++
 
             if (!writableCharacteristic.value) {
@@ -147,7 +146,7 @@ export function useWebBluetooth() {
         }
     };
 
-    // Desconectar manualmente
+    // Desconectar manually
     const disconnectBluetooth = () => {
         // (Misma lógica que antes)
         if (bluetoothDevice.value) {
@@ -212,3 +211,4 @@ export function useWebBluetooth() {
         sendViaWebBluetooth,
     };
 }
+

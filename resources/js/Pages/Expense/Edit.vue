@@ -15,7 +15,7 @@ const props = defineProps({
 });
 
 const page = usePage();
-const hasActiveBranchSession = computed(() => page.props.branchHasActiveSession);
+const activeSession = computed(() => page.props.activeSession);
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -148,10 +148,10 @@ const submit = () => {
                     </div>
 
                     <div v-if="form.payment_method === 'efectivo'">
-                        <div v-if="hasActiveBranchSession" class="flex items-center gap-3">
+                        <div v-if="activeSession || true" class="flex items-center gap-3">
                             <ToggleSwitch v-model="form.take_from_cash_register" inputId="take_from_cash_register" />
                             <InputLabel for="take_from_cash_register">
-                                ¿Tomar efectivo de la caja activa?
+                                ¿Tomar efectivo de la caja activa cuando se creó este gasto?
                             </InputLabel>
                         </div>
                         <div v-else

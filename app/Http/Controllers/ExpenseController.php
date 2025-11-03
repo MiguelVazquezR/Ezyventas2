@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\CashRegisterSessionStatus;
 use App\Enums\ExpenseStatus;
+use App\Enums\PaymentMethod;
 use App\Enums\SessionCashMovementType;
 use App\Http\Requests\StoreExpenseRequest;
 use App\Http\Requests\UpdateExpenseRequest;
@@ -108,7 +109,7 @@ class ExpenseController extends Controller implements HasMiddleware
         ]);
     }
 
-   public function create(): Response
+    public function create(): Response
     {
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
@@ -119,7 +120,7 @@ class ExpenseController extends Controller implements HasMiddleware
         } else {
             $userBankAccounts = $user->bankAccounts()->get();
         }
-        
+
         return Inertia::render('Expense/Create', [
             'categories' => ExpenseCategory::where('subscription_id', $subscriptionId)->get(['id', 'name']),
             'userBankAccounts' => $userBankAccounts,
@@ -211,62 +212,106 @@ class ExpenseController extends Controller implements HasMiddleware
 
     public function update(UpdateExpenseRequest $request, Expense $expense)
     {
-        DB::transaction(function () use ($request, $expense) {
+        // Cargamos la relación del movimiento de caja original ANTES de la transacción
+        $expense->load('sessionCashMovement');
+        $originalMovement = $expense->sessionCashMovement;
+
+        // Guardamos los valores originales para la lógica de reversión
+        $originalAmount = $expense->amount;
+        $originalStatus = $expense->status;
+        $originalBankAccountId = $expense->bank_account_id;
+
+        DB::transaction(function () use ($request, $expense, $originalMovement, $originalAmount, $originalStatus, $originalBankAccountId) {
             $validated = $request->validated();
             $user = Auth::user();
+
+            // --- Definir el nuevo estado ---
+            $newAmount = $validated['amount'];
+            $newStatus = ExpenseStatus::from($validated['status']); // Asegurar que sea Enum
+            $newPaymentMethod = PaymentMethod::from($validated['payment_method']); // Asegurar que sea Enum
+            $newBankAccountId = $validated['bank_account_id'] ?? null;
             $takeFromCashRegister = $validated['take_from_cash_register'] ?? false;
 
-            // --- 1. REVERTIR ESTADO ANTERIOR ---
-            // Revertir movimiento de caja si existía
-            if ($expense->sessionCashMovement) {
-                $expense->sessionCashMovement->delete();
-            }
+            // --- 1. REVERTIR SALDO BANCARIO (si aplica) ---
             // Revertir saldo de cuenta bancaria si estaba pagado desde una
-            if ($expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
-                $oldBankAccount = BankAccount::find($expense->bank_account_id);
+            if ($originalStatus === ExpenseStatus::PAID && $originalBankAccountId) {
+                $oldBankAccount = BankAccount::find($originalBankAccountId);
                 if ($oldBankAccount) {
-                    $oldBankAccount->increment('balance', $expense->amount);
+                    $oldBankAccount->increment('balance', $originalAmount);
                 }
             }
 
             // --- 2. ACTUALIZAR EL GASTO ---
+            // Actualizamos el gasto con todos los datos validados
+            // PERO, reseteamos el 'session_cash_movement_id' por ahora.
+            // Se asignará correctamente en el paso 4 si es necesario.
+            $validated['session_cash_movement_id'] = null;
             $expense->update($validated);
-            // Asegurarse de que el enlace al movimiento se borra antes de crear uno nuevo
-            $expense->session_cash_movement_id = null;
-            $expense->save();
 
-            // --- 3. APLICAR NUEVO ESTADO ---
-            // Aplicar nuevo saldo a cuenta bancaria
-            if ($expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
-                $newBankAccount = BankAccount::find($expense->bank_account_id);
+            // --- 3. APLICAR NUEVO SALDO BANCARIO (si aplica) ---
+            if ($newStatus === ExpenseStatus::PAID && $newBankAccountId) {
+                $newBankAccount = BankAccount::find($newBankAccountId);
                 if ($newBankAccount) {
-                    $newBankAccount->decrement('balance', $expense->amount);
+                    $newBankAccount->decrement('balance', $newAmount);
                 }
             }
-            // Crear nuevo movimiento de caja si es necesario
-            if (
-                $expense->payment_method->value === 'efectivo' &&
-                $expense->status === ExpenseStatus::PAID &&
-                $takeFromCashRegister
-            ) {
-                $activeSession = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
-                    ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $user->branch_id))
-                    ->latest('opened_at')
-                    ->first();
 
-                if (!$activeSession) {
-                    throw ValidationException::withMessages([
-                        'take_from_cash_register' => 'No hay una sesión de caja activa para registrar la salida de efectivo.',
+            // --- 4. LÓGICA DE MOVIMIENTO DE CAJA (El núcleo del cambio) ---
+            $isCashWithdrawal = $newPaymentMethod === PaymentMethod::CASH &&
+                $newStatus === ExpenseStatus::PAID &&
+                $takeFromCashRegister;
+
+            if ($isCashWithdrawal) {
+                // Caso 1: El nuevo estado es "Retiro de Caja"
+
+                if ($originalMovement) {
+                    // 1.1: Ya existía un movimiento. Lo ACTUALIZAMOS.
+                    // No se crea uno nuevo, no se cambia de sesión.
+                    $originalMovement->update([
+                        'amount' => $newAmount,
+                        'description' => "Gasto (actualizado): " . ($expense->folio ?: $expense->description),
+                        'user_id' => $user->id, // Actualizar por si otro usuario edita
                     ]);
+                    // Re-asignamos el ID del movimiento al gasto
+                    // $expense->update(['session_cash_movement_id' => $originalMovement->id]);
+                } else {
+                    // 1.2: No existía movimiento. Creamos uno NUEVO en la SESIÓN DEL DÍA DEL GASTO.
+                    $expenseDate = $expense->expense_date; // Carbon date
+
+                    // Buscamos una sesión (abierta o cerrada) que cubra la fecha del gasto
+                    $session = CashRegisterSession::whereHas('cashRegister', fn($q) => $q->where('branch_id', $user->branch_id))
+                        ->where('opened_at', '<=', $expenseDate->endOfDay()) // Que abriera antes de terminar el día
+                        // ->where(function ($query) use ($expenseDate) {
+                        //     $query->where('closed_at', '>=', $expenseDate->startOfDay()) // Y cerrara después de empezar el día
+                        //         ->orWhereNull('closed_at'); // O que siga abierta
+                        // })
+                        ->latest('opened_at')
+                        ->first();
+
+                    if (!$session) {
+                        // Si no se encuentra, se lanza error. No se puede crear el movimiento.
+                        throw ValidationException::withMessages([
+                            'take_from_cash_register' => 'No se encontró una sesión de caja (abierta o cerrada) para la fecha del gasto: ' . $expenseDate->format('d/m/Y') . '. No se puede registrar la salida de efectivo.',
+                        ]);
+                    }
+
+                    $movement = $session->cashMovements()->create([
+                        'type' => SessionCashMovementType::OUTFLOW,
+                        'amount' => $newAmount,
+                        'description' => "Gasto (creado en actualización): " . ($expense->folio ?: $expense->description),
+                        'user_id' => $user->id
+                    ]);
+                    $expense->update(['session_cash_movement_id' => $movement->id]);
                 }
+            } else {
+                // Caso 2: El nuevo estado NO es "Retiro de Caja"
 
-                $movement = $activeSession->cashMovements()->create([
-                    'type' => SessionCashMovementType::OUTFLOW,
-                    'amount' => $expense->amount,
-                    'description' => "Gasto (actualizado): " . ($expense->folio ?: $expense->description),
-                ]);
-
-                $expense->update(['session_cash_movement_id' => $movement->id]);
+                if ($originalMovement) {
+                    // 2.1: Había un movimiento original. Ahora debe BORRARSE.
+                    $originalMovement->delete();
+                    // El 'session_cash_movement_id' del gasto ya se seteó en null (paso 2).
+                }
+                // 2.2: No había movimiento original y tampoco hay uno nuevo. No se hace nada.
             }
         });
 
