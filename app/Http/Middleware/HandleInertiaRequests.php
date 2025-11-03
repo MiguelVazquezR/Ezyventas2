@@ -29,56 +29,70 @@ class HandleInertiaRequests extends Middleware
 
                 $isOwner = !$user->roles()->exists();
                 $subscription = $user->branch->subscription;
-                $availableModuleNames = $subscription->getAvailableModuleNames();
+
+                // --- PERMISOS POR EXPIRACIÓN ---
+                // 1. Verificar si la suscripción tiene una versión activa AHORA.
+                $currentVersion = $subscription->currentVersion();
+
+                $isSubscriptionActive = (bool)$currentVersion;
+
+                // 2. Obtener los módulos solo si está activa.
+                //    getAvailableModuleNames() internamente ya hace esta verificación, 
+                //    pero tener $isSubscriptionActive nos sirve para el paso 3.
+                $availableModuleNames = $isSubscriptionActive
+                    ? $subscription->getAvailableModuleNames()
+                    : [];
+
+                // 3. Asignar permisos según el estado de la suscripción.
                 $permissions = $isOwner
-                    ? Permission::query()
-                        ->whereIn('module', $availableModuleNames)
-                        ->orWhere('module', 'Sistema')
-                        ->pluck('name')
-                    : $user->getAllPermissions()->pluck('name');
+                    ? Permission::query() // El dueño siempre obtiene permisos de Sistema
+                    ->whereIn('module', $availableModuleNames) // Si está expirada, $availableModuleNames estará vacío
+                    ->orWhere('module', 'Sistema')
+                    ->pluck('name')
+                    : ($isSubscriptionActive ? $user->getAllPermissions()->pluck('name') : []); // No-dueño solo obtiene permisos si la suscripción está activa
 
-                // --- INICIO: Lógica de Advertencia de Suscripción ---
+                // --- FIN: CORRECCIÓN DE PERMISOS POR EXPIRACIÓN ---
+
+                // --- Lógica de Advertencia de Suscripción ---
                 $subscriptionWarning = null;
-                if ($isOwner) {
-                    // MODIFICADO: Obtener la versión MÁS RECIENTE (activa o expirada)
-                    // Quitamos el filtro de 'end_date' para encontrar también las expiradas.
-                    $currentVersion = $subscription->versions()
-                        ->latest('id')
-                        ->first();
+                // MODIFICADO: Obtener la versión MÁS RECIENTE (activa o expirada)
+                // Quitamos el filtro de 'end_date' para encontrar también las expiradas.
+                $currentVersion = $subscription->versions()
+                    ->latest('id')
+                    ->first();
 
-                    if ($currentVersion) {
-                        $endDate = Carbon::parse($currentVersion->end_date)->startOfDay();
-                        $today = Carbon::now()->startOfDay();
+                if ($currentVersion) {
+                    $endDate = Carbon::parse($currentVersion->end_date)->startOfDay();
+                    $today = Carbon::now()->startOfDay();
 
-                        // Usamos diffInDays con 'false' para obtener números negativos si ya pasó
-                        $daysRemaining = $today->diffInDays($endDate, false);
-                        
-                        $warningThreshold = 5; // Mostrar advertencia si faltan 5 días o menos
+                    // Usamos diffInDays con 'false' para obtener números negativos si ya pasó
+                    $daysRemaining = $today->diffInDays($endDate, false);
 
-                        // CASO 1: Expirado ($daysRemaining es negativo)
-                        if ($daysRemaining < 0) {
-                            $subscriptionWarning = [
-                                'daysRemaining' => $daysRemaining,
-                                'endDate' => $endDate->translatedFormat('d \d\e F \d\e\l Y'),
-                                'message' => "Tu suscripción expiró el " . $endDate->translatedFormat('d \d\e F'),
-                                'isExpired' => true // Flag para el frontend
-                            ];
-                        } 
-                        // CASO 2: Vence hoy (0) o en los próximos 5 días (1-5)
-                        elseif ($daysRemaining <= $warningThreshold) { 
-                            $message = $daysRemaining === 0
-                                ? "Tu suscripción vence hoy"
-                                : "Tu suscripción vence en {$daysRemaining} " . ($daysRemaining === 1 ? 'día' : 'días');
-                            
-                            $subscriptionWarning = [
-                                'daysRemaining' => $daysRemaining,
-                                'endDate' => $endDate->translatedFormat('d \d\e F \d\e\l Y'),
-                                'message' => $message,
-                                'isExpired' => false // Flag para el frontend
-                            ];
-                        }
-                        // CASO 3: Faltan más de 5 días. $subscriptionWarning se queda en null.
+                    $warningThreshold = 5; // Mostrar advertencia si faltan 5 días o menos
+
+                    // CASO 1: Expirado ($daysRemaining es negativo)
+                    if ($daysRemaining < 0) {
+                        $subscriptionWarning = [
+                            'daysRemaining' => $daysRemaining,
+                            'endDate' => $endDate->translatedFormat('d \d\e F \d\e\l Y'),
+                            'message' => "La suscripción expiró el " . $endDate->translatedFormat('d \d\e F'),
+                            'isExpired' => true // Flag para el frontend
+                        ];
                     }
+                    // CASO 2: Vence hoy (0) o en los próximos 5 días (1-5)
+                    elseif ($daysRemaining <= $warningThreshold) {
+                        $message = $daysRemaining == 0
+                            ? "La suscripción vence hoy"
+                            : "La suscripción vence en {$daysRemaining} " . ($daysRemaining === 1 ? 'día' : 'días');
+
+                        $subscriptionWarning = [
+                            'daysRemaining' => $daysRemaining,
+                            'endDate' => $endDate->translatedFormat('d \d\e F \d\e\l Y'),
+                            'message' => $message,
+                            'isExpired' => false // Flag para el frontend
+                        ];
+                    }
+                    // CASO 3: Faltan más de 5 días. $subscriptionWarning se queda en null.
                 }
                 // --- FIN: Lógica de Advertencia de Suscripción ---
 
