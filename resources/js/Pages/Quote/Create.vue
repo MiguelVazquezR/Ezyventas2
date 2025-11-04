@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
@@ -162,27 +162,26 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 </script>
 
 <template>
-    <Head title="Crear Cotización" />
-    <AppLayout>
+    <AppLayout title="Crear cotización">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="mt-4">
-            <h1 class="text-2xl font-bold">Crear Nueva Cotización</h1>
+            <h1 class="text-2xl font-bold">Crear nueva cotización</h1>
         </div>
         <form @submit.prevent="submit" class="mt-6 max-w-4xl mx-auto space-y-6">
             <!-- Información del Cliente -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información General</h2>
+                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información general</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <div class="flex justify-between items-center mb-1">
                             <InputLabel for="customer" value="Cliente *" />
                             <Button @click="showCustomerModal = true" label="Nuevo" icon="pi pi-plus" text size="small" />
                         </div>
-                        <Select id="customer" v-model="form.customer_id" :options="localCustomers" filter optionLabel="name" optionValue="id" placeholder="Selecciona un cliente" class="w-full" />
-                        <InputError :message="form.errors.customer_id" class="mt-2" />
+                        <Select size="large" id="customer" v-model="form.customer_id" :options="localCustomers" filter optionLabel="name" optionValue="id" placeholder="Selecciona un cliente" class="w-full" />
+                        <InputError :message="form.errors.customer_id" />
                     </div>
-                    <div>
-                        <InputLabel for="expiry_date" value="Fecha de Expiración" />
+                    <div class="mt-3">
+                        <InputLabel for="expiry_date" value="Fecha de expiración" />
                         <DatePicker id="expiry_date" v-model="form.expiry_date" class="w-full mt-1" />
                     </div>
                 </div>
@@ -208,16 +207,21 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         </template>
                     </Column>
                     <Column field="quantity" header="Cantidad" style="width: 10rem"><template #body="{ index }"><InputNumber v-model="form.items[index].quantity" class="w-full" showButtons buttonLayout="horizontal" :step="1" decrementButtonClass="p-button-secondary" incrementButtonClass="p-button-secondary" incrementButtonIcon="pi pi-plus" decrementButtonIcon="pi pi-minus" /></template></Column>
-                    <Column field="unit_price" header="Precio Unit." style="width: 12rem"><template #body="{ index }"><InputNumber v-model="form.items[index].unit_price" mode="currency" currency="MXN" locale="es-MX" class="w-full" /></template></Column>
+                    <Column field="unit_price" header="Precio unit." style="width: 12rem"><template #body="{ index }"><InputNumber v-model="form.items[index].unit_price" mode="currency" currency="MXN" locale="es-MX" class="w-full" /></template></Column>
                     <Column field="line_total" header="Total"><template #body="{ data }">{{ formatCurrency(data.line_total) }}</template></Column>
                     <Column style="width: 4rem"><template #body="{ index }"><Button @click="removeItem(index)" icon="pi pi-trash" text rounded severity="danger" /></template></Column>
+                     <template #empty>
+                        <div class="text-center text-gray-500 py-4">
+                            No hay conceptos registrados.
+                        </div>
+                    </template>
                 </DataTable>
                 <InputError :message="form.errors.items" class="mt-2" />
                 <!-- Totales y Impuestos -->
                 <div class="mt-4 space-y-4">
                     <div class="flex items-center gap-4">
                         <ToggleSwitch v-model="includeTax" inputId="include_tax" />
-                        <InputLabel for="include_tax" value="Desglosar Impuestos (IVA 16%)" />
+                        <InputLabel for="include_tax" value="Desglosar impuestos (IVA 16%)" />
                     </div>
                     <div v-if="includeTax" class="p-3 bg-gray-50 dark:bg-gray-900 rounded-md">
                         <SelectButton v-model="taxType" :options="taxOptions" optionLabel="label" optionValue="value" />
@@ -226,7 +230,7 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         <div class="md:col-start-3"><InputLabel for="subtotal" value="Subtotal" /><InputNumber id="subtotal" :modelValue="form.subtotal" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" readonly /></div>
                         <div><InputLabel for="total_discount" value="Descuento" /><InputNumber id="total_discount" v-model="form.total_discount" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" /></div>
                         <div class="md:col-start-3"><InputLabel for="total_tax" value="Impuestos" /><InputNumber id="total_tax" :modelValue="form.total_tax" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" readonly /></div>
-                        <div><InputLabel for="shipping_cost" value="Costo de Envío" /><InputNumber id="shipping_cost" v-model="form.shipping_cost" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" /></div>
+                        <div><InputLabel for="shipping_cost" value="Costo de envío" /><InputNumber id="shipping_cost" v-model="form.shipping_cost" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" /></div>
                         <div class="md:col-start-3 col-span-2 border-t pt-2 mt-2">
                             <InputLabel for="total_amount" value="Total" class="font-bold text-lg" />
                             <InputNumber id="total_amount" :modelValue="form.total_amount" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1 font-bold text-lg" inputClass="!font-bold !text-lg" readonly />
@@ -236,18 +240,18 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
             </div>
             <!-- Información de Envío y Notas -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información de Envío y Notas</h2>
+                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información de envío y notas</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div><InputLabel for="recipient_name" value="Nombre de quien recibe" /><InputText id="recipient_name" v-model="form.recipient_name" class="mt-1 w-full" /></div>
                     <div><InputLabel for="recipient_phone" value="Teléfono de quien recibe" /><InputText id="recipient_phone" v-model="form.recipient_phone" class="mt-1 w-full" /></div>
                     <div class="md:col-span-2"><InputLabel for="recipient_email" value="Email de quien recibe" /><InputText id="recipient_email" v-model="form.recipient_email" type="email" class="mt-1 w-full" /></div>
-                    <div class="md:col-span-2"><InputLabel for="shipping_address" value="Dirección de Envío" /><Textarea id="shipping_address" v-model="form.shipping_address" rows="3" class="mt-1 w-full" /></div>
-                    <div class="md:col-span-2"><InputLabel for="notes" value="Notas Adicionales" /><Textarea id="notes" v-model="form.notes" rows="3" class="mt-1 w-full" /></div>
+                    <div class="md:col-span-2"><InputLabel for="shipping_address" value="Dirección de envío" /><Textarea id="shipping_address" v-model="form.shipping_address" rows="3" class="mt-1 w-full" /></div>
+                    <div class="md:col-span-2"><InputLabel for="notes" value="Notas adicionales" /><Textarea id="notes" v-model="form.notes" rows="3" class="mt-1 w-full" /></div>
                 </div>
             </div>
             <!-- Campos Personalizados -->
             <div v-if="customFieldDefinitions.length > 0" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles Adicionales</h2>
+                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles adicionales</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div v-for="field in customFieldDefinitions" :key="field.id">
                         <InputLabel :for="field.key" :value="field.name" />
@@ -260,8 +264,8 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     </div>
                 </div>
             </div>
-            <div class="flex justify-end">
-                <Button type="submit" label="Crear Cotización" :loading="form.processing" severity="warning" />
+            <div class="flex justify-end sticky bottom-4">
+                <Button type="submit" label="Crear cotización" :loading="form.processing" severity="warning" />
             </div>
         </form>
         <CreateCustomerModal v-model:visible="showCustomerModal" @created="handleNewCustomer" />

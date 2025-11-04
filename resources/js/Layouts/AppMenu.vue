@@ -32,7 +32,7 @@ const model = ref([
                     },
                 ]
             },
-            // { label: 'Cotizaciones', icon: 'pi pi-file-check', to: route('quotes.index'), routeName: 'quotes.*', permission: 'quotes.access' },
+            { label: 'Cotizaciones', icon: 'pi pi-file-check', to: route('quotes.index'), routeName: 'quotes.*', permission: 'quotes.access' },
             {
                 label: 'Cajas', icon: 'pi pi-dollar',
                 items: [
