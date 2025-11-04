@@ -10,6 +10,8 @@ Route::middleware('auth')->group(function () {
 
     // Nueva ruta para el estado de cuenta
     Route::get('customers/{customer}/print-statement', [CustomerController::class, 'printStatement'])->name('customers.printStatement');
+    
+    Route::post('customers/{customer}/adjust-balance', [CustomerController::class, 'adjustBalance'])->name('customers.adjustBalance');
 
     Route::resource('customers', CustomerController::class);
 });

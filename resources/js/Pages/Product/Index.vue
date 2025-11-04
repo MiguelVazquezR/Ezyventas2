@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import AddBatchStockModal from './Partials/AddBatchStockModal.vue';
 import ImportProductsModal from './Partials/ImportProductsModal.vue';
@@ -60,7 +60,7 @@ const toggleHeaderMenu = (event) => {
 };
 const splitButtonItems = ref([
     {
-        label: 'Exportar a Excel',
+        label: 'Exportar a excel',
         icon: 'pi pi-download',
         command: () => window.location.href = route('import-export.products.export')
     },
@@ -69,7 +69,7 @@ const splitButtonItems = ref([
 const deleteSelectedProducts = () => {
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar los ${selectedProducts.value.length} productos seleccionados? Esta acción no se puede deshacer.`,
-        header: 'Confirmación de Eliminación Masiva',
+        header: 'Confirmación de eliminación masiva',
         icon: 'pi pi-exclamation-triangle',
         acceptClass: 'p-button-danger',
         acceptLabel: 'Sí, eliminar',
@@ -91,7 +91,7 @@ const deleteSingleProduct = () => {
     if (!selectedProductForMenu.value) return;
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar el producto "${selectedProductForMenu.value.name}"?`,
-        header: 'Confirmar Eliminación',
+        header: 'Confirmar eliminación',
         icon: 'pi pi-info-circle',
         acceptClass: 'p-button-danger',
         accept: () => {
@@ -137,8 +137,7 @@ const getStockSeverity = (product) => {
 </script>
 
 <template>
-    <Head title="Mis Productos" />
-    <AppLayout>
+    <AppLayout title="Mis productos">
         <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
                 <!-- Header -->
