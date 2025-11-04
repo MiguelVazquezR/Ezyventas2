@@ -44,7 +44,8 @@ createInertiaApp({
                                 strong: 'Fuerte',
                                 passwordPrompt: 'Ingrese una contraseña',
                                 emptyMessage: 'No se encontraron resultados',
-                                pending: 'Pendiente'
+                                pending: 'Pendiente',
+                                emptySearchMessage: 'No se encontraron resultados',
                             },
                             theme: {
                                 preset: Ezyventas,

@@ -398,8 +398,8 @@ watch(activeSession, (newSession) => {
                         <div class="flex justify-between items-center">
                             <div class="flex items-center gap-2">
                                 <Button :icon="manualSubtotalMode ? 'pi pi-lock' : 'pi pi-lock-open'"
-                                    @click="toggleSubtotalMode"
-                                    :severity="manualSubtotalMode ? 'secondary' : 'success'" text rounded size="small"
+                                    @click="toggleSubtotalMode" :severity="manualSubtotalMode ? 'secondary' : 'success'"
+                                    text rounded size="small"
                                     v-tooltip.left="manualSubtotalMode ? 'Cambiar a cálculo automático' : 'Cambiar a subtotal manual'" />
                                 <label class="font-semibold text-gray-700 dark:text-gray-300">Subtotal</label>
                             </div>
@@ -421,15 +421,19 @@ watch(activeSession, (newSession) => {
                         <!-- Monto Descontado (solo si hay descuento) -->
                         <div v-if="form.discount_amount > 0"
                             class="flex justify-end items-center text-sm text-red-600 dark:text-red-400 pr-1">
-                            <span>- {{ new Intl.NumberFormat('es-MX', { style: 'currency', currency:
-                            'MXN' }).format(form.discount_amount) }}</span>
+                            <span>- {{ new Intl.NumberFormat('es-MX', {
+                                style: 'currency', currency:
+                                    'MXN'
+                            }).format(form.discount_amount) }}</span>
                         </div>
                         <Divider class="!my-2" />
                         <!-- Total Final -->
                         <div class="flex justify-between items-center text-xl font-bold">
                             <span class="text-gray-800 dark:text-gray-200">TOTAL:</span>
-                            <span>{{ new Intl.NumberFormat('es-MX', { style: 'currency',
-                                currency: 'MXN' }).format(form.final_total) }}</span>
+                            <span>{{ new Intl.NumberFormat('es-MX', {
+                                style: 'currency',
+                                currency: 'MXN'
+                            }).format(form.final_total) }}</span>
                         </div>
                     </div>
                 </div>
@@ -468,7 +472,7 @@ watch(activeSession, (newSession) => {
                 <div class="flex items-center justify-between border-b pb-3 mb-4">
                     <h2 class="text-lg font-semibold">Detalles adicionales</h2>
                     <Button v-if="hasPermission('services.orders.manage_custom_fields')" @click="openCustomFieldManager"
-                        icon="pi pi-cog" text rounded v-tooltip.left="'Gestionar campos personalizados'" />
+                        icon="pi pi-cog" text label="Gestionar" v-tooltip.left="'Gestionar campos personalizados'" />
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div v-for="field in customFieldDefinitions" :key="field.id">
@@ -494,9 +498,15 @@ watch(activeSession, (newSession) => {
                         </div>
                         <InputError :message="form.errors[`custom_fields.${field.key}`]" class="mt-2" />
                     </div>
-                    <p v-if="!customFieldDefinitions.length" class="col-span-full text-center text-gray-500">
+                    <p v-if="!customFieldDefinitions.length && hasPermission('services.orders.manage_custom_fields')"
+                        class="col-span-full text-center text-gray-500">
                         Actualmente no tienes ningún campo adicional, pero puedes agregar los que requieras
-                        haciendo clic en el ícono de engranaje (<i class="pi pi-cog"></i>) en la parte superior derecha.
+                        haciendo clic en el ícono de engranaje (<i class="pi pi-cog"></i> Gestionar) en la parte
+                        superior derecha.
+                    </p>
+                    <p v-else-if="!hasPermission('services.orders.manage_custom_fields')"
+                        class="col-span-full text-center text-gray-500">
+                        Actualmente no tienes ningún campo adicional, pero un administrador puede agregarlos cuando se requiera.
                     </p>
                 </div>
             </div>
@@ -521,15 +531,9 @@ watch(activeSession, (newSession) => {
         <ManageCustomFields ref="manageFieldsComponent" module="service_orders"
             :definitions="props.customFieldDefinitions" />
 
-        <StartSessionModal 
-            v-model:visible="isStartSessionModalVisible"
-            :cash-registers="availableCashRegisters"
-            :user-bank-accounts="userBankAccounts"
-        />
-        <JoinSessionModal
-            v-model:visible="isJoinSessionModalVisible"
-            :sessions="joinableSessions"
-        />
+        <StartSessionModal v-model:visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
+            :user-bank-accounts="userBankAccounts" />
+        <JoinSessionModal v-model:visible="isJoinSessionModalVisible" :sessions="joinableSessions" />
 
         <ConfirmPopup group="concept-delete" />
     </AppLayout>

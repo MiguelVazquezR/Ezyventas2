@@ -90,6 +90,7 @@ class PermissionSeeder extends Seeder
                 'quotes.export' => 'Exportar cotizaciones',
                 'quotes.change_status' => 'Cambiar status de cotizaciones',
                 'quotes.create_sale' => 'Cambiar status de cotizaciones',
+                'quotes.manage_custom_fields' => 'Administrar campos personalizados de cotizaciones',
             ],
             'Reportes financieros' => [
                 'financial_reports.access' => 'Acceder a reportes financieros',
