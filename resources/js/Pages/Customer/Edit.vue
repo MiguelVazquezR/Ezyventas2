@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
@@ -31,22 +31,20 @@ const submit = () => {
 </script>
 
 <template>
-
-    <Head :title="`Editar Cliente: ${customer.name}`" />
-    <AppLayout>
+    <AppLayout :title="`Editar cliente: ${customer.name}`">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="mt-4">
-            <h1 class="text-2xl font-bold">Editar Cliente</h1>
+            <h1 class="text-2xl font-bold">Editar cliente</h1>
         </div>
         <form @submit.prevent="submit" class="mt-6 max-w-2xl mx-auto bg-white p-6 rounded-lg shadow-md">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                    <InputLabel for="name" value="Nombre del Cliente *" />
+                    <InputLabel for="name" value="Nombre del cliente *" />
                     <InputText id="name" v-model="form.name" class="mt-1 w-full" />
                     <InputError :message="form.errors.name" class="mt-2" />
                 </div>
                 <div>
-                    <InputLabel for="company_name" value="Nombre de la Empresa" />
+                    <InputLabel for="company_name" value="Nombre de la empresa" />
                     <InputText id="company_name" v-model="form.company_name" class="mt-1 w-full" />
                 </div>
                 <div>
@@ -54,7 +52,7 @@ const submit = () => {
                     <InputText id="phone" v-model="form.phone" class="mt-1 w-full" />
                 </div>
                 <div>
-                    <InputLabel for="email" value="Correo Electrónico" />
+                    <InputLabel for="email" value="Correo electrónico" />
                     <InputText id="email" v-model="form.email" type="email" class="mt-1 w-full" />
                     <InputError :message="form.errors.email" class="mt-2" />
                 </div>
@@ -63,7 +61,7 @@ const submit = () => {
                     <InputText id="tax_id" v-model="form.tax_id" class="mt-1 w-full" />
                 </div>
                 <div>
-                    <InputLabel for="credit_limit" value="Límite de Crédito" />
+                    <InputLabel for="credit_limit" value="Límite de crédito" />
                     <InputNumber id="credit_limit" v-model="form.credit_limit" mode="currency" currency="MXN"
                         locale="es-MX" class="w-full mt-1" />
                 </div>

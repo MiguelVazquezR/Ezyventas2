@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ImportCustomersModal from './Partials/ImportCustomersModal.vue';
@@ -125,9 +125,7 @@ const formatCurrency = (value) => {
 </script>
 
 <template>
-
-    <Head title="Clientes" />
-    <AppLayout>
+    <AppLayout title="Clientes">
         <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
                 <!-- Header -->
@@ -150,8 +148,8 @@ const formatCurrency = (value) => {
 
                 <!-- Barra de Acciones Masivas -->
                 <div v-if="selectedCustomers.length > 0"
-                    class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-2 mb-4 flex justify-between items-center">
-                    <span class="font-semibold text-sm text-blue-800 dark:text-blue-200">{{ selectedCustomers.length }}
+                    class="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700 rounded-lg p-2 mb-4 flex justify-between items-center">
+                    <span class="font-semibold text-sm text-[#373737] dark:text-gray-200">{{ selectedCustomers.length }}
                         cliente(s) seleccionado(s)</span>
                     <Button v-if="hasPermission('customers.delete')" @click="deleteSelectedCustomers" label="Eliminar" icon="pi pi-trash" size="small"
                         severity="danger" outlined />

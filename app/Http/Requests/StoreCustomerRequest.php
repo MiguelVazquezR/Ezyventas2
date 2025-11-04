@@ -21,6 +21,7 @@ class StoreCustomerRequest extends FormRequest
             'tax_id' => 'nullable|string|max:255',
             'balance' => 'nullable|numeric',
             'credit_limit' => 'nullable|numeric|min:0',
+            'initial_balance' => 'nullable|numeric',
         ];
     }
 }
