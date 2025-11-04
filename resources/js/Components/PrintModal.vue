@@ -419,6 +419,9 @@ const getTemplateTypeSeverity = (type) => {
                     </div>
                     <InlineMessage v-if="pluginError" severity="error" class="mt-3 text-sm">
                         {{ pluginError }}
+                        Si no tienes el plugin instalado, descárgalo desde
+                        <a href="@/../../ezy_plugin_v1.0.0.exe" target="_blank" class="underline font-medium">aquí (v1.0.0 Windows x64)</a>.
+                        Si no puedes descargarlo, envíanos un mensaje al +52 3321705650 o un correo a notificaciones@ezyventas.com.
                     </InlineMessage>
                     <Message
                         v-if="!isLoadingPluginPrinters && pluginPrinters.length === 0 && !pluginError && (hasTicketJobs || hasLabelJobs)"

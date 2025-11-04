@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CustomerBalanceMovementType;
 use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
 use App\Models\CashRegister;
@@ -10,6 +11,8 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -22,7 +25,7 @@ class CustomerController extends Controller implements HasMiddleware
             new Middleware('can:customers.create', only: ['create', 'store']),
             // --- MODIFICADO: Añadido printStatement a los permisos de 'see_details' ---
             new Middleware('can:customers.see_details', only: ['show', 'printStatement']),
-            new Middleware('can:customers.edit', only: ['edit', 'update']),
+            new Middleware('can:customers.edit', only: ['edit', 'update', 'adjustBalance']),
             new Middleware('can:customers.delete', only: ['destroy', 'batchDestroy']),
         ];
     }
@@ -46,7 +49,7 @@ class CustomerController extends Controller implements HasMiddleware
         }
 
         $sortField = $request->input('sortField', 'created_at');
-        $sortOrder = $request->input('sortOrder', 'asc');
+        $sortOrder = $request->input('sortOrder', 'desc');
         $query->orderBy($sortField, $sortOrder);
 
         $customers = $query->paginate($request->input('rows', 20))->withQueryString();
@@ -64,9 +67,31 @@ class CustomerController extends Controller implements HasMiddleware
 
     public function store(StoreCustomerRequest $request)
     {
-        Customer::create(array_merge($request->validated(), [
-            'branch_id' => Auth::user()->branch_id,
-        ]));
+        $validated = $request->validated();
+        $initialBalance = $validated['initial_balance'] ?? 0;
+
+        // Remover 'initial_balance' si existe, para que no falle al crear el cliente
+        // (ya que no es una columna en la BD, 'balance' sí lo es).
+        unset($validated['initial_balance']);
+
+        DB::transaction(function () use ($validated, $initialBalance) {
+            
+            // 1. Crear el cliente y asignar su saldo inicial
+            $customer = Customer::create(array_merge($validated, [
+                'branch_id' => Auth::user()->branch_id,
+                'balance' => $initialBalance, // Asignar el saldo inicial
+            ]));
+
+            // 2. Si el saldo inicial es diferente de cero, crear el movimiento
+            if ($initialBalance != 0) {
+                $customer->balanceMovements()->create([
+                    'type' => CustomerBalanceMovementType::MANUAL_ADJUSTMENT,
+                    'amount' => $initialBalance,
+                    'balance_after' => $initialBalance, // Es el primer movimiento
+                    'notes' => 'Saldo Inicial registrado al crear cliente.',
+                ]);
+            }
+        });
 
         return redirect()->route('customers.index')->with('success', 'Cliente creado con éxito.');
     }
@@ -116,6 +141,55 @@ class CustomerController extends Controller implements HasMiddleware
         return redirect()->route('customers.index')->with('success', 'Cliente actualizado con éxito.');
     }
 
+    /**
+     * --- método para ajuste manual de saldo ---
+     */
+    public function adjustBalance(Request $request, Customer $customer)
+    {
+        // Validar la entrada
+        $validated = $request->validate([
+            'adjustment_type' => ['required', Rule::in(['add', 'set_total'])],
+            'amount' => ['required', 'numeric'],
+            'notes' => ['required', 'string', 'max:255'],
+        ]);
+
+        DB::transaction(function () use ($customer, $validated) {
+            $currentBalance = $customer->balance;
+            $newBalance = 0;
+            $adjustmentAmount = 0;
+            $notes = "Ajuste manual: " . $validated['notes'];
+
+            if ($validated['adjustment_type'] === 'add') {
+                // Modo: Sumar/Restar Monto
+                // 'amount' es el monto a sumar/restar (ej: -50 o 100)
+                $adjustmentAmount = $validated['amount'];
+                $newBalance = $currentBalance + $adjustmentAmount;
+            } elseif ($validated['adjustment_type'] === 'set_total') {
+                // Modo: Establecer Saldo Total
+                // 'amount' es el nuevo saldo deseado (ej: 0 o -200)
+                $newBalance = $validated['amount'];
+                $adjustmentAmount = $newBalance - $currentBalance; // Calculamos la diferencia
+            }
+
+            // Si no hay cambio, no hacemos nada
+            if ($adjustmentAmount == 0) {
+                return;
+            }
+
+            // Actualizar el saldo del cliente
+            $customer->update(['balance' => $newBalance]);
+
+            // Crear el movimiento en el historial
+            $customer->balanceMovements()->create([
+                'type' => CustomerBalanceMovementType::MANUAL_ADJUSTMENT,
+                'amount' => $adjustmentAmount, // Registramos la *diferencia*
+                'balance_after' => $newBalance,
+                'notes' => $notes,
+            ]);
+        });
+
+        return redirect()->back()->with('success', 'Saldo del cliente ajustado con éxito.');
+    }
 
     public function destroy(Customer $customer)
     {
