@@ -104,7 +104,7 @@ const onRemoveClosingImage = (event) => {
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
-    { label: 'Órdenes de Servicio', url: route('service-orders.index') },
+    { label: 'Órdenes de servicio', url: route('service-orders.index') },
     { label: `Orden #${props.serviceOrder.folio || props.serviceOrder.id}` }
 ]);
 

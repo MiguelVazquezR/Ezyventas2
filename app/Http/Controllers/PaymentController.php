@@ -43,7 +43,7 @@ class PaymentController extends Controller
 
         try {
             DB::transaction(function () use ($validated, $transaction, $paymentService) {
-                $customer = $transaction->customer;
+                // $customer = $transaction->customer;
                 $payments = $validated['payments'];
                 $sessionId = $validated['cash_register_session_id'];
 
@@ -59,18 +59,18 @@ class PaymentController extends Controller
                 $paymentService->processPayments($transaction, $payments, $sessionId);
 
                 // La lógica de negocio, como actualizar el balance del cliente, permanece aquí.
-                if ($customer) {
-                    // El balance del cliente se actualiza para reflejar que su deuda ha disminuido.
-                    $customer->increment('balance', $totalAmountToPayInRequest);
+                // if ($customer) {
+                //     // El balance del cliente se actualiza para reflejar que su deuda ha disminuido.
+                //     $customer->increment('balance', $totalAmountToPayInRequest);
                     
-                    $customer->balanceMovements()->create([
-                        'transaction_id' => $transaction->id,
-                        'type' => CustomerBalanceMovementType::PAYMENT,
-                        'amount' => $totalAmountToPayInRequest,
-                        'balance_after' => $customer->balance,
-                        'notes' => "Abono a transacción {$transaction->folio}",
-                    ]);
-                }
+                //     $customer->balanceMovements()->create([
+                //         'transaction_id' => $transaction->id,
+                //         'type' => CustomerBalanceMovementType::PAYMENT,
+                //         'amount' => $totalAmountToPayInRequest,
+                //         'balance_after' => $customer->balance,
+                //         'notes' => "Abono a transacción {$transaction->folio}",
+                //     ]);
+                // }
             });
         } catch (Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar el pago: ' . $e->getMessage());
