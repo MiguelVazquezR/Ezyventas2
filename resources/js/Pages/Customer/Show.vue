@@ -254,8 +254,8 @@ const getTransactionStatusSeverity = (status) => {
                     </DataTable>
                 </div>
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Historial
-                        de movimientos
+                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
+                        Historial de movimientos de saldo
                     </h2>
                     <DataTable :value="historicalMovements" class="p-datatable-sm" responsiveLayout="scroll"
                         :paginator="historicalMovements?.length > 5" :rows="5" sortField="date" :sortOrder="-1">

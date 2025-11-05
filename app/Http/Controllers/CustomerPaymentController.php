@@ -20,7 +20,7 @@ class CustomerPaymentController extends Controller
     /**
      * Almacena uno o más pagos (abonos) de un cliente y los aplica a sus deudas pendientes.
      */
-    public function store(Request $request, Customer $customer, PaymentService $paymentService)
+     public function store(Request $request, Customer $customer, PaymentService $paymentService)
     {
         $validated = $request->validate([
             'payments' => 'required|array|min:1',
@@ -36,6 +36,11 @@ class CustomerPaymentController extends Controller
 
                 $user = Auth::user();
                 $sessionId = $validated['cash_register_session_id'];
+                
+                // --- INICIO DE LA MODIFICACIÓN ---
+                // 1. Capturamos el timestamp UNA SOLA VEZ aquí
+                $now = now();
+                // --- FIN DE LA MODIFICACIÓN ---
 
                 $pendingTransactions = $customer->transactions()
                     ->where('status', TransactionStatus::PENDING)
@@ -44,6 +49,11 @@ class CustomerPaymentController extends Controller
 
                 foreach ($validated['payments'] as $paymentData) {
                     $amountToApply = (float) $paymentData['amount'];
+
+                    // --- INICIO DE LA MODIFICACIÓN ---
+                    // 2. Preparamos un array para los movimientos de saldo
+                    $balanceMovementsToCreate = [];
+                    // --- FIN DE LA MODIFICACIÓN ---
 
                     foreach ($pendingTransactions as $transaction) {
                         if ($amountToApply <= 0.001) break;
@@ -68,13 +78,18 @@ class CustomerPaymentController extends Controller
 
                         $customer->increment('balance', $amountForThisTransaction);
 
-                        $customer->balanceMovements()->create([
+                        // --- INICIO DE LA MODIFICACIÓN ---
+                        // 3. Añadimos el movimiento de PAGO DE DEUDA al array
+                        $balanceMovementsToCreate[] = [
                             'transaction_id' => $transaction->id,
                             'type' => CustomerBalanceMovementType::PAYMENT,
                             'amount' => $amountForThisTransaction,
-                            'balance_after' => $customer->balance,
+                            'balance_after' => $customer->balance, // El balance se actualiza secuencialmente
                             'notes' => "Abono a la venta #{$transaction->folio} (" . $paymentData['method'] . "). " . ($validated['notes'] ?? ''),
-                        ]);
+                            'created_at' => $now, // Usamos el timestamp $now
+                            'updated_at' => $now,
+                        ];
+                        // --- FIN DE LA MODIFICACIÓN ---
 
                         $amountToApply -= $amountForThisTransaction;
                     }
@@ -82,7 +97,6 @@ class CustomerPaymentController extends Controller
                     if ($amountToApply > 0.001) {
                         // Se crea una transacción especial para registrar este ingreso
                         $balanceTransaction = $customer->transactions()->create([
-                            // --- CORRECCIÓN: Se llama al nuevo método para generar el folio ---
                             'folio' => $this->generateBalancePaymentFolio(),
                             'branch_id' => $user->branch_id,
                             'user_id' => $user->id,
@@ -108,14 +122,44 @@ class CustomerPaymentController extends Controller
                         );
 
                         $customer->increment('balance', $amountToApply);
-                        $customer->balanceMovements()->create([
+
+                        // --- INICIO DE LA MODIFICACIÓN ---
+                        // 4. Añadimos el movimiento de ABONO A SALDO al array
+                        $balanceMovementsToCreate[] = [
                             'transaction_id' => $balanceTransaction->id,
                             'type' => CustomerBalanceMovementType::PAYMENT,
                             'amount' => $amountToApply,
-                            'balance_after' => $customer->balance,
+                            'balance_after' => $customer->balance, // El balance final
                             'notes' => 'Abono a saldo a favor. ' . ($validated['notes'] ?? ''),
-                        ]);
+                            'created_at' => $now, // Usamos el timestamp $now
+                            'updated_at' => $now,
+                        ];
+                        // --- FIN DE LA MODIFICACIÓN ---
                     }
+
+                    // --- INICIO DE LA MODIFICACIÓN ---
+                    // 5. Invertimos el array y asignamos los timestamps
+                    // El `DataTable` ordena por 'date' DESC (lo más nuevo primero).
+                    // Queremos que el PAGO DE DEUDA (que está primero en el array) aparezca primero en la lista (más nuevo).
+                    
+                    $movementsCount = count($balanceMovementsToCreate);
+                    if ($movementsCount > 1) {                        
+                        // Asignamos los timestamps con 1 segundo de diferencia
+                        for ($i = 0; $i < $movementsCount; $i++) {
+                            // El primer elemento (abono a saldo) tendrá $now
+                            // El segundo (pago deuda) tendrá $now + 1 segundo
+                            // Y así sucesivamente...
+                            $timestamp = $now->copy()->addSeconds($i);
+                            $balanceMovementsToCreate[$i]['created_at'] = $timestamp;
+                            $balanceMovementsToCreate[$i]['updated_at'] = $timestamp;
+                        }    
+                    }
+                    
+                    // 6. Creamos los movimientos en la BD
+                    foreach($balanceMovementsToCreate as $movementData) {
+                         $customer->balanceMovements()->create($movementData);
+                    }
+                    // --- FIN DE LA MODIFICACIÓN ---
                 }
             });
         } catch (Exception $e) {

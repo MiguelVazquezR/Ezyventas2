@@ -166,21 +166,25 @@ class PointOfSaleController extends Controller implements HasMiddleware
         try {
             $transaction = DB::transaction(function () use ($validated, $user, $customer, $totalSale, $paymentsFromRequest, $paymentService) {
 
+                // --- INICIO DE MODIFICACIÓN 1 ---
+                // Capturamos el timestamp base para ordenar los movimientos
+                $now = now();
+                // --- FIN DE MODIFICACIÓN 1 ---
+
                 $newTransaction = Transaction::create([
                     'cash_register_session_id' => $validated['cash_register_session_id'],
                     'folio' => $this->generateFolio(),
                     'customer_id' => $customer?->id,
                     'branch_id' => $user->branch_id,
                     'user_id' => $user->id,
-                    // Se crea como PENDIENTE y se actualiza al final si se paga por completo.
                     'status' => TransactionStatus::PENDING,
                     'channel' => TransactionChannel::POS,
                     'subtotal' => $validated['subtotal'],
                     'total_discount' => $validated['total_discount'] ?? 0,
-                    'total_tax' => 0, // Ajustar si se manejan impuestos
+                    'total_tax' => 0,
                     'total' => $totalSale,
                     'currency' => 'MXN',
-                    'status_changed_at' => now(),
+                    'status_changed_at' => $now, // Usar $now
                 ]);
 
                 // Crear items de la transacción y descontar stock
@@ -233,7 +237,11 @@ class PointOfSaleController extends Controller implements HasMiddleware
                             'type' => CustomerBalanceMovementType::CREDIT_USAGE,
                             'amount' => -$balanceToUse,
                             'balance_after' => $customer->balance,
-                            'notes' => "Uso de saldo en venta POS #{$newTransaction->folio}",
+                            'notes' => "Uso de saldo en venta POS #{$newTransaction->folio} (Total de venta: $$totalSale)",
+                            // --- INICIO DE MODIFICACIÓN 2 ---
+                            'created_at' => $now, // Usar el timestamp base
+                            'updated_at' => $now,
+                            // --- FIN DE MODIFICACIÓN 2 ---
                         ]);
                     }
                 }
@@ -259,7 +267,11 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         'type' => CustomerBalanceMovementType::CREDIT_SALE,
                         'amount' => -$remainingDue,
                         'balance_after' => $customer->balance,
-                        'notes' => "Cargo a crédito por venta POS #{$newTransaction->folio}",
+                        'notes' => "Cargo a crédito por venta POS #{$newTransaction->folio} (Total de venta: $$totalSale)",
+                        // --- INICIO DE MODIFICACIÓN 3 ---
+                        'created_at' => $now->copy()->addSecond(), // 1 segundo *despues* que el uso de saldo
+                        'updated_at' => $now->copy()->addSecond(),
+                        // --- FIN DE MODIFICACIÓN 3 ---
                     ]);
                 } else { // VENTA PAGADA POR COMPLETO
                     $newTransaction->update(['status' => TransactionStatus::COMPLETED]);
