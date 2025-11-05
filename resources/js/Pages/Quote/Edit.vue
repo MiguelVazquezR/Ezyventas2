@@ -497,7 +497,7 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
             </div>
 
             <div class="flex justify-end sticky bottom-4">
-                <Button type="submit" label="Actualizar Cotización" :loading="form.processing" severity="warning" />
+                <Button type="submit" label="Actualizar cotización" :loading="form.processing" severity="warning" />
             </div>
         </form>
 

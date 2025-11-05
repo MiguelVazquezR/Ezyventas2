@@ -159,9 +159,15 @@ class QuoteController extends Controller implements HasMiddleware
             ];
         });
 
+        $subscriptionId = Auth::user()->branch->subscription_id;
+        $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
+            ->where('module', 'quotes')
+            ->get();
+
         return Inertia::render('Quote/Show', [
             'quote' => $quote,
             'activities' => $formattedActivities,
+            'customFieldDefinitions' => $customFieldDefinitions,
         ]);
     }
 
@@ -217,8 +223,14 @@ class QuoteController extends Controller implements HasMiddleware
         // Cargar todas las relaciones necesarias para la plantilla
         $quote->load(['customer', 'items.itemable', 'branch.subscription']);
 
+        $subscriptionId = Auth::user()->branch->subscription_id;
+        $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
+            ->where('module', 'quotes')
+            ->get();
+
         return Inertia::render('Quote/Print', [
             'quote' => $quote,
+            'customFieldDefinitions' => $customFieldDefinitions,
         ]);
     }
 
