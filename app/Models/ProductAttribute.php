@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,6 +21,7 @@ class ProductAttribute extends Model
         'attributes', // La nueva columna JSON
         'selling_price_modifier', // Nombre más claro
         'current_stock',
+        'reserved_stock',
         'min_stock',
         'max_stock',
         'sku_suffix',
@@ -33,10 +35,21 @@ class ProductAttribute extends Model
     protected $casts = [
         'attributes' => 'array',
         'selling_price_modifier' => 'decimal:2',
-        'current_stock' => 'integer',
-        'min_stock' => 'integer',
-        'max_stock' => 'integer',
+        'current_stock' => 'decimal:1',
+        'reserved_stock' => 'decimal:1',
+        'min_stock' => 'decimal:2',
+        'max_stock' => 'decimal:2',
     ];
+
+    /**
+     * Obtiene el stock disponible para la venta (físico - reservado).
+     */
+    protected function availableStock(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->current_stock - $this->reserved_stock,
+        );
+    }
 
     /**
      * Obtiene el producto base al que pertenece esta combinación de atributos.

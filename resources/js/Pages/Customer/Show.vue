@@ -58,7 +58,6 @@ const submitAdjustment = () => {
         preserveScroll: true,
     });
 };
-// --- FIN AÑADIDO ---
 
 const handleOpenAddBalanceFlow = () => {
     if (activeSession.value) {
@@ -80,9 +79,22 @@ watch(activeSession, (newSession) => {
     }
 });
 
-
 const handleBalancePaymentSubmit = (paymentData) => {
-    router.post(route('customers.payments.store', props.customer.id), paymentData, {
+    // 1. Asegurarnos de que tenemos una sesión activa (el flujo de UI ya debería garantizarlo)
+    if (!activeSession.value) {
+        // Esto es un fallback, el botón "Abonar" no debería ser visible sin sesión.
+        usePage().props.flash.error = 'No hay una sesión de caja activa para registrar el pago.';
+        return;
+    }
+
+    // 2. Añadir el ID de la sesión de caja al payload
+    const payload = {
+        ...paymentData,
+        cash_register_session_id: activeSession.value.id
+    };
+
+    // 3. Enviar el payload completo al controlador
+    router.post(route('customers.payments.store', props.customer.id), payload, {
         onSuccess: () => {
             isPaymentModalVisible.value = false;
         },
@@ -170,7 +182,7 @@ const getTransactionStatusSeverity = (status) => {
             <div>
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{{ customer.name }}</h1>
                 <p v-if="customer.company_name" class="text-gray-500 dark:text-gray-400 mt-1">{{ customer.company_name
-                    }}</p>
+                }}</p>
             </div>
             <div>
                 <Button @click="toggleMenu" label="Acciones" icon="pi pi-chevron-down" iconPos="right"
@@ -191,10 +203,10 @@ const getTransactionStatusSeverity = (status) => {
                                 }}</span></li>
                         <li v-if="customer.email" class="flex items-center"><i
                                 class="pi pi-envelope w-6 text-gray-500"></i> <span class="font-medium">{{
-                                customer.email }}</span></li>
+                                    customer.email }}</span></li>
                         <li v-if="customer.tax_id" class="flex items-center"><i
                                 class="pi pi-id-card w-6 text-gray-500"></i> <span class="font-medium">{{
-                                customer.tax_id }}</span></li>
+                                    customer.tax_id }}</span></li>
                     </ul>
                 </div>
                 <div v-if="hasPermission('customers.see_financial_info')"
@@ -302,8 +314,7 @@ const getTransactionStatusSeverity = (status) => {
             :user-bank-accounts="userBankAccounts" />
         <JoinSessionModal v-model:visible="isJoinSessionModalVisible" :sessions="joinableSessions" />
         <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="0"
-            :client="customer" :active-session="activeSession" payment-mode="balance"
-            @submit="handleBalancePaymentSubmit" />
+            :client="customer" payment-mode="balance" @submit="handleBalancePaymentSubmit" />
         <Dialog v-model:visible="isAdjustModalVisible" header="Ajuste Manual de Saldo" modal
             class="w-full max-w-lg mx-4">
             <form @submit.prevent="submitAdjustment" class="space-y-6">

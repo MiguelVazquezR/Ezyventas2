@@ -8,4 +8,5 @@ enum TransactionStatus: string
     case PENDING = 'pendiente';
     case CANCELLED = 'cancelado';
     case REFUNDED = 'reembolsado';
+    case ON_LAYAWAY = 'apartado';
 }

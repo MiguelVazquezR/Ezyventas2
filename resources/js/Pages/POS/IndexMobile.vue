@@ -321,13 +321,14 @@ const handleCheckout = (checkoutData) => {
         toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar una venta.', life: 5000 });
         return;
     }
+
+    // 1. Mapear datos base (sin cambios)
     form.cartItems = cartItems.value.map(item => ({
         id: item.id,
         product_attribute_id: item.product_attribute_id || null,
         quantity: item.quantity,
-        unit_price: item.price, // Precio final unitario
+        unit_price: item.price,
         description: item.name + (item.selectedVariant ? ` (${Object.values(item.selectedVariant).join('/')})` : ''),
-        // Usar original_price (base + modif) para calcular descuento
         discount: (item.original_price ?? item.price) - item.price,
         discount_reason: (() => {
             const originalPrice = item.original_price ?? item.price;
@@ -338,7 +339,7 @@ const handleCheckout = (checkoutData) => {
                 return 'Precio de mayoreo';
             }
             if (item.price < originalPrice) {
-                return 'Promoción de item';
+                return 'Promoción de producto';
             }
             return null; // Sin descuento o motivo específico
         })()
@@ -347,16 +348,36 @@ const handleCheckout = (checkoutData) => {
     form.subtotal = checkoutData.subtotal;
     form.total_discount = checkoutData.total_discount;
     form.total = checkoutData.total;
-    form.payments = checkoutData.payments;
-    form.use_balance = checkoutData.use_balance;
     form.cash_register_session_id = props.activeSession.id;
 
-    form.post(route('pos.checkout'), {
+    // 2. Mapear nuevos datos de pago (del MultiPaymentProcessor)
+    form.payments = checkoutData.payments;
+    form.use_balance = checkoutData.use_balance;
+
+    // 3. Determinar la ruta basada en el tipo de transacción
+    let routeName;
+    const transactionType = checkoutData.transactionType;
+
+    switch (transactionType) {
+        case 'contado':
+        case 'credito':
+            routeName = 'pos.checkout'; // El backend (checkout) ya maneja la lógica de crédito
+            break;
+        case 'apartado':
+            // Esta es la ruta que crearemos en el backend
+            routeName = 'pos.layaway'; 
+            break;
+        default:
+            toast.add({ severity: 'error', summary: 'Error', detail: 'Tipo de transacción desconocido.', life: 5000 });
+            return;
+    }
+
+    // 4. Enviar el formulario a la ruta correcta
+    form.post(route(routeName), {
         onSuccess: () => {
             clearCart();
-            page.props.flash.success = null;
-            router.reload({ only: ['products'], preserveState: true });
-            isCartDrawerVisible.value = false;
+            page.props.flash.success = null; // Limpiar flash de Inertia
+            router.reload({ only: ['products'], preserveState: true }); // Recargar productos (stock)
         },
         onError: (errors) => {
             console.error("Error de validación:", errors);
@@ -394,7 +415,7 @@ const handleCheckout = (checkoutData) => {
                 <!-- Drawer del Carrito -->
                 <Drawer v-model:visible="isCartDrawerVisible" position="right" class="!w-full md:!w-[450px]">
                     <template #header>
-                        <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Resumen de Venta</h2>
+                        <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Resumen de venta</h2>
                     </template>
                     <ShoppingCart :items="cartItems" :client="selectedClient" :customers="localCustomers"
                         :default-customer="defaultCustomer" :active-promotions="activePromotions"

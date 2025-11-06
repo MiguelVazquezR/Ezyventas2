@@ -14,6 +14,7 @@ const emit = defineEmits(['update:visible', 'addToCart']);
 const selectedVariants = ref({});
 const currentPrice = ref(0);
 const currentStock = ref(0);
+const currentReservedStock = ref(0);
 const currentSku = ref('');
 const currentImage = ref('');
 const originalPrice = ref(0);
@@ -27,6 +28,7 @@ watch(() => props.product, (newProduct) => {
         currentPrice.value = newProduct.price;
         originalPrice.value = newProduct.original_price;
         currentStock.value = newProduct.stock;
+        currentReservedStock.value = newProduct.reserved_stock;
         currentSku.value = newProduct.sku;
         currentImage.value = (newProduct.general_images && newProduct.general_images.length > 0)
             ? newProduct.general_images[0]
@@ -131,6 +133,7 @@ watch(selectedCombination, (combo) => {
             currentPrice.value = props.product.price + combo.price_modifier;
             originalPrice.value = props.product.original_price + combo.price_modifier;
             currentStock.value = combo.stock;
+            currentReservedStock.value = combo.reserved_stock;
             currentSku.value = `${props.product.sku ?? ''}-${combo.sku_suffix ?? ''}`;
             // Image from full combo takes final precedence
             if(combo.image_url) {
@@ -141,6 +144,7 @@ watch(selectedCombination, (combo) => {
             currentPrice.value = props.product.price;
             originalPrice.value = props.product.original_price;
             currentStock.value = props.product.stock;
+            currentReservedStock.value = props.product.reserved_stock;
             currentSku.value = props.product.sku;
             // The `selectedVariants` watcher will handle reverting the image
         }
@@ -266,8 +270,12 @@ const formatCurrency = (value) => {
                             class="text-gray-500">SKU:</span><span class="font-medium font-mono">{{ currentSku }}</span>
                     </div>
                     <div class="flex justify-between items-center text-sm"><span
-                            class="text-gray-500">Stock:</span><span class="font-bold"
+                            class="text-gray-500">Stock disponible:</span><span class="font-bold"
                             :class="currentStock > 0 ? 'text-green-600' : 'text-red-600'">{{ currentStock }}</span>
+                    </div>
+                    <div v-if="currentReservedStock > 0" class="flex justify-between items-center text-sm">
+                        <span class="text-gray-500">Apartados:</span>
+                        <span class="font-medium text-blue-600">{{ currentReservedStock }}</span>
                     </div>
                 </div>
 

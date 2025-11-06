@@ -42,7 +42,7 @@ const itemsDiscount = computed(() => {
         // Usar original_price del item si existe. Este es el precio "base" ANTES de cualquier descuento o ajuste manual.
         // Si original_price no está (aunque debería), usamos el precio actual como fallback.
         const basePrice = item.original_price ?? item.price;
-        
+
         // discountPerItem será:
         // Positivo si hay descuento (base > final)
         // Negativo si hay aumento (base < final)
@@ -75,7 +75,7 @@ const cartLevelDiscounts = computed(() => {
                     // Cantidad real gratuita no puede exceder la cantidad en carrito
                     const actualFreeQty = Math.min(timesApplied * parseInt(effect.value, 10), freeItemInCart.quantity);
                     if (actualFreeQty > 0) {
-                         // El descuento es el precio actual del item gratuito por la cantidad gratuita
+                        // El descuento es el precio actual del item gratuito por la cantidad gratuita
                         applied.push({ name: promo.name, amount: freeItemInCart.price * actualFreeQty });
                     }
                 }
@@ -114,7 +114,7 @@ const cartLevelDiscounts = computed(() => {
                 const discountAmountPerBundle = originalBundlePrice - bundleSetPrice;
 
                 if (discountAmountPerBundle > 0) {
-                     // El descuento total es el ahorro por paquete * número de veces aplicado
+                    // El descuento total es el ahorro por paquete * número de veces aplicado
                     applied.push({ name: promo.name, amount: discountAmountPerBundle * canApplyBundleTimes });
                 }
             }
@@ -178,7 +178,8 @@ const formatCurrency = (value) => {
                 <div class="flex items-center gap-2">
                     <Button @click="$emit('saveCart', { total: total })" :disabled="items.length === 0"
                         icon="pi pi-save" rounded variant="outlined" severity="secondary"
-                        v-tooltip.bottom="'Guardar para después'" size="small" class="!bg-white dark:!bg-gray-700 !size-7" />
+                        v-tooltip.bottom="'Guardar para después'" size="small"
+                        class="!bg-white dark:!bg-gray-700 !size-7" />
                     <Button @click="requireConfirmation($event)" :disabled="items.length === 0" icon="pi pi-trash"
                         rounded variant="outlined" severity="danger" v-tooltip.bottom="'Limpiar carrito'" size="small"
                         class="!bg-white dark:!bg-gray-700 !size-7" />
@@ -213,9 +214,11 @@ const formatCurrency = (value) => {
                     <div v-if="client" class="py-2 border-t dark:border-gray-600 space-y-2">
                         <div class="flex justify-between text-sm">
                             <span class="text-gray-600 dark:text-gray-300">Saldo:</span>
-                            <span :class="(client.balance || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+                            <span
+                                :class="(client.balance || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
                                 class="font-bold">
-                                {{ formatCurrency(client.balance || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' : '' }}
+                                {{ formatCurrency(client.balance || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' :
+                                '' }}
                             </span>
                         </div>
                         <div class="flex justify-between text-sm">
@@ -229,7 +232,8 @@ const formatCurrency = (value) => {
             </div>
 
             <!-- Lista de Items -->
-            <p v-if="items.length > 0" class="my-2 text-sm text-[#1E1E1E] dark:text-gray-200 flex items-center space-x-2">
+            <p v-if="items.length > 0"
+                class="my-2 text-sm text-[#1E1E1E] dark:text-gray-200 flex items-center space-x-2">
                 <span>Detalles de venta</span>
                 <Badge :value="items.length" class="!bg-white !text-black dark:!bg-black dark:!text-white"></Badge>
             </p>
@@ -237,18 +241,14 @@ const formatCurrency = (value) => {
                 <p v-if="items.length === 0" class="text-gray-500 dark:text-gray-400 text-center mt-8">El carrito está
                     vacío</p>
                 <!-- Pasar el item completo a CartItem, incluyendo isTierPrice y isManualPrice -->
-                <CartItem
-                    v-for="item in items"
-                    :key="item.cartItemId"
-                    :item="item"
-                    :applied-cart-promo-names="appliedCartPromoNames"
-                    @update-quantity="$emit('updateQuantity', $event)"
-                    @update-price="$emit('updatePrice', $event)"
-                    @remove-item="$emit('removeItem', $event)" />
+                <CartItem v-for="item in items" :key="item.cartItemId" :item="item"
+                    :applied-cart-promo-names="appliedCartPromoNames" @update-quantity="$emit('updateQuantity', $event)"
+                    @update-price="$emit('updatePrice', $event)" @remove-item="$emit('removeItem', $event)" />
             </div>
 
             <!-- Detalles del Pago -->
-            <div class="mt-4 p-2 rounded-[10px] border border-[#D9D9D9] bg-white dark:bg-gray-900 dark:border-gray-700 space-y-1">
+            <div
+                class="mt-4 p-2 rounded-[10px] border border-[#D9D9D9] bg-white dark:bg-gray-900 dark:border-gray-700 space-y-1">
                 <!-- Subtotal -->
                 <div class="flex justify-between items-center text-gray-600 dark:text-gray-300">
                     <span>Subtotal</span><span class="font-medium">{{ formatCurrency(subtotal) }}</span>
@@ -266,7 +266,7 @@ const formatCurrency = (value) => {
                         <span>{{ promo.name }}</span>
                         <span>-{{ formatCurrency(promo.amount) }}</span>
                     </div>
-                     <!-- Podrías añadir aquí un detalle del descuento manual si lo implementas -->
+                    <!-- Podrías añadir aquí un detalle del descuento manual si lo implementas -->
                 </div>
 
                 <!-- Caso 2: Mostrar Aumento (si totalDiscount es negativo) -->
@@ -287,7 +287,7 @@ const formatCurrency = (value) => {
 
                 <!-- Botón Pagar/Finalizar -->
                 <Button @click="isPaymentModalVisible = true" :disabled="items.length === 0"
-                     :label="(client && total <= 0 && client.balance >= total) || total === 0 ? 'Finalizar' : 'Pagar'"
+                    :label="(client && total <= 0 && client.balance >= total) || total === 0 ? 'Finalizar' : 'Pagar'"
                     icon="pi pi-arrow-right" iconPos="right"
                     class="w-full mt-2 bg-orange-500 hover:bg-orange-600 border-none" />
             </div>
@@ -295,14 +295,9 @@ const formatCurrency = (value) => {
 
         <!-- Modales -->
         <CreateCustomerModal v-model:visible="isCreateCustomerModalVisible" @created="handleCustomerCreated" />
-        <PaymentModal
-            v-model:visible="isPaymentModalVisible"
-            :total-amount="total"
-            :client="client"
-            :customers="customers"
-            @update:client="$emit('selectCustomer', $event)"
-            @customer-created="$emit('customerCreated', $event)"
-            @submit="handlePaymentSubmit"
-        />
+        <PaymentModal v-model:visible="isPaymentModalVisible" :total-amount="total" :client="client"
+            :customers="customers" :allow-credit="true" :allow-layaway="true" payment-mode="strict"
+            @update:client="$emit('selectCustomer', $event)" @customer-created="$emit('customerCreated', $event)"
+            @submit="handlePaymentSubmit" />
     </div>
 </template>
