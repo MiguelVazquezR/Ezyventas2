@@ -83,13 +83,15 @@ class Product extends Model implements HasMedia
         ];
     }
 
+    protected $appends = ['available_stock'];
+
     /**
      * Obtiene el stock disponible para la venta (físico - reservado).
      */
     protected function availableStock(): Attribute
     {
         return Attribute::make(
-            get: fn () => $this->current_stock - $this->reserved_stock,
+            get: fn() => $this->current_stock - $this->reserved_stock,
         );
     }
 
