@@ -20,50 +20,70 @@ const formatCurrency = (value) => {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 };
 
-// --- *** INICIO DE NUEVA MODIFICACIÓN: Título Dinámico *** ---
-const currentTransactionInfo = computed(() => {
-    switch (props.transactionType) {
-        case 'contado':
-            return {
-                label: 'Pago al contado',
-                image: '/images/contado.webp',
-                bgColor: '#C5E0F7',
-                textColor: '#3D5F9B'
-            };
-        case 'credito':
-            return {
-                label: 'Venta a crédito / Pagos',
-                image: '/images/credito.webp',
-                bgColor: '#FFCD87',
-                textColor: '#603814'
-            };
-        case 'apartado':
-            return {
-                label: 'Sistema de apartado',
-                image: '/images/apartado.webp',
-                bgColor: '#FFC9E9',
-                textColor: '#862384'
-            };
-        case 'balance':
-            return {
-                label: 'Abono a saldo',
-                image: null, // No hay imagen definida, usamos icono
-                icon: 'pi pi-wallet',
-                bgColor: '#E0E7FF', // Color Indigo-100
-                textColor: '#4338CA' // Color Indigo-700
-            };
-        default:
-            return { label: 'Procesar pago', image: null, icon: 'pi pi-check', bgColor: '#F3F4F6', textColor: '#1F2937' };
-    }
-});
-// --- *** FIN DE NUEVA MODIFICACIÓN *** ---
-
-
 // --- Estado Interno: Lista de Pagos y Saldo ---
 const payments = ref([]);
 const useBalance = ref(false);
 
-// --- Botones de Método de Pago ---
+// --- *** INICIO DE MODIFICACIÓN: Título dinámico *** ---
+const currentTransactionInfo = computed(() => {
+    switch (props.transactionType) {
+        case 'contado':
+            return {
+                id: 'contado',
+                label: 'Pago al Contado',
+                image: '/images/contado.webp',
+                bgColor: '#C5E0F7',
+                textColor: '#3D5F9B',
+            };
+        case 'credito':
+            return {
+                id: 'credito',
+                label: 'A Crédito / Pagos',
+                image: '/images/credito.webp',
+                bgColor: '#FFCD87',
+                textColor: '#603814',
+            };
+        case 'apartado':
+            return {
+                id: 'apartado',
+                label: 'Sistema de Apartado',
+                image: '/images/apartado.webp',
+                bgColor: '#FFC9E9',
+                textColor: '#862384',
+            };
+        // CASO PARA ABONOS A SALDO (CustomerShow.vue)
+        case 'balance':
+            return {
+                id: 'balance',
+                label: 'Abono a Saldo',
+                image: '/images/efectivo.webp', // Reusamos imagen o usamos una genérica
+                bgColor: '#E5E7EB',
+                textColor: '#374151',
+            };
+        // --- NUEVO CASO ---
+        // CASO PARA ABONOS FLEXIBLES (ServiceOrderShow.vue)
+        case 'flexible':
+            return {
+                id: 'flexible',
+                label: 'Abono a Orden',
+                image: '/images/contado.webp', // Reusamos imagen
+                bgColor: '#E0F2FE',
+                textColor: '#0C4A6E',
+            };
+        default:
+            return {
+                id: 'default',
+                label: 'Registrar Pago',
+                image: '/images/contado.webp',
+                bgColor: '#E5E7EB',
+                textColor: '#374151',
+            };
+    }
+});
+// --- *** FIN DE MODIFICACIÓN *** ---
+
+
+// --- Botones de Método de Pago (con estilos) ---
 const paymentMethodButtons = computed(() => [
     {
         id: 'efectivo',
@@ -91,11 +111,11 @@ const paymentMethodButtons = computed(() => [
 // --- Lógica de Pagos Computada ---
 const totalAddedPayments = computed(() => payments.value.reduce((sum, p) => sum + (p.amount || 0), 0));
 const clientBalanceToUse = computed(() => (props.client && props.client.balance > 0) ? props.client.balance : 0);
-const effectiveBalanceUsed = computed(() => useBalance.value ? clientBalanceToUse.value : 0);
+const effectiveBalanceUsed = computed(() => useBalance.value ? Math.min(clientBalanceToUse.value, props.totalAmount) : 0);
 const totalPaid = computed(() => totalAddedPayments.value + effectiveBalanceUsed.value);
 const remainingAmount = computed(() => props.totalAmount - totalPaid.value);
 
-// --- Lógica de unicidad y edición ---
+// --- Lógica de unicidad y edición de pagos ---
 const usedPaymentMethods = computed(() => new Set(payments.value.map(p => p.method)));
 
 const addPaymentMethod = (method) => {
@@ -105,7 +125,8 @@ const addPaymentMethod = (method) => {
     if (remainingAmount.value > 0.01) {
         amountToAdd = remainingAmount.value;
     }
-    else if (props.transactionType === 'balance' || props.transactionType === 'apartado') {
+    // Para abonos, apartados, o flexibles, es mejor empezar en 0
+    else if (props.transactionType === 'balance' || props.transactionType === 'apartado' || props.transactionType === 'flexible') {
         amountToAdd = 0;
     }
     else {
@@ -125,11 +146,12 @@ const removePayment = (idToRemove) => {
     payments.value = payments.value.filter(p => p.id !== idToRemove);
 };
 
-// Lógica de Crédito
+// --- Lógica de Crédito ---
 const availableCredit = computed(() => props.client?.available_credit || 0);
 const creditDeficit = computed(() => {
     if (props.transactionType !== 'credito') return 0;
-    if (availableCredit.value <= 0) {
+    // Si no hay crédito, todo el restante es déficit
+    if (availableCredit.value <= 0 && remainingAmount.value > 0.01) {
         return remainingAmount.value;
     }
     const deficit = remainingAmount.value - availableCredit.value;
@@ -152,22 +174,36 @@ const handleSubmit = () => {
 
 // --- Lógica del Botón Finalizar (Computada) ---
 const finalizeButtonLabel = computed(() => {
-    if (props.transactionType === 'balance') return 'Registrar abono';
-    if (props.transactionType === 'apartado') return 'Crear apartado';
-    if (props.transactionType === 'credito') return `Guardar a crédito (${formatCurrency(remainingAmount.value)})`;
-    return 'Finalizar venta';
+    if (props.transactionType === 'balance') return 'Registrar Abono';
+    if (props.transactionType === 'apartado') return 'Crear Apartado';
+    if (props.transactionType === 'credito') {
+        // Si el restante es positivo, es "Guardar a crédito", si es 0 o negativo, es "Finalizar"
+        return remainingAmount.value > 0.01 ? `Guardar a crédito (${formatCurrency(remainingAmount.value)})` : 'Finalizar Venta';
+    }
+    // --- NUEVO CASO ---
+    if (props.transactionType === 'flexible') return 'Registrar Abono';
+
+    return 'Finalizar Venta'; // Default para 'contado'
 });
 
 const isFinalizeButtonDisabled = computed(() => {
-    if (props.transactionType === 'balance') {
-        return totalAddedPayments.value <= 0.01;
+    // Para 'balance' y 'apartado', se debe pagar *algo*
+    if (props.transactionType === 'balance' || props.transactionType === 'apartado') {
+        return totalPaid.value <= 0.01;
     }
-    if (props.transactionType === 'apartado') {
-        return totalAddedPayments.value <= 0.01;
+
+    // --- NUEVO CASO ---
+    // Para 'flexible', se debe pagar *algo*, pero PUEDE quedar restante
+    if (props.transactionType === 'flexible') {
+        return totalPaid.value <= 0.01;
     }
+
+    // Para 'contado', no debe quedar restante
     if (props.transactionType === 'contado') {
         return remainingAmount.value > 0.01;
     }
+
+    // Para 'credito', no debe haber déficit de crédito
     if (props.transactionType === 'credito') {
         return creditDeficit.value > 0;
     }
@@ -175,41 +211,41 @@ const isFinalizeButtonDisabled = computed(() => {
 });
 
 // --- Configuración Inicial ---
-if (props.totalAmount <= 0) {
+// Pre-seleccionar "Usar Saldo" si el total es 0 o negativo (ya pagado con saldo)
+if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
     useBalance.value = true;
 }
 </script>
 
 <template>
     <div class="flex flex-col min-h-[400px]">
-        <!-- --- *** INICIO DE NUEVA MODIFICACIÓN: Título *** --- -->
-        <div class="flex items-center gap-3 p-3 rounded-lg mb-3 -mt-2"
+
+        <!-- --- *** INICIO DE MODIFICACIÓN: Título dinámico *** --- -->
+        <div class="flex items-center gap-3 mb-4 p-3 rounded-lg"
             :style="{ backgroundColor: currentTransactionInfo.bgColor, color: currentTransactionInfo.textColor }">
-            <img v-if="currentTransactionInfo.image" :src="currentTransactionInfo.image"
-                :alt="currentTransactionInfo.label" class="size-8 object-contain" />
-            <i v-else-if="currentTransactionInfo.icon" :class="[currentTransactionInfo.icon, 'text-xl']"></i>
-            <h3 class="text-lg font-bold m-0">{{ currentTransactionInfo.label }}</h3>
+            <img :src="currentTransactionInfo.image" :alt="currentTransactionInfo.label" class="h-8 w-8 object-contain">
+            <h3 class="text-lg font-semibold m-0">{{ currentTransactionInfo.label }}</h3>
         </div>
-        <!-- --- *** FIN DE NUEVA MODIFICACIÓN *** --- -->
+        <!-- --- *** FIN DE MODIFICACIÓN *** --- -->
 
         <!-- Resumen de Montos -->
-        <div class="space-y-2 mb-3">
-            <div class="flex justify-between text-xl font-bold">
-                <span class="text-gray-800 dark:text-gray-200">Total de venta:</span>
+        <div class="space-y-2 mb-4">
+            <div class="flex justify-between text-2xl font-bold">
+                <span class="text-gray-800 dark:text-gray-200">Total de Venta:</span>
                 <span class="font-mono">{{ formatCurrency(totalAmount) }}</span>
             </div>
 
             <div class="flex justify-between text-lg">
                 <span class="font-semibold" :class="{
                     'text-gray-600 dark:text-gray-300': remainingAmount > 0.01,
-                    'text-green-600 dark:text-green-400': remainingAmount <= -0.01
+                    'text-green-600 dark:text-green-400': remainingAmount <= 0.01
                 }">
-                    {{ remainingAmount <= -0.01 ? 'Su cambio:' : 'Restante:' }} </span>
+                    {{ remainingAmount <= 0.01 ? 'Su cambio:' : 'Restante:' }} </span>
                         <span class="font-bold font-mono" :class="{
                             'text-red-500': remainingAmount > 0.01,
-                            'text-green-600 dark:text-green-400': remainingAmount <= -0.01
+                            'text-green-600 dark:text-green-400': remainingAmount <= 0.01
                         }">
-                            {{ formatCurrency(remainingAmount <= -0.01 ? -remainingAmount : remainingAmount) }} </span>
+                            {{ formatCurrency(remainingAmount <= 0.01 ? -remainingAmount : remainingAmount) }} </span>
             </div>
         </div>
 
@@ -235,44 +271,45 @@ if (props.totalAmount <= 0) {
 
         <!-- Botones de Método de Pago -->
         <label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Agregar método de pago:</label>
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
+        <div class="grid grid-cols-3 gap-3 mb-4">
             <button v-for="method in paymentMethodButtons" :key="method.id" @click="addPaymentMethod(method)"
                 :disabled="usedPaymentMethods.has(method.id)"
-                class="flex flex-col items-center justify-center p-3 border rounded-lg transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-90"
+                class="flex flex-col items-center justify-center p-4 border rounded-lg transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-90"
                 :style="{ backgroundColor: method.bgColor, color: method.textColor }">
-                <img :src="method.image" :alt="method.label" class="size-10 object-contain mb-2">
+                <img :src="method.image" :alt="method.label" class="h-10 w-10 object-contain mb-2">
                 <span class="font-semibold text-sm text-center">{{ method.label }}</span>
             </button>
         </div>
 
-
         <!-- Lista de Pagos Editable -->
-        <div v-if="payments.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-3 flex-grow">
-            <label class="text-sm font-medium text-gray-700 dark:text-gray-300 col-span-full">Pagos registrados:</label>
+        <div v-if="payments.length > 0" class="space-y-3 flex-grow">
+            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Pagos registrados:</label>
             <div v-for="(payment, index) in payments" :key="payment.id"
                 class="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border dark:border-gray-600">
                 <div class="flex justify-between items-center mb-2">
                     <span class="font-semibold capitalize text-gray-800 dark:text-gray-200">{{ payment.method }}</span>
                     <Button icon="pi pi-trash" text rounded severity="danger" @click="removePayment(payment.id)"
-                        class="!size-5" size="small" v-tooltip.bottom="'Eliminar pago'" />
+                        class="!size-6" v-tooltip.bottom="'Eliminar pago'" />
                 </div>
 
                 <div class="space-y-2">
                     <div>
                         <label class="text-xs font-medium text-gray-500 dark:text-gray-400">Monto</label>
-                        <InputNumber fluid v-model="payment.amount" mode="currency" currency="MXN" locale="es-MX"
+                        <InputNumber v-model="payment.amount" mode="currency" currency="MXN" locale="es-MX"
                             class="w-full mt-1" :min="0" />
                     </div>
                     <div v-if="['tarjeta', 'transferencia'].includes(payment.method)">
                         <label class="text-xs font-medium text-gray-500 dark:text-gray-400">Cuenta destino</label>
                         <div class="flex items-center gap-2">
                             <Select v-model="payment.bank_account_id" :options="bankAccountOptions" optionLabel="label"
-                                optionValue="value" placeholder="Selecciona una cuenta" class="w-[80%] mt-1"
-                                :class="{ 'p-invalid': !payment.bank_account_id }" />
+                                optionValue="value" placeholder="Selecciona una cuenta" class="w-full mt-1"
+                                :class="{ 'p-invalid': !payment.bank_account_id && payment.amount > 0 }" />
                             <Button icon="pi pi-plus" rounded severity="secondary" outlined
                                 class="!size-8 flex-shrink-0" @click="emit('add-account')"
                                 v-tooltip.bottom="'Agregar cuenta'" />
                         </div>
+                        <small v-if="!payment.bank_account_id && payment.amount > 0" class="p-error text-xs">Se requiere
+                            una cuenta para este tipo de pago.</small>
                     </div>
                 </div>
             </div>

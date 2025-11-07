@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CustomerBalanceMovementType;
 use App\Enums\ServiceOrderStatus;
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
@@ -181,6 +182,28 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'channel' => TransactionChannel::SERVICE_ORDER,
                 'status' => $serviceOrder->final_total > 0 ? TransactionStatus::PENDING : TransactionStatus::COMPLETED,
             ]);
+
+            // --- Registrar la deuda en el balance del cliente ---
+            // Si hay un cliente asociado y el total de la orden es mayor a 0,
+            // generamos la deuda (cargo) en el balance del cliente.
+            if ($customer && $serviceOrder->final_total > 0) {
+                
+                // Decrementamos el balance (haciéndolo más negativo)
+                // Ej: balance 0 - 500 (final_total) = -500
+                $customer->decrement('balance', $serviceOrder->final_total);
+
+                // Registramos el movimiento para trazabilidad (para el estado de cuenta)
+                $customer->balanceMovements()->create([
+                    'transaction_id' => $transaction->id,
+                    // Usamos 'CREDIT_SALE' para reflejar que es un cargo por una venta/servicio
+                    'type' => CustomerBalanceMovementType::CREDIT_SALE, 
+                    'amount' => -$serviceOrder->final_total, // El monto es negativo (es un cargo)
+                    'balance_after' => $customer->balance, // El balance actualizado
+                    'notes' => "Cargo por Orden de Servicio #{$serviceOrder->folio}",
+                    'created_at' => $transaction->created_at, // Usamos el mismo timestamp de la transacción
+                    'updated_at' => $transaction->created_at,
+                ]);
+            }
 
             if (!empty($validated['items'])) {
                 foreach ($validated['items'] as $item) {

@@ -27,6 +27,8 @@ class ProductAttribute extends Model
         'sku_suffix',
     ];
 
+    protected $appends = ['available_stock'];
+
     /**
      * The attributes that should be cast.
      *
@@ -35,10 +37,10 @@ class ProductAttribute extends Model
     protected $casts = [
         'attributes' => 'array',
         'selling_price_modifier' => 'decimal:2',
-        'current_stock' => 'decimal:1',
-        'reserved_stock' => 'decimal:1',
-        'min_stock' => 'decimal:2',
-        'max_stock' => 'decimal:2',
+        'current_stock' => 'integer',
+        'reserved_stock' => 'integer',
+        'min_stock' => 'integer',
+        'max_stock' => 'integer',
     ];
 
     /**
@@ -47,7 +49,7 @@ class ProductAttribute extends Model
     protected function availableStock(): Attribute
     {
         return Attribute::make(
-            get: fn () => $this->current_stock - $this->reserved_stock,
+            get: fn() => $this->current_stock - $this->reserved_stock,
         );
     }
 

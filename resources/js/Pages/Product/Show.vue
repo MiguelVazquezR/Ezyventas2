@@ -382,15 +382,15 @@ const totalAvailable = computed(() => props.product.available_stock);
                         <!-- Totales para producto con variantes -->
                         <div class="grid grid-cols-4 gap-4 text-center mt-6 pt-4 border-t dark:border-gray-700">
                             <div>
-                                <p class="text-sm text-gray-500 dark:text-gray-400">Total Físico</p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Total físico</p>
                                 <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ totalStock }}</p>
                             </div>
                             <div>
-                                <p class="text-sm text-gray-500 dark:text-gray-400">Total Apartados</p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Total apartados</p>
                                 <p class="text-2xl font-bold text-blue-600">{{ totalReserved }}</p>
                             </div>
                             <div>
-                                <p class="text-sm text-gray-500 dark:text-gray-400">Total Disponible</p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Total disponible</p>
                                 <p class="text-2xl font-bold" :class="totalAvailable > 0 ? 'text-green-600' : 'text-red-600'">
                                     {{ totalAvailable }}
                                 </p>
@@ -404,9 +404,9 @@ const totalAvailable = computed(() => props.product.available_stock);
 
                     <!-- --- NUEVA SECCIÓN: Tabla de Apartados Activos --- -->
                     <div v-if="activeLayaways && activeLayaways.length > 0" class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                        <h3 class="font-semibold mb-3 text-gray-800 dark:text-gray-200">Unidades Apartadas (Detalle)</h3>
+                        <h5 class="font-semibold mb-3 text-gray-800 dark:text-gray-200">Unidades apartadas (detalle)</h5>
                         <DataTable :value="activeLayaways" class="p-datatable-sm" responsiveLayout="scroll" sortField="date" :sortOrder="-1">
-                            <Column field="date" header="Fecha Apartado" sortable>
+                            <Column field="date" header="Fecha apartado" sortable>
                                 <template #body="{ data }">
                                     {{ formatDate(data.date) }}
                                 </template>

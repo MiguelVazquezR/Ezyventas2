@@ -46,7 +46,20 @@ watch(() => page.props.flash.show_payment_modal, (showModal) => {
     }
 }, { immediate: true });
 
-const handlePaymentSubmit = (payload) => {
+const handlePaymentSubmit = (paymentData) => {
+    // 1. Validar que la sesión activa exista (aunque la UI ya debería hacerlo)
+    if (!props.activeSession) {
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No hay una sesión de caja activa para registrar el pago.', life: 5000 });
+        return;
+    }
+
+    // 2. Inyectar el ID de la sesión de caja al payload
+    const payload = {
+        ...paymentData,
+        cash_register_session_id: props.activeSession.id
+    };
+    
+    // 3. Enviar el payload completo al controlador
     router.post(route('payments.store', props.serviceOrder.transaction.id), payload, {
         preserveScroll: true,
         onSuccess: () => {
@@ -617,9 +630,11 @@ const getPaymentMethodIcon = (method) => {
             </div>
         </div>
 
-        <PaymentModal v-if="serviceOrder.transaction" v-model:visible="isPaymentModalVisible"
-            :total-amount="amountDue" :client="serviceOrder.customer" :active-session="activeSession"
-            payment-mode="flexible" @submit="handlePaymentSubmit"
+         <PaymentModal v-if="serviceOrder.transaction" v-model:visible="isPaymentModalVisible"
+            :total-amount="amountDue" 
+            :client="serviceOrder.customer" 
+            payment-mode="flexible" 
+            @submit="handlePaymentSubmit"
             @update:visible="(val) => { if (!val) handlePaymentModalClosed(); }" />
         <PrintModal v-if="serviceOrder" v-model:visible="isPrintModalVisible"
             :data-source="{ type: 'service_order', id: serviceOrder.id }" :available-templates="availableTemplates"
