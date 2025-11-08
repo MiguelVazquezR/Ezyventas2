@@ -9,6 +9,7 @@ const props = defineProps({
     transactionType: { type: String, required: true },
     bankAccounts: { type: Array, required: true },
     bankAccountOptions: { type: Array, required: true },
+    loading: { type: Boolean, default: false },
 });
 
 // --- Emits ---
@@ -174,16 +175,16 @@ const handleSubmit = () => {
 
 // --- Lógica del Botón Finalizar (Computada) ---
 const finalizeButtonLabel = computed(() => {
-    if (props.transactionType === 'balance') return 'Registrar Abono';
-    if (props.transactionType === 'apartado') return 'Crear Apartado';
+    if (props.transactionType === 'balance') return 'Registrar abono';
+    if (props.transactionType === 'apartado') return 'Crear apartado';
     if (props.transactionType === 'credito') {
         // Si el restante es positivo, es "Guardar a crédito", si es 0 o negativo, es "Finalizar"
-        return remainingAmount.value > 0.01 ? `Guardar a crédito (${formatCurrency(remainingAmount.value)})` : 'Finalizar Venta';
+        return remainingAmount.value > 0.01 ? `Guardar a crédito (${formatCurrency(remainingAmount.value)})` : 'Finalizar venta';
     }
     // --- NUEVO CASO ---
-    if (props.transactionType === 'flexible') return 'Registrar Abono';
+    if (props.transactionType === 'flexible') return 'Registrar abono';
 
-    return 'Finalizar Venta'; // Default para 'contado'
+    return 'Finalizar venta'; // Default para 'contado'
 });
 
 const isFinalizeButtonDisabled = computed(() => {
@@ -219,7 +220,6 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
 
 <template>
     <div class="flex flex-col min-h-[400px]">
-
         <!-- --- *** INICIO DE MODIFICACIÓN: Título dinámico *** --- -->
         <div class="flex items-center gap-3 mb-4 p-3 rounded-lg"
             :style="{ backgroundColor: currentTransactionInfo.bgColor, color: currentTransactionInfo.textColor }">
@@ -238,14 +238,14 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
             <div class="flex justify-between text-lg">
                 <span class="font-semibold" :class="{
                     'text-gray-600 dark:text-gray-300': remainingAmount > 0.01,
-                    'text-green-600 dark:text-green-400': remainingAmount <= 0.01
+                    'text-green-600 dark:text-green-400': remainingAmount < 0.0
                 }">
-                    {{ remainingAmount <= 0.01 ? 'Su cambio:' : 'Restante:' }} </span>
+                    {{ remainingAmount < 0.0 ? 'Su cambio:' : 'Restante:' }} </span>
                         <span class="font-bold font-mono" :class="{
                             'text-red-500': remainingAmount > 0.01,
-                            'text-green-600 dark:text-green-400': remainingAmount <= 0.01
+                            'text-green-600 dark:text-green-400': remainingAmount < 0.0
                         }">
-                            {{ formatCurrency(remainingAmount <= 0.01 ? -remainingAmount : remainingAmount) }} </span>
+                            {{ formatCurrency(remainingAmount < 0.0 ? -remainingAmount : remainingAmount) }} </span>
             </div>
         </div>
 
@@ -282,27 +282,27 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
         </div>
 
         <!-- Lista de Pagos Editable -->
-        <div v-if="payments.length > 0" class="space-y-3 flex-grow">
-            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">Pagos registrados:</label>
+        <div v-if="payments.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-3 flex-grow">
+            <label class="text-sm font-medium text-gray-700 dark:text-gray-300 col-span-full mb-2">Pagos registrados:</label>
             <div v-for="(payment, index) in payments" :key="payment.id"
                 class="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border dark:border-gray-600">
                 <div class="flex justify-between items-center mb-2">
                     <span class="font-semibold capitalize text-gray-800 dark:text-gray-200">{{ payment.method }}</span>
                     <Button icon="pi pi-trash" text rounded severity="danger" @click="removePayment(payment.id)"
-                        class="!size-6" v-tooltip.bottom="'Eliminar pago'" />
+                        class="!size-5" size="small" v-tooltip.bottom="'Eliminar pago'" />
                 </div>
 
                 <div class="space-y-2">
                     <div>
                         <label class="text-xs font-medium text-gray-500 dark:text-gray-400">Monto</label>
-                        <InputNumber v-model="payment.amount" mode="currency" currency="MXN" locale="es-MX"
+                        <InputNumber fluid v-model="payment.amount" mode="currency" currency="MXN" locale="es-MX"
                             class="w-full mt-1" :min="0" />
                     </div>
                     <div v-if="['tarjeta', 'transferencia'].includes(payment.method)">
                         <label class="text-xs font-medium text-gray-500 dark:text-gray-400">Cuenta destino</label>
                         <div class="flex items-center gap-2">
                             <Select v-model="payment.bank_account_id" :options="bankAccountOptions" optionLabel="label"
-                                optionValue="value" placeholder="Selecciona una cuenta" class="w-full mt-1"
+                                optionValue="value" placeholder="Selecciona una cuenta" class="w-[80%] mt-1"
                                 :class="{ 'p-invalid': !payment.bank_account_id && payment.amount > 0 }" />
                             <Button icon="pi pi-plus" rounded severity="secondary" outlined
                                 class="!size-8 flex-shrink-0" @click="emit('add-account')"
@@ -327,8 +327,8 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
                 <small>Crédito disponible: {{ formatCurrency(availableCredit) }}</small>
             </Message>
 
-            <Button :label="finalizeButtonLabel" :disabled="isFinalizeButtonDisabled" @click="handleSubmit"
-                icon="pi pi-check" class="w-full !py-3" />
+            <Button :label="finalizeButtonLabel" :disabled="isFinalizeButtonDisabled || props.loading" :loading="props.loading"
+                @click="handleSubmit" icon="pi pi-check" class="w-full !py-3" />
         </div>
     </div>
 </template>

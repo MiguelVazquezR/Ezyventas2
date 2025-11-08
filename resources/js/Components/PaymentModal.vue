@@ -19,6 +19,7 @@ const props = defineProps({
     },
     allowCredit: { type: Boolean, default: true },
     allowLayaway: { type: Boolean, default: true },
+    loading: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['update:visible', 'submit', 'update:client', 'customerCreated']);
@@ -80,7 +81,9 @@ const bankAccountOptions = ref([]);
 const showAddBankAccountModal = ref(false);
 const showCreateCustomerModal = ref(false);
 
-const fetchBankAccounts = async () => {
+const isLoadingAccounts = ref(false); // Nuevo estado de carga
+
+const fetchBankAccounts = async () => { // Convertido a async
     try {
         const response = await axios.get(route('branch-bank-accounts'));
         bankAccounts.value = response.data;
@@ -88,16 +91,16 @@ const fetchBankAccounts = async () => {
             label: `${acc.bank_name} - ${acc.account_name} (...${(acc.card_number || acc.account_number || 'N/A').slice(-4)})`,
             value: acc.id
         }));
-    } catch (error) { console.error("Error fetching bank accounts:", error); }
+    } catch (error) { 
+        console.error("Error fetching bank accounts:", error); 
+        toast.add({ severity: 'error', summary: 'Error de Carga', detail: 'No se pudieron cargar las cuentas bancarias.', life: 5000 });
+    }
 };
 
-const onBankAccountAdded = (newAccount) => {
-    bankAccounts.value.push(newAccount);
-    bankAccountOptions.value.push({
-        label: `${newAccount.bank_name} - ${newAccount.account_number} (${newAccount.owner_name})`,
-        value: newAccount.id
-    });
-    toast.add({ severity: 'success', summary: 'Éxito', detail: 'Cuenta bancaria agregada.', life: 3000 });
+// Esta función ahora no espera ningún argumento (newAccount), solo recarga la lista.
+const onBankAccountAdded = () => {
+    // Vuelve a cargar la lista de cuentas para obtener la nueva
+    fetchBankAccounts(); 
 };
 
 // --- Lógica de Envío y Cierre (sin cambios) ---
@@ -114,7 +117,6 @@ const handleSubmitFromProcessor = (paymentData) => {
 };
 
 
-// --- *** INICIO DE MODIFICACIÓN *** ---
 // Actualizamos esta función para manejar el 'paymentMode' flexible
 const resetModalState = () => {
     
@@ -139,15 +141,15 @@ const resetModalState = () => {
         transactionType.value = 'contado'; // Valor inicial por defecto
     }
 };
-// --- *** FIN DE MODIFICACIÓN *** ---
 
-
-watch(() => props.visible, (isVisible) => {
+watch(() => props.visible, async (isVisible) => {
     if (isVisible) {
-        resetModalState(); // Esta función ahora maneja los 3 casos
-        fetchBankAccounts();
+        isLoadingAccounts.value = true;
+        resetModalState(); // <-- Esta función AHORA SÍ se ejecutará
+        await fetchBankAccounts(); // Espera a que las cuentas carguen
+        isLoadingAccounts.value = false; // Oculta el spinner
     }
-});
+}, { immediate: true });
 </script>
 
 <template>
@@ -159,7 +161,6 @@ watch(() => props.visible, (isVisible) => {
 
             <!-- Columna Derecha: Contenido Dinámico -->
             <div class="lg:col-span-2 p-4 lg:p-8">
-
                 <!-- 
                   CASO 1: FLUJO DE VENTA (Selección de tipo)
                   Esto ahora solo se muestra si el modo NO es 'balance' Y NO es 'flexible',
@@ -210,10 +211,23 @@ watch(() => props.visible, (isVisible) => {
                     </a>
                     <!-- El 'v-else' asegura que el enlace "Volver" no aparezca en modo balance o flexible -->
 
-                    <MultiPaymentProcessor :total-amount="totalAmount" :client="client"
-                        :transaction-type="transactionType" :bank-accounts="bankAccounts"
-                        :bank-account-options="bankAccountOptions" @submit="handleSubmitFromProcessor"
-                        @add-account="showAddBankAccountModal = true" />
+                    <!-- Mostrar spinner mientras cargan las cuentas -->
+                    <div v-if="isLoadingAccounts" class="flex items-center justify-center min-h-[400px]">
+                        <i class="pi pi-spin pi-spinner !text-4xl text-gray-500"></i>
+                    </div>
+                    
+                    <!-- Mostrar el procesador solo cuando las cuentas estén listas -->
+                    <MultiPaymentProcessor 
+                        v-else
+                        :total-amount="totalAmount" 
+                        :client="client"
+                        :transaction-type="transactionType" 
+                        :bank-accounts="bankAccounts"
+                        :bank-account-options="bankAccountOptions"
+                        :loading="props.loading"
+                        @submit="handleSubmitFromProcessor"
+                        @add-account="showAddBankAccountModal = true" 
+                    />
                 </div>
 
             </div>

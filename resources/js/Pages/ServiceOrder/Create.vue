@@ -275,27 +275,27 @@ watch(activeSession, (newSession) => {
     <AppLayout title="Crear orden de servicio">
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="mt-4">
-            <h1 class="text-2xl font-bold">Registrar Nueva Orden de Servicio</h1>
+            <h1 class="text-2xl font-bold">Registrar nueva orden de servicio</h1>
         </div>
 
         <form @submit.prevent="submit" class="mt-6 max-w-4xl mx-auto space-y-6">
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información Principal</h2>
+                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información principal</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <InputLabel for="customer_name" value="Nombre del Cliente *" />
+                        <InputLabel for="customer_name" value="Nombre del cliente *" />
                         <AutoComplete v-model="form.customer_name" :suggestions="filteredCustomers"
                             @complete="searchCustomer" field="name" @item-select="onCustomerSelect" inputClass="w-full"
                             class="w-full mt-1" inputId="customer_name">
                             <template #option="slotProps">
                                 <div>{{ slotProps.option.name }}</div>
-                                <div class="text-xs text-gray-500">{{ slotProps.option.phone }}</div>
+                                <div class="text-xs text-gray-500 ml-2">{{ slotProps.option.phone }}</div>
                             </template>
                         </AutoComplete>
                         <InputError :message="form.errors.customer_name" class="mt-2" />
                     </div>
                     <div>
-                        <InputLabel for="customer_phone" value="Teléfono del Cliente" />
+                        <InputLabel for="customer_phone" value="Teléfono del cliente" />
                         <InputText id="customer_phone" v-model="form.customer_phone" class="mt-1 w-full" />
                     </div>
 
@@ -308,7 +308,7 @@ watch(activeSession, (newSession) => {
                             <ToggleSwitch v-model="form.create_customer" inputId="create_customer" />
                         </div>
                         <div v-if="form.create_customer" class="transition-all">
-                            <InputLabel for="credit_limit" value="Asignar Límite de Crédito" />
+                            <InputLabel for="credit_limit" value="Asignar límite de crédito" />
                             <InputNumber id="credit_limit" v-model="form.credit_limit" mode="currency" currency="MXN"
                                 locale="es-MX" class="w-full mt-1" />
                             <InputError :message="form.errors.credit_limit" class="mt-2" />
@@ -316,24 +316,24 @@ watch(activeSession, (newSession) => {
                     </div>
 
                     <div>
-                        <InputLabel for="customer_email" value="Correo Electrónico" />
+                        <InputLabel for="customer_email" value="Correo electrónico" />
                         <InputText id="customer_email" v-model="form.customer_email" class="mt-1 w-full" />
                         <InputError :message="form.errors.customer_email" class="mt-2" />
                     </div>
                     <div>
-                        <InputLabel for="promised_at" value="Fecha Promesa de Entrega" />
+                        <InputLabel for="promised_at" value="Fecha promesa de entrega" />
                         <DatePicker id="promised_at" v-model="form.promised_at" class="w-full mt-1"
                             dateFormat="dd/mm/yy" />
                         <InputError :message="form.errors.promised_at" class="mt-2" />
                     </div>
                     <div class="md:col-span-2">
-                        <InputLabel for="item_description" value="Descripción del Equipo *" />
+                        <InputLabel for="item_description" value="Descripción del equipo *" />
                         <InputText id="item_description" v-model="form.item_description" class="mt-1 w-full"
                             placeholder="Ej: iPhone 13 Pro, 256GB, Azul Sierra" />
                         <InputError :message="form.errors.item_description" class="mt-2" />
                     </div>
                     <div class="md:col-span-2">
-                        <InputLabel for="reported_problems" value="Falla o Problema Reportado por el Cliente *" />
+                        <InputLabel for="reported_problems" value="Falla o problema reportado por el cliente *" />
                         <Textarea id="reported_problems" v-model="form.reported_problems" rows="3"
                             class="mt-1 w-full" />
                         <InputError :message="form.errors.reported_problems" class="mt-2" />
@@ -342,7 +342,7 @@ watch(activeSession, (newSession) => {
             </div>
 
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Refacciones y Mano de Obra</h2>
+                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Refacciones y mano de obra</h2>
                 <div class="flex gap-2 mb-4">
                     <AutoComplete v-model="selectedItem" :suggestions="filteredItems" @complete="searchItems"
                         field="name" optionLabel="name" placeholder="Busca o escribe un concepto..." class="w-full"
@@ -364,6 +364,10 @@ watch(activeSession, (newSession) => {
                             <SelectButton v-model="form.items[index].itemable_type" :options="itemTypeOptions"
                                 optionLabel="label" optionValue="value" :allowEmpty="false"
                                 :disabled="data.itemable_id !== 0 && data.itemable_id !== null" class="w-full" />
+                            <div v-if="form.items[index].itemable_type === 'App\\Models\\Product' && form.items[index].itemable_id && form.items[index].itemable_id !== 0"
+                                class="text-xs text-gray-500 dark:text-gray-400 italic mt-1 pl-1">
+                                (Se descontarán {{ form.items[index].quantity || 0 }} unidad(es) del stock)
+                            </div>
                         </template>
                     </Column>
                     <Column field="description" header="Descripción"><template #body="{ index }">
@@ -375,7 +379,7 @@ watch(activeSession, (newSession) => {
                                 buttonLayout="horizontal" :step="1" :min="1" />
                         </template>
                     </Column>
-                    <Column field="unit_price" header="Precio Unit." style="width: 9.5rem"><template #body="{ index }">
+                    <Column field="unit_price" header="Precio unit." style="width: 9.5rem"><template #body="{ index }">
                             <InputNumber v-model="form.items[index].unit_price" @blur="checkUnitPrice(index)"
                                 mode="currency" currency="MXN" locale="es-MX" fluid class="w-full" />
                         </template>
@@ -441,12 +445,12 @@ watch(activeSession, (newSession) => {
 
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <div class="flex items-center justify-between border-b pb-3 mb-4">
-                    <h2 class="text-lg font-semibold">Asignación de Técnico</h2>
+                    <h2 class="text-lg font-semibold">Asignación de técnico</h2>
                     <ToggleSwitch v-model="form.assign_technician" inputId="assign_technician" />
                 </div>
                 <div v-if="form.assign_technician" class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <InputLabel for="technician_name" value="Nombre del Técnico *" />
+                        <InputLabel for="technician_name" value="Nombre del técnico *" />
                         <InputText id="technician_name" v-model="form.technician_name" class="mt-1 w-full" />
                         <InputError :message="form.errors.technician_name" class="mt-2" />
                     </div>
@@ -457,7 +461,7 @@ watch(activeSession, (newSession) => {
                         <InputError :message="form.errors.technician_commission_type" class="mt-2" />
                     </div>
                     <div class="md:col-span-2">
-                        <InputLabel for="technician_commission_value" value="Valor de la Comisión *" />
+                        <InputLabel for="technician_commission_value" value="Valor de la comisión *" />
                         <InputNumber id="technician_commission_value" v-model="form.technician_commission_value"
                             class="w-full mt-1" :prefix="form.technician_commission_type === 'fixed' ? '$' : null"
                             :suffix="form.technician_commission_type === 'percentage' ? '%' : null" />
@@ -506,13 +510,14 @@ watch(activeSession, (newSession) => {
                     </p>
                     <p v-else-if="!hasPermission('services.orders.manage_custom_fields')"
                         class="col-span-full text-center text-gray-500">
-                        Actualmente no tienes ningún campo adicional, pero un administrador puede agregarlos cuando se requiera.
+                        Actualmente no tienes ningún campo adicional, pero un administrador puede agregarlos cuando se
+                        requiera.
                     </p>
                 </div>
             </div>
 
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia Fotográfica Inicial (Máx. 5)</h2>
+                <h2 class="text-lg font-semibold border-b pb-3 mb-4">Evidencia fotográfica inicial (Máx. 5)</h2>
                 <FileUpload name="initial_evidence_images[]" @select="onSelectImages" @remove="onRemoveImage"
                     :multiple="true" :show-upload-button="false" accept="image/*" :maxFileSize="2000000">
                     <template #empty>
@@ -523,7 +528,7 @@ watch(activeSession, (newSession) => {
             </div>
 
             <div class="flex justify-end sticky bottom-4">
-                <Button type="submit" label="Crear Orden" :loading="form.processing" severity="warning"
+                <Button type="submit" label="Crear orden" :loading="form.processing" severity="warning"
                     class="shadow-lg" />
             </div>
         </form>

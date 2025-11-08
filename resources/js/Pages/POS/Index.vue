@@ -31,6 +31,7 @@ const toast = useToast();
 
 const cartItems = ref([]);
 const selectedClient = ref(null);
+const isPaymentModalVisible = ref(false);
 
 // --- Lógica para Modales ---
 const isStartSessionModalVisible = ref(false);
@@ -118,7 +119,7 @@ const addToCart = (data) => {
                 existingItem.isTierPrice = updatedIsTier;
             }
         } else {
-            toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
+            toast.add({ severity: 'warn', summary: 'Stock insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
         }
     } else {
         const newItem = {
@@ -205,6 +206,7 @@ const removeCartItem = (itemId) => {
 const clearCart = () => {
     cartItems.value = [];
     selectedClient.value = null;
+    isPaymentModalVisible.value = false;
 };
 
 // --- Clientes y Carritos Pendientes ---
@@ -214,7 +216,7 @@ watch(() => props.customers, (newCustomers) => { localCustomers.value = [...newC
 const handleCustomerCreated = (newCustomer) => {
     localCustomers.value.push(newCustomer);
     selectedClient.value = newCustomer;
-    toast.add({ severity: 'success', summary: 'Cliente Creado', detail: 'El nuevo cliente ha sido seleccionado.', life: 3000 });
+    toast.add({ severity: 'success', summary: 'Cliente creado', detail: 'El nuevo cliente ha sido seleccionado.', life: 3000 });
 };
 const pendingCarts = ref([]);
 const saveCartToPending = (payload) => {
@@ -227,7 +229,7 @@ const saveCartToPending = (payload) => {
         total: payload.total,
     });
     clearCart();
-    toast.add({ severity: 'success', summary: 'Carrito Guardado', detail: 'El carrito actual se movió a la lista de espera.', life: 3000 });
+    toast.add({ severity: 'success', summary: 'Carrito guardado', detail: 'El carrito actual se movió a la lista de espera.', life: 3000 });
 };
 const resumePendingCart = (cartId) => {
     const cartToResume = pendingCarts.value.find(c => c.id === cartId);
@@ -369,12 +371,26 @@ const handleCheckout = (checkoutData) => {
                         @open-close-session-modal="isCloseSessionModalVisible = true" class="h-full" />
                 </div>
                 <div class="lg:w-1/3 xl:w-1/4 h-full overflow-hidden">
-                    <ShoppingCart :items="cartItems" :client="selectedClient" :customers="localCustomers"
-                        :default-customer="defaultCustomer" :active-promotions="activePromotions"
-                        @update-quantity="updateCartQuantity" @update-price="updateCartPrice"
-                        @remove-item="removeCartItem" @clear-cart="clearCart" @select-customer="handleSelectCustomer"
-                        @customer-created="handleCustomerCreated" @save-cart="saveCartToPending"
-                        @checkout="handleCheckout" class="h-full" />
+                    <ShoppingCart 
+                        :items="cartItems" 
+                        :client="selectedClient" 
+                        :customers="localCustomers"
+                        :default-customer="defaultCustomer" 
+                        :active-promotions="activePromotions"
+                        :loading="form.processing"
+                        :payment-modal-visible="isPaymentModalVisible"
+                        @update-quantity="updateCartQuantity" 
+                        @update-price="updateCartPrice"
+                        @remove-item="removeCartItem" 
+                        @clear-cart="clearCart" 
+                        @select-customer="handleSelectCustomer"
+                        @customer-created="handleCustomerCreated" 
+                        @save-cart="saveCartToPending"
+                        @checkout="handleCheckout" 
+                        @open-payment-modal="isPaymentModalVisible = true"
+                        @close-payment-modal="isPaymentModalVisible = false"
+                        class="h-full" 
+                    />
                 </div>
             </div>
         </template>

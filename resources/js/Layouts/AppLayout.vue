@@ -225,7 +225,7 @@ watch(activeSession, (newSession, oldSession) => {
         <div class="layout-mask animate-fadein"></div>
     </div>
     <Toast />
-    <ConfirmDialog />
+    <ConfirmDialog class="max-w-2xl" />
 
     <!-- --- INICIO: NUEVO MODAL AÑADIDO --- -->
     <SessionClosedModal 

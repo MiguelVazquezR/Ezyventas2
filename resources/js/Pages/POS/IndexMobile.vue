@@ -31,6 +31,7 @@ const toast = useToast();
 
 const cartItems = ref([]);
 const selectedClient = ref(null);
+const isPaymentModalVisible = ref(false);
 
 // --- Lógica para Drawer del Carrito ---
 const isCartDrawerVisible = ref(false);
@@ -239,6 +240,7 @@ const removeCartItem = (itemId) => {
 const clearCart = () => {
     cartItems.value = [];
     selectedClient.value = null;
+    isPaymentModalVisible.value = false;
 };
 
 // --- Clientes y Carritos Pendientes ---
@@ -365,7 +367,7 @@ const handleCheckout = (checkoutData) => {
             break;
         case 'apartado':
             // Esta es la ruta que crearemos en el backend
-            routeName = 'pos.layaway'; 
+            routeName = 'pos.layaway';
             break;
         default:
             toast.add({ severity: 'error', summary: 'Error', detail: 'Tipo de transacción desconocido.', life: 5000 });
@@ -417,12 +419,26 @@ const handleCheckout = (checkoutData) => {
                     <template #header>
                         <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Resumen de venta</h2>
                     </template>
-                    <ShoppingCart :items="cartItems" :client="selectedClient" :customers="localCustomers"
-                        :default-customer="defaultCustomer" :active-promotions="activePromotions"
-                        @update-quantity="updateCartQuantity" @update-price="updateCartPrice"
-                        @remove-item="removeCartItem" @clear-cart="clearCart" @select-customer="handleSelectCustomer"
-                        @customer-created="handleCustomerCreated" @save-cart="saveCartToPending"
-                        @checkout="handleCheckout" class="h-full" />
+                    <ShoppingCart 
+                        :items="cartItems" 
+                        :client="selectedClient" 
+                        :customers="localCustomers"
+                        :default-customer="defaultCustomer" 
+                        :active-promotions="activePromotions"
+                        :loading="form.processing"
+                        :payment-modal-visible="isPaymentModalVisible"
+                        @update-quantity="updateCartQuantity" 
+                        @update-price="updateCartPrice"
+                        @remove-item="removeCartItem" 
+                        @clear-cart="clearCart" 
+                        @select-customer="handleSelectCustomer"
+                        @customer-created="handleCustomerCreated" 
+                        @save-cart="saveCartToPending"
+                        @checkout="handleCheckout" 
+                        @open-payment-modal="isPaymentModalVisible = true"
+                        @close-payment-modal="isPaymentModalVisible = false"
+                        class="h-full" 
+                    />
                 </Drawer>
 
             </template>

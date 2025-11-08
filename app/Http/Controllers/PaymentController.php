@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Exception;
+use Illuminate\Validation\ValidationException;
 
 class PaymentController extends Controller
 {
@@ -25,36 +26,41 @@ class PaymentController extends Controller
     public function store(Request $request, Transaction $transaction, PaymentService $paymentService)
     {
         // 1. VALIDACIÓN DEL PAYLOAD
-        // Validamos la entrada para que coincida con lo que envía MultiPaymentProcessor
-        $validated = $request->validate([
-            // Requerimos el ID de la sesión de caja, que ServiceOrderShow.vue debe inyectar.
+        
+        // --- INICIO DE MODIFICACIÓN (Problema 2) ---
+        // Definimos las reglas base
+        $rules = [
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id,status,abierta',
-            
-            // 'use_balance' es un booleano simple.
             'use_balance' => 'required|boolean',
-            
-            // 'payments' ahora es 'nullable' porque el pago podría ser *solo* con saldo a favor.
             'payments' => 'nullable|array',
             'payments.*.amount' => 'required_with:payments|numeric|min:0.01',
             'payments.*.method' => ['required_with:payments', Rule::in(['efectivo', 'tarjeta', 'transferencia'])],
             'payments.*.notes' => 'nullable|string',
-            'payments.*.bank_account_id' => [
-                'nullable',
-                'integer',
-                'exists:bank_accounts,id',
-                // Es requerido si uno de los métodos de pago es tarjeta o transferencia.
-                Rule::requiredIf(function () use ($request) {
-                    foreach ($request->input('payments', []) as $payment) {
-                        if (in_array($payment['method'], ['tarjeta', 'transferencia'])) {
-                            return true;
-                        }
-                    }
-                    return false;
-                }),
-            ],
-        ], [
-            'cash_register_session_id.required' => 'No se ha proporcionado una sesión de caja activa.'
-        ]);
+        ];
+
+        // Añadimos reglas dinámicas para 'bank_account_id'
+        // Iteramos sobre cada pago enviado en el request
+        foreach ($request->input('payments', []) as $index => $payment) {
+            // Si el método es tarjeta o transferencia, hacemos 'bank_account_id' obligatorio
+            // para *ese* índice específico (ej. payments.1.bank_account_id)
+            if (in_array($payment['method'], ['tarjeta', 'transferencia'])) {
+                $rules["payments.{$index}.bank_account_id"] = 'required|integer|exists:bank_accounts,id';
+            } else {
+                // Si es 'efectivo', solo nos aseguramos de que sea nulo o un entero válido
+                $rules["payments.{$index}.bank_account_id"] = 'nullable|integer';
+            }
+        }
+
+        // Definimos los mensajes de error personalizados
+        $messages = [
+            'cash_register_session_id.required' => 'No se ha proporcionado una sesión de caja activa.',
+            'payments.*.bank_account_id.required' => 'Se requiere una cuenta destino para pagos con tarjeta o transferencia.',
+            'payments.*.bank_account_id.exists' => 'La cuenta bancaria seleccionada no es válida.',
+        ];
+
+        // Ejecutamos la validación con las reglas dinámicas
+        $validated = $request->validate($rules, $messages);
+        // --- FIN DE MODIFICACIÓN ---
 
         // Validación personalizada: Asegurarse de que al menos un método de pago venga.
         if (empty($validated['payments']) && !$validated['use_balance']) {
@@ -62,7 +68,6 @@ class PaymentController extends Controller
                 'payments' => 'Debe proporcionar al menos un método de pago o usar el saldo a favor.',
             ]);
         }
-
 
         try {
             // 2. INICIO DE LA TRANSACCIÓN DE BASE DE DATOS

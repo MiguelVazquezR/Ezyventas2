@@ -29,6 +29,7 @@ const isPaymentModalVisible = ref(false);
 const isStartSessionModalVisible = ref(false);
 const isJoinSessionModalVisible = ref(false);
 const sessionModalAwaitingPaymentModal = ref(false);
+const isPaymentProcessing = ref(false);
 
 // --- Lógica para modal de ajuste ---
 const isAdjustModalVisible = ref(false);
@@ -93,10 +94,15 @@ const handleBalancePaymentSubmit = (paymentData) => {
         cash_register_session_id: activeSession.value.id
     };
 
+    isPaymentProcessing.value = true;
+
     // 3. Enviar el payload completo al controlador
     router.post(route('customers.payments.store', props.customer.id), payload, {
         onSuccess: () => {
             isPaymentModalVisible.value = false;
+        },
+        onFinish: () => { // Desactivar loading (en éxito o error)
+            isPaymentProcessing.value = false;
         },
         preserveScroll: true,
     });
@@ -314,7 +320,7 @@ const getTransactionStatusSeverity = (status) => {
             :user-bank-accounts="userBankAccounts" />
         <JoinSessionModal v-model:visible="isJoinSessionModalVisible" :sessions="joinableSessions" />
         <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="0"
-            :client="customer" payment-mode="balance" @submit="handleBalancePaymentSubmit" />
+            :client="customer" :loading="isPaymentProcessing" payment-mode="balance" @submit="handleBalancePaymentSubmit" />
         <Dialog v-model:visible="isAdjustModalVisible" header="Ajuste Manual de Saldo" modal
             class="w-full max-w-lg mx-4">
             <form @submit.prevent="submitAdjustment" class="space-y-6">

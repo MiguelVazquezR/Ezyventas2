@@ -11,9 +11,11 @@ const props = defineProps({
     customers: Array,
     defaultCustomer: Object,
     activePromotions: Array,
+    loading: { type: Boolean, default: false },
+    paymentModalVisible: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(['updateQuantity', 'updatePrice', 'removeItem', 'clearCart', 'selectCustomer', 'customerCreated', 'saveCart', 'checkout']);
+const emit = defineEmits(['updateQuantity', 'updatePrice', 'removeItem', 'clearCart', 'selectCustomer', 'customerCreated', 'saveCart', 'checkout', 'open-payment-modal', 'close-payment-modal']);
 
 const confirm = useConfirm();
 const requireConfirmation = (event) => {
@@ -145,11 +147,8 @@ const total = computed(() => subtotal.value - totalDiscount.value);
 
 
 // --- Lógica Modal Pago ---
-const isPaymentModalVisible = ref(false);
-
 // Emitir datos de checkout (sin cambios)
 const handlePaymentSubmit = (paymentData) => {
-    isPaymentModalVisible.value = false;
     emit('checkout', {
         ...paymentData,
         subtotal: subtotal.value,
@@ -218,11 +217,11 @@ const formatCurrency = (value) => {
                                 :class="(client.balance || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
                                 class="font-bold">
                                 {{ formatCurrency(client.balance || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' :
-                                '' }}
+                                    '' }}
                             </span>
                         </div>
                         <div class="flex justify-between text-sm">
-                            <span class="text-gray-600 dark:text-gray-300">Crédito Disponible:</span>
+                            <span class="text-gray-600 dark:text-gray-300">Crédito disponible:</span>
                             <span class="font-bold text-blue-600 dark:text-blue-400">
                                 {{ formatCurrency(client.available_credit || 0) }}
                             </span>
@@ -286,18 +285,28 @@ const formatCurrency = (value) => {
                 </div>
 
                 <!-- Botón Pagar/Finalizar -->
-                <Button @click="isPaymentModalVisible = true" :disabled="items.length === 0"
+                <Button @click="$emit('open-payment-modal')" :disabled="items.length === 0"
                     :label="(client && total <= 0 && client.balance >= total) || total === 0 ? 'Finalizar' : 'Pagar'"
                     icon="pi pi-arrow-right" iconPos="right"
-                    class="w-full mt-2 bg-orange-500 hover:bg-orange-600 border-none" />
+                    class="w-full mt-2 bg-orange-500 border-none" />
             </div>
         </div>
 
         <!-- Modales -->
         <CreateCustomerModal v-model:visible="isCreateCustomerModalVisible" @created="handleCustomerCreated" />
-        <PaymentModal v-model:visible="isPaymentModalVisible" :total-amount="total" :client="client"
-            :customers="customers" :allow-credit="true" :allow-layaway="true" payment-mode="strict"
-            @update:client="$emit('selectCustomer', $event)" @customer-created="$emit('customerCreated', $event)"
-            @submit="handlePaymentSubmit" />
+        <PaymentModal
+            :visible="props.paymentModalVisible"
+            @update:visible="$emit('close-payment-modal')"
+            :total-amount="total"
+            :client="client"
+            :customers="customers"
+            :allow-credit="true"
+            :allow-layaway="true"
+            :loading="props.loading"
+            payment-mode="strict"
+            @update:client="$emit('selectCustomer', $event)"
+            @customer-created="$emit('customerCreated', $event)"
+            @submit="handlePaymentSubmit"
+        />
     </div>
 </template>
