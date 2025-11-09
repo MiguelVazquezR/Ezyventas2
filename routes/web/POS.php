@@ -13,7 +13,10 @@ use App\Http\Controllers\PointOfSaleController;
 | aquí definidas ya cuentan con el middleware de autenticación.
 |
 */
+
 Route::middleware('auth')->prefix('pos')->as('pos.')->group(function () {
     Route::get('/', [PointOfSaleController::class, 'index'])->name('index');
     Route::post('/checkout', [PointOfSaleController::class, 'checkout'])->name('checkout');
+    // para Apartado
+    Route::post('/layaway', [PointOfSaleController::class, 'createLayaway'])->name('layaway');
 });

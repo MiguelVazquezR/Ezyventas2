@@ -130,8 +130,14 @@ const onPage = (event) => fetchData({ page: event.page + 1, rows: event.rows });
 const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: event.sortOrder });
 watch(searchTerm, () => fetchData());
 const getStockSeverity = (product) => {
-    if (product.current_stock <= 0) return 'danger';
-    if (product.current_stock <= product.min_stock) return 'warning';
+    // Calcular el stock disponible (físico - apartado)
+    const availableStock = (product.current_stock || 0) - (product.reserved_stock || 0);
+
+    if (availableStock <= 0) return 'danger';
+    // Asegurarse de que min_stock existe y es un número antes de comparar
+    if (product.min_stock && typeof product.min_stock === 'number' && availableStock <= product.min_stock) {
+        return 'warning';
+    }
     return 'success';
 };
 </script>
@@ -149,12 +155,14 @@ const getStockSeverity = (product) => {
                             <InputText v-model="searchTerm" placeholder="Buscar en mis productos..." class="w-full" />
                         </IconField>
                         <div class="flex items-center gap-2">
-                            <div v-tooltip.bottom="limitReached ? `Límite de ${productLimit} productos alcanzado` : 'Crear nuevo producto'">
+                            <div
+                                v-tooltip.bottom="limitReached ? `Límite de ${productLimit} productos alcanzado` : 'Crear nuevo producto'">
                                 <ButtonGroup>
-                                    <Button v-if="hasPermission('products.create')" label="Nuevo producto" icon="pi pi-plus"
-                                        @click="router.get(route('products.create'))" severity="warning"
-                                        :disabled="limitReached" />
-                                    <Button v-if="hasPermission('products.import_export')" icon="pi pi-chevron-down" @click="toggleHeaderMenu" severity="warning" />
+                                    <Button v-if="hasPermission('products.create')" label="Nuevo producto"
+                                        icon="pi pi-plus" @click="router.get(route('products.create'))"
+                                        severity="warning" :disabled="limitReached" />
+                                    <Button v-if="hasPermission('products.import_export')" icon="pi pi-chevron-down"
+                                        @click="toggleHeaderMenu" severity="warning" />
                                 </ButtonGroup>
                             </div>
                             <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" />
@@ -163,7 +171,8 @@ const getStockSeverity = (product) => {
                 </div>
 
                 <!-- MEJORADO: Resumen de Stock por Categoría -->
-                <Panel v-if="stockByCategory && stockByCategory.length > 0" toggleable collapsed class="mb-6 !shadow-none border dark:border-gray-700">
+                <Panel v-if="stockByCategory && stockByCategory.length > 0" toggleable collapsed
+                    class="mb-6 !shadow-none border dark:border-gray-700">
                     <template #header>
                         <div class="flex items-center gap-2 text-gray-800 dark:text-gray-200">
                             <i class="pi pi-chart-bar"></i>
@@ -173,16 +182,21 @@ const getStockSeverity = (product) => {
 
                     <div class="text-sm text-gray-700 dark:text-gray-300">
                         <ul class="space-y-3">
-                            <li v-for="cat in stockByCategory" :key="cat.id" class="flex justify-between items-baseline">
+                            <li v-for="cat in stockByCategory" :key="cat.id"
+                                class="flex justify-between items-baseline">
                                 <span class="text-gray-600 dark:text-gray-400">{{ cat.name }}</span>
-                                <span class="flex-grow border-b border-dashed border-gray-300 dark:border-gray-600 mx-2"></span>
-                                <span class="font-medium text-gray-900 dark:text-gray-100">{{ cat.products_sum_current_stock }} unidades</span>
+                                <span
+                                    class="flex-grow border-b border-dashed border-gray-300 dark:border-gray-600 mx-2"></span>
+                                <span class="font-medium text-gray-900 dark:text-gray-100">{{
+                                    cat.products_sum_current_stock }}
+                                    unidades</span>
                             </li>
                         </ul>
                         <Divider />
                         <div class="flex justify-between items-center font-bold text-base mt-2">
                             <span>Total General</span>
-                            <span class="text-primary-500">{{ new Intl.NumberFormat().format(totalStock) }} unidades</span>
+                            <span class="text-primary-500">{{ new Intl.NumberFormat().format(totalStock) }}
+                                unidades</span>
                         </div>
                     </div>
                 </Panel>
@@ -194,10 +208,10 @@ const getStockSeverity = (product) => {
                     <span class="font-semibold text-sm text-[#373737] dark:text-gray-200">{{ selectedProducts.length }}
                         producto(s) seleccionado(s)</span>
                     <div class="flex items-center gap-2">
-                        <Button v-if="hasPermission('products.manage_stock')" @click="showAddStockModal = true" label="Dar entrada" icon="pi pi-arrow-down"
-                            size="small" severity="secondary" outlined />
-                        <Button v-if="hasPermission('products.delete')" @click="deleteSelectedProducts" label="Eliminar" icon="pi pi-trash" size="small"
-                            severity="danger" outlined />
+                        <Button v-if="hasPermission('products.manage_stock')" @click="showAddStockModal = true"
+                            label="Dar entrada" icon="pi pi-arrow-down" size="small" severity="secondary" outlined />
+                        <Button v-if="hasPermission('products.delete')" @click="deleteSelectedProducts" label="Eliminar"
+                            icon="pi pi-trash" size="small" severity="danger" outlined />
                     </div>
                 </div>
 
@@ -222,13 +236,9 @@ const getStockSeverity = (product) => {
                     <Column field="sku" header="Código" sortable>
                         <template #body="{ data }">
                             <div class="flex items-center gap-2 -ml-2">
-                                <Button
-                                    v-if="data.sku && hasPermission('pos.access')"
-                                    @click="openPrintModal(data)"
-                                    icon="pi pi-print"
-                                    text rounded severity="secondary"
-                                    v-tooltip.bottom="'Imprimir Etiqueta'"
-                                />
+                                <Button v-if="data.sku && hasPermission('pos.access')" @click="openPrintModal(data)"
+                                    icon="pi pi-print" text rounded severity="secondary"
+                                    v-tooltip.bottom="'Imprimir Etiqueta'" />
                                 <span>{{ data.sku }}</span>
                             </div>
                         </template>
@@ -236,7 +246,16 @@ const getStockSeverity = (product) => {
                     <Column field="name" header="Nombre" sortable></Column>
                     <Column field="current_stock" header="Existencias" sortable>
                         <template #body="{ data }">
-                            <Tag :value="data.current_stock" :severity="getStockSeverity(data)" />
+                            <div class="flex items-center space-x-2">
+                                <!-- El Tag muestra el stock disponible -->
+                                <Tag :value="(data.current_stock || 0) - (data.reserved_stock || 0)"
+                                    :severity="getStockSeverity(data)" />
+
+                                <Tag v-if="data.reserved_stock && data.reserved_stock > 0"
+                                    :value="data.reserved_stock + ' apartado(s)'"
+                                    v-tooltip.bottom="`Stock físico Total: ${data.current_stock}`"
+                                    class="!bg-indigo-100 !text-indigo-600" />
+                            </div>
                         </template>
                     </Column>
                     <Column field="selling_price" header="Precio" sortable>
@@ -246,7 +265,7 @@ const getStockSeverity = (product) => {
                             }).format(data.selling_price) }}
                         </template>
                     </Column>
-                    <Column field="min_stock" header="Exist. Mínimas" sortable></Column>
+                    <Column field="min_stock" header="Exist. mínimas" sortable></Column>
                     <Column headerStyle="width: 5rem; text-align: center">
                         <template #body="{ data }">
                             <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded
@@ -268,12 +287,8 @@ const getStockSeverity = (product) => {
         <AddBatchStockModal :visible="showAddStockModal" :products="selectedProducts"
             @update:visible="showAddStockModal = false" />
         <ImportProductsModal :visible="showImportModal" @update:visible="showImportModal = false" />
-        
-        <PrintModal 
-            v-if="printDataSource"
-            v-model:visible="isPrintModalVisible"
-            :data-source="printDataSource"
-            :available-templates="availableTemplates"
-        />
+
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
+            :available-templates="availableTemplates" />
     </AppLayout>
 </template>

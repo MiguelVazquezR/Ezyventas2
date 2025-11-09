@@ -398,7 +398,7 @@ const submit = () => {
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <div class="flex items-center justify-between border-b pb-3 mb-4">
                     <h2 class="text-lg font-semibold">Detalles Adicionales</h2>
-                    <Button @click="openCustomFieldManager" icon="pi pi-cog" text rounded v-tooltip.left="'Gestionar campos personalizados'" />
+                    <Button @click="openCustomFieldManager" icon="pi pi-cog" text label="Gestionar" v-tooltip.left="'Gestionar campos personalizados'" />
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div v-for="field in customFieldDefinitions" :key="field.id">

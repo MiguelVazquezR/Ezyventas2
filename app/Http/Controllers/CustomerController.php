@@ -23,7 +23,6 @@ class CustomerController extends Controller implements HasMiddleware
         return [
             new Middleware('can:customers.access', only: ['index']),
             new Middleware('can:customers.create', only: ['create', 'store']),
-            // --- MODIFICADO: Añadido printStatement a los permisos de 'see_details' ---
             new Middleware('can:customers.see_details', only: ['show', 'printStatement']),
             new Middleware('can:customers.edit', only: ['edit', 'update', 'adjustBalance']),
             new Middleware('can:customers.delete', only: ['destroy', 'batchDestroy']),
@@ -37,6 +36,10 @@ class CustomerController extends Controller implements HasMiddleware
 
         $query = Customer::query()
             ->where('branch_id', $branchId);
+
+        // Usamos withSum para sumar la columna 'quantity' de la relación 'layawayItems'
+        // El resultado estará disponible como 'layaway_items_quantity_sum'
+        $query->withSum('layawayItems as layaway_items_quantity_sum', 'quantity');
 
         if ($request->has('search')) {
             $searchTerm = $request->input('search');
@@ -75,7 +78,7 @@ class CustomerController extends Controller implements HasMiddleware
         unset($validated['initial_balance']);
 
         DB::transaction(function () use ($validated, $initialBalance) {
-            
+
             // 1. Crear el cliente y asignar su saldo inicial
             $customer = Customer::create(array_merge($validated, [
                 'branch_id' => Auth::user()->branch_id,
@@ -96,11 +99,18 @@ class CustomerController extends Controller implements HasMiddleware
         return redirect()->route('customers.index')->with('success', 'Cliente creado con éxito.');
     }
 
-    public function show(Customer $customer): Response
+   public function show(Customer $customer): Response
     {
         // Se cargan las transacciones por separado para la primera tabla.
         $customer->load([
             'transactions' => fn($query) => $query->orderBy('created_at', 'desc'),
+            
+            // Cargamos la relación 'layawayTransactions' (que definimos en el Customer.php)
+            // y también cargamos las sub-relaciones 'payments' e 'items' de esos apartados.
+            'layawayTransactions' => function ($query) {
+                $query->with(['payments', 'items'])
+                      ->orderBy('created_at', 'desc');
+            },
         ]);
 
         // Se obtienen las cajas registradoras disponibles para el modal de apertura de sesión.
@@ -119,12 +129,27 @@ class CustomerController extends Controller implements HasMiddleware
             $userBankAccounts = $user->bankAccounts()->get();
         }
 
+        // Formateamos los apartados para la vista
+        $formattedLayaways = $customer->layawayTransactions->map(function ($transaction) {
+            $totalPaid = $transaction->payments->sum('amount');
+            return [
+                'id' => $transaction->id,
+                'folio' => $transaction->folio,
+                'created_at' => $transaction->created_at->toDateTimeString(),
+                'total_amount' => (float) $transaction->total,
+                'total_paid' => (float) $totalPaid,
+                'pending_amount' => (float) $transaction->total - $totalPaid,
+                'total_items_quantity' => $transaction->items->sum('quantity'),
+            ];
+        });
+
         return Inertia::render('Customer/Show', [
             'customer' => $customer,
             // Se pasa el nuevo historial de movimientos calculado a través del accesor en el modelo Customer.
             'historicalMovements' => $customer->historical_movements,
             'availableCashRegisters' => $availableCashRegisters,
             'userBankAccounts' => $userBankAccounts,
+            'activeLayaways' => $formattedLayaways, // <-- Pasamos los apartados formateados a la vista
         ]);
     }
 

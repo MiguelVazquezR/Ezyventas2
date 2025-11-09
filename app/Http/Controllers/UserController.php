@@ -156,6 +156,7 @@ class UserController extends Controller implements HasMiddleware
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'branch_id' => Auth::user()->branch_id,
+            'email_verified_at' => now(),
         ]);
 
         $role = Role::find($request->role_id);

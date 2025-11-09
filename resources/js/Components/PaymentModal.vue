@@ -5,192 +5,242 @@ import { useToast } from 'primevue/usetoast';
 import BankAccountModal from '@/Components/BankAccountModal.vue';
 import CreateCustomerModal from '@/Components/CreateCustomerModal.vue';
 import PaymentSummaryColumn from './PaymentModalPartials/PaymentSummaryColumn.vue';
-import PaymentStepBalance from './PaymentModalPartials/PaymentStepBalance.vue';
-import PaymentStepFlow from './PaymentModalPartials/PaymentStepFlow.vue';
+import MultiPaymentProcessor from './PaymentModalPartials/MultiPaymentProcessor.vue';
 
+// --- Props (sin cambios) ---
 const props = defineProps({
     visible: Boolean,
     totalAmount: { type: Number, required: true },
     client: { type: Object, default: null },
     customers: { type: Array, default: () => [] },
-    activeSession: { type: Object, default: null },
     paymentMode: {
         type: String,
-        default: 'strict',
-        validator: (value) => ['strict', 'flexible', 'balance'].includes(value)
-    }
+        default: 'strict', // 'strict', 'flexible', 'balance'
+    },
+    allowCredit: { type: Boolean, default: true },
+    allowLayaway: { type: Boolean, default: true },
+    loading: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['update:visible', 'submit', 'update:client', 'customerCreated']);
 const toast = useToast();
 
-// --- ESTADO Y LÓGICA DEL COMPONENTE ---
-const selectedMethod = ref(null);
-const payments = ref([]);
+// --- Estado de Flujo (sin cambios) ---
+const currentStep = ref('selecType');
+const transactionType = ref('contado');
+
+// --- 1. Estado: Selectores de tipo de transacción (sin cambios) ---
+const transactionTypes = computed(() => {
+    let types = [
+        {
+            id: 'contado',
+            label: 'Pago al contado',
+            image: '/images/contado.webp',
+            bgColor: '#C5E0F7',
+            textColor: '#3D5F9B',
+            description: 'Se liquida el 100% de la venta en este momento.',
+            disabled: false
+        },
+        {
+            id: 'credito',
+            label: 'A crédito / pagos',
+            image: '/images/credito.webp',
+            bgColor: '#FFCD87',
+            textColor: '#603814',
+            description: 'Paga un anticipo y el resto se va al saldo deudor del cliente.',
+            disabled: !props.allowCredit || !props.client
+        },
+        {
+            id: 'apartado',
+            label: 'Sistema de apartado',
+            image: '/images/apartado.webp',
+            bgColor: '#FFC9E9',
+            textColor: '#862384',
+            description: 'Paga un anticipo para reservar los productos.',
+            disabled: !props.allowLayaway || !props.client
+        },
+    ];
+
+    if (!props.allowCredit) {
+        types = types.filter(t => t.id !== 'credito');
+    }
+    if (!props.allowLayaway) {
+        types = types.filter(t => t.id !== 'apartado');
+    }
+    return types;
+});
+
+const selectTransactionType = (type) => {
+    transactionType.value = type;
+    currentStep.value = 'processPayment';
+};
+
+// --- 2. Estado: Procesador de Pagos (sin cambios) ---
+const bankAccounts = ref([]);
+const bankAccountOptions = ref([]);
 const showAddBankAccountModal = ref(false);
 const showCreateCustomerModal = ref(false);
-const cashReceived = ref(null);
-const bankAccounts = ref([]);
-const selectedAccountId = ref(null);
-const paymentNotes = ref('');
-const amountToPay = ref(0);
-const willMakeDownPayment = ref(false);
-const downPaymentAmount = ref(null);
-const downPaymentMethod = ref('efectivo');
-const downPaymentBankAccountId = ref(null);
 
-// --- LÓGICA DE DATOS Y CÁLCULOS ---
-const fetchBankAccounts = async () => {
+const isLoadingAccounts = ref(false); // Nuevo estado de carga
+
+const fetchBankAccounts = async () => { // Convertido a async
     try {
         const response = await axios.get(route('branch-bank-accounts'));
         bankAccounts.value = response.data;
-        if (bankAccounts.value.length === 1) {
-            selectedAccountId.value = bankAccounts.value[0].id;
-            downPaymentBankAccountId.value = bankAccounts.value[0].id;
-        }
-    } catch (error) { console.error("Error fetching bank accounts:", error); }
+        bankAccountOptions.value = response.data.map(acc => ({
+            label: `${acc.bank_name} - ${acc.account_name} (...${(acc.card_number || acc.account_number || 'N/A').slice(-4)})`,
+            value: acc.id
+        }));
+    } catch (error) { 
+        console.error("Error fetching bank accounts:", error); 
+        toast.add({ severity: 'error', summary: 'Error de Carga', detail: 'No se pudieron cargar las cuentas bancarias.', life: 5000 });
+    }
 };
 
+// Esta función ahora no espera ningún argumento (newAccount), solo recarga la lista.
 const onBankAccountAdded = () => {
-    showAddBankAccountModal.value = false;
-    toast.add({ severity: 'success', summary: 'Éxito', detail: 'Cuenta bancaria registrada.', life: 3000 });
-    fetchBankAccounts();
+    // Vuelve a cargar la lista de cuentas para obtener la nueva
+    fetchBankAccounts(); 
 };
 
-const bankAccountOptions = computed(() => bankAccounts.value.map(acc => ({
-    label: `${acc.bank_name} - ${acc.account_name} (...${(acc.card_number || acc.account_number || 'N/A').slice(-4)})`,
-    value: acc.id
-})));
-
-const clientBalance = computed(() => props.client?.balance || 0);
-const amountAfterBalance = computed(() => props.totalAmount - Math.min(props.totalAmount, Math.max(0, clientBalance.value)));
-const amountToCreditFinal = computed(() => (willMakeDownPayment.value && downPaymentAmount.value > 0) ? amountAfterBalance.value - downPaymentAmount.value : amountAfterBalance.value);
-const futureDebt = computed(() => Math.abs(Math.min(0, clientBalance.value)) + amountToCreditFinal.value);
-const creditLimitExceeded = computed(() => futureDebt.value > (props.client?.credit_limit || 0));
-const requiredDownPayment = computed(() => creditLimitExceeded.value ? futureDebt.value - (props.client?.credit_limit || 0) : 0);
-const isCreditSale = computed(() => props.client ? amountToCreditFinal.value <= (props.client?.available_credit || 0) : false);
-
-const resetState = () => {
-    selectedMethod.value = null;
-    payments.value = [];
-    cashReceived.value = null;
-    selectedAccountId.value = null;
-    paymentNotes.value = '';
-    amountToPay.value = 0;
-    willMakeDownPayment.value = false;
-    downPaymentAmount.value = null;
-    downPaymentMethod.value = 'efectivo';
-    downPaymentBankAccountId.value = null;
-};
-
-// --- LÓGICA DE FLUJO Y MANEJO DE EVENTOS ---
-watch(() => props.visible, (newVal) => {
-    if (newVal) {
-        fetchBankAccounts();
-        resetState();
-        if (props.paymentMode === 'balance' && props.client?.balance < 0) {
-            amountToPay.value = Math.abs(props.client.balance);
-        }
-    }
-}, { immediate: true });
-
-const submitForm = () => {
-    payments.value = [];
-    let amount = 0;
-
-    if (props.paymentMode === 'balance') {
-        amount = amountToPay.value;
-        if (amount > 0) payments.value.push({ amount, method: selectedMethod.value, notes: paymentNotes.value, bank_account_id: selectedAccountId.value });
-    } else if (selectedMethod.value === 'credito') {
-        if (willMakeDownPayment.value && downPaymentAmount.value > 0) {
-            const downPaymentPayload = {
-                amount: downPaymentAmount.value,
-                method: downPaymentMethod.value,
-                notes: 'Abono inicial en venta a crédito'
-            };
-            if (['tarjeta', 'transferencia'].includes(downPaymentMethod.value)) {
-                downPaymentPayload.bank_account_id = downPaymentBankAccountId.value;
-            }
-            payments.value.push(downPaymentPayload);
-        }
-    } else {
-        amount = selectedMethod.value === 'efectivo' ? (cashReceived.value || 0) : (amountToPay.value || 0);
-        const finalAmount = Math.min(amount, props.totalAmount);
-        if (finalAmount > 0) {
-            const payload = { amount: finalAmount, method: selectedMethod.value };
-            if (['tarjeta', 'transferencia'].includes(selectedMethod.value)) {
-                payload.bank_account_id = selectedAccountId.value;
-                payload.notes = paymentNotes.value;
-            }
-            payments.value.push(payload);
-        }
-    }
-
-    if (payments.value.length === 0 && selectedMethod.value !== 'credito') {
-        toast.add({ severity: 'warn', summary: 'Monto Inválido', detail: 'El monto a pagar debe ser mayor a cero.', life: 4000 });
-        return;
-    }
-
-    emit('submit', { payments: payments.value, cash_register_session_id: props.activeSession?.id });
+// --- Lógica de Envío y Cierre (sin cambios) ---
+const closeModal = () => {
     emit('update:visible', false);
 };
+
+const handleSubmitFromProcessor = (paymentData) => {
+    emit('submit', {
+        ...paymentData,
+        transactionType: transactionType.value,
+    });
+    // No cerramos el modal aquí, esperamos a que el padre (Index.vue) lo haga
+};
+
+
+// Actualizamos esta función para manejar el 'paymentMode' flexible
+const resetModalState = () => {
+    
+    // Caso 1: Abono a Saldo (desde CustomerShow.vue)
+    // Salta al paso de pago y usa el tipo 'balance'
+    if (props.paymentMode === 'balance') {
+        currentStep.value = 'processPayment';
+        transactionType.value = 'balance';
+    } 
+    
+    // Caso 2: Pago Flexible (desde ServiceOrderShow.vue)
+    // Salta al paso de pago y usa el tipo 'flexible'
+    else if (props.paymentMode === 'flexible') {
+        currentStep.value = 'processPayment';
+        transactionType.value = 'flexible'; // <-- Este es el nuevo tipo
+    } 
+    
+    // Caso 3: Venta Estricta (desde POS/Index.vue)
+    // Inicia en el paso de selección de tipo
+    else {
+        currentStep.value = 'selecType';
+        transactionType.value = 'contado'; // Valor inicial por defecto
+    }
+};
+
+watch(() => props.visible, async (isVisible) => {
+    if (isVisible) {
+        isLoadingAccounts.value = true;
+        resetModalState(); // <-- Esta función AHORA SÍ se ejecutará
+        await fetchBankAccounts(); // Espera a que las cuentas carguen
+        isLoadingAccounts.value = false; // Oculta el spinner
+    }
+}, { immediate: true });
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="$emit('update:visible', false)" modal :header="paymentMode === 'balance' ? 'Abonar a Saldo' : 'Procesar Pago'"
-        :style="{ width: '50rem' }" :draggable="false">
-        <Toast />
-        <div class="grid grid-cols-2">
-            <PaymentSummaryColumn
-                :payment-mode="paymentMode"
-                :total-amount="totalAmount"
-                :amount-to-pay="amountToPay"
-                :client="client"
-            />
-            <div class="col-span-1 p-8">
-                <PaymentStepBalance
-                    v-if="paymentMode === 'balance'"
-                    v-model:amountToPay="amountToPay"
-                    v-model:selectedAccountId="selectedAccountId"
-                    v-model:paymentNotes="paymentNotes"
-                    :bank-accounts="bankAccounts"
-                    :bank-account-options="bankAccountOptions"
-                    @select-method="selectedMethod = $event"
-                    @submit="submitForm"
-                    @add-account="showAddBankAccountModal = true"
-                />
-                <PaymentStepFlow
-                    v-else
-                    v-model:cashReceived="cashReceived"
-                    v-model:amountToPay="amountToPay"
-                    v-model:selectedAccountId="selectedAccountId"
-                    v-model:paymentNotes="paymentNotes"
-                    v-model:willMakeDownPayment="willMakeDownPayment"
-                    v-model:downPaymentAmount="downPaymentAmount"
-                    v-model:downPaymentMethod="downPaymentMethod"
-                    v-model:downPaymentBankAccountId="downPaymentBankAccountId"
-                    :payment-mode="paymentMode"
-                    :total-amount="totalAmount"
-                    :client="client"
-                    :customers="customers"
-                    :bank-accounts="bankAccounts"
-                    :bank-account-options="bankAccountOptions"
-                    :is-credit-sale="isCreditSale"
-                    :credit-limit-exceeded="creditLimitExceeded"
-                    :required-down-payment="requiredDownPayment"
-                    :amount-to-credit-final="amountToCreditFinal"
-                    @select-method="selectedMethod = $event"
-                    @submit="submitForm"
-                    @add-account="showAddBankAccountModal = true"
-                    @select-customer="emit('update:client', $event)"
-                    @create-customer="showCreateCustomerModal = true"
-                    @remove-client="emit('update:client', null)"
-                />
+    <Dialog :visible="visible" @update:visible="closeModal" modal header="Procesar pago" class="w-full max-w-4xl mx-4">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-0">
+            <!-- Columna Izquierda: Resumen -->
+            <PaymentSummaryColumn :payment-mode="paymentMode" :total-amount="totalAmount" :client="client"
+                :transaction-type="transactionType" />
+
+            <!-- Columna Derecha: Contenido Dinámico -->
+            <div class="lg:col-span-2 p-4 lg:p-8">
+                <!-- 
+                  CASO 1: FLUJO DE VENTA (Selección de tipo)
+                  Esto ahora solo se muestra si el modo NO es 'balance' Y NO es 'flexible',
+                  Y si el paso actual es 'selecType'.
+                -->
+                <div v-if="paymentMode === 'strict' && currentStep === 'selecType'">
+                    <h3 class="text-xl font-semibold text-center mb-6 text-gray-800 dark:text-gray-200">
+                        ¿Cómo deseas registrar esta venta?
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <button v-for="type in transactionTypes" :key="type.id" @click="selectTransactionType(type.id)"
+                            :disabled="type.disabled"
+                            class="flex flex-col items-center justify-center p-4 border rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-90"
+                            :style="{ backgroundColor: type.bgColor, color: type.textColor }"
+                            v-tooltip.bottom="type.disabled ? 'Debes seleccionar un cliente para esta opción' : ''">
+                            <p class="font-bold text-center mb-1 text-sm">{{ type.label }}</p>
+                            <img :src="type.image" :alt="type.label" class="size-16 object-contain mb-1">
+                            <p class="text-xs m-0">{{ type.description }}</p>
+                        </button>
+                    </div>
+
+                    <!-- Selector de Cliente (solo visible si no hay cliente) -->
+                    <div v-if="!client && (allowCredit || allowLayaway)" class="mt-8">
+                        <Message severity="info" :closable="false">
+                            <span class="font-semibold">Se requiere un cliente</span> para ventas a crédito o sistema de
+                            apartado.
+                        </Message>
+                        <div class="flex items-center gap-2 mt-4">
+                            <Select :modelValue="client" @update:modelValue="emit('update:client', $event)"
+                                :options="customers" optionLabel="name" placeholder="Seleccionar cliente existente..."
+                                filter class="w-11/12" />
+                            <Button @click="showCreateCustomerModal = true" rounded icon="pi pi-plus"
+                                severity="contrast" size="small" v-tooltip.bottom="'Crear nuevo cliente'" />
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- 
+                  CASO 2: PROCESADOR DE PAGOS
+                  Esto se muestra si estamos en el paso 'processPayment' (para 'strict')
+                  O si el modo es 'balance' o 'flexible' (que saltan directo aquí).
+                -->
+                <div v-else-if="currentStep === 'processPayment'">
+                    <a v-if="paymentMode === 'strict'" @click="currentStep = 'selecType'"
+                        class="text-sm text-primary cursor-pointer mb-5 block hover:underline">
+                        &larr; Volver a seleccionar tipo
+                    </a>
+                    <!-- El 'v-else' asegura que el enlace "Volver" no aparezca en modo balance o flexible -->
+
+                    <!-- Mostrar spinner mientras cargan las cuentas -->
+                    <div v-if="isLoadingAccounts" class="flex items-center justify-center min-h-[400px]">
+                        <i class="pi pi-spin pi-spinner !text-4xl text-gray-500"></i>
+                    </div>
+                    
+                    <!-- Mostrar el procesador solo cuando las cuentas estén listas -->
+                    <MultiPaymentProcessor 
+                        v-else
+                        :total-amount="totalAmount" 
+                        :client="client"
+                        :transaction-type="transactionType" 
+                        :bank-accounts="bankAccounts"
+                        :bank-account-options="bankAccountOptions"
+                        :loading="props.loading"
+                        @submit="handleSubmitFromProcessor"
+                        @add-account="showAddBankAccountModal = true" 
+                    />
+                </div>
+
             </div>
         </div>
-        <template #footer><div></div></template>
+
+        <template #footer>
+            <div></div>
+        </template>
     </Dialog>
-    
-    <BankAccountModal :visible="showAddBankAccountModal" @update:visible="showAddBankAccountModal = $event" @success="onBankAccountAdded" />
-    <CreateCustomerModal :visible="showCreateCustomerModal" @update:visible="showCreateCustomerModal = $event" @created="emit('customerCreated', $event)" />
+
+    <!-- Modales auxiliares (sin cambios) -->
+    <BankAccountModal :visible="showAddBankAccountModal" @update:visible="showAddBankAccountModal = $event"
+        @success="onBankAccountAdded" />
+    <CreateCustomerModal :visible="showCreateCustomerModal" @update:visible="showCreateCustomerModal = $event"
+        @created="emit('customerCreated', $event)" />
 </template>

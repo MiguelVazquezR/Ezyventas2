@@ -48,7 +48,7 @@ const splitButtonItems = ref([
 const deleteSingleOrder = () => {
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar esta orden de servicio?`,
-        header: 'Confirmar Eliminación',
+        header: 'Confirmar eliminación',
         icon: 'pi pi-info-circle',
         acceptClass: 'p-button-danger',
         accept: () => {
@@ -115,11 +115,12 @@ const formatDate = (dateString) => {
 
 const getStatusSeverity = (status) => {
     const map = {
-        pendiente: 'info',
-        en_progreso: 'warning',
+        cancelado: 'danger',
+        pendiente: 'warn',
+        en_progreso: 'info',
         esperando_refaccion: 'secondary',
         terminado: 'success',
-        entregado: 'primary',
+        entregado: 'success',
     };
     return map[status] || 'secondary';
 };
@@ -131,7 +132,7 @@ const getStatusSeverity = (status) => {
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
                 <!-- Header -->
                 <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Órdenes de Servicio</h1>
+                    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Órdenes de servicio</h1>
                     <div class="flex items-center gap-2">
                         <IconField iconPosition="left" class="w-full md:w-auto">
                             <InputIcon class="pi pi-search"></InputIcon>
@@ -174,10 +175,10 @@ const getStatusSeverity = (status) => {
                                 class="capitalize" />
                         </template>
                     </Column>
-                    <Column field="received_at" header="Fecha de Recepción" sortable>
+                    <Column field="received_at" header="Fecha de recepción" sortable>
                         <template #body="{ data }"> {{ formatDate(data.received_at) }} </template>
                     </Column>
-                    <Column field="promised_at" header="Fecha Promesa" sortable>
+                    <Column field="promised_at" header="Fecha promesa" sortable>
                         <template #body="{ data }"> {{ formatDate(data.promised_at) }} </template>
                     </Column>
                     <Column field="final_total" header="Total" sortable>

@@ -1,69 +1,112 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useToast } from 'primevue/usetoast';
 
-// Helper de Logging (opcional, para depuración)
+// --- Logger de depuración ---
 const logger = {
     info: (...args) => console.log('[useWebBluetooth Info]', ...args),
     warn: (...args) => console.warn('[useWebBluetooth Warn]', ...args),
     error: (...args) => console.error('[useWebBluetooth Error]', ...args),
 };
 
+// --- UUIDs de Servicio Conocidos ---
+
+// 1. UUID de Puerto Serial estándar (Usado por muchas impresoras)
+const SERIAL_PORT_PROFILE_UUID = '00001101-0000-1000-8000-00805f9b34fb';
+// 2. UUID de tus imágenes nRF Connect (Anunciado por Phomemo Q30)
+const PHOMEMO_IMG_UUID = '0000af30-0000-1000-8000-00805f9b34fb';
+// 3. UUID de tu código antiguo funcional (PrintTicket.vue)
+const PHOMEMO_OLD_CODE_UUID = '49535343-fe7d-4ae5-8fa9-9fafd205e455';
+
 
 export function useWebBluetooth() {
     const toast = useToast();
-    const bluetoothDevice = ref(null); // Almacena el objeto BluetoothDevice
-    const writableCharacteristic = ref(null); // Almacena la característica GATT para escribir
-    const isConnectingBluetooth = ref(false); // Loading para la conexión BT
-    const isScanningBluetooth = ref(false); // Loading para el escaneo BT
-    const bluetoothError = ref(null); // Errores específicos de BT
-    const isSecureContext = ref(false); // True si es HTTPS o localhost
+    const bluetoothDevice = ref(null);
+    const writableCharacteristic = ref(null);
+    const isConnectingBluetooth = ref(false);
+    const isScanningBluetooth = ref(false);
+    const bluetoothError = ref(null);
+    const isSecureContext = ref(false);
 
-    // Verificar contexto seguro al montar
     onMounted(() => {
         isSecureContext.value = window.isSecureContext;
-        logger.info(`Contexto seguro (HTTPS/localhost): ${isSecureContext.value}`);
+        if (!isSecureContext.value) {
+            logger.error("La página no se sirve en un contexto seguro (HTTPS o localhost). Web Bluetooth será deshabilitado.");
+        }
     });
 
-    // Intenta encontrar la característica correcta para enviar datos
-    async function findWritableCharacteristic(server) { // <-- Quitamos serviceUuid
+    /**
+     * Esta es la función clave. En lugar de buscar un servicio/característica
+     * específicos, explorará TODOS los servicios del dispositivo hasta
+     * encontrar uno que permita la escritura.
+     */
+    async function findWritableCharacteristic(server) {
+        logger.info("Buscando servicios primarios...");
+        
+        let services;
         try {
-            // +++ INICIO CORRECCIÓN (Estrategia Exploratoria) +++
-            // Volvemos a pedir TODOS los servicios, ya que el UUID '0xAF30'
-            // parece ser solo de anuncio, pero no el de conexión real.
-            logger.info("Buscando todos los servicios primarios...");
-            const services = await server.getPrimaryServices();
-            logger.info('Servicios GATT encontrados:', services.map(s => s.uuid));
-            // +++ FIN CORRECCIÓN +++
+            // Obtener todos los servicios primarios
+            services = await server.getPrimaryServices();
+            if (!services || services.length === 0) {
+                throw new Error("No se encontraron servicios primarios en el dispositivo.");
+            }
+        } catch (e) {
+            logger.error("Error obteniendo servicios primarios:", e);
+            throw new Error(`No se pudieron obtener servicios: ${e.message}`);
+        }
+        
+        logger.info(`Servicios GATT encontrados: ${services.length}`, services.map(s => s.uuid));
 
+        // Priorizamos 'writeWithoutResponse' (más rápido para imprimir)
+        let writeChar = null;
+        let writeWithoutResponseChar = null;
 
-            // Recorremos todos los servicios encontrados
-            for (const service of services) {
-                logger.info(`Inspeccionando características del servicio: ${service.uuid}`);
-                const characteristics = await service.getCharacteristics();
-                // Priorizar 'writeWithoutResponse'
-                const writeWithoutResponseChar = characteristics.find(c => c.properties.writeWithoutResponse);
-                if (writeWithoutResponseChar) {
-                    logger.info('Característica encontrada (writeWithoutResponse):', writeWithoutResponseChar.uuid);
-                    return writeWithoutResponseChar;
+        // Recorrer todos los servicios
+        for (const service of services) {
+            logger.info(`Inspeccionando servicio: ${service.uuid}`);
+            let characteristics;
+            try {
+                characteristics = await service.getCharacteristics();
+            } catch (e) {
+                logger.warn(`No se pudieron obtener características para el servicio ${service.uuid}`, e.message);
+                continue; // Saltar al siguiente servicio
+            }
+            
+            // Recorrer todas las características de este servicio
+            for (const characteristic of characteristics) {
+                const props = characteristic.properties;
+                // logger.info(`-- Característica: ${characteristic.uuid}`, props);
+
+                // Encontrar la primera característica que soporte 'writeWithoutResponse'
+                if (props.writeWithoutResponse) {
+                    logger.info(`¡Característica 'writeWithoutResponse' encontrada!: ${characteristic.uuid}`);
+                    writeWithoutResponseChar = characteristic;
+                    break; // Salir del bucle de características
                 }
-                // Luego buscar 'write'
-                const writeChar = characteristics.find(c => c.properties.write);
-                if (writeChar) {
-                    logger.info('Característica encontrada (write):', writeChar.uuid);
-                    return writeChar;
+                // Si no, guardar la primera que soporte 'write'
+                if (props.write && !writeChar) {
+                    logger.info(`Característica 'write' encontrada: ${characteristic.uuid}`);
+                    writeChar = characteristic;
                 }
             }
-            throw new Error("No se encontró ninguna característica escribible en ningún servicio.");
-        } catch (e) {
-            logger.error("Error al buscar características:", e);
-            // El error "No service found in device" del navegador será capturado aquí.
-            throw new Error(`Error buscando servicio/característica: ${e.message}`);
+            // Si ya encontramos la ideal (WithoutResponse), no necesitamos seguir buscando
+            if (writeWithoutResponseChar) {
+                break; // Salir del bucle de servicios
+            }
         }
+
+        // Devolver la característica priorizada
+        const foundChar = writeWithoutResponseChar || writeChar;
+        if (foundChar) {
+            logger.info(`Usando característica: ${foundChar.uuid} (Método: ${writeWithoutResponseChar ? 'writeWithoutResponse' : 'write'})`);
+            return foundChar;
+        }
+
+        // Si se llega aquí, no se encontró nada
+        throw new Error("No se encontró ninguna característica con propiedad 'write' o 'writeWithoutResponse'.");
     }
 
     // Escanear y conectar
     const scanAndConnectBluetooth = async () => {
-        // (Misma lógica que antes, usando logger)
         if (!navigator.bluetooth) {
             bluetoothError.value = "Web Bluetooth no es soportado en este navegador.";
             toast.add({ severity: 'error', summary: 'Error Compatibilidad', detail: bluetoothError.value, life: 5000 });
@@ -77,57 +120,52 @@ export function useWebBluetooth() {
 
         isScanningBluetooth.value = true;
         bluetoothError.value = null;
-        if (bluetoothDevice.value?.gatt?.connected) { // Desconectar si ya hay uno
+        
+        if (bluetoothDevice.value?.gatt?.connected) {
             disconnectBluetooth();
         }
         bluetoothDevice.value = null;
         writableCharacteristic.value = null;
 
-        // Definimos el UUID de la impresora (de nRF Connect) como constante
-        const PRINTER_SERVICE_UUID = '0000af30-0000-1000-8000-00805f9b34fb';
-
         try {
             logger.info("Solicitando dispositivo Bluetooth...");
             const device = await navigator.bluetooth.requestDevice({
-                // +++ INICIO CORRECCIÓN (Estrategia Exploratoria) +++
-                // Volvemos a aceptar todos los dispositivos, ya que el filtro de servicio es erróneo.
+                // 1. Aceptar todos los dispositivos. (Esto es lo que muestra la Phomemo)
                 acceptAllDevices: true,
-                // PERO, seguimos pidiendo permiso para el servicio que 'anuncia',
-                // esto debería darnos permiso para explorar el dispositivo.
-                optionalServices: [PRINTER_SERVICE_UUID]
-                // +++ FIN CORRECCIÓN +++
+                
+                // 2. Pedir permiso para TODOS los servicios que sospechamos.
+                // Esta es la clave para que 'getPrimaryServices()' funcione.
+                optionalServices: [
+                    SERIAL_PORT_PROFILE_UUID, // El estándar
+                    PHOMEMO_IMG_UUID,         // El de las imágenes nRF
+                    PHOMEMO_OLD_CODE_UUID     // El de tu código antiguo
+                ]
             });
 
             logger.info('Dispositivo seleccionado:', device.name);
             bluetoothDevice.value = device;
             isConnectingBluetooth.value = true;
 
+            // Escuchar desconexiones
             device.addEventListener('gattserverdisconnected', onDisconnected);
 
             logger.info('Conectando al servidor GATT...');
             const server = await device.gatt.connect();
             logger.info('Servidor GATT conectado.');
 
-            logger.info('Buscando característica escribible...');
-            // +++ INICIO CORRECCIÓN (Estrategia Exploratoria) +++
-            // Llamamos a la función sin el UUID específico, para que explore todos.
+            logger.info('Buscando característica escribible (método exploratorio)...');
             writableCharacteristic.value = await findWritableCharacteristic(server);
-            // +++ FIN CORRECCIÓN +++
-
-            if (!writableCharacteristic.value) {
-                throw new Error("No se pudo encontrar característica adecuada para escribir.");
-            }
 
             logger.info('¡Impresora Bluetooth lista!');
             toast.add({ severity: 'success', summary: 'Conectado', detail: `Impresora "${device.name}" conectada.`, life: 3000 });
 
         } catch (e) {
-            logger.error("Error de Web Bluetooth:", e);
+            logger.error("Error en el proceso de conexión de Web Bluetooth:", e);
             let userMessage = `Error: ${e.message}. Verifique impresora y permisos.`;
-            if (e.name === 'NotFoundError') userMessage = 'Búsqueda cancelada o no se seleccionó impresora.';
-            if (e.name === 'NotAllowedError') userMessage = 'Permiso denegado para acceder a Bluetooth.';
+            if (e.name === 'NotFoundError') userMessage = 'Búsqueda cancelada.';
+            if (e.name === 'NotAllowedError') userMessage = 'Permiso denegado para Bluetooth.';
             bluetoothError.value = userMessage;
-            toast.add({ severity: 'error', summary: 'Error Bluetooth', detail: bluetoothError.value, life: 6000 });
+            toast.add({ severity: 'error', summary: 'Error Bluetooth', detail: userMessage, life: 6000 });
             disconnectBluetooth(); // Limpiar
         } finally {
             isScanningBluetooth.value = false;
@@ -136,19 +174,17 @@ export function useWebBluetooth() {
     };
 
     // Listener de desconexión
-    const onDisconnected = () => {
-        // (Misma lógica que antes)
-         logger.warn('Impresora Bluetooth desconectada.');
-        // Evitar toast si la desconexión fue manual (bluetoothDevice ya es null)
+    const onDisconnected = (event) => {
+         const deviceName = event.target?.name || 'Dispositivo';
+         logger.warn(`Bluetooth desconectado: ${deviceName}`);
         if (bluetoothDevice.value) {
             toast.add({ severity: 'warn', summary: 'Desconectado', detail: 'Se perdió la conexión Bluetooth.', life: 4000 });
-            disconnectBluetooth(); // Limpiar estado
+            disconnectBluetooth();
         }
     };
 
-    // Desconectar manually
+    // Desconectar manualmente
     const disconnectBluetooth = () => {
-        // (Misma lógica que antes)
         if (bluetoothDevice.value) {
             bluetoothDevice.value.removeEventListener('gattserverdisconnected', onDisconnected);
             if (bluetoothDevice.value.gatt?.connected) {
@@ -158,7 +194,6 @@ export function useWebBluetooth() {
                 } catch (e) { logger.error("Error al desconectar GATT:", e) }
             }
         }
-        // Marcar como desconectado ANTES de limpiar refs para que onDisconnected no muestre toast
         const wasConnected = !!bluetoothDevice.value;
         bluetoothDevice.value = null;
         writableCharacteristic.value = null;
@@ -166,26 +201,50 @@ export function useWebBluetooth() {
         if(wasConnected) logger.info("Estado Bluetooth limpiado.");
     };
 
-    // Enviar datos por Bluetooth
+    /**
+     * Envia datos crudos (raw data) a la impresora.
+     * @param {ArrayBuffer | Uint8Array} data Los datos crudos a enviar.
+     */
     async function sendViaWebBluetooth(data) {
-        // (Misma lógica que antes, requiere 'writableCharacteristic.value' disponible)
         if (!writableCharacteristic.value) {
-             throw new Error("No hay característica Bluetooth escribible disponible.");
+             throw new Error("Característica Bluetooth no conectada.");
         }
-        const characteristic = writableCharacteristic.value; // Para claridad
-        const MAX_CHUNK_SIZE = 500;
-        let offset = 0;
-        const encoder = new TextEncoder(); // UTF-8 por defecto
-        const dataBuffer = encoder.encode(data);
-        logger.info(`Enviando ${dataBuffer.byteLength} bytes por Bluetooth...`);
+        
+        const characteristic = writableCharacteristic.value;
+        
+        // Determinar el método de escritura (priorizar sin respuesta)
+        const method = characteristic.properties.writeWithoutResponse 
+            ? 'writeValueWithoutResponse' 
+            : 'writeValue';
 
+        // Determinar tamaño de paquete (chunk)
+        // Tu código antiguo usaba 20, lo cual es muy seguro.
+        // El MTU - 3 es lo ideal, pero 20 es una apuesta segura para Phomemo.
+        const MAX_CHUNK_SIZE = 20; 
+        
+        // Asegurarnos de que 'data' es un buffer
+        let dataBuffer;
+        if (data instanceof ArrayBuffer) {
+            dataBuffer = new Uint8Array(data);
+        } else if (data instanceof Uint8Array) {
+            dataBuffer = data;
+        } else {
+            logger.error("Tipo de dato incorrecto. 'sendViaWebBluetooth' espera un ArrayBuffer o Uint8Array.");
+            throw new Error("Datos de entrada no son un buffer.");
+        }
+        
+        logger.info(`Enviando ${dataBuffer.byteLength} bytes por Bluetooth...`);
+        logger.info(`Usando método: ${method} con chunks de ${MAX_CHUNK_SIZE} bytes.`);
+
+        let offset = 0;
         while (offset < dataBuffer.byteLength) {
             const chunk = dataBuffer.slice(offset, offset + MAX_CHUNK_SIZE);
             offset += chunk.byteLength;
             try {
-                await characteristic.writeValueWithoutResponse(chunk);
+                await characteristic[method](chunk);
                 logger.info(`Chunk BT enviado (${chunk.byteLength} bytes), offset: ${offset}`);
-                // await new Promise(resolve => setTimeout(resolve, 50)); // Pausa opcional
+                // Pausa corta (vital para algunas impresoras)
+                await new Promise(resolve => setTimeout(resolve, 20)); 
             } catch (e) {
                 logger.error("Error al escribir chunk BT:", e);
                 throw new Error(`Error enviando datos BT: ${e.message}`);
@@ -194,7 +253,6 @@ export function useWebBluetooth() {
         logger.info('Todos los datos enviados por Bluetooth.');
     }
 
-    // Desconectar al desmontar
     onUnmounted(() => {
         disconnectBluetooth();
     });

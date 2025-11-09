@@ -14,7 +14,7 @@ class StoreQuoteRequest extends FormRequest
     public function rules(): array
     {
        return [
-            'customer_id' => 'required|exists:customers,id',
+            'customer_id' => 'nullable|exists:customers,id',
             'expiry_date' => 'nullable|date',
             'notes' => 'nullable|string',
             'subtotal' => 'required|numeric',

@@ -37,10 +37,21 @@ class CustomerPaymentController extends Controller
                 $user = Auth::user();
                 $sessionId = $validated['cash_register_session_id'];
 
+                // 1. Capturamos el timestamp UNA SOLA VEZ aquí
+                $now = now();
+
+                // 2. Buscar *TODAS* las deudas del cliente.
+                //    Cambiamos ->where('status', TransactionStatus::PENDING)
+                //    por ->whereIn('status', [lista_de_estados])
+                //    para incluir tanto ventas a crédito ('pendiente') como apartados ('apartado').
                 $pendingTransactions = $customer->transactions()
-                    ->where('status', TransactionStatus::PENDING)
-                    ->orderBy('created_at', 'asc')
+                    ->whereIn('status', [TransactionStatus::PENDING, TransactionStatus::ON_LAYAWAY])
+                    ->orderBy('created_at', 'asc') // Pagar la deuda más antigua primero (FIFO)
                     ->get();
+
+                // 3. Mover la inicialización del array FUERA del bucle de pagos
+                //    para que acumule *todos* los movimientos.
+                $balanceMovementsToCreate = [];
 
                 foreach ($validated['payments'] as $paymentData) {
                     $amountToApply = (float) $paymentData['amount'];
@@ -68,13 +79,16 @@ class CustomerPaymentController extends Controller
 
                         $customer->increment('balance', $amountForThisTransaction);
 
-                        $customer->balanceMovements()->create([
+                        // 3. Añadimos el movimiento de PAGO DE DEUDA al array
+                        $balanceMovementsToCreate[] = [
                             'transaction_id' => $transaction->id,
                             'type' => CustomerBalanceMovementType::PAYMENT,
                             'amount' => $amountForThisTransaction,
-                            'balance_after' => $customer->balance,
+                            'balance_after' => $customer->balance, // El balance se actualiza secuencialmente
                             'notes' => "Abono a la venta #{$transaction->folio} (" . $paymentData['method'] . "). " . ($validated['notes'] ?? ''),
-                        ]);
+                            'created_at' => $now, // Usamos el timestamp $now
+                            'updated_at' => $now,
+                        ];
 
                         $amountToApply -= $amountForThisTransaction;
                     }
@@ -82,7 +96,6 @@ class CustomerPaymentController extends Controller
                     if ($amountToApply > 0.001) {
                         // Se crea una transacción especial para registrar este ingreso
                         $balanceTransaction = $customer->transactions()->create([
-                            // --- CORRECCIÓN: Se llama al nuevo método para generar el folio ---
                             'folio' => $this->generateBalancePaymentFolio(),
                             'branch_id' => $user->branch_id,
                             'user_id' => $user->id,
@@ -108,13 +121,39 @@ class CustomerPaymentController extends Controller
                         );
 
                         $customer->increment('balance', $amountToApply);
-                        $customer->balanceMovements()->create([
+
+                        // 4. Añadimos el movimiento de ABONO A SALDO al array
+                        $balanceMovementsToCreate[] = [
                             'transaction_id' => $balanceTransaction->id,
                             'type' => CustomerBalanceMovementType::PAYMENT,
                             'amount' => $amountToApply,
-                            'balance_after' => $customer->balance,
+                            'balance_after' => $customer->balance, // El balance final
                             'notes' => 'Abono a saldo a favor. ' . ($validated['notes'] ?? ''),
-                        ]);
+                            'created_at' => $now, // Usamos el timestamp $now
+                            'updated_at' => $now,
+                        ];
+                    }
+                }
+
+                // Mover la lógica de STAGGERING y CREACIÓN aquí,
+                $movementsCount = count($balanceMovementsToCreate);
+                if ($movementsCount > 0) {
+                    
+                    // Si hay más de un movimiento (ej. 2 pagos, o 1 pago a 2 deudas),
+                    // aplicamos el stagger de 1 segundo.
+                    if ($movementsCount > 1) {                        
+                        for ($i = 0; $i < $movementsCount; $i++) {
+                            // El primer movimiento (índice 0) se queda con $now
+                            // El segundo (índice 1) se queda con $now + 1s, etc.
+                            $timestamp = $now->copy()->addSeconds($i);
+                            $balanceMovementsToCreate[$i]['created_at'] = $timestamp;
+                            $balanceMovementsToCreate[$i]['updated_at'] = $timestamp;
+                        }    
+                    }
+                    
+                    //Finalmente, crear todos los movimientos en la BD
+                    foreach($balanceMovementsToCreate as $movementData) {
+                         $customer->balanceMovements()->create($movementData);
                     }
                 }
             });

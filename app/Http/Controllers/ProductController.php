@@ -4,14 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
+use App\Enums\TransactionStatus;
 use App\Http\Requests\StoreProductRequest;
 use App\Http\Requests\UpdateProductRequest;
 use App\Models\AttributeDefinition;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductAttribute;
 use App\Models\Promotion;
 use App\Models\Provider;
+use App\Models\TransactionItem;
 use App\Traits\OptimizeMediaLocal;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -374,6 +377,52 @@ class ProductController extends Controller implements HasMiddleware
             ];
         })->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes'])); // Filter out 'updated' events with no changes shown
 
+         // --- INICIO DE MODIFICACIÓN: Obtener Apartados Activos ---
+        $productAndVariantIds = $product->productAttributes->pluck('id')->push($product->id);
+        
+        // Obtenemos los IDs de los itemables (Product y ProductAttribute)
+        $itemableIds = [
+            Product::class => $product->id,
+            ProductAttribute::class => $product->productAttributes->pluck('id')->all(),
+        ];
+
+        $layawayItems = TransactionItem::query()
+            ->where(function ($query) use ($itemableIds) {
+                // Busca items que sean el producto principal
+                $query->where('itemable_type', Product::class)
+                      ->where('itemable_id', $itemableIds[Product::class]);
+                
+                // Busca items que sean variantes de este producto
+                if (!empty($itemableIds[ProductAttribute::class])) {
+                    $query->orWhere(function($q) use ($itemableIds) {
+                        $q->where('itemable_type', ProductAttribute::class)
+                          ->whereIn('itemable_id', $itemableIds[ProductAttribute::class]);
+                    });
+                }
+            })
+            ->whereHas('transaction', function ($q) {
+                // Filtra solo por transacciones 'en_apartado'
+                $q->where('status', TransactionStatus::ON_LAYAWAY);
+            })
+            ->with([
+                // Cargamos la información necesaria
+                'transaction:id,folio,customer_id,created_at',
+                'transaction.customer:id,name'
+            ])
+            ->get();
+        
+        $formattedLayaways = $layawayItems->map(function($item) {
+            return [
+                'transaction_id' => $item->transaction->id,
+                'folio' => $item->transaction->folio,
+                'customer_name' => $item->transaction->customer?->name ?? 'Cliente Eliminado',
+                'customer_id' => $item->transaction->customer_id,
+                'quantity' => $item->quantity,
+                'description' => $item->description, // Descripción del item (ej. "Playera (Roja, M)")
+                'date' => $item->transaction->created_at->toDateTimeString(), // Usamos toDateTimeString para consistencia
+            ];
+        });
+        // --- FIN DE MODIFICACIÓN ---
 
         $availableTemplates = Auth::user()->branch->printTemplates()
             ->where('type', TemplateType::LABEL)
@@ -385,6 +434,7 @@ class ProductController extends Controller implements HasMiddleware
             'promotions' => $promotions,
             'activities' => $formattedActivities,
             'availableTemplates' => $availableTemplates,
+            'activeLayaways' => $formattedLayaways,
         ]);
     }
 

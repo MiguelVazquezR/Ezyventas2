@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, provide } from 'vue';
-import { router, usePage, useForm } from '@inertiajs/vue3';
+import { router, usePage, useForm, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from "primevue/usetoast";
@@ -29,6 +29,7 @@ const isPrintModalVisible = ref(false);
 const isPaymentModalVisible = ref(false);
 const isInPostCreationFlow = ref(false);
 const isDiagnosisModalVisible = ref(false);
+const isPaymentProcessing = ref(false);
 
 const openPrintModal = () => isPrintModalVisible.value = true;
 const openPaymentModal = () => isPaymentModalVisible.value = true;
@@ -46,7 +47,22 @@ watch(() => page.props.flash.show_payment_modal, (showModal) => {
     }
 }, { immediate: true });
 
-const handlePaymentSubmit = (payload) => {
+const handlePaymentSubmit = (paymentData) => {
+    // 1. Validar que la sesión activa exista (aunque la UI ya debería hacerlo)
+    if (!props.activeSession) {
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No hay una sesión de caja activa para registrar el pago.', life: 5000 });
+        return;
+    }
+
+    // 2. Inyectar el ID de la sesión de caja al payload
+    const payload = {
+        ...paymentData,
+        cash_register_session_id: props.activeSession.id
+    };
+
+    isPaymentProcessing.value = true;
+
+    // 3. Enviar el payload completo al controlador
     router.post(route('payments.store', props.serviceOrder.transaction.id), payload, {
         preserveScroll: true,
         onSuccess: () => {
@@ -55,6 +71,9 @@ const handlePaymentSubmit = (payload) => {
         onError: (errors) => {
             const errorMsg = Object.values(errors)[0] || 'No se pudo registrar el pago.';
             toast.add({ severity: 'error', summary: 'Error', detail: errorMsg, life: 4000 });
+        },
+        onFinish: () => { // Desactivar loading (en éxito o error)
+            isPaymentProcessing.value = false;
         }
     });
 };
@@ -104,14 +123,14 @@ const onRemoveClosingImage = (event) => {
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
-    { label: 'Órdenes de Servicio', url: route('service-orders.index') },
+    { label: 'Órdenes de servicio', url: route('service-orders.index') },
     { label: `Orden #${props.serviceOrder.folio || props.serviceOrder.id}` }
 ]);
 
 const steps = ref([
     { label: 'Pendiente', value: 'pendiente', icon: 'pi pi-inbox' },
     { label: 'En Progreso', value: 'en_progreso', icon: 'pi pi-cog' },
-    { label: 'Esperando Refacción', value: 'esperando_refaccion', icon: 'pi pi-wrench' },
+    { label: 'Esperando refacción', value: 'esperando_refaccion', icon: 'pi pi-wrench' },
     { label: 'Terminado', value: 'terminado', icon: 'pi pi-check-circle' },
     { label: 'Entregado', value: 'entregado', icon: 'pi pi-send' }
 ]);
@@ -230,8 +249,8 @@ const changeStatus = (newStatusValue, newIndex) => {
 
 const cancelOrder = () => {
     confirm.require({
-        message: 'Al cancelar la orden, su estatus cambiará a "Cancelado" y no podrá seguir avanzando en el flujo. ¿Estás seguro?',
-        header: 'Confirmar Cancelación',
+        message: 'Al cancelar la orden, su estatus cambiará a "Cancelado", no podrá seguir avanzando en el flujo y se regresará el stock de las refacciones registradas. ¿Continuar?',
+        header: 'Confirmar cancelación',
         icon: 'pi pi-exclamation-triangle',
         acceptClass: 'p-button-danger',
         acceptLabel: 'Sí, cancelar orden',
@@ -245,7 +264,7 @@ const cancelOrder = () => {
 const deleteOrder = () => {
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar esta orden de servicio? Esta acción no se puede deshacer.`,
-        header: 'Confirmar Eliminación',
+        header: 'Confirmar eliminación',
         accept: () => {
             router.delete(route('service-orders.destroy', props.serviceOrder.id));
         }
@@ -274,7 +293,7 @@ const formatDate = (dateString) => {
 };
 
 const getStatusSeverity = (status) => {
-    const map = { pendiente: 'info', en_progreso: 'warning', esperando_refaccion: 'secondary', terminado: 'success', entregado: 'primary', cancelado: 'danger' };
+    const map = { pendiente: 'warn', en_progreso: 'info', esperando_refaccion: 'secondary', terminado: 'success', entregado: 'success', cancelado: 'danger' };
     return map[status] || 'secondary';
 };
 
@@ -325,11 +344,10 @@ const getPaymentMethodIcon = (method) => {
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Orden de Servicio #{{ serviceOrder.folio
                     || serviceOrder.id }}
                 </h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Cliente: {{ serviceOrder.customer_name }}</p>
             </div>
             <div class="flex items-center gap-2 mt-4 sm:mt-0">
                 <Button v-if="!isCancelled && hasPermission('services.orders.change_status')" @click="cancelOrder"
-                    label="Cancelar Orden" severity="danger" outlined />
+                    label="Cancelar orden" severity="danger" outlined />
                 <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined></SplitButton>
             </div>
         </div>
@@ -338,8 +356,8 @@ const getPaymentMethodIcon = (method) => {
             <div class="col-span-full bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-6">Flujo de estatus</h2>
                 <div v-if="isCancelled" class="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-md">
-                    <i class="pi pi-times-circle text-red-500 text-3xl"></i>
-                    <p class="mt-2 font-semibold text-red-700 dark:text-red-300">Esta orden ha sido cancelada.</p>
+                    <i class="pi pi-times-circle text-red-500 !text-3xl"></i>
+                    <p class="mt-1 font-semibold text-red-700 dark:text-red-300">Esta orden ha sido cancelada.</p>
                 </div>
                 <Stepper v-else v-model:value="activeIndex" class="basis-full">
                     <StepList>
@@ -367,9 +385,20 @@ const getPaymentMethodIcon = (method) => {
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div v-if="hasPermission('services.orders.see_customer_info')">
                             <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información del cliente</h2>
-                            <ul class="space-y-3 text-sm">
-                                <li class="flex items-center"><i class="pi pi-user w-6 text-gray-500"></i><span
-                                        class="font-medium">{{ serviceOrder.customer_name }}</span></li>
+                            <ul class="space-y-2 text-sm">
+                                <li class="flex items-center">
+                                    <i class="pi pi-user w-6 text-gray-500"></i>
+                                     <template v-if="serviceOrder.customer_id">
+                                        <Link :href="route('customers.show', serviceOrder.customer_id)"
+                                            class="text-blue-600 hover:underline flex items-center gap-2">
+                                        {{ serviceOrder.customer_name }}
+                                        <i class="pi pi-external-link text-xs"></i>
+                                        </Link>
+                                    </template>
+                                    <template v-else>
+                                        <span class="font-medium">{{ serviceOrder.customer_name }}</span>
+                                    </template>
+                                </li>
                                 <li v-if="serviceOrder.customer_phone" class="flex items-center">
                                     <i class="pi pi-phone w-6 text-gray-500"></i>
                                     <span class="font-medium">{{ serviceOrder.customer_phone }}</span>
@@ -446,13 +475,21 @@ const getPaymentMethodIcon = (method) => {
                                     :severity="getItemType(data.itemable_type).severity" />
                             </template>
                         </Column>
-                        <Column field="description" header="Descripción"></Column>
+                        <Column field="description" header="Descripción">
+                            <template #body="{ data }">
+                                <span>{{ data.description }}</span>
+                                <!-- Añadimos la nota si es un Producto (Refacción) con ID -->
+                                <div v-if="data.itemable_type === 'App\\Models\\Product' && data.itemable_id" 
+                                     class="text-xs text-gray-500 dark:text-gray-400 italic mt-1">
+                                    (Se {{ isCancelled ? 'devolvió' : 'descontó' }} {{ data.quantity }} unidad(es) {{ isCancelled ? 'al' : 'del' }} stock)
+                                </div>
+                            </template>
+                        </Column>
                         <Column field="quantity" header="Cantidad" style="width: 6rem" class="text-center"></Column>
                         <Column field="unit_price" header="Precio Unit." style="width: 10rem" class="text-right">
                             <template #body="{ data }">{{ formatCurrency(data.unit_price) }}</template>
                         </Column>
-                        <Column field="line_total" header="Total" style="width: 10rem"
-                            class="text-right font-semibold">
+                        <Column field="line_total" header="Total" style="width: 10rem" class="text-right font-semibold">
                             <template #body="{ data }">{{ formatCurrency(data.line_total) }}</template>
                         </Column>
                         <template #empty>
@@ -471,7 +508,7 @@ const getPaymentMethodIcon = (method) => {
                                 <span>Descuento ({{ serviceOrder.discount_type === 'percentage' ?
                                     `${serviceOrder.discount_value}%` : 'Fijo' }}):</span>
                                 <span class="font-semibold">(-) {{ formatCurrency(serviceOrder.discount_amount)
-                                }}</span>
+                                    }}</span>
                             </div>
                             <div class="flex justify-between font-bold text-lg border-t pt-2 mt-2">
                                 <span>Total:</span>
@@ -507,7 +544,8 @@ const getPaymentMethodIcon = (method) => {
                             formatCurrency(serviceOrder.subtotal) }}</span></li>
                         <li v-if="serviceOrder.discount_amount > 0" class="flex justify-between">
                             <span>Descuento:</span><span class="font-semibold text-red-500">(-) {{
-                                formatCurrency(serviceOrder.discount_amount) }}</span></li>
+                                formatCurrency(serviceOrder.discount_amount) }}</span>
+                        </li>
                         <li class="flex justify-between font-bold"><span>Total de la orden:</span><span>{{
                             formatCurrency(serviceOrder.final_total) }}</span></li>
                         <li class="flex justify-between"><span>Total pagado:</span><span
@@ -528,7 +566,7 @@ const getPaymentMethodIcon = (method) => {
                             <span>Ingresos (Subtotal):</span>
                             <span class="font-semibold">{{ formatCurrency(profitAnalysis.subtotal) }}</span>
                         </li>
-                         <li v-if="profitAnalysis.discount > 0" class="flex justify-between">
+                        <li v-if="profitAnalysis.discount > 0" class="flex justify-between">
                             <span>Descuento aplicado:</span>
                             <span class="text-red-500">(-) {{ formatCurrency(profitAnalysis.discount) }}</span>
                         </li>
@@ -569,8 +607,7 @@ const getPaymentMethodIcon = (method) => {
                             <template #body="{ data }">
                                 <div class="flex flex-col">
                                     <div class="flex items-center gap-2">
-                                        <i :class="getPaymentMethodIcon(data.payment_method)"
-                                            class="text-gray-500"></i>
+                                        <i :class="getPaymentMethodIcon(data.payment_method)" class="text-gray-500"></i>
                                         <span class="capitalize font-medium">{{ data.payment_method }}</span>
                                     </div>
                                     <small v-if="data.bank_account"
@@ -617,10 +654,9 @@ const getPaymentMethodIcon = (method) => {
             </div>
         </div>
 
-        <PaymentModal v-if="serviceOrder.transaction" v-model:visible="isPaymentModalVisible"
-            :total-amount="amountDue" :client="serviceOrder.customer" :active-session="activeSession"
-            payment-mode="flexible" @submit="handlePaymentSubmit"
-            @update:visible="(val) => { if (!val) handlePaymentModalClosed(); }" />
+        <PaymentModal v-if="serviceOrder.transaction" v-model:visible="isPaymentModalVisible" :total-amount="amountDue"
+            :client="serviceOrder.customer" :loading="isPaymentProcessing" payment-mode="flexible"
+            @submit="handlePaymentSubmit" @update:visible="(val) => { if (!val) handlePaymentModalClosed(); }" />
         <PrintModal v-if="serviceOrder" v-model:visible="isPrintModalVisible"
             :data-source="{ type: 'service_order', id: serviceOrder.id }" :available-templates="availableTemplates"
             @hide="handlePrintModalClosed" />

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -25,6 +26,7 @@ class Product extends Model implements HasMedia
         'price_tiers',
         'cost_price',
         'current_stock',
+        'reserved_stock',
         'min_stock',
         'max_stock',
         'category_id',
@@ -64,6 +66,9 @@ class Product extends Model implements HasMedia
             'online_price' => 'decimal:2',
             'sale_price' => 'decimal:2',
             'current_stock' => 'integer',
+            'reserved_stock' => 'integer',
+            'min_stock' => 'integer',
+            'max_stock' => 'integer',
             'show_online' => 'boolean',
             'is_featured' => 'boolean',
             'is_on_sale' => 'boolean',
@@ -76,6 +81,18 @@ class Product extends Model implements HasMedia
             'width' => 'decimal:2',
             'height' => 'decimal:2',
         ];
+    }
+
+    protected $appends = ['available_stock'];
+
+    /**
+     * Obtiene el stock disponible para la venta (físico - reservado).
+     */
+    protected function availableStock(): Attribute
+    {
+        return Attribute::make(
+            get: fn() => $this->current_stock - $this->reserved_stock,
+        );
     }
 
     // Método de configuración para el historial de actividad

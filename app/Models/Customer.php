@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use App\Enums\TransactionStatus;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class Customer extends Model
 {
@@ -134,5 +136,25 @@ class Customer extends Model
     public function balanceMovements(): HasMany
     {
         return $this->hasMany(CustomerBalanceMovement::class);
+    }
+
+    /**
+     * Obtiene todas las transacciones que están activamente "en_apartado".
+     */
+    public function layawayTransactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class)->where('status', TransactionStatus::ON_LAYAWAY);
+    }
+
+    /**
+     * Obtiene todos los *items* (TransactionItem) que están dentro de transacciones "en_apartado".
+     * Esto nos permite sumar las cantidades de productos.
+     */
+    public function layawayItems(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            TransactionItem::class, // El modelo final al que queremos llegar
+            Transaction::class      // El modelo intermedio
+        )->where('transactions.status', TransactionStatus::ON_LAYAWAY);
     }
 }

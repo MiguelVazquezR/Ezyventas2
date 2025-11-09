@@ -424,7 +424,7 @@ class SubscriptionController extends Controller
             'payment_method' => ['required', Rule::in(['transferencia', 'stripe', 'card_mock', 'tarjeta'])],
             'proof_of_payment' => ['nullable', 'required_if:payment_method,transferencia', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:2048'],
             'bank_account_id' => 'nullable|numeric|exists:bank_accounts,id',
-            'expense_category_id' => [Rule::requiredIf($request->bank_account_id != null), 'numeric','exists:expense_categories,id'],
+            'expense_category_id' => [Rule::requiredIf($request->bank_account_id != null)],
         ]);
 
         $subscription = $user->branch->subscription;
