@@ -31,7 +31,7 @@ const fieldTypes = ref([
     { label: 'Texto corto', value: 'text' },
     { label: 'Número', value: 'number' },
     { label: 'Texto largo', value: 'textarea' },
-    { label: 'Sí/No (Switch)', value: 'boolean' },
+    { label: 'Sí/No (switch)', value: 'boolean' },
     { label: 'Selección única', value: 'select' },
     { label: 'Selección múltiple', value: 'checkbox' },
     { label: 'Desbloqueo celular', value: 'pattern' },
@@ -88,19 +88,19 @@ const deleteCustomField = (id) => {
 </script>
 
 <template>
-    <Dialog v-model:visible="isDialogVisible" modal header="Gestionar Campos Personalizados" class="w-full max-w-3xl">
+    <Dialog v-model:visible="isDialogVisible" modal header="Gestionar campos personalizados" class="w-full max-w-3xl">
         <div class="flex flex-col md:flex-row gap-6">
             <!-- Formulario de creación/edición -->
             <div class="w-full md:w-1/3 border-r-0 md:border-r pr-0 md:pr-6">
                 <form @submit.prevent="saveCustomField" class="space-y-4">
-                    <h3 class="font-bold text-lg">{{ customFieldForm.id ? 'Editar Campo' : 'Nuevo Campo' }}</h3>
+                    <h3 class="font-bold text-lg">{{ customFieldForm.id ? 'Editar campo' : 'Nuevo campo' }}</h3>
                     <div>
-                        <InputLabel for="cf-name" value="Nombre del Campo" />
+                        <InputLabel for="cf-name" value="Nombre del campo" />
                         <InputText id="cf-name" v-model="customFieldForm.name" class="w-full mt-1" />
                         <InputError :message="customFieldForm.errors.name" class="mt-1" />
                     </div>
                     <div>
-                        <InputLabel for="cf-type" value="Tipo de Campo" />
+                        <InputLabel for="cf-type" value="Tipo de campo" />
                         <Dropdown id="cf-type" v-model="customFieldForm.type" :options="fieldTypes" optionLabel="label"
                             optionValue="value" class="w-full mt-1" />
                         <InputError :message="customFieldForm.errors.type" class="mt-1" />
@@ -123,7 +123,7 @@ const deleteCustomField = (id) => {
             </div>
             <!-- Lista de campos existentes -->
             <div class="w-full md:w-2/3">
-                 <h3 class="font-bold text-lg mb-4">Campos Existentes</h3>
+                 <h3 class="font-bold text-lg mb-4">Campos existentes</h3>
                 <DataTable :value="definitions" size="small" scrollable scrollHeight="400px">
                     <template #empty>No hay campos definidos.</template>
                     <Column field="name" header="Nombre" style="min-width: 150px;"></Column>

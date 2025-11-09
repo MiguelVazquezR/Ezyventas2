@@ -39,7 +39,7 @@ class QuoteController extends Controller implements HasMiddleware
         $subscriptionId = $user->branch->subscription_id;
 
         $query = Quote::query()
-            ->join('customers', 'quotes.customer_id', '=', 'customers.id')
+            ->leftJoin('customers', 'quotes.customer_id', '=', 'customers.id')
             ->whereHas('branch.subscription', function ($q) use ($subscriptionId) {
                 $q->where('id', $subscriptionId);
             })
@@ -77,18 +77,25 @@ class QuoteController extends Controller implements HasMiddleware
             $user = Auth::user();
             $validated = $request->validated();
 
+            // --- INICIO: Validación de campos personalizados ---
+            // Validamos los campos personalizados por separado
+            $customFieldsData = $this->validateCustomFields($request);
+            // Los fusionamos con los datos validados del FormRequest
+            $validatedData = array_merge($validated, $customFieldsData);
+            // --- FIN: Validación ---
+
             $lastQuote = Quote::where('branch_id', $user->branch_id)->latest('id')->first();
             $nextFolioNumber = $lastQuote ? (int) substr($lastQuote->folio, 4) + 1 : 1;
             $folio = 'COT-' . $nextFolioNumber;
 
-            $quote = Quote::create(array_merge($validated, [
+            $quote = Quote::create(array_merge($validatedData, [ // <-- USAR $validatedData
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
                 'folio' => $folio,
                 'status' => QuoteStatus::DRAFT,
             ]));
 
-            foreach ($validated['items'] as $item) {
+            foreach ($validatedData['items'] as $item) { // <-- USAR $validatedData
                 $quote->items()->create($item);
             }
         });
@@ -107,10 +114,16 @@ class QuoteController extends Controller implements HasMiddleware
     {
         DB::transaction(function () use ($request, $quote) {
             $validated = $request->validated();
-            $quote->update($validated);
+
+            // --- INICIO: Validación de campos personalizados ---
+            $customFieldsData = $this->validateCustomFields($request);
+            $validatedData = array_merge($validated, $customFieldsData);
+            // --- FIN: Validación ---
+
+            $quote->update($validatedData); // <-- USAR $validatedData
 
             $quote->items()->delete(); // Simple: borrar y recrear
-            foreach ($validated['items'] as $item) {
+            foreach ($validatedData['items'] as $item) { // <-- USAR $validatedData
                 $quote->items()->create($item);
             }
         });
@@ -146,9 +159,15 @@ class QuoteController extends Controller implements HasMiddleware
             ];
         });
 
+        $subscriptionId = Auth::user()->branch->subscription_id;
+        $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
+            ->where('module', 'quotes')
+            ->get();
+
         return Inertia::render('Quote/Show', [
             'quote' => $quote,
             'activities' => $formattedActivities,
+            'customFieldDefinitions' => $customFieldDefinitions,
         ]);
     }
 
@@ -204,8 +223,14 @@ class QuoteController extends Controller implements HasMiddleware
         // Cargar todas las relaciones necesarias para la plantilla
         $quote->load(['customer', 'items.itemable', 'branch.subscription']);
 
+        $subscriptionId = Auth::user()->branch->subscription_id;
+        $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
+            ->where('module', 'quotes')
+            ->get();
+
         return Inertia::render('Quote/Print', [
             'quote' => $quote,
+            'customFieldDefinitions' => $customFieldDefinitions,
         ]);
     }
 
@@ -220,5 +245,64 @@ class QuoteController extends Controller implements HasMiddleware
             'services' => Service::where('branch_id', $user->branch_id)->get(['id', 'name', 'base_price']),
             'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'quotes')->get(),
         ];
+    }
+
+    /**
+     * Valida los campos personalizados dinámicamente.
+     */
+    private function validateCustomFields(Request $request)
+    {
+        $user = $request->user();
+        $subscriptionId = $user->branch->subscription_id;
+        $definitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
+            ->where('module', 'quotes')
+            ->get();
+
+        if ($definitions->isEmpty()) {
+            return ['custom_fields' => []]; // No hay campos para validar
+        }
+
+        $rules = [];
+        $messages = [];
+
+        foreach ($definitions as $field) {
+            $ruleKey = 'custom_fields.' . $field->key;
+            $rules[$ruleKey] = ['nullable'];
+            $messages["{$ruleKey}.*"] = "El campo {$field->name} es inválido."; // Mensaje genérico
+
+            switch ($field->type) {
+                case 'text':
+                case 'textarea':
+                    $rules[$ruleKey][] = 'string';
+                    $rules[$ruleKey][] = 'max:255';
+                    break;
+                case 'number':
+                    $rules[$ruleKey][] = 'numeric';
+                    break;
+                case 'boolean':
+                    $rules[$ruleKey][] = 'boolean';
+                    break;
+                case 'select':
+                    $rules[$ruleKey][] = 'string';
+                    if (!empty($field->options)) {
+                        $rules[$ruleKey][] = Rule::in($field->options);
+                    }
+                    break;
+                case 'checkbox':
+                    $rules[$ruleKey] = 'array'; // Sobrescribir 'nullable'
+                    $rules["{$ruleKey}.*"] = ['string', Rule::in($field->options ?? [])];
+                    break;
+                case 'pattern':
+                    $rules[$ruleKey] = 'array'; // Sobrescribir 'nullable'
+                    $rules["{$ruleKey}.*"] = 'integer'; // Asume que el patrón es un array de enteros
+                    break;
+            }
+        }
+
+        // Validar solo los campos personalizados
+        return $request->validate([
+            'custom_fields' => ['nullable', 'array'], // Asegurarse que 'custom_fields' es un array
+            ...$rules
+        ], $messages);
     }
 }

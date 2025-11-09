@@ -1,19 +1,20 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import DiffViewer from '@/Components/DiffViewer.vue';
 import AddStockModal from './Partials/AddStockModal.vue';
-import PrintModal from '@/Components/PrintModal.vue'; // <-- 1. Importar el modal
+import PrintModal from '@/Components/PrintModal.vue';
 import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     product: Object,
     activities: Array,
     promotions: Array,
-    availableTemplates: Array, // <-- 2. Aceptar la nueva prop
+    availableTemplates: Array,
+    activeLayaways: Array,
 });
 
 const toast = useToast();
@@ -46,14 +47,14 @@ const openPrintModal = () => {
 
 
 const actionItems = ref([
-    { label: 'Crear Nuevo', icon: 'pi pi-plus', command: () => router.get(route('products.create')), visible: hasPermission('products.create') },
+    { label: 'Crear nuevo', icon: 'pi pi-plus', command: () => router.get(route('products.create')), visible: hasPermission('products.create') },
     { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('products.edit', props.product.id)), visible: hasPermission('products.edit') },
-    { label: 'Agregar Promoción', icon: 'pi pi-tag', command: () => router.get(route('products.promotions.create', props.product.id)), visible: hasPermission('products.manage_promos') },
-    { label: 'Dar Entrada a Producto', icon: 'pi pi-arrow-down', command: () => showAddStockModal.value = true, visible: hasPermission('products.manage_stock') },
+    { label: 'Agregar promoción', icon: 'pi pi-tag', command: () => router.get(route('products.promotions.create', props.product.id)), visible: hasPermission('products.manage_promos') },
+    { label: 'Dar entrada a producto', icon: 'pi pi-arrow-down', command: () => showAddStockModal.value = true, visible: hasPermission('products.manage_stock') },
     // --- Añadido botón de imprimir al menú de acciones ---
-    { label: 'Imprimir Etiqueta', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
+    { label: 'Imprimir etiqueta', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
-    { label: 'Eliminar Producto', icon: 'pi pi-trash', class: 'text-red-500', command: () => deleteProduct(), visible: hasPermission('products.delete') },
+    { label: 'Eliminar producto', icon: 'pi pi-trash', class: 'text-red-500', command: () => deleteProduct(), visible: hasPermission('products.delete') },
 ]);
 
 const copyToClipboard = (text) => {
@@ -170,6 +171,11 @@ const priceTiers = computed(() => {
     return [...props.product.price_tiers].sort((a, b) => a.min_quantity - b.min_quantity);
 });
 
+// --- Computed para totales (para variantes) ---
+// El backend ya nos da estos totales en el `product` padre
+const totalStock = computed(() => props.product.current_stock);
+const totalReserved = computed(() => props.product.reserved_stock);
+const totalAvailable = computed(() => props.product.available_stock);
 </script>
 
 <template>
@@ -311,26 +317,36 @@ const priceTiers = computed(() => {
                         class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
                         Inventario y variantes</h2>
 
-                    <div v-if="!isVariantProduct" class="grid grid-cols-3 gap-4 text-center">
+                    <!-- Vista para Producto Simple -->
+                    <div v-if="!isVariantProduct" class="grid grid-cols-4 gap-4 text-center">
                         <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Stock actual</p>
-                            <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.current_stock }}
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Stock Físico</p>
+                            <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ totalStock }}
+                            </p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Apartados</p>
+                            <p class="text-2xl font-bold" :class="totalReserved > 0 ? 'text-blue-600' : 'text-gray-800 dark:text-gray-200'">
+                                {{ totalReserved }}
+                            </p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Disponible</p>
+                            <p class="text-2xl font-bold" :class="totalAvailable > 0 ? 'text-green-600' : 'text-red-600'">
+                                {{ totalAvailable }}
                             </p>
                         </div>
                         <div>
                             <p class="text-sm text-gray-500 dark:text-gray-400">Stock mínimo</p>
                             <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.min_stock || 'N/A' }}</p>
                         </div>
-                        <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Stock máximo</p>
-                            <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.max_stock || 'N/A' }}</p>
-                        </div>
                     </div>
 
+                    <!-- Vista para Producto con Variantes -->
                     <div v-else>
                         <DataTable :value="product.product_attributes" class="p-datatable-sm">
                             <Column header="Imagen">
-                                <template #body="{ data }">
+                               <template #body="{ data }">
                                     <img v-if="variantImages[data.attributes.Color]"
                                         :src="variantImages[data.attributes.Color]"
                                         class="size-12 object-contain rounded-md" />
@@ -342,14 +358,81 @@ const priceTiers = computed(() => {
                             </Column>
                             <Column v-for="key in Object.keys(product.product_attributes[0]?.attributes || {})"
                                 :key="key" :field="`attributes.${key}`" :header="key"></Column>
-                            <Column field="current_stock" header="Stock"></Column>
-                            <Column header="Precio">
+                            
+                            <!-- Nuevas Columnas de Stock -->
+                            <Column field="current_stock" header="Físico" sortable></Column>
+                            <Column field="reserved_stock" header="Apartado" sortable>
                                 <template #body="{ data }">
+                                    <span :class="data.reserved_stock > 0 ? 'text-blue-600 font-semibold' : ''">{{ data.reserved_stock }}</span>
+                                </template>
+                            </Column>
+                            <Column field="available_stock" header="Disponible" sortable>
+                                 <template #body="{ data }">
+                                    <span :class="data.available_stock > 0 ? 'text-green-600' : 'text-red-600 font-semibold'">{{ data.available_stock }}</span>
+                                </template>
+                            </Column>
+
+                            <Column header="Precio">
+                                 <template #body="{ data }">
                                     {{ formatCurrency(parseFloat(product.selling_price) + parseFloat(data.selling_price_modifier)) }}
                                 </template>
                             </Column>
                         </DataTable>
+
+                        <!-- Totales para producto con variantes -->
+                        <div class="grid grid-cols-4 gap-4 text-center mt-6 pt-4 border-t dark:border-gray-700">
+                            <div>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Total físico</p>
+                                <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ totalStock }}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Total apartados</p>
+                                <p class="text-2xl font-bold text-blue-600">{{ totalReserved }}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Total disponible</p>
+                                <p class="text-2xl font-bold" :class="totalAvailable > 0 ? 'text-green-600' : 'text-red-600'">
+                                    {{ totalAvailable }}
+                                </p>
+                            </div>
+                             <div>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Stock mínimo</p>
+                                <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.min_stock || 'N/A' }}</p>
+                            </div>
+                        </div>
                     </div>
+
+                    <!-- --- NUEVA SECCIÓN: Tabla de Apartados Activos --- -->
+                    <div v-if="activeLayaways && activeLayaways.length > 0" class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <h5 class="font-semibold mb-3 text-gray-800 dark:text-gray-200">Unidades apartadas (detalle)</h5>
+                        <DataTable :value="activeLayaways" class="p-datatable-sm" responsiveLayout="scroll" sortField="date" :sortOrder="-1">
+                            <Column field="date" header="Fecha apartado" sortable>
+                                <template #body="{ data }">
+                                    {{ formatDate(data.date) }}
+                                </template>
+                            </Column>
+                            <Column field="customer_name" header="Cliente" sortable>
+                                    <template #body="{ data }">
+                                    <Link v-if="data.customer_id" :href="route('customers.show', data.customer_id)" class="text-blue-500 hover:underline">
+                                        {{ data.customer_name }}
+                                    </Link>
+                                    <span v-else>{{ data.customer_name }}</span>
+                                </template>
+                            </Column>
+                            <Column field="folio" header="Apartado #" sortable>
+                                <template #body="{ data }">
+                                    <!-- Asumiendo que tienes una ruta 'transactions.show' -->
+                                    <Link :href="route('transactions.show', data.transaction_id)" class="text-blue-500 hover:underline">
+                                        {{ data.folio }}
+                                    </Link>
+                                </template>
+                            </Column>
+                            <Column field="quantity" header="Cant." headerClass="text-center" bodyClass="text-center"></Column>
+                            <Column field="description" header="Descripción (Item)"></Column>
+                        </DataTable>
+                    </div>
+                    <!-- --- FIN DE NUEVA SECCIÓN --- -->
+
                 </div>
 
                 <!-- Promociones -->

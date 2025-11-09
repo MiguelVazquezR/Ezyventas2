@@ -8,6 +8,7 @@ enum CustomerBalanceMovementType: string
     case CREDIT_SALE = 'venta_a_credito';        // Cargo al cliente por una venta a crédito
     case PAYMENT = 'abono';                      // Abono realizado por el cliente a su saldo
     case CREDIT_PURCHASE = 'compra_de_credito';    // Compra de saldo a favor (si aplica)
+    case LAYAWAY_DEBT = 'deuda_por_apartado';   // Deuda generada por un apartado
     case CREDIT_USAGE = 'uso_de_credito';        // Uso de saldo a favor para pagar una venta
     case BALANCE_REFUND = 'devolucion_a_balance';  // Devolución de dinero que aumenta el saldo a favor
     case MANUAL_ADJUSTMENT = 'ajuste_manual';    // Ajuste manual por el administrador

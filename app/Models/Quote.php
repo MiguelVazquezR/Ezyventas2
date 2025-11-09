@@ -15,6 +15,7 @@ class Quote extends Model
     use HasFactory, LogsActivity;
 
     protected $fillable = [
+        'folio',
         'branch_id',
         'user_id',
         'customer_id',
@@ -36,7 +37,6 @@ class Quote extends Model
         'recipient_email',
         'recipient_phone',
         'shipping_address',
-        'folio',
         'status_changed_at',
     ];
 

@@ -5,15 +5,15 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import DiffViewer from '@/Components/DiffViewer.vue';
 import { usePermissions } from '@/Composables';
+import PatternLock from '@/Components/PatternLock.vue'; // <-- 1. Importar PatternLock
 
 const props = defineProps({
     quote: Object,
     activities: Array,
+    customFieldDefinitions: Array, // <-- 2. Añadir prop de definiciones
 });
 
 const confirm = useConfirm();
-
-// composables
 const { hasPermission } = usePermissions();
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
@@ -22,21 +22,18 @@ const breadcrumbItems = ref([
     { label: `Cotización #${props.quote.folio}` }
 ]);
 
-// --- Lógica del Flujo de Estatus ---
+// --- Lógica del Flujo de Estatus (Sin cambios) ---
 const steps = ref([
     { label: 'Borrador', value: 'borrador', icon: 'pi pi-file-edit' },
     { label: 'Enviado', value: 'enviado', icon: 'pi pi-send' },
     { label: 'Autorizada', value: 'autorizada', icon: 'pi pi-check-circle' },
     { label: 'Venta Generada', value: 'venta_generada', icon: 'pi pi-dollar' },
 ]);
-
 const activeIndex = computed(() => {
     const index = steps.value.findIndex(step => step.value === props.quote.status);
     return index >= 0 ? index + 1 : 0;
 });
-
 const isTerminalStatus = computed(() => ['rechazada', 'venta_generada', 'expirada'].includes(props.quote.status));
-
 const changeStatus = (newStatusValue, newIndex) => {
     if (newIndex < activeIndex.value || isTerminalStatus.value) return;
     const newStatusLabel = steps.value.find(s => s.value === newStatusValue)?.label || newStatusValue;
@@ -50,7 +47,7 @@ const changeStatus = (newStatusValue, newIndex) => {
     });
 };
 
-// --- Lógica de Acciones ---
+// --- Lógica de Acciones (Sin cambios) ---
 const createNewVersion = () => {
     confirm.require({
         message: 'Se creará una nueva versión de esta cotización en estado "Borrador" para que puedas editarla. ¿Deseas continuar?',
@@ -61,7 +58,6 @@ const createNewVersion = () => {
         }
     });
 };
-
 const deleteQuote = () => {
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar la cotización #${props.quote.folio}? Esta acción no se puede deshacer.`,
@@ -69,9 +65,8 @@ const deleteQuote = () => {
         accept: () => router.delete(route('quotes.destroy', props.quote.id))
     });
 };
-
 const actionItems = ref([
-    { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('quotes.edit', props.quote.id)), disabled: isTerminalStatus.value, visible: hasPermission('quotes.create') },
+    { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('quotes.edit', props.quote.id)), disabled: isTerminalStatus.value, visible: hasPermission('quotes.edit') }, // 'quotes.edit' en lugar de 'quotes.create'
     { label: 'Crear nueva versión', icon: 'pi pi-copy', command: createNewVersion, visible: hasPermission('quotes.create') },
     { label: 'Ver PDF / Imprimir', icon: 'pi pi-print', command: () => window.open(route('quotes.print', props.quote.id), '_blank') },
     { label: 'Convertir a venta', icon: 'pi pi-dollar', disabled: props.quote.status !== 'autorizada', visible: hasPermission('quotes.create_sale') },
@@ -83,11 +78,33 @@ const actionItems = ref([
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+    // Ajuste para mostrar la fecha local correctamente
+    const date = new Date(dateString);
+    const userTimezoneOffset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() + userTimezoneOffset).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
 };
 const getStatusSeverity = (status) => {
     const map = { borrador: 'secondary', enviado: 'info', autorizada: 'success', rechazada: 'danger', venta_generada: 'primary', expirada: 'warning' };
     return map[status] || 'secondary';
+};
+
+// 3. Helper para la tabla de conceptos
+const getItemType = (itemableType) => {
+    if (!itemableType) return 'Servicio';
+    return itemableType.includes('Product') ? 'Producto' : 'Servicio';
+};
+
+// 4. Helper para mostrar campos personalizados
+const getFormattedCustomValue = (field, value) => {
+    if (value === null || value === undefined) return 'N/A';
+    switch (field.type) {
+        case 'boolean':
+            return value ? 'Sí' : 'No';
+        case 'checkbox':
+            return Array.isArray(value) ? value.join(', ') : value;
+        default:
+            return value;
+    }
 };
 
 const allVersions = computed(() => {
@@ -106,15 +123,16 @@ const allVersions = computed(() => {
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <div>
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Cotización #{{ quote.folio }}</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Cliente: {{ quote.customer.name }}</p>
+                <!-- 5. Cliente opcional en la cabecera -->
+                <p class="text-gray-500 dark:text-gray-400 mt-1">Cliente: {{ quote.customer?.name || 'Sin cliente' }}</p>
             </div>
             <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined class="mt-4 sm:mt-0" />
         </div>
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="lg:col-span-2 space-y-6">
-                <!-- Flujo de Estatus -->
+                <!-- Flujo de Estatus (Sin cambios) -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-6">Flujo de Estatus</h2>
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-6">Flujo de estatus</h2>
                     <div v-if="isTerminalStatus" class="text-center p-4 rounded-md"
                         :class="{ 'bg-red-50 dark:bg-red-900/20': quote.status === 'rechazada', 'bg-purple-50 dark:bg-purple-900/20': quote.status === 'venta_generada', 'bg-yellow-50 dark:bg-yellow-900/20': quote.status === 'expirada' }">
                         <p class="font-semibold"
@@ -148,17 +166,36 @@ const allVersions = computed(() => {
                         </StepList>
                     </Stepper>
                 </div>
-                <!-- Conceptos y Totales -->
+                
+                <!-- Conceptos y Totales (ACTUALIZADO) -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Conceptos</h2>
                     <DataTable :value="quote.items" class="p-datatable-sm">
-                        <Column field="description" header="Descripción"></Column>
-                        <Column field="quantity" header="Cantidad"></Column>
-                        <Column field="unit_price" header="Precio Unit."><template #body="{ data }">{{
-                            formatCurrency(data.unit_price) }}</template></Column>
-                        <Column field="line_total" header="Total"><template #body="{ data }">{{
-                            formatCurrency(data.line_total) }}</template></Column>
+                        <!-- 6. Columna TIPO añadida -->
+                        <Column header="Tipo" style="width: 10rem">
+                            <template #body="{ data }">
+                                <Tag :value="getItemType(data.itemable_type)"
+                                    :severity="getItemType(data.itemable_type) === 'Producto' ? 'info' : 'success'" />
+                            </template>
+                        </Column>
+                        <!-- 7. Columna DESCRIPCIÓN actualizada -->
+                        <Column field="description" header="Descripción">
+                            <template #body="{ data }">
+                                <div>{{ data.description }}</div>
+                                <div v-if="data.variant_details" class="text-xs text-gray-500 mt-1">
+                                    ({{ Object.values(data.variant_details).join(', ') }})
+                                </div>
+                            </template>
+                        </Column>
+                        <Column field="quantity" header="Cantidad" style="width: 6rem" class="text-center"></Column>
+                        <Column field="unit_price" header="Precio Unit." style="width: 10rem" class="text-right">
+                            <template #body="{ data }">{{ formatCurrency(data.unit_price) }}</template>
+                        </Column>
+                        <Column field="line_total" header="Total" style="width: 10rem" class="text-right">
+                            <template #body="{ data }">{{ formatCurrency(data.line_total) }}</template>
+                        </Column>
                     </DataTable>
+                    <!-- Totales (Sin cambios) -->
                     <div class="mt-4 flex justify-end">
                         <div class="w-full max-w-sm space-y-2 text-sm">
                             <div class="flex justify-between"><span>Subtotal:</span> <span>{{
@@ -166,9 +203,9 @@ const allVersions = computed(() => {
                             </div>
                             <div class="flex justify-between"><span>Descuento:</span> <span class="text-red-500">- {{
                                 formatCurrency(quote.total_discount) }}</span></div>
-                            <div class="flex justify-between"><span>Impuestos ({{ quote.tax_rate || 0 }}%):</span>
-                                <span>{{
-                                    formatCurrency(quote.total_tax) }}</span>
+                            <div class="flex justify-between">
+                                <span>Impuestos ({{ quote.tax_type === 'included' ? 'Incluidos' : (quote.tax_rate || 0) + '%' }}):</span>
+                                <span>{{ formatCurrency(quote.total_tax) }}</span>
                             </div>
                             <div class="flex justify-between"><span>Envío:</span> <span>{{
                                 formatCurrency(quote.shipping_cost) }}</span>
@@ -180,8 +217,61 @@ const allVersions = computed(() => {
                         </div>
                     </div>
                 </div>
+
+                <!-- 8. Tarjeta de DETALLES ADICIONALES (NUEVA) -->
+                <div v-if="customFieldDefinitions && customFieldDefinitions.length > 0"
+                    class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles adicionales</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                        <template v-for="def in customFieldDefinitions" :key="def.id">
+                            <div v-if="quote.custom_fields && quote.custom_fields[def.key]" class="py-2">
+                                <span class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ def.name }}</span>
+                                <div class="mt-1 text-gray-800 dark:text-gray-200">
+                                    <PatternLock v-if="def.type === 'pattern'" v-model="quote.custom_fields[def.key]"
+                                        read-only />
+                                    <span v-else>{{ getFormattedCustomValue(def, quote.custom_fields[def.key]) }}</span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
             </div>
             <div class="lg:col-span-1 space-y-6">
+                <!-- 9. Tarjeta de DETALLES (NUEVA) -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles</h2>
+                    <ul class="space-y-2 text-sm">
+                        <li class="flex justify-between">
+                            <span class="font-medium text-gray-500 dark:text-gray-400">Destinatario:</span>
+                            <span class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_name }}</span>
+                        </li>
+                        <li class="flex justify-between">
+                            <span class="font-medium text-gray-500 dark:text-gray-400">Email:</span>
+                            <span class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_email || 'N/A'
+                                }}</span>
+                        </li>
+                        <li class="flex justify-between">
+                            <span class="font-medium text-gray-500 dark:text-gray-400">Teléfono:</span>
+                            <span class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_phone || 'N/A'
+                                }}</span>
+                        </li>
+                        <li class="flex justify-between">
+                            <span class="font-medium text-gray-500 dark:text-gray-400">Expiración:</span>
+                            <span class="text-gray-800 dark:text-gray-200 text-right">{{ formatDate(quote.expiry_date)
+                                }}</span>
+                        </li>
+                        <li v-if="quote.shipping_address" class="flex flex-col">
+                            <span class="font-medium text-gray-500 dark:text-gray-400">Dirección de envío:</span>
+                            <p class="text-gray-800 dark:text-gray-200 mt-1 whitespace-pre-wrap">{{
+                                quote.shipping_address }}</p>
+                        </li>
+                        <li v-if="quote.notes" class="flex flex-col">
+                            <span class="font-medium text-gray-500 dark:text-gray-400">Notas adicionales:</span>
+                            <p class="text-gray-800 dark:text-gray-200 mt-1 whitespace-pre-wrap">{{ quote.notes }}</p>
+                        </li>
+                    </ul>
+                </div>
                 <!-- Historial de Versiones -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Versiones</h2>
@@ -203,10 +293,10 @@ const allVersions = computed(() => {
                 </div>
                 <!-- Historial de Actividad -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-6">Historial de Actividad</h2>
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-6">Historial de actividad</h2>
                     <div v-if="activities && activities.length > 0" class="relative max-h-[350px] overflow-y-auto pr-2">
                         <div class="relative pl-6">
-                            <div class="absolute left-10 top-0 h-full border-l-2 border-gray-200 dark:border-gray-700">
+                            <div class="absolute left-10 top-0 h-full border-gray-200 dark:border-gray-700">
                             </div>
                             <div class="space-y-8">
                                 <div v-if="activities && activities.length > 0"
@@ -214,7 +304,7 @@ const allVersions = computed(() => {
                                     <div class="relative pl-6">
                                         <!-- Línea vertical del timeline -->
                                         <div
-                                            class="absolute left-10 top-0 h-full border-l-2 border-gray-200 dark:border-gray-700">
+                                            class="absolute left-10 top-0 h-full border-gray-200 dark:border-gray-700">
                                         </div>
 
                                         <div class="space-y-8">

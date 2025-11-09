@@ -20,54 +20,18 @@ const props = defineProps({
 
 const emit = defineEmits(['addToCart', 'resumeCart', 'deleteCart', 'productCreatedAndAddToCart', 'refreshSessionData', 'openCloseSessionModal', 'openHistoryModal']);
 
-// --- Lógica para Infinite Scroll y Carga Inicial ---
-const loadedProducts = ref([]);
+// --- INICIO DE MODIFICACIÓN: Lógica de Scroll simplificada ---
+// 1. Inicializamos 'loadedProducts' directamente con los datos de la primera página
+const loadedProducts = ref(props.products.data);
+// 2. 'nextCursor' ahora es 'next_cursor_url'
 const nextCursor = ref(props.products.next_page_url);
 const isLoadingMore = ref(false);
-const isInitialising = ref(false);
 const productsContainer = ref(null);
+// 3. 'isInitialising' ya no es necesario
 
-const initialiseProductList = async () => {
-    const currentPage = props.products.current_page;
-    if (currentPage <= 1) {
-        loadedProducts.value = props.products.data;
-        return;
-    }
-
-    isInitialising.value = true;
-    try {
-        const fetchPromises = [];
-        const searchParams = new URLSearchParams(window.location.search);
-
-        for (let page = 1; page < currentPage; page++) {
-            searchParams.set('page', page);
-            const url = `${window.location.pathname}?${searchParams.toString()}`;
-            fetchPromises.push(
-                axios.get(url, {
-                    headers: {
-                        'X-Inertia': 'true',
-                        'X-Inertia-Version': usePage().version,
-                        'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
-                })
-            );
-        }
-
-        const responses = await Promise.all(fetchPromises);
-        const previousProducts = responses.flatMap(response => response.data.props.products.data);
-
-        loadedProducts.value = [...previousProducts, ...props.products.data];
-
-    } catch (error) {
-        console.error("Failed to load previous product pages:", error);
-        loadedProducts.value = props.products.data; // Fallback en caso de error
-    } finally {
-        isInitialising.value = false;
-    }
-};
-
+// Esta función ahora es mucho más simple y robusta
 const loadMoreProducts = () => {
+    // 4. Comprobamos 'nextCursor' (que viene de 'next_page_url')
     if (!nextCursor.value || isLoadingMore.value) return;
     isLoadingMore.value = true;
 
@@ -76,7 +40,9 @@ const loadMoreProducts = () => {
         preserveScroll: true,
         only: ['products'],
         onSuccess: (page) => {
+            // Añadimos los nuevos productos al final de la lista
             loadedProducts.value.push(...page.props.products.data);
+            // Actualizamos el cursor para la *siguiente* carga
             nextCursor.value = page.props.products.next_page_url;
             isLoadingMore.value = false;
         },
@@ -94,7 +60,7 @@ const handleScroll = (event) => {
 };
 
 onMounted(() => {
-    initialiseProductList();
+    // 5. Ya no se necesita 'initialiseProductList'
     productsContainer.value?.addEventListener('scroll', handleScroll);
 });
 
@@ -124,10 +90,10 @@ const applyFilters = () => {
     });
 };
 
-watch(() => props.products.data, (newProducts) => {
-    loadedProducts.value = newProducts;
-    nextCursor.value = props.products.next_page_url; // Asegúrate de actualizar también el cursor de paginación
-}, { deep: true }); // 'deep' por si acaso hay cambios anidados que detectar
+// watch(() => props.products.data, (newProducts) => {
+//     loadedProducts.value = newProducts;
+//     nextCursor.value = props.products.next_page_url; // Asegúrate de actualizar también el cursor de paginación
+// }, { deep: true }); // 'deep' por si acaso hay cambios anidados que detectar
 
 watch(searchTerm, debounce(applyFilters, 300));
 
@@ -147,7 +113,7 @@ const toggleMenu = (event) => {
 // Usar 'activeSession.payments' como la única fuente de verdad para el cálculo.
 const cashBalance = computed(() => {
     if (!props.activeSession) return 0;
-    
+
     const cashSales = props.activeSession.payments
         ? props.activeSession.payments
             .filter(p => p && p.payment_method === 'efectivo' && p.status === 'completado')
@@ -157,11 +123,11 @@ const cashBalance = computed(() => {
     const inflows = props.activeSession.cash_movements
         .filter(m => m.type === 'ingreso')
         .reduce((sum, m) => sum + parseFloat(m.amount), 0);
-        
+
     const outflows = props.activeSession.cash_movements
         .filter(m => m.type === 'egreso')
         .reduce((sum, m) => sum + parseFloat(m.amount), 0);
-        
+
     return (parseFloat(props.activeSession.opening_cash_balance) || 0) + cashSales + inflows - outflows;
 });
 
@@ -235,11 +201,15 @@ const handleGlobalKeyDown = (event) => {
 
 onMounted(() => {
     window.addEventListener('keydown', handleGlobalKeyDown);
+    // Añadimos de nuevo el listener de scroll que quitamos de la otra función
+    productsContainer.value?.addEventListener('scroll', handleScroll);
 });
 
 onUnmounted(() => {
     window.removeEventListener('keydown', handleGlobalKeyDown);
     clearTimeout(barcodeTimer);
+    // Añadimos de nuevo el listener de scroll que quitamos de la otra función
+    productsContainer.value?.removeEventListener('scroll', handleScroll);
 });
 </script>
 
@@ -264,11 +234,11 @@ onUnmounted(() => {
                         <template #end>
                             <div class="lg:px-4 py-2 text-sm text-gray-700 dark:text-gray-200 space-y-3">
                                 <div>
-                                    <span class="font-semibold">Efectivo en Caja:</span>
+                                    <span class="font-semibold">Efectivo en caja:</span>
                                     <p class="text-lg font-bold text-right">${{ cashBalance.toFixed(2) }}</p>
                                 </div>
                                 <div class="border-t dark:border-gray-600 pt-2">
-                                    <span class="font-semibold">Ventas (Sesión Actual):</span>
+                                    <span class="font-semibold">Ventas (sesión actual):</span>
                                     <div class="flex justify-between text-xs mt-1">
                                         <span>Tarjeta:</span>
                                         <span class="font-mono">${{ cardTotal.toFixed(2) }}</span>
@@ -286,15 +256,14 @@ onUnmounted(() => {
                         v-tooltip.bottom="'Ver historial de ventas'" variant="outlined" size="medium"
                         class="!size-8 !bg-white" />
                     <button @click="toggleOverlay" class="relative">
-                        <Button icon="pi pi-shopping-cart" rounded severity="secondary"
-                            aria-label="Carritos en espera" variant="outlined" size="medium"
-                        class="!size-8 !bg-white" />
+                        <Button icon="pi pi-shopping-cart" rounded severity="secondary" aria-label="Carritos en espera"
+                            variant="outlined" size="medium" class="!size-8 !bg-white" />
                         <Badge v-if="pendingCarts.length" :value="pendingCarts.length" severity="contrast"
-                            class="absolute top-2 right-0 transform translate-x-1/2 -translate-y-1/2" size="small"></Badge>
+                            class="absolute top-2 right-0 transform translate-x-1/2 -translate-y-1/2" size="small">
+                        </Badge>
                     </button>
                     <Button @click="$emit('openCloseSessionModal')" icon="pi pi-sign-out" rounded severity="danger"
-                        v-tooltip.bottom="'Cerrar Caja'" variant="outlined" size="medium"
-                        class="!size-8 !bg-white" />
+                        v-tooltip.bottom="'Cerrar Caja'" variant="outlined" size="medium" class="!size-8 !bg-white" />
                     <Popover ref="op">
                         <PendingCartsPopover :carts="pendingCarts" @resume-cart="$emit('resumeCart', $event)"
                             @delete-cart="$emit('deleteCart', $event)" />
@@ -313,20 +282,18 @@ onUnmounted(() => {
         </div>
 
         <div class="flex-grow lg:px-6 pb-6 overflow-y-auto" ref="productsContainer">
-            <div v-if="isInitialising" class="flex justify-center items-center h-full">
-                <i class="pi pi-spin pi-spinner text-4xl text-gray-400"></i>
-            </div>
-            <template v-else>
-                <p v-if="loadedProducts.length === 0 && !isLoadingMore" class="text-center text-gray-500 mt-8">No se
-                    encontraron productos.</p>
-                <div v-else class="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2">
+            <template v-if="loadedProducts.length > 0">
+                <div class="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2">
                     <ProductCard v-for="product in loadedProducts" :key="`${product.id}-${product.sku}`"
                         :product="product" @showDetails="showProductDetails" @addToCart="$emit('addToCart', $event)" />
                 </div>
-                <div v-if="isLoadingMore" class="flex justify-center items-center h-24">
-                    <i class="pi pi-spin pi-spinner text-3xl text-gray-400"></i>
-                </div>
             </template>
+            <p v-else-if="!isLoadingMore" class="text-center text-gray-500 mt-8">
+                No se encontraron productos.
+            </p>
+            <div v-if="isLoadingMore" class="flex justify-center items-center h-24">
+                <i class="pi pi-spin pi-spinner !text-3xl text-gray-400"></i>
+            </div>
         </div>
 
         <ProductDetailModal v-model:visible="isDetailModalVisible" :product="selectedProductForModal"

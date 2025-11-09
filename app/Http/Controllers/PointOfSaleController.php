@@ -156,6 +156,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'payments.*.method' => ['required', Rule::in(array_column(PaymentMethod::cases(), 'value'))],
             'payments.*.bank_account_id' => 'nullable|exists:bank_accounts,id',
             'payments.*.notes' => 'nullable|string|max:255',
+            'use_balance' => 'required|boolean',
         ]);
 
         $user = Auth::user();
@@ -166,21 +167,23 @@ class PointOfSaleController extends Controller implements HasMiddleware
         try {
             $transaction = DB::transaction(function () use ($validated, $user, $customer, $totalSale, $paymentsFromRequest, $paymentService) {
 
+                // Capturamos el timestamp base para ordenar los movimientos
+                $now = now();
+
                 $newTransaction = Transaction::create([
                     'cash_register_session_id' => $validated['cash_register_session_id'],
                     'folio' => $this->generateFolio(),
                     'customer_id' => $customer?->id,
                     'branch_id' => $user->branch_id,
                     'user_id' => $user->id,
-                    // Se crea como PENDIENTE y se actualiza al final si se paga por completo.
                     'status' => TransactionStatus::PENDING,
                     'channel' => TransactionChannel::POS,
                     'subtotal' => $validated['subtotal'],
                     'total_discount' => $validated['total_discount'] ?? 0,
-                    'total_tax' => 0, // Ajustar si se manejan impuestos
+                    'total_tax' => 0,
                     'total' => $totalSale,
                     'currency' => 'MXN',
-                    'status_changed_at' => now(),
+                    'status_changed_at' => $now,
                 ]);
 
                 // Crear items de la transacción y descontar stock
@@ -209,9 +212,11 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     Product::find($item['id'])->decrement('current_stock', $item['quantity']);
                 }
 
-                // 1. Aplicar el saldo a favor del cliente si existe.
-                if ($customer && $customer->balance > 0) {
-                    $balanceToUse = min($totalSale, (float) $customer->balance);
+
+                // 1. Aplicar el saldo a favor del cliente si existe Y SI SE SOLICITÓ.
+                $balanceToUse = 0; // <-- AÑADIDO
+                if ($validated['use_balance'] && $customer && $customer->balance > 0) {
+                    $balanceToUse = min($totalSale, (float) $customer->balance); // <-- LÍNEA CORREGIDA
                     if ($balanceToUse > 0) {
 
                         $balancePaymentData = [[
@@ -233,14 +238,43 @@ class PointOfSaleController extends Controller implements HasMiddleware
                             'type' => CustomerBalanceMovementType::CREDIT_USAGE,
                             'amount' => -$balanceToUse,
                             'balance_after' => $customer->balance,
-                            'notes' => "Uso de saldo en venta POS #{$newTransaction->folio}",
+                            'notes' => "Uso de saldo en venta POS #{$newTransaction->folio} (Total de venta: $$totalSale)",
+                            'created_at' => $now,
+                            'updated_at' => $now,
                         ]);
                     }
                 }
 
-                // 2. Registrar los pagos directos (efectivo, tarjeta, etc.) que vienen del modal.
+                // 2. Registrar los pagos directos (con tope al total de la venta)
+                $totalDue = $totalSale - $balanceToUse; // Total a pagar con métodos
+                $paymentsToProcess = [];
+
                 if (!empty($paymentsFromRequest)) {
-                    $paymentService->processPayments($newTransaction, $paymentsFromRequest, $validated['cash_register_session_id']);
+                    // Si se pagó de más (contado), capar los pagos al total adeudado.
+                    $totalPaidFromRequest = collect($paymentsFromRequest)->sum('amount');
+
+                    if ($totalPaidFromRequest > $totalDue) {
+                        // Capamos los pagos al total adeudado
+                        $cappedPayments = [];
+                        $runningTotal = 0;
+                        foreach ($paymentsFromRequest as $payment) {
+                            $paymentAmount = (float) $payment['amount'];
+                            $amountToCap = $totalDue - $runningTotal; // Lo que falta por pagar
+
+                            if ($amountToCap <= 0) break; // Ya se cubrió el total
+
+                            $amountToRecord = min($paymentAmount, $amountToCap);
+
+                            $cappedPayments[] = array_merge($payment, ['amount' => $amountToRecord]);
+                            $runningTotal += $amountToRecord;
+                        }
+                        $paymentsToProcess = $cappedPayments;
+                    } else {
+                        // No se pagó de más, procesar tal cual
+                        $paymentsToProcess = $paymentsFromRequest;
+                    }
+
+                    $paymentService->processPayments($newTransaction, $paymentsToProcess, $validated['cash_register_session_id']);
                 }
 
                 // 3. Calcular el estado final y gestionar el crédito.
@@ -259,8 +293,11 @@ class PointOfSaleController extends Controller implements HasMiddleware
                         'type' => CustomerBalanceMovementType::CREDIT_SALE,
                         'amount' => -$remainingDue,
                         'balance_after' => $customer->balance,
-                        'notes' => "Cargo a crédito por venta POS #{$newTransaction->folio}",
+                        'notes' => "Cargo a crédito por venta POS #{$newTransaction->folio} (Total de venta: $$totalSale)",
+                        'created_at' => $now->copy()->addSecond(), // 1 segundo *despues*
+                        'updated_at' => $now->copy()->addSecond(),
                     ]);
+                    // (El estado de la transacción se queda como PENDING)
                 } else { // VENTA PAGADA POR COMPLETO
                     $newTransaction->update(['status' => TransactionStatus::COMPLETED]);
                 }
@@ -273,6 +310,166 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 ->with('print_data', ['type' => 'transaction', 'id' => $transaction->id]);
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar la venta: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Maneja la creación de una transacción de apartado.
+     */
+    public function createLayaway(Request $request, PaymentService $paymentService)
+    {
+        $validated = $request->validate([
+            'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
+            'cartItems' => 'required|array|min:1',
+            'cartItems.*.id' => 'required|exists:products,id',
+            'cartItems.*.product_attribute_id' => 'nullable|exists:product_attributes,id',
+            'cartItems.*.quantity' => 'required|numeric|min:1',
+            'cartItems.*.unit_price' => 'required|numeric|min:0',
+            'cartItems.*.description' => 'required|string',
+            'cartItems.*.discount' => 'required|numeric',
+            'cartItems.*.discount_reason' => 'nullable|string|max:255',
+            'customerId' => 'required|exists:customers,id', // <-- REQUERIDO
+            'subtotal' => 'required|numeric',
+            'total_discount' => 'nullable|numeric',
+            'total' => 'required|numeric',
+            'payments' => 'required|array|min:1', // <-- REQUERIDO (debe haber anticipo)
+            'payments.*.amount' => 'required|numeric|min:0.01',
+            'payments.*.method' => ['required', Rule::in(array_column(PaymentMethod::cases(), 'value'))],
+            'payments.*.bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'payments.*.notes' => 'nullable|string|max:255',
+            'use_balance' => 'required|boolean',
+        ]);
+
+        $user = Auth::user();
+        $customer = Customer::find($validated['customerId']); // Sabemos que existe
+        $totalSale = (float) $validated['total'];
+        $paymentsFromRequest = $validated['payments'];
+        $now = now();
+
+        try {
+            $transaction = DB::transaction(function () use ($validated, $user, $customer, $totalSale, $paymentsFromRequest, $paymentService, $now) {
+
+                $newTransaction = Transaction::create([
+                    'cash_register_session_id' => $validated['cash_register_session_id'],
+                    'folio' => $this->generateFolio(),
+                    'customer_id' => $customer->id,
+                    'branch_id' => $user->branch_id,
+                    'user_id' => $user->id,
+                    'status' => TransactionStatus::ON_LAYAWAY, // <-- NUEVO ESTADO
+                    'channel' => TransactionChannel::POS,
+                    'subtotal' => $validated['subtotal'],
+                    'total_discount' => $validated['total_discount'] ?? 0,
+                    'total_tax' => 0,
+                    'total' => $totalSale,
+                    'currency' => 'MXN',
+                    'status_changed_at' => $now,
+                ]);
+
+                // --- LÓGICA DE STOCK PARA APARTADO ---
+                // Crear items y RESERVAR stock
+                foreach ($validated['cartItems'] as $item) {
+                    $itemableId = $item['id'];
+                    $itemableType = Product::class;
+                    $itemModel = Product::find($item['id']);
+
+                    if (!empty($item['product_attribute_id'])) {
+                        $itemableId = $item['product_attribute_id'];
+                        $itemableType = ProductAttribute::class;
+                        $itemModel = ProductAttribute::find($item['product_attribute_id']);
+                    }
+
+                    $newTransaction->items()->create([
+                        'itemable_id' => $itemableId,
+                        'itemable_type' => $itemableType,
+                        'description' => $item['description'],
+                        'quantity' => $item['quantity'],
+                        'unit_price' => $item['unit_price'],
+                        'discount_amount' => $item['discount'],
+                        'discount_reason' => $item['discount_reason'] ?? null,
+                        'line_total' => $item['quantity'] * $item['unit_price'],
+                    ]);
+
+                    // INCREMENTAR stock reservado
+                    $itemModel->increment('reserved_stock', $item['quantity']);
+                    // Incrementar el padre también para que el accesor totalice bien
+                    if ($itemModel instanceof ProductAttribute) {
+                        Product::find($item['id'])->increment('reserved_stock', $item['quantity']);
+                    }
+                }
+                // --- FIN LÓGICA DE STOCK ---
+
+                // 1. Aplicar el saldo a favor del cliente si se solicitó.
+                $balanceToUse = 0;
+                if ($validated['use_balance'] && $customer->balance > 0) {
+                    $balanceToUse = min($totalSale, (float) $customer->balance);
+                    if ($balanceToUse > 0) {
+                        $paymentService->processPayments(
+                            $newTransaction,
+                            [['amount' => $balanceToUse, 'method' => PaymentMethod::BALANCE->value]],
+                            $validated['cash_register_session_id']
+                        );
+                        $customer->decrement('balance', $balanceToUse);
+                        $customer->balanceMovements()->create([
+                            'transaction_id' => $newTransaction->id,
+                            'type' => CustomerBalanceMovementType::CREDIT_USAGE,
+                            'amount' => -$balanceToUse,
+                            'balance_after' => $customer->balance,
+                            'notes' => "Uso de saldo en apartado POS #{$newTransaction->folio}",
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+                    }
+                }
+
+                // 2. Registrar los pagos (anticipo)
+                if (!empty($paymentsFromRequest)) {
+                    $paymentService->processPayments($newTransaction, $paymentsFromRequest, $validated['cash_register_session_id']);
+                }
+
+                // 3. Verificar si se liquidó por completo en el primer pago
+                $totalPaid = $newTransaction->fresh()->payments()->sum('amount');
+                // --- INICIO DE FIX #2 ---
+                if ($totalPaid >= $totalSale - 0.01) { // -0.01 por seguridad con floats
+                    // Se pagó completo, convertir a venta completada y mover stock
+                    $newTransaction->update(['status' => TransactionStatus::COMPLETED]);
+                    foreach ($newTransaction->items as $txnItem) {
+                        $itemModel = $txnItem->itemable; // Product o ProductAttribute
+
+                        // Mover stock de "reservado" a "vendido"
+                        $itemModel->decrement('reserved_stock', $txnItem->quantity);
+                        $itemModel->decrement('current_stock', $txnItem->quantity); // Restar el físico
+
+                        if ($itemModel instanceof ProductAttribute) {
+                            $product = $itemModel->product;
+                            $product->decrement('reserved_stock', $txnItem->quantity);
+                            $product->decrement('current_stock', $txnItem->quantity);
+                        }
+                    }
+                } else {
+                    // NO se pagó completo. Registrar el restante como deuda.
+                    $remainingDue = $totalSale - $totalPaid;
+
+                    $customer->decrement('balance', $remainingDue);
+
+                    $customer->balanceMovements()->create([
+                        'transaction_id' => $newTransaction->id,
+                        'type' => CustomerBalanceMovementType::LAYAWAY_DEBT,
+                        'amount' => -$remainingDue,
+                        'balance_after' => $customer->balance,
+                        'notes' => "Cargo a saldo por apartado POS #{$newTransaction->folio}",
+                        'created_at' => $now->copy()->addSecond(), // 1s después del pago
+                        'updated_at' => $now->copy()->addSecond(),
+                    ]);
+                }
+
+                return $newTransaction;
+            });
+
+            return redirect()->route('pos.index')
+                ->with('success', 'Apartado registrado con éxito. Folio: ' . $transaction->folio)
+                ->with('print_data', ['type' => 'transaction', 'id' => $transaction->id]);
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Error al procesar el apartado: ' . $e->getMessage());
         }
     }
 
@@ -291,7 +488,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
         }
 
         // --- Cargar price_tiers explícitamente ---
-        $paginatedProducts = $query->with(['media', 'category:id,name', 'productAttributes'])->paginate(20)->withQueryString();
+        $paginatedProducts = $query->with(['media', 'category:id,name', 'productAttributes'])
+            ->orderBy('name', 'asc') // Asegurar un orden consistente
+            ->cursorPaginate(20)
+            ->withQueryString();
 
         $paginatedProducts->through(function ($product) {
             $promotionData = $this->getPromotionData($product);
@@ -305,7 +505,8 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'original_price' => $promotionData['original_price'], // Precio base antes de promos/tiers
                 'selling_price' => (float) $product->selling_price, // Precio de venta (1 pieza)
                 'price_tiers' => $product->price_tiers ?? [], // <-- AÑADIDO: Incluir price_tiers
-                'stock' => $product->current_stock,
+                'stock' => $product->available_stock,
+                'reserved_stock' => (int) $product->reserved_stock,
                 'category' => $product->category->name ?? 'Sin categoría',
                 'image' => $generalImages->first() ?: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' . urlencode($product->name),
                 'general_images' => $generalImages,
@@ -440,7 +641,8 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'id' => $attr->id,
                 'attributes' => $attr->attributes,
                 'price_modifier' => (float) $attr->selling_price_modifier,
-                'stock' => $attr->current_stock,
+                'stock' => $attr->available_stock,
+                'reserved_stock' => (int) $attr->reserved_stock,
                 'sku_suffix' => $attr->sku_suffix,
                 'image_url' => $imageUrl,
             ];

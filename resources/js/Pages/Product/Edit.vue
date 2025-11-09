@@ -474,7 +474,7 @@ const confirmRemoveItem = (event, index) => {
                             <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-200 m-0">
                                 Inventario y variantes
                             </h2>
-                            <Button v-if="form.category_id" icon="pi pi-cog" text rounded
+                            <Button v-if="form.category_id" icon="pi pi-cog" text label="Gestionar"
                                 v-tooltip.left="'Gestionar atributos de la categoría'"
                                 @click="showAttributesModal = true" />
                         </div>

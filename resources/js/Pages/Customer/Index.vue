@@ -78,11 +78,11 @@ const deleteSelectedCustomers = () => {
 const menuItems = ref([
     { label: 'Ver', icon: 'pi pi-eye', command: () => router.get(route('customers.show', selectedCustomerForMenu.value.id)), visible: hasPermission('customers.see_details') },
     { label: 'Editar cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', selectedCustomerForMenu.value.id)), visible: hasPermission('customers.edit') },
-    { 
-        label: 'Estado de cuenta', 
-        icon: 'pi pi-file-pdf', 
-        command: () => window.open(route('customers.printStatement', selectedCustomerForMenu.value.id), '_blank'), 
-        visible: hasPermission('customers.see_details') 
+    {
+        label: 'Estado de cuenta',
+        icon: 'pi pi-file-pdf',
+        command: () => window.open(route('customers.printStatement', selectedCustomerForMenu.value.id), '_blank'),
+        visible: hasPermission('customers.see_details')
     },
     // { label: 'Registrar Venta', icon: 'pi pi-shopping-cart', visible: hasPermission('customers.store_sale') },
     { separator: true },
@@ -151,8 +151,8 @@ const formatCurrency = (value) => {
                     class="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700 rounded-lg p-2 mb-4 flex justify-between items-center">
                     <span class="font-semibold text-sm text-[#373737] dark:text-gray-200">{{ selectedCustomers.length }}
                         cliente(s) seleccionado(s)</span>
-                    <Button v-if="hasPermission('customers.delete')" @click="deleteSelectedCustomers" label="Eliminar" icon="pi pi-trash" size="small"
-                        severity="danger" outlined />
+                    <Button v-if="hasPermission('customers.delete')" @click="deleteSelectedCustomers" label="Eliminar"
+                        icon="pi pi-trash" size="small" severity="danger" outlined />
                 </div>
 
                 <!-- Tabla de Clientes -->
@@ -173,19 +173,36 @@ const formatCurrency = (value) => {
                     <Column field="phone" header="Contacto" sortable>
                         <template #body="{ data }">
                             <div>
-                                <p vif="data.phone" class="m-0"><i class="pi pi-phone !text-xs mr-2"></i>{{ data.phone }}</p>
-                                <p v-if="data.email" class="m-0"><i class="pi pi-envelope !text-xs mr-2"></i>{{ data.email }}</p>
+                                <p vif="data.phone" class="m-0"><i class="pi pi-phone !text-xs mr-2"></i>{{ data.phone
+                                    }}</p>
+                                <p v-if="data.email" class="m-0"><i class="pi pi-envelope !text-xs mr-2"></i>{{
+                                    data.email }}</p>
                             </div>
                         </template>
                     </Column>
-                    <Column v-if="hasPermission('customers.see_financial_info')" field="balance" header="Saldo" sortable>
+                    <Column v-if="hasPermission('customers.see_financial_info')" field="balance" header="Saldo"
+                        sortable>
                         <template #body="{ data }">
                             <span :class="getBalanceClass(data.balance)" class="font-mono font-semibold">
                                 {{ formatCurrency(data.balance) }}
                             </span>
                         </template>
                     </Column>
-                    <Column v-if="hasPermission('customers.see_financial_info')" field="credit_limit" header="Límite de crédito" sortable>
+                    <Column v-if="hasPermission('customers.see_financial_info')" field="layaway_items_quantity_sum"
+                        header="Apartados" sortable>
+                        <template #body="{ data }">
+                            <span v-if="data.layaway_items_quantity_sum > 0"
+                                class="font-semibold text-indigo-600 dark:text-indigo-400">
+                                {{ data.layaway_items_quantity_sum }}
+                                <span class="text-xs">unidades</span>
+                            </span>
+                            <span v-else class="text-gray-400 dark:text-gray-500">
+                                0
+                            </span>
+                        </template>
+                    </Column>
+                    <Column v-if="hasPermission('customers.see_financial_info')" field="credit_limit"
+                        header="Límite de crédito" sortable>
                         <template #body="{ data }">
                             {{ formatCurrency(data.credit_limit) }}
                         </template>

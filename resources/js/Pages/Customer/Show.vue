@@ -14,6 +14,7 @@ const props = defineProps({
     customer: Object,
     historicalMovements: Array,
     userBankAccounts: Array,
+    activeLayaways: Array,
 });
 
 const confirm = useConfirm();
@@ -29,6 +30,7 @@ const isPaymentModalVisible = ref(false);
 const isStartSessionModalVisible = ref(false);
 const isJoinSessionModalVisible = ref(false);
 const sessionModalAwaitingPaymentModal = ref(false);
+const isPaymentProcessing = ref(false);
 
 // --- Lógica para modal de ajuste ---
 const isAdjustModalVisible = ref(false);
@@ -58,7 +60,6 @@ const submitAdjustment = () => {
         preserveScroll: true,
     });
 };
-// --- FIN AÑADIDO ---
 
 const handleOpenAddBalanceFlow = () => {
     if (activeSession.value) {
@@ -80,11 +81,29 @@ watch(activeSession, (newSession) => {
     }
 });
 
-
 const handleBalancePaymentSubmit = (paymentData) => {
-    router.post(route('customers.payments.store', props.customer.id), paymentData, {
+    // 1. Asegurarnos de que tenemos una sesión activa (el flujo de UI ya debería garantizarlo)
+    if (!activeSession.value) {
+        // Esto es un fallback, el botón "Abonar" no debería ser visible sin sesión.
+        usePage().props.flash.error = 'No hay una sesión de caja activa para registrar el pago.';
+        return;
+    }
+
+    // 2. Añadir el ID de la sesión de caja al payload
+    const payload = {
+        ...paymentData,
+        cash_register_session_id: activeSession.value.id
+    };
+
+    isPaymentProcessing.value = true;
+
+    // 3. Enviar el payload completo al controlador
+    router.post(route('customers.payments.store', props.customer.id), payload, {
         onSuccess: () => {
             isPaymentModalVisible.value = false;
+        },
+        onFinish: () => { // Desactivar loading (en éxito o error)
+            isPaymentProcessing.value = false;
         },
         preserveScroll: true,
     });
@@ -153,6 +172,7 @@ const getTransactionStatusSeverity = (status) => {
         pendiente: 'warn',
         cancelado: 'danger',
         reembolsado: 'info',
+        apartado: 'info',
     };
     return map[status] || 'secondary';
 };
@@ -170,7 +190,7 @@ const getTransactionStatusSeverity = (status) => {
             <div>
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{{ customer.name }}</h1>
                 <p v-if="customer.company_name" class="text-gray-500 dark:text-gray-400 mt-1">{{ customer.company_name
-                    }}</p>
+                }}</p>
             </div>
             <div>
                 <Button @click="toggleMenu" label="Acciones" icon="pi pi-chevron-down" iconPos="right"
@@ -184,32 +204,32 @@ const getTransactionStatusSeverity = (status) => {
             <div class="lg:col-span-1 space-y-6">
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
-                        Información de Contacto</h2>
+                        Información de contacto</h2>
                     <ul class="space-y-3 text-sm">
                         <li v-if="customer.phone" class="flex items-center"><i
                                 class="pi pi-phone w-6 text-gray-500"></i> <span class="font-medium">{{ customer.phone
                                 }}</span></li>
                         <li v-if="customer.email" class="flex items-center"><i
                                 class="pi pi-envelope w-6 text-gray-500"></i> <span class="font-medium">{{
-                                customer.email }}</span></li>
+                                    customer.email }}</span></li>
                         <li v-if="customer.tax_id" class="flex items-center"><i
                                 class="pi pi-id-card w-6 text-gray-500"></i> <span class="font-medium">{{
-                                customer.tax_id }}</span></li>
+                                    customer.tax_id }}</span></li>
                     </ul>
                 </div>
                 <div v-if="hasPermission('customers.see_financial_info')"
                     class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
-                        Información Financiera</h2>
+                        Información financiera</h2>
                     <ul class="space-y-3 text-sm">
                         <li class="flex justify-between items-center">
-                            <span class="text-gray-500">Saldo Actual</span>
+                            <span class="text-gray-500">Saldo actual</span>
                             <span :class="getBalanceClass(customer.balance)" class="font-mono font-semibold text-lg">
                                 {{ formatCurrency(customer.balance) }}
                             </span>
                         </li>
                         <li class="flex justify-between items-center">
-                            <span class="text-gray-500">Límite de Crédito</span>
+                            <span class="text-gray-500">Límite de crédito</span>
                             <span class="font-mono font-medium">
                                 {{ formatCurrency(customer.credit_limit) }}
                             </span>
@@ -220,8 +240,45 @@ const getTransactionStatusSeverity = (status) => {
 
             <!-- Columna Derecha: Historial -->
             <div class="lg:col-span-2 space-y-6">
+                <div v-if="activeLayaways && activeLayaways.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-blue-800 dark:text-blue-300">
+                        Apartados activos
+                    </h2>
+                    <DataTable :value="activeLayaways" class="p-datatable-sm" responsiveLayout="scroll"
+                        :paginator="activeLayaways.length > 3" :rows="3" sortField="created_at" :sortOrder="-1">
+                        <Column field="folio" header="Folio">
+                            <template #body="{ data }">
+                                <Link :href="route('transactions.show', data.id)" class="text-blue-500 hover:underline">
+                                #{{ data.folio }}
+                                </Link>
+                            </template>
+                        </Column>
+                        <Column field="created_at" header="Fecha apartado" sortable>
+                            <template #body="{ data }"> {{ formatDate(data.created_at) }}</template>
+                        </Column>
+                        <Column field="total_items_quantity" header="Unidades" headerClass="text-center" bodyClass="text-center"></Column>
+                        <Column field="total_amount" header="Total">
+                            <template #body="{ data }">
+                                {{ formatCurrency(data.total_amount) }}
+                            </template>
+                        </Column>
+                         <Column field="pending_amount" header="Pendiente">
+                            <template #body="{ data }">
+                                <span class="font-semibold text-red-500">
+                                    {{ formatCurrency(data.pending_amount) }}
+                                </span>
+                            </template>
+                        </Column>
+                        <template #empty>
+                            <div class="text-center text-gray-500 py-4">
+                                No hay apartados activos.
+                            </div>
+                        </template>
+                    </DataTable>
+                </div>
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Ventas
+                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
+                        Ventas
                     </h2>
                     <DataTable :value="customer.transactions" class="p-datatable-sm" responsiveLayout="scroll"
                         :paginator="customer.transactions?.length > 5" :rows="5">
@@ -254,8 +311,8 @@ const getTransactionStatusSeverity = (status) => {
                     </DataTable>
                 </div>
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">Historial
-                        de movimientos
+                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
+                        Historial de movimientos
                     </h2>
                     <DataTable :value="historicalMovements" class="p-datatable-sm" responsiveLayout="scroll"
                         :paginator="historicalMovements?.length > 5" :rows="5" sortField="date" :sortOrder="-1">
@@ -302,8 +359,7 @@ const getTransactionStatusSeverity = (status) => {
             :user-bank-accounts="userBankAccounts" />
         <JoinSessionModal v-model:visible="isJoinSessionModalVisible" :sessions="joinableSessions" />
         <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="0"
-            :client="customer" :active-session="activeSession" payment-mode="balance"
-            @submit="handleBalancePaymentSubmit" />
+            :client="customer" :loading="isPaymentProcessing" payment-mode="balance" @submit="handleBalancePaymentSubmit" />
         <Dialog v-model:visible="isAdjustModalVisible" header="Ajuste Manual de Saldo" modal
             class="w-full max-w-lg mx-4">
             <form @submit.prevent="submitAdjustment" class="space-y-6">

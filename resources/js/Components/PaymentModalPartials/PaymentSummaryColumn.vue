@@ -40,20 +40,20 @@ const title = computed(() => {
 <template>
     <div class="col-span-1 bg-gray-50 dark:bg-gray-800 p-3 lg:p-6 flex flex-col justify-center items-center rounded-l-lg min-h-[300px] lg:min-h-[500px]">
         <p class="lg:text-lg font-semibold text-gray-600 dark:text-gray-300">{{ title }}</p>
-        <p class="text-3xl lg:text-6xl font-bold text-gray-800 dark:text-gray-100 mt-4 break-all">
+        <p class="text-xl lg:text-3xl font-bold text-gray-800 dark:text-gray-100 mt-4 break-all">
             {{ formatCurrency(displayAmount) }}
         </p>
 
         <div v-if="client" class="mt-8 w-full border-t border-gray-200 dark:border-gray-700 pt-4 text-sm">
             <p class="font-semibold text-center text-gray-800 dark:text-gray-200 mb-2">{{ client.name }}</p>
             <div class="flex justify-between">
-                <span class="text-gray-500 dark:text-gray-400">Saldo Actual:</span>
+                <span class="text-gray-500 dark:text-gray-400">Saldo actual:</span>
                 <span class="font-mono font-semibold" :class="client.balance >= 0 ? 'text-green-500' : 'text-red-500'">
                     {{ formatCurrency(client.balance) }}
                 </span>
             </div>
             <div class="flex justify-between mt-1">
-                <span class="text-gray-500 dark:text-gray-400">Crédito Disponible:</span>
+                <span class="text-gray-500 dark:text-gray-400">Crédito disponible:</span>
                 <span class="font-mono font-semibold text-blue-500">
                     {{ formatCurrency(client.available_credit) }}
                 </span>

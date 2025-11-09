@@ -15,7 +15,7 @@ class PlanItemSeeder extends Seeder
 
         // Módulos
         $modules = [
-            ['key' => 'module_pos', 'name' => 'Punto de Venta', 'price' => 139, 'icon' => 'pi pi-shop'], //Activo al suscribirse
+            ['key' => 'module_pos', 'name' => 'Punto de Venta', 'price' => 130, 'icon' => 'pi pi-shop'], //Activo al suscribirse
             ['key' => 'module_financial_reports', 'name' => 'Reportes financieros', 'price' => 25, 'icon' => 'pi pi-chart-bar'], //Activo al suscribirse
             ['key' => 'module_transactions', 'name' => 'Historial de Ventas', 'price' => 0, 'icon' => 'pi pi-history'], //Activo al suscribirse
             ['key' => 'module_products', 'name' => 'Productos', 'price' => 0, 'icon' => 'pi pi-barcode'], //Activo al suscribirse
