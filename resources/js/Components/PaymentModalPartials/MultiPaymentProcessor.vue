@@ -23,7 +23,7 @@ const formatCurrency = (value) => {
 
 // --- Estado Interno: Lista de Pagos y Saldo ---
 const payments = ref([]);
-const useBalance = ref(false);
+const useBalance = ref(true);
 
 // --- *** INICIO DE MODIFICACIÓN: Título dinámico *** ---
 const currentTransactionInfo = computed(() => {
@@ -31,7 +31,7 @@ const currentTransactionInfo = computed(() => {
         case 'contado':
             return {
                 id: 'contado',
-                label: 'Pago al Contado',
+                label: 'Pago al contado',
                 image: '/images/contado.webp',
                 bgColor: '#C5E0F7',
                 textColor: '#3D5F9B',
@@ -47,7 +47,7 @@ const currentTransactionInfo = computed(() => {
         case 'apartado':
             return {
                 id: 'apartado',
-                label: 'Sistema de Apartado',
+                label: 'Sistema de apartado',
                 image: '/images/apartado.webp',
                 bgColor: '#FFC9E9',
                 textColor: '#862384',
@@ -56,7 +56,7 @@ const currentTransactionInfo = computed(() => {
         case 'balance':
             return {
                 id: 'balance',
-                label: 'Abono a Saldo',
+                label: 'Abono a saldo',
                 image: '/images/efectivo.webp', // Reusamos imagen o usamos una genérica
                 bgColor: '#E5E7EB',
                 textColor: '#374151',
@@ -66,7 +66,7 @@ const currentTransactionInfo = computed(() => {
         case 'flexible':
             return {
                 id: 'flexible',
-                label: 'Abono a Orden',
+                label: 'Abono a orden',
                 image: '/images/contado.webp', // Reusamos imagen
                 bgColor: '#E0F2FE',
                 textColor: '#0C4A6E',
@@ -74,7 +74,7 @@ const currentTransactionInfo = computed(() => {
         default:
             return {
                 id: 'default',
-                label: 'Registrar Pago',
+                label: 'Registrar pago',
                 image: '/images/contado.webp',
                 bgColor: '#E5E7EB',
                 textColor: '#374151',
@@ -220,18 +220,17 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
 
 <template>
     <div class="flex flex-col min-h-[400px]">
-        <!-- --- *** INICIO DE MODIFICACIÓN: Título dinámico *** --- -->
+        <!-- --- *** Título dinámico *** --- -->
         <div class="flex items-center gap-3 mb-4 p-3 rounded-lg"
             :style="{ backgroundColor: currentTransactionInfo.bgColor, color: currentTransactionInfo.textColor }">
             <img :src="currentTransactionInfo.image" :alt="currentTransactionInfo.label" class="h-8 w-8 object-contain">
             <h3 class="text-lg font-semibold m-0">{{ currentTransactionInfo.label }}</h3>
         </div>
-        <!-- --- *** FIN DE MODIFICACIÓN *** --- -->
 
         <!-- Resumen de Montos -->
-        <div class="space-y-2 mb-4">
+        <div v-if="props.transactionType !== 'balance'" class="space-y-2 mb-4">
             <div class="flex justify-between text-2xl font-bold">
-                <span class="text-gray-800 dark:text-gray-200">Total de Venta:</span>
+                <span class="text-gray-800 dark:text-gray-200">Total de venta:</span>
                 <span class="font-mono">{{ formatCurrency(totalAmount) }}</span>
             </div>
 
@@ -250,7 +249,7 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
         </div>
 
         <!-- Toggle de Saldo -->
-        <div v-if="clientBalanceToUse > 0"
+        <div v-if="clientBalanceToUse > 0 && props.transactionType == 'contado'"
             class="mb-4 bg-yellow-100 dark:bg-yellow-900/50 border border-yellow-300 dark:border-yellow-700 p-3 rounded-lg flex items-center justify-between">
             <span class="text-sm font-medium text-yellow-800 dark:text-yellow-200">
                 Usar saldo a favor ({{ formatCurrency(clientBalanceToUse) }})
