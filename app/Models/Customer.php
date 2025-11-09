@@ -78,7 +78,7 @@ class Customer extends Model
 
                 // 2. Identificar transacciones que no generaron movimiento de saldo (ej. ventas de contado)
                 $movementTransactionIds = $balanceMovements->pluck('transaction_id')->filter()->unique();
-                $transactionsWithoutMovement = $transactions->whereNotIn('id', $movementTransactionIds);
+                $transactionsWithoutMovement = $transactions->whereNotIn('id', $movementTransactionIds)->where('status', 'completado');
 
                 // 3. Mapear estas transacciones y encontrar su saldo resultante
                 $formattedTransactions = $transactionsWithoutMovement->map(function ($transaction) use ($formattedMovements) {
