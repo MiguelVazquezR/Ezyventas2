@@ -488,7 +488,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
         }
 
         // --- Cargar price_tiers explícitamente ---
-        $paginatedProducts = $query->with(['media', 'category:id,name', 'productAttributes'])->paginate(20)->withQueryString();
+        $paginatedProducts = $query->with(['media', 'category:id,name', 'productAttributes'])
+            ->orderBy('name', 'asc') // Asegurar un orden consistente
+            ->cursorPaginate(20)
+            ->withQueryString();
 
         $paginatedProducts->through(function ($product) {
             $promotionData = $this->getPromotionData($product);

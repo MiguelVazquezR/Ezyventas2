@@ -90,28 +90,39 @@ const timelineEvents = computed(() => {
             const totalPaid = paymentsForTx.reduce((sum, p) => sum + parseFloat(p.amount), 0);
 
             // Determinar estado y color basado en tx.status
-            let statusText = 'Venta (Desconocido)';
+            let statusText = 'Venta (desconocido)';
             let statusColor = '#64748b'; // Gris por defecto
             let statusIcon = 'pi pi-shopping-cart'; // Icono por defecto
+            let iconColor = 'ffffff'; // color de icono por defecto
 
             switch (tx.status) {
                 case 'completado':
                     statusText = 'Venta';
-                    statusColor = '#22c55e'; // Verde
+                    statusColor = '#c5e0f7'; // azul
+                    iconColor = '#3d5f9b';
                     break;
                 case 'pendiente':
-                    statusText = 'Venta (Pendiente)';
-                    statusColor = '#f59e0b'; // Amarillo
+                    statusText = 'Venta (credito / pagos)';
+                    statusColor = '#ffcd87'; // naranja
+                    iconColor = '#603814';
                     break;
                 case 'cancelado':
-                    statusText = 'Venta (Cancelada)';
-                    statusColor = '#ef4444'; // Rojo
+                    statusText = 'Venta (cancelada)';
+                    statusColor = '#ffd3d3'; // Rojo
+                    iconColor = '#bf0202';
                     statusIcon = 'pi pi-times-circle'; // Icono de cancelación
                     break;
                 case 'reembolsado':
-                    statusText = 'Venta (Reembolsada)';
-                    statusColor = '#3b82f6'; // Azul
+                    statusText = 'Venta (reembolsada)';
+                    statusColor = '#eee6ff'; // morado
+                    iconColor = '#8c3de4';
                     statusIcon = 'pi pi-replay'; // Icono de reembolso/replay
+                    break;
+                case 'apartado':
+                    statusText = 'Venta (apartada)';
+                    statusColor = '#ffc9e9';
+                    iconColor = '#862384';
+                    statusIcon = 'pi pi-shopping-bag'; // Icono de apartado/shopping bag
                     break;
             }
 
@@ -119,8 +130,9 @@ const timelineEvents = computed(() => {
                 type: 'sale',
                 date: tx.created_at,
                 status: statusText, // Texto corregido
-                color: statusColor, // Color corregido
+                bgColor: statusColor, // Color corregido
                 icon: statusIcon,   // Icono corregido/añadido
+                iconColor: iconColor,   // Icono corregido/añadido
                 data: tx,
                 totalSale: parseFloat(tx.total),
                 totalPaid: totalPaid,
@@ -165,8 +177,9 @@ const timelineEvents = computed(() => {
             return {
                 type: 'abono',
                 date: tx.created_at,
-                status: 'Abono a Saldo',
-                color: '#0ea5e9',
+                status: 'Abono a saldo',
+                bgColor: '#d3ebff',
+                iconColor: '#009cdf',
                 icon: 'pi pi-user-plus',
                 data: tx,
                 totalAbono: parseFloat(tx.total),
@@ -259,7 +272,7 @@ const timelineEvents = computed(() => {
                     class="customized-timeline">
                     <template #marker="slotProps">
                         <span class="flex w-8 h-8 items-center justify-center text-white rounded-full z-10 shadow-md"
-                            :style="{ backgroundColor: slotProps.item.color }">
+                            :style="{ backgroundColor: slotProps.item.bgColor, color: slotProps.item.iconColor || '#ffffff' }">
                             <i :class="slotProps.item.icon"></i>
                         </span>
                     </template>
