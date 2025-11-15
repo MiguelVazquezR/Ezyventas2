@@ -31,6 +31,16 @@ class PaymentController extends Controller
             'payments.*.notes' => 'nullable|string',
         ];
 
+        foreach ($request->input('payments', []) as $index => $payment) {
+            // Si el método es tarjeta o transferencia, hacemos 'bank_account_id' obligatorio
+            if (in_array($payment['method'], ['tarjeta', 'transferencia'])) {
+                $rules["payments.{$index}.bank_account_id"] = 'required|integer|exists:bank_accounts,id';
+            } else {
+                // Si es 'efectivo' o 'saldo', solo nos aseguramos de que sea nulo
+                $rules["payments.{$index}.bank_account_id"] = 'nullable|integer';
+            }
+        }
+
         $messages = [
             'cash_register_session_id.required' => 'No se ha proporcionado una sesión de caja activa.',
             'payments.*.bank_account_id.required' => 'Se requiere una cuenta destino para pagos con tarjeta o transferencia.',

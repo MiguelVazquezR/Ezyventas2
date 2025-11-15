@@ -266,6 +266,15 @@ class TransactionPaymentService
                         $sessionId
                     );
 
+                    // Volvemos a verificar el total pagado *después* del abono.
+                    $newTotalPaid = $totalPaidOnTransaction + $amountForThisTransaction;
+                    
+                    // Si el nuevo total pagado cubre el total de la transacción...
+                    if ($newTotalPaid >= $transaction->total - 0.01) {
+                        // ...la marcamos como COMPLETADA.
+                        $transaction->update(['status' => TransactionStatus::COMPLETED]);
+                    }
+
                     $customer->increment('balance', $amountForThisTransaction);
 
                     // Guardar movimiento de saldo para creación posterior
@@ -485,7 +494,6 @@ class TransactionPaymentService
             'subtotal' => $amount,
             'total_discount' => 0,
             'total_tax' => 0,
-            'total' => $amount,
             'channel' => TransactionChannel::BALANCE_PAYMENT,
             'status' => TransactionStatus::COMPLETED,
             'notes' => 'Transacción generada para registrar abono a saldo a favor.',

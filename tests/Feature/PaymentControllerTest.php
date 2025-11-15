@@ -37,6 +37,10 @@ class PaymentControllerTest extends TestCase
         $this->branch = Branch::factory()->create();
         $this->user = User::factory()->create(['branch_id' => $this->branch->id]);
 
+        $this->branch->subscription->update([
+            'onboarding_completed_at' => now() 
+        ]);
+
         $this->customer = Customer::factory()->create([
             'branch_id' => $this->branch->id,
             'balance' => -1000.00
@@ -93,7 +97,7 @@ class PaymentControllerTest extends TestCase
 
         // --- ACT ---
         $response = $this->actingAs($this->user)
-            ->postJson(
+            ->post(
                 // Ajusta el nombre de tu ruta si es diferente
                 route('payments.store', $this->transaction),
                 $payload

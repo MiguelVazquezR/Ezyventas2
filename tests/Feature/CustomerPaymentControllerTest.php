@@ -37,6 +37,10 @@ class CustomerPaymentControllerTest extends TestCase
         // 1. Crear datos base
         $this->branch = Branch::factory()->create();
         $this->user = User::factory()->create(['branch_id' => $this->branch->id]);
+
+        $this->branch->subscription->update([
+            'onboarding_completed_at' => now() 
+        ]);
         
         $this->customer = Customer::factory()->create([
             'branch_id' => $this->branch->id,
@@ -108,10 +112,13 @@ class CustomerPaymentControllerTest extends TestCase
         ];
 
         // --- ACT ---
-        $response = $this->postJson(
+        $response = $this->post(
             route('customers.payments.store', $this->customer), 
             $payload
         );
+
+        // Detendrá la prueba y te dirá si un campo de validación falló.
+        $response->assertSessionHasNoErrors();
 
         // --- ASSERT ---
         $response->assertRedirect();
@@ -151,7 +158,7 @@ class CustomerPaymentControllerTest extends TestCase
         ];
 
         // --- ACT ---
-        $response = $this->postJson(route('customers.payments.store', $this->customer), $payload);
+        $response = $this->post(route('customers.payments.store', $this->customer), $payload);
 
         // --- ASSERT ---
         $response->assertRedirect();
@@ -162,7 +169,7 @@ class CustomerPaymentControllerTest extends TestCase
         $this->assertDatabaseHas('transactions', [
             'customer_id' => $this->customer->id,
             'channel' => TransactionChannel::BALANCE_PAYMENT->value,
-            'total' => 200.00,
+            'subtotal' => 200.00,
             'folio' => 'ABONO-001'
         ]);
         
