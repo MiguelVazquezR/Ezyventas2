@@ -14,6 +14,7 @@ use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Exception;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Servicio para orquestar operaciones de pago complejas que
@@ -24,9 +25,7 @@ class TransactionPaymentService
     /**
      * @param PaymentService $paymentService El servicio de bajo nivel para registrar pagos.
      */
-    public function __construct(protected PaymentService $paymentService)
-    {
-    }
+    public function __construct(protected PaymentService $paymentService) {}
 
     /**
      * Procesa una nueva venta (Contado, Crédito o Apartado) desde el POS.
@@ -65,7 +64,7 @@ class TransactionPaymentService
                 'subtotal' => $validatedData['subtotal'],
                 'total_discount' => $validatedData['total_discount'] ?? 0,
                 'total_tax' => 0,
-                'total' => $totalSale,
+                // 'total' => $totalSale,
                 'currency' => 'MXN',
                 'status_changed_at' => $now,
             ]);
@@ -191,7 +190,7 @@ class TransactionPaymentService
             // 6. Aplicar Pagos Directos (y reducir deuda del cliente)
             if ($totalFromPayments > 0) {
                 $paymentsFromRequest = $validatedData['payments'];
-                
+
                 // Registra los pagos
                 $this->applyDirectPayments($transaction, $paymentsFromRequest, $sessionId);
 
@@ -234,7 +233,7 @@ class TransactionPaymentService
             $now = now();
             $balanceMovementsToCreate = [];
 
-            // 1. Buscar *TODAS* las deudas (Crédito y Apartados)
+            // 1. Buscar *TODAS* las deudas
             $pendingTransactions = $customer->transactions()
                 ->whereIn('status', [TransactionStatus::PENDING, TransactionStatus::ON_LAYAWAY])
                 ->orderBy('created_at', 'asc') // FIFO
@@ -247,6 +246,7 @@ class TransactionPaymentService
                 foreach ($pendingTransactions as $transaction) {
                     if ($amountToApply <= 0.001) break;
 
+                    $originalStatus = $transaction->status;
                     $totalPaidOnTransaction = $transaction->payments()->sum('amount');
                     $pendingAmountOnTransaction = $transaction->total - $totalPaidOnTransaction;
 
@@ -254,25 +254,26 @@ class TransactionPaymentService
 
                     $amountForThisTransaction = min($amountToApply, $pendingAmountOnTransaction);
 
-                    // Registrar el pago
+                    // --- ¡AQUÍ ESTÁ LA CORRECCIÓN! ---
                     $this->paymentService->processPayments(
-                        $transaction,
+                        $transaction, // <-- DEBE SER $transaction
                         [[
-                            'amount' => $amountForThisTransaction,
+                            'amount' => $amountForThisTransaction, // <-- DEBE SER $amountForThisTransaction
                             'method' => $paymentData['method'],
-                            'notes' => 'Abono a deuda. ' . ($validatedData['notes'] ?? ''),
+                            'notes' => 'Abono a deuda. ' . ($validatedData['notes'] ?? ''), // Nota corregida
                             'bank_account_id' => $paymentData['bank_account_id'] ?? null,
                         ]],
                         $sessionId
                     );
+                    // --- FIN DE LA CORRECCIÓN ---
 
-                    // Volvemos a verificar el total pagado *después* del abono.
+                    // 3. Comprobar si se liquidó
                     $newTotalPaid = $totalPaidOnTransaction + $amountForThisTransaction;
-                    
-                    // Si el nuevo total pagado cubre el total de la transacción...
                     if ($newTotalPaid >= $transaction->total - 0.01) {
-                        // ...la marcamos como COMPLETADA.
                         $transaction->update(['status' => TransactionStatus::COMPLETED]);
+                        if ($originalStatus === TransactionStatus::ON_LAYAWAY) {
+                            $this->finalizeLayawayStock($transaction);
+                        }
                     }
 
                     $customer->increment('balance', $amountForThisTransaction);
@@ -294,6 +295,7 @@ class TransactionPaymentService
                 if ($amountToApply > 0.001) {
                     $balanceTransaction = $this->createBalancePaymentTransaction($customer, $user, $sessionId, $amountToApply, $now);
 
+                    // Esta llamada (que estaba copiada arriba) SÍ es correcta aquí
                     $this->paymentService->processPayments(
                         $balanceTransaction,
                         [[
@@ -318,7 +320,7 @@ class TransactionPaymentService
                 }
             }
 
-            // 4. Crear movimientos de saldo con 'staggering' (separación de tiempo)
+            // 4. Crear movimientos de saldo
             $this->createStaggeredBalanceMovements($customer, $balanceMovementsToCreate, $now);
         });
     }
@@ -342,7 +344,7 @@ class TransactionPaymentService
             'notes' => $notes,
             'bank_account_id' => null,
         ]];
-        
+
         $this->paymentService->processPayments($transaction, $balancePaymentData, $sessionId);
 
         $customer->decrement('balance', $amountToUse);
@@ -442,17 +444,34 @@ class TransactionPaymentService
     private function finalizeLayawayStock(Transaction $transaction): void
     {
         foreach ($transaction->items as $txnItem) {
-            $itemModel = $txnItem->itemable; // Product o ProductAttribute
-            
-            // Mover stock de "reservado" a "vendido"
-            $itemModel->decrement('reserved_stock', $txnItem->quantity);
-            $itemModel->decrement('current_stock', $txnItem->quantity); // Restar el físico
+            $itemModel = $txnItem->itemable; // Esto es Product o ProductAttribute
 
-            if ($itemModel instanceof ProductAttribute) {
-                $product = $itemModel->product;
-                $product->decrement('reserved_stock', $txnItem->quantity);
-                $product->decrement('current_stock', $txnItem->quantity);
+            // 1. Si el itemable (producto o variante) ya no existe,
+            //    no podemos hacer nada. Simplemente saltamos.
+            if (!$itemModel) {
+                Log::warning("No se pudo finalizar el stock para el item {$txnItem->id} de la transacción {$transaction->id}: El producto/variante ya no existe.");
+                continue;
             }
+
+            // 2. Decrementar el stock del itemable (sea Producto o Atributo)
+            //    Esto mueve de 'reservado' a 0 y de 'físico' a -1.
+            $itemModel->decrement('reserved_stock', $txnItem->quantity);
+            $itemModel->decrement('current_stock', $txnItem->quantity);
+
+            // 3. Si el itemable era una VARIANTE (ProductAttribute)...
+            if ($itemModel instanceof \App\Models\ProductAttribute) {
+                // ...también debemos actualizar las cantidades del PRODUCTO PADRE.
+                $product = $itemModel->product; // Asumiendo que tienes esta relación
+                
+                if ($product) {
+                    $product->decrement('reserved_stock', $txnItem->quantity);
+                    $product->decrement('current_stock', $txnItem->quantity);
+                } else {
+                    Log::warning("La variante {$itemModel->id} no tiene un producto padre asociado.");
+                }
+            }
+            // 4. Si era un Producto simple, no se necesita hacer nada más,
+            //    ya que el paso 2 descontó el stock del producto principal.
         }
     }
 
@@ -512,7 +531,7 @@ class TransactionPaymentService
 
         for ($i = 0; $i < $movementsCount; $i++) {
             $timestamp = ($movementsCount > 1) ? $baseTimestamp->copy()->addSeconds($i) : $baseTimestamp;
-            
+
             $customer->balanceMovements()->create([
                 'transaction_id' => $movements[$i]['transaction_id'],
                 'type' => $movements[$i]['type'],

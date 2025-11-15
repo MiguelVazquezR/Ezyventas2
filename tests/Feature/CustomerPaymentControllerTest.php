@@ -14,6 +14,7 @@ use App\Models\Transaction;
 use App\Enums\TransactionStatus;
 use App\Enums\CustomerBalanceMovementType;
 use App\Enums\TransactionChannel;
+use App\Models\Product;
 use Carbon\Carbon;
 use PHPUnit\Framework\Attributes\Test; // <-- Usar el atributo
 
@@ -184,5 +185,106 @@ class CustomerPaymentControllerTest extends TestCase
         
         $expectedBankBalance = $initialBankBalance + 1500.00;
         $this->assertEquals($expectedBankBalance, $this->bankAccount->fresh()->balance);
+    }
+
+    #[Test]
+    public function it_completes_a_layaway_transaction_and_updates_stock_when_paid_off(): void
+    {
+        // --- ARRANGE ---
+        // 1. Crear un producto con stock
+        $product = Product::factory()->create([
+            'branch_id' => $this->branch->id,
+            'selling_price' => 150.00,
+            'current_stock' => 20,
+            'reserved_stock' => 0
+        ]);
+
+        // 2. Crear el Apartado (Transacción ON_LAYAWAY)
+        // Debemos fijar descuento e impuestos a 0 para que
+        // el 'total' (accessor) sea exactamente 150.
+        $layawayTransaction = Transaction::factory()->create([
+            'customer_id' => $this->customer->id,
+            'branch_id' => $this->branch->id,
+            'user_id' => $this->user->id,
+            'subtotal' => 150.00,
+            'total_discount' => 0.00, // <-- AÑADIDO
+            'total_tax' => 0.00,      // <-- AÑADIDO
+            'status' => TransactionStatus::ON_LAYAWAY
+        ]);
+        
+        // 3. Crear el item y simular la reserva de stock
+        // (Esto simula lo que hizo el PointOfSaleController al crear el apartado)
+        $layawayTransaction->items()->create([
+            'itemable_id' => $product->id,
+            'itemable_type' => Product::class,
+            'description' => 'Producto de apartado',
+            'quantity' => 1,
+            'unit_price' => 150.00,
+            'line_total' => 150.00
+        ]);
+        $product->update(['reserved_stock' => 1]); // El stock ahora es 20 current, 1 reserved
+
+        // 4. Simular la deuda del cliente por este apartado
+        $this->customer->update(['balance' => -150.00]);
+
+        // 5. Preparar el payload del pago (liquidación total)
+        $payload = [
+            'cash_register_session_id' => $this->session->id,
+            'use_balance' => false,
+            'payments' => [
+                [
+                    'amount' => 150.00, // Se paga el total restante
+                    'method' => 'efectivo',
+                    'bank_account_id' => null,
+                ]
+            ]
+        ];
+
+        // --- ACT ---
+        // Llamamos a la ruta correcta: 'customers.payments.store'
+        $response = $this->post(
+            route('customers.payments.store', $this->customer),
+            $payload
+        );
+
+        // --- ASSERT ---
+        $response->assertSessionHasNoErrors();
+        $response->assertSessionHas('success');
+
+        // 1. Verificar que la Transacción ahora está COMPLETADA
+        $this->assertEquals(
+            TransactionStatus::COMPLETED,
+            $layawayTransaction->fresh()->status,
+            'La transacción de apartado no se marcó como COMPLETADA.'
+        );
+
+        // 2. Verificar que el SALDO DEL CLIENTE volvió a 0
+        $this->assertEquals(
+            0.00, // Debía -150, pagó 150
+            $this->customer->fresh()->balance,
+            'El saldo del cliente no se actualizó a 0.'
+        );
+
+        // 3. Verificar que se creó el Movimiento de Saldo por el PAGO
+        $this->assertDatabaseHas('customer_balance_movements', [
+            'customer_id' => $this->customer->id,
+            'transaction_id' => $layawayTransaction->id,
+            'type' => CustomerBalanceMovementType::PAYMENT,
+            'amount' => 150.00 // Movimiento positivo por el abono
+        ]);
+
+        // 4. Verificar que el STOCK RESERVADO se liberó (volvió a 0)
+        $this->assertEquals(
+            0,
+            $product->fresh()->reserved_stock,
+            'El stock reservado no se liberó.'
+        );
+
+        // 5. Verificar que el STOCK FÍSICO se descontó
+        $this->assertEquals(
+            19, // Empezó en 20, 1 se vendió
+            $product->fresh()->current_stock,
+            'El stock físico (current_stock) no se descontó.'
+        );
     }
 }

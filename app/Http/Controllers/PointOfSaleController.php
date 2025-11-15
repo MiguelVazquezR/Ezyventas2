@@ -26,6 +26,7 @@ use Illuminate\Validation\Rule;
 use Carbon\Carbon;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Facades\Log;
 use Laravel\Jetstream\Agent;
 
 class PointOfSaleController extends Controller implements HasMiddleware
@@ -39,9 +40,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
     }
 
     // Inyectar el nuevo servicio en el constructor
-    public function __construct(protected TransactionPaymentService $transactionPaymentService)
-    {
-    }
+    public function __construct(protected TransactionPaymentService $transactionPaymentService) {}
 
     public function index(Request $request): Response
     {
