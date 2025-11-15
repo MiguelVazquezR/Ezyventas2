@@ -3,13 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Enums\QuoteStatus;
+use App\Enums\TransactionChannel;
+use App\Enums\TransactionStatus;
 use App\Http\Requests\StoreQuoteRequest;
 use App\Http\Requests\UpdateQuoteRequest;
 use App\Models\Customer;
 use App\Models\CustomFieldDefinition;
 use App\Models\Product;
+use App\Models\ProductAttribute;
 use App\Models\Quote;
 use App\Models\Service;
+use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -30,6 +34,7 @@ class QuoteController extends Controller implements HasMiddleware
             new Middleware('can:quotes.edit', only: ['edit', 'update']),
             new Middleware('can:quotes.delete', only: ['destroy', 'batchDestroy']),
             new Middleware('can:quotes.change_status', only: ['updateStatus']),
+            new Middleware('can:quotes.create_sale', only: ['convertToSale']),
         ];
     }
 
@@ -39,11 +44,18 @@ class QuoteController extends Controller implements HasMiddleware
         $subscriptionId = $user->branch->subscription_id;
 
         $query = Quote::query()
+            // --- INICIO DE CAMBIOS ---
+            // 1. Solo mostrar cotizaciones "originales" (que no son hijas de otra)
+            ->whereNull('parent_quote_id')
+            // --- FIN DE CAMBIOS ---
             ->leftJoin('customers', 'quotes.customer_id', '=', 'customers.id')
             ->whereHas('branch.subscription', function ($q) use ($subscriptionId) {
                 $q->where('id', $subscriptionId);
             })
-            ->with('customer:id,name')
+            // --- INICIO DE CAMBIOS ---
+            // 2. Cargar la cotización principal, sus versiones (hijas) y el cliente de esas versiones
+            ->with(['customer:id,name', 'versions.customer:id,name'])
+            // --- FIN DE CAMBIOS ---
             ->select('quotes.*');
 
         if ($request->has('search')) {
@@ -176,7 +188,51 @@ class QuoteController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'status' => ['required', Rule::enum(QuoteStatus::class)],
         ]);
-        $quote->update(['status' => $validated['status']]);
+
+        $newStatus = $validated['status'];
+        $oldStatus = $quote->status->value;
+
+        // Solo devolver stock si se CANCELA una cotización que YA generó venta
+        if (
+            $newStatus === QuoteStatus::CANCELLED->value &&
+            $oldStatus === QuoteStatus::SALE_GENERATED->value && // Solo desde 'venta_generada'
+            $quote->transaction_id
+        ) {
+
+            DB::transaction(function () use ($quote) {
+                // 1. Cargar la transacción, sus pagos y los items
+                $quote->load(['transaction.payments', 'items']);
+                $transaction = $quote->transaction;
+
+                if ($transaction && $transaction->status !== TransactionStatus::CANCELLED && $transaction->status !== TransactionStatus::REFUNDED) {
+
+                    // 2. Devolver el stock (AHORA INCLUYE VARIANTES)
+                    foreach ($quote->items as $item) {
+
+                        if ($item->itemable_type == Product::class) {
+                            // Caso 1: Producto Simple
+                            $product = Product::find($item->itemable_id);
+                            if ($product) {
+                                $product->increment('current_stock', $item->quantity);
+                            }
+                        } elseif ($item->itemable_type == ProductAttribute::class) {
+                            // Caso 2: Variante de Producto
+                            $variant = ProductAttribute::find($item->itemable_id);
+                            if ($variant) {
+                                $variant->increment('current_stock', $item->quantity);
+                            }
+                        }
+                    }
+
+                    // 3. Actualizar la transacción a 'Cancelada' o 'Reembolsada'
+                    $totalPaid = $transaction->payments->sum('amount');
+                    $transaction->status = $totalPaid > 0 ? TransactionStatus::REFUNDED : TransactionStatus::CANCELLED;
+                    $transaction->save();
+                }
+            });
+        }
+
+        $quote->update(['status' => $newStatus]);
         return redirect()->back()->with('success', 'Estatus de la cotización actualizado.');
     }
 
@@ -232,6 +288,108 @@ class QuoteController extends Controller implements HasMiddleware
             'quote' => $quote,
             'customFieldDefinitions' => $customFieldDefinitions,
         ]);
+    }
+
+    /**
+     * Convierte una cotización autorizada en una transacción de venta.
+     */
+    public function convertToSale(Request $request, Quote $quote)
+    {
+        // 1. Validar que la cotización esté autorizada
+        if ($quote->status !== QuoteStatus::AUTHORIZED) {
+            return redirect()->back()->with('error', 'Solo se pueden convertir cotizaciones autorizadas.');
+        }
+
+        // 2. Validar que no se haya generado ya una venta
+        if ($quote->transaction_id) {
+            return redirect()->back()->with('error', 'Esta cotización ya ha sido convertida en una venta.');
+        }
+
+        $newTransaction = DB::transaction(function () use ($quote) {
+            $user = Auth::user();
+
+            // 3. Generar un nuevo folio de Venta
+            $folio = $this->generateSaleFolio($user->branch_id);
+
+            // 4. Crear la Transacción (Venta)
+            $transaction = Transaction::create([
+                'folio' => $folio,
+                'customer_id' => $quote->customer_id,
+                'branch_id' => $user->branch_id,
+                'user_id' => $user->id,
+                'cash_register_session_id' => null, // La venta se crea, pero se paga/asigna en caja después
+                'transactionable_id' => $quote->id,
+                'transactionable_type' => Quote::class,
+                'status' => TransactionStatus::PENDING, // PENDIENTE de pago
+                'channel' => TransactionChannel::QUOTE,
+                'subtotal' => $quote->subtotal,
+                'total_discount' => $quote->total_discount,
+                'total_tax' => $quote->total_tax,
+                'notes' => "Venta generada desde la cotización #{$quote->folio}.\n" . $quote->notes,
+            ]);
+
+            // 5. Copiar los items de la cotización a la transacción
+            foreach ($quote->items as $quoteItem) {
+                $transaction->items()->create([
+                    'itemable_id' => $quoteItem->itemable_id,
+                    'itemable_type' => $quoteItem->itemable_type, // <-- Esto ahora puede ser ProductAttribute::class
+                    'description' => $quoteItem->description,
+                    'quantity' => $quoteItem->quantity,
+                    'unit_price' => $quoteItem->unit_price,
+                    'discount_amount' => 0,
+                    'tax_amount' => 0,
+                    'line_total' => $quoteItem->line_total,
+                ]);
+
+                // --- INICIO: LÓGICA DE DESCUENTO DE STOCK REFACTORIZADA ---
+                
+                if ($quoteItem->itemable_type == Product::class) {
+                    // Caso 1: Producto Simple
+                    $product = Product::find($quoteItem->itemable_id);
+                    if ($product) {
+                        $product->decrement('current_stock', $quoteItem->quantity);
+                    }
+                } elseif ($quoteItem->itemable_type == ProductAttribute::class) {
+                    // Caso 2: Variante de Producto
+                    $variant = ProductAttribute::find($quoteItem->itemable_id);
+                    if ($variant) {
+                        $variant->decrement('current_stock', $quoteItem->quantity);
+                    }
+                }
+                // --- FIN: LÓGICA DE DESCUENTO DE STOCK ---
+            }
+
+            // 6. Actualizar la cotización
+            $quote->update([
+                'status' => QuoteStatus::SALE_GENERATED,
+                'transaction_id' => $transaction->id,
+            ]);
+
+            return $transaction;
+        });
+
+        // 7. Redirigir de vuelta a la cotización con mensaje de éxito
+        return redirect()->route('quotes.show', $quote->id)->with('success', "Venta #{$newTransaction->folio} generada con éxito.");
+    }
+
+    private function generateSaleFolio($branchId): string
+    {
+        // Buscar la última transacción para esta sucursal que siga el formato V-
+        $lastTransaction = Transaction::where('branch_id', $branchId)
+            ->where('folio', 'LIKE', 'V-%')
+            ->orderBy('id', 'desc') // Ordenar por ID para obtener la más reciente de forma fiable
+            ->first();
+
+        $sequence = 1; // Iniciar en 1 por defecto
+
+        if ($lastTransaction) {
+            // Extraer solo la parte numérica del folio anterior (ej. de "V-001" -> 1)
+            $lastFolioNumber = (int) substr($lastTransaction->folio, 2);
+            $sequence = $lastFolioNumber + 1;
+        }
+
+        // Formatear el nuevo folio con el prefijo y 3 ceros a la izquierda
+        return 'V-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
     }
 
     private function getFormData()

@@ -254,7 +254,6 @@ class TransactionPaymentService
 
                     $amountForThisTransaction = min($amountToApply, $pendingAmountOnTransaction);
 
-                    // --- ¡AQUÍ ESTÁ LA CORRECCIÓN! ---
                     $this->paymentService->processPayments(
                         $transaction, // <-- DEBE SER $transaction
                         [[
@@ -265,7 +264,6 @@ class TransactionPaymentService
                         ]],
                         $sessionId
                     );
-                    // --- FIN DE LA CORRECCIÓN ---
 
                     // 3. Comprobar si se liquidó
                     $newTotalPaid = $totalPaidOnTransaction + $amountForThisTransaction;

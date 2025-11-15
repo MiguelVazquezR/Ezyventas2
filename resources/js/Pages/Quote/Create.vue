@@ -95,13 +95,18 @@ const openVariantSelector = (index) => {
 
 const handleVariantSelected = (variant) => {
     if (itemIndexForVariantSelection.value === null || !form.items[itemIndexForVariantSelection.value]) return;
-
+    
     const item = form.items[itemIndexForVariantSelection.value];
     const product = productForVariantSelection.value;
+    
+    // --- INICIO DE LA CORRECCIÓN ---
+    // Ahora, el itemable es la VARIANTE (ProductAttribute)
+    item.itemable_id = variant.id;
+    item.itemable_type = 'App\\Models\\ProductAttribute'; // <-- CLAVE
+    // --- FIN DE LA CORRECCIÓN ---
 
     item.variant_details = variant.attributes;
     item.description = `${product.name} (${Object.values(variant.attributes).join(', ')})`;
-    // Modificador de precio de la variante
     item.unit_price = (parseFloat(product.selling_price) || 0) + (parseFloat(variant.selling_price_modifier) || 0);
 };
 

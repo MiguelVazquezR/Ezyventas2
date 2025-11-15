@@ -440,27 +440,4 @@ class PointOfSaleController extends Controller implements HasMiddleware
     {
         return ['id' => null, 'name' => 'Público en General', 'phone' => '', 'balance' => 0.0, 'credit_limit' => 0.0, 'available_credit' => 0.0];
     }
-
-    private function generateFolio(): string
-    {
-        // Obtener la suscripción del usuario actual
-        $branchId = Auth::user()->branch_id;
-
-        // Buscar la última transacción para esta suscripción que siga el formato V-
-        $lastTransaction = Transaction::where('branch_id', $branchId)
-            ->where('folio', 'LIKE', 'V-%')
-            ->orderBy('id', 'desc') // Ordenar por ID para obtener la más reciente de forma fiable
-            ->first();
-
-        $sequence = 1; // Iniciar en 1 por defecto para un nuevo suscriptor
-
-        if ($lastTransaction) {
-            // Extraer solo la parte numérica del folio anterior
-            $lastFolioNumber = (int) substr($lastTransaction->folio, 2);
-            $sequence = $lastFolioNumber + 1;
-        }
-
-        // Formatear el nuevo folio con el prefijo y el número consecutivo con ceros a la izquierda
-        return 'V-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
-    }
 }

@@ -30,7 +30,7 @@ class CustomFieldDefinitionController extends Controller
             'subscription_id' => $subscriptionId,
             'module' => $validated['module'],
             'name' => $validated['name'],
-            'key' => Str::snake($validated['name'] . '_' . Str::random(3)),
+            'key' => Str::snake(strtolower($validated['name'])),
             'type' => $validated['type'],
             'options' => $optionsArray, // Guardar como array JSON
         ]);

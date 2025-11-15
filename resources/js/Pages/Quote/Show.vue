@@ -5,12 +5,12 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import DiffViewer from '@/Components/DiffViewer.vue';
 import { usePermissions } from '@/Composables';
-import PatternLock from '@/Components/PatternLock.vue'; // <-- 1. Importar PatternLock
+import PatternLock from '@/Components/PatternLock.vue';
 
 const props = defineProps({
     quote: Object,
     activities: Array,
-    customFieldDefinitions: Array, // <-- 2. Añadir prop de definiciones
+    customFieldDefinitions: Array,
 });
 
 const confirm = useConfirm();
@@ -27,7 +27,7 @@ const steps = ref([
     { label: 'Borrador', value: 'borrador', icon: 'pi pi-file-edit' },
     { label: 'Enviado', value: 'enviado', icon: 'pi pi-send' },
     { label: 'Autorizada', value: 'autorizada', icon: 'pi pi-check-circle' },
-    { label: 'Venta Generada', value: 'venta_generada', icon: 'pi pi-dollar' },
+    { label: 'Venta generada', value: 'venta_generada', icon: 'pi pi-dollar' },
 ]);
 const activeIndex = computed(() => {
     const index = steps.value.findIndex(step => step.value === props.quote.status);
@@ -43,6 +43,20 @@ const changeStatus = (newStatusValue, newIndex) => {
         icon: 'pi pi-sync',
         accept: () => {
             router.patch(route('quotes.updateStatus', props.quote.id), { status: newStatusValue }, { preserveScroll: true });
+        }
+    });
+};
+
+const convertToSale = () => {
+    confirm.require({
+        message: `Se creará una nueva venta (Transacción) con los datos de esta cotización. El estatus de la cotización cambiará a "Venta Generada". ¿Deseas continuar?`,
+        header: 'Confirmar Conversión a Venta',
+        icon: 'pi pi-dollar',
+        acceptClass: 'p-button-success',
+        accept: () => {
+            router.post(route('quotes.convertToSale', props.quote.id), {}, {
+                preserveScroll: true
+            });
         }
     });
 };
@@ -69,7 +83,13 @@ const actionItems = ref([
     { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('quotes.edit', props.quote.id)), disabled: isTerminalStatus.value, visible: hasPermission('quotes.edit') }, // 'quotes.edit' en lugar de 'quotes.create'
     { label: 'Crear nueva versión', icon: 'pi pi-copy', command: createNewVersion, visible: hasPermission('quotes.create') },
     { label: 'Ver PDF / Imprimir', icon: 'pi pi-print', command: () => window.open(route('quotes.print', props.quote.id), '_blank') },
-    { label: 'Convertir a venta', icon: 'pi pi-dollar', disabled: props.quote.status !== 'autorizada', visible: hasPermission('quotes.create_sale') },
+    { 
+        label: 'Convertir a venta', 
+        icon: 'pi pi-dollar', 
+        command: convertToSale,
+        disabled: props.quote.status !== 'autorizada' || props.quote.transaction_id,
+        visible: hasPermission('quotes.create_sale') 
+    },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteQuote, visible: hasPermission('quotes.delete') },
 ]);
@@ -134,10 +154,10 @@ const allVersions = computed(() => {
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-6">Flujo de estatus</h2>
                     <div v-if="isTerminalStatus" class="text-center p-4 rounded-md"
-                        :class="{ 'bg-red-50 dark:bg-red-900/20': quote.status === 'rechazada', 'bg-purple-50 dark:bg-purple-900/20': quote.status === 'venta_generada', 'bg-yellow-50 dark:bg-yellow-900/20': quote.status === 'expirada' }">
+                        :class="{ 'bg-red-50 dark:bg-red-900/20': quote.status === 'rechazada', 'bg-green-50 dark:bg-green-900/20': quote.status === 'venta_generada', 'bg-yellow-50 dark:bg-yellow-900/20': quote.status === 'expirada' }">
                         <p class="font-semibold"
-                            :class="{ 'text-red-700 dark:text-red-300': quote.status === 'rechazada', 'text-purple-700 dark:text-purple-300': quote.status === 'venta_generada', 'text-yellow-700 dark:text-yellow-300': quote.status === 'expirada' }">
-                            Esta cotización ha sido {{ quote.status.replace('_', ' ') }}.
+                            :class="{ 'text-red-700 dark:text-red-300': quote.status === 'rechazada', 'text-green-700 dark:text-green-300': quote.status === 'venta_generada', 'text-yellow-700 dark:text-yellow-300': quote.status === 'expirada' }">
+                            Esta cotización ha sido "{{ quote.status.replace('_', ' ') }}".
                         </p>
                     </div>
                     <Stepper v-else v-model:value="activeIndex" class="basis-full">
