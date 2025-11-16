@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\CustomerBalanceMovementType;
 use App\Enums\QuoteStatus;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
@@ -301,35 +302,31 @@ class QuoteControllerTest extends TestCase
         // Obtenemos stock inicial conocido
         $initialProductStock = $this->product->current_stock; // 100
         $initialVariantStock = $this->variant->current_stock; // 50
+        $this->customer->update(['balance' => 0.00]); // <-- ASEGURAR SALDO INICIAL
+        $quoteTotal = (100 * 2) + (110 * 3); // 200 (Prod) + 330 (Var) = 530
 
         $quote = Quote::factory()->create([
             'branch_id' => $this->branch->id,
             'user_id' => $this->user->id,
             'customer_id' => $this->customer->id,
             'status' => QuoteStatus::AUTHORIZED, // Requisito
-            'subtotal' => (100 * 2) + (110 * 3), // 200 (Prod) + 330 (Var) = 530
+            'subtotal' => $quoteTotal,
             'total_discount' => 0,
             'total_tax' => 0,
-            'total_amount' => 530,
+            'total_amount' => $quoteTotal,
         ]);
-
+        
         // Item 1: Producto Simple (Cantidad 2)
         $quote->items()->create([
-            'itemable_id' => $this->product->id,
+            'itemable_id' => $this->product->id, 
             'itemable_type' => Product::class,
-            'description' => 'Producto Simple',
-            'quantity' => 2,
-            'unit_price' => 100,
-            'line_total' => 200
+            'description' => 'Producto Simple', 'quantity' => 2, 'unit_price' => 100, 'line_total' => 200
         ]);
         // Item 2: Variante (Cantidad 3)
         $quote->items()->create([
-            'itemable_id' => $this->variant->id,
+            'itemable_id' => $this->variant->id, 
             'itemable_type' => ProductAttribute::class,
-            'description' => 'Producto Variante',
-            'quantity' => 3,
-            'unit_price' => 110,
-            'line_total' => 330
+            'description' => 'Producto Variante', 'quantity' => 3, 'unit_price' => 110, 'line_total' => 330
         ]);
 
         // --- ACT ---
@@ -344,7 +341,7 @@ class QuoteControllerTest extends TestCase
             'folio' => 'V-001',
             'status' => TransactionStatus::PENDING->value,
             'channel' => TransactionChannel::QUOTE->value,
-            'subtotal' => 530,
+            'subtotal' => $quoteTotal,
         ]);
 
         // 2. Verificar que los items se copiaron (uno como Product, uno como ProductAttribute)
@@ -372,6 +369,17 @@ class QuoteControllerTest extends TestCase
         // 4. Verificar que el stock se DESCONTÓ
         $this->assertEquals($initialProductStock - 2, $this->product->fresh()->current_stock, 'El stock del producto simple no se descontó.');
         $this->assertEquals($initialVariantStock - 3, $this->variant->fresh()->current_stock, 'El stock de la variante no se descontó.');
+
+        // 5. Verificar que se generó la deuda al cliente
+        $expectedDebt = -$quoteTotal;
+        $this->assertEquals($expectedDebt, $this->customer->fresh()->balance, 'El saldo del cliente no se actualizó a la deuda correcta.');
+        $this->assertDatabaseHas('customer_balance_movements', [
+            'customer_id' => $this->customer->id,
+            'transaction_id' => $transaction->id,
+            'type' => CustomerBalanceMovementType::CREDIT_SALE->value,
+            'amount' => $expectedDebt, // La deuda es un movimiento negativo
+            'balance_after' => $expectedDebt,
+        ]);
     }
 
     #[Test]

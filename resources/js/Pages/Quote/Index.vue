@@ -19,17 +19,14 @@ const searchTerm = ref(props.filters.search || '');
 const headerMenu = ref();
 const menu = ref();
 const selectedQuoteForMenu = ref(null);
-
-// --- ESTA ES LA LÍNEA CORRECTA (de la vez pasada) ---
-const expandedRows = ref({}); // Almacena las filas expandidas (CAMBIADO A OBJETO)
+const expandedRows = ref({}); // De la corrección anterior
 
 const toggleHeaderMenu = (event) => {
     headerMenu.value.toggle(event);
 };
-
 const splitButtonItems = ref([
     // { label: 'Importar Cotizaciones', icon: 'pi pi-upload', command: () => showImportModal.value = true },
-    { label: 'Exportar Cotizaciones', icon: 'pi pi-download', command: () => window.location.href = route('import-export.quotes.export') },
+    { label: 'Exportar cotizaciones', icon: 'pi pi-download', command: () => window.location.href = route('import-export.quotes.export') },
 ]);
 
 // --- Lógica de Acciones ---
@@ -66,16 +63,117 @@ const deleteSelectedQuotes = () => {
     });
 };
 
-const menuItems = ref([
-    { label: 'Ver', icon: 'pi pi-eye', command: () => router.get(route('quotes.show', selectedQuoteForMenu.value.id)), visible: hasPermission('quotes.see_details') },
-    { label: 'Editar cotización', icon: 'pi pi-pencil', command: () => router.get(route('quotes.edit', selectedQuoteForMenu.value.id)), visible: hasPermission('quotes.edit') },
-    { label: 'Convertir a venta', icon: 'pi pi-dollar', visible: hasPermission('quotes.create_sale') },
-    { separator: true },
-    { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleQuote, visible: hasPermission('quotes.delete') },
-]);
+// --- INICIO: NUEVAS ACCIONES ---
+/**
+ * Llama al endpoint para convertir una cotización 'autorizada' en una 'transacción'.
+ */
+const convertToSale = () => {
+    if (!selectedQuoteForMenu.value) return;
+    confirm.require({
+        message: `Se creará una nueva venta (Transacción) con los datos de esta cotización. El estatus cambiará a "Venta generada". ¿Deseas continuar?`,
+        header: 'Confirmar conversión a venta',
+        icon: 'pi pi-dollar',
+        acceptClass: 'p-button-success',
+        accept: () => {
+            router.post(route('quotes.convertToSale', selectedQuoteForMenu.value.id), {}, {
+                preserveScroll: true,
+                onSuccess: () => selectedQuoteForMenu.value = null,
+            });
+        }
+    });
+};
 
+/**
+ * Llama al endpoint 'updateStatus' para cambiar el estatus a 'cancelada'.
+ */
+const cancelSale = () => {
+    if (!selectedQuoteForMenu.value) return;
+    confirm.require({
+        message: `Esta acción cancelará la venta asociada (marcando la transacción como cancelada/reembolsada) y devolverá el stock al inventario. ¿Estás seguro?`,
+        header: 'Confirmar cancelación de venta',
+        icon: 'pi pi-times-circle',
+        acceptClass: 'p-button-danger',
+        accept: () => {
+            router.patch(route('quotes.updateStatus', selectedQuoteForMenu.value.id), {
+                status: 'cancelada'
+            }, {
+                preserveScroll: true,
+                onSuccess: () => selectedQuoteForMenu.value = null,
+            });
+        }
+    });
+};
+
+// El menú ahora se genera dinámicamente
+const menuItems = ref([]);
+
+/**
+ * Actualiza dinámicamente los items del menú de acciones
+ * basándose en el estatus de la cotización seleccionada.
+ */
 const toggleMenu = (event, data) => {
     selectedQuoteForMenu.value = data;
+    const quote = data;
+    const items = [];
+
+    // Acción: Ver
+    items.push({ 
+        label: 'Ver', 
+        icon: 'pi pi-eye', 
+        command: () => router.get(route('quotes.show', quote.id)), 
+        visible: hasPermission('quotes.see_details') 
+    });
+
+    // Acción: Editar
+    const canEdit = ['borrador', 'enviado', 'autorizada'].includes(quote.status);
+    if (canEdit) {
+        items.push({ 
+            label: 'Editar cotización', 
+            icon: 'pi pi-pencil', 
+            command: () => router.get(route('quotes.edit', quote.id)), 
+            visible: hasPermission('quotes.edit') 
+        });
+    }
+
+    // Acción: Convertir a Venta
+    const canConvertToSale = (quote.status === 'autorizada' && !quote.transaction_id);
+    if (canConvertToSale) {
+        items.push({ 
+            label: 'Convertir a venta', 
+            icon: 'pi pi-dollar',
+            command: convertToSale,
+            visible: hasPermission('quotes.create_sale') 
+        });
+    }
+
+    // Acción: Cancelar Venta
+    const canCancel = (quote.status === 'venta_generada');
+    if (canCancel) {
+        items.push({
+            label: 'Cancelar venta',
+            icon: 'pi pi-times-circle',
+            class: 'text-orange-500', // Un color distintivo
+            command: cancelSale,
+            visible: hasPermission('quotes.change_status') // Asumiendo que este permiso controla la cancelación
+        });
+    }
+
+    items.push({ separator: true });
+
+    // Acción: Eliminar
+    // No permitir eliminar si ya generó una venta (debe cancelarse primero)
+    const canDelete = (quote.status !== 'venta_generada');
+    if (canDelete) {
+        items.push({ 
+            label: 'Eliminar', 
+            icon: 'pi pi-trash', 
+            class: 'text-red-500', 
+            command: deleteSingleQuote, 
+            visible: hasPermission('quotes.delete') 
+        });
+    }
+    
+    menuItems.value = items;
     menu.value.toggle(event);
 };
 
@@ -96,7 +194,16 @@ const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: eve
 watch(searchTerm, () => fetchData());
 
 const getStatusSeverity = (status) => {
-    const map = { borrador: 'secondary', enviado: 'info', autorizada: 'success', rechazada: 'danger', venta_generada: 'primary', expirada: 'warning' };
+    // Añadido el nuevo estatus 'cancelada'
+    const map = { 
+        borrador: 'secondary', 
+        enviado: 'info', 
+        autorizada: 'success', 
+        rechazada: 'danger', 
+        venta_generada: 'success', 
+        expirada: 'warning',
+        cancelada: 'danger' // O 'warning', como prefieras
+    };
     return map[status] || 'secondary';
 };
 
@@ -144,19 +251,21 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         severity="danger" outlined />
                 </div>
 
-                <!-- Tabla de Cotizaciones -->
+                <!-- Tabla de Cotizaciones (Sin cambios en el template, la magia está en el script) -->
                 <DataTable :value="quotes.data" v-model:selection="selectedQuotes" lazy paginator
                     :totalRecords="quotes.total" :rows="quotes.per_page" :rowsPerPageOptions="[20, 50, 100, 200]"
                     dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 60rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} cotizaciones"
-                    v-model:expandedRows="expandedRows">
+                    v-model:expandedRows="expandedRows" 
+                    >
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
+                    
                     <Column expander headerStyle="width: 3rem" />
+                    
                     <Column field="folio" header="Folio" sortable>
                         <template #body="{ data }">
                             {{ data.folio }}
-                            <!-- Esto se encarga de mostrar si hay versiones -->
                             <Tag v-if="data.versions && data.versions.length > 0" :value="`+${data.versions.length} ${data.versions.length > 1 ? 'versiones' : 'versión'}`" class="ml-2" size="small" severity="contrast" />
                         </template>
                     </Column>
@@ -210,6 +319,7 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 
                 </DataTable>
 
+                <!-- El menú ahora se alimenta de 'menuItems' que se genera dinámicamente -->
                 <Menu ref="menu" :model="menuItems" :popup="true" />
             </div>
         </div>

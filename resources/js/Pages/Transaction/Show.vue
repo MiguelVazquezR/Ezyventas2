@@ -97,7 +97,7 @@ const cancelSale = () => {
         message: `¿Estás seguro de que quieres cancelar la venta #${localTransaction.value.folio}? Esta acción repondrá el stock y ajustará el saldo del cliente si fue a crédito.`,
         header: 'Confirmar Cancelación',
         accept: () => {
-            router.patch(route('transactions.cancel', localTransaction.value.id), {}, {
+            router.post(route('transactions.cancel', localTransaction.value.id), {}, {
                 preserveScroll: true,
                 onSuccess: () => {
                     // Actualizar estado local si es necesario, aunque Inertia debería hacerlo
@@ -120,7 +120,7 @@ const openRefundModal = () => {
 
 const confirmRefund = () => {
     refundProcessing.value = true;
-    router.patch(route('transactions.refund', props.transaction.id),
+    router.post(route('transactions.refund', props.transaction.id),
         { refund_method: refundMethod.value }, // <-- Enviar el método elegido
         {
             preserveScroll: true,

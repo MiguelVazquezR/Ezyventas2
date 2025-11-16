@@ -5,12 +5,14 @@ namespace App\Http\Controllers;
 use App\Enums\CustomerBalanceMovementType;
 use App\Enums\SessionCashMovementType;
 use App\Enums\CashRegisterSessionStatus;
+use App\Enums\QuoteStatus;
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Models\Customer;
 use App\Models\Product;
+use App\Models\Quote;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -154,6 +156,13 @@ class TransactionController extends Controller implements HasMiddleware
                 }
 
                 $transaction->update(['status' => TransactionStatus::CANCELLED]);
+
+                $transaction->loadMissing('transactionable');
+                if ($transaction->transactionable instanceof Quote) {
+                    $transaction->transactionable->update([
+                        'status' => QuoteStatus::CANCELLED
+                    ]);
+                }
             });
         } catch (\Exception $e) {
             Log::error("Error al cancelar transacción {$transaction->id}: " . $e->getMessage());
@@ -179,7 +188,8 @@ class TransactionController extends Controller implements HasMiddleware
         // 2. No debe estar ya 'cancelado' o 'reembolsado'
         $canRefund = (
             $transaction->status === TransactionStatus::COMPLETED ||
-            ($transaction->status === TransactionStatus::PENDING && $totalPaid > 0)
+            ($transaction->status === TransactionStatus::PENDING && $totalPaid > 0) ||
+            $transaction->status === TransactionStatus::ON_LAYAWAY // <-- Permitir reembolsar apartados
         ) && !in_array($transaction->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED]);
 
 
@@ -243,6 +253,14 @@ class TransactionController extends Controller implements HasMiddleware
 
                 // 3. Actualizar el estado de la transacción a REEMBOLSADA
                 $transaction->update(['status' => TransactionStatus::REFUNDED]);
+
+                // 4. Si la transacción vino de una cotización, actualizar la cotización
+                $transaction->loadMissing('transactionable');
+                if ($transaction->transactionable instanceof Quote) {
+                    $transaction->transactionable->update([
+                        'status' => QuoteStatus::CANCELLED // O un estatus 'REEMBOLSADO' si lo tuvieras
+                    ]);
+                }
             });
         } catch (LogicException $e) {
             Log::warning("Intento de reembolso sin sesión activa/cliente por usuario {$user->id} para transacción {$transaction->id}: " . $e->getMessage());

@@ -116,7 +116,7 @@ const cancelSale = () => {
         acceptLabel: 'Sí, cancelar',
         rejectLabel: 'No',
         accept: () => {
-            router.patch(route('transactions.cancel', selectedTransactionForMenu.value.id), {}, { preserveScroll: true });
+            router.post(route('transactions.cancel', selectedTransactionForMenu.value.id), {}, { preserveScroll: true });
         }
     });
 };
@@ -137,7 +137,7 @@ const confirmRefund = () => {
     if (!refundingTransaction.value) return;
 
     refundProcessing.value = true;
-    router.patch(route('transactions.refund', refundingTransaction.value.id),
+    router.post(route('transactions.refund', refundingTransaction.value.id),
         { refund_method: refundMethod.value },
         {
             preserveScroll: true,

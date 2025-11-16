@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CustomerBalanceMovementType;
 use App\Enums\QuoteStatus;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
@@ -192,42 +193,53 @@ class QuoteController extends Controller implements HasMiddleware
         $newStatus = $validated['status'];
         $oldStatus = $quote->status->value;
 
-        // Solo devolver stock si se CANCELA una cotización que YA generó venta
         if (
             $newStatus === QuoteStatus::CANCELLED->value &&
-            $oldStatus === QuoteStatus::SALE_GENERATED->value && // Solo desde 'venta_generada'
+            $oldStatus === QuoteStatus::SALE_GENERATED->value &&
             $quote->transaction_id
         ) {
-
+            
             DB::transaction(function () use ($quote) {
-                // 1. Cargar la transacción, sus pagos y los items
                 $quote->load(['transaction.payments', 'items']);
                 $transaction = $quote->transaction;
 
                 if ($transaction && $transaction->status !== TransactionStatus::CANCELLED && $transaction->status !== TransactionStatus::REFUNDED) {
-
-                    // 2. Devolver el stock (AHORA INCLUYE VARIANTES)
+                    
+                    // 2. Devolver el stock
                     foreach ($quote->items as $item) {
-
+                        // ... (lógica de devolución de stock sin cambios)
                         if ($item->itemable_type == Product::class) {
-                            // Caso 1: Producto Simple
                             $product = Product::find($item->itemable_id);
-                            if ($product) {
-                                $product->increment('current_stock', $item->quantity);
-                            }
+                            if ($product) $product->increment('current_stock', $item->quantity);
                         } elseif ($item->itemable_type == ProductAttribute::class) {
-                            // Caso 2: Variante de Producto
                             $variant = ProductAttribute::find($item->itemable_id);
-                            if ($variant) {
-                                $variant->increment('current_stock', $item->quantity);
-                            }
+                            if ($variant) $variant->increment('current_stock', $item->quantity);
                         }
                     }
 
-                    // 3. Actualizar la transacción a 'Cancelada' o 'Reembolsada'
+                    // 3. Actualizar la transacción
                     $totalPaid = $transaction->payments->sum('amount');
                     $transaction->status = $totalPaid > 0 ? TransactionStatus::REFUNDED : TransactionStatus::CANCELLED;
                     $transaction->save();
+
+                    // --- INICIO: LÓGICA DE SALDO AÑADIDA ---
+                    // 4. Revertir la deuda del cliente (si la transacción tenía cliente)
+                    if ($transaction->customer_id) {
+                        $customer = Customer::find($transaction->customer_id);
+                        if ($customer) {
+                            $creditAmount = $transaction->total; // El total de la venta
+                            $customer->increment('balance', $creditAmount); // Aumentar saldo (revertir deuda)
+
+                            // Registrar el movimiento de crédito por cancelación
+                            $customer->balanceMovements()->create([
+                                'transaction_id' => $transaction->id,
+                                'type' => CustomerBalanceMovementType::CANCELLATION_CREDIT,
+                                'amount' => $creditAmount, // Movimiento positivo
+                                'balance_after' => $customer->fresh()->balance,
+                            ]);
+                        }
+                    }
+                    // --- FIN: LÓGICA DE SALDO AÑADIDA ---
                 }
             });
         }
@@ -293,31 +305,25 @@ class QuoteController extends Controller implements HasMiddleware
     /**
      * Convierte una cotización autorizada en una transacción de venta.
      */
-    public function convertToSale(Request $request, Quote $quote)
+     public function convertToSale(Request $request, Quote $quote)
     {
-        // 1. Validar que la cotización esté autorizada
         if ($quote->status !== QuoteStatus::AUTHORIZED) {
-            return redirect()->back()->with('error', 'Solo se pueden convertir cotizaciones autorizadas.');
+            return redirect()->back()->with('error', 'Solo las cotizaciones autorizadas pueden convertirse en venta.');
         }
-
-        // 2. Validar que no se haya generado ya una venta
         if ($quote->transaction_id) {
-            return redirect()->back()->with('error', 'Esta cotización ya ha sido convertida en una venta.');
+            return redirect()->back()->with('error', 'Esta cotización ya tiene una venta asociada.');
         }
 
         $newTransaction = DB::transaction(function () use ($quote) {
             $user = Auth::user();
-
-            // 3. Generar un nuevo folio de Venta
             $folio = $this->generateSaleFolio($user->branch_id);
 
             // 4. Crear la Transacción (Venta)
             $transaction = Transaction::create([
                 'folio' => $folio,
-                'customer_id' => $quote->customer_id,
+                'customer_id' => $quote->customer_id, // <-- Asignar el cliente
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
-                'cash_register_session_id' => null, // La venta se crea, pero se paga/asigna en caja después
                 'transactionable_id' => $quote->id,
                 'transactionable_type' => Quote::class,
                 'status' => TransactionStatus::PENDING, // PENDIENTE de pago
@@ -325,14 +331,15 @@ class QuoteController extends Controller implements HasMiddleware
                 'subtotal' => $quote->subtotal,
                 'total_discount' => $quote->total_discount,
                 'total_tax' => $quote->total_tax,
-                'notes' => "Venta generada desde la cotización #{$quote->folio}.\n" . $quote->notes,
+                // 'total' se calcula automáticamente (accessor)
             ]);
 
-            // 5. Copiar los items de la cotización a la transacción
+            // 5. Copiar los items Y DESCONTAR STOCK
             foreach ($quote->items as $quoteItem) {
+                // ... (lógica de creación de item y descuento de stock sin cambios) ...
                 $transaction->items()->create([
                     'itemable_id' => $quoteItem->itemable_id,
-                    'itemable_type' => $quoteItem->itemable_type, // <-- Esto ahora puede ser ProductAttribute::class
+                    'itemable_type' => $quoteItem->itemable_type,
                     'description' => $quoteItem->description,
                     'quantity' => $quoteItem->quantity,
                     'unit_price' => $quoteItem->unit_price,
@@ -341,22 +348,13 @@ class QuoteController extends Controller implements HasMiddleware
                     'line_total' => $quoteItem->line_total,
                 ]);
 
-                // --- INICIO: LÓGICA DE DESCUENTO DE STOCK REFACTORIZADA ---
-                
                 if ($quoteItem->itemable_type == Product::class) {
-                    // Caso 1: Producto Simple
                     $product = Product::find($quoteItem->itemable_id);
-                    if ($product) {
-                        $product->decrement('current_stock', $quoteItem->quantity);
-                    }
+                    if ($product) $product->decrement('current_stock', $quoteItem->quantity);
                 } elseif ($quoteItem->itemable_type == ProductAttribute::class) {
-                    // Caso 2: Variante de Producto
                     $variant = ProductAttribute::find($quoteItem->itemable_id);
-                    if ($variant) {
-                        $variant->decrement('current_stock', $quoteItem->quantity);
-                    }
+                    if ($variant) $variant->decrement('current_stock', $quoteItem->quantity);
                 }
-                // --- FIN: LÓGICA DE DESCUENTO DE STOCK ---
             }
 
             // 6. Actualizar la cotización
@@ -365,11 +363,31 @@ class QuoteController extends Controller implements HasMiddleware
                 'transaction_id' => $transaction->id,
             ]);
 
+            // --- INICIO: LÓGICA DE SALDO AÑADIDA ---
+            // 7. Generar la deuda en el balance del cliente (si hay cliente)
+            if ($quote->customer_id) {
+                $customer = Customer::find($quote->customer_id);
+                if ($customer) {
+                    $debtAmount = $transaction->total; // El total de la nueva transacción
+                    $customer->decrement('balance', $debtAmount); // Restar del saldo (generar deuda)
+                    
+                    // Registrar el movimiento de Venta a Crédito
+                    $customer->balanceMovements()->create([
+                        'transaction_id' => $transaction->id,
+                        'type' => CustomerBalanceMovementType::CREDIT_SALE,
+                        'amount' => -$debtAmount, // Movimiento negativo
+                        'balance_after' => $customer->fresh()->balance,
+                    ]);
+                }
+            }
+            // --- FIN: LÓGICA DE SALDO AÑADIDA ---
+
             return $transaction;
         });
 
-        // 7. Redirigir de vuelta a la cotización con mensaje de éxito
-        return redirect()->route('quotes.show', $quote->id)->with('success', "Venta #{$newTransaction->folio} generada con éxito.");
+        return redirect()->route('quotes.show', $quote->id)
+            ->with('success', 'Cotización convertida a venta con éxito. Folio de Venta: ' . $newTransaction->folio)
+            ->with('transaction_id', $newTransaction->id);
     }
 
     private function generateSaleFolio($branchId): string
