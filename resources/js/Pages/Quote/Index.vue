@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, Link } from '@inertiajs/vue3'; // <-- Importar Link
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
@@ -19,14 +19,13 @@ const searchTerm = ref(props.filters.search || '');
 const headerMenu = ref();
 const menu = ref();
 const selectedQuoteForMenu = ref(null);
-const expandedRows = ref({}); // De la corrección anterior
+const expandedRows = ref({}); 
 
 const toggleHeaderMenu = (event) => {
     headerMenu.value.toggle(event);
 };
 const splitButtonItems = ref([
-    // { label: 'Importar Cotizaciones', icon: 'pi pi-upload', command: () => showImportModal.value = true },
-    { label: 'Exportar cotizaciones', icon: 'pi pi-download', command: () => window.location.href = route('import-export.quotes.export') },
+    { label: 'Exportar Cotizaciones', icon: 'pi pi-download', command: () => window.location.href = route('import-export.quotes.export') },
 ]);
 
 // --- Lógica de Acciones ---
@@ -63,15 +62,12 @@ const deleteSelectedQuotes = () => {
     });
 };
 
-// --- INICIO: NUEVAS ACCIONES ---
-/**
- * Llama al endpoint para convertir una cotización 'autorizada' en una 'transacción'.
- */
+// --- Nuevas Acciones ---
 const convertToSale = () => {
     if (!selectedQuoteForMenu.value) return;
     confirm.require({
-        message: `Se creará una nueva venta (Transacción) con los datos de esta cotización. El estatus cambiará a "Venta generada". ¿Deseas continuar?`,
-        header: 'Confirmar conversión a venta',
+        message: `Se creará una nueva venta (Transacción) con los datos de esta cotización. El estatus cambiará a "Venta Generada". ¿Deseas continuar?`,
+        header: 'Confirmar Conversión a Venta',
         icon: 'pi pi-dollar',
         acceptClass: 'p-button-success',
         accept: () => {
@@ -83,14 +79,11 @@ const convertToSale = () => {
     });
 };
 
-/**
- * Llama al endpoint 'updateStatus' para cambiar el estatus a 'cancelada'.
- */
 const cancelSale = () => {
     if (!selectedQuoteForMenu.value) return;
     confirm.require({
         message: `Esta acción cancelará la venta asociada (marcando la transacción como cancelada/reembolsada) y devolverá el stock al inventario. ¿Estás seguro?`,
-        header: 'Confirmar cancelación de venta',
+        header: 'Confirmar Cancelación de Venta',
         icon: 'pi pi-times-circle',
         acceptClass: 'p-button-danger',
         accept: () => {
@@ -104,13 +97,10 @@ const cancelSale = () => {
     });
 };
 
+
 // El menú ahora se genera dinámicamente
 const menuItems = ref([]);
 
-/**
- * Actualiza dinámicamente los items del menú de acciones
- * basándose en el estatus de la cotización seleccionada.
- */
 const toggleMenu = (event, data) => {
     selectedQuoteForMenu.value = data;
     const quote = data;
@@ -152,16 +142,15 @@ const toggleMenu = (event, data) => {
         items.push({
             label: 'Cancelar venta',
             icon: 'pi pi-times-circle',
-            class: 'text-orange-500', // Un color distintivo
+            class: 'text-orange-500', 
             command: cancelSale,
-            visible: hasPermission('quotes.change_status') // Asumiendo que este permiso controla la cancelación
+            visible: hasPermission('quotes.change_status') 
         });
     }
 
     items.push({ separator: true });
 
     // Acción: Eliminar
-    // No permitir eliminar si ya generó una venta (debe cancelarse primero)
     const canDelete = (quote.status !== 'venta_generada');
     if (canDelete) {
         items.push({ 
@@ -194,7 +183,6 @@ const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: eve
 watch(searchTerm, () => fetchData());
 
 const getStatusSeverity = (status) => {
-    // Añadido el nuevo estatus 'cancelada'
     const map = { 
         borrador: 'secondary', 
         enviado: 'info', 
@@ -202,7 +190,7 @@ const getStatusSeverity = (status) => {
         rechazada: 'danger', 
         venta_generada: 'success', 
         expirada: 'warning',
-        cancelada: 'danger' // O 'warning', como prefieras
+        cancelada: 'danger' 
     };
     return map[status] || 'secondary';
 };
@@ -251,7 +239,7 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         severity="danger" outlined />
                 </div>
 
-                <!-- Tabla de Cotizaciones (Sin cambios en el template, la magia está en el script) -->
+                <!-- Tabla de Cotizaciones -->
                 <DataTable :value="quotes.data" v-model:selection="selectedQuotes" lazy paginator
                     :totalRecords="quotes.total" :rows="quotes.per_page" :rowsPerPageOptions="[20, 50, 100, 200]"
                     dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 60rem"
@@ -269,7 +257,31 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                             <Tag v-if="data.versions && data.versions.length > 0" :value="`+${data.versions.length} ${data.versions.length > 1 ? 'versiones' : 'versión'}`" class="ml-2" size="small" severity="contrast" />
                         </template>
                     </Column>
-                    <Column field="customer.name" header="Cliente" sortable></Column>
+                    
+                    <!-- COLUMNA CLIENTE ACTUALIZADA -->
+                    <Column field="customer.name" header="Cliente" sortable>
+                        <template #body="{ data }">
+                            <div v-if="data.customer">
+                                <!-- Nombre del cliente relacionado (Clickable) -->
+                                <Link 
+                                    :href="route('customers.show', data.customer.id)" 
+                                    class="font-medium text-primary dark:text-orange-300 hover:underline"
+                                    @click.stop
+                                >
+                                    {{ data.customer.name }}
+                                </Link>
+                                <!-- Nombre del destinatario si es diferente -->
+                                <div v-if="data.recipient_name && data.recipient_name !== data.customer.name" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                    Dirigido a: {{ data.recipient_name }}
+                                </div>
+                            </div>
+                            <div v-else>
+                                <!-- Solo recipient_name si no hay cliente relacionado -->
+                                {{ data.recipient_name || 'N/A' }}
+                            </div>
+                        </template>
+                    </Column>
+
                     <Column field="expiry_date" header="Fecha de expiración" sortable>
                         <template #body="{ data }"> {{ formatDate(data.expiry_date) }} </template>
                     </Column>

@@ -29,21 +29,36 @@ const steps = ref([
     { label: 'Autorizada', value: 'autorizada', icon: 'pi pi-check-circle' },
     { label: 'Venta generada', value: 'venta_generada', icon: 'pi pi-dollar' },
 ]);
+
 const activeIndex = computed(() => {
     const index = steps.value.findIndex(step => step.value === props.quote.status);
     return index >= 0 ? index + 1 : 0;
 });
-// --- ACTUALIZADO: isTerminalStatus ---
-const isTerminalStatus = computed(() => ['rechazada', 'venta_generada', 'expirada', 'cancelada'].includes(props.quote.status));
+
+// --- ACTUALIZADO: isTerminalStatus solo oculta el stepper si está cancelada ---
+// Esto permite ver el stepper completado cuando es 'venta_generada'
+const isTerminalStatus = computed(() => ['cancelada'].includes(props.quote.status));
+
+// Helper para mostrar el mensaje de estado (Banner de color)
+const showStatusBanner = computed(() => ['rechazada', 'expirada', 'cancelada'].includes(props.quote.status));
+
 
 const changeStatus = (newStatusValue, newIndex) => {
     // Evitar cambiar a estatus 'cancelada' desde el stepper
     if (newIndex < activeIndex.value || isTerminalStatus.value || newStatusValue === 'cancelada') return;
+    
     const newStatusLabel = steps.value.find(s => s.value === newStatusValue)?.label || newStatusValue;
+    
+    // Si se intenta cambiar a Venta Generada desde el stepper
+    const isGeneratingSale = newStatusValue === 'venta_generada';
+    const message = isGeneratingSale 
+        ? `Al cambiar el estatus a "Venta generada", el sistema creará automáticamente una nueva venta y descontará el inventario. ¿Deseas continuar?`
+        : `¿Estás seguro de que quieres cambiar el estatus a "${newStatusLabel}"?`;
+
     confirm.require({
-        message: `¿Estás seguro de que quieres cambiar el estatus a "${newStatusLabel}"?`,
-        header: 'Confirmar Cambio de Estatus',
-        icon: 'pi pi-sync',
+        message: message,
+        header: 'Confirmar cambio de estatus',
+        icon: isGeneratingSale ? 'pi pi-dollar' : 'pi pi-sync',
         accept: () => {
             router.patch(route('quotes.updateStatus', props.quote.id), { status: newStatusValue }, { preserveScroll: true });
         }
@@ -66,7 +81,6 @@ const convertToSale = () => {
     });
 };
 
-// --- AÑADIDO: cancelSale ---
 const cancelSale = () => {
     confirm.require({
         message: `Esta acción cancelará la venta asociada (marcando la transacción como cancelada/reembolsada) y devolverá el stock al inventario. ¿Estás seguro?`,
@@ -102,7 +116,6 @@ const deleteQuote = () => {
     });
 };
 
-// --- ACTUALIZADO: actionItems ahora es un 'computed' ---
 const actionItems = computed(() => {
     const quote = props.quote;
     const items = [];
@@ -111,26 +124,26 @@ const actionItems = computed(() => {
     const canEdit = ['borrador', 'enviado', 'autorizada'].includes(quote.status);
     if (canEdit && hasPermission('quotes.edit')) {
         items.push({
-            label: 'Editar',
-            icon: 'pi pi-pencil',
+            label: 'Editar', 
+            icon: 'pi pi-pencil', 
             command: () => router.get(route('quotes.edit', quote.id))
         });
     }
 
     // Acción: Crear nueva versión
     if (hasPermission('quotes.create')) {
-        items.push({
-            label: 'Crear nueva versión',
-            icon: 'pi pi-copy',
-            command: createNewVersion
+        items.push({ 
+            label: 'Crear nueva versión', 
+            icon: 'pi pi-copy', 
+            command: createNewVersion 
         });
     }
 
     // Acción: Ver PDF
-    items.push({
-        label: 'Ver PDF / Imprimir',
-        icon: 'pi pi-print',
-        command: () => window.open(route('quotes.print', quote.id), '_blank')
+    items.push({ 
+        label: 'Ver PDF / Imprimir', 
+        icon: 'pi pi-print', 
+        command: () => window.open(route('quotes.print', quote.id), '_blank') 
     });
 
     // Acción: Convertir a Venta
@@ -142,7 +155,7 @@ const actionItems = computed(() => {
             command: convertToSale
         });
     }
-
+    
     // Acción: Cancelar Venta
     const canCancel = (quote.status === 'venta_generada');
     if (canCancel && hasPermission('quotes.change_status')) {
@@ -159,11 +172,11 @@ const actionItems = computed(() => {
     // Acción: Eliminar
     const canDelete = (quote.status !== 'venta_generada');
     if (canDelete && hasPermission('quotes.delete')) {
-        items.push({
-            label: 'Eliminar',
-            icon: 'pi pi-trash',
-            class: 'text-red-500',
-            command: deleteQuote
+        items.push({ 
+            label: 'Eliminar', 
+            icon: 'pi pi-trash', 
+            class: 'text-red-500', 
+            command: deleteQuote 
         });
     }
 
@@ -178,23 +191,22 @@ const formatDate = (dateString) => {
     const userTimezoneOffset = date.getTimezoneOffset() * 60000;
     return new Date(date.getTime() + userTimezoneOffset).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
 };
-// --- ACTUALIZADO: getStatusSeverity ---
+
 const getStatusSeverity = (status) => {
-    const map = {
-        borrador: 'secondary',
-        enviado: 'info',
-        autorizada: 'success',
-        rechazada: 'danger',
-        venta_generada: 'primary',
+    const map = { 
+        borrador: 'secondary', 
+        enviado: 'info', 
+        autorizada: 'success', 
+        rechazada: 'danger', 
+        venta_generada: 'success', 
         expirada: 'warning',
-        cancelada: 'danger' // <-- Añadido
+        cancelada: 'danger'
     };
     return map[status] || 'secondary';
 };
 
 const getItemType = (itemableType) => {
     if (!itemableType) return 'Servicio';
-    // Esto funciona para Product y ProductAttribute
     return itemableType.includes('Product') ? 'Producto' : 'Servicio';
 };
 
@@ -216,6 +228,12 @@ const allVersions = computed(() => {
     const combined = [...parent, ...selfAndVersions];
     return [...new Map(combined.map(item => [item.id, item])).values()].sort((a, b) => a.version_number - b.version_number);
 });
+
+// --- ACTUALIZADO: Verificar si hay detalles para mostrar ---
+const hasDetails = computed(() => {
+    const q = props.quote;
+    return q.recipient_name || q.recipient_email || q.recipient_phone || q.expiry_date || q.shipping_address || q.notes;
+});
 </script>
 
 <template>
@@ -226,10 +244,8 @@ const allVersions = computed(() => {
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <div>
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Cotización #{{ quote.folio }}</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Cliente: {{ quote.customer?.name || 'Sin cliente' }}
-                </p>
+                <p class="text-gray-500 dark:text-gray-400 mt-1">Cliente: {{ quote.customer?.name || 'Sin cliente' }}</p>
             </div>
-            <!-- ACTUALIZADO: El modelo ahora es el 'computed' -->
             <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined class="mt-4 sm:mt-0" />
         </div>
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -237,25 +253,25 @@ const allVersions = computed(() => {
                 <!-- Flujo de Estatus (ACTUALIZADO) -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-6">Flujo de estatus</h2>
-                    <!-- ACTUALIZADO: Añadido 'cancelada' al v-if -->
-                    <div v-if="isTerminalStatus" class="text-center p-4 rounded-md" :class="{
-                        'bg-red-50 dark:bg-red-900/20': quote.status === 'rechazada' || quote.status === 'cancelada',
-                        'bg-green-50 dark:bg-green-900/20': quote.status === 'venta_generada',
-                        'bg-yellow-50 dark:bg-yellow-900/20': quote.status === 'expirada'
-                    }">
-                        <p class="font-semibold" :class="{
-                            'text-red-700 dark:text-red-300': quote.status === 'rechazada' || quote.status === 'cancelada',
-                            'text-green-700 dark:text-green-300': quote.status === 'venta_generada',
-                            'text-yellow-700 dark:text-yellow-300': quote.status === 'expirada'
+                    
+                    <!-- Banner de Mensaje solo para estatus "muertos" o "cancelados" -->
+                    <div v-if="showStatusBanner" class="text-center p-4 rounded-md"
+                        :class="{ 
+                            'bg-red-50 dark:bg-red-900/20': quote.status === 'rechazada' || quote.status === 'cancelada', 
+                            'bg-yellow-50 dark:bg-yellow-900/20': quote.status === 'expirada' 
                         }">
-                            <!-- Mensaje dinámico para el nuevo estatus -->
-                            <span v-if="quote.status === 'cancelada'">Esta venta ha sido cancelada. El stock ha sido
-                                devuelto.</span>
+                        <p class="font-semibold"
+                            :class="{ 
+                                'text-red-700 dark:text-red-300': quote.status === 'rechazada' || quote.status === 'cancelada', 
+                                'text-yellow-700 dark:text-yellow-300': quote.status === 'expirada' 
+                            }">
+                            <span v-if="quote.status === 'cancelada'">Esta venta ha sido cancelada. El stock ha sido devuelto.</span>
                             <span v-else>Esta cotización ha sido "{{ quote.status.replace('_', ' ') }}".</span>
                         </p>
                     </div>
-                    <!-- El stepper no se muestra si es terminal, lo cual es correcto -->
-                    <Stepper v-else v-model:value="activeIndex" class="basis-full">
+                    
+                    <!-- El stepper se muestra siempre que no esté CANCELADA (incluyendo venta_generada) -->
+                    <Stepper v-if="!isTerminalStatus" v-model:value="activeIndex" class="basis-full">
                         <StepList>
                             <Step v-for="(step, index) in steps" :key="step.label" :value="index + 1" asChild>
                                 <template #default="{ value, a11yAttrs }">
@@ -281,10 +297,9 @@ const allVersions = computed(() => {
                         </StepList>
                     </Stepper>
                 </div>
-
+                
                 <!-- Conceptos y Totales (Sin cambios) -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <!-- ... (El código de conceptos y totales no necesita cambios) ... -->
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Conceptos</h2>
                     <DataTable :value="quote.items" class="p-datatable-sm">
                         <Column header="Tipo" style="width: 10rem">
@@ -317,9 +332,7 @@ const allVersions = computed(() => {
                             <div class="flex justify-between"><span>Descuento:</span> <span class="text-red-500">- {{
                                 formatCurrency(quote.total_discount) }}</span></div>
                             <div class="flex justify-between">
-                                <span>Impuestos ({{ quote.tax_type === 'included' ? 'Incluidos' : (quote.tax_rate || 0)
-                                    + '%'
-                                }}):</span>
+                                <span>Impuestos ({{ quote.tax_type === 'included' ? 'Incluidos' : (quote.tax_rate || 0) + '%' }}):</span>
                                 <span>{{ formatCurrency(quote.total_tax) }}</span>
                             </div>
                             <div class="flex justify-between"><span>Envío:</span> <span>{{
@@ -353,42 +366,46 @@ const allVersions = computed(() => {
 
             </div>
             <div class="lg:col-span-1 space-y-6">
-                <!-- 9. Tarjeta de DETALLES (NUEVA) -->
+                <!-- Tarjeta de DETALLES (ACTUALIZADA) -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles</h2>
-                    <ul class="space-y-2 text-sm">
-                        <li class="flex justify-between">
+                    <!-- Verificación con v-if hasDetails -->
+                    <ul v-if="hasDetails" class="space-y-2 text-sm">
+                        <li v-if="quote.recipient_name" class="flex justify-between">
                             <span class="font-medium text-gray-500 dark:text-gray-400">Destinatario:</span>
                             <span class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_name }}</span>
                         </li>
-                        <li class="flex justify-between">
+                        <li v-if="quote.recipient_email" class="flex justify-between">
                             <span class="font-medium text-gray-500 dark:text-gray-400">Email:</span>
-                            <span class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_email || 'N/A'
-                                }}</span>
+                            <span class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_email }}</span>
                         </li>
-                        <li class="flex justify-between">
+                        <li v-if="quote.recipient_phone" class="flex justify-between">
                             <span class="font-medium text-gray-500 dark:text-gray-400">Teléfono:</span>
-                            <span class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_phone || 'N/A'
-                                }}</span>
+                            <span class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_phone }}</span>
                         </li>
-                        <li class="flex justify-between">
+                        <li v-if="quote.expiry_date" class="flex justify-between">
                             <span class="font-medium text-gray-500 dark:text-gray-400">Expiración:</span>
-                            <span class="text-gray-800 dark:text-gray-200 text-right">{{ formatDate(quote.expiry_date)
-                                }}</span>
+                            <span class="text-gray-800 dark:text-gray-200 text-right">{{ formatDate(quote.expiry_date) }}</span>
                         </li>
                         <li v-if="quote.shipping_address" class="flex flex-col">
                             <span class="font-medium text-gray-500 dark:text-gray-400">Dirección de envío:</span>
-                            <p class="text-gray-800 dark:text-gray-200 mt-1 whitespace-pre-wrap">{{
-                                quote.shipping_address }}</p>
+                            <p class="text-gray-800 dark:text-gray-200 mt-1 whitespace-pre-wrap">{{ quote.shipping_address }}</p>
                         </li>
                         <li v-if="quote.notes" class="flex flex-col">
                             <span class="font-medium text-gray-500 dark:text-gray-400">Notas adicionales:</span>
                             <p class="text-gray-800 dark:text-gray-200 mt-1 whitespace-pre-wrap">{{ quote.notes }}</p>
                         </li>
                     </ul>
+                    <!-- Mensaje si no hay detalles -->
+                    <div v-else class="text-center py-4 text-gray-500 dark:text-gray-400">
+                        <i class="pi pi-info-circle mr-2"></i>
+                        <span>No hay detalles adicionales registrados para esta cotización.</span>
+                    </div>
                 </div>
-                <!-- Historial de Versiones -->
+                
+                <!-- Historial de Versiones (Sin cambios) -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <!-- ... (contenido de versiones) ... -->
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Versiones</h2>
                     <ul class="space-y-2">
                         <li v-for="version in allVersions" :key="version.id">
@@ -406,10 +423,12 @@ const allVersions = computed(() => {
                         </li>
                     </ul>
                 </div>
-                <!-- Historial de Actividad -->
+                <!-- Historial de Actividad (Sin cambios) -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-6">Historial de actividad</h2>
-                    <div v-if="activities && activities.length > 0" class="relative max-h-[350px] overflow-y-auto pr-2">
+                     <!-- ... (contenido de actividad) ... -->
+                     <h2 class="text-lg font-semibold border-b pb-3 mb-6">Historial de actividad</h2>
+                     <!-- ... (resto del código de actividad) ... -->
+                     <div v-if="activities && activities.length > 0" class="relative max-h-[350px] overflow-y-auto pr-2">
                         <div class="relative pl-6">
                             <div class="absolute left-10 top-0 h-full border-gray-200 dark:border-gray-700">
                             </div>

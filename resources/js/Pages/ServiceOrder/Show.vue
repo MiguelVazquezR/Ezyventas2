@@ -315,7 +315,7 @@ const closingEvidenceImages = computed(() => {
 });
 
 const getItemType = (itemableType) => {
-    if (itemableType === 'App\\Models\\Product') {
+    if (itemableType === 'App\\Models\\Product' || itemableType === 'App\\Models\\ProductAttribute') {
         return { text: 'Refacción', severity: 'info' };
     }
     if (itemableType === 'App\\Models\\Service') {
@@ -479,7 +479,7 @@ const getPaymentMethodIcon = (method) => {
                             <template #body="{ data }">
                                 <span>{{ data.description }}</span>
                                 <!-- Añadimos la nota si es un Producto (Refacción) con ID -->
-                                <div v-if="data.itemable_type === 'App\\Models\\Product' && data.itemable_id" 
+                                <div v-if="['App\\Models\\Product', 'App\\Models\\ProductAttribute'].includes(data.itemable_type) && data.itemable_id"
                                      class="text-xs text-gray-500 dark:text-gray-400 italic mt-1">
                                     (Se {{ isCancelled ? 'devolvió' : 'descontó' }} {{ data.quantity }} unidad(es) {{ isCancelled ? 'al' : 'del' }} stock)
                                 </div>
