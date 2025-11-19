@@ -63,7 +63,7 @@ const saveCustomField = () => {
             router.reload({ only: ['customFieldDefinitions'] });
         },
         onError: (errors) => {
-            toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo guardar el campo.', life: 3000 });
+            toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo guardar el campo.', life: 5000 });
         }
     };
 

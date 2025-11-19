@@ -13,6 +13,7 @@ use App\Http\Requests\UpdateServiceOrderRequest;
 use App\Models\Customer;
 use App\Models\CustomFieldDefinition;
 use App\Models\Product;
+use App\Models\ProductAttribute;
 use App\Models\Service;
 use App\Models\ServiceOrder;
 use App\Models\Transaction;
@@ -144,11 +145,9 @@ class ServiceOrderController extends Controller implements HasMiddleware
             $user = Auth::user();
             $customer = null;
 
-            // --- Se generan ambos folios consecutivos ---
             $folio = $this->generateServiceOrderFolio();
             $transactionFolio = $this->generateTransactionFolio();
 
-            // --- Lógica de creación/búsqueda de cliente ---
             if (! empty($validated['customer_id'])) {
                 $customer = Customer::find($validated['customer_id']);
             } elseif ($validated['create_customer']) {
@@ -159,11 +158,10 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     'email' => $validated['customer_email'] ?? null,
                     'address' => $validated['customer_address'] ?? null,
                     'credit_limit' => $validated['credit_limit'],
-                    'balance' => 0, // El cliente nuevo inicia con balance 0
+                    'balance' => 0,
                 ]);
             }
 
-            // --- Creación de ServiceOrder ---
             $serviceOrder = ServiceOrder::create(array_merge($validated, [
                 'folio' => $folio,
                 'user_id' => $user->id,
@@ -172,7 +170,6 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'status' => ServiceOrderStatus::PENDING,
             ]));
 
-            // --- Creación de la Transacción asociada ---
             $transaction = $serviceOrder->transaction()->create([
                 'folio' => $transactionFolio,
                 'customer_id' => $customer?->id,
@@ -187,54 +184,46 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'status' => $serviceOrder->final_total > 0 ? TransactionStatus::PENDING : TransactionStatus::COMPLETED,
             ]);
 
-            // --- Lógica de cargo a Balance ---
-            // Si hay un cliente y la orden tiene costo, se genera la deuda.
             if ($customer && $serviceOrder->final_total > 0) {
-                
-                // Decrementamos el balance (haciéndolo más negativo)
                 $customer->decrement('balance', $serviceOrder->final_total);
 
-                // Registramos el movimiento para trazabilidad
                 $customer->balanceMovements()->create([
                     'transaction_id' => $transaction->id,
                     'type' => CustomerBalanceMovementType::CREDIT_SALE, 
-                    'amount' => -$serviceOrder->final_total, // El monto es negativo (es un cargo)
-                    'balance_after' => $customer->balance, // El balance actualizado
+                    'amount' => -$serviceOrder->final_total,
+                    'balance_after' => $customer->balance,
                     'notes' => "Cargo por Orden de Servicio #{$serviceOrder->folio}",
                     'created_at' => $transaction->created_at, 
                     'updated_at' => $transaction->created_at,
                 ]);
             }
             
-            // --- Lógica de Descuento de Stock ---
+            // --- Lógica de Descuento de Stock (ACTUALIZADA) ---
             if (!empty($validated['items'])) {
                 foreach ($validated['items'] as $item) {
-                    // Limpieza de ID (código existente)
                     if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
                         unset($item['itemable_id']);
                     }
                     
-                    // 1. Creamos el item de la orden (código existente)
                     $serviceOrderItem = $serviceOrder->items()->create($item);
 
-                    // 2. ¡NUEVO! Verificamos si el item es un Producto (App\Models\Product)
-                    //    y si tiene un ID (no es un servicio o item manual)
+                    // Caso 1: Producto Simple
                     if ($serviceOrderItem->itemable_type === Product::class && $serviceOrderItem->itemable_id) {
-                        
-                        // 3. ¡NUEVO! Buscamos el producto en la base de datos
                         $product = Product::find($serviceOrderItem->itemable_id);
-                        
-                        // 4. ¡NUEVO! Si encontramos el producto, descontamos el stock físico
                         if ($product) {
-                            // Usamos decrement para restar del 'current_stock'
                             $product->decrement('current_stock', $serviceOrderItem->quantity);
+                        }
+                    }
+                    // Caso 2: Variante de Producto
+                    elseif ($serviceOrderItem->itemable_type === ProductAttribute::class && $serviceOrderItem->itemable_id) {
+                        $variant = ProductAttribute::find($serviceOrderItem->itemable_id);
+                        if ($variant) {
+                            $variant->decrement('current_stock', $serviceOrderItem->quantity);
                         }
                     }
                 }
             }
-            // --- Lógica de Descuento de Stock ---
 
-            // --- Lógica de Imágenes ---
             if ($request->hasFile('initial_evidence_images')) {
                 foreach ($request->file('initial_evidence_images') as $file) {
                     $mediaItem = $serviceOrder->addMedia($file)->toMediaCollection('initial-service-order-evidence');
@@ -245,7 +234,6 @@ class ServiceOrderController extends Controller implements HasMiddleware
             $newServiceOrder = $serviceOrder;
         });
 
-        // --- Redirección ---
         return redirect()->route('service-orders.show', $newServiceOrder->id)
             ->with('success', 'Orden de servicio creada.')
             ->with('show_payment_modal', true);
@@ -316,82 +304,63 @@ class ServiceOrderController extends Controller implements HasMiddleware
         DB::transaction(function () use ($request, $serviceOrder) {
             $validated = $request->validated();
 
-            // --- INICIO DE MODIFICACIÓN: Lógica de Sincronización de Stock ---
+            // --- Lógica de Sincronización de Stock (ACTUALIZADA) ---
 
-            // 1. Obtener todos los items *antiguos* ANTES de borrarlos
+            // 1. Obtener items antiguos y reponer stock
             $oldItems = $serviceOrder->items()->get();
-
-            // 2. Reponer el stock de los items antiguos (devolverlos al inventario)
             foreach ($oldItems as $oldItem) {
-                // Solo reponemos si es un Producto con ID
                 if ($oldItem->itemable_type === Product::class && $oldItem->itemable_id) {
                     $product = Product::find($oldItem->itemable_id);
-                    if ($product) {
-                        $product->increment('current_stock', $oldItem->quantity);
-                    }
+                    if ($product) $product->increment('current_stock', $oldItem->quantity);
+                } elseif ($oldItem->itemable_type === ProductAttribute::class && $oldItem->itemable_id) {
+                    $variant = ProductAttribute::find($oldItem->itemable_id);
+                    if ($variant) $variant->increment('current_stock', $oldItem->quantity);
                 }
             }
 
-            // 3. Borrar los items antiguos de la orden (como estaba en tu código)
+            // 2. Borrar items antiguos
             $serviceOrder->items()->delete();
 
-            // 4. Crear los items *nuevos* y descontar su stock
+            // 3. Crear items nuevos y descontar stock
             if (!empty($validated['items'])) {
                 foreach ($validated['items'] as $item) {
                     if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
                         unset($item['itemable_id']);
                     }
                     
-                    // Creamos el nuevo item
                     $newServiceOrderItem = $serviceOrder->items()->create($item);
 
-                    // Verificamos si es un Producto y descontamos el stock
                     if ($newServiceOrderItem->itemable_type === Product::class && $newServiceOrderItem->itemable_id) {
                         $product = Product::find($newServiceOrderItem->itemable_id);
-                        if ($product) {
-                            // (Importante: Asegúrate de que tu validación no permita descontar más de lo que hay,
-                            // o usa decrement() si estás seguro de que la disponibilidad se validó en el frontend)
-                            $product->decrement('current_stock', $newServiceOrderItem->quantity);
-                        }
+                        if ($product) $product->decrement('current_stock', $newServiceOrderItem->quantity);
+                    } elseif ($newServiceOrderItem->itemable_type === ProductAttribute::class && $newServiceOrderItem->itemable_id) {
+                        $variant = ProductAttribute::find($newServiceOrderItem->itemable_id);
+                        if ($variant) $variant->decrement('current_stock', $newServiceOrderItem->quantity);
                     }
                 }
             }
-            // --- FIN DE MODIFICACIÓN ---
 
-
-            // --- Lógica de actualización de Orden y Transacción ---
+            // --- Actualización de Orden y Transacción ---
             $serviceOrder->update($validated);
 
             $serviceOrder->load('transaction');
             if ($serviceOrder->transaction) {
-                // --- INICIO DE MODIFICACIÓN: Actualizar el 'total' de la transacción ---
-                // Cargamos el cliente para la lógica de balance
                 $customer = $serviceOrder->customer; 
-                
-                // Obtenemos el total anterior ANTES de actualizar
                 $oldTotal = $serviceOrder->transaction->total;
-                $newTotal = $validated['final_total']; // Asumiendo que final_total está en $validated
+                $newTotal = $validated['final_total'];
                 $totalDifference = $newTotal - $oldTotal;
 
-                // Actualizamos la transacción con los nuevos totales
                 $serviceOrder->transaction->update([
                     'subtotal' => $validated['subtotal'],
                     'total_discount' => $validated['discount_amount'],
-                    'total' => $newTotal, // Actualizamos el total de la deuda
+                    'total' => $newTotal,
                 ]);
 
-                // Si hay un cliente, ajustamos su balance con la diferencia
                 if ($customer && $totalDifference != 0) {
-                    // Si el nuevo total es MAYOR (totalDifference > 0), le cargamos más (decrement)
-                    // Si el nuevo total es MENOR (totalDifference < 0), le devolvemos (increment)
                     $customer->decrement('balance', $totalDifference);
-                    
-                    // (Opcional: puedes añadir un CustomerBalanceMovement aquí)
                 }
-                // --- FIN DE MODIFICACIÓN ---
             }
 
-            // --- Lógica de Imágenes ---
             if ($request->input('deleted_media_ids')) {
                 $serviceOrder->media()->whereIn('id', $request->input('deleted_media_ids'))->delete();
             }
@@ -437,50 +406,39 @@ class ServiceOrderController extends Controller implements HasMiddleware
             'status' => ['required', Rule::enum(ServiceOrderStatus::class)],
         ]);
 
-        $oldStatus = $serviceOrder->status; // Obtenemos el Enum/valor actual
-        $newStatus = ServiceOrderStatus::from($validated['status']); // Convertimos el string a Enum
+        $oldStatus = $serviceOrder->status;
+        $newStatus = ServiceOrderStatus::from($validated['status']);
 
-        // 1. Solo ejecutar esta lógica si el nuevo estado es "cancelado"
-        //    y si el estado anterior NO ERA "cancelado" (para evitar doble ejecución).
         if ($newStatus === ServiceOrderStatus::CANCELLED && $oldStatus !== ServiceOrderStatus::CANCELLED) {
             
             DB::transaction(function () use ($serviceOrder) {
-                
-                // 2. Cargar las relaciones necesarias
                 $serviceOrder->load('items', 'transaction.customer', 'transaction.payments');
 
-                // 3. Devolver el stock de las refacciones (Productos) al inventario
+                // Devolver stock (incluyendo variantes)
                 foreach ($serviceOrder->items as $item) {
-                    // Verificamos que sea un Producto (no un Servicio) y tenga ID
                     if ($item->itemable_type === Product::class && $item->itemable_id) {
                         $product = Product::find($item->itemable_id);
-                        if ($product) {
-                            // Incrementamos el stock físico (current_stock)
-                            $product->increment('current_stock', $item->quantity);
-                        }
+                        if ($product) $product->increment('current_stock', $item->quantity);
+                    } elseif ($item->itemable_type === ProductAttribute::class && $item->itemable_id) {
+                        $variant = ProductAttribute::find($item->itemable_id);
+                        if ($variant) $variant->increment('current_stock', $item->quantity);
                     }
                 }
 
-                // 5. Revertir la deuda pendiente del cliente (si aplica)
                 $customer = $serviceOrder->customer;
                 $transaction = $serviceOrder->transaction;
 
                 if ($customer && $transaction) {
-                    // Calculamos la deuda real pendiente de ESTA transacción
                     $totalPaid = $transaction->payments()->sum('amount');
                     $totalDebt = $transaction->total;
-                    $pendingDebt = $totalDebt - $totalPaid; // Ej: 500 (deuda) - 100 (pagado) = 400 (pendiente)
+                    $pendingDebt = $totalDebt - $totalPaid;
 
-                    // Si aún quedaba deuda (pendiente > 0), "perdonamos" esa deuda
-                    // incrementando su balance (ej: balance -400 + 400 = 0)
                     if ($pendingDebt > 0.01) {
                         $customer->increment('balance', $pendingDebt);
-
-                        // Registrar el movimiento para trazabilidad
                         $customer->balanceMovements()->create([
                             'transaction_id' => $transaction->id,
-                            'type' => CustomerBalanceMovementType::CANCELLATION_CREDIT, // Enum de 'credito_por_cancelacion'
-                            'amount' => $pendingDebt, // El monto es positivo (un abono/crédito)
+                            'type' => CustomerBalanceMovementType::CANCELLATION_CREDIT,
+                            'amount' => $pendingDebt,
                             'balance_after' => $customer->balance,
                             'notes' => "Crédito por cancelación de O.S. #{$serviceOrder->folio}",
                             'created_at' => now(),
@@ -489,17 +447,14 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     }
                 }
 
-                // 6. Actualizar el estado de la Transacción asociada a "cancelado"
                 if($transaction) {
                     $transaction->update(['status' => TransactionStatus::CANCELLED]);
                 }
             });
         }
         
-        // 7. Actualizar el estado de la Orden de Servicio
         $serviceOrder->update(['status' => $newStatus->value]);
 
-        // 8. Registrar la actividad (código existente)
         activity()
             ->performedOn($serviceOrder)
             ->causedBy(auth()->user())

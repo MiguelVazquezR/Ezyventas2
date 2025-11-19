@@ -67,7 +67,7 @@ const form = useForm({
     tax_rate: props.quote.tax_rate,
 });
 
-// --- Lógica de inicialización de campos personalizada (Mejorada para Edit) ---
+// --- Lógica de inicialización de campos personalizada ---
 const initializeCustomFields = (definitions) => {
     const newCustomFields = { ...form.custom_fields }; // Empezar con los valores cargados
     definitions.forEach(field => {
@@ -89,7 +89,7 @@ watch(() => props.customFieldDefinitions, (newDefs) => {
 // --- FIN: Lógica de inicialización ---
 
 
-// --- Lógica de Impuestos y Totales (Traída de Create.vue) ---
+// --- Lógica de Impuestos y Totales ---
 const includeTax = ref(parseFloat(props.quote.total_tax) > 0);
 const taxType = ref(props.quote.tax_type || 'added');
 const taxOptions = [{ label: 'Precio + IVA', value: 'added' }, { label: 'Precio con IVA incluido', value: 'included' }];
@@ -123,10 +123,10 @@ watch([() => form.items, () => form.total_discount, () => form.shipping_cost, in
         form.tax_type = null;
         form.tax_rate = null;
     }
-
-    form.subtotal = (taxType.value === 'included' && includeTax.value) ? baseSubtotal : grossSubtotal;
+    
+    form.subtotal = (taxType.value === 'included' && includeTax.value) ? baseSubtotal : grossSubtotal; 
     form.total_tax = finalTax;
-
+    
     let total = 0;
     if (includeTax.value && taxType.value === 'included') {
         total = (baseSubtotal + finalTax) + shipping;
@@ -138,7 +138,7 @@ watch([() => form.items, () => form.total_discount, () => form.shipping_cost, in
 }, { deep: true, immediate: true });
 
 
-// --- Lógica para Variantes y Items (Mejorada) ---
+// --- Lógica para Variantes y Items ---
 const itemTypeOptions = ref([
     { label: 'Producto', value: 'App\\Models\\Product' },
     { label: 'Servicio', value: 'App\\Models\\Service' },
@@ -159,6 +159,21 @@ const searchItems = (event) => {
     } else {
         filteredItems.value = availableItems.value.filter((item) => item.name.toLowerCase().includes(event.query.toLowerCase()));
     }
+};
+
+// Helper para saber si mostrar el botón de variante (COPIADO DE CREATE.VUE)
+const canSelectVariant = (item) => {
+    if (!item.itemable_id) return false;
+    
+    // Si ya es un atributo, por definición tiene variantes
+    if (item.itemable_type === 'App\\Models\\ProductAttribute') return true;
+    
+    // Si es un producto, verificar si tiene atributos configurados
+    if (item.itemable_type === 'App\\Models\\Product') {
+         const p = props.products.find(p => p.id === item.itemable_id);
+         return p && p.product_attributes && p.product_attributes.length > 0;
+    }
+    return false;
 };
 
 const addItem = () => {
@@ -193,7 +208,7 @@ const addItem = () => {
             itemable_id: 0,
             description: selectedItem.value
         };
-    } else {
+    } else { 
         return;
     }
     form.items.push(itemToAdd);
@@ -207,7 +222,17 @@ const addItem = () => {
 
 const openVariantSelector = (index) => {
     const item = form.items[index];
-    const product = props.products.find(p => p.id === item.itemable_id);
+    let product = null;
+
+    // 1. Si es un Producto base, buscarlo directamente
+    if (item.itemable_type === 'App\\Models\\Product') {
+        product = props.products.find(p => p.id === item.itemable_id);
+    } 
+    // 2. Si ya es una Variante (ProductAttribute), buscar el producto padre que contiene esta variante
+    else if (item.itemable_type === 'App\\Models\\ProductAttribute') {
+        product = props.products.find(p => p.product_attributes?.some(attr => attr.id === item.itemable_id));
+    }
+
     if (product) {
         productForVariantSelection.value = product;
         itemIndexForVariantSelection.value = index;
@@ -221,6 +246,11 @@ const handleVariantSelected = (variant) => {
     if (itemIndexForVariantSelection.value === null || !form.items[itemIndexForVariantSelection.value]) return;
     const item = form.items[itemIndexForVariantSelection.value];
     const product = productForVariantSelection.value;
+    
+    // --- ACTUALIZADO: Usar ProductAttribute ---
+    item.itemable_id = variant.id;
+    item.itemable_type = 'App\\Models\\ProductAttribute';
+    
     item.variant_details = variant.attributes;
     item.description = `${product.name} (${Object.values(variant.attributes).join(', ')})`;
     item.unit_price = (parseFloat(product.selling_price) || 0) + (parseFloat(variant.selling_price_modifier) || 0);
@@ -280,38 +310,30 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 </script>
 
 <template>
-
     <Head :title="`Editar Cotización #${quote.folio}`" />
     <AppLayout>
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
-        <div class="mt-4">
-            <h1 class="text-2xl font-bold">Editar Cotización</h1>
-        </div>
+        <div class="mt-4"><h1 class="text-2xl font-bold">Editar Cotización</h1></div>
 
         <form @submit.prevent="submit" class="mt-6 max-w-4xl mx-auto space-y-6">
-
-            <!-- Información general (ACTUALIZADA) -->
+            
+            <!-- Información general -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información general</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
                         <div class="flex justify-between items-center mb-1">
                             <InputLabel for="customer" value="Cliente (Opcional)" />
-                            <Button @click="showCustomerModal = true" label="Nuevo" icon="pi pi-plus" text
-                                size="small" />
+                            <Button @click="showCustomerModal = true" label="Nuevo" icon="pi pi-plus" text size="small" />
                         </div>
-                        <Select size="large" id="customer" v-model="form.customer_id" :options="localCustomers" filter
-                            optionLabel="name" optionValue="id" placeholder="Selecciona un cliente" class="w-full"
-                            showClear />
+                        <Select size="large" id="customer" v-model="form.customer_id" :options="localCustomers" filter optionLabel="name" optionValue="id" placeholder="Selecciona un cliente" class="w-full" showClear />
                         <InputError :message="form.errors.customer_id" />
                     </div>
-                    <div class="mt-3">
+                    <div>
                         <InputLabel for="expiry_date" value="Fecha de expiración" />
-                        <DatePicker id="expiry_date" v-model="form.expiry_date" class="w-full mt-1"
-                            dateFormat="dd/mm/yy" />
+                        <DatePicker id="expiry_date" v-model="form.expiry_date" class="w-full mt-1" dateFormat="dd/mm/yy" />
                     </div>
-
-                    <!-- CAMPOS DE DESTINATARIO MOVIDOS AQUÍ -->
+                    
                     <div>
                         <InputLabel for="recipient_name" value="Nombre de quien recibe *" />
                         <InputText id="recipient_name" v-model="form.recipient_name" class="mt-1 w-full" />
@@ -324,21 +346,19 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     </div>
                     <div class="md:col-span-2">
                         <InputLabel for="recipient_email" value="Email de quien recibe" />
-                        <InputText id="recipient_email" v-model="form.recipient_email" type="email"
-                            class="mt-1 w-full" />
+                        <InputText id="recipient_email" v-model="form.recipient_email" type="email" class="mt-1 w-full" />
                         <InputError :message="form.errors.recipient_email" class="mt-2" />
                     </div>
                 </div>
             </div>
 
-            <!-- Items de la Cotización (ACTUALIZADO) -->
+            <!-- Items de la Cotización -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Conceptos</h2>
-                <!-- Selector de items (AutoComplete) -->
                 <div class="flex gap-2 mb-4">
                     <AutoComplete v-model="selectedItem" :suggestions="filteredItems" @complete="searchItems"
                         field="name" optionLabel="name" placeholder="Busca o escribe un concepto..." class="w-full"
-                        dropdown> <!-- 'forceSelection' eliminado -->
+                        dropdown>
                         <template #option="slotProps">
                             <div>{{ slotProps.option.name }}
                                 <Tag :value="slotProps.option.type" />
@@ -347,15 +367,18 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     </AutoComplete>
                     <Button @click="addItem" icon="pi pi-plus" label="Agregar" :disabled="!selectedItem" />
                 </div>
-
-                <!-- Tabla de items (DataTable) -->
+                
                 <DataTable :value="form.items" class="p-datatable-sm">
                     <template #empty>
                         <div class="text-center p-4">No se han agregado conceptos.</div>
                     </template>
                     <Column header="Tipo" style="width: 15rem">
                         <template #body="{ data, index }">
-                            <SelectButton v-model="form.items[index].itemable_type" :options="itemTypeOptions"
+                             <!-- Lógica corregida para visualización del tipo -->
+                            <SelectButton 
+                                :model-value="['App\\Models\\Product', 'App\\Models\\ProductAttribute'].includes(form.items[index].itemable_type) ? 'App\\Models\\Product' : form.items[index].itemable_type"
+                                @update:model-value="(val) => form.items[index].itemable_type = val"
+                                :options="itemTypeOptions"
                                 optionLabel="label" optionValue="value" :allowEmpty="false"
                                 :disabled="data.itemable_id !== 0 && data.itemable_id !== null" class="w-full" />
                         </template>
@@ -363,13 +386,13 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     <Column field="description" header="Descripción">
                         <template #body="{ data, index }">
                             <InputText v-model="form.items[index].description" fluid class="w-full" />
-                            <div v-if="data.itemable_id && data.itemable_type === 'App\\Models\\Product'"
-                                class="text-xs text-gray-500 mt-1">
-                                <Button
-                                    v-if="props.products.find(p => p.id === data.itemable_id)?.product_attributes.length > 0"
-                                    @click="openVariantSelector(index)"
-                                    :label="data.variant_details ? 'Cambiar variante' : 'Seleccionar variante'" text
-                                    size="small" class="!p-0" />
+                            <!-- Lógica corregida para mostrar botón de variante -->
+                            <div v-if="canSelectVariant(data)" class="text-xs text-gray-500 mt-1">
+                                <Button 
+                                    @click="openVariantSelector(index)" 
+                                    :label="data.variant_details ? 'Cambiar variante' : 'Seleccionar variante'" 
+                                    text size="small" class="!p-0" 
+                                />
                             </div>
                         </template>
                     </Column>
@@ -390,13 +413,13 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     </Column>
                     <Column style="width: 4rem">
                         <template #body="{ index }">
-                            <Button @click="confirmRemoveItem($event, index)" icon="pi pi-trash" text rounded
-                                size="small" severity="danger" />
+                            <Button @click="confirmRemoveItem($event, index)" icon="pi pi-trash" text rounded size="small"
+                                severity="danger" />
                         </template>
                     </Column>
                 </DataTable>
                 <InputError :message="form.errors.items" class="mt-2" />
-
+                
                 <!-- Totales y Impuestos -->
                 <div class="mt-4 space-y-4">
                     <div class="flex items-center gap-4">
@@ -409,35 +432,29 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div class="md:col-start-3">
                             <InputLabel for="subtotal" value="Subtotal" />
-                            <InputNumber id="subtotal" :modelValue="form.subtotal" mode="currency" currency="MXN"
-                                locale="es-MX" class="w-full mt-1" readonly />
+                            <InputNumber id="subtotal" :modelValue="form.subtotal" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" readonly />
                         </div>
                         <div>
                             <InputLabel for="total_discount" value="Descuento" />
-                            <InputNumber id="total_discount" v-model="form.total_discount" mode="currency"
-                                currency="MXN" locale="es-MX" class="w-full mt-1" />
+                            <InputNumber id="total_discount" v-model="form.total_discount" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" />
                         </div>
                         <div class="md:col-start-3">
                             <InputLabel for="total_tax" value="Impuestos" />
-                            <InputNumber id="total_tax" :modelValue="form.total_tax" mode="currency" currency="MXN"
-                                locale="es-MX" class="w-full mt-1" readonly />
+                            <InputNumber id="total_tax" :modelValue="form.total_tax" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" readonly />
                         </div>
                         <div>
                             <InputLabel for="shipping_cost" value="Costo de envío" />
-                            <InputNumber id="shipping_cost" v-model="form.shipping_cost" mode="currency" currency="MXN"
-                                locale="es-MX" class="w-full mt-1" />
+                            <InputNumber id="shipping_cost" v-model="form.shipping_cost" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" />
                         </div>
                         <div class="md:col-start-3 col-span-2 border-t pt-2 mt-2">
                             <InputLabel for="total_amount" value="Total" class="font-bold text-lg" />
-                            <InputNumber id="total_amount" :modelValue="form.total_amount" mode="currency"
-                                currency="MXN" locale="es-MX" class="w-full mt-1 font-bold text-lg"
-                                inputClass="!font-bold !text-lg" readonly />
+                            <InputNumber id="total_amount" :modelValue="form.total_amount" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1 font-bold text-lg" inputClass="!font-bold !text-lg" readonly />
                         </div>
                     </div>
                 </div>
             </div>
-
-            <!-- Información de Envío y Notas (ACTUALIZADA) -->
+            
+            <!-- Información de Envío y Notas -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información de envío y notas</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -452,12 +469,12 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                 </div>
             </div>
 
-            <!-- Bloque de Campos Personalizados (ACTUALIZADO) -->
+            <!-- Bloque de Campos Personalizados -->
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <div class="flex items-center justify-between border-b pb-3 mb-4">
                     <h2 class="text-lg font-semibold">Detalles adicionales</h2>
                     <Button v-if="hasPermission('quotes.manage_custom_fields')" @click="openCustomFieldManager"
-                        icon="pi pi-cog" text label="Gestionar" v-tooltip.left="'Gestionar campos personalizados'" />
+                        icon="pi pi-cog" text rounded v-tooltip.left="'Gestionar campos personalizados'" />
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div v-for="field in customFieldDefinitions" :key="field.id">
@@ -497,16 +514,19 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
             </div>
 
             <div class="flex justify-end sticky bottom-4">
-                <Button type="submit" label="Actualizar cotización" :loading="form.processing" severity="warning" />
+                <Button type="submit" label="Actualizar Cotización" :loading="form.processing" severity="warning" />
             </div>
         </form>
 
         <CreateCustomerModal v-model:visible="showCustomerModal" @created="handleNewCustomer" />
-        <SelectVariantModal v-model:visible="showVariantModal" :product="productForVariantSelection"
-            @variant-selected="handleVariantSelected" />
-
-        <ManageCustomFields ref="manageFieldsComponent" module="quotes" :definitions="props.customFieldDefinitions" />
-
+        <SelectVariantModal v-model:visible="showVariantModal" :product="productForVariantSelection" @variant-selected="handleVariantSelected" />
+    
+        <ManageCustomFields 
+            ref="manageFieldsComponent" 
+            module="quotes"
+            :definitions="props.customFieldDefinitions" 
+        />
+        
         <ConfirmPopup group="concept-delete" />
 
     </AppLayout>

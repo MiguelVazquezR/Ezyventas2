@@ -10,4 +10,5 @@ enum QuoteStatus: string
     case REJECTED = 'rechazada';
     case SALE_GENERATED = 'venta_generada';
     case EXPIRED = 'expirada';
+    case CANCELLED = 'cancelada';
 }

@@ -18,6 +18,7 @@ class BankAccountFactory extends Factory
         return [
             'subscription_id' => Subscription::factory(),
             'bank_name' => $this->faker->randomElement(['BBVA', 'Santander', 'Banorte', 'HSBC']),
+            'owner_name' => $this->faker->name(), // <-- AÑADIR ESTA LÍNEA
             'account_name' => 'Cuenta Principal',
             'account_number' => $this->faker->numerify('##################'),
             'balance' => $this->faker->randomFloat(2, 5000, 100000),
