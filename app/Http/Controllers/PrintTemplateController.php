@@ -75,6 +75,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
 
         $view = match ($type) {
             'etiqueta' => 'Template/CreateLabel',
+            'cotizacion' => 'Template/CreateQuoteTemplate',
             default => 'Template/CreateTicket',
         };
 
@@ -157,6 +158,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
 
         $view = match ($printTemplate->type->value) {
             'etiqueta' => 'Template/EditLabel',
+            'cotizacion' => 'Template/CreateQuoteTemplate', // Reutilizamos CreateQuoteTemplate adaptado para edición si le pasas el prop 'template'
             default => 'Template/EditTicket',
         };
 
