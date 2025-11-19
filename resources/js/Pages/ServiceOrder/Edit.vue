@@ -6,6 +6,9 @@ import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import PatternLock from '@/Components/PatternLock.vue';
 import ManageCustomFields from '@/Components/ManageCustomFields.vue';
+// --- INICIO: Imports añadidos ---
+import SelectVariantModal from '@/Components/SelectVariantModal.vue';
+// --- FIN: Imports añadidos ---
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
 
@@ -101,6 +104,61 @@ watch([() => form.subtotal, () => form.discount_type, () => form.discount_value]
 }, { immediate: true });
 // --- FIN DE LA LÓGICA MEJORADA ---
 
+// --- INICIO: Lógica de Variantes (Integrada) ---
+const showVariantModal = ref(false);
+const productForVariantSelection = ref(null);
+const itemIndexForVariantSelection = ref(null);
+
+const openVariantSelector = (index) => {
+    const item = form.items[index];
+    let product = null;
+
+    // 1. Si es un Producto base
+    if (item.itemable_type === 'App\\Models\\Product') {
+        product = props.products.find(p => p.id === item.itemable_id);
+    } 
+    // 2. Si ya es una Variante (ProductAttribute)
+    else if (item.itemable_type === 'App\\Models\\ProductAttribute') {
+        product = props.products.find(p => p.product_attributes?.some(attr => attr.id === item.itemable_id));
+    }
+
+    if (product) {
+        productForVariantSelection.value = product;
+        itemIndexForVariantSelection.value = index;
+        showVariantModal.value = true;
+    }
+};
+
+const handleVariantSelected = (variant) => {
+    if (itemIndexForVariantSelection.value === null || !form.items[itemIndexForVariantSelection.value]) return;
+    
+    const item = form.items[itemIndexForVariantSelection.value];
+    const product = productForVariantSelection.value;
+    
+    // Actualizar a ProductAttribute
+    item.itemable_id = variant.id;
+    item.itemable_type = 'App\\Models\\ProductAttribute';
+
+    item.variant_details = variant.attributes;
+    item.description = `${product.name} (${Object.values(variant.attributes).join(', ')})`;
+    
+    // Actualizar precio base + modificador
+    item.unit_price = (parseFloat(product.selling_price) || 0) + (parseFloat(variant.selling_price_modifier) || 0);
+
+    if (!manualSubtotalMode.value) recalculateSubtotal();
+};
+
+const canSelectVariant = (item) => {
+    if (!item.itemable_id) return false;
+    if (item.itemable_type === 'App\\Models\\ProductAttribute') return true;
+    if (item.itemable_type === 'App\\Models\\Product') {
+         const p = props.products.find(p => p.id === item.itemable_id);
+         return p && p.product_attributes && p.product_attributes.length > 0;
+    }
+    return false;
+};
+// --- FIN: Lógica de Variantes ---
+
 // --- Lógica de Items ---
 const itemTypeOptions = ref([
     { label: 'Refacción', value: 'App\\Models\\Product' },
@@ -119,6 +177,7 @@ const searchItems = (event) => {
         filteredItems.value = availableItems.value.filter((item) => item.name.toLowerCase().includes(event.query.toLowerCase()));
     }
 };
+
 const addItem = () => {
     let itemToAdd = {
         itemable_id: null,
@@ -128,14 +187,41 @@ const addItem = () => {
         unit_price: 0,
         line_total: 0,
     };
+    
+    let triggerVariantModal = false;
+    let productForModal = null;
+
     if (typeof selectedItem.value === 'object' && selectedItem.value !== null) {
-        itemToAdd = { ...itemToAdd, itemable_id: selectedItem.value.id, itemable_type: selectedItem.value.itemable_type, description: selectedItem.value.name, unit_price: selectedItem.value.price };
+        const selected = selectedItem.value;
+        itemToAdd = { 
+            ...itemToAdd, 
+            itemable_id: selected.id, 
+            itemable_type: selected.itemable_type, 
+            description: selected.name, 
+            unit_price: selected.price 
+        };
+
+         // Verificar variantes
+        if (selected.itemable_type === 'App\\Models\\Product' && selected.product_attributes && selected.product_attributes.length > 0) {
+            triggerVariantModal = true;
+            productForModal = selected;
+        }
+
     } else if (typeof selectedItem.value === 'string') {
         itemToAdd = { ...itemToAdd, itemable_id: 0, description: selectedItem.value };
     } else { return; }
+
     form.items.push(itemToAdd);
+
+    if (triggerVariantModal) {
+        productForVariantSelection.value = productForModal;
+        itemIndexForVariantSelection.value = form.items.length - 1;
+        showVariantModal.value = true;
+    }
+
     selectedItem.value = null;
 };
+
 const removeItem = (index) => form.items.splice(index, 1);
 const confirmRemoveItem = (event, index) => {
     confirm.require({
@@ -292,32 +378,58 @@ const submit = () => {
                     </template>
                     <Column header="Tipo" style="width: 15rem">
                         <template #body="{ data, index }">
-                            <SelectButton v-model="form.items[index].itemable_type" :options="itemTypeOptions"
-                                optionLabel="label" optionValue="value" :allowEmpty="false"
-                                :disabled="data.itemable_id !== 0 && data.itemable_id !== null" class="w-full" />
+                             <!-- Lógica corregida: Si es ProductAttribute, visualmente sigue siendo 'Producto' -->
+                            <SelectButton 
+                                :model-value="['App\\Models\\Product', 'App\\Models\\ProductAttribute'].includes(form.items[index].itemable_type) ? 'App\\Models\\Product' : form.items[index].itemable_type"
+                                @update:model-value="(val) => form.items[index].itemable_type = val"
+                                :options="itemTypeOptions"
+                                optionLabel="label" 
+                                optionValue="value" 
+                                :allowEmpty="false"
+                                :disabled="data.itemable_id !== 0 && data.itemable_id !== null" 
+                                class="w-full" 
+                            />
+                            <div v-if="['App\\Models\\Product', 'App\\Models\\ProductAttribute'].includes(form.items[index].itemable_type) && form.items[index].itemable_id && form.items[index].itemable_id !== 0"
+                                class="text-xs text-gray-500 dark:text-gray-400 italic mt-1 pl-1">
+                                (Se descontarán {{ form.items[index].quantity || 0 }} unidad(es) del stock)
+                            </div>
                         </template>
                     </Column>
-                    <Column field="description" header="Descripción"><template #body="{ index }">
+                    <Column field="description" header="Descripción">
+                        <template #body="{ data, index }">
                             <InputText v-model="form.items[index].description" fluid class="w-full" />
+                            <!-- Botón para cambiar variante (lógica corregida) -->
+                            <div v-if="canSelectVariant(data)" class="text-xs text-gray-500 mt-1">
+                                <Button 
+                                    @click="openVariantSelector(index)" 
+                                    :label="data.variant_details ? 'Cambiar variante' : 'Seleccionar variante'" 
+                                    text size="small" class="!p-0" 
+                                />
+                            </div>
                         </template>
                     </Column>
-                    <Column field="quantity" header="Cantidad" style="width: 9.5rem"><template #body="{ index }">
+                    <Column field="quantity" header="Cantidad" style="width: 9.5rem">
+                        <template #body="{ index }">
                             <InputNumber v-model="form.items[index].quantity" fluid class="w-full" showButtons
                                 buttonLayout="horizontal" :step="1" :min="1" />
                         </template>
                     </Column>
-                    <Column field="unit_price" header="Precio Unit." style="width: 9.5rem"><template #body="{ index }">
+                    <Column field="unit_price" header="Precio Unit." style="width: 9.5rem">
+                        <template #body="{ index }">
                             <InputNumber v-model="form.items[index].unit_price" @blur="checkUnitPrice(index)"
                                 mode="currency" currency="MXN" locale="es-MX" fluid class="w-full" />
                         </template>
                     </Column>
-                    <Column field="line_total" header="Total"><template #body="{ data }">{{ new
+                    <Column field="line_total" header="Total">
+                        <template #body="{ data }">{{ new
                         Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(data.line_total)
                             }}</template>
                     </Column>
-                    <Column style="width: 4rem"><template #body="{ index, event }"><Button
-                                @click="confirmRemoveItem($event, index)" icon="pi pi-trash" text rounded size="small"
-                                severity="danger" /></template>
+                    <Column style="width: 4rem">
+                        <template #body="{ index, event }">
+                            <Button @click="confirmRemoveItem($event, index)" icon="pi pi-trash" text rounded size="small"
+                                severity="danger" />
+                        </template>
                     </Column>
                 </DataTable>
                 <InputError :message="form.errors.items" class="mt-2" />
@@ -455,6 +567,10 @@ const submit = () => {
 
         <ManageCustomFields ref="manageFieldsComponent" module="service_orders"
             :definitions="props.customFieldDefinitions" />
+
+        <!-- Modal de Variantes -->
+        <SelectVariantModal v-model:visible="showVariantModal" :product="productForVariantSelection"
+            @variant-selected="handleVariantSelected" />
 
         <ConfirmPopup group="concept-delete" />
     </AppLayout>

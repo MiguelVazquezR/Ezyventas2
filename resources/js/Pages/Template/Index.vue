@@ -7,9 +7,9 @@ import { computed } from 'vue';
 
 const props = defineProps({
     templates: Array,
-    // --- AÑADIDO: Props para manejar los límites ---
     templateLimit: Number,
     templateUsage: Number,
+    template: Object,
 });
 
 // --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
@@ -42,6 +42,11 @@ const newTemplateOptions = [
         label: 'Nueva etiqueta',
         icon: 'pi pi-tags',
         command: () => router.get(route('print-templates.create', { type: 'etiqueta' }))
+    },
+    {
+        label: 'Nueva cotización (Carta/A4)',
+        icon: 'pi pi-file-pdf',
+        command: () => router.get(route('print-templates.create', { type: 'cotizacion' }))
     }
 ];
 </script>

@@ -1,6 +1,5 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import Message from 'primevue/message';
 
 // --- Props ---
 const props = defineProps({

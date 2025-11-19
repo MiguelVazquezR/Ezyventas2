@@ -8,6 +8,9 @@ import PatternLock from '@/Components/PatternLock.vue';
 import ManageCustomFields from '@/Components/ManageCustomFields.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
 import JoinSessionModal from '@/Components/JoinSessionModal.vue';
+// --- INICIO: Imports añadidos ---
+import SelectVariantModal from '@/Components/SelectVariantModal.vue';
+// --- FIN: Imports añadidos ---
 import { usePermissions } from '@/Composables';
 import { useConfirm } from "primevue/useconfirm";
 
@@ -34,7 +37,7 @@ const sessionModalAwaitingSubmit = ref(false);
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
-    { label: 'Ódenes de Servicio', url: route('service-orders.index') },
+    { label: 'Órdenes de Servicio', url: route('service-orders.index') },
     { label: 'Crear Orden' }
 ]);
 
@@ -63,7 +66,7 @@ const form = useForm({
     cash_register_session_id: null,
 });
 
-// --- LÓGICA MEJORADA PARA CÁLCULOS Y SUBTOTAL MANUAL ---
+// --- LÓGICA PARA SUBTOTAL MANUAL Y CÁLCULOS ---
 const manualSubtotalMode = ref(true);
 
 const recalculateSubtotal = () => {
@@ -83,14 +86,12 @@ const toggleSubtotalMode = () => {
     }
 };
 
-// Watcher #1: Recalcula automáticamente el subtotal si cambian los items y no está en modo manual.
 watch(() => form.items, () => {
     if (!manualSubtotalMode.value) {
         recalculateSubtotal();
     }
 }, { deep: true });
 
-// Watcher #2: Recalcula siempre el descuento y el total final cuando cambia el subtotal o el descuento.
 watch([() => form.subtotal, () => form.discount_type, () => form.discount_value], ([subtotal, discountType, discountValue]) => {
     const sub = subtotal || 0;
     const val = discountValue || 0;
@@ -111,9 +112,62 @@ watch([() => form.subtotal, () => form.discount_type, () => form.discount_value]
     form.discount_amount = discountAmount;
     form.final_total = sub - discountAmount;
 }, { immediate: true });
-// --- FIN DE LA LÓGICA MEJORADA ---
 
+// --- Lógica de Variantes (Integrada) ---
+const showVariantModal = ref(false);
+const productForVariantSelection = ref(null);
+const itemIndexForVariantSelection = ref(null);
 
+const openVariantSelector = (index) => {
+    const item = form.items[index];
+    let product = null;
+
+    // 1. Si es un Producto base
+    if (item.itemable_type === 'App\\Models\\Product') {
+        product = props.products.find(p => p.id === item.itemable_id);
+    } 
+    // 2. Si ya es una Variante (ProductAttribute)
+    else if (item.itemable_type === 'App\\Models\\ProductAttribute') {
+        product = props.products.find(p => p.product_attributes?.some(attr => attr.id === item.itemable_id));
+    }
+
+    if (product) {
+        productForVariantSelection.value = product;
+        itemIndexForVariantSelection.value = index;
+        showVariantModal.value = true;
+    }
+};
+
+const handleVariantSelected = (variant) => {
+    if (itemIndexForVariantSelection.value === null || !form.items[itemIndexForVariantSelection.value]) return;
+    
+    const item = form.items[itemIndexForVariantSelection.value];
+    const product = productForVariantSelection.value;
+    
+    // Actualizar a ProductAttribute
+    item.itemable_id = variant.id;
+    item.itemable_type = 'App\\Models\\ProductAttribute';
+
+    item.variant_details = variant.attributes;
+    item.description = `${product.name} (${Object.values(variant.attributes).join(', ')})`;
+    
+    // Actualizar precio base + modificador
+    item.unit_price = (parseFloat(product.selling_price) || 0) + (parseFloat(variant.selling_price_modifier) || 0);
+
+    if (!manualSubtotalMode.value) recalculateSubtotal();
+};
+
+const canSelectVariant = (item) => {
+    if (!item.itemable_id) return false;
+    if (item.itemable_type === 'App\\Models\\ProductAttribute') return true;
+    if (item.itemable_type === 'App\\Models\\Product') {
+         const p = props.products.find(p => p.id === item.itemable_id);
+         return p && p.product_attributes && p.product_attributes.length > 0;
+    }
+    return false;
+};
+
+// --- Items ---
 const itemTypeOptions = ref([
     { label: 'Refacción', value: 'App\\Models\\Product' },
     { label: 'Servicio', value: 'App\\Models\\Service' },
@@ -125,6 +179,7 @@ const availableItems = computed(() => [
 ]);
 const selectedItem = ref(null);
 const filteredItems = ref([]);
+
 const searchItems = (event) => {
     if (!event.query.trim().length) {
         filteredItems.value = [...availableItems.value];
@@ -132,6 +187,7 @@ const searchItems = (event) => {
         filteredItems.value = availableItems.value.filter((item) => item.name.toLowerCase().includes(event.query.toLowerCase()));
     }
 };
+
 const addItem = () => {
     let itemToAdd = {
         itemable_id: null,
@@ -141,14 +197,26 @@ const addItem = () => {
         unit_price: 0,
         line_total: 0,
     };
+
+    let triggerVariantModal = false;
+    let productForModal = null;
+
     if (typeof selectedItem.value === 'object' && selectedItem.value !== null) {
+        const selected = selectedItem.value;
         itemToAdd = {
             ...itemToAdd,
-            itemable_id: selectedItem.value.id,
-            itemable_type: selectedItem.value.itemable_type,
-            description: selectedItem.value.name,
-            unit_price: selectedItem.value.price
+            itemable_id: selected.id,
+            itemable_type: selected.itemable_type,
+            description: selected.name,
+            unit_price: selected.price
         };
+
+        // Verificar variantes
+        if (selected.itemable_type === 'App\\Models\\Product' && selected.product_attributes && selected.product_attributes.length > 0) {
+            triggerVariantModal = true;
+            productForModal = selected;
+        }
+
     } else if (typeof selectedItem.value === 'string') {
         itemToAdd = {
             ...itemToAdd,
@@ -156,7 +224,15 @@ const addItem = () => {
             description: selectedItem.value
         };
     } else { return; }
+
     form.items.push(itemToAdd);
+    
+    if (triggerVariantModal) {
+        productForVariantSelection.value = productForModal;
+        itemIndexForVariantSelection.value = form.items.length - 1;
+        showVariantModal.value = true;
+    }
+
     selectedItem.value = null;
 };
 
@@ -361,17 +437,29 @@ watch(activeSession, (newSession) => {
                     </template>
                     <Column header="Tipo" style="width: 15rem">
                         <template #body="{ data, index }">
-                            <SelectButton v-model="form.items[index].itemable_type" :options="itemTypeOptions"
+                            <SelectButton 
+                                :model-value="['App\\Models\\Product', 'App\\Models\\ProductAttribute'].includes(form.items[index].itemable_type) ? 'App\\Models\\Product' : form.items[index].itemable_type"
+                                @update:model-value="(val) => form.items[index].itemable_type = val"
+                                :options="itemTypeOptions"
                                 optionLabel="label" optionValue="value" :allowEmpty="false"
                                 :disabled="data.itemable_id !== 0 && data.itemable_id !== null" class="w-full" />
-                            <div v-if="form.items[index].itemable_type === 'App\\Models\\Product' && form.items[index].itemable_id && form.items[index].itemable_id !== 0"
+                            <div v-if="['App\\Models\\Product', 'App\\Models\\ProductAttribute'].includes(form.items[index].itemable_type) && form.items[index].itemable_id && form.items[index].itemable_id !== 0"
                                 class="text-xs text-gray-500 dark:text-gray-400 italic mt-1 pl-1">
                                 (Se descontarán {{ form.items[index].quantity || 0 }} unidad(es) del stock)
                             </div>
                         </template>
                     </Column>
-                    <Column field="description" header="Descripción"><template #body="{ index }">
+                    <Column field="description" header="Descripción">
+                        <template #body="{ data, index }">
                             <InputText v-model="form.items[index].description" fluid class="w-full" />
+                             <!-- Botón para cambiar variante -->
+                            <div v-if="canSelectVariant(data)" class="text-xs text-gray-500 mt-1">
+                                <Button 
+                                    @click="openVariantSelector(index)" 
+                                    :label="data.variant_details ? 'Cambiar variante' : 'Seleccionar variante'" 
+                                    text size="small" class="!p-0" 
+                                />
+                            </div>
                         </template>
                     </Column>
                     <Column field="quantity" header="Cantidad" style="width: 9.5rem"><template #body="{ index }">
@@ -539,6 +627,10 @@ watch(activeSession, (newSession) => {
         <StartSessionModal v-model:visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
             :user-bank-accounts="userBankAccounts" />
         <JoinSessionModal v-model:visible="isJoinSessionModalVisible" :sessions="joinableSessions" />
+        
+        <!-- Modal de Variantes -->
+        <SelectVariantModal v-model:visible="showVariantModal" :product="productForVariantSelection"
+            @variant-selected="handleVariantSelected" />
 
         <ConfirmPopup group="concept-delete" />
     </AppLayout>
