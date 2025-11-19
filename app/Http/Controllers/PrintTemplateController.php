@@ -28,14 +28,11 @@ class PrintTemplateController extends Controller implements HasMiddleware
         ];
     }
 
-    /**
-     * --- AÑADIDO: Función auxiliar para obtener datos del límite de plantillas. ---
-     */
     private function getTemplateLimitData()
     {
         $subscription = Auth::user()->branch->subscription;
         $currentVersion = $subscription->versions()->latest('start_date')->first();
-        $limit = -1; // -1 significa ilimitado
+        $limit = -1; 
         if ($currentVersion) {
             $limitItem = $currentVersion->items()->where('item_key', 'limit_print_templates')->first();
             if ($limitItem) {
@@ -70,7 +67,6 @@ class PrintTemplateController extends Controller implements HasMiddleware
         $subscription = Auth::user()->branch->subscription;
 
         $limitData = $this->getTemplateLimitData();
-
         $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscription->id)->get();
 
         $view = match ($type) {
@@ -84,7 +80,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
             'templateImages' => $subscription->getMedia('template-images')->map(fn($media) => ['id' => $media->id, 'url' => $media->getUrl(), 'name' => $media->name]),
             'templateLimit' => $limitData['limit'],
             'templateUsage' => $limitData['usage'],
-            'customFieldDefinitions' => $customFieldDefinitions, // <-- NUEVO: Pasar campos personalizados
+            'customFieldDefinitions' => $customFieldDefinitions,
         ]);
     }
 
@@ -98,11 +94,13 @@ class PrintTemplateController extends Controller implements HasMiddleware
         }
 
         $subscription = Auth::user()->branch->subscription;
+        
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
             'content' => 'required|array',
-            'content.config' => 'required|array',
+            // Validamos estructura básica, permitiendo config/elements para cotizaciones
+            'content.config' => 'required|array', 
             'content.elements' => 'required|array',
             'branch_ids' => 'required|array|min:1',
             'branch_ids.*' => ['required', Rule::in($subscription->branches->pluck('id'))],
@@ -113,7 +111,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
                 'name' => $validated['name'],
                 'type' => $validated['type'],
                 'content' => $validated['content'],
-                'context_type' => $this->determineContextType($validated['content']['elements'] ?? []),
+                // Pasamos el tipo explícitamente para determinar el contexto
+                'context_type' => $this->determineContextType($validated['type'], $validated['content']['elements'] ?? []),
             ]);
             $template->branches()->attach($validated['branch_ids']);
         });
@@ -142,7 +141,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
                 'name' => $validated['name'],
                 'type' => $validated['type'],
                 'content' => $validated['content'],
-                'context_type' => $this->determineContextType($validated['content']['elements'] ?? []),
+                // Pasamos el tipo explícitamente para determinar el contexto
+                'context_type' => $this->determineContextType($validated['type'], $validated['content']['elements'] ?? []),
             ]);
             $printTemplate->branches()->sync($validated['branch_ids']);
         });
@@ -158,7 +158,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
 
         $view = match ($printTemplate->type->value) {
             'etiqueta' => 'Template/EditLabel',
-            'cotizacion' => 'Template/CreateQuoteTemplate', // Reutilizamos CreateQuoteTemplate adaptado para edición si le pasas el prop 'template'
+            'cotizacion' => 'Template/CreateQuoteTemplate',
             default => 'Template/EditTicket',
         };
 
@@ -173,7 +173,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
         ]);
 
         return Inertia::render($view, [
-            'template' => $printTemplate,
+            'template' => $printTemplate, 
+            'printTemplate' => $printTemplate, // Compatibilidad con prop del componente Quote
             'branches' => $subscription->branches()->get(['id', 'name']),
             'templateImages' => $templateImages,
             'customFieldDefinitions' => $customFieldDefinitions,
@@ -185,42 +186,44 @@ class PrintTemplateController extends Controller implements HasMiddleware
         if ($printTemplate->subscription_id !== Auth::user()->branch->subscription_id) {
             abort(403);
         }
-
         $printTemplate->delete();
-
         return redirect()->back()->with('success', 'Plantilla eliminada con éxito.');
     }
 
     public function storeMedia(Request $request)
     {
-        $request->validate([
-            'image' => ['required', 'image', 'max:1024'],
-        ]);
-
+        $request->validate(['image' => ['required', 'image', 'max:2048']]);
         $subscription = Auth::user()->branch->subscription;
-
-        $media = $subscription->addMediaFromRequest('image')
-            ->toMediaCollection('template-images');
-
-        return response()->json([
-            'id' => $media->id,
-            'url' => $media->getUrl(),
-            'name' => $media->name,
-        ]);
+        $media = $subscription->addMediaFromRequest('image')->toMediaCollection('template-images');
+        return response()->json(['id' => $media->id, 'url' => $media->getUrl(), 'name' => $media->name]);
     }
 
-    private function determineContextType(array $elements): string
+    /**
+     * Determina el contexto basándose PRIMERO en el tipo de plantilla, 
+     * y luego en el contenido si es necesario.
+     */
+    private function determineContextType(string $type, array $elements): string
     {
+        // 1. Prioridad: Si es Cotización, el contexto es QUOTE (exclusivo para módulo de cotizaciones)
+        if ($type === TemplateType::QUOTE->value) {
+            return TemplateContextType::QUOTE->value;
+        }
+
+        // 2. Análisis de contenido para otros tipos (Tickets/Etiquetas)
         $contentString = json_encode($elements);
 
         if (str_contains($contentString, '{{os.')) {
             return TemplateContextType::SERVICE_ORDER->value;
         }
-        if (str_contains($contentString, '{{folio') || str_contains($contentString, '{{cliente.')) {
-            return TemplateContextType::TRANSACTION->value;
-        }
+        
+        // Etiquetas de producto o tickets que solo imprimen info de producto
         if (str_contains($contentString, '{{p.')) {
             return TemplateContextType::PRODUCT->value;
+        }
+
+        // Tickets de venta (tienen folio o cliente y no son cotizaciones)
+        if (str_contains($contentString, '{{folio') || str_contains($contentString, '{{cliente.')) {
+            return TemplateContextType::TRANSACTION->value;
         }
 
         return TemplateContextType::GENERAL->value;

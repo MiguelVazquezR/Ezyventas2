@@ -7,21 +7,17 @@ import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
-import Menu from 'primevue/menu';
-import Editor from 'primevue/editor';
-import ColorPicker from 'primevue/colorpicker';
-import Slider from 'primevue/slider';
 import { useTemplateVariables } from '@/Composables/useTemplateVariables';
 
-// Props simplificados para evitar errores de compilación
-const props = defineProps({
-    branches: Array,
-    templateImages: Array,
-    templateLimit: Number,
-    templateUsage: Number,
-    customFieldDefinitions: Array,
-    printTemplate: Object
-});
+// CORRECCIÓN DEFINITIVA: Sintaxis de Array para evitar errores de parser
+const props = defineProps([
+    'branches',
+    'templateImages',
+    'templateLimit',
+    'templateUsage',
+    'customFieldDefinitions',
+    'printTemplate'
+]);
 
 // --- Lógica de Límite ---
 const limitReached = computed(() => {
@@ -36,7 +32,7 @@ const toast = useToast();
 const templateElements = ref([]);
 const selectedElement = ref(null);
 const localTemplateImages = ref(props.templateImages ? [...props.templateImages] : []);
-const isUploadingImage = ref(false); // Estado global de carga para feedback visual
+const isUploadingImage = ref(false);
 
 // Referencias para el Canvas
 const canvasContainerRef = ref(null);
@@ -48,6 +44,8 @@ const pan = ref({ x: 0, y: 0 });
 const isPanning = ref(false);
 const lastMousePos = ref({ x: 0, y: 0 });
 const isSpacePressed = ref(false);
+// Estado para prevenir deselección accidental tras arrastrar
+const isJustFinishedDragging = ref(false); 
 
 // Estado para Variables en Columnas
 const lastFocusedColumn = ref('col1');
@@ -61,7 +59,7 @@ const form = useForm({
         config: {
             pageSize: 'letter',
             orientation: 'portrait',
-            margins: '2.5cm',
+            margins: '1.5cm',
             primaryColor: '#3B82F6',
             fontFamily: 'sans-serif'
         },
@@ -107,7 +105,6 @@ const handleKeyDown = (e) => {
         if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA' && !document.activeElement.isContentEditable) {
             e.preventDefault();
             isSpacePressed.value = true;
-            if (canvasContainerRef.value) canvasContainerRef.value.style.cursor = 'grab';
         }
     }
 };
@@ -115,39 +112,40 @@ const handleKeyDown = (e) => {
 const handleKeyUp = (e) => {
     if (e.code === 'Space') {
         isSpacePressed.value = false;
-        isPanning.value = false; // Detener pan si se suelta espacio
+        isPanning.value = false;
+        // Resetear cursor explícitamente
+        document.body.style.cursor = '';
         if (canvasContainerRef.value) canvasContainerRef.value.style.cursor = 'default';
     }
 };
 
 const startPan = (e) => {
-    // Permitir Pan si se presiona Espacio (prioridad sobre elementos) O clic en fondo
-    // Nota: Si es espacio, ignoramos el target para poder arrastrar desde cualquier punto
     if (isSpacePressed.value || e.target === canvasContainerRef.value) {
         isPanning.value = true;
         lastMousePos.value = { x: e.clientX, y: e.clientY };
         if (canvasContainerRef.value) canvasContainerRef.value.style.cursor = 'grabbing';
-        e.preventDefault(); // Evitar selecciones
+        e.preventDefault();
     }
 };
 
 const doPan = (e) => {
     if (!isPanning.value) return;
     e.preventDefault();
-    
     const deltaX = e.clientX - lastMousePos.value.x;
     const deltaY = e.clientY - lastMousePos.value.y;
-    
     pan.value.x += deltaX;
     pan.value.y += deltaY;
-    
     lastMousePos.value = { x: e.clientX, y: e.clientY };
 };
 
 const endPan = () => {
     isPanning.value = false;
-    if (canvasContainerRef.value) {
-        canvasContainerRef.value.style.cursor = isSpacePressed.value ? 'grab' : 'default';
+    // Restaurar cursor según si se sigue presionando espacio
+    if (isSpacePressed.value) {
+         if (canvasContainerRef.value) canvasContainerRef.value.style.cursor = 'grab';
+    } else {
+         if (canvasContainerRef.value) canvasContainerRef.value.style.cursor = 'default';
+         document.body.style.cursor = '';
     }
 };
 
@@ -167,10 +165,10 @@ const zoomIn = () => zoomScale.value = Math.min(zoomScale.value + 0.1, 3.0);
 const zoomOut = () => zoomScale.value = Math.max(zoomScale.value - 0.1, 0.1);
 const resetView = () => fitToScreen();
 
-// Computed para input manual de zoom (0-100 integer <-> 0.1-3.0 float)
 const zoomPercentage = computed({
     get: () => Math.round(zoomScale.value * 100),
     set: (val) => {
+        if (!val) return;
         let newScale = val / 100;
         if (newScale < 0.1) newScale = 0.1;
         if (newScale > 3.0) newScale = 3.0;
@@ -190,46 +188,55 @@ const getPaperPixelDimensions = () => {
     return { w, h };
 };
 
-// --- Helper de Colores ---
-const useColorModel = (obj, prop) => computed({
+// --- Helper de Colores (Corrección para ColorPicker) ---
+// Creamos computeds estables en lugar de funciones inline
+const createColorComputed = (propName) => computed({
     get: () => {
-        const val = obj[prop];
-        return val ? val.replace('#', '') : 'FFFFFF';
+        const val = selectedElement.value?.data?.[propName];
+        // Si no hay valor, devolvemos blanco.
+        // Usamos regex /#/g para quitar todos los hash por si acaso.
+        return val ? val.toString().replace(/#/g, '') : 'FFFFFF';
     },
     set: (val) => {
-        obj[prop] = '#' + (val ? val.replace('#', '') : '000000');
+        if (selectedElement.value?.data) {
+            // Si val es null (puede pasar al limpiar input), ponemos negro o el defecto que quieras
+            const hex = val ? val.toString().replace(/#/g, '') : '000000';
+            selectedElement.value.data[propName] = '#' + hex;
+        }
     }
 });
 
+const currentShapeColor = createColorComputed('color');
+const currentHeaderColor = createColorComputed('headerColor');
+const currentHeaderTextColor = createColorComputed('headerTextColor');
+const currentSeparatorColor = createColorComputed('color');
+
+
 // --- Gestión de Imágenes ---
 const handleImageUpload = async (event, uploader) => {
-    if (selectedElement.value?.type !== 'image') return;
-    
-    // Prevenir múltiples subidas simultáneas
+    if (!selectedElement.value || selectedElement.value.type !== 'image') return;
     if (isUploadingImage.value) return;
 
     isUploadingImage.value = true;
-    selectedElement.value.data.isUploading = true; // Estado local del elemento
+    const currentElement = selectedElement.value;
+    currentElement.data.isUploading = true;
 
     const formData = new FormData();
     formData.append('image', event.files[0]);
 
     try {
         const response = await axios.post(route('print-templates.media.store'), formData);
-        
-        // Actualizar datos
-        selectedElement.value.data.url = response.data.url;
+        currentElement.data.url = response.data.url;
         localTemplateImages.value.unshift(response.data);
-        
-        // Limpiar uploader de PrimeVue
-        uploader.clear();
-        toast.add({ severity: 'success', summary: 'Éxito', detail: 'Imagen subida correctamente', life: 3000 });
+        toast.add({ severity: 'success', summary: 'Éxito', detail: 'Imagen subida', life: 2000 });
+        // Limpieza diferida para evitar conflictos
+        setTimeout(() => { if (uploader) uploader.clear(); }, 100);
     } catch (error) {
         console.error(error);
         toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo subir la imagen', life: 3000 });
     } finally {
         isUploadingImage.value = false;
-        if(selectedElement.value) selectedElement.value.data.isUploading = false;
+        currentElement.data.isUploading = false;
     }
 };
 
@@ -269,48 +276,52 @@ const insertVariable = (variable) => {
     }
 };
 
-// --- Drag & Drop (Elementos Absolutos) ---
-const isDraggingElement = ref(false);
-const dragStart = ref({ mouseX: 0, mouseY: 0, elX: 0, elY: 0 });
+// --- Drag & Drop & Selección ---
+const selectElement = (element) => {
+    if (isSpacePressed.value) return;
+    selectedElement.value = element;
+};
 
 const startDragElement = (event, element) => {
-    // Si se está usando la herramienta de Pan (Espacio), no iniciar arrastre de elemento
     if (isSpacePressed.value) return;
-    
     if (element.data.positionType !== 'absolute') return;
     
-    event.stopPropagation(); // Evitar que el evento llegue al papel
-    event.preventDefault();  // Evitar selección de texto nativa
-
-    // IMPORTANTE: Seleccionar el elemento explícitamente al iniciar arrastre
+    event.stopPropagation();
+    
     selectedElement.value = element;
-    isDraggingElement.value = true;
+    // Usamos un estado temporal para el arrastre pero NO para selección
+    // La selección ya se hizo arriba
+    
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startElX = element.data.x;
+    const startElY = element.data.y;
 
-    dragStart.value = {
-        mouseX: event.clientX,
-        mouseY: event.clientY,
-        elX: element.data.x,
-        elY: element.data.y
+    const onDragElement = (e) => {
+        const deltaX = (e.clientX - startX) / zoomScale.value;
+        const deltaY = (e.clientY - startY) / zoomScale.value;
+        
+        element.data.x = Math.round((startElX + deltaX) / 5) * 5;
+        element.data.y = Math.round((startElY + deltaY) / 5) * 5;
     };
+
+    const stopDragElement = () => {
+        isJustFinishedDragging.value = true;
+        setTimeout(() => { isJustFinishedDragging.value = false; }, 100); 
+
+        window.removeEventListener('mousemove', onDragElement);
+        window.removeEventListener('mouseup', stopDragElement);
+    };
+
     window.addEventListener('mousemove', onDragElement);
     window.addEventListener('mouseup', stopDragElement);
 };
 
-const onDragElement = (event) => {
-    if (!isDraggingElement.value || !selectedElement.value) return;
-    
-    const deltaX = (event.clientX - dragStart.value.mouseX) / zoomScale.value;
-    const deltaY = (event.clientY - dragStart.value.mouseY) / zoomScale.value;
-    
-    selectedElement.value.data.x = Math.round((dragStart.value.elX + deltaX) / 5) * 5;
-    selectedElement.value.data.y = Math.round((dragStart.value.elY + deltaY) / 5) * 5;
-};
 
-const stopDragElement = () => {
-    isDraggingElement.value = false;
-    window.removeEventListener('mousemove', onDragElement);
-    window.removeEventListener('mouseup', stopDragElement);
-    // No ponemos selectedElement a null aquí para mantener las propiedades visibles
+const onPaperClick = () => {
+    if (!isSpacePressed.value && !isPanning.value && !isJustFinishedDragging.value) {
+        selectedElement.value = null;
+    }
 };
 
 // --- Utils y CRUD ---
@@ -319,7 +330,7 @@ const submit = () => {
     const routeParams = props.printTemplate ? props.printTemplate.id : {};
     const method = props.printTemplate ? 'put' : 'post';
     form[method](route(routeName, routeParams), {
-        onSuccess: () => toast.add({ severity: 'success', summary: 'Guardado', detail: 'Plantilla guardada correctamente', life: 3000 })
+        onSuccess: () => toast.add({ severity: 'success', summary: 'Guardado', detail: 'Plantilla guardada', life: 3000 })
     });
 };
 
@@ -340,6 +351,7 @@ const paperDimensions = computed(() => {
 
 const addElementToEnd = (type) => {
     const newElement = { id: uuidv4(), type, data: { positionType: 'flow' } };
+    // Defaults
     if (type === 'rich_text') newElement.data = { ...newElement.data, content: '<p>Texto...</p>', align: 'left' };
     if (type === 'quote_table') newElement.data = { ...newElement.data, showImages: true, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'] };
     if (type === 'columns_2') newElement.data = { ...newElement.data, col1: '<p>Emisor...</p>', col2: '<p>Cliente...</p>', gap: '20px' };
@@ -358,7 +370,7 @@ const addElementToEnd = (type) => {
     selectedElement.value = newElement;
 };
 
-// Gestión de inserción relativa (Añadir antes/después)
+// Inserción Relativa
 const addMenuRef = ref(null);
 const currentInsertionTarget = ref({ id: null, position: 'after' });
 
@@ -374,10 +386,8 @@ const openAddMenu = (event, elementId, position) => {
 };
 
 const addElementRelative = (type) => {
-    // Reutilizamos la lógica de creación por tipo
-    // Creamos un "dummy" para obtener la data y luego lo insertamos
     const temp = { id: uuidv4(), type, data: { positionType: 'flow' } };
-    if (type === 'rich_text') temp.data = { ...temp.data, content: '<p>Nuevo Texto...</p>', align: 'left' };
+    if (type === 'rich_text') temp.data = { ...temp.data, content: '<p>Nuevo...</p>', align: 'left' };
     if (type === 'quote_table') temp.data = { ...temp.data, showImages: true, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'] };
     if (type === 'columns_2') temp.data = { ...temp.data, col1: '<p>Columna 1</p>', col2: '<p>Columna 2</p>', gap: '20px' };
     if (type === 'separator') temp.data = { ...temp.data, color: '#e5e7eb', height: 2, style: 'solid', margin: '20px' };
@@ -385,7 +395,6 @@ const addElementRelative = (type) => {
 
     const { id: targetId, position } = currentInsertionTarget.value;
     const targetIndex = templateElements.value.findIndex(el => el.id === targetId);
-    
     if (targetIndex !== -1) {
         if (position === 'before') templateElements.value.splice(targetIndex, 0, temp);
         else templateElements.value.splice(targetIndex + 1, 0, temp);
@@ -398,32 +407,24 @@ const removeElement = (id) => {
     if (selectedElement.value?.id === id) selectedElement.value = null;
 };
 
-const onPaperClick = (event) => {
-    // Solo deseleccionar si NO estamos arrastrando el papel
-    if (!isSpacePressed.value && !isPanning.value) {
-        // Si el clic fue directo al papel (no a un hijo), deseleccionamos
-        selectedElement.value = null;
-    }
-};
-
 const pageSizeOptions = [{label: 'Carta', value: 'letter'}, {label: 'A4', value: 'a4'}];
 const orientationOptions = [{label: 'Vertical', value: 'portrait'}, {label: 'Horizontal', value: 'landscape'}];
 const shapeOptions = [{label: 'Rectángulo', value: 'rectangle'}, {label: 'Círculo', value: 'circle'}, {label: 'Estrella', value: 'star'}];
-const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-left' }, { label: 'Centro', value: 'center', icon: 'pi pi-align-center' }, { label: 'Derecha', value: 'right', icon: 'pi pi-align-right' }];
+const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-left' }, { label: 'Centro', value: 'center', icon: 'pi pi-align-center' }, { label: 'Derecha', value: 'end', icon: 'pi pi-align-right' }];
 
 </script>
 
 <template>
     <AppLayout :title="props.printTemplate ? 'Editar cotización' : 'Crear cotización'">
         
-        <div v-if="limitReached" class="h-[calc(100vh-8rem)] flex items-center justify-center p-4">
+        <div v-if="limitReached" class="h-[calc(100vh-7rem)] flex items-center justify-center p-4">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
                 <h1 class="text-2xl font-bold">Límite Alcanzado</h1>
                 <Link :href="route('print-templates.index')"><Button label="Volver" class="mt-4"/></Link>
             </div>
         </div>
 
-        <div v-else class="flex h-[calc(100vh-8rem)] overflow-hidden bg-gray-100 dark:bg-gray-900 select-none">
+        <div v-else class="flex h-[calc(100vh-7rem)] overflow-hidden bg-gray-100 dark:bg-gray-900 select-none">
             
             <!-- PANEL IZQUIERDO -->
             <div class="w-80 border-r dark:border-gray-700 bg-white dark:bg-gray-800 z-20 flex flex-col h-full shrink-0 shadow-lg">
@@ -433,8 +434,8 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
                         <div><InputLabel value="Nombre *" /><InputText v-model="form.name" class="w-full p-inputtext-sm" /></div>
                         <div><InputLabel value="Sucursales" /><MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" optionValue="id" placeholder="Seleccionar" class="w-full" :maxSelectedLabels="1" /></div>
                         <div class="grid grid-cols-2 gap-2">
-                            <div><InputLabel value="Tamaño" /><Dropdown v-model="form.content.config.pageSize" :options="pageSizeOptions" optionLabel="label" optionValue="value" class="w-full" /></div>
-                            <div><InputLabel value="Orientación" /><Dropdown v-model="form.content.config.orientation" :options="orientationOptions" optionLabel="label" optionValue="value" class="w-full" /></div>
+                            <div><InputLabel value="Tamaño" /><Select v-model="form.content.config.pageSize" :options="pageSizeOptions" optionLabel="label" optionValue="value" class="w-full" /></div>
+                            <div><InputLabel value="Orientación" /><Select v-model="form.content.config.orientation" :options="orientationOptions" optionLabel="label" optionValue="value" class="w-full" /></div>
                         </div>
                         <div><InputLabel value="Márgenes" /><InputText v-model="form.content.config.margins" class="w-full" placeholder="2.5cm" /></div>
                     </div>
@@ -445,7 +446,7 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
                         </Button>
                     </div>
                 </div>
-                <div class="p-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800 mt-auto">
+                <div class="p-4 border-t dark:border-gray-700 dark:bg-gray-800 mt-auto">
                     <Button @click="submit" :label="props.printTemplate ? 'Actualizar' : 'Guardar'" icon="pi pi-save" class="w-full mb-2" :loading="form.processing" />
                     <Link :href="route('print-templates.index')"><Button label="Cancelar" severity="secondary" text class="w-full" /></Link>
                 </div>
@@ -453,13 +454,18 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
 
             <!-- PANEL CENTRAL (CANVAS) -->
             <div ref="canvasContainerRef" 
-                class="flex-1 relative overflow-hidden bg-gray-200/50 dark:bg-black/20 flex items-center justify-center cursor-default"
-                @mousedown="startPan" @mousemove="doPan" @mouseup="endPan" @mouseleave="endPan"
+                class="flex-1 relative overflow-hidden dark:bg-black/20 flex items-center justify-center cursor-default group-canvas"
             >
-                <!-- Menu Contextual para inserción (visible vía lógica) -->
+                <!-- Overlay para Mover con Espacio (Cubre todo para capturar eventos) -->
+                <div v-if="isSpacePressed" 
+                    class="absolute inset-0 z-[100] cursor-grab active:cursor-grabbing bg-transparent"
+                    @mousedown="startPan" @mousemove="doPan" @mouseup="endPan" @mouseleave="endPan"
+                ></div>
+
+                <!-- Menu Contextual -->
                 <Menu ref="addMenuRef" :model="addMenuTemplate" :popup="true" />
 
-                <!-- Capa de transformación (Zoom y Pan) -->
+                <!-- Capa de transformación -->
                 <div ref="paperRef" class="bg-white shadow-2xl transition-transform duration-75 ease-linear origin-center"
                     :style="{
                         width: paperDimensions.w,
@@ -474,16 +480,16 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
                             
                             <!-- FLUJO -->
                             <div v-if="element.data.positionType === 'flow'"
-                                @click.stop="selectedElement = element"
+                                @click.stop="selectElement(element)"
                                 class="relative group border border-transparent hover:border-dashed hover:border-blue-300 transition-all rounded mb-1"
                                 :class="{ '!border-blue-500 bg-blue-50/10': selectedElement?.id === element.id }"
                             >
-                                <!-- Botones de Inserción/Eliminación (Visible al Hover o Seleccionar) -->
-                                <div class="absolute -right-8 top-0 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50"
+                                <!-- Controles de Inserción -->
+                                <div class="absolute -right-9 top-0 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50"
                                     :class="{ 'opacity-100': selectedElement?.id === element.id }">
-                                     <Button icon="pi pi-arrow-up" class="!w-6 !h-6 !p-0" rounded severity="secondary" @click.stop="openAddMenu($event, element.id, 'before')" v-tooltip.left="'Insertar Antes'" />
-                                     <Button icon="pi pi-arrow-down" class="!w-6 !h-6 !p-0" rounded severity="secondary" @click.stop="openAddMenu($event, element.id, 'after')" v-tooltip.left="'Insertar Después'" />
-                                     <Button icon="pi pi-trash" class="!w-6 !h-6 !p-0" rounded severity="danger" @click.stop="removeElement(element.id)" v-tooltip.left="'Eliminar'" />
+                                     <Button icon="pi pi-arrow-up" class="!w-7 !h-7 !p-0" rounded severity="secondary" @click.stop="openAddMenu($event, element.id, 'before')" v-tooltip.left="'Insertar Antes'" />
+                                     <Button icon="pi pi-arrow-down" class="!w-7 !h-7 !p-0" rounded severity="secondary" @click.stop="openAddMenu($event, element.id, 'after')" v-tooltip.left="'Insertar Después'" />
+                                     <Button icon="pi pi-trash" class="!w-7 !h-7 !p-0" rounded severity="danger" @click.stop="removeElement(element.id)" v-tooltip.left="'Eliminar'" />
                                 </div>
 
                                 <div v-if="element.type === 'rich_text'" v-html="element.data.content" class="prose max-w-none break-words text-sm pointer-events-none"></div>
@@ -516,6 +522,7 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
                             <!-- ABSOLUTOS -->
                             <div v-else-if="element.data.positionType === 'absolute'"
                                 @mousedown="startDragElement($event, element)"
+                                @click.stop="selectElement(element)" 
                                 class="absolute cursor-move group"
                                 :style="{ left: element.data.x + 'px', top: element.data.y + 'px', zIndex: selectedElement?.id === element.id ? 50 : 10 }"
                             >
@@ -523,7 +530,10 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
                                 <button v-if="selectedElement?.id === element.id" @click.stop="removeElement(element.id)" class="absolute -top-4 -right-4 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center shadow z-50"><i class="pi pi-times text-[10px]"></i></button>
 
                                 <div v-if="element.type === 'image'" :class="`flex justify-${element.data.align === 'right' ? 'end' : (element.data.align === 'center' ? 'center' : 'start')}`" :style="{ width: element.data.width + 'px' }">
-                                    <img :src="element.data.url || 'https://placehold.co/150x150'" class="w-full h-auto pointer-events-none" />
+                                    <div class="relative w-full">
+                                        <img :src="element.data.url || 'https://placehold.co/150x150'" class="w-full h-auto pointer-events-none select-none" />
+                                        <div v-if="element.data.isUploading" class="absolute inset-0 bg-white/70 flex items-center justify-center"><i class="pi pi-spin pi-spinner text-blue-500 text-2xl"></i></div>
+                                    </div>
                                 </div>
 
                                 <div v-if="element.type === 'shape'" :class="`flex justify-${element.data.align === 'right' ? 'end' : (element.data.align === 'center' ? 'center' : 'start')}`">
@@ -536,13 +546,13 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
                     </div>
                 </div>
 
-                <!-- Controles Zoom & Hint -->
-                <div class="absolute bottom-6 right-6 flex flex-col items-end gap-2 pointer-events-none">
-                    <div v-if="!isSpacePressed" class="bg-black/70 text-white px-3 py-1.5 rounded-full text-xs shadow-lg animate-fade-in">
+                <!-- Controles Zoom & Info -->
+                <div class="absolute bottom-6 right-6 flex flex-col items-end gap-2 z-50">
+                    <div v-if="!isSpacePressed" class="bg-black/70 text-white px-3 py-1.5 rounded-full text-xs shadow-lg animate-fade-in pointer-events-none select-none">
                         <i class="pi pi-info-circle mr-1"></i> Mantén <b>Espacio</b> para mover el lienzo
                     </div>
                     
-                    <div class="flex items-center gap-2 bg-white dark:bg-gray-800 p-1.5 rounded-lg shadow-lg border dark:border-gray-700 pointer-events-auto">
+                   <div class="flex items-center gap-2 bg-white dark:bg-gray-800 p-1.5 rounded-lg shadow-lg border dark:border-gray-700 pointer-events-auto">
                         <Button icon="pi pi-minus" rounded text severity="secondary" @click="zoomOut" />
                         <InputNumber v-model="zoomPercentage" inputClass="!text-center !w-10 !p-1 !text-xs !border-none !ring-0" suffix="%" :min="10" :max="300" />
                         <Button icon="pi pi-plus" rounded text severity="secondary" @click="zoomIn" />
@@ -552,7 +562,7 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
             </div>
 
             <!-- PANEL DERECHO -->
-            <div class="w-80 border-l dark:border-gray-700 bg-white dark:bg-gray-800 z-20 flex flex-col h-full shrink-0 shadow-lg">
+            <div class="w-80 border-l dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col h-full shrink-0 shadow-lg">
                 <h3 class="font-bold p-4 border-b text-lg">Propiedades</h3>
                 <div v-if="selectedElement" class="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
                     
@@ -560,8 +570,8 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
                     <div v-if="selectedElement.data.positionType === 'absolute'" class="bg-gray-50 p-3 rounded border">
                         <span class="text-xs font-bold uppercase text-gray-500 mb-2 block">Posición</span>
                         <div class="grid grid-cols-2 gap-2">
-                            <div><InputLabel value="X" class="text-xs" /><InputNumber v-model="selectedElement.data.x" class="w-full h-8" inputClass="!py-1" /></div>
-                            <div><InputLabel value="Y" class="text-xs" /><InputNumber v-model="selectedElement.data.y" class="w-full h-8" inputClass="!py-1" /></div>
+                            <div><InputLabel value="X" class="text-xs" /><InputNumber fluid v-model="selectedElement.data.x" class="w-full h-8" inputClass="!py-1" /></div>
+                            <div><InputLabel value="Y" class="text-xs" /><InputNumber fluid v-model="selectedElement.data.y" class="w-full h-8" inputClass="!py-1" /></div>
                         </div>
                     </div>
 
@@ -599,33 +609,33 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
                         </div>
                     </div>
 
-                    <!-- Shape (Color Fix) -->
+                    <!-- Shape (Color Fix con Computed Estable) -->
                     <div v-if="selectedElement.type === 'shape'">
-                        <InputLabel value="Forma" /><Dropdown v-model="selectedElement.data.shapeType" :options="shapeOptions" optionLabel="label" optionValue="value" class="w-full" />
+                        <InputLabel value="Forma" /><Select v-model="selectedElement.data.shapeType" :options="shapeOptions" optionLabel="label" optionValue="value" class="w-full" />
                         <InputLabel value="Color" class="mt-4" />
                         <div class="flex items-center gap-2 border p-2 rounded bg-white">
-                            <ColorPicker v-model="useColorModel(selectedElement.data, 'color').value" format="hex" />
-                            <span class="text-gray-400">#</span><InputText v-model="useColorModel(selectedElement.data, 'color').value" class="!border-none !p-0 w-full uppercase font-mono text-sm" maxlength="6" />
+                            <ColorPicker v-model="currentShapeColor" format="hex" />
+                            <span class="text-gray-400">#</span><InputText v-model="currentShapeColor" class="!border-none !p-0 w-full uppercase font-mono text-sm" maxlength="6" />
                         </div>
                         <div class="grid grid-cols-2 gap-2 mt-4">
-                            <div><InputLabel value="Ancho" /><InputNumber v-model="selectedElement.data.width" class="w-full" /></div>
-                            <div><InputLabel value="Alto" /><InputNumber v-model="selectedElement.data.height" class="w-full" /></div>
+                            <div><InputLabel value="Ancho" /><InputNumber fluid v-model="selectedElement.data.width" class="w-full" /></div>
+                            <div><InputLabel value="Alto" /><InputNumber fluid v-model="selectedElement.data.height" class="w-full" /></div>
                         </div>
                         <InputLabel value="Opacidad" class="mt-4" /><div class="flex items-center gap-4"><Slider v-model="selectedElement.data.opacity" class="w-full" :min="0" :max="100" /><span class="text-sm w-8">{{ selectedElement.data.opacity }}%</span></div>
                         <InputLabel value="Rotación" class="mt-4" /><InputNumber v-model="selectedElement.data.rotation" class="w-full" :min="0" :max="360" suffix="°" />
                     </div>
 
-                    <!-- Tabla / Separator (Color Fix) -->
+                    <!-- Tabla / Separator (Color Fix con Computed Estable) -->
                     <div v-if="selectedElement.type === 'quote_table'">
                         <InputLabel value="Fondo Cabecera" />
-                        <div class="flex items-center gap-2 mt-1"><ColorPicker v-model="useColorModel(selectedElement.data, 'headerColor').value" format="hex" /><InputText v-model="selectedElement.data.headerColor" class="w-24 h-8 text-sm" /></div>
+                        <div class="flex items-center gap-2 mt-1"><ColorPicker v-model="currentHeaderColor" format="hex" /><InputText v-model="currentHeaderColor" class="w-24 h-8 text-sm" /></div>
                         <InputLabel value="Texto Cabecera" class="mt-4" />
-                        <div class="flex items-center gap-2 mt-1"><ColorPicker v-model="useColorModel(selectedElement.data, 'headerTextColor').value" format="hex" /><InputText v-model="selectedElement.data.headerTextColor" class="w-24 h-8 text-sm" /></div>
+                        <div class="flex items-center gap-2 mt-1"><ColorPicker v-model="currentHeaderTextColor" format="hex" /><InputText v-model="currentHeaderTextColor" class="w-24 h-8 text-sm" /></div>
                     </div>
                     
                     <div v-if="selectedElement.type === 'separator'">
                         <InputLabel value="Color" />
-                        <div class="flex items-center gap-2 mt-1"><ColorPicker v-model="useColorModel(selectedElement.data, 'color').value" format="hex" /><InputText v-model="selectedElement.data.color" class="w-24 h-8 text-sm" /></div>
+                        <div class="flex items-center gap-2 mt-1"><ColorPicker v-model="currentSeparatorColor" format="hex" /><InputText v-model="currentSeparatorColor" class="w-24 h-8 text-sm" /></div>
                         <InputLabel value="Grosor" class="mt-4" /><InputNumber v-model="selectedElement.data.height" class="w-full" />
                     </div>
 
