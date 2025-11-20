@@ -1,132 +1,157 @@
 <script setup>
 import { Link, useForm } from '@inertiajs/vue3';
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, onMounted } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
-import Menu from 'primevue/menu'; // Para el menú de inserción
+import Menu from 'primevue/menu';
 import { useTemplateVariables } from '@/Composables/useTemplateVariables';
 
-const props = defineProps({
-    branches: Array,
-    templateImages: Array,
-    templateLimit: Number,
-    templateUsage: Number,
-    customFieldDefinitions: Array, // Prop para campos personalizados
-});
+// Props unificadas para Crear y Editar
+const props = defineProps([
+    'branches',
+    'templateImages',
+    'templateLimit',
+    'templateUsage',
+    'customFieldDefinitions',
+    'printTemplate' // Si existe, estamos en modo edición
+]);
 
-// Lógica para verificar si se alcanzó el límite
+// --- Lógica de Límite ---
 const limitReached = computed(() => {
-    if (props.templateLimit === -1) return false;
-    return props.templateUsage >= props.templateLimit;
+    const limit = props.templateLimit !== undefined ? props.templateLimit : -1;
+    const usage = props.templateUsage || 0;
+    if (limit === -1) return false;
+    if (props.printTemplate) return false; // Si editamos, no aplica límite
+    return usage >= limit;
 });
 
 const toast = useToast();
 const templateElements = ref([]);
 const selectedElement = ref(null);
-const localTemplateImages = ref([...props.templateImages]);
+const localTemplateImages = ref(props.templateImages ? [...props.templateImages] : []);
 
+// Estado para inserción relativa
+const addMenuRef = ref(null);
+const currentInsertionTarget = ref({ id: null, position: 'after' });
+
+// Formulario Unificado
 const form = useForm({
     name: '',
     type: 'ticket_venta',
     branch_ids: [],
     content: {
-        config: { paperWidth: '80mm', feedLines: 3, codepage: 'cp850' },
+        config: { 
+            paperWidth: '80mm', 
+            feedLines: 3, 
+            codepage: 'cp850' 
+        },
         elements: [],
     },
 });
 
+// Inicialización (Montaje)
+onMounted(() => {
+    if (props.printTemplate) {
+        // Modo Edición: Cargar datos
+        form.name = props.printTemplate.name;
+        form.type = props.printTemplate.type;
+        form.branch_ids = props.printTemplate.branches ? props.printTemplate.branches.map(b => b.id) : [];
+        
+        if (props.printTemplate.content) {
+            form.content.config = { ...form.content.config, ...props.printTemplate.content.config };
+            // Asegurar IDs únicos
+            templateElements.value = (props.printTemplate.content.elements || []).map(el => ({
+                ...el,
+                id: el.id || uuidv4()
+            }));
+        }
+    }
+});
+
+// Sincronizar elementos con el formulario
 watch(templateElements, (newElements) => {
     form.content.elements = newElements;
 }, { deep: true });
 
+// --- Acciones CRUD ---
 const submit = () => {
-    form.post(route('print-templates.store'));
+    const routeName = props.printTemplate ? 'print-templates.update' : 'print-templates.store';
+    const routeParams = props.printTemplate ? props.printTemplate.id : {};
+    const method = props.printTemplate ? 'put' : 'post';
+
+    form[method](route(routeName, routeParams), {
+        onSuccess: () => toast.add({ severity: 'success', summary: 'Guardado', detail: 'Plantilla guardada correctamente', life: 3000 }),
+        onError: () => toast.add({ severity: 'error', summary: 'Error', detail: 'Revisa los campos obligatorios', life: 3000 })
+    });
 };
 
+// --- Gestión de Elementos ---
 const availableElements = ref([
-    { id: 'text', name: 'Texto', icon: 'pi pi-align-left' },
-    { id: 'image', name: 'Imagen de Internet', icon: 'pi pi-image' },
-    { id: 'local_image', name: 'Subir Imagen', icon: 'pi pi-upload' },
-    { id: 'separator', name: 'Separador', icon: 'pi pi-minus' },
-    { id: 'line_break', name: 'Salto de Línea', icon: 'pi pi-arrow-down' },
-    { id: 'barcode', name: 'Código de Barras', icon: 'pi pi-barcode' },
-    { id: 'qr', name: 'Código QR', icon: 'pi pi-qrcode' },
-    { id: 'sales_table', name: 'Tabla de Venta', icon: 'pi pi-table' },
+    { id: 'text', name: 'Texto', icon: 'pi pi-align-left', description: 'Párrafos, datos' },
+    { id: 'image', name: 'Imagen URL', icon: 'pi pi-image', description: 'Desde internet' },
+    { id: 'local_image', name: 'Subir Imagen', icon: 'pi pi-upload', description: 'Local / Galería' },
+    { id: 'separator', name: 'Separador', icon: 'pi pi-minus', description: 'Línea divisoria' },
+    { id: 'line_break', name: 'Salto de Línea', icon: 'pi pi-arrow-down', description: 'Espacio vacío' },
+    { id: 'barcode', name: 'Código Barras', icon: 'pi pi-barcode', description: 'Folios, SKU' },
+    { id: 'qr', name: 'Código QR', icon: 'pi pi-qrcode', description: 'Enlaces, Info' },
+    { id: 'sales_table', name: 'Tabla Venta', icon: 'pi pi-table', description: 'Lista productos' },
 ]);
 
-// --- LÓGICA DE INSERCIÓN ---
-const addMenuRef = ref(null);
-const currentInsertionTarget = ref({ id: null, position: 'after' });
-
-// Plantilla para el menú, basada en los elementos disponibles
-const addMenuTemplate = computed(() => {
-    return availableElements.value.map(el => ({
-        label: el.name,
-        icon: el.icon,
-        command: () => {
-            addElementRelative(el.id);
-        }
-    }));
-});
-
-// Abre el menú de inserción
-const openAddMenu = (event, elementId, position) => {
-    currentInsertionTarget.value = { id: elementId, position: position };
-    if (addMenuRef.value) {
-        addMenuRef.value.toggle(event);
-    }
-};
-
-// Función auxiliar para crear un nuevo objeto de elemento
 const createElementOfType = (type) => {
     const newElement = { id: uuidv4(), type: type, data: { align: 'left' } };
     if (type === 'text') newElement.data = { text: 'Texto de ejemplo', align: 'left' };
     if (type === 'image') newElement.data = { url: 'https://placehold.co/300x150', width: 300, align: 'center' };
     if (type === 'local_image') newElement.data = { url: '', width: 300, align: 'center', isUploading: false };
-    // AÑADIDO: Valores por defecto para altura y tamaño
     if (type === 'barcode') newElement.data = { type: 'CODE128', value: '{{v.folio}}', align: 'center', height: 80 };
     if (type === 'qr') newElement.data = { value: '{{os.folio}}', align: 'center', size: 5 };
     return newElement;
 };
 
-// Añade un elemento relativo (antes/después) al elemento seleccionado
-const addElementRelative = (type) => {
-    const newElement = createElementOfType(type);
-    const { id: targetId, position } = currentInsertionTarget.value;
-
-    const targetIndex = templateElements.value.findIndex(el => el.id === targetId);
-    if (targetIndex === -1) {
-        templateElements.value.push(newElement); // Fallback si no se encuentra
-        return;
-    }
-
-    if (position === 'before') {
-        templateElements.value.splice(targetIndex, 0, newElement);
-    } else {
-        templateElements.value.splice(targetIndex + 1, 0, newElement);
-    }
-    selectedElement.value = newElement; // Selecciona el nuevo elemento
-};
-
-// Añade un elemento al final (comportamiento original)
 const addElementToEnd = (type) => {
     const newElement = createElementOfType(type);
     templateElements.value.push(newElement);
     selectedElement.value = newElement;
+    // Scroll al fondo (opcional)
+    setTimeout(() => {
+        const container = document.getElementById('ticket-canvas');
+        if (container) container.scrollTop = container.scrollHeight;
+    }, 50);
 };
-// --- FIN LÓGICA DE INSERCIÓN ---
 
-const removeElement = (elementId) => {
-    templateElements.value = templateElements.value.filter(el => el.id !== elementId);
-    if (selectedElement.value?.id === elementId) {
-        selectedElement.value = null;
+const addElementRelative = (type) => {
+    const newElement = createElementOfType(type);
+    const { id: targetId, position } = currentInsertionTarget.value;
+    const targetIndex = templateElements.value.findIndex(el => el.id === targetId);
+    
+    if (targetIndex !== -1) {
+        if (position === 'before') templateElements.value.splice(targetIndex, 0, newElement);
+        else templateElements.value.splice(targetIndex + 1, 0, newElement);
+        selectedElement.value = newElement;
     }
 };
 
+const removeElement = (elementId) => {
+    templateElements.value = templateElements.value.filter(el => el.id !== elementId);
+    if (selectedElement.value?.id === elementId) selectedElement.value = null;
+};
+
+// Menú Contextual de Inserción
+const addMenuTemplate = computed(() => {
+    return availableElements.value.map(el => ({
+        label: el.name, icon: el.icon, command: () => addElementRelative(el.id)
+    }));
+});
+
+const openAddMenu = (event, elementId, position) => {
+    currentInsertionTarget.value = { id: elementId, position: position };
+    if (addMenuRef.value) addMenuRef.value.toggle(event);
+};
+
+// --- Imágenes ---
 const handleImageUpload = async (event, uploader) => {
     if (selectedElement.value?.type !== 'local_image') return;
     selectedElement.value.data.isUploading = true;
@@ -138,14 +163,17 @@ const handleImageUpload = async (event, uploader) => {
         const newImage = response.data;
         selectedElement.value.data.url = newImage.url;
         localTemplateImages.value.unshift(newImage);
-        toast.add({ severity: 'success', summary: 'Éxito', detail: 'Imagen subida.', life: 3000 });
-        uploader.clear();
+        toast.add({ severity: 'success', summary: 'Éxito', detail: 'Imagen subida', life: 2000 });
+        if (uploader) uploader.clear();
     } catch (error) {
-        // Manejo de error
+        toast.add({ severity: 'error', summary: 'Error', detail: 'Error al subir imagen', life: 3000 });
     } finally {
         selectedElement.value.data.isUploading = false;
     }
 };
+
+// --- Variables ---
+const { placeholderOptions } = useTemplateVariables(() => props.customFieldDefinitions);
 
 const insertPlaceholder = (placeholder) => {
     if (selectedElement.value && selectedElement.value.type === 'text') {
@@ -153,318 +181,254 @@ const insertPlaceholder = (placeholder) => {
     }
 };
 
-// Usar el composable para obtener las opciones de variables
-const { placeholderOptions } = useTemplateVariables(() => props.customFieldDefinitions);
-
-const alignmentOptions = ref([{ icon: 'pi pi-align-left', value: 'left' }, { icon: 'pi pi-align-center', value: 'center' }, { icon: 'pi pi-align-right', value: 'right' }]);
-const barcodeTypeOptions = ref(['CODE128', 'CODE39', 'EAN13', 'UPC-A']);
+// Opciones
+const alignmentOptions = [
+    { icon: 'pi pi-align-left', value: 'left' }, 
+    { icon: 'pi pi-align-center', value: 'center' }, 
+    { icon: 'pi pi-align-right', value: 'right' }
+];
+const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
 
 </script>
 
 <template>
-    <AppLayout title="Crear plantilla de ticket">
-        <!-- Pantalla de Límite Alcanzado -->
-        <div v-if="limitReached" class="h-[calc(100vh-8rem)] flex items-center justify-center p-4">
+    <AppLayout :title="props.printTemplate ? 'Editar Plantilla de Ticket' : 'Crear Plantilla de Ticket'">
+        
+        <!-- Estado Límite Alcanzado -->
+        <div v-if="limitReached" class="h-[calc(100vh-7rem)] flex items-center justify-center p-4">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
-                <i class="pi pi-exclamation-triangle !text-6xl text-amber-500 mb-4"></i>
-                <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Límite de Plantillas Alcanzado</h1>
-                <p class="text-gray-600 dark:text-gray-300 mb-6">
-                    Has alcanzado el límite de <strong>{{ templateLimit }} plantillas</strong> permitido por tu plan
-                    actual. Para agregar más, por favor mejora tu plan.
-                </p>
-                <div class="flex justify-center items-center gap-4">
-                    <Link :href="route('print-templates.index')">
-                    <Button label="Volver a Plantillas" severity="secondary" outlined />
-                    </Link>
-                    <a :href="route('subscription.manage')" target="_blank" rel="noopener noreferrer">
-                        <Button label="Mejorar Mi Plan" icon="pi pi-arrow-up" />
-                    </a>
-                </div>
+                <h1 class="text-2xl font-bold">Límite Alcanzado</h1>
+                <p class="text-gray-600 mt-2 mb-4">Has alcanzado el límite de plantillas permitido.</p>
+                <Link :href="route('print-templates.index')"><Button label="Volver" /></Link>
             </div>
         </div>
 
-        <!-- Editor de Plantillas -->
-        <div v-else class="flex h-[calc(100vh-8rem)]">
-            <!-- Columna de Herramientas (Izquierda) -->
-            <div class="w-1/4 border-r dark:border-gray-700 p-4 overflow-y-auto">
-                <h3 class="font-bold mb-4">Configuración de ticket</h3>
-                <div class="space-y-4">
-                    <div>
-                        <InputLabel value="Nombre de la Plantilla *" />
-                        <InputText :model-value="form.name" @update:model-value="form.name = $event"
-                            class="w-full mt-1" />
-                        <InputError :message="form.errors.name" class="mt-1" />
-                    </div>
-                    <div>
-                        <InputLabel value="Asignar a Sucursal(es) *" />
-                        <MultiSelect :model-value="form.branch_ids" @update:model-value="form.branch_ids = $event"
-                            :options="branches" optionLabel="name" optionValue="id" placeholder="Selecciona"
-                            class="w-full mt-1" size="large" />
-                        <InputError :message="form.errors.branch_ids" class="mt-1" />
-                    </div>
-                    <div class="border-t dark:border-gray-600 pt-4">
-                        <InputLabel value="Ancho del Papel" />
-                        <div class="flex flex-wrap gap-4 mt-2">
-                            <div v-for="width in ['80mm', '58mm']" :key="width" class="flex items-center">
-                                <RadioButton :model-value="form.content.config.paperWidth"
-                                    @update:model-value="form.content.config.paperWidth = $event" :inputId="width"
-                                    :value="width" />
-                                <label :for="width" class="ml-2">{{ width }}</label>
-                            </div>
+        <!-- Editor -->
+        <div v-else class="flex h-[calc(100vh-7rem)] overflow-hidden bg-gray-100 dark:bg-gray-900 select-none">
+            
+            <!-- PANEL IZQUIERDO: Configuración y Elementos -->
+            <div class="w-80 border-r dark:border-gray-700 bg-white dark:bg-gray-800 z-20 flex flex-col h-full shrink-0 shadow-lg">
+                <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                    <h3 class="font-bold mb-4 text-lg">Configuración</h3>
+                    <div class="space-y-4 mb-6">
+                        <div>
+                            <InputLabel value="Nombre *" />
+                            <InputText v-model="form.name" class="w-full p-inputtext-sm" :invalid="!!form.errors.name" />
+                            <InputError :message="form.errors.name" class="mt-1" />
                         </div>
-                    </div>
-                    <div>
-                        <InputLabel value="Líneas en blanco al final" />
-                        <InputNumber :model-value="form.content.config.feedLines"
-                            @update:model-value="form.content.config.feedLines = $event" :min="0" :max="10" showButtons
-                            class="mt-2" />
-                    </div>
-                </div>
-
-                <h3 class="font-bold mb-4 mt-6">Elementos</h3>
-                <div class="space-y-2">
-                    <Button v-for="el in availableElements" :key="el.id" @click="addElementToEnd(el.id)"
-                        :label="el.name" :icon="`pi ${el.icon}`" outlined class="w-full justify-start"
-                        v-tooltip.right="'Añadir al final'" />
-                </div>
-                <div class="mt-6 border-t dark:border-gray-700 pt-4 flex justify-end gap-2">
-                    <Link :href="route('print-templates.index')">
-                    <Button label="Cancelar" severity="secondary" text />
-                    </Link>
-                    <Button @click="submit" label="Crear Plantilla" :loading="form.processing" />
-                </div>
-            </div>
-
-            <!-- Columna Central: Vista Previa -->
-            <div class="w-1/2 p-4 overflow-y-auto bg-gray-50 dark:bg-gray-900 relative"
-                @click.self="selectedElement = null">
-
-                <!-- Menú para inserción -->
-                <Menu ref="addMenuRef" :model="addMenuTemplate" :popup="true" />
-
-                <div class="bg-white dark:bg-gray-800 shadow-lg mx-auto p-4"
-                    :class="form.content.config.paperWidth === '80mm' ? 'max-w-md' : 'max-w-xs'"
-                    @click.self="selectedElement = null">
-
-                    <!-- Bucle de elementos -->
-                    <div v-for="element in templateElements" :key="element.id" @click="selectedElement = element"
-                        class="py-px border-2 border-transparent hover:border-dashed rounded-md cursor-pointer relative group"
-                        :class="{ '!border-blue-500 border-solid': selectedElement?.id === element.id }">
-
-                        <!-- Botón para insertar ANTES -->
-                        <div v-if="selectedElement?.id === element.id"
-                            class="!absolute -top-3 left-1/2 -translate-x-1/2 z-20 opacity-100" @click.stop>
-                            <Button icon="pi pi-plus-circle" rounded severity="info" size="small"
-                                class="!size-5 !bg-blue-500" @click.stop="openAddMenu($event, element.id, 'before')"
-                                v-tooltip.top="'Añadir antes'" />
+                        <div>
+                            <InputLabel value="Sucursales *" />
+                            <MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" optionValue="id" placeholder="Seleccionar" class="w-full" :maxSelectedLabels="1" :invalid="!!form.errors.branch_ids" />
+                            <InputError :message="form.errors.branch_ids" class="mt-1" />
                         </div>
-
-                        <!-- Botón de eliminar -->
-                        <Button @click.stop="removeElement(element.id)" icon="pi pi-times" severity="danger" text
-                            rounded size="small"
-                            class="!absolute top-0 right-0 z-10 !size-5"
-                            :class="selectedElement?.id === element.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
-                            v-tooltip.left="'Eliminar'" />
-
-                        <!-- Contenido del elemento -->
-                        <div :class="`text-${element.data.align}`">
-                            <div v-if="element.type === 'text'"
-                                class="whitespace-pre-wrap font-mono text-sm break-words">{{ element.data.text }}</div>
-                            <img v-if="element.type === 'image' || element.type === 'local_image'"
-                                :src="element.data.url || 'https://placehold.co/300x150?text=Imagen'" alt="Imagen"
-                                :style="{ maxWidth: (element.data.width * 0.5) + 'px' }"
-                                :class="{ 'mx-auto': element.data.align === 'center', 'ml-auto': element.data.align === 'right' }">
-                            <div v-if="element.type === 'separator'"
-                                class="w-full border-t border-dashed border-gray-400 my-2"></div>
-                            
-                            <!-- AÑADIDO: Previsualización de altura de barcode -->
-                            <div v-if="element.type === 'barcode'" class="p-2 bg-gray-200 inline-flex items-center justify-center"
-                                :style="{ height: (element.data.height || 80) / 1.5 + 'px' }">
-                                <div>
-                                    <p class="text-[10px] font-mono tracking-widest m-0">{{ element.data.value }}</p>
-                                    <p class="text-center text-[8px] uppercase m-0">{{ element.data.type }}</p>
+                        <div class="border-t dark:border-gray-700 pt-4">
+                            <InputLabel value="Ancho del Papel" />
+                            <div class="flex gap-4 mt-2">
+                                <div class="flex items-center">
+                                    <RadioButton v-model="form.content.config.paperWidth" inputId="80mm" value="80mm" />
+                                    <label for="80mm" class="ml-2 text-sm">80mm</label>
+                                </div>
+                                <div class="flex items-center">
+                                    <RadioButton v-model="form.content.config.paperWidth" inputId="58mm" value="58mm" />
+                                    <label for="58mm" class="ml-2 text-sm">58mm</label>
                                 </div>
                             </div>
-
-                            <div v-if="element.type === 'line_break'"
-                                class="text-center text-xs text-gray-400 my-1 py-1 border-y border-dashed">
-                                [Salto de Línea]
-                            </div>
-                            
-                            <!-- AÑADIDO: Previsualización de tamaño de QR -->
-                            <div v-if="element.type === 'qr'" class="p-2 bg-gray-200 inline-block">
-                                <i class="pi pi-qrcode" :style="{ fontSize: ((element.data.size || 5) * 6) + 'px' }"></i>
-                                <p class="text-center text-[8px]">{{ element.data.value }}</p>
-
-                            </div>
-                            <div v-if="element.type === 'sales_table'"
-                                class="border-2 border-dashed p-4 text-center text-gray-400 font-mono text-sm">
-                                <p>[-- Tabla de Productos --]</p>
-                                <p class="text-xs">Cantidad, Nombre, Total</p>
-                            </div>
                         </div>
-
-                        <!-- Botón para insertar DESPUÉS -->
-                        <div v-if="selectedElement?.id === element.id"
-                            class="!absolute -bottom-3 left-1/2 -translate-x-1/2 z-20 opacity-100" @click.stop>
-                            <Button icon="pi pi-plus-circle" rounded severity="info" size="small"
-                                class="!size-5 !bg-blue-500" @click.stop="openAddMenu($event, element.id, 'after')"
-                                v-tooltip.bottom="'Añadir después'" />
+                        <div>
+                            <InputLabel value="Líneas finales (feed)" />
+                            <InputNumber v-model="form.content.config.feedLines" :min="0" :max="10" showButtons class="w-full" />
                         </div>
                     </div>
-                    <!-- Fin del bucle v-for -->
 
-                    <p v-if="templateElements.length === 0" class="text-center text-gray-400 py-16">Añade elementos
-                        desde el panel izquierdo.</p>
+                    <h3 class="font-bold mb-3 text-lg border-t pt-4">Elementos</h3>
+                    <div class="grid grid-cols-1 gap-2">
+                        <Button v-for="el in availableElements" :key="el.id" @click="addElementToEnd(el.id)" severity="secondary" outlined class="!justify-start !text-left !py-3">
+                            <div class="flex items-center gap-3">
+                                <i :class="el.icon" class="text-xl text-blue-500"></i>
+                                <div>
+                                    <div class="text-sm font-bold">{{ el.name }}</div>
+                                    <div class="text-xs text-gray-500">{{ el.description }}</div>
+                                </div>
+                            </div>
+                        </Button>
+                    </div>
+                </div>
+                <div class="p-4 border-t dark:border-gray-700 dark:bg-gray-800 mt-auto">
+                    <Button @click="submit" :label="props.printTemplate ? 'Actualizar' : 'Guardar'" icon="pi pi-save" class="w-full mb-2" :loading="form.processing" />
+                    <Link :href="route('print-templates.index')"><Button label="Cancelar" severity="secondary" text class="w-full" /></Link>
                 </div>
             </div>
 
-            <!-- Columna Derecha: Propiedades -->
-            <div class="w-1/4 border-l dark:border-gray-700 p-4 overflow-y-auto">
-                <h3 class="font-bold mb-4">Propiedades</h3>
-                <div v-if="selectedElement" class="space-y-4">
-                    <!-- Propiedades de Texto -->
-                    <div v-if="selectedElement.type === 'text'">
-                        <InputLabel>Alineación</InputLabel>
-                        <SelectButton :model-value="selectedElement.data.align"
-                            @update:model-value="selectedElement.data.align = $event" :options="alignmentOptions"
-                            optionValue="value" class="mt-1 w-full">
-                            <template #option="slotProps"> <i :class="slotProps.option.icon"></i> </template>
-                        </SelectButton>
-                        <InputLabel class="mt-4">Contenido del Texto</InputLabel>
-                        <Textarea :model-value="selectedElement.data.text"
-                            @update:model-value="selectedElement.data.text = $event" rows="5"
-                            class="w-full mt-1 font-mono text-sm" />
-                        <Accordion :activeIndex="null">
-                            <AccordionPanel value="0">
-                                <AccordionHeader>Insertar variable</AccordionHeader>
-                                <AccordionContent>
-                                    <div class="space-y-2 max-h-72 overflow-y-auto">
-                                        <div v-for="group in placeholderOptions" :key="group.group">
-                                            <p class="text-xs font-bold text-gray-500 mb-1">{{ group.group }}</p>
-                                            <div class="flex flex-wrap gap-1">
-                                                <Button v-for="item in group.items" :key="item.value"
-                                                    @click="insertPlaceholder(item.value)" :label="item.label"
-                                                    severity="secondary" outlined size="small" />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </AccordionContent>
-                            </AccordionPanel>
-                        </Accordion>
-                    </div>
+            <!-- PANEL CENTRAL (CANVAS) -->
+            <div class="flex-1 relative overflow-hidden dark:bg-black/20 flex items-center justify-center bg-gray-100 dark:bg-gray-900"
+                 @click.self="selectedElement = null">
+                
+                <!-- Menú Contextual -->
+                <Menu ref="addMenuRef" :model="addMenuTemplate" :popup="true" />
 
-                    <!-- Propiedades de Imagen de Internet -->
-                    <div v-if="selectedElement.type === 'image'" class="space-y-4">
-                        <InputLabel>Alineación</InputLabel>
-                        <SelectButton :model-value="selectedElement.data.align"
-                            @update:model-value="selectedElement.data.align = $event" :options="alignmentOptions"
-                            optionValue="value" class="mt-1">
-                            <template #option="slotProps"> <i :class="slotProps.option.icon"></i> </template>
-                        </SelectButton>
-                        <div>
-                            <InputLabel>URL de la Imagen</InputLabel>
-                            <InputText :model-value="selectedElement.data.url"
-                                @update:model-value="selectedElement.data.url = $event" class="w-full mt-1 text-xs" />
-                        </div>
-                        <div>
-                            <InputLabel>Ancho (px)</InputLabel>
-                            <InputNumber :model-value="selectedElement.data.width"
-                                @update:model-value="selectedElement.data.width = $event" class="w-full mt-1" />
-                        </div>
-                    </div>
+                <!-- Área Scrollable del Ticket -->
+                <div id="ticket-canvas" class="w-full h-full overflow-y-auto p-8 flex justify-center custom-scrollbar" @click.self="selectedElement = null">
+                    
+                    <!-- El "Papel" del Ticket -->
+                    <div class="bg-white dark:bg-gray-800 shadow-2xl min-h-[12cm] transition-all duration-300 relative"
+                        :class="form.content.config.paperWidth === '80mm' ? 'w-[80mm]' : 'w-[58mm]'"
+                        style="padding: 5px 0; height: fit-content;"
+                        @click.self="selectedElement = null">
 
-                    <!-- Propiedades de Imagen Local -->
-                    <div v-if="selectedElement.type === 'local_image'" class="space-y-4">
-                        <InputLabel>Alineación</InputLabel>
-                        <SelectButton :model-value="selectedElement.data.align"
-                            @update:model-value="selectedElement.data.align = $event" :options="alignmentOptions"
-                            optionValue="value" class="mt-1">
-                            <template #option="slotProps"> <i :class="slotProps.option.icon"></i> </template>
-                        </SelectButton>
-                        <div>
-                            <InputLabel>Galería de Imágenes</InputLabel>
-                            <div
-                                class="mt-2 grid grid-cols-3 gap-2 max-h-48 overflow-y-auto border dark:border-gray-600 p-2 rounded-md">
-                                <img v-for="image in localTemplateImages" :key="image.id" :src="image.url"
-                                    :alt="image.name" @click="selectedElement.data.url = image.url"
-                                    class="w-full h-16 object-cover rounded-md cursor-pointer border-2"
-                                    :class="selectedElement.data.url === image.url ? 'border-blue-500' : 'border-transparent'">
+                        <div v-for="element in templateElements" :key="element.id" @click="selectedElement = element"
+                            class="relative group border border-transparent hover:border-dashed hover:border-blue-300 transition-all rounded-sm px-1"
+                            :class="{ '!border-blue-500 bg-blue-50/10': selectedElement?.id === element.id }">
+
+                            <!-- Controles de Inserción/Eliminación (Estilo Hover Flotante) -->
+                            <div v-if="selectedElement?.id === element.id" class="absolute -right-8 top-0 flex flex-col gap-1 z-50">
+                                <Button icon="pi pi-arrow-up" class="!w-6 !h-6 !p-0" rounded severity="secondary" @click.stop="openAddMenu($event, element.id, 'before')" v-tooltip.left="'Insertar Antes'" />
+                                <Button icon="pi pi-arrow-down" class="!w-6 !h-6 !p-0" rounded severity="secondary" @click.stop="openAddMenu($event, element.id, 'after')" v-tooltip.left="'Insertar Después'" />
+                                <Button icon="pi pi-trash" class="!w-6 !h-6 !p-0" rounded severity="danger" @click.stop="removeElement(element.id)" v-tooltip.left="'Eliminar'" />
                             </div>
-                            <p v-if="localTemplateImages.length === 0" class="text-xs text-center text-gray-500 py-4">No
-                                hay imágenes en la galería.</p>
-                        </div>
-                        <div>
-                            <InputLabel>o Subir Nueva Imagen</InputLabel>
-                            <FileUpload @uploader="handleImageUpload" :multiple="false" accept="image/*"
-                                :showUploadButton="false" :showCancelButton="false" customUpload mode="basic"
-                                chooseLabel="Seleccionar Archivo" :auto="true"
-                                :loading="selectedElement.data.isUploading" />
-                        </div>
-                        <div>
-                            <InputLabel>Ancho (px)</InputLabel>
-                            <InputNumber :model-value="selectedElement.data.width"
-                                @update:model-value="selectedElement.data.width = $event" class="w-full mt-1" />
-                        </div>
-                    </div>
 
-                    <!-- Propiedades de Código de Barras -->
-                    <div v-if="selectedElement.type === 'barcode'" class="space-y-4">
-                        <InputLabel>Alineación</InputLabel>
-                        <SelectButton :model-value="selectedElement.data.align"
-                            @update:model-value="selectedElement.data.align = $event" :options="alignmentOptions"
-                            optionValue="value" class="mt-1">
-                            <template #option="slotProps"> <i :class="slotProps.option.icon"></i> </template>
+                            <!-- Renderizado del Elemento -->
+                            <div :class="`text-${element.data.align} pointer-events-none`">
+                                
+                                <!-- Texto -->
+                                <div v-if="element.type === 'text'" class="whitespace-pre-wrap font-mono text-xs leading-tight break-words">
+                                    {{ element.data.text || '(Vacío)' }}
+                                </div>
+
+                                <!-- Imagen -->
+                                <img v-if="['image', 'local_image'].includes(element.type)"
+                                    :src="element.data.url || 'https://placehold.co/300x150?text=IMG'" 
+                                    class="object-contain inline-block"
+                                    :style="{ maxWidth: element.data.width ? (element.data.width + 'px') : '100%' }"
+                                />
+
+                                <!-- Separador -->
+                                <div v-if="element.type === 'separator'" class="w-full border-t border-dashed border-black my-1"></div>
+                                
+                                <!-- Salto -->
+                                <div v-if="element.type === 'line_break'" class="h-4 text-[10px] text-gray-300 flex items-center justify-center border border-dashed border-gray-200 my-1">
+                                    [Espacio]
+                                </div>
+
+                                <!-- Barcode -->
+                                <div v-if="element.type === 'barcode'" class="inline-flex flex-col items-center">
+                                    <div class="bg-gray-200 w-full min-w-[100px] flex items-center justify-center" :style="{ height: (element.data.height || 50) + 'px' }">
+                                        <span class="font-mono text-[10px] tracking-widest">|| ||| || |||</span>
+                                    </div>
+                                    <span class="text-[10px] font-mono">{{ element.data.value }}</span>
+                                </div>
+
+                                <!-- QR -->
+                                <div v-if="element.type === 'qr'" class="inline-block p-1">
+                                    <i class="pi pi-qrcode" :style="{ fontSize: ((element.data.size || 5) * 8) + 'px' }"></i>
+                                </div>
+
+                                <!-- Tabla -->
+                                <div v-if="element.type === 'sales_table'" class="text-xs font-mono w-full">
+                                    <div class="flex border-b border-black border-dashed pb-1 mb-1">
+                                        <span class="w-8">Cant</span>
+                                        <span class="flex-1">Desc</span>
+                                        <span class="w-12 text-right">Total</span>
+                                    </div>
+                                    <div class="flex text-gray-400 italic">
+                                        <span class="w-8">1</span>
+                                        <span class="flex-1">Producto...</span>
+                                        <span class="w-12 text-right">$0.00</span>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+
+                        <!-- Placeholder Vacio -->
+                        <div v-if="templateElements.length === 0" class="text-center py-10 text-gray-400 text-xs italic">
+                            Plantilla vacía.<br>Añade elementos desde la izquierda.
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- PANEL DERECHO: Propiedades -->
+            <div class="w-80 border-l dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col h-full shrink-0 shadow-lg">
+                <h3 class="font-bold p-4 border-b text-lg">Propiedades</h3>
+                <div v-if="selectedElement" class="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
+                    
+                    <!-- Propiedad Alineación (Común) -->
+                    <div v-if="['text', 'image', 'local_image', 'barcode', 'qr'].includes(selectedElement.type)">
+                        <InputLabel value="Alineación" />
+                        <SelectButton v-model="selectedElement.data.align" :options="alignmentOptions" optionLabel="label" optionValue="value" class="w-full">
+                            <template #option="slotProps"><i :class="slotProps.option.icon"></i></template>
                         </SelectButton>
-                        <div>
-                            <InputLabel>Tipo de Código</InputLabel>
-                            <Dropdown :model-value="selectedElement.data.type"
-                                @update:model-value="selectedElement.data.type = $event" :options="barcodeTypeOptions"
-                                class="w-full mt-1" />
-                        </div>
-                        <div>
-                            <InputLabel>Valor</InputLabel>
-                            <InputText :model-value="selectedElement.data.value"
-                                @update:model-value="selectedElement.data.value = $event" class="w-full mt-1" />
-                        </div>
-                        <!-- AÑADIDO: Input para altura -->
-                        <div>
-                            <InputLabel>Altura (1-255)</InputLabel>
-                            <InputNumber :model-value="selectedElement.data.height"
-                                @update:model-value="selectedElement.data.height = $event" class="w-full mt-1" showButtons :min="1" :max="255" />
-                        </div>
                     </div>
 
-                    <!-- Propiedades de Código QR -->
-                    <div v-if="selectedElement.type === 'qr'" class="space-y-4">
-                        <InputLabel>Alineación</InputLabel>
-                        <SelectButton :model-value="selectedElement.data.align"
-                            @update:model-value="selectedElement.data.align = $event" :options="alignmentOptions"
-                            optionValue="value" class="mt-1">
-                            <template #option="slotProps"> <i :class="slotProps.option.icon"></i> </template>
-                        </SelectButton>
-                        <div>
-                            <InputLabel>Valor</InputLabel>
-                            <InputText :model-value="selectedElement.data.value"
-                                @update:model-value="selectedElement.data.value = $event" class="w-full mt-1" />
-                        </div>
-                        <!-- AÑADIDO: Input para tamaño -->
-                        <div>
-                            <InputLabel>Tamaño (1-16)</InputLabel>
-                            <InputNumber :model-value="selectedElement.data.size"
-                                @update:model-value="selectedElement.data.size = $event" class="w-full mt-1" showButtons :min="1" :max="16" />
-                        </div>
+                    <!-- TEXTO -->
+                    <div v-if="selectedElement.type === 'text'">
+                        <InputLabel value="Contenido" class="mt-4" />
+                        <Textarea v-model="selectedElement.data.text" rows="6" class="w-full font-mono text-sm" />
+                        
+                        <Accordion class="mt-4"><AccordionPanel value="0"><AccordionHeader>Variables</AccordionHeader><AccordionContent>
+                            <div class="space-y-3">
+                                <div v-for="group in placeholderOptions" :key="group.group">
+                                    <div class="text-xs font-bold text-gray-500 mb-1">{{ group.group }}</div>
+                                    <div class="flex flex-wrap gap-1">
+                                        <Button v-for="item in group.items" :key="item.value" @click="insertPlaceholder(item.value)" :label="item.label" severity="secondary" outlined size="small" class="!text-xs !py-1 !px-2" />
+                                    </div>
+                                </div>
+                            </div>
+                        </AccordionContent></AccordionPanel></Accordion>
                     </div>
 
-                    <!-- Otros tipos no tienen propiedades (separator, line_break, sales_table) -->
+                    <!-- IMAGENES -->
+                    <div v-if="['image', 'local_image'].includes(selectedElement.type)">
+                        <div v-if="selectedElement.type === 'image'">
+                            <InputLabel value="URL Imagen" class="mt-4" />
+                            <InputText v-model="selectedElement.data.url" class="w-full text-sm" />
+                        </div>
+
+                        <div v-if="selectedElement.type === 'local_image'" class="mt-4 p-3 border rounded bg-gray-50">
+                            <div class="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto mb-2">
+                                <div v-for="img in localTemplateImages" :key="img.id" class="relative group">
+                                    <img :src="img.url" @click="selectedElement.data.url = img.url" class="h-12 w-full object-cover border-2 cursor-pointer rounded hover:border-blue-500" :class="selectedElement.data.url === img.url ? 'border-blue-500' : 'border-transparent'" />
+                                </div>
+                            </div>
+                            <div class="relative">
+                                <FileUpload mode="basic" :auto="true" customUpload @uploader="handleImageUpload" accept="image/*" class="w-full" chooseLabel="Subir Imagen" :disabled="selectedElement.data.isUploading" />
+                            </div>
+                        </div>
+
+                        <InputLabel value="Ancho Máximo (px)" class="mt-4" />
+                        <InputNumber v-model="selectedElement.data.width" class="w-full" :min="10" />
+                    </div>
+
+                    <!-- CODIGO BARRAS -->
+                    <div v-if="selectedElement.type === 'barcode'">
+                        <InputLabel value="Tipo" class="mt-4" />
+                        <Select v-model="selectedElement.data.type" :options="barcodeTypeOptions" class="w-full" />
+                        
+                        <InputLabel value="Valor" class="mt-4" />
+                        <InputText v-model="selectedElement.data.value" class="w-full" />
+                        
+                        <InputLabel value="Altura (px)" class="mt-4" />
+                        <InputNumber v-model="selectedElement.data.height" class="w-full" :min="20" :max="200" />
+                    </div>
+
+                    <!-- QR -->
+                    <div v-if="selectedElement.type === 'qr'">
+                        <InputLabel value="Valor / URL" class="mt-4" />
+                        <InputText v-model="selectedElement.data.value" class="w-full" />
+                        
+                        <InputLabel value="Tamaño (1-16)" class="mt-4" />
+                        <InputNumber v-model="selectedElement.data.size" class="w-full" :min="1" :max="16" showButtons />
+                    </div>
+
+                    <!-- TABLA VENTA -->
+                    <div v-if="selectedElement.type === 'sales_table'">
+                        <p class="text-sm text-gray-500 italic mt-4">Este elemento renderiza automáticamente la lista de productos vendidos.</p>
+                    </div>
 
                 </div>
-                <!-- Estado vacío del panel de propiedades -->
-                <div v-else class="text-center text-sm text-gray-500 mt-8">
-                    <p>Selecciona un elemento de la vista previa para editar sus propiedades.</p>
-                </div>
+                <div v-else class="text-center text-gray-400 py-20 italic flex-1 flex items-center justify-center px-6"><p>Selecciona un elemento.</p></div>
             </div>
         </div>
     </AppLayout>
 </template>
-
