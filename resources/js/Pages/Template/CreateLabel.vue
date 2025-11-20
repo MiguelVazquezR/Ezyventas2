@@ -39,6 +39,11 @@ const isPanning = ref(false);
 const lastMousePos = ref({ x: 0, y: 0 });
 const isSpacePressed = ref(false);
 
+// --- ESTADO MÓVIL (DRAWERS) ---
+const showLeftDrawer = ref(false);
+const showRightDrawer = ref(false);
+const lastPinchDistance = ref(null); // Para zoom con dos dedos
+
 // --- ARRASTRE DE ELEMENTOS (DRAG & DROP) ---
 const isDraggingElement = ref(false);
 const dragStartPos = ref({ x: 0, y: 0 });
@@ -81,16 +86,37 @@ onMounted(() => {
     
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+
+    // Registrar eventos touch manualmente como no-pasivos para permitir preventDefault (Zoom/Pan sin scroll)
+    if (canvasContainerRef.value) {
+        canvasContainerRef.value.addEventListener('touchstart', handleTouchStart, { passive: false });
+        canvasContainerRef.value.addEventListener('touchmove', handleTouchMove, { passive: false });
+        canvasContainerRef.value.addEventListener('touchend', handleTouchEnd);
+    }
 });
 
 onUnmounted(() => {
     window.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('keyup', handleKeyUp);
+
+    if (canvasContainerRef.value) {
+        canvasContainerRef.value.removeEventListener('touchstart', handleTouchStart);
+        canvasContainerRef.value.removeEventListener('touchmove', handleTouchMove);
+        canvasContainerRef.value.removeEventListener('touchend', handleTouchEnd);
+    }
 });
 
 watch(templateElements, (newElements) => {
     form.content.elements = newElements;
 }, { deep: true });
+
+// Si se selecciona un elemento en móvil, abrir panel derecho automáticamente
+watch(selectedElement, (val) => {
+    if (val && window.innerWidth < 1024) {
+        showRightDrawer.value = true;
+        showLeftDrawer.value = false;
+    }
+});
 
 // --- NAVEGACIÓN DEL CANVAS (PAN/ZOOM) ---
 
@@ -142,6 +168,58 @@ const onCanvasClick = () => {
     }
 };
 
+// --- LÓGICA TÁCTIL (TOUCH) ---
+const getDistance = (touch1, touch2) => {
+    const dx = touch1.clientX - touch2.clientX;
+    const dy = touch1.clientY - touch2.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+};
+
+const handleTouchStart = (e) => {
+    // Si estamos arrastrando un elemento, ignoramos esto (el stopPropagation del elemento lo maneja)
+    if (isDraggingElement.value) return;
+
+    if (e.touches.length === 1) {
+        // Un dedo: Paneo (solo si toca el fondo directamente)
+        if (e.target === canvasContainerRef.value || isSpacePressed.value) {
+            isPanning.value = true;
+            lastMousePos.value = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+    } else if (e.touches.length === 2) {
+        // Dos dedos: Iniciar Zoom
+        isPanning.value = false;
+        lastPinchDistance.value = getDistance(e.touches[0], e.touches[1]);
+    }
+};
+
+const handleTouchMove = (e) => {
+    if (isDraggingElement.value) return;
+
+    if (e.touches.length === 1 && isPanning.value) {
+        if (e.cancelable) e.preventDefault(); // Evitar scroll nativo
+        const deltaX = e.touches[0].clientX - lastMousePos.value.x;
+        const deltaY = e.touches[0].clientY - lastMousePos.value.y;
+        pan.value.x += deltaX;
+        pan.value.y += deltaY;
+        lastMousePos.value = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else if (e.touches.length === 2 && lastPinchDistance.value) {
+        if (e.cancelable) e.preventDefault(); // Evitar zoom nativo del navegador
+        const dist = getDistance(e.touches[0], e.touches[1]);
+        const scaleChange = dist / lastPinchDistance.value;
+        
+        let newScale = zoomScale.value * scaleChange;
+        newScale = Math.min(Math.max(newScale, 0.5), 5.0);
+        zoomScale.value = newScale;
+        
+        lastPinchDistance.value = dist;
+    }
+};
+
+const handleTouchEnd = () => {
+    isPanning.value = false;
+    lastPinchDistance.value = null;
+};
+
 const zoomIn = () => zoomScale.value = Math.min(zoomScale.value + 0.1, 5.0);
 const zoomOut = () => zoomScale.value = Math.max(zoomScale.value - 0.1, 0.5);
 const resetView = () => {
@@ -161,24 +239,42 @@ const zoomPercentage = computed({
 });
 
 // --- LÓGICA DE ARRASTRE DE ELEMENTOS (ABSOLUTE DRAG) ---
+// Helper para obtener posición unificada (Mouse/Touch)
+const getClientPos = (e) => {
+    return e.touches ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : { x: e.clientX, y: e.clientY };
+};
+
 const startDragElement = (event, element) => {
-    if (isSpacePressed.value) return; // Prioridad al paneo
+    if (isSpacePressed.value) return; 
+    
     event.stopPropagation();
 
     selectedElement.value = element;
     isDraggingElement.value = true;
-    dragStartPos.value = { x: event.clientX, y: event.clientY };
+    
+    const pos = getClientPos(event);
+    dragStartPos.value = { x: pos.x, y: pos.y };
     elementStartPos.value = { x: element.data.x, y: element.data.y };
 
-    window.addEventListener('mousemove', onDragElementMove);
-    window.addEventListener('mouseup', onDragElementEnd);
+    if (event.type === 'mousedown') {
+        window.addEventListener('mousemove', onDragElementMove);
+        window.addEventListener('mouseup', onDragElementEnd);
+    } else {
+        // Passive false importante aquí también para evitar scroll mientras movemos el elemento
+        window.addEventListener('touchmove', onDragElementMove, { passive: false });
+        window.addEventListener('touchend', onDragElementEnd);
+    }
 };
 
 const onDragElementMove = (event) => {
     if (!isDraggingElement.value || !selectedElement.value) return;
+    
+    // Prevenir scroll al mover elemento
+    if (event.type === 'touchmove' && event.cancelable) event.preventDefault(); 
 
-    const deltaX = event.clientX - dragStartPos.value.x;
-    const deltaY = event.clientY - dragStartPos.value.y;
+    const pos = getClientPos(event);
+    const deltaX = pos.x - dragStartPos.value.x;
+    const deltaY = pos.y - dragStartPos.value.y;
 
     // Ajustamos el delta dividiendo por el zoom para que el movimiento del mouse coincida con el del objeto visualmente
     const newX = elementStartPos.value.x + (deltaX / zoomScale.value / pxPerMm.value);
@@ -191,12 +287,13 @@ const onDragElementMove = (event) => {
 const onDragElementEnd = () => {
     isDraggingElement.value = false;
     
-    // Activamos bandera para evitar que el evento 'click' subsiguiente deseleccione el elemento
     isJustFinishedDragging.value = true;
     setTimeout(() => { isJustFinishedDragging.value = false; }, 100);
 
     window.removeEventListener('mousemove', onDragElementMove);
     window.removeEventListener('mouseup', onDragElementEnd);
+    window.removeEventListener('touchmove', onDragElementMove);
+    window.removeEventListener('touchend', onDragElementEnd);
 };
 
 
@@ -240,6 +337,12 @@ const addElement = (type) => {
     }
     templateElements.value.push(newElement);
     selectedElement.value = newElement;
+    
+    // En móvil, abrir drawer de propiedades
+    if (window.innerWidth < 1024) {
+        showLeftDrawer.value = false;
+        showRightDrawer.value = true;
+    }
 };
 
 const removeElement = (id) => {
@@ -248,9 +351,7 @@ const removeElement = (id) => {
 };
 
 // --- Conversiones de Unidades Visuales ---
-// Usamos una constante de visualización para convertir mm a pixeles en pantalla.
-// 1mm = 3.78px (approx a 96dpi). Esto es SOLO para visualización CSS.
-// La propiedad "dpi" del config es para la impresora real, pero aquí usamos px para dibujar.
+// 1mm = 3.78px (approx a 96dpi)
 const pxPerMm = computed(() => 3.78); 
 
 const labelStyle = computed(() => ({
@@ -258,7 +359,6 @@ const labelStyle = computed(() => ({
     height: `${form.content.config.height * pxPerMm.value}px`,
 }));
 
-// Simulaciones de fuentes TSPL para visualización aproximada (height en dots)
 const tsplFontDotHeights = { 1: 12, 2: 20, 3: 24, 4: 32, 5: 48, 6: 64, 7: 80, 8: 96 };
 
 const getElementStyle = (element) => {
@@ -273,22 +373,18 @@ const getElementStyle = (element) => {
         transformOrigin: 'top left',
     };
 
-    // Simulaciones visuales basadas en las propiedades
-    const visualDpiScale = 1; // Factor de ajuste visual
+    const visualDpiScale = 1; 
 
     if (element.type === 'text') {
         const dotHeight = tsplFontDotHeights[element.data.font_size] || 24;
-        // Convertir dots a px visuales (aprox 8 dots = 1mm en 203dpi)
         const mmHeight = dotHeight / 8; 
         baseStyle.fontSize = `${mmHeight * pxPerMm.value * visualDpiScale}px`;
         baseStyle.lineHeight = '1';
         baseStyle.whiteSpace = 'nowrap';
     }
     if (element.type === 'barcode') {
-        // Altura en dots -> mm -> px
         const heightMm = element.data.height / 8; 
         baseStyle.height = `${heightMm * pxPerMm.value}px`;
-        // Ancho base aproximado
         baseStyle.minWidth = `${20 * pxPerMm.value}px`; 
         baseStyle.backgroundColor = '#e5e7eb';
         baseStyle.display = 'flex';
@@ -296,8 +392,7 @@ const getElementStyle = (element) => {
         baseStyle.justifyContent = 'center';
     }
     if (element.type === 'qr') {
-        // Maginification controla el tamaño del módulo
-        const sizeMm = element.data.magnification * 3; // Estimación
+        const sizeMm = element.data.magnification * 3; 
         const sizePx = sizeMm * pxPerMm.value;
         baseStyle.width = `${sizePx}px`;
         baseStyle.height = `${sizePx}px`;
@@ -308,7 +403,8 @@ const getElementStyle = (element) => {
 
 
 // Variables
-const { placeholderOptions } = useTemplateVariables(() => props.customFieldDefinitions);
+// MODIFICADO: Se agrega el contexto 'etiqueta' para filtrar las variables correctamente
+const { placeholderOptions } = useTemplateVariables(() => props.customFieldDefinitions, 'etiqueta');
 const dpiOptions = [203, 300, 600];
 
 </script>
@@ -326,10 +422,38 @@ const dpiOptions = [203, 300, 600];
         </div>
 
         <!-- Editor -->
-        <div v-else class="flex h-[calc(100vh-7rem)] overflow-hidden bg-gray-100 dark:bg-gray-900 select-none">
+        <div v-else class="flex flex-col lg:flex-row h-[calc(100vh-7rem)] overflow-hidden bg-gray-100 dark:bg-gray-900 select-none relative">
             
+            <!-- BACKDROP MÓVIL -->
+            <div v-if="showLeftDrawer || showRightDrawer" 
+                 class="fixed inset-0 bg-black/50 z-30 lg:hidden transition-opacity" 
+                 @click="showLeftDrawer = false; showRightDrawer = false">
+            </div>
+
+            <!-- BARRA DE HERRAMIENTAS MÓVIL (Top Bar) -->
+            <div class="lg:hidden w-full h-14 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between px-4 z-20 shrink-0 shadow-sm">
+                <Button icon="pi pi-bars" text rounded severity="secondary" @click="showLeftDrawer = !showLeftDrawer" v-tooltip.bottom="'Configuración y Elementos'" />
+                <span class="font-bold text-sm text-gray-700 dark:text-gray-200 truncate">{{ form.name || 'Nueva Plantilla' }}</span>
+                <div class="relative">
+                    <Button icon="pi pi-pencil" text rounded 
+                            :severity="selectedElement ? 'primary' : 'secondary'" 
+                            @click="selectedElement ? (showRightDrawer = !showRightDrawer) : null"
+                            :disabled="!selectedElement"
+                            v-tooltip.bottom="'Propiedades'" />
+                    <span v-if="selectedElement" class="absolute top-1 right-1 w-2 h-2 bg-blue-500 rounded-full"></span>
+                </div>
+            </div>
+
             <!-- PANEL IZQUIERDO: Configuración y Elementos -->
-            <div class="w-80 border-r dark:border-gray-700 bg-white dark:bg-gray-800 z-20 flex flex-col h-full shrink-0 shadow-lg">
+            <div class="fixed inset-y-0 left-0 w-80 lg:w-80 lg:static transition-transform duration-300 ease-in-out z-40 flex flex-col h-full shadow-2xl lg:shadow-lg bg-white dark:bg-gray-800 border-r dark:border-gray-700"
+                 :class="showLeftDrawer ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'">
+                
+                <!-- Cabecera Drawer Móvil -->
+                <div class="lg:hidden flex items-center justify-between p-4 border-b dark:border-gray-700">
+                    <h3 class="font-bold">Herramientas</h3>
+                    <Button icon="pi pi-times" text rounded severity="secondary" @click="showLeftDrawer = false" />
+                </div>
+
                 <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
                     <h3 class="font-bold mb-4 text-lg">Configuración</h3>
                     <div class="space-y-4 mb-6">
@@ -398,12 +522,16 @@ const dpiOptions = [203, 300, 600];
                         transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomScale})`,
                         width: labelStyle.width,
                         height: labelStyle.height
-                    }">
+                    }"
+                    @mousedown.stop
+                    @touchstart.stop
+                    @click.self="selectedElement = null">
                     
                     <!-- Label Content -->
                     <div class="w-full h-full relative overflow-hidden bg-white">
                         <div v-for="element in templateElements" :key="element.id"
                             @mousedown.stop="startDragElement($event, element)"
+                            @touchstart.stop.prevent="startDragElement($event, element)"
                             @click.stop="selectedElement = element"
                             :style="getElementStyle(element)"
                             class="hover:outline hover:outline-1 hover:outline-blue-300 cursor-move select-none"
@@ -423,6 +551,7 @@ const dpiOptions = [203, 300, 600];
                             <!-- Botón Eliminar Flotante -->
                             <button v-if="selectedElement?.id === element.id" 
                                 @click.stop="removeElement(element.id)" 
+                                @touchstart.stop.prevent="removeElement(element.id)"
                                 class="absolute -top-3 -right-3 bg-red-500 text-white rounded-full size-4 flex items-center justify-center shadow hover:bg-red-600 z-[60]"
                                 title="Eliminar">
                                 <i class="pi pi-times !text-[9px]"></i>
@@ -440,7 +569,7 @@ const dpiOptions = [203, 300, 600];
 
                 <!-- Controles Zoom -->
                 <div class="absolute bottom-6 right-6 flex flex-col items-end gap-2 z-50">
-                    <div v-if="!isSpacePressed" class="bg-black/70 text-white px-3 py-1.5 rounded-full text-xs shadow-lg animate-fade-in pointer-events-none select-none">
+                    <div v-if="!isSpacePressed" class="bg-black/70 text-white px-3 py-1.5 rounded-full text-xs shadow-lg animate-fade-in pointer-events-none select-none hidden lg:block">
                         <i class="pi pi-info-circle mr-1"></i> Mantén <b>Espacio</b> para mover el lienzo
                     </div>
                     
@@ -455,8 +584,16 @@ const dpiOptions = [203, 300, 600];
             </div>
 
             <!-- PANEL DERECHO: Propiedades -->
-            <div class="w-80 border-l dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col h-full shrink-0 shadow-lg">
-                <h3 class="font-bold p-4 border-b text-lg">Propiedades</h3>
+            <div class="fixed inset-y-0 right-0 w-80 lg:w-80 lg:static transition-transform duration-300 ease-in-out z-40 flex flex-col h-full shadow-2xl lg:shadow-lg bg-white dark:bg-gray-800 border-l dark:border-gray-700"
+                 :class="showRightDrawer ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'">
+                
+                <!-- Cabecera Drawer Móvil -->
+                <div class="lg:hidden flex items-center justify-between p-4 border-b dark:border-gray-700">
+                    <h3 class="font-bold">Propiedades</h3>
+                    <Button icon="pi pi-times" text rounded severity="secondary" @click="showRightDrawer = false" />
+                </div>
+
+                <h3 class="hidden lg:block font-bold p-4 border-b text-lg">Propiedades</h3>
                 <div v-if="selectedElement" class="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
                     
                     <!-- Posición (Coordenadas) -->
@@ -481,11 +618,17 @@ const dpiOptions = [203, 300, 600];
                         <InputNumber v-model="selectedElement.data.font_size" class="w-full" showButtons :min="1" :max="10" />
                         <small class="text-gray-500 text-xs">Índice de fuente interna de impresora.</small>
 
+                        <!-- MODIFICADO: Iteración de grupos de variables -->
                         <Accordion class="mt-4"><AccordionPanel value="0"><AccordionHeader>Variables</AccordionHeader><AccordionContent>
-                            <div class="flex flex-wrap gap-1">
-                                <Button v-for="item in placeholderOptions.flatMap(g => g.items)" :key="item.value" 
-                                    @click="selectedElement.data.value = (selectedElement.data.value || '') + item.value" 
-                                    :label="item.label" severity="secondary" outlined size="small" class="!text-xs !py-1 !px-2" />
+                            <div class="flex flex-col gap-3">
+                                <div v-for="group in placeholderOptions" :key="group.group">
+                                    <div class="text-xs font-bold text-gray-500 mb-1 uppercase">{{ group.group }}</div>
+                                    <div class="flex flex-wrap gap-1">
+                                        <Button v-for="item in group.items" :key="item.value" 
+                                            @click="selectedElement.data.value = (selectedElement.data.value || '') + item.value" 
+                                            :label="item.label" severity="secondary" outlined size="small" class="!text-xs !py-1 !px-2" />
+                                    </div>
+                                </div>
                             </div>
                         </AccordionContent></AccordionPanel></Accordion>
                     </div>

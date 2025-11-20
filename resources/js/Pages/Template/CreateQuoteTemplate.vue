@@ -8,6 +8,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import { useTemplateVariables } from '@/Composables/useTemplateVariables';
+import Checkbox from 'primevue/checkbox'; // Importar Checkbox
 
 // CORRECCIÓN DEFINITIVA: Sintaxis de Array para evitar errores de parser
 const props = defineProps([
@@ -44,6 +45,16 @@ const pan = ref({ x: 0, y: 0 });
 const isPanning = ref(false);
 const lastMousePos = ref({ x: 0, y: 0 });
 const isSpacePressed = ref(false);
+
+// --- ESTADO MÓVIL (DRAWERS) ---
+const showLeftDrawer = ref(false);
+const showRightDrawer = ref(false);
+const lastPinchDistance = ref(null); // Para zoom con dos dedos
+
+// --- ARRASTRE DE ELEMENTOS (DRAG & DROP) ---
+const isDraggingElement = ref(false);
+const dragStartPos = ref({ x: 0, y: 0 });
+const elementStartPos = ref({ x: 0, y: 0 });
 // Estado para prevenir deselección accidental tras arrastrar
 const isJustFinishedDragging = ref(false); 
 
@@ -84,6 +95,13 @@ onMounted(() => {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('resize', fitToScreen);
+
+    // Registrar eventos touch manualmente como no-pasivos
+    if (canvasContainerRef.value) {
+        canvasContainerRef.value.addEventListener('touchstart', handleTouchStart, { passive: false });
+        canvasContainerRef.value.addEventListener('touchmove', handleTouchMove, { passive: false });
+        canvasContainerRef.value.addEventListener('touchend', handleTouchEnd);
+    }
     
     setTimeout(fitToScreen, 100);
 });
@@ -92,11 +110,25 @@ onUnmounted(() => {
     window.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('keyup', handleKeyUp);
     window.removeEventListener('resize', fitToScreen);
+
+    if (canvasContainerRef.value) {
+        canvasContainerRef.value.removeEventListener('touchstart', handleTouchStart);
+        canvasContainerRef.value.removeEventListener('touchmove', handleTouchMove);
+        canvasContainerRef.value.removeEventListener('touchend', handleTouchEnd);
+    }
 });
 
 watch(templateElements, (newElements) => {
     form.content.elements = newElements;
 }, { deep: true });
+
+// Si se selecciona un elemento en móvil, abrir panel derecho automáticamente
+watch(selectedElement, (val) => {
+    if (val && window.innerWidth < 1024) {
+        showRightDrawer.value = true;
+        showLeftDrawer.value = false;
+    }
+});
 
 // --- Lógica de Navegación (Zoom & Pan) ---
 
@@ -147,6 +179,64 @@ const endPan = () => {
          if (canvasContainerRef.value) canvasContainerRef.value.style.cursor = 'default';
          document.body.style.cursor = '';
     }
+};
+
+// Lógica de Deselección Global
+const onCanvasClick = () => {
+    if (!isSpacePressed.value && !isPanning.value && !isJustFinishedDragging.value) {
+        selectedElement.value = null;
+    }
+};
+
+// --- LÓGICA TÁCTIL (TOUCH) ---
+const getDistance = (touch1, touch2) => {
+    const dx = touch1.clientX - touch2.clientX;
+    const dy = touch1.clientY - touch2.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+};
+
+const handleTouchStart = (e) => {
+    if (isDraggingElement.value) return;
+
+    if (e.touches.length === 1) {
+        // Un dedo: Paneo (si toca el fondo)
+        if (e.target === canvasContainerRef.value || isSpacePressed.value) {
+            isPanning.value = true;
+            lastMousePos.value = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+    } else if (e.touches.length === 2) {
+        // Dos dedos: Iniciar Zoom
+        isPanning.value = false;
+        lastPinchDistance.value = getDistance(e.touches[0], e.touches[1]);
+    }
+};
+
+const handleTouchMove = (e) => {
+    if (isDraggingElement.value) return;
+
+    if (e.touches.length === 1 && isPanning.value) {
+        if (e.cancelable) e.preventDefault(); 
+        const deltaX = e.touches[0].clientX - lastMousePos.value.x;
+        const deltaY = e.touches[0].clientY - lastMousePos.value.y;
+        pan.value.x += deltaX;
+        pan.value.y += deltaY;
+        lastMousePos.value = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else if (e.touches.length === 2 && lastPinchDistance.value) {
+        if (e.cancelable) e.preventDefault(); 
+        const dist = getDistance(e.touches[0], e.touches[1]);
+        const scaleChange = dist / lastPinchDistance.value;
+        
+        let newScale = zoomScale.value * scaleChange;
+        newScale = Math.min(Math.max(newScale, 0.1), 3.0);
+        zoomScale.value = newScale;
+        
+        lastPinchDistance.value = dist;
+    }
+};
+
+const handleTouchEnd = () => {
+    isPanning.value = false;
+    lastPinchDistance.value = null;
 };
 
 const fitToScreen = () => {
@@ -253,7 +343,8 @@ const deleteImage = async (imgId) => {
 };
 
 // --- Variables ---
-const { placeholderOptions } = useTemplateVariables(() => props.customFieldDefinitions);
+// MODIFICADO: Pasamos el contexto 'cotizacion' para filtrar variables
+const { placeholderOptions } = useTemplateVariables(() => props.customFieldDefinitions, 'cotizacion');
 
 const insertVariable = (variable) => {
     if (!selectedElement.value) return;
@@ -282,47 +373,59 @@ const selectElement = (element) => {
     selectedElement.value = element;
 };
 
+// Helper para obtener posición unificada
+const getClientPos = (e) => {
+    return e.touches ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : { x: e.clientX, y: e.clientY };
+};
+
 const startDragElement = (event, element) => {
     if (isSpacePressed.value) return;
     if (element.data.positionType !== 'absolute') return;
     
+    // En touch, prevenimos default para evitar scroll
+    if (event.type === 'touchstart') event.preventDefault();
     event.stopPropagation();
     
     selectedElement.value = element;
-    // Usamos un estado temporal para el arrastre pero NO para selección
-    // La selección ya se hizo arriba
-    
-    const startX = event.clientX;
-    const startY = event.clientY;
-    const startElX = element.data.x;
-    const startElY = element.data.y;
+    isDraggingElement.value = true;
 
-    const onDragElement = (e) => {
-        const deltaX = (e.clientX - startX) / zoomScale.value;
-        const deltaY = (e.clientY - startY) / zoomScale.value;
-        
-        element.data.x = Math.round((startElX + deltaX) / 5) * 5;
-        element.data.y = Math.round((startElY + deltaY) / 5) * 5;
-    };
+    const pos = getClientPos(event);
+    dragStartPos.value = { x: pos.x, y: pos.y };
+    elementStartPos.value = { x: element.data.x, y: element.data.y };
 
-    const stopDragElement = () => {
-        isJustFinishedDragging.value = true;
-        setTimeout(() => { isJustFinishedDragging.value = false; }, 100); 
-
-        window.removeEventListener('mousemove', onDragElement);
-        window.removeEventListener('mouseup', stopDragElement);
-    };
-
-    window.addEventListener('mousemove', onDragElement);
-    window.addEventListener('mouseup', stopDragElement);
-};
-
-
-const onPaperClick = () => {
-    if (!isSpacePressed.value && !isPanning.value && !isJustFinishedDragging.value) {
-        selectedElement.value = null;
+    if (event.type === 'mousedown') {
+        window.addEventListener('mousemove', onDragElementMove);
+        window.addEventListener('mouseup', onDragElementEnd);
+    } else {
+        window.addEventListener('touchmove', onDragElementMove, { passive: false });
+        window.addEventListener('touchend', onDragElementEnd);
     }
 };
+
+const onDragElementMove = (e) => {
+    if (!isDraggingElement.value || !selectedElement.value) return;
+    if (e.type === 'touchmove' && e.cancelable) e.preventDefault();
+
+    const pos = getClientPos(e);
+    const deltaX = (pos.x - dragStartPos.value.x) / zoomScale.value;
+    const deltaY = (pos.y - dragStartPos.value.y) / zoomScale.value;
+    
+    // Snap to grid (5px)
+    selectedElement.value.data.x = Math.round((elementStartPos.value.x + deltaX) / 5) * 5;
+    selectedElement.value.data.y = Math.round((elementStartPos.value.y + deltaY) / 5) * 5;
+};
+
+const onDragElementEnd = () => {
+    isDraggingElement.value = false;
+    isJustFinishedDragging.value = true;
+    setTimeout(() => { isJustFinishedDragging.value = false; }, 100); 
+
+    window.removeEventListener('mousemove', onDragElementMove);
+    window.removeEventListener('mouseup', onDragElementEnd);
+    window.removeEventListener('touchmove', onDragElementMove);
+    window.removeEventListener('touchend', onDragElementEnd);
+};
+
 
 // --- Utils y CRUD ---
 const submit = () => {
@@ -331,7 +434,7 @@ const submit = () => {
     const method = props.printTemplate ? 'put' : 'post';
     form[method](route(routeName, routeParams), {
         // onSuccess: () => toast.add({ severity: 'success', summary: 'Guardado', detail: 'Plantilla guardada', life: 3000 }),
-        // onError: () => toast.add({ severity: 'error', summary: 'Error', detail: 'Por favor revisa los campos requeridos', life: 3000 })
+        onError: () => toast.add({ severity: 'error', summary: 'Error', detail: 'Por favor revisa los campos requeridos', life: 3000 })
     });
 };
 
@@ -354,13 +457,12 @@ const addElementToEnd = (type) => {
     const newElement = { id: uuidv4(), type, data: { positionType: 'flow' } };
     // Defaults
     if (type === 'rich_text') newElement.data = { ...newElement.data, content: '<p>Texto...</p>', align: 'left' };
-    if (type === 'quote_table') newElement.data = { ...newElement.data, showImages: true, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'] };
+    // MODIFICADO: Se añade showBreakdown por defecto a la tabla
+    if (type === 'quote_table') newElement.data = { ...newElement.data, showImages: true, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'], showBreakdown: true };
     if (type === 'columns_2') newElement.data = { ...newElement.data, col1: '<p>Emisor...</p>', col2: '<p>Cliente...</p>', gap: '20px' };
     if (type === 'separator') newElement.data = { ...newElement.data, color: '#e5e7eb', height: 2, style: 'solid', margin: '20px' };
-    // UPDATED: Signature Defaults (Default to center)
     if (type === 'signature') newElement.data = { ...newElement.data, label: 'Firma', align: 'center', lineWidth: '200px' };
     
-    // UPDATED: Image default (No align needed)
     if (type === 'image') newElement.data = { positionType: 'absolute', url: '', width: 150, x: 50, y: 50, isUploading: false };
     if (type === 'shape') newElement.data = { positionType: 'absolute', shapeType: 'rectangle', color: '#3B82F6', width: 100, height: 100, x: 100, y: 100, opacity: 100, rotation: 0 };
 
@@ -371,6 +473,12 @@ const addElementToEnd = (type) => {
     }
     templateElements.value.push(newElement);
     selectedElement.value = newElement;
+
+    // En móvil, abrir drawer de propiedades automáticamente
+    if (window.innerWidth < 1024) {
+        showLeftDrawer.value = false;
+        showRightDrawer.value = true;
+    }
 };
 
 // Inserción Relativa
@@ -391,10 +499,10 @@ const openAddMenu = (event, elementId, position) => {
 const addElementRelative = (type) => {
     const temp = { id: uuidv4(), type, data: { positionType: 'flow' } };
     if (type === 'rich_text') temp.data = { ...temp.data, content: '<p>Nuevo...</p>', align: 'left' };
-    if (type === 'quote_table') temp.data = { ...temp.data, showImages: true, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'] };
+    // MODIFICADO: Default showBreakdown
+    if (type === 'quote_table') temp.data = { ...temp.data, showImages: true, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'], showBreakdown: true };
     if (type === 'columns_2') temp.data = { ...temp.data, col1: '<p>Columna 1</p>', col2: '<p>Columna 2</p>', gap: '20px' };
     if (type === 'separator') temp.data = { ...temp.data, color: '#e5e7eb', height: 2, style: 'solid', margin: '20px' };
-    // UPDATED: Signature Defaults
     if (type === 'signature') temp.data = { ...temp.data, label: 'Firma', align: 'center', lineWidth: '200px' };
 
     const { id: targetId, position } = currentInsertionTarget.value;
@@ -404,6 +512,11 @@ const addElementRelative = (type) => {
         else templateElements.value.splice(targetIndex + 1, 0, temp);
     }
     selectedElement.value = temp;
+    
+    // En móvil, abrir drawer de propiedades
+    if (window.innerWidth < 1024) {
+        showRightDrawer.value = true;
+    }
 };
 
 const removeElement = (id) => {
@@ -434,10 +547,38 @@ const alignOptions = [
             </div>
         </div>
 
-        <div v-else class="flex h-[calc(100vh-7rem)] overflow-hidden bg-gray-100 dark:bg-gray-900 select-none">
+        <div v-else class="flex flex-col lg:flex-row h-[calc(100vh-7rem)] overflow-hidden bg-gray-100 dark:bg-gray-900 select-none relative">
             
+            <!-- BACKDROP MÓVIL -->
+            <div v-if="showLeftDrawer || showRightDrawer" 
+                 class="fixed inset-0 bg-black/50 z-30 lg:hidden transition-opacity" 
+                 @click="showLeftDrawer = false; showRightDrawer = false">
+            </div>
+
+            <!-- BARRA DE HERRAMIENTAS MÓVIL (Top Bar) -->
+            <div class="lg:hidden w-full h-14 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between px-4 z-20 shrink-0 shadow-sm">
+                <Button icon="pi pi-bars" text rounded severity="secondary" @click="showLeftDrawer = !showLeftDrawer" v-tooltip.bottom="'Configuración y Elementos'" />
+                <span class="font-bold text-sm text-gray-700 dark:text-gray-200 truncate">{{ form.name || 'Nueva Cotización' }}</span>
+                <div class="relative">
+                    <Button icon="pi pi-pencil" text rounded 
+                            :severity="selectedElement ? 'primary' : 'secondary'" 
+                            @click="selectedElement ? (showRightDrawer = !showRightDrawer) : null"
+                            :disabled="!selectedElement"
+                            v-tooltip.bottom="'Propiedades'" />
+                    <span v-if="selectedElement" class="absolute top-1 right-1 w-2 h-2 bg-blue-500 rounded-full"></span>
+                </div>
+            </div>
+
             <!-- PANEL IZQUIERDO -->
-            <div class="w-80 border-r dark:border-gray-700 bg-white dark:bg-gray-800 z-20 flex flex-col h-full shrink-0 shadow-lg">
+            <div class="fixed inset-y-0 left-0 w-80 lg:w-80 lg:static transition-transform duration-300 ease-in-out z-40 flex flex-col h-full shadow-2xl lg:shadow-lg bg-white dark:bg-gray-800 border-r dark:border-gray-700"
+                 :class="showLeftDrawer ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'">
+                
+                <!-- Cabecera Drawer Móvil -->
+                <div class="lg:hidden flex items-center justify-between p-4 border-b dark:border-gray-700">
+                    <h3 class="font-bold">Herramientas</h3>
+                    <Button icon="pi pi-times" text rounded severity="secondary" @click="showLeftDrawer = false" />
+                </div>
+
                 <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
                     <h3 class="font-bold mb-4 text-lg">Configuración</h3>
                     <div class="space-y-4 mb-6">
@@ -447,7 +588,7 @@ const alignOptions = [
                             <InputError :message="form.errors.name" class="mt-1" />
                         </div>
                         <div>
-                            <InputLabel value="Sucursales *" />
+                            <InputLabel value="Sucursales" />
                             <MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" optionValue="id" placeholder="Seleccionar" class="w-full" :maxSelectedLabels="1" :invalid="!!form.errors.branch_ids" />
                             <InputError :message="form.errors.branch_ids" class="mt-1" />
                         </div>
@@ -473,12 +614,19 @@ const alignOptions = [
             <!-- PANEL CENTRAL (CANVAS) -->
             <div ref="canvasContainerRef" 
                 class="flex-1 relative overflow-hidden dark:bg-black/20 flex items-center justify-center cursor-default group-canvas"
+                @click="onCanvasClick"
+                @mousedown="startPan" 
+                @mousemove="doPan" 
+                @mouseup="endPan" 
+                @mouseleave="endPan"
+                @touchstart="handleTouchStart"
+                @touchmove="handleTouchMove"
+                @touchend="handleTouchEnd"
             >
                 <!-- Overlay para Mover con Espacio (Cubre todo para capturar eventos) -->
                 <div v-if="isSpacePressed" 
-                    class="absolute inset-0 z-[100] cursor-grab active:cursor-grabbing bg-transparent"
-                    @mousedown="startPan" @mousemove="doPan" @mouseup="endPan" @mouseleave="endPan"
-                ></div>
+                    class="absolute inset-0 z-[100] cursor-grab active:cursor-grabbing bg-transparent">
+                </div>
 
                 <!-- Menu Contextual -->
                 <Menu ref="addMenuRef" :model="addMenuTemplate" :popup="true" />
@@ -491,7 +639,9 @@ const alignOptions = [
                         transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomScale})`,
                         padding: form.content.config.margins || '2.5cm'
                     }"
-                    @click="onPaperClick"
+                    @mousedown.stop
+                    @touchstart.stop
+                    @click.self="selectedElement = null"
                 >
                     <div class="w-full h-full relative">
                         <template v-for="element in templateElements" :key="element.id">
@@ -512,6 +662,7 @@ const alignOptions = [
 
                                 <div v-if="element.type === 'rich_text'" v-html="element.data.content" class="prose max-w-none break-words text-sm pointer-events-none"></div>
                                 
+                                <!-- MODIFICADO: Tabla de Conceptos con Desglose Opcional -->
                                 <div v-if="element.type === 'quote_table'" class="w-full overflow-x-auto pointer-events-none">
                                     <table class="w-full border-collapse text-xs">
                                         <thead>
@@ -523,6 +674,15 @@ const alignOptions = [
                                             <tr class="border-b"><td class="p-1 text-center">1</td><td class="p-1">Ejemplo</td><td class="p-1 text-right">$100</td></tr>
                                         </tbody>
                                     </table>
+                                    
+                                    <!-- Previsualización del Desglose de Totales -->
+                                    <div v-if="element.data.showBreakdown !== false" class="flex justify-end mt-2 text-xs">
+                                        <div class="w-40 space-y-1">
+                                            <div class="flex justify-between"><span>Subtotal:</span><span>$100.00</span></div>
+                                            <div class="flex justify-between"><span>IVA:</span><span>$16.00</span></div>
+                                            <div class="flex justify-between font-bold border-t border-gray-300 pt-1"><span>Total:</span><span>$116.00</span></div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div v-if="element.type === 'columns_2'" class="flex" :style="{ gap: element.data.gap }">
@@ -545,12 +705,13 @@ const alignOptions = [
                             <!-- ABSOLUTOS -->
                             <div v-else-if="element.data.positionType === 'absolute'"
                                 @mousedown="startDragElement($event, element)"
+                                @touchstart.stop.prevent="startDragElement($event, element)"
                                 @click.stop="selectElement(element)" 
                                 class="absolute cursor-move group"
                                 :style="{ left: element.data.x + 'px', top: element.data.y + 'px', zIndex: selectedElement?.id === element.id ? 50 : 10 }"
                             >
                                 <div class="absolute -inset-2 border-2 border-transparent rounded pointer-events-none" :class="{ '!border-blue-500': selectedElement?.id === element.id, 'group-hover:border-blue-300 dashed': selectedElement?.id !== element.id }"></div>
-                                <button v-if="selectedElement?.id === element.id" @click.stop="removeElement(element.id)" class="absolute -top-4 -right-4 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center shadow z-50"><i class="pi pi-times text-[10px]"></i></button>
+                                <button v-if="selectedElement?.id === element.id" @click.stop="removeElement(element.id)" @touchstart.stop.prevent="removeElement(element.id)" class="absolute -top-4 -right-4 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center shadow z-50"><i class="pi pi-times text-[10px]"></i></button>
 
                                 <!-- IMAGE UPDATED: Removed alignment class 'flex justify-...' since it's absolute -->
                                 <div v-if="element.type === 'image'" :style="{ width: element.data.width + 'px' }">
@@ -573,7 +734,7 @@ const alignOptions = [
 
                 <!-- Controles Zoom & Info -->
                 <div class="absolute bottom-6 right-6 flex flex-col items-end gap-2 z-50">
-                    <div v-if="!isSpacePressed" class="bg-black/70 text-white px-3 py-1.5 rounded-full text-xs shadow-lg animate-fade-in pointer-events-none select-none">
+                    <div v-if="!isSpacePressed" class="bg-black/70 text-white px-3 py-1.5 rounded-full text-xs shadow-lg animate-fade-in pointer-events-none select-none hidden lg:block">
                         <i class="pi pi-info-circle mr-1"></i> Mantén <b>Espacio</b> para mover el lienzo
                     </div>
                     
@@ -587,8 +748,16 @@ const alignOptions = [
             </div>
 
             <!-- PANEL DERECHO -->
-            <div class="w-80 border-l dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col h-full shrink-0 shadow-lg">
-                <h3 class="font-bold p-4 border-b text-lg">Propiedades</h3>
+            <div class="fixed inset-y-0 right-0 w-80 lg:w-80 lg:static transition-transform duration-300 ease-in-out z-40 flex flex-col h-full shadow-2xl lg:shadow-lg bg-white dark:bg-gray-800 border-l dark:border-gray-700"
+                 :class="showRightDrawer ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'">
+                
+                <!-- Cabecera Drawer Móvil -->
+                <div class="lg:hidden flex items-center justify-between p-4 border-b dark:border-gray-700">
+                    <h3 class="font-bold">Propiedades</h3>
+                    <Button icon="pi pi-times" text rounded severity="secondary" @click="showRightDrawer = false" />
+                </div>
+
+                <h3 class="hidden lg:block font-bold p-4 border-b text-lg">Propiedades</h3>
                 <div v-if="selectedElement" class="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
                     
                     <!-- Posición Absoluta -->
@@ -611,8 +780,17 @@ const alignOptions = [
                              <div @click="lastFocusedColumn = 'col2'" :class="{'ring-2 ring-blue-200 rounded': lastFocusedColumn === 'col2'}"><InputLabel value="Columna Derecha" /><Editor v-model="selectedElement.data.col2" editorStyle="height: 100px" /></div>
                              <div><InputLabel value="Espacio" /><InputText v-model="selectedElement.data.gap" class="w-full" /></div>
                         </div>
+                        
+                        <!-- MODIFICADO: Iteración de grupos de variables -->
                         <Accordion class="mt-4"><AccordionPanel value="0"><AccordionHeader>Variables</AccordionHeader><AccordionContent>
-                            <div class="flex flex-wrap gap-1"><Button v-for="item in placeholderOptions.flatMap(g => g.items)" :key="item.value" @click="insertVariable(item.value)" :label="item.label" severity="secondary" outlined size="small" class="!text-xs !py-1 !px-2" /></div>
+                            <div class="flex flex-col gap-3">
+                                <div v-for="group in placeholderOptions" :key="group.group">
+                                    <div class="text-xs font-bold text-gray-500 mb-1 uppercase">{{ group.group }}</div>
+                                    <div class="flex flex-wrap gap-1">
+                                        <Button v-for="item in group.items" :key="item.value" @click="insertVariable(item.value)" :label="item.label" severity="secondary" outlined size="small" class="!text-xs !py-1 !px-2" />
+                                    </div>
+                                </div>
+                            </div>
                         </AccordionContent></AccordionPanel></Accordion>
                     </div>
 
@@ -656,6 +834,12 @@ const alignOptions = [
                         <div class="flex items-center gap-2 mt-1"><ColorPicker v-model="currentHeaderColor" format="hex" /><InputText v-model="currentHeaderColor" class="w-24 h-8 text-sm" /></div>
                         <InputLabel value="Texto Cabecera" class="mt-4" />
                         <div class="flex items-center gap-2 mt-1"><ColorPicker v-model="currentHeaderTextColor" format="hex" /><InputText v-model="currentHeaderTextColor" class="w-24 h-8 text-sm" /></div>
+                        
+                        <!-- MODIFICADO: Opción de mostrar desglose -->
+                        <div class="flex items-center gap-2 mt-6">
+                            <Checkbox v-model="selectedElement.data.showBreakdown" binary />
+                            <label class="text-sm text-gray-700 dark:text-gray-300">Mostrar desglose de totales (Subtotal, IVA...)</label>
+                        </div>
                     </div>
                     
                     <div v-if="selectedElement.type === 'separator'">
@@ -677,9 +861,17 @@ const alignOptions = [
                              <template #option="slotProps"><i :class="slotProps.option.icon"></i></template>
                         </SelectButton>
                         
+                        <!-- MODIFICADO: Iteración de grupos de variables -->
                         <div class="mt-4">
                              <Accordion><AccordionPanel value="0"><AccordionHeader>Variables</AccordionHeader><AccordionContent>
-                                <div class="flex flex-wrap gap-1"><Button v-for="item in placeholderOptions.flatMap(g => g.items)" :key="item.value" @click="insertVariable(item.value)" :label="item.label" severity="secondary" outlined size="small" class="!text-xs !py-1 !px-2" /></div>
+                                <div class="flex flex-col gap-3">
+                                    <div v-for="group in placeholderOptions" :key="group.group">
+                                        <div class="text-xs font-bold text-gray-500 mb-1 uppercase">{{ group.group }}</div>
+                                        <div class="flex flex-wrap gap-1">
+                                            <Button v-for="item in group.items" :key="item.value" @click="insertVariable(item.value)" :label="item.label" severity="secondary" outlined size="small" class="!text-xs !py-1 !px-2" />
+                                        </div>
+                                    </div>
+                                </div>
                             </AccordionContent></AccordionPanel></Accordion>
                         </div>
                     </div>

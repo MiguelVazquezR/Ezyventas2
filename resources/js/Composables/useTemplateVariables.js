@@ -1,84 +1,114 @@
 import { computed } from 'vue';
 
 /**
- * Define las variables estáticas base para todos los tipos de plantillas,
- * ahora organizadas por su modelo/entidad lógica.
+ * Define las variables estáticas base organizadas por contexto.
  */
-const getBaseVariables = () => ([
-    {
+const getAllVariables = () => ({
+    negocio: {
         group: 'Negocio',
         items: [
             { label: 'Nombre del negocio', value: '{{negocio.nombre}}' },
             { label: 'Razón social', value: '{{negocio.razon_social}}' },
-            { label: 'Dirección del negocio', value: '{{negocio.direccion}}' },
-            { label: 'Teléfono del negocio', value: '{{negocio.telefono}}' },
+            { label: 'Dirección', value: '{{negocio.direccion}}' },
+            { label: 'Teléfono', value: '{{negocio.telefono}}' },
         ]
     },
-    {
+    sucursal: {
         group: 'Sucursal',
         items: [
             { label: 'Nombre sucursal', value: '{{sucursal.nombre}}' },
-            { label: 'Dirección sucursal', value: '{{sucursal.direccion}}' },
-            { label: 'Teléfono sucursal', value: '{{sucursal.telefono}}' },
+            { label: 'Dirección', value: '{{sucursal.direccion}}' },
+            { label: 'Teléfono', value: '{{sucursal.telefono}}' },
         ]
     },
-    {
-        group: 'Transacción (Venta)',
-        items: [
-            { label: 'Folio', value: '{{v.folio}}' }, { label: 'Fecha', value: '{{v.fecha}}' }, { label: 'Hora', value: '{{v.hora}}' },
-            { label: 'Fecha y hora', value: '{{v.fecha_hora}}' }, { label: 'Subtotal', value: '{{v.subtotal}}' }, { label: 'Descuentos', value: '{{v.descuentos}}' },
-            { label: 'Impuestos', value: '{{v.impuestos}}' }, { label: 'Total', value: '{{v.total}}' },
-            { label: 'Métodos de pago', value: '{{v.metodos_pago}}' },
-            { label: 'Total pagado', value: '{{v.total_pagado}}' },
-            { label: 'Notas de venta', value: '{{v.notas_venta}}' },
-        ]
-    },
-    {
-        group: 'Orden de Servicio',
-        items: [
-            { label: 'Folio (OS)', value: '{{os.folio}}' }, { label: 'Fecha recepción', value: '{{os.fecha_recepcion}}' }, { label: 'Hora recepción', value: '{{os.hora_recepcion}}' },
-            { label: 'Fecha y Hora recepción', value: '{{os.fecha_hora_recepcion}}' }, { label: 'Problemas reportados', value: '{{os.problemas_reportados}}' },
-            { label: 'Equipo/Máquina', value: '{{os.item_description}}' }, { label: 'Subtotal (OS)', value: '{{os.subtotal}}' }, { label: 'Descuento (OS)', value: '{{os.descuento}}' },
-            { label: 'Total (OS)', value: '{{os.total}}' },
-            // Las variables de pago se movieron a 'Transacción' ya que dependen de ella.
-        ]
-    },
-    {
+    cliente: {
         group: 'Cliente',
         items: [
-            { label: 'Nombre del cliente', value: '{{cliente.nombre}}' },
-            { label: 'Teléfono del cliente', value: '{{cliente.telefono}}' },
-            { label: 'Email del cliente', value: '{{cliente.email}}' },
-            { label: 'Empresa del cliente', value: '{{cliente.empresa}}' },
+            { label: 'Nombre completo', value: '{{cliente.nombre}}' },
+            { label: 'Teléfono', value: '{{cliente.telefono}}' },
+            { label: 'Email', value: '{{cliente.email}}' },
+            { label: 'Empresa', value: '{{cliente.empresa}}' },
+            { label: 'Dirección', value: '{{cliente.direccion}}' },
         ]
     },
-    {
-        group: 'Vendedor',
-        items: [{ label: 'Nombre del vendedor', value: '{{vendedor.nombre}}' }]
-    },
-    {
-        group: 'Producto (para etiquetas)',
+    cotizacion: {
+        group: 'Cotización',
         items: [
-            { label: 'Nombre producto', value: '{{p.nombre}}' },
-            { label: 'Precio producto', value: '{{p.precio}}' },
-            { label: 'SKU producto', value: '{{p.sku}}' },
+            { label: 'Folio', value: '{{cotizacion.folio}}' },
+            { label: 'Fecha creación', value: '{{cotizacion.fecha_creacion}}' },
+            { label: 'Fecha vencimiento', value: '{{cotizacion.fecha_vencimiento}}' },
+            { label: 'Subtotal', value: '{{cotizacion.subtotal}}' },
+            { label: 'Impuestos', value: '{{cotizacion.impuestos}}' },
+            { label: 'Envío', value: '{{cotizacion.envio}}' },
+            { label: 'Descuento', value: '{{cotizacion.descuento}}' },
+            { label: 'Total', value: '{{cotizacion.total}}' },
+            { label: 'Notas', value: '{{cotizacion.notas}}' },
         ]
     },
-]);
+    transaccion: {
+        group: 'Venta / Ticket',
+        items: [
+            { label: 'Folio Venta', value: '{{v.folio}}' },
+            { label: 'Fecha', value: '{{v.fecha}}' },
+            { label: 'Hora', value: '{{v.hora}}' },
+            { label: 'Total Pagado', value: '{{v.total_pagado}}' },
+            { label: 'Cambio', value: '{{v.cambio}}' },
+            { label: 'Métodos de Pago', value: '{{v.metodos_pago}}' },
+            { label: 'Cajero', value: '{{vendedor.nombre}}' },
+        ]
+    },
+    orden_servicio: {
+        group: 'Orden de Servicio',
+        items: [
+            { label: 'Folio OS', value: '{{os.folio}}' },
+            { label: 'Fecha Recepción', value: '{{os.fecha_recepcion}}' },
+            { label: 'Equipo', value: '{{os.item_description}}' },
+            { label: 'Problemas', value: '{{os.problemas_reportados}}' },
+            { label: 'Diagnóstico', value: '{{os.diagnostico}}' },
+            { label: 'Fecha Promesa', value: '{{os.fecha_promesa}}' },
+        ]
+    },
+    producto: { 
+        group: 'Producto',
+        items: [
+            { label: 'Nombre', value: '{{p.nombre}}' },
+            { label: 'Precio', value: '{{p.precio}}' },
+            { label: 'SKU', value: '{{p.sku}}' },
+            { label: 'Código Barras', value: '{{p.codigo_barras}}' },
+        ]
+    }
+});
 
 /**
- * Composable de Vue para gestionar las variables de plantilla.
- * Acepta una función getter para los campos personalizados para mantener la reactividad.
- * @param {import('vue').ComputedRef<Array> | Function} customFieldDefinitionsGetter - Una función que devuelve el array de definiciones de campos personalizados (ej. () => props.customFieldDefinitions).
+ * Composable para gestionar variables de plantilla filtradas por contexto.
+ * @param {Function} customFieldDefinitionsGetter Getter para campos personalizados.
+ * @param {String} context 'cotizacion' | 'ticket' | 'etiqueta' | 'general'
  */
-export function useTemplateVariables(customFieldDefinitionsGetter) {
+export function useTemplateVariables(customFieldDefinitionsGetter, context = 'general') {
 
     const placeholderOptions = computed(() => {
-        const options = getBaseVariables();
-        const customFieldsByModule = {};
+        const allVars = getAllVariables();
+        const activeGroups = [];
 
-        // Llama al getter para obtener el array actual. Asegura que sea un array.
+        // Lógica actualizada:
+        if (context === 'cotizacion') {
+            // Solo mostrar variables específicas de cotización y datos generales
+            activeGroups.push(allVars.negocio, allVars.sucursal, allVars.cliente, allVars.cotizacion);
+        } else {
+            // Para tickets y etiquetas, mostrar TODO excepto variables de cotización
+            activeGroups.push(
+                allVars.negocio, 
+                allVars.sucursal, 
+                allVars.cliente,
+                allVars.transaccion, 
+                allVars.orden_servicio, 
+                allVars.producto
+            );
+        }
+
+        // Procesar campos personalizados
         const definitions = (typeof customFieldDefinitionsGetter === 'function' ? customFieldDefinitionsGetter() : customFieldDefinitionsGetter) || [];
+        const customFieldsByModule = {};
 
         if (Array.isArray(definitions)) {
             definitions.forEach(field => {
@@ -89,21 +119,31 @@ export function useTemplateVariables(customFieldDefinitionsGetter) {
             });
         }
 
-        // Añadir campos personalizados de Órdenes de Servicio
-        if (customFieldsByModule['service_orders']) {
-            options.push({
-                group: 'Campos Personalizados (Orden de Servicio)',
-                items: customFieldsByModule['service_orders'].map(field => ({
-                    label: field.name,
-                    value: `{{os.custom.${field.key}}}`
-                }))
-            });
+        // Añadir campos personalizados según el contexto
+        if (context === 'cotizacion') {
+            if (customFieldsByModule['quotes']) {
+                activeGroups.push({
+                    group: 'Campos Personalizados (Cotización)',
+                    items: customFieldsByModule['quotes'].map(field => ({
+                        label: field.name,
+                        value: `{{cotizacion.custom.${field.key}}}`
+                    }))
+                });
+            }
+        } else {
+            // En tickets/etiquetas mostramos campos de OS por defecto
+            if (customFieldsByModule['service_orders']) {
+                 activeGroups.push({
+                    group: 'Campos Personalizados (OS)',
+                    items: customFieldsByModule['service_orders'].map(field => ({
+                        label: field.name,
+                        value: `{{os.custom.${field.key}}}`
+                    }))
+                });
+            }
         }
-        
-        // Aquí puedes añadir más lógica para otros módulos (ej. 'products') si los implementas en el backend
-        // if (customFieldsByModule['products']) { ... }
 
-        return options;
+        return activeGroups;
     });
 
     return { placeholderOptions };
