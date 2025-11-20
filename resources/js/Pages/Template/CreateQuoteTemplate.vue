@@ -330,7 +330,8 @@ const submit = () => {
     const routeParams = props.printTemplate ? props.printTemplate.id : {};
     const method = props.printTemplate ? 'put' : 'post';
     form[method](route(routeName, routeParams), {
-        onSuccess: () => toast.add({ severity: 'success', summary: 'Guardado', detail: 'Plantilla guardada', life: 3000 })
+        // onSuccess: () => toast.add({ severity: 'success', summary: 'Guardado', detail: 'Plantilla guardada', life: 3000 }),
+        // onError: () => toast.add({ severity: 'error', summary: 'Error', detail: 'Por favor revisa los campos requeridos', life: 3000 })
     });
 };
 
@@ -356,9 +357,11 @@ const addElementToEnd = (type) => {
     if (type === 'quote_table') newElement.data = { ...newElement.data, showImages: true, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'] };
     if (type === 'columns_2') newElement.data = { ...newElement.data, col1: '<p>Emisor...</p>', col2: '<p>Cliente...</p>', gap: '20px' };
     if (type === 'separator') newElement.data = { ...newElement.data, color: '#e5e7eb', height: 2, style: 'solid', margin: '20px' };
+    // UPDATED: Signature Defaults (Default to center)
     if (type === 'signature') newElement.data = { ...newElement.data, label: 'Firma', align: 'center', lineWidth: '200px' };
     
-    if (type === 'image') newElement.data = { positionType: 'absolute', url: '', width: 150, x: 50, y: 50, align: 'center', isUploading: false };
+    // UPDATED: Image default (No align needed)
+    if (type === 'image') newElement.data = { positionType: 'absolute', url: '', width: 150, x: 50, y: 50, isUploading: false };
     if (type === 'shape') newElement.data = { positionType: 'absolute', shapeType: 'rectangle', color: '#3B82F6', width: 100, height: 100, x: 100, y: 100, opacity: 100, rotation: 0 };
 
     if (newElement.data.positionType === 'absolute') {
@@ -391,6 +394,7 @@ const addElementRelative = (type) => {
     if (type === 'quote_table') temp.data = { ...temp.data, showImages: true, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'] };
     if (type === 'columns_2') temp.data = { ...temp.data, col1: '<p>Columna 1</p>', col2: '<p>Columna 2</p>', gap: '20px' };
     if (type === 'separator') temp.data = { ...temp.data, color: '#e5e7eb', height: 2, style: 'solid', margin: '20px' };
+    // UPDATED: Signature Defaults
     if (type === 'signature') temp.data = { ...temp.data, label: 'Firma', align: 'center', lineWidth: '200px' };
 
     const { id: targetId, position } = currentInsertionTarget.value;
@@ -410,7 +414,13 @@ const removeElement = (id) => {
 const pageSizeOptions = [{label: 'Carta', value: 'letter'}, {label: 'A4', value: 'a4'}];
 const orientationOptions = [{label: 'Vertical', value: 'portrait'}, {label: 'Horizontal', value: 'landscape'}];
 const shapeOptions = [{label: 'Rectángulo', value: 'rectangle'}, {label: 'Círculo', value: 'circle'}, {label: 'Estrella', value: 'star'}];
-const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-left' }, { label: 'Centro', value: 'center', icon: 'pi pi-align-center' }, { label: 'Derecha', value: 'end', icon: 'pi pi-align-right' }];
+
+// UPDATED: Align options now match Tailwind flex utils (start, center, end)
+const alignOptions = [
+    { label: 'Izquierda', value: 'start', icon: 'pi pi-align-left' }, 
+    { label: 'Centro', value: 'center', icon: 'pi pi-align-center' }, 
+    { label: 'Derecha', value: 'end', icon: 'pi pi-align-right' }
+];
 
 </script>
 
@@ -431,8 +441,16 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
                 <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
                     <h3 class="font-bold mb-4 text-lg">Configuración</h3>
                     <div class="space-y-4 mb-6">
-                        <div><InputLabel value="Nombre *" /><InputText v-model="form.name" class="w-full p-inputtext-sm" /></div>
-                        <div><InputLabel value="Sucursales" /><MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" optionValue="id" placeholder="Seleccionar" class="w-full" :maxSelectedLabels="1" /></div>
+                        <div>
+                            <InputLabel value="Nombre *" />
+                            <InputText v-model="form.name" class="w-full p-inputtext-sm" :invalid="!!form.errors.name" />
+                            <InputError :message="form.errors.name" class="mt-1" />
+                        </div>
+                        <div>
+                            <InputLabel value="Sucursales *" />
+                            <MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" optionValue="id" placeholder="Seleccionar" class="w-full" :maxSelectedLabels="1" :invalid="!!form.errors.branch_ids" />
+                            <InputError :message="form.errors.branch_ids" class="mt-1" />
+                        </div>
                         <div class="grid grid-cols-2 gap-2">
                             <div><InputLabel value="Tamaño" /><Select v-model="form.content.config.pageSize" :options="pageSizeOptions" optionLabel="label" optionValue="value" class="w-full" /></div>
                             <div><InputLabel value="Orientación" /><Select v-model="form.content.config.orientation" :options="orientationOptions" optionLabel="label" optionValue="value" class="w-full" /></div>
@@ -514,8 +532,13 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
 
                                 <div v-if="element.type === 'separator'" :style="{ borderTop: `${element.data.height}px ${element.data.style} ${element.data.color}`, margin: `${element.data.margin} 0` }"></div>
                                 
-                                <div v-if="element.type === 'signature'" :class="`flex flex-col items-${element.data.align === 'right' ? 'end' : (element.data.align === 'center' ? 'center' : 'start')} mt-8`">
-                                    <div class="border-t border-black pt-1" :style="{ width: element.data.lineWidth }"></div><span class="text-xs">{{ element.data.label }}</span>
+                                <!-- SIGNATURE UPDATED: Dynamic alignment and text -->
+                                <div v-if="element.type === 'signature'" 
+                                    class="flex flex-col mt-8"
+                                    :class="`items-${element.data.align || 'center'}`"
+                                >
+                                    <div class="border-t border-black pt-1" :style="{ width: element.data.lineWidth }"></div>
+                                    <span class="text-xs">{{ element.data.label }}</span>
                                 </div>
                             </div>
 
@@ -529,14 +552,16 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
                                 <div class="absolute -inset-2 border-2 border-transparent rounded pointer-events-none" :class="{ '!border-blue-500': selectedElement?.id === element.id, 'group-hover:border-blue-300 dashed': selectedElement?.id !== element.id }"></div>
                                 <button v-if="selectedElement?.id === element.id" @click.stop="removeElement(element.id)" class="absolute -top-4 -right-4 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center shadow z-50"><i class="pi pi-times text-[10px]"></i></button>
 
-                                <div v-if="element.type === 'image'" :class="`flex justify-${element.data.align === 'right' ? 'end' : (element.data.align === 'center' ? 'center' : 'start')}`" :style="{ width: element.data.width + 'px' }">
+                                <!-- IMAGE UPDATED: Removed alignment class 'flex justify-...' since it's absolute -->
+                                <div v-if="element.type === 'image'" :style="{ width: element.data.width + 'px' }">
                                     <div class="relative w-full">
                                         <img :src="element.data.url || 'https://placehold.co/150x150'" class="w-full h-auto pointer-events-none select-none" />
                                         <div v-if="element.data.isUploading" class="absolute inset-0 bg-white/70 flex items-center justify-center"><i class="pi pi-spin pi-spinner text-blue-500 text-2xl"></i></div>
                                     </div>
                                 </div>
 
-                                <div v-if="element.type === 'shape'" :class="`flex justify-${element.data.align === 'right' ? 'end' : (element.data.align === 'center' ? 'center' : 'start')}`">
+                                <!-- SHAPE UPDATED: Removed alignment class -->
+                                <div v-if="element.type === 'shape'">
                                     <div :style="{ width: element.data.width + 'px', height: element.data.height + 'px', backgroundColor: element.data.shapeType !== 'star' ? element.data.color : 'transparent', opacity: element.data.opacity/100, transform: `rotate(${element.data.rotation}deg)`, borderRadius: element.data.shapeType === 'circle' ? '50%' : '0' }">
                                         <svg v-if="element.data.shapeType === 'star'" viewBox="0 0 24 24" class="w-full h-full" :style="{ fill: element.data.color }"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                                     </div>
@@ -591,10 +616,10 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
                         </AccordionContent></AccordionPanel></Accordion>
                     </div>
 
-                    <!-- Imagen -->
+                    <!-- Imagen (UPDATED: Removed alignment selector) -->
                     <div v-if="selectedElement.type === 'image'">
                         <InputLabel value="Ancho (px)" /><InputNumber v-model="selectedElement.data.width" class="w-full" :min="20" />
-                        <InputLabel value="Alineación" class="mt-4" /><SelectButton v-model="selectedElement.data.align" :options="alignOptions" optionLabel="label" optionValue="value" class="w-full"><template #option="slotProps"><i :class="slotProps.option.icon"></i></template></SelectButton>
+                        
                         <div class="mt-4 p-3 border rounded bg-gray-50">
                              <div class="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto mb-2">
                                 <div v-for="img in localTemplateImages" :key="img.id" class="relative group">
@@ -637,6 +662,26 @@ const alignOptions = [{ label: 'Izquierda', value: 'left', icon: 'pi pi-align-le
                         <InputLabel value="Color" />
                         <div class="flex items-center gap-2 mt-1"><ColorPicker v-model="currentSeparatorColor" format="hex" /><InputText v-model="currentSeparatorColor" class="w-24 h-8 text-sm" /></div>
                         <InputLabel value="Grosor" class="mt-4" /><InputNumber v-model="selectedElement.data.height" class="w-full" />
+                    </div>
+
+                    <!-- NEW: Signature Properties -->
+                    <div v-if="selectedElement.type === 'signature'">
+                        <InputLabel value="Texto debajo de línea" />
+                        <InputText v-model="selectedElement.data.label" class="w-full mb-4" />
+                        
+                        <InputLabel value="Ancho de Línea" />
+                        <InputText v-model="selectedElement.data.lineWidth" class="w-full mb-4" placeholder="Ej: 200px o 50%" v-tooltip.top="'Puede usar px o %'" />
+
+                        <InputLabel value="Alineación" />
+                        <SelectButton v-model="selectedElement.data.align" :options="alignOptions" optionLabel="label" optionValue="value" class="w-full">
+                             <template #option="slotProps"><i :class="slotProps.option.icon"></i></template>
+                        </SelectButton>
+                        
+                        <div class="mt-4">
+                             <Accordion><AccordionPanel value="0"><AccordionHeader>Variables</AccordionHeader><AccordionContent>
+                                <div class="flex flex-wrap gap-1"><Button v-for="item in placeholderOptions.flatMap(g => g.items)" :key="item.value" @click="insertVariable(item.value)" :label="item.label" severity="secondary" outlined size="small" class="!text-xs !py-1 !px-2" /></div>
+                            </AccordionContent></AccordionPanel></Accordion>
+                        </div>
                     </div>
 
                 </div>
