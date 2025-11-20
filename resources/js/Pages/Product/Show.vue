@@ -144,22 +144,54 @@ const getPromotionSummary = (promo) => {
 };
 
 const generalImages = computed(() =>
-    props.product.media.filter(m => m.collection_name === 'product-general-images')
+    (props.product.media || []).filter(m => m.collection_name === 'product-general-images')
 );
 
+// Genera un mapa de 'Opción' -> 'URL Imagen' (ej. 'Rojo' -> 'url...')
 const variantImages = computed(() => {
-    const images = props.product.media.filter(m => m.collection_name === 'product-variant-images');
+    const media = props.product.media || [];
+    const images = media.filter(m => m.collection_name === 'product-variant-images');
     const imageMap = {};
     images.forEach(img => {
-        const option = img.custom_properties.variant_option;
-        if (!imageMap[option]) {
-            imageMap[option] = img.original_url;
+        // Acceso seguro a custom_properties
+        const properties = img.custom_properties || {};
+        const option = properties.variant_option;
+        if (option) {
+            // Convertimos a string para asegurar coincidencias (ej. "24" vs 24)
+            imageMap[String(option)] = img.original_url;
         }
     });
     return imageMap;
 });
 
-const isVariantProduct = computed(() => props.product.product_attributes.length > 0);
+// Función auxiliar para obtener la imagen de una variante buscando coincidencias en sus atributos
+const getVariantImage = (attributes) => {
+    if (!attributes) return null;
+    
+    // Manejar caso donde attributes venga como string JSON
+    let attrs = attributes;
+    if (typeof attrs === 'string') {
+        try {
+            attrs = JSON.parse(attrs);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    if (!attrs || typeof attrs !== 'object') return null;
+
+    // Iteramos sobre los valores de los atributos (ej. "Rojo", "M", "Algodón")
+    for (const value of Object.values(attrs)) {
+        // Convertimos el valor a string para buscar en el mapa
+        const valStr = String(value);
+        if (variantImages.value[valStr]) {
+            return variantImages.value[valStr];
+        }
+    }
+    return null;
+};
+
+const isVariantProduct = computed(() => props.product.product_attributes && props.product.product_attributes.length > 0);
 
 // --- AÑADIDO: Computed property para los niveles de precio ---
 const priceTiers = computed(() => {
@@ -209,38 +241,6 @@ const totalAvailable = computed(() => props.product.available_stock);
                         No hay imágenes generales.
                     </div>
                 </div>
-                <!-- <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2
-                        class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
-                        Tienda en Línea</h2>
-                    <ul class="space-y-3 text-sm">
-                        <li class="flex justify-between">
-                            <span class="text-gray-500 dark:text-gray-400">Mostrar en tienda</span>
-                            <Tag :value="product.show_online ? 'Sí' : 'No'"
-                                :severity="product.show_online ? 'success' : 'danger'">
-                            </Tag>
-                        </li>
-                        <li v-if="product.show_online" class="flex justify-between">
-                            <span class="text-gray-500 dark:text-gray-400">Precio en línea</span>
-                            <span class="font-medium text-gray-800 dark:text-gray-200">{{ new Intl.NumberFormat('es-MX',
-                                {
-                                    style:
-                                        'currency', currency: 'MXN'
-                                }).format(product.online_price || product.selling_price)
-                                }}</span>
-                        </li>
-                        <li class="flex justify-between">
-                            <span class="text-gray-500 dark:text-gray-400">Requiere envío</span>
-                            <Tag :value="product.requires_shipping ? 'Sí' : 'No'"
-                                :severity="product.requires_shipping ? 'info' : 'secondary'"></Tag>
-                        </li>
-                        <li v-if="product.requires_shipping" class="flex justify-between">
-                            <span class="text-gray-500 dark:text-gray-400">Peso</span>
-                            <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.weight || 'N/A' }}
-                                kg</span>
-                        </li>
-                    </ul>
-                </div> -->
             </div>
 
             <!-- Columna Derecha -->
@@ -347,8 +347,9 @@ const totalAvailable = computed(() => props.product.available_stock);
                         <DataTable :value="product.product_attributes" class="p-datatable-sm">
                             <Column header="Imagen">
                                <template #body="{ data }">
-                                    <img v-if="variantImages[data.attributes.Color]"
-                                        :src="variantImages[data.attributes.Color]"
+                                    <!-- CORRECCIÓN: Usamos la función auxiliar robusta getVariantImage -->
+                                    <img v-if="getVariantImage(data.attributes)"
+                                        :src="getVariantImage(data.attributes)"
                                         class="size-12 object-contain rounded-md" />
                                     <div v-else
                                         class="size-12 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
@@ -359,7 +360,6 @@ const totalAvailable = computed(() => props.product.available_stock);
                             <Column v-for="key in Object.keys(product.product_attributes[0]?.attributes || {})"
                                 :key="key" :field="`attributes.${key}`" :header="key"></Column>
                             
-                            <!-- Nuevas Columnas de Stock -->
                             <Column field="current_stock" header="Físico" sortable></Column>
                             <Column field="reserved_stock" header="Apartado" sortable>
                                 <template #body="{ data }">
@@ -421,7 +421,6 @@ const totalAvailable = computed(() => props.product.available_stock);
                             </Column>
                             <Column field="folio" header="Apartado #" sortable>
                                 <template #body="{ data }">
-                                    <!-- Asumiendo que tienes una ruta 'transactions.show' -->
                                     <Link :href="route('transactions.show', data.transaction_id)" class="text-blue-500 hover:underline">
                                         {{ data.folio }}
                                     </Link>

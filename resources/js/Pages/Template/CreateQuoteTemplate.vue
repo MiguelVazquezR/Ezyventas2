@@ -8,9 +8,8 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import { useTemplateVariables } from '@/Composables/useTemplateVariables';
-import Checkbox from 'primevue/checkbox'; // Importar Checkbox
+import Checkbox from 'primevue/checkbox'; 
 
-// CORRECCIÓN DEFINITIVA: Sintaxis de Array para evitar errores de parser
 const props = defineProps([
     'branches',
     'templateImages',
@@ -20,7 +19,6 @@ const props = defineProps([
     'printTemplate'
 ]);
 
-// --- Lógica de Límite ---
 const limitReached = computed(() => {
     const limit = props.templateLimit !== undefined ? props.templateLimit : -1;
     const usage = props.templateUsage || 0;
@@ -35,33 +33,26 @@ const selectedElement = ref(null);
 const localTemplateImages = ref(props.templateImages ? [...props.templateImages] : []);
 const isUploadingImage = ref(false);
 
-// Referencias para el Canvas
 const canvasContainerRef = ref(null);
 const paperRef = ref(null);
 
-// Estado de Viewport (Zoom y Pan)
 const zoomScale = ref(1);
 const pan = ref({ x: 0, y: 0 });
 const isPanning = ref(false);
 const lastMousePos = ref({ x: 0, y: 0 });
 const isSpacePressed = ref(false);
 
-// --- ESTADO MÓVIL (DRAWERS) ---
 const showLeftDrawer = ref(false);
 const showRightDrawer = ref(false);
-const lastPinchDistance = ref(null); // Para zoom con dos dedos
+const lastPinchDistance = ref(null);
 
-// --- ARRASTRE DE ELEMENTOS (DRAG & DROP) ---
 const isDraggingElement = ref(false);
 const dragStartPos = ref({ x: 0, y: 0 });
 const elementStartPos = ref({ x: 0, y: 0 });
-// Estado para prevenir deselección accidental tras arrastrar
 const isJustFinishedDragging = ref(false); 
 
-// Estado para Variables en Columnas
 const lastFocusedColumn = ref('col1');
 
-// Formulario
 const form = useForm({
     name: '',
     type: 'cotizacion',
@@ -78,7 +69,6 @@ const form = useForm({
     },
 });
 
-// Inicialización
 onMounted(() => {
     if (props.printTemplate) {
         form.name = props.printTemplate.name;
@@ -96,7 +86,6 @@ onMounted(() => {
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('resize', fitToScreen);
 
-    // Registrar eventos touch manualmente como no-pasivos
     if (canvasContainerRef.value) {
         canvasContainerRef.value.addEventListener('touchstart', handleTouchStart, { passive: false });
         canvasContainerRef.value.addEventListener('touchmove', handleTouchMove, { passive: false });
@@ -122,15 +111,12 @@ watch(templateElements, (newElements) => {
     form.content.elements = newElements;
 }, { deep: true });
 
-// Si se selecciona un elemento en móvil, abrir panel derecho automáticamente
 watch(selectedElement, (val) => {
     if (val && window.innerWidth < 1024) {
         showRightDrawer.value = true;
         showLeftDrawer.value = false;
     }
 });
-
-// --- Lógica de Navegación (Zoom & Pan) ---
 
 const handleKeyDown = (e) => {
     if (e.code === 'Space' && !isSpacePressed.value) {
@@ -145,7 +131,6 @@ const handleKeyUp = (e) => {
     if (e.code === 'Space') {
         isSpacePressed.value = false;
         isPanning.value = false;
-        // Resetear cursor explícitamente
         document.body.style.cursor = '';
         if (canvasContainerRef.value) canvasContainerRef.value.style.cursor = 'default';
     }
@@ -172,7 +157,6 @@ const doPan = (e) => {
 
 const endPan = () => {
     isPanning.value = false;
-    // Restaurar cursor según si se sigue presionando espacio
     if (isSpacePressed.value) {
          if (canvasContainerRef.value) canvasContainerRef.value.style.cursor = 'grab';
     } else {
@@ -181,14 +165,12 @@ const endPan = () => {
     }
 };
 
-// Lógica de Deselección Global
 const onCanvasClick = () => {
     if (!isSpacePressed.value && !isPanning.value && !isJustFinishedDragging.value) {
         selectedElement.value = null;
     }
 };
 
-// --- LÓGICA TÁCTIL (TOUCH) ---
 const getDistance = (touch1, touch2) => {
     const dx = touch1.clientX - touch2.clientX;
     const dy = touch1.clientY - touch2.clientY;
@@ -197,15 +179,12 @@ const getDistance = (touch1, touch2) => {
 
 const handleTouchStart = (e) => {
     if (isDraggingElement.value) return;
-
     if (e.touches.length === 1) {
-        // Un dedo: Paneo (si toca el fondo)
         if (e.target === canvasContainerRef.value || isSpacePressed.value) {
             isPanning.value = true;
             lastMousePos.value = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         }
     } else if (e.touches.length === 2) {
-        // Dos dedos: Iniciar Zoom
         isPanning.value = false;
         lastPinchDistance.value = getDistance(e.touches[0], e.touches[1]);
     }
@@ -213,7 +192,6 @@ const handleTouchStart = (e) => {
 
 const handleTouchMove = (e) => {
     if (isDraggingElement.value) return;
-
     if (e.touches.length === 1 && isPanning.value) {
         if (e.cancelable) e.preventDefault(); 
         const deltaX = e.touches[0].clientX - lastMousePos.value.x;
@@ -225,11 +203,9 @@ const handleTouchMove = (e) => {
         if (e.cancelable) e.preventDefault(); 
         const dist = getDistance(e.touches[0], e.touches[1]);
         const scaleChange = dist / lastPinchDistance.value;
-        
         let newScale = zoomScale.value * scaleChange;
         newScale = Math.min(Math.max(newScale, 0.1), 3.0);
         zoomScale.value = newScale;
-        
         lastPinchDistance.value = dist;
     }
 };
@@ -244,7 +220,6 @@ const fitToScreen = () => {
     const containerWidth = canvasContainerRef.value.clientWidth - 64; 
     const containerHeight = canvasContainerRef.value.clientHeight - 64;
     const { w, h } = getPaperPixelDimensions();
-    
     const scaleX = containerWidth / w;
     const scaleY = containerHeight / h;
     zoomScale.value = Math.min(scaleX, scaleY, 1.0);
@@ -278,52 +253,39 @@ const getPaperPixelDimensions = () => {
     return { w, h };
 };
 
-// --- Helper de Colores (Corrección para ColorPicker) ---
-// Creamos computeds estables en lugar de funciones inline
 const createColorComputed = (propName) => computed({
     get: () => {
         const val = selectedElement.value?.data?.[propName];
-        // Si no hay valor, devolvemos blanco.
-        // Usamos regex /#/g para quitar todos los hash por si acaso.
         return val ? val.toString().replace(/#/g, '') : 'FFFFFF';
     },
     set: (val) => {
         if (selectedElement.value?.data) {
-            // Si val es null (puede pasar al limpiar input), ponemos negro o el defecto que quieras
             const hex = val ? val.toString().replace(/#/g, '') : '000000';
             selectedElement.value.data[propName] = '#' + hex;
         }
     }
 });
-
 const currentShapeColor = createColorComputed('color');
 const currentHeaderColor = createColorComputed('headerColor');
 const currentHeaderTextColor = createColorComputed('headerTextColor');
 const currentSeparatorColor = createColorComputed('color');
 
-
-// --- Gestión de Imágenes ---
 const handleImageUpload = async (event, uploader) => {
     if (!selectedElement.value || selectedElement.value.type !== 'image') return;
     if (isUploadingImage.value) return;
-
     isUploadingImage.value = true;
     const currentElement = selectedElement.value;
     currentElement.data.isUploading = true;
-
     const formData = new FormData();
     formData.append('image', event.files[0]);
-
     try {
         const response = await axios.post(route('print-templates.media.store'), formData);
         currentElement.data.url = response.data.url;
         localTemplateImages.value.unshift(response.data);
         toast.add({ severity: 'success', summary: 'Éxito', detail: 'Imagen subida', life: 2000 });
-        // Limpieza diferida para evitar conflictos
         setTimeout(() => { if (uploader) uploader.clear(); }, 100);
     } catch (error) {
-        console.error(error);
-        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo subir la imagen', life: 3000 });
+        toast.add({ severity: 'error', summary: 'Error', detail: 'Error al subir imagen', life: 3000 });
     } finally {
         isUploadingImage.value = false;
         currentElement.data.isUploading = false;
@@ -342,22 +304,16 @@ const deleteImage = async (imgId) => {
     }
 };
 
-// --- Variables ---
-// MODIFICADO: Pasamos el contexto 'cotizacion' para filtrar variables
 const { placeholderOptions } = useTemplateVariables(() => props.customFieldDefinitions, 'cotizacion');
 
 const insertVariable = (variable) => {
     if (!selectedElement.value) return;
     const tag = ` ${variable} `;
-
     if (selectedElement.value.type === 'rich_text') {
         selectedElement.value.data.content += tag;
     } else if (selectedElement.value.type === 'columns_2') {
-        if (lastFocusedColumn.value === 'col2') {
-            selectedElement.value.data.col2 += tag;
-        } else {
-            selectedElement.value.data.col1 += tag;
-        }
+        if (lastFocusedColumn.value === 'col2') selectedElement.value.data.col2 += tag;
+        else selectedElement.value.data.col1 += tag;
     } else if (selectedElement.value.type === 'signature') {
          selectedElement.value.data.label += tag;
     } else {
@@ -367,13 +323,11 @@ const insertVariable = (variable) => {
     }
 };
 
-// --- Drag & Drop & Selección ---
 const selectElement = (element) => {
     if (isSpacePressed.value) return;
     selectedElement.value = element;
 };
 
-// Helper para obtener posición unificada
 const getClientPos = (e) => {
     return e.touches ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : { x: e.clientX, y: e.clientY };
 };
@@ -381,18 +335,13 @@ const getClientPos = (e) => {
 const startDragElement = (event, element) => {
     if (isSpacePressed.value) return;
     if (element.data.positionType !== 'absolute') return;
-    
-    // En touch, prevenimos default para evitar scroll
     if (event.type === 'touchstart') event.preventDefault();
     event.stopPropagation();
-    
     selectedElement.value = element;
     isDraggingElement.value = true;
-
     const pos = getClientPos(event);
     dragStartPos.value = { x: pos.x, y: pos.y };
     elementStartPos.value = { x: element.data.x, y: element.data.y };
-
     if (event.type === 'mousedown') {
         window.addEventListener('mousemove', onDragElementMove);
         window.addEventListener('mouseup', onDragElementEnd);
@@ -405,12 +354,9 @@ const startDragElement = (event, element) => {
 const onDragElementMove = (e) => {
     if (!isDraggingElement.value || !selectedElement.value) return;
     if (e.type === 'touchmove' && e.cancelable) e.preventDefault();
-
     const pos = getClientPos(e);
     const deltaX = (pos.x - dragStartPos.value.x) / zoomScale.value;
     const deltaY = (pos.y - dragStartPos.value.y) / zoomScale.value;
-    
-    // Snap to grid (5px)
     selectedElement.value.data.x = Math.round((elementStartPos.value.x + deltaX) / 5) * 5;
     selectedElement.value.data.y = Math.round((elementStartPos.value.y + deltaY) / 5) * 5;
 };
@@ -419,15 +365,12 @@ const onDragElementEnd = () => {
     isDraggingElement.value = false;
     isJustFinishedDragging.value = true;
     setTimeout(() => { isJustFinishedDragging.value = false; }, 100); 
-
     window.removeEventListener('mousemove', onDragElementMove);
     window.removeEventListener('mouseup', onDragElementEnd);
     window.removeEventListener('touchmove', onDragElementMove);
     window.removeEventListener('touchend', onDragElementEnd);
 };
 
-
-// --- Utils y CRUD ---
 const submit = () => {
     const routeName = props.printTemplate ? 'print-templates.update' : 'print-templates.store';
     const routeParams = props.printTemplate ? props.printTemplate.id : {};
@@ -455,17 +398,13 @@ const paperDimensions = computed(() => {
 
 const addElementToEnd = (type) => {
     const newElement = { id: uuidv4(), type, data: { positionType: 'flow' } };
-    // Defaults
     if (type === 'rich_text') newElement.data = { ...newElement.data, content: '<p>Texto...</p>', align: 'left' };
-    // MODIFICADO: Se añade showBreakdown por defecto a la tabla
-    if (type === 'quote_table') newElement.data = { ...newElement.data, showImages: true, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'], showBreakdown: true };
+    if (type === 'quote_table') newElement.data = { ...newElement.data, showImages: false, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'], showBreakdown: true };
     if (type === 'columns_2') newElement.data = { ...newElement.data, col1: '<p>Emisor...</p>', col2: '<p>Cliente...</p>', gap: '20px' };
     if (type === 'separator') newElement.data = { ...newElement.data, color: '#e5e7eb', height: 2, style: 'solid', margin: '20px' };
     if (type === 'signature') newElement.data = { ...newElement.data, label: 'Firma', align: 'center', lineWidth: '200px' };
-    
     if (type === 'image') newElement.data = { positionType: 'absolute', url: '', width: 150, x: 50, y: 50, isUploading: false };
     if (type === 'shape') newElement.data = { positionType: 'absolute', shapeType: 'rectangle', color: '#3B82F6', width: 100, height: 100, x: 100, y: 100, opacity: 100, rotation: 0 };
-
     if (newElement.data.positionType === 'absolute') {
         const count = templateElements.value.filter(e => e.data.positionType === 'absolute').length;
         newElement.data.x = 50 + (count * 20);
@@ -473,38 +412,30 @@ const addElementToEnd = (type) => {
     }
     templateElements.value.push(newElement);
     selectedElement.value = newElement;
-
-    // En móvil, abrir drawer de propiedades automáticamente
     if (window.innerWidth < 1024) {
         showLeftDrawer.value = false;
         showRightDrawer.value = true;
     }
 };
 
-// Inserción Relativa
 const addMenuRef = ref(null);
 const currentInsertionTarget = ref({ id: null, position: 'after' });
-
 const addMenuTemplate = computed(() => {
     return availableElements.value.filter(el => el.type === 'flow').map(el => ({
         label: el.name, icon: el.icon, command: () => addElementRelative(el.id)
     }));
 });
-
 const openAddMenu = (event, elementId, position) => {
     currentInsertionTarget.value = { id: elementId, position: position };
     if (addMenuRef.value) addMenuRef.value.toggle(event);
 };
-
 const addElementRelative = (type) => {
     const temp = { id: uuidv4(), type, data: { positionType: 'flow' } };
     if (type === 'rich_text') temp.data = { ...temp.data, content: '<p>Nuevo...</p>', align: 'left' };
-    // MODIFICADO: Default showBreakdown
-    if (type === 'quote_table') temp.data = { ...temp.data, showImages: true, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'], showBreakdown: true };
+    if (type === 'quote_table') temp.data = { ...temp.data, showImages: false, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'], showBreakdown: true };
     if (type === 'columns_2') temp.data = { ...temp.data, col1: '<p>Columna 1</p>', col2: '<p>Columna 2</p>', gap: '20px' };
     if (type === 'separator') temp.data = { ...temp.data, color: '#e5e7eb', height: 2, style: 'solid', margin: '20px' };
     if (type === 'signature') temp.data = { ...temp.data, label: 'Firma', align: 'center', lineWidth: '200px' };
-
     const { id: targetId, position } = currentInsertionTarget.value;
     const targetIndex = templateElements.value.findIndex(el => el.id === targetId);
     if (targetIndex !== -1) {
@@ -512,11 +443,7 @@ const addElementRelative = (type) => {
         else templateElements.value.splice(targetIndex + 1, 0, temp);
     }
     selectedElement.value = temp;
-    
-    // En móvil, abrir drawer de propiedades
-    if (window.innerWidth < 1024) {
-        showRightDrawer.value = true;
-    }
+    if (window.innerWidth < 1024) showRightDrawer.value = true;
 };
 
 const removeElement = (id) => {
@@ -527,14 +454,11 @@ const removeElement = (id) => {
 const pageSizeOptions = [{label: 'Carta', value: 'letter'}, {label: 'A4', value: 'a4'}];
 const orientationOptions = [{label: 'Vertical', value: 'portrait'}, {label: 'Horizontal', value: 'landscape'}];
 const shapeOptions = [{label: 'Rectángulo', value: 'rectangle'}, {label: 'Círculo', value: 'circle'}, {label: 'Estrella', value: 'star'}];
-
-// UPDATED: Align options now match Tailwind flex utils (start, center, end)
 const alignOptions = [
     { label: 'Izquierda', value: 'start', icon: 'pi pi-align-left' }, 
     { label: 'Centro', value: 'center', icon: 'pi pi-align-center' }, 
     { label: 'Derecha', value: 'end', icon: 'pi pi-align-right' }
 ];
-
 </script>
 
 <template>
@@ -549,13 +473,11 @@ const alignOptions = [
 
         <div v-else class="flex flex-col lg:flex-row h-[calc(100vh-7rem)] overflow-hidden bg-gray-100 dark:bg-gray-900 select-none relative">
             
-            <!-- BACKDROP MÓVIL -->
             <div v-if="showLeftDrawer || showRightDrawer" 
                  class="fixed inset-0 bg-black/50 z-30 lg:hidden transition-opacity" 
                  @click="showLeftDrawer = false; showRightDrawer = false">
             </div>
 
-            <!-- BARRA DE HERRAMIENTAS MÓVIL (Top Bar) -->
             <div class="lg:hidden w-full h-14 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between px-4 z-20 shrink-0 shadow-sm">
                 <Button icon="pi pi-bars" text rounded severity="secondary" @click="showLeftDrawer = !showLeftDrawer" v-tooltip.bottom="'Configuración y Elementos'" />
                 <span class="font-bold text-sm text-gray-700 dark:text-gray-200 truncate">{{ form.name || 'Nueva Cotización' }}</span>
@@ -569,18 +491,16 @@ const alignOptions = [
                 </div>
             </div>
 
-            <!-- PANEL IZQUIERDO -->
             <div class="fixed inset-y-0 left-0 w-80 lg:w-80 lg:static transition-transform duration-300 ease-in-out z-40 flex flex-col h-full shadow-2xl lg:shadow-lg bg-white dark:bg-gray-800 border-r dark:border-gray-700"
                  :class="showLeftDrawer ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'">
                 
-                <!-- Cabecera Drawer Móvil -->
                 <div class="lg:hidden flex items-center justify-between p-4 border-b dark:border-gray-700">
                     <h3 class="font-bold">Herramientas</h3>
                     <Button icon="pi pi-times" text rounded severity="secondary" @click="showLeftDrawer = false" />
                 </div>
 
                 <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                    <h3 class="font-bold mb-4 text-lg">Configuración</h3>
+                    <h3 class="font-bold mb-4 text-lg">Configuración cotización</h3>
                     <div class="space-y-4 mb-6">
                         <div>
                             <InputLabel value="Nombre *" />
@@ -611,7 +531,6 @@ const alignOptions = [
                 </div>
             </div>
 
-            <!-- PANEL CENTRAL (CANVAS) -->
             <div ref="canvasContainerRef" 
                 class="flex-1 relative overflow-hidden dark:bg-black/20 flex items-center justify-center cursor-default group-canvas"
                 @click="onCanvasClick"
@@ -623,15 +542,12 @@ const alignOptions = [
                 @touchmove="handleTouchMove"
                 @touchend="handleTouchEnd"
             >
-                <!-- Overlay para Mover con Espacio (Cubre todo para capturar eventos) -->
                 <div v-if="isSpacePressed" 
                     class="absolute inset-0 z-[100] cursor-grab active:cursor-grabbing bg-transparent">
                 </div>
 
-                <!-- Menu Contextual -->
                 <Menu ref="addMenuRef" :model="addMenuTemplate" :popup="true" />
 
-                <!-- Capa de transformación -->
                 <div ref="paperRef" class="bg-white shadow-2xl transition-transform duration-75 ease-linear origin-center"
                     :style="{
                         width: paperDimensions.w,
@@ -652,9 +568,9 @@ const alignOptions = [
                                 class="relative group border border-transparent hover:border-dashed hover:border-blue-300 transition-all rounded mb-1"
                                 :class="{ '!border-blue-500 bg-blue-50/10': selectedElement?.id === element.id }"
                             >
-                                <!-- Controles de Inserción -->
-                                <div class="absolute -right-9 top-0 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-50"
-                                    :class="{ 'opacity-100': selectedElement?.id === element.id }">
+                                <!-- Controles de Inserción (VISIBILIDAD CONTROLADA) -->
+                                <div class="absolute -right-9 top-0 flex flex-col gap-1 z-50"
+                                    v-if="selectedElement?.id === element.id">
                                      <Button icon="pi pi-arrow-up" class="!w-7 !h-7 !p-0" rounded severity="secondary" @click.stop="openAddMenu($event, element.id, 'before')" v-tooltip.left="'Insertar Antes'" />
                                      <Button icon="pi pi-arrow-down" class="!w-7 !h-7 !p-0" rounded severity="secondary" @click.stop="openAddMenu($event, element.id, 'after')" v-tooltip.left="'Insertar Después'" />
                                      <Button icon="pi pi-trash" class="!w-7 !h-7 !p-0" rounded severity="danger" @click.stop="removeElement(element.id)" v-tooltip.left="'Eliminar'" />
@@ -662,25 +578,31 @@ const alignOptions = [
 
                                 <div v-if="element.type === 'rich_text'" v-html="element.data.content" class="prose max-w-none break-words text-sm pointer-events-none"></div>
                                 
-                                <!-- MODIFICADO: Tabla de Conceptos con Desglose Opcional -->
                                 <div v-if="element.type === 'quote_table'" class="w-full overflow-x-auto pointer-events-none">
                                     <table class="w-full border-collapse text-xs">
                                         <thead>
                                             <tr :style="{ backgroundColor: element.data.headerColor, color: element.data.headerTextColor }">
-                                                <th class="p-1 border-b">Cant.</th><th class="p-1 border-b text-left">Descripción</th><th class="p-1 border-b text-right">Total</th>
+                                                <th v-if="element.data.showImages" class="p-1 border-b text-center w-10">Img</th>
+                                                <th class="p-1 border-b">Cant.</th>
+                                                <th class="p-1 border-b text-left">Descripción</th>
+                                                <th class="p-1 border-b text-right">Total</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr class="border-b"><td class="p-1 text-center">1</td><td class="p-1">Ejemplo</td><td class="p-1 text-right">$100</td></tr>
+                                            <tr class="border-b">
+                                                <td v-if="element.data.showImages" class="p-1 text-center"><div class="w-8 h-8 bg-gray-200 rounded mx-auto"></div></td>
+                                                <td class="p-1 text-center">1</td>
+                                                <td class="p-1">Ejemplo</td>
+                                                <td class="p-1 text-right">$100</td>
+                                            </tr>
                                         </tbody>
                                     </table>
                                     
-                                    <!-- Previsualización del Desglose de Totales -->
-                                    <div v-if="element.data.showBreakdown !== false" class="flex justify-end mt-2 text-xs">
-                                        <div class="w-40 space-y-1">
+                                    <!-- MOCKUP DESGLOSE EN EDITOR -->
+                                    <div v-if="element.data.showBreakdown !== false" class="flex justify-end mt-2 text-xs text-gray-500 border-t pt-1">
+                                        <div class="w-32 text-right space-y-1">
                                             <div class="flex justify-between"><span>Subtotal:</span><span>$100.00</span></div>
-                                            <div class="flex justify-between"><span>IVA:</span><span>$16.00</span></div>
-                                            <div class="flex justify-between font-bold border-t border-gray-300 pt-1"><span>Total:</span><span>$116.00</span></div>
+                                            <div class="flex justify-between font-bold"><span>Total:</span><span>$116.00</span></div>
                                         </div>
                                     </div>
                                 </div>
@@ -692,7 +614,6 @@ const alignOptions = [
 
                                 <div v-if="element.type === 'separator'" :style="{ borderTop: `${element.data.height}px ${element.data.style} ${element.data.color}`, margin: `${element.data.margin} 0` }"></div>
                                 
-                                <!-- SIGNATURE UPDATED: Dynamic alignment and text -->
                                 <div v-if="element.type === 'signature'" 
                                     class="flex flex-col mt-8"
                                     :class="`items-${element.data.align || 'center'}`"
@@ -713,7 +634,6 @@ const alignOptions = [
                                 <div class="absolute -inset-2 border-2 border-transparent rounded pointer-events-none" :class="{ '!border-blue-500': selectedElement?.id === element.id, 'group-hover:border-blue-300 dashed': selectedElement?.id !== element.id }"></div>
                                 <button v-if="selectedElement?.id === element.id" @click.stop="removeElement(element.id)" @touchstart.stop.prevent="removeElement(element.id)" class="absolute -top-4 -right-4 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center shadow z-50"><i class="pi pi-times text-[10px]"></i></button>
 
-                                <!-- IMAGE UPDATED: Removed alignment class 'flex justify-...' since it's absolute -->
                                 <div v-if="element.type === 'image'" :style="{ width: element.data.width + 'px' }">
                                     <div class="relative w-full">
                                         <img :src="element.data.url || 'https://placehold.co/150x150'" class="w-full h-auto pointer-events-none select-none" />
@@ -721,7 +641,6 @@ const alignOptions = [
                                     </div>
                                 </div>
 
-                                <!-- SHAPE UPDATED: Removed alignment class -->
                                 <div v-if="element.type === 'shape'">
                                     <div :style="{ width: element.data.width + 'px', height: element.data.height + 'px', backgroundColor: element.data.shapeType !== 'star' ? element.data.color : 'transparent', opacity: element.data.opacity/100, transform: `rotate(${element.data.rotation}deg)`, borderRadius: element.data.shapeType === 'circle' ? '50%' : '0' }">
                                         <svg v-if="element.data.shapeType === 'star'" viewBox="0 0 24 24" class="w-full h-full" :style="{ fill: element.data.color }"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
@@ -732,7 +651,6 @@ const alignOptions = [
                     </div>
                 </div>
 
-                <!-- Controles Zoom & Info -->
                 <div class="absolute bottom-6 right-6 flex flex-col items-end gap-2 z-50">
                     <div v-if="!isSpacePressed" class="bg-black/70 text-white px-3 py-1.5 rounded-full text-xs shadow-lg animate-fade-in pointer-events-none select-none hidden lg:block">
                         <i class="pi pi-info-circle mr-1"></i> Mantén <b>Espacio</b> para mover el lienzo
@@ -747,11 +665,9 @@ const alignOptions = [
                 </div>
             </div>
 
-            <!-- PANEL DERECHO -->
-            <div class="fixed inset-y-0 right-0 w-80 lg:w-80 lg:static transition-transform duration-300 ease-in-out z-40 flex flex-col h-full shadow-2xl lg:shadow-lg bg-white dark:bg-gray-800 border-l dark:border-gray-700"
+            <div class="fixed inset-y-0 right-0 w-80 lg:w-80 lg:static transition-transform duration-300 ease-in-out flex flex-col h-full shadow-2xl lg:shadow-lg bg-white dark:bg-gray-800 border-l dark:border-gray-700"
                  :class="showRightDrawer ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'">
                 
-                <!-- Cabecera Drawer Móvil -->
                 <div class="lg:hidden flex items-center justify-between p-4 border-b dark:border-gray-700">
                     <h3 class="font-bold">Propiedades</h3>
                     <Button icon="pi pi-times" text rounded severity="secondary" @click="showRightDrawer = false" />
@@ -760,7 +676,6 @@ const alignOptions = [
                 <h3 class="hidden lg:block font-bold p-4 border-b text-lg">Propiedades</h3>
                 <div v-if="selectedElement" class="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
                     
-                    <!-- Posición Absoluta -->
                     <div v-if="selectedElement.data.positionType === 'absolute'" class="bg-gray-50 p-3 rounded border">
                         <span class="text-xs font-bold uppercase text-gray-500 mb-2 block">Posición</span>
                         <div class="grid grid-cols-2 gap-2">
@@ -769,7 +684,6 @@ const alignOptions = [
                         </div>
                     </div>
 
-                    <!-- Editors Rich Text / Columns -->
                     <div v-if="['rich_text', 'columns_2'].includes(selectedElement.type)">
                         <div v-if="selectedElement.type === 'rich_text'">
                             <InputLabel value="Contenido" class="mb-2"/>
@@ -780,8 +694,6 @@ const alignOptions = [
                              <div @click="lastFocusedColumn = 'col2'" :class="{'ring-2 ring-blue-200 rounded': lastFocusedColumn === 'col2'}"><InputLabel value="Columna Derecha" /><Editor v-model="selectedElement.data.col2" editorStyle="height: 100px" /></div>
                              <div><InputLabel value="Espacio" /><InputText v-model="selectedElement.data.gap" class="w-full" /></div>
                         </div>
-                        
-                        <!-- MODIFICADO: Iteración de grupos de variables -->
                         <Accordion class="mt-4"><AccordionPanel value="0"><AccordionHeader>Variables</AccordionHeader><AccordionContent>
                             <div class="flex flex-col gap-3">
                                 <div v-for="group in placeholderOptions" :key="group.group">
@@ -794,7 +706,6 @@ const alignOptions = [
                         </AccordionContent></AccordionPanel></Accordion>
                     </div>
 
-                    <!-- Imagen (UPDATED: Removed alignment selector) -->
                     <div v-if="selectedElement.type === 'image'">
                         <InputLabel value="Ancho (px)" /><InputNumber v-model="selectedElement.data.width" class="w-full" :min="20" />
                         
@@ -812,7 +723,6 @@ const alignOptions = [
                         </div>
                     </div>
 
-                    <!-- Shape (Color Fix con Computed Estable) -->
                     <div v-if="selectedElement.type === 'shape'">
                         <InputLabel value="Forma" /><Select v-model="selectedElement.data.shapeType" :options="shapeOptions" optionLabel="label" optionValue="value" class="w-full" />
                         <InputLabel value="Color" class="mt-4" />
@@ -828,17 +738,20 @@ const alignOptions = [
                         <InputLabel value="Rotación" class="mt-4" /><InputNumber v-model="selectedElement.data.rotation" class="w-full" :min="0" :max="360" suffix="°" />
                     </div>
 
-                    <!-- Tabla / Separator (Color Fix con Computed Estable) -->
                     <div v-if="selectedElement.type === 'quote_table'">
                         <InputLabel value="Fondo Cabecera" />
                         <div class="flex items-center gap-2 mt-1"><ColorPicker v-model="currentHeaderColor" format="hex" /><InputText v-model="currentHeaderColor" class="w-24 h-8 text-sm" /></div>
                         <InputLabel value="Texto Cabecera" class="mt-4" />
                         <div class="flex items-center gap-2 mt-1"><ColorPicker v-model="currentHeaderTextColor" format="hex" /><InputText v-model="currentHeaderTextColor" class="w-24 h-8 text-sm" /></div>
                         
-                        <!-- MODIFICADO: Opción de mostrar desglose -->
                         <div class="flex items-center gap-2 mt-6">
+                            <Checkbox v-model="selectedElement.data.showImages" binary />
+                            <label class="text-sm text-gray-700 dark:text-gray-300">Mostrar imágenes</label>
+                        </div>
+
+                        <div class="flex items-center gap-2 mt-2">
                             <Checkbox v-model="selectedElement.data.showBreakdown" binary />
-                            <label class="text-sm text-gray-700 dark:text-gray-300">Mostrar desglose de totales (Subtotal, IVA...)</label>
+                            <label class="text-sm text-gray-700 dark:text-gray-300">Mostrar desglose de totales</label>
                         </div>
                     </div>
                     
@@ -848,7 +761,6 @@ const alignOptions = [
                         <InputLabel value="Grosor" class="mt-4" /><InputNumber v-model="selectedElement.data.height" class="w-full" />
                     </div>
 
-                    <!-- NEW: Signature Properties -->
                     <div v-if="selectedElement.type === 'signature'">
                         <InputLabel value="Texto debajo de línea" />
                         <InputText v-model="selectedElement.data.label" class="w-full mb-4" />
@@ -861,7 +773,6 @@ const alignOptions = [
                              <template #option="slotProps"><i :class="slotProps.option.icon"></i></template>
                         </SelectButton>
                         
-                        <!-- MODIFICADO: Iteración de grupos de variables -->
                         <div class="mt-4">
                              <Accordion><AccordionPanel value="0"><AccordionHeader>Variables</AccordionHeader><AccordionContent>
                                 <div class="flex flex-col gap-3">

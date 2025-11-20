@@ -455,7 +455,7 @@ const dpiOptions = [203, 300, 600];
                 </div>
 
                 <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                    <h3 class="font-bold mb-4 text-lg">Configuración</h3>
+                    <h3 class="font-bold mb-4 text-lg">Configuración etiqueta</h3>
                     <div class="space-y-4 mb-6">
                         <div>
                             <InputLabel value="Nombre *" />

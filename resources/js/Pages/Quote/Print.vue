@@ -53,7 +53,6 @@ const getFormattedCustomValue = (field, value) => {
 <template>
     <Head :title="`Cotización #${quote.folio}`" />
     
-    <!-- Agregamos 'items-start' para evitar centrado vertical que pueda afectar coordenadas relativas -->
     <div class="bg-gray-100 dark:bg-gray-900 min-h-screen p-4 sm:p-8 print:p-0 print:bg-white flex flex-col items-center print:block">
         
         <!-- Botón de acción -->
@@ -68,71 +67,80 @@ const getFormattedCustomValue = (field, value) => {
              class="bg-white shadow-lg print:shadow-none print:w-full overflow-hidden relative print-content mx-auto"
              :class="[pageSizeClass, pageHeightClass]"
              :style="{ padding: config.margins || '1.5cm', fontFamily: config.fontFamily || 'sans-serif' }">
-            
-            <div class="w-full h-full relative">
-                <template v-for="element in elements" :key="element.id">
-                    
-                    <!-- Elementos de Flujo (Relative) -->
-                    <div v-if="element.data.positionType === 'flow'" class="mb-2">
-                        <!-- Texto Rico -->
-                        <div v-if="element.type === 'rich_text'" 
-                             v-html="replaceVariables(element.data.content, quote)" 
-                             class="prose max-w-none text-sm break-words">
-                        </div>
-                        
-                        <!-- Tabla de Cotización -->
-                        <div v-if="element.type === 'quote_table'" 
-                             v-html="renderQuoteTable(element, quote)">
-                        </div>
 
-                        <!-- 2 Columnas -->
-                        <div v-if="element.type === 'columns_2'" class="flex" :style="{ gap: element.data.gap }">
-                            <div class="flex-1 text-sm break-words" v-html="replaceVariables(element.data.col1, quote)"></div>
-                            <div class="flex-1 text-sm break-words" v-html="replaceVariables(element.data.col2, quote)"></div>
+            <!-- Contenedor Principal -->
+            <div class="relative w-full h-full">
+                
+                <!-- CAPA 1: FONDO (Elementos Absolutos) -->
+                <!-- z-0 asegura que esté al fondo. inset-0 para que cubra el área (respetando el padding del padre gracias a position relative) -->
+                <div class="absolute inset-0 z-0 pointer-events-none">
+                    <template v-for="element in elements" :key="'abs-' + element.id">
+                        <div v-if="element.data.positionType === 'absolute'"
+                             class="absolute"
+                             :style="{ left: element.data.x + 'px', top: element.data.y + 'px' }">
+                            
+                             <!-- Imagen -->
+                             <div v-if="element.type === 'image'" :style="{ width: element.data.width + 'px' }">
+                                <img :src="element.data.url" class="w-full h-auto block" />
+                            </div>
+    
+                            <!-- Figura -->
+                            <div v-if="element.type === 'shape'" 
+                                 :style="{ 
+                                     width: element.data.width + 'px', 
+                                     height: element.data.height + 'px', 
+                                     backgroundColor: element.data.shapeType !== 'star' ? element.data.color : 'transparent', 
+                                     opacity: element.data.opacity/100, 
+                                     transform: `rotate(${element.data.rotation}deg)`, 
+                                     borderRadius: element.data.shapeType === 'circle' ? '50%' : '0' 
+                                 }">
+                                 <svg v-if="element.data.shapeType === 'star'" viewBox="0 0 24 24" class="w-full h-full" :style="{ fill: element.data.color }"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                            </div>
                         </div>
+                    </template>
+                </div>
 
-                        <!-- Separador -->
-                        <div v-if="element.type === 'separator'" 
-                             :style="{ 
-                                 borderTop: `${element.data.height}px ${element.data.style} ${element.data.color}`, 
-                                 margin: `${element.data.margin} 0` 
-                             }">
+                <!-- CAPA 2: FRENTE (Elementos de Flujo) -->
+                <!-- z-10 y relative aseguran que el texto fluya y quede ENCIMA de la capa 1 -->
+                <div class="relative z-10">
+                    <template v-for="element in elements" :key="'flow-' + element.id">
+                        <div v-if="element.data.positionType === 'flow'" class="mb-2 relative">
+                            <!-- Texto Rico -->
+                            <div v-if="element.type === 'rich_text'" 
+                                 v-html="replaceVariables(element.data.content, quote)" 
+                                 class="prose max-w-none text-sm break-words">
+                            </div>
+                            
+                            <!-- Tabla de Cotización -->
+                            <div v-if="element.type === 'quote_table'" 
+                                 v-html="renderQuoteTable(element, quote)">
+                            </div>
+    
+                            <!-- 2 Columnas -->
+                            <div v-if="element.type === 'columns_2'" class="flex" :style="{ gap: element.data.gap }">
+                                <div class="flex-1 text-sm break-words" v-html="replaceVariables(element.data.col1, quote)"></div>
+                                <div class="flex-1 text-sm break-words" v-html="replaceVariables(element.data.col2, quote)"></div>
+                            </div>
+    
+                            <!-- Separador -->
+                            <div v-if="element.type === 'separator'" 
+                                 :style="{ 
+                                     borderTop: `${element.data.height}px ${element.data.style} ${element.data.color}`, 
+                                     margin: `${element.data.margin} 0` 
+                                 }">
+                            </div>
+                            
+                            <!-- Firma -->
+                            <div v-if="element.type === 'signature'" 
+                                 class="flex flex-col mt-8"
+                                 :class="`items-${element.data.align || 'center'}`">
+                                <div class="border-t border-black pt-1" :style="{ width: element.data.lineWidth }"></div>
+                                <span class="text-xs mt-1">{{ replaceVariables(element.data.label, quote) }}</span>
+                            </div>
                         </div>
-                        
-                        <!-- Firma -->
-                        <div v-if="element.type === 'signature'" 
-                             class="flex flex-col mt-8"
-                             :class="`items-${element.data.align || 'center'}`">
-                            <div class="border-t border-black pt-1" :style="{ width: element.data.lineWidth }"></div>
-                            <span class="text-xs mt-1">{{ replaceVariables(element.data.label, quote) }}</span>
-                        </div>
-                    </div>
+                    </template>
+                </div>
 
-                    <!-- Elementos Absolutos (Absolute) -->
-                    <div v-else-if="element.data.positionType === 'absolute'"
-                         class="absolute"
-                         :style="{ left: element.data.x + 'px', top: element.data.y + 'px' }">
-                        
-                        <!-- Imagen -->
-                         <div v-if="element.type === 'image'" :style="{ width: element.data.width + 'px' }">
-                            <img :src="element.data.url" class="w-full h-auto block" />
-                        </div>
-
-                        <!-- Figura -->
-                        <div v-if="element.type === 'shape'" 
-                             :style="{ 
-                                 width: element.data.width + 'px', 
-                                 height: element.data.height + 'px', 
-                                 backgroundColor: element.data.shapeType !== 'star' ? element.data.color : 'transparent', 
-                                 opacity: element.data.opacity/100, 
-                                 transform: `rotate(${element.data.rotation}deg)`, 
-                                 borderRadius: element.data.shapeType === 'circle' ? '50%' : '0' 
-                             }">
-                             <svg v-if="element.data.shapeType === 'star'" viewBox="0 0 24 24" class="w-full h-full" :style="{ fill: element.data.color }"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                        </div>
-                    </div>
-
-                </template>
             </div>
         </div>
 

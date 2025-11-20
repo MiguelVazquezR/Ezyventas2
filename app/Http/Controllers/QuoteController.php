@@ -10,12 +10,13 @@ use App\Http\Requests\StoreQuoteRequest;
 use App\Http\Requests\UpdateQuoteRequest;
 use App\Models\Customer;
 use App\Models\CustomFieldDefinition;
-use App\Models\PrintTemplate; // <-- AÑADIDO
+use App\Models\PrintTemplate;
 use App\Models\Product;
 use App\Models\ProductAttribute;
 use App\Models\Quote;
 use App\Models\Service;
 use App\Models\Transaction;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -134,8 +135,22 @@ class QuoteController extends Controller implements HasMiddleware
 
     public function show(Quote $quote): Response
     {
-        // MODIFICADO: Cargar 'items.itemable.media' para las imágenes
-        $quote->load(['customer', 'user', 'items.itemable.media', 'parent.versions', 'versions', 'activities.causer']);
+        // CORRECCIÓN: Cargar explícitamente 'product' además de 'product.media'
+        $quote->load([
+            'customer', 
+            'user', 
+            'parent.versions', 
+            'versions', 
+            'activities.causer',
+            'items.itemable' => function (MorphTo $morphTo) {
+                $morphTo->morphWith([
+                    Product::class => ['media'],
+                    Service::class => ['media'],
+                    // IMPORTANTE: Cargar 'product' y 'product.media' asegura que la relación padre esté disponible en el JSON
+                    ProductAttribute::class => ['product.media'], 
+                ]);
+            }
+        ]);
 
         $translations = config('log_translations.Quote', []);
         $formattedActivities = $quote->activities->map(function ($activity) use ($translations) {
@@ -279,13 +294,20 @@ class QuoteController extends Controller implements HasMiddleware
         return redirect()->route('quotes.index')->with('success', 'Cotizaciones seleccionadas eliminadas.');
     }
 
-    /**
-     * Muestra una versión imprimible de la cotización.
-     */
     public function print(Request $request, Quote $quote): Response
     {
-        // MODIFICADO: Cargar 'items.itemable.media'
-        $quote->load(['customer', 'items.itemable.media', 'branch.subscription']);
+        // CORRECCIÓN: Cargar 'product' también aquí
+        $quote->load([
+            'customer', 
+            'branch.subscription',
+            'items.itemable' => function (MorphTo $morphTo) {
+                $morphTo->morphWith([
+                    Product::class => ['media'],
+                    Service::class => ['media'],
+                    ProductAttribute::class => ['product.media'], // <-- AQUÍ
+                ]);
+            }
+        ]);
 
         $subscriptionId = Auth::user()->branch->subscription_id;
         $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
