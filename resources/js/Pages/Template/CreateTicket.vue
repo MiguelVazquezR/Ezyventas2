@@ -1,6 +1,6 @@
 <script setup>
 import { Link, useForm } from '@inertiajs/vue3';
-import { ref, watch, computed, onMounted } from 'vue';
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
@@ -38,6 +38,14 @@ const localTemplateImages = ref(props.templateImages ? [...props.templateImages]
 const addMenuRef = ref(null);
 const currentInsertionTarget = ref({ id: null, position: 'after' });
 
+// --- ESTADO DE VIEWPORT (ZOOM Y PAN) ---
+const canvasContainerRef = ref(null);
+const zoomScale = ref(1.2); // ZOOM POR DEFECTO MÁS GRANDE (150%)
+const pan = ref({ x: 0, y: -50 }); // Un poco de margen superior inicial
+const isPanning = ref(false);
+const lastMousePos = ref({ x: 0, y: 0 });
+const isSpacePressed = ref(false);
+
 // Formulario Unificado
 const form = useForm({
     name: '',
@@ -70,12 +78,85 @@ onMounted(() => {
             }));
         }
     }
+
+    // Event listeners para Paneo y Zoom
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+});
+
+onUnmounted(() => {
+    window.removeEventListener('keydown', handleKeyDown);
+    window.removeEventListener('keyup', handleKeyUp);
 });
 
 // Sincronizar elementos con el formulario
 watch(templateElements, (newElements) => {
     form.content.elements = newElements;
 }, { deep: true });
+
+// --- Lógica de Navegación (Zoom & Pan) ---
+
+const handleKeyDown = (e) => {
+    if (e.code === 'Space' && !isSpacePressed.value) {
+        // Evitar activar si estamos escribiendo en un input
+        if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA' && !document.activeElement.isContentEditable) {
+            e.preventDefault();
+            isSpacePressed.value = true;
+        }
+    }
+};
+
+const handleKeyUp = (e) => {
+    if (e.code === 'Space') {
+        isSpacePressed.value = false;
+        isPanning.value = false;
+        document.body.style.cursor = '';
+    }
+};
+
+const startPan = (e) => {
+    // Permitir pan si se presiona espacio O si se hace click directo en el fondo gris (canvas)
+    if (isSpacePressed.value || e.target === canvasContainerRef.value) {
+        isPanning.value = true;
+        lastMousePos.value = { x: e.clientX, y: e.clientY };
+        if (canvasContainerRef.value) canvasContainerRef.value.style.cursor = 'grabbing';
+        e.preventDefault();
+    }
+};
+
+const doPan = (e) => {
+    if (!isPanning.value) return;
+    e.preventDefault();
+    const deltaX = e.clientX - lastMousePos.value.x;
+    const deltaY = e.clientY - lastMousePos.value.y;
+    pan.value.x += deltaX;
+    pan.value.y += deltaY;
+    lastMousePos.value = { x: e.clientX, y: e.clientY };
+};
+
+const endPan = () => {
+    isPanning.value = false;
+    if (canvasContainerRef.value) canvasContainerRef.value.style.cursor = isSpacePressed.value ? 'grab' : 'default';
+};
+
+const zoomIn = () => zoomScale.value = Math.min(zoomScale.value + 0.1, 3.0);
+const zoomOut = () => zoomScale.value = Math.max(zoomScale.value - 0.1, 0.5);
+const resetView = () => {
+    zoomScale.value = 1.2;
+    pan.value = { x: 0, y: -50 };
+};
+
+const zoomPercentage = computed({
+    get: () => Math.round(zoomScale.value * 100),
+    set: (val) => {
+        if (!val) return;
+        let newScale = val / 100;
+        if (newScale < 0.1) newScale = 0.1;
+        if (newScale > 3.0) newScale = 3.0;
+        zoomScale.value = newScale;
+    }
+});
+
 
 // --- Acciones CRUD ---
 const submit = () => {
@@ -84,7 +165,7 @@ const submit = () => {
     const method = props.printTemplate ? 'put' : 'post';
 
     form[method](route(routeName, routeParams), {
-        onSuccess: () => toast.add({ severity: 'success', summary: 'Guardado', detail: 'Plantilla guardada correctamente', life: 3000 }),
+        // onSuccess: () => toast.add({ severity: 'success', summary: 'Guardado', detail: 'Plantilla guardada correctamente', life: 3000 }),
         onError: () => toast.add({ severity: 'error', summary: 'Error', detail: 'Revisa los campos obligatorios', life: 3000 })
     });
 };
@@ -115,11 +196,6 @@ const addElementToEnd = (type) => {
     const newElement = createElementOfType(type);
     templateElements.value.push(newElement);
     selectedElement.value = newElement;
-    // Scroll al fondo (opcional)
-    setTimeout(() => {
-        const container = document.getElementById('ticket-canvas');
-        if (container) container.scrollTop = container.scrollHeight;
-    }, 50);
 };
 
 const addElementRelative = (type) => {
@@ -260,19 +336,32 @@ const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
             </div>
 
             <!-- PANEL CENTRAL (CANVAS) -->
-            <div class="flex-1 relative overflow-hidden dark:bg-black/20 flex items-center justify-center bg-gray-100 dark:bg-gray-900"
-                 @click.self="selectedElement = null">
+            <div ref="canvasContainerRef"
+                 class="flex-1 relative overflow-hidden dark:bg-black/20 flex items-center justify-center bg-gray-100 dark:bg-gray-900 group-canvas"
+                 @mousedown="startPan"
+                 @mousemove="doPan" 
+                 @mouseup="endPan" 
+                 @mouseleave="endPan">
                 
+                <!-- Overlay para Mover con Espacio -->
+                <div v-if="isSpacePressed" 
+                    class="absolute inset-0 z-[100] cursor-grab active:cursor-grabbing bg-transparent">
+                </div>
+
                 <!-- Menú Contextual -->
                 <Menu ref="addMenuRef" :model="addMenuTemplate" :popup="true" />
 
-                <!-- Área Scrollable del Ticket -->
-                <div id="ticket-canvas" class="w-full h-full overflow-y-auto p-8 flex justify-center custom-scrollbar" @click.self="selectedElement = null">
+                <!-- Área Transformable del Ticket -->
+                <div class="transition-transform duration-75 ease-linear origin-top"
+                    :style="{
+                        transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomScale})`
+                    }">
                     
                     <!-- El "Papel" del Ticket -->
-                    <div class="bg-white dark:bg-gray-800 shadow-2xl min-h-[12cm] transition-all duration-300 relative"
+                    <div class="bg-white dark:bg-gray-800 shadow-2xl min-h-[10cm] relative mx-auto"
                         :class="form.content.config.paperWidth === '80mm' ? 'w-[80mm]' : 'w-[58mm]'"
                         style="padding: 5px 0; height: fit-content;"
+                        @mousedown.stop
                         @click.self="selectedElement = null">
 
                         <div v-for="element in templateElements" :key="element.id" @click="selectedElement = element"
@@ -346,6 +435,21 @@ const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
 
                     </div>
                 </div>
+
+                <!-- Controles Zoom & Info -->
+                <div class="absolute bottom-6 right-6 flex flex-col items-end gap-2 z-50">
+                    <div v-if="!isSpacePressed" class="bg-black/70 text-white px-3 py-1.5 rounded-full text-xs shadow-lg animate-fade-in pointer-events-none select-none">
+                        <i class="pi pi-info-circle mr-1"></i> Mantén <b>Espacio</b> para mover el lienzo
+                    </div>
+                    
+                   <div class="flex items-center gap-2 bg-white dark:bg-gray-800 p-1.5 rounded-lg shadow-lg border dark:border-gray-700 pointer-events-auto">
+                        <Button icon="pi pi-minus" rounded text severity="secondary" @click="zoomOut" />
+                        <InputNumber v-model="zoomPercentage" inputClass="!text-center !w-10 !p-1 !text-xs !border-none !ring-0" suffix="%" :min="10" :max="300" />
+                        <Button icon="pi pi-plus" rounded text severity="secondary" @click="zoomIn" />
+                        <Button icon="pi pi-expand" rounded text severity="info" @click="resetView" v-tooltip.top="'Restablecer vista'" />
+                    </div>
+                </div>
+
             </div>
 
             <!-- PANEL DERECHO: Propiedades -->
