@@ -99,7 +99,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
             'name' => 'required|string|max:255',
             'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
             'content' => 'required|array',
-            // Validamos estructura básica, permitiendo config/elements para cotizaciones
+            // Validamos estructura básica, asegurando que exista config y elements
             'content.config' => 'required|array', 
             'content.elements' => 'required|array',
             'branch_ids' => 'required|array|min:1',
@@ -156,10 +156,11 @@ class PrintTemplateController extends Controller implements HasMiddleware
             abort(403);
         }
 
+        // MODIFICACIÓN: Ahora apuntamos a las vistas unificadas (Create...) en lugar de Edit...
         $view = match ($printTemplate->type->value) {
-            'etiqueta' => 'Template/EditLabel',
+            'etiqueta' => 'Template/CreateLabel', 
             'cotizacion' => 'Template/CreateQuoteTemplate',
-            default => 'Template/EditTicket',
+            default => 'Template/CreateTicket',
         };
 
         $subscription = Auth::user()->branch->subscription;
@@ -173,8 +174,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
         ]);
 
         return Inertia::render($view, [
-            'template' => $printTemplate, 
-            'printTemplate' => $printTemplate, // Compatibilidad con prop del componente Quote
+            'template' => $printTemplate, // Mantenemos por compatibilidad si algún componente viejo lo usa
+            'printTemplate' => $printTemplate, // Esta es la prop clave que usan los nuevos componentes
             'branches' => $subscription->branches()->get(['id', 'name']),
             'templateImages' => $templateImages,
             'customFieldDefinitions' => $customFieldDefinitions,
