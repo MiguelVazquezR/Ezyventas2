@@ -10,11 +10,13 @@ use App\Http\Requests\StoreQuoteRequest;
 use App\Http\Requests\UpdateQuoteRequest;
 use App\Models\Customer;
 use App\Models\CustomFieldDefinition;
+use App\Models\PrintTemplate;
 use App\Models\Product;
 use App\Models\ProductAttribute;
 use App\Models\Quote;
 use App\Models\Service;
 use App\Models\Transaction;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -45,18 +47,12 @@ class QuoteController extends Controller implements HasMiddleware
         $subscriptionId = $user->branch->subscription_id;
 
         $query = Quote::query()
-            // --- INICIO DE CAMBIOS ---
-            // 1. Solo mostrar cotizaciones "originales" (que no son hijas de otra)
             ->whereNull('parent_quote_id')
-            // --- FIN DE CAMBIOS ---
             ->leftJoin('customers', 'quotes.customer_id', '=', 'customers.id')
             ->whereHas('branch.subscription', function ($q) use ($subscriptionId) {
                 $q->where('id', $subscriptionId);
             })
-            // --- INICIO DE CAMBIOS ---
-            // 2. Cargar la cotización principal, sus versiones (hijas) y el cliente de esas versiones
             ->with(['customer:id,name', 'versions.customer:id,name'])
-            // --- FIN DE CAMBIOS ---
             ->select('quotes.*');
 
         if ($request->has('search')) {
@@ -90,25 +86,21 @@ class QuoteController extends Controller implements HasMiddleware
             $user = Auth::user();
             $validated = $request->validated();
 
-            // --- INICIO: Validación de campos personalizados ---
-            // Validamos los campos personalizados por separado
             $customFieldsData = $this->validateCustomFields($request);
-            // Los fusionamos con los datos validados del FormRequest
             $validatedData = array_merge($validated, $customFieldsData);
-            // --- FIN: Validación ---
 
             $lastQuote = Quote::where('branch_id', $user->branch_id)->latest('id')->first();
             $nextFolioNumber = $lastQuote ? (int) substr($lastQuote->folio, 4) + 1 : 1;
             $folio = 'COT-' . $nextFolioNumber;
 
-            $quote = Quote::create(array_merge($validatedData, [ // <-- USAR $validatedData
+            $quote = Quote::create(array_merge($validatedData, [
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
                 'folio' => $folio,
                 'status' => QuoteStatus::DRAFT,
             ]));
 
-            foreach ($validatedData['items'] as $item) { // <-- USAR $validatedData
+            foreach ($validatedData['items'] as $item) {
                 $quote->items()->create($item);
             }
         });
@@ -127,16 +119,13 @@ class QuoteController extends Controller implements HasMiddleware
     {
         DB::transaction(function () use ($request, $quote) {
             $validated = $request->validated();
-
-            // --- INICIO: Validación de campos personalizados ---
             $customFieldsData = $this->validateCustomFields($request);
             $validatedData = array_merge($validated, $customFieldsData);
-            // --- FIN: Validación ---
 
-            $quote->update($validatedData); // <-- USAR $validatedData
+            $quote->update($validatedData);
 
-            $quote->items()->delete(); // Simple: borrar y recrear
-            foreach ($validatedData['items'] as $item) { // <-- USAR $validatedData
+            $quote->items()->delete(); 
+            foreach ($validatedData['items'] as $item) {
                 $quote->items()->create($item);
             }
         });
@@ -146,8 +135,22 @@ class QuoteController extends Controller implements HasMiddleware
 
     public function show(Quote $quote): Response
     {
-        // Cargar todas las relaciones necesarias para la vista
-        $quote->load(['customer', 'user', 'items.itemable', 'parent.versions', 'versions', 'activities.causer']);
+        // CORRECCIÓN: Cargar explícitamente 'product' además de 'product.media'
+        $quote->load([
+            'customer', 
+            'user', 
+            'parent.versions', 
+            'versions', 
+            'activities.causer',
+            'items.itemable' => function (MorphTo $morphTo) {
+                $morphTo->morphWith([
+                    Product::class => ['media'],
+                    Service::class => ['media'],
+                    // IMPORTANTE: Cargar 'product' y 'product.media' asegura que la relación padre esté disponible en el JSON
+                    ProductAttribute::class => ['product.media'], 
+                ]);
+            }
+        ]);
 
         $translations = config('log_translations.Quote', []);
         $formattedActivities = $quote->activities->map(function ($activity) use ($translations) {
@@ -177,10 +180,19 @@ class QuoteController extends Controller implements HasMiddleware
             ->where('module', 'quotes')
             ->get();
 
+        $printTemplates = PrintTemplate::where('subscription_id', $subscriptionId)
+            ->where('type', 'cotizacion')
+            ->whereHas('branches', function ($q) use ($quote) {
+                $q->where('branches.id', $quote->branch_id);
+            })
+            ->select('id', 'name')
+            ->get();
+
         return Inertia::render('Quote/Show', [
             'quote' => $quote,
             'activities' => $formattedActivities,
             'customFieldDefinitions' => $customFieldDefinitions,
+            'printTemplates' => $printTemplates,
         ]);
     }
 
@@ -193,19 +205,15 @@ class QuoteController extends Controller implements HasMiddleware
         $newStatus = $validated['status'];
         $oldStatus = $quote->status->value;
 
-        // CASO 1: CAMBIO A VENTA GENERADA (Desde el Stepper)
-        // Si se marca como "Venta generada" y no tiene transacción, creamos la venta automáticamente
         if ($newStatus === QuoteStatus::SALE_GENERATED->value && !$quote->transaction_id) {
             try {
                 $this->createSaleTransaction($quote, Auth::user());
-                // createSaleTransaction ya actualiza el estatus, por lo que no necesitamos hacer más
                 return redirect()->back()->with('success', 'Venta generada automáticamente desde el cambio de estatus.');
             } catch (\Exception $e) {
                 return redirect()->back()->with('error', 'Error al generar la venta: ' . $e->getMessage());
             }
         }
 
-        // CASO 2: CANCELACIÓN DE VENTA
         if (
             $newStatus === QuoteStatus::CANCELLED->value &&
             $oldStatus === QuoteStatus::SALE_GENERATED->value &&
@@ -216,8 +224,6 @@ class QuoteController extends Controller implements HasMiddleware
                 $transaction = $quote->transaction;
 
                 if ($transaction && $transaction->status !== TransactionStatus::CANCELLED && $transaction->status !== TransactionStatus::REFUNDED) {
-
-                    // Devolver el stock
                     foreach ($quote->items as $item) {
                         if ($item->itemable_type == Product::class) {
                             $product = Product::find($item->itemable_id);
@@ -228,12 +234,10 @@ class QuoteController extends Controller implements HasMiddleware
                         }
                     }
 
-                    // Actualizar la transacción
                     $totalPaid = $transaction->payments->sum('amount');
                     $transaction->status = $totalPaid > 0 ? TransactionStatus::REFUNDED : TransactionStatus::CANCELLED;
                     $transaction->save();
 
-                    // Revertir la deuda del cliente
                     if ($transaction->customer_id) {
                         $customer = Customer::find($transaction->customer_id);
                         if ($customer) {
@@ -290,28 +294,38 @@ class QuoteController extends Controller implements HasMiddleware
         return redirect()->route('quotes.index')->with('success', 'Cotizaciones seleccionadas eliminadas.');
     }
 
-    /**
-     * Muestra una versión imprimible de la cotización.
-     */
-    public function print(Quote $quote): Response
+    public function print(Request $request, Quote $quote): Response
     {
-        // Cargar todas las relaciones necesarias para la plantilla
-        $quote->load(['customer', 'items.itemable', 'branch.subscription']);
+        // CORRECCIÓN: Cargar 'product' también aquí
+        $quote->load([
+            'customer', 
+            'branch.subscription',
+            'items.itemable' => function (MorphTo $morphTo) {
+                $morphTo->morphWith([
+                    Product::class => ['media'],
+                    Service::class => ['media'],
+                    ProductAttribute::class => ['product.media'], // <-- AQUÍ
+                ]);
+            }
+        ]);
 
         $subscriptionId = Auth::user()->branch->subscription_id;
         $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
             ->where('module', 'quotes')
             ->get();
 
+        $printTemplate = null;
+        if ($request->has('template_id')) {
+            $printTemplate = PrintTemplate::find($request->input('template_id'));
+        }
+
         return Inertia::render('Quote/Print', [
             'quote' => $quote,
             'customFieldDefinitions' => $customFieldDefinitions,
+            'printTemplate' => $printTemplate,
         ]);
     }
 
-    /**
-     * Convierte una cotización autorizada en una transacción de venta.
-     */
     public function convertToSale(Request $request, Quote $quote)
     {
         if ($quote->status !== QuoteStatus::AUTHORIZED) {
@@ -334,21 +348,18 @@ class QuoteController extends Controller implements HasMiddleware
 
     private function generateSaleFolio($branchId): string
     {
-        // Buscar la última transacción para esta sucursal que siga el formato V-
         $lastTransaction = Transaction::where('branch_id', $branchId)
             ->where('folio', 'LIKE', 'V-%')
-            ->orderBy('id', 'desc') // Ordenar por ID para obtener la más reciente de forma fiable
+            ->orderBy('id', 'desc') 
             ->first();
 
-        $sequence = 1; // Iniciar en 1 por defecto
+        $sequence = 1; 
 
         if ($lastTransaction) {
-            // Extraer solo la parte numérica del folio anterior (ej. de "V-001" -> 1)
             $lastFolioNumber = (int) substr($lastTransaction->folio, 2);
             $sequence = $lastFolioNumber + 1;
         }
 
-        // Formatear el nuevo folio con el prefijo y 3 ceros a la izquierda
         return 'V-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
     }
 
@@ -365,16 +376,11 @@ class QuoteController extends Controller implements HasMiddleware
         ];
     }
 
-    /**
-     * Método privado que contiene TODA la lógica de creación de la venta.
-     * Se reutiliza en convertToSale y updateStatus.
-     */
     private function createSaleTransaction(Quote $quote, $user)
     {
         return DB::transaction(function () use ($quote, $user) {
             $folio = $this->generateSaleFolio($user->branch_id);
 
-            // 1. Crear la Transacción (Venta)
             $transaction = Transaction::create([
                 'folio' => $folio,
                 'customer_id' => $quote->customer_id,
@@ -389,7 +395,6 @@ class QuoteController extends Controller implements HasMiddleware
                 'total_tax' => $quote->total_tax,
             ]);
 
-            // 2. Copiar los items Y DESCONTAR STOCK
             foreach ($quote->items as $quoteItem) {
                 $transaction->items()->create([
                     'itemable_id' => $quoteItem->itemable_id,
@@ -411,13 +416,11 @@ class QuoteController extends Controller implements HasMiddleware
                 }
             }
 
-            // 3. Actualizar la cotización
             $quote->update([
                 'status' => QuoteStatus::SALE_GENERATED,
                 'transaction_id' => $transaction->id,
             ]);
 
-            // 4. Generar la deuda en el balance del cliente
             if ($quote->customer_id) {
                 $customer = Customer::find($quote->customer_id);
                 if ($customer) {
@@ -437,9 +440,6 @@ class QuoteController extends Controller implements HasMiddleware
         });
     }
 
-    /**
-     * Valida los campos personalizados dinámicamente.
-     */
     private function validateCustomFields(Request $request)
     {
         $user = $request->user();
@@ -449,7 +449,7 @@ class QuoteController extends Controller implements HasMiddleware
             ->get();
 
         if ($definitions->isEmpty()) {
-            return ['custom_fields' => []]; // No hay campos para validar
+            return ['custom_fields' => []];
         }
 
         $rules = [];
@@ -458,7 +458,7 @@ class QuoteController extends Controller implements HasMiddleware
         foreach ($definitions as $field) {
             $ruleKey = 'custom_fields.' . $field->key;
             $rules[$ruleKey] = ['nullable'];
-            $messages["{$ruleKey}.*"] = "El campo {$field->name} es inválido."; // Mensaje genérico
+            $messages["{$ruleKey}.*"] = "El campo {$field->name} es inválido.";
 
             switch ($field->type) {
                 case 'text':
@@ -479,19 +479,18 @@ class QuoteController extends Controller implements HasMiddleware
                     }
                     break;
                 case 'checkbox':
-                    $rules[$ruleKey] = 'array'; // Sobrescribir 'nullable'
+                    $rules[$ruleKey] = 'array';
                     $rules["{$ruleKey}.*"] = ['string', Rule::in($field->options ?? [])];
                     break;
                 case 'pattern':
-                    $rules[$ruleKey] = 'array'; // Sobrescribir 'nullable'
-                    $rules["{$ruleKey}.*"] = 'integer'; // Asume que el patrón es un array de enteros
+                    $rules[$ruleKey] = 'array';
+                    $rules["{$ruleKey}.*"] = 'integer';
                     break;
             }
         }
 
-        // Validar solo los campos personalizados
         return $request->validate([
-            'custom_fields' => ['nullable', 'array'], // Asegurarse que 'custom_fields' es un array
+            'custom_fields' => ['nullable', 'array'],
             ...$rules
         ], $messages);
     }

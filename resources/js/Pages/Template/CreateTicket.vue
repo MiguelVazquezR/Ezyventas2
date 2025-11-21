@@ -1,6 +1,6 @@
 <script setup>
 import { Link, useForm } from '@inertiajs/vue3';
-import { ref, watch, computed, onMounted } from 'vue';
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
@@ -38,6 +38,19 @@ const localTemplateImages = ref(props.templateImages ? [...props.templateImages]
 const addMenuRef = ref(null);
 const currentInsertionTarget = ref({ id: null, position: 'after' });
 
+// --- ESTADO DE VIEWPORT (ZOOM Y PAN) ---
+const canvasContainerRef = ref(null);
+const zoomScale = ref(1.2); 
+const pan = ref({ x: 0, y: -50 });
+const isPanning = ref(false);
+const lastMousePos = ref({ x: 0, y: 0 });
+const isSpacePressed = ref(false);
+
+// --- ESTADO MÓVIL (DRAWERS) ---
+const showLeftDrawer = ref(false);
+const showRightDrawer = ref(false);
+const lastPinchDistance = ref(null); // Para zoom con dos dedos
+
 // Formulario Unificado
 const form = useForm({
     name: '',
@@ -70,12 +83,139 @@ onMounted(() => {
             }));
         }
     }
+
+    // Event listeners para Paneo y Zoom (Teclado)
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+});
+
+onUnmounted(() => {
+    window.removeEventListener('keydown', handleKeyDown);
+    window.removeEventListener('keyup', handleKeyUp);
 });
 
 // Sincronizar elementos con el formulario
 watch(templateElements, (newElements) => {
     form.content.elements = newElements;
 }, { deep: true });
+
+// Si se selecciona un elemento en móvil, abrir panel derecho automáticamente
+watch(selectedElement, (val) => {
+    if (val && window.innerWidth < 1024) {
+        showRightDrawer.value = true;
+        showLeftDrawer.value = false;
+    }
+});
+
+// --- Lógica de Navegación (Zoom & Pan Mouse) ---
+
+const handleKeyDown = (e) => {
+    if (e.code === 'Space' && !isSpacePressed.value) {
+        if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA' && !document.activeElement.isContentEditable) {
+            e.preventDefault();
+            isSpacePressed.value = true;
+        }
+    }
+};
+
+const handleKeyUp = (e) => {
+    if (e.code === 'Space') {
+        isSpacePressed.value = false;
+        isPanning.value = false;
+        document.body.style.cursor = '';
+    }
+};
+
+const startPan = (e) => {
+    if (isSpacePressed.value || e.target === canvasContainerRef.value) {
+        isPanning.value = true;
+        lastMousePos.value = { x: e.clientX, y: e.clientY };
+        if (canvasContainerRef.value) canvasContainerRef.value.style.cursor = 'grabbing';
+        e.preventDefault();
+    }
+};
+
+const doPan = (e) => {
+    if (!isPanning.value) return;
+    e.preventDefault();
+    const deltaX = e.clientX - lastMousePos.value.x;
+    const deltaY = e.clientY - lastMousePos.value.y;
+    pan.value.x += deltaX;
+    pan.value.y += deltaY;
+    lastMousePos.value = { x: e.clientX, y: e.clientY };
+};
+
+const endPan = () => {
+    isPanning.value = false;
+    if (canvasContainerRef.value) canvasContainerRef.value.style.cursor = isSpacePressed.value ? 'grab' : 'default';
+};
+
+// --- LÓGICA TÁCTIL (TOUCH) ---
+const getDistance = (touch1, touch2) => {
+    const dx = touch1.clientX - touch2.clientX;
+    const dy = touch1.clientY - touch2.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+};
+
+const handleTouchStart = (e) => {
+    if (e.touches.length === 1) {
+        // Un dedo: Paneo (si toca el fondo)
+        if (e.target === canvasContainerRef.value || isSpacePressed.value) {
+            isPanning.value = true;
+            lastMousePos.value = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+    } else if (e.touches.length === 2) {
+        // Dos dedos: Iniciar Zoom
+        isPanning.value = false;
+        lastPinchDistance.value = getDistance(e.touches[0], e.touches[1]);
+    }
+};
+
+const handleTouchMove = (e) => {
+    if (e.touches.length === 1 && isPanning.value) {
+        e.preventDefault(); // Evitar scroll nativo
+        const deltaX = e.touches[0].clientX - lastMousePos.value.x;
+        const deltaY = e.touches[0].clientY - lastMousePos.value.y;
+        pan.value.x += deltaX;
+        pan.value.y += deltaY;
+        lastMousePos.value = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else if (e.touches.length === 2 && lastPinchDistance.value) {
+        e.preventDefault(); // Evitar zoom nativo del navegador
+        const dist = getDistance(e.touches[0], e.touches[1]);
+        const scaleChange = dist / lastPinchDistance.value;
+        
+        // Aplicar zoom suavizado
+        let newScale = zoomScale.value * scaleChange;
+        newScale = Math.min(Math.max(newScale, 0.5), 3.0);
+        zoomScale.value = newScale;
+        
+        lastPinchDistance.value = dist;
+    }
+};
+
+const handleTouchEnd = () => {
+    isPanning.value = false;
+    lastPinchDistance.value = null;
+};
+
+const zoomIn = () => zoomScale.value = Math.min(zoomScale.value + 0.1, 3.0);
+const zoomOut = () => zoomScale.value = Math.max(zoomScale.value - 0.1, 0.5);
+const resetView = () => {
+    zoomScale.value = 1.2;
+    pan.value = { x: 0, y: -50 };
+};
+
+const zoomPercentage = computed({
+    get: () => Math.round(zoomScale.value * 100),
+    set: (val) => {
+        if (!val) return;
+        let newScale = val / 100;
+        if (newScale < 0.1) newScale = 0.1;
+        if (newScale > 3.0) newScale = 3.0;
+        zoomScale.value = newScale;
+    }
+});
+
 
 // --- Acciones CRUD ---
 const submit = () => {
@@ -84,7 +224,7 @@ const submit = () => {
     const method = props.printTemplate ? 'put' : 'post';
 
     form[method](route(routeName, routeParams), {
-        onSuccess: () => toast.add({ severity: 'success', summary: 'Guardado', detail: 'Plantilla guardada correctamente', life: 3000 }),
+        // onSuccess: () => toast.add({ severity: 'success', summary: 'Guardado', detail: 'Plantilla guardada correctamente', life: 3000 }),
         onError: () => toast.add({ severity: 'error', summary: 'Error', detail: 'Revisa los campos obligatorios', life: 3000 })
     });
 };
@@ -115,11 +255,11 @@ const addElementToEnd = (type) => {
     const newElement = createElementOfType(type);
     templateElements.value.push(newElement);
     selectedElement.value = newElement;
-    // Scroll al fondo (opcional)
-    setTimeout(() => {
-        const container = document.getElementById('ticket-canvas');
-        if (container) container.scrollTop = container.scrollHeight;
-    }, 50);
+    // En móvil, cerrar drawer izquierdo y abrir derecho (propiedades)
+    if (window.innerWidth < 1024) {
+        showLeftDrawer.value = false;
+        showRightDrawer.value = true;
+    }
 };
 
 const addElementRelative = (type) => {
@@ -204,12 +344,41 @@ const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
         </div>
 
         <!-- Editor -->
-        <div v-else class="flex h-[calc(100vh-7rem)] overflow-hidden bg-gray-100 dark:bg-gray-900 select-none">
+        <div v-else class="flex flex-col lg:flex-row h-[calc(100vh-7rem)] overflow-hidden bg-gray-100 dark:bg-gray-900 select-none relative">
             
+            <!-- BACKDROP MÓVIL: Oscurece el fondo cuando hay un drawer abierto -->
+            <div v-if="showLeftDrawer || showRightDrawer" 
+                 class="fixed inset-0 bg-black/50 z-30 lg:hidden transition-opacity" 
+                 @click="showLeftDrawer = false; showRightDrawer = false">
+            </div>
+
+            <!-- BARRA DE HERRAMIENTAS MÓVIL (Top Bar) -->
+            <div class="lg:hidden w-full h-14 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between px-4 z-20 shrink-0 shadow-sm">
+                <Button icon="pi pi-bars" text rounded severity="secondary" @click="showLeftDrawer = !showLeftDrawer" v-tooltip.bottom="'Configuración y Elementos'" />
+                <span class="font-bold text-sm text-gray-700 dark:text-gray-200 truncate">{{ form.name || 'Nueva Plantilla' }}</span>
+                <div class="relative">
+                    <Button icon="pi pi-pencil" text rounded 
+                            :severity="selectedElement ? 'primary' : 'secondary'" 
+                            @click="selectedElement ? (showRightDrawer = !showRightDrawer) : null"
+                            :disabled="!selectedElement"
+                            v-tooltip.bottom="'Propiedades'" />
+                    <span v-if="selectedElement" class="absolute top-1 right-1 w-2 h-2 bg-blue-500 rounded-full"></span>
+                </div>
+            </div>
+
             <!-- PANEL IZQUIERDO: Configuración y Elementos -->
-            <div class="w-80 border-r dark:border-gray-700 bg-white dark:bg-gray-800 z-20 flex flex-col h-full shrink-0 shadow-lg">
+            <!-- Responsive: Fixed (Drawer) en móvil, Relative en Desktop -->
+            <div class="fixed inset-y-0 left-0 w-80 lg:w-80 lg:static transition-transform duration-300 ease-in-out z-40 flex flex-col h-full shadow-2xl lg:shadow-lg bg-white dark:bg-gray-800 border-r dark:border-gray-700"
+                 :class="showLeftDrawer ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'">
+                
+                <!-- Cabecera Drawer Móvil -->
+                <div class="lg:hidden flex items-center justify-between p-4 border-b dark:border-gray-700">
+                    <h3 class="font-bold">Herramientas</h3>
+                    <Button icon="pi pi-times" text rounded severity="secondary" @click="showLeftDrawer = false"/>
+                </div>
+
                 <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                    <h3 class="font-bold mb-4 text-lg">Configuración</h3>
+                    <h3 class="font-bold mb-4 text-lg">Configuración ticket</h3>
                     <div class="space-y-4 mb-6">
                         <div>
                             <InputLabel value="Nombre *" />
@@ -260,19 +429,37 @@ const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
             </div>
 
             <!-- PANEL CENTRAL (CANVAS) -->
-            <div class="flex-1 relative overflow-hidden dark:bg-black/20 flex items-center justify-center bg-gray-100 dark:bg-gray-900"
+            <div ref="canvasContainerRef"
+                 class="flex-1 relative overflow-hidden dark:bg-black/20 flex items-center justify-center bg-gray-100 dark:bg-gray-900 group-canvas"
+                 @mousedown="startPan"
+                 @mousemove="doPan" 
+                 @mouseup="endPan" 
+                 @mouseleave="endPan"
+                 @touchstart="handleTouchStart"
+                 @touchmove="handleTouchMove"
+                 @touchend="handleTouchEnd"
                  @click.self="selectedElement = null">
                 
+                <!-- Overlay para Mover con Espacio -->
+                <div v-if="isSpacePressed" 
+                    class="absolute inset-0 z-[100] cursor-grab active:cursor-grabbing bg-transparent">
+                </div>
+
                 <!-- Menú Contextual -->
                 <Menu ref="addMenuRef" :model="addMenuTemplate" :popup="true" />
 
-                <!-- Área Scrollable del Ticket -->
-                <div id="ticket-canvas" class="w-full h-full overflow-y-auto p-8 flex justify-center custom-scrollbar" @click.self="selectedElement = null">
+                <!-- Área Transformable del Ticket -->
+                <div class="transition-transform duration-75 ease-linear origin-top"
+                    :style="{
+                        transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomScale})`
+                    }">
                     
                     <!-- El "Papel" del Ticket -->
-                    <div class="bg-white dark:bg-gray-800 shadow-2xl min-h-[12cm] transition-all duration-300 relative"
+                    <div class="bg-white dark:bg-gray-800 shadow-2xl min-h-[10cm] relative mx-auto"
                         :class="form.content.config.paperWidth === '80mm' ? 'w-[80mm]' : 'w-[58mm]'"
                         style="padding: 5px 0; height: fit-content;"
+                        @mousedown.stop
+                        @touchstart.stop
                         @click.self="selectedElement = null">
 
                         <div v-for="element in templateElements" :key="element.id" @click="selectedElement = element"
@@ -281,9 +468,9 @@ const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
 
                             <!-- Controles de Inserción/Eliminación (Estilo Hover Flotante) -->
                             <div v-if="selectedElement?.id === element.id" class="absolute -right-8 top-0 flex flex-col gap-1 z-50">
-                                <Button icon="pi pi-arrow-up" class="!w-6 !h-6 !p-0" rounded severity="secondary" @click.stop="openAddMenu($event, element.id, 'before')" v-tooltip.left="'Insertar Antes'" />
-                                <Button icon="pi pi-arrow-down" class="!w-6 !h-6 !p-0" rounded severity="secondary" @click.stop="openAddMenu($event, element.id, 'after')" v-tooltip.left="'Insertar Después'" />
-                                <Button icon="pi pi-trash" class="!w-6 !h-6 !p-0" rounded severity="danger" @click.stop="removeElement(element.id)" v-tooltip.left="'Eliminar'" />
+                                <Button icon="pi pi-arrow-up" class="!size-5 !p-0 shadow-md" size="small" rounded severity="secondary" @click.stop="openAddMenu($event, element.id, 'before')" v-tooltip.left="'Insertar Antes'" />
+                                <Button icon="pi pi-arrow-down" class="!size-5 !p-0 shadow-md" size="small" rounded severity="secondary" @click.stop="openAddMenu($event, element.id, 'after')" v-tooltip.left="'Insertar Después'" />
+                                <Button icon="pi pi-trash" class="!size-5 !p-0 shadow-md" size="small" rounded severity="danger" @click.stop="removeElement(element.id)" v-tooltip.left="'Eliminar'" />
                             </div>
 
                             <!-- Renderizado del Elemento -->
@@ -341,16 +528,40 @@ const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
 
                         <!-- Placeholder Vacio -->
                         <div v-if="templateElements.length === 0" class="text-center py-10 text-gray-400 text-xs italic">
-                            Plantilla vacía.<br>Añade elementos desde la izquierda.
+                            Plantilla vacía.<br>Añade elementos desde el menú de la izquierda.
                         </div>
 
                     </div>
                 </div>
+
+                <!-- Controles Zoom & Info -->
+                <div class="absolute bottom-6 right-6 flex flex-col items-end gap-2 z-50">
+                    <div v-if="!isSpacePressed" class="bg-black/70 text-white px-3 py-1.5 rounded-full text-xs shadow-lg animate-fade-in pointer-events-none select-none hidden lg:block">
+                        <i class="pi pi-info-circle mr-1"></i> Mantén <b>Espacio</b> para mover el lienzo
+                    </div>
+                    
+                   <div class="flex items-center gap-2 bg-white dark:bg-gray-800 p-1.5 rounded-lg shadow-lg border dark:border-gray-700 pointer-events-auto">
+                        <Button icon="pi pi-minus" rounded text severity="secondary" @click="zoomOut" />
+                        <InputNumber v-model="zoomPercentage" inputClass="!text-center !w-10 !p-1 !text-xs !border-none !ring-0" suffix="%" :min="10" :max="300" />
+                        <Button icon="pi pi-plus" rounded text severity="secondary" @click="zoomIn" />
+                        <Button icon="pi pi-expand" rounded text severity="info" @click="resetView" v-tooltip.top="'Restablecer vista'" />
+                    </div>
+                </div>
+
             </div>
 
             <!-- PANEL DERECHO: Propiedades -->
-            <div class="w-80 border-l dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col h-full shrink-0 shadow-lg">
-                <h3 class="font-bold p-4 border-b text-lg">Propiedades</h3>
+            <!-- Responsive: Fixed (Drawer) en móvil, Relative en Desktop -->
+            <div class="fixed inset-y-0 right-0 w-80 lg:w-80 lg:static transition-transform duration-300 ease-in-out z-40 flex flex-col h-full shadow-2xl lg:shadow-lg bg-white dark:bg-gray-800 border-l dark:border-gray-700"
+                 :class="showRightDrawer ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'">
+                
+                <!-- Cabecera Drawer Móvil -->
+                <div class="lg:hidden flex items-center justify-between p-4 border-b dark:border-gray-700">
+                    <h3 class="font-bold">Propiedades</h3>
+                    <Button icon="pi pi-times" text rounded severity="secondary" @click="showRightDrawer = false" />
+                </div>
+
+                <h3 class="hidden lg:block font-bold p-4 border-b text-lg">Propiedades</h3>
                 <div v-if="selectedElement" class="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
                     
                     <!-- Propiedad Alineación (Común) -->
