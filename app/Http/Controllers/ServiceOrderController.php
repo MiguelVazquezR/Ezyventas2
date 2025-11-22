@@ -85,27 +85,43 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
         $translations = config('log_translations.ServiceOrder', []);
 
+        // --- CORRECCIÓN: Lógica robusta para formatear actividades y evitar problemas de indexación ---
         $formattedActivities = $serviceOrder->activities->map(function ($activity) use ($translations) {
             $changes = ['before' => [], 'after' => []];
-            if (isset($activity->properties['old'])) {
-                foreach ($activity->properties['old'] as $key => $value) {
+            
+            // Obtener propiedades de forma segura
+            $oldProps = $activity->properties->get('old', []);
+            $newProps = $activity->properties->get('attributes', []);
+
+            if (is_array($oldProps)) {
+                foreach ($oldProps as $key => $value) {
                     $changes['before'][($translations[$key] ?? $key)] = $value;
                 }
             }
-            if (isset($activity->properties['attributes'])) {
-                foreach ($activity->properties['attributes'] as $key => $value) {
-                    $changes['after'][($translations[$key] ?? $key)] = $value;
+            if (is_array($newProps)) {
+                foreach ($newProps as $key => $value) {
+                    // Solo incluir si es nuevo o si cambió respecto al valor anterior
+                    if (!array_key_exists($key, $oldProps) || $oldProps[$key] !== $value) {
+                        $changes['after'][($translations[$key] ?? $key)] = $value;
+                    }
                 }
             }
+            
+            // Limpiar 'before' para dejar solo lo que realmente cambió
+            $changes['before'] = array_intersect_key($changes['before'], $changes['after']);
+
             return [
                 'id' => $activity->id,
                 'description' => $activity->description,
                 'event' => $activity->event,
                 'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
                 'timestamp' => $activity->created_at->diffForHumans(),
-                'changes' => $changes,
+                // Asegurar que changes sea un objeto si está vacío
+                'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
             ];
-        });
+        })
+        ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes'])) // Filtrar updates vacíos
+        ->values(); // Reindexar array para evitar { "0": ... } en JSON
 
         $availableTemplates = Auth::user()->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
@@ -128,9 +144,6 @@ class ServiceOrderController extends Controller implements HasMiddleware
         return Inertia::render('ServiceOrder/Create', $this->getFormData());
     }
 
-    /**
-     * Almacena una nueva orden de servicio.
-     */
     public function store(StoreServiceOrderRequest $request)
     {
         $validated = array_merge($request->validated(), $request->validate([
@@ -198,7 +211,6 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 ]);
             }
             
-            // --- Lógica de Descuento de Stock (ACTUALIZADA) ---
             if (!empty($validated['items'])) {
                 foreach ($validated['items'] as $item) {
                     if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
@@ -207,19 +219,13 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     
                     $serviceOrderItem = $serviceOrder->items()->create($item);
 
-                    // Caso 1: Producto Simple
                     if ($serviceOrderItem->itemable_type === Product::class && $serviceOrderItem->itemable_id) {
                         $product = Product::find($serviceOrderItem->itemable_id);
-                        if ($product) {
-                            $product->decrement('current_stock', $serviceOrderItem->quantity);
-                        }
+                        if ($product) $product->decrement('current_stock', $serviceOrderItem->quantity);
                     }
-                    // Caso 2: Variante de Producto
                     elseif ($serviceOrderItem->itemable_type === ProductAttribute::class && $serviceOrderItem->itemable_id) {
                         $variant = ProductAttribute::find($serviceOrderItem->itemable_id);
-                        if ($variant) {
-                            $variant->decrement('current_stock', $serviceOrderItem->quantity);
-                        }
+                        if ($variant) $variant->decrement('current_stock', $serviceOrderItem->quantity);
                     }
                 }
             }
@@ -239,57 +245,37 @@ class ServiceOrderController extends Controller implements HasMiddleware
             ->with('show_payment_modal', true);
     }
 
-    /**
-     * Genera un folio consecutivo para las órdenes de servicio, único por suscripción.
-     *
-     * @return string
-     */
     private function generateServiceOrderFolio(): string
     {
         $branchId = Auth::user()->branch_id;
-
-        // Busca la última orden de servicio de la suscripción con el formato de folio específico
         $lastOrder = ServiceOrder::where('branch_id', $branchId)
             ->where('folio', 'like', 'OS-%')
-            // Ordena por el valor numérico del folio para encontrar el más alto, no por ID.
             ->orderByRaw('CAST(SUBSTRING(folio, 4) AS UNSIGNED) DESC')
             ->first();
 
         $sequence = 1;
         if ($lastOrder) {
-            // Extrae la parte numérica del folio (después de "OS-") y le suma 1
             $lastSequence = (int) substr($lastOrder->folio, 3);
             $sequence = $lastSequence + 1;
         }
 
-        // Retorna el nuevo folio formateado con 3 dígitos (ej: OS-001)
         return 'OS-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
     }
 
-    /**
-     * Genera un folio consecutivo para la transacción de la orden de servicio.
-     *
-     * @return string
-     */
     private function generateTransactionFolio(): string
     {
         $branchId = Auth::user()->branch_id;
-
-        // Busca la última transacción de la suscripción con el formato de folio específico
         $lastTransaction = Transaction::where('branch_id', $branchId)
             ->where('folio', 'like', 'OS-V-%')
-            // Ordena por el valor numérico del folio para encontrar el más alto
             ->orderByRaw('CAST(SUBSTRING(folio, 6) AS UNSIGNED) DESC')
             ->first();
 
         $sequence = 1;
         if ($lastTransaction) {
-            // Extrae la parte numérica del folio (después de "OS-V-") y le suma 1
             $lastSequence = (int) substr($lastTransaction->folio, 5);
             $sequence = $lastSequence + 1;
         }
 
-        // Retorna el nuevo folio formateado
         return 'OS-V-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
     }
 
@@ -303,10 +289,9 @@ class ServiceOrderController extends Controller implements HasMiddleware
     {
         DB::transaction(function () use ($request, $serviceOrder) {
             $validated = $request->validated();
+            $itemsChanged = false; // Flag para detectar cambios en items
 
-            // --- Lógica de Sincronización de Stock (ACTUALIZADA) ---
-
-            // 1. Obtener items antiguos y reponer stock
+            // --- 1. Reponer stock antiguo ---
             $oldItems = $serviceOrder->items()->get();
             foreach ($oldItems as $oldItem) {
                 if ($oldItem->itemable_type === Product::class && $oldItem->itemable_id) {
@@ -318,10 +303,16 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 }
             }
 
-            // 2. Borrar items antiguos
+            // --- 2. Comparar si los items cambiaron antes de borrar ---
+            // Simple verificación de conteo o contenido podría hacerse aquí, 
+            // pero como borramos y creamos, asumimos que si hay items en request, hubo acción sobre items.
+            if ($oldItems->count() > 0 || !empty($validated['items'])) {
+                 $itemsChanged = true;
+            }
+
             $serviceOrder->items()->delete();
 
-            // 3. Crear items nuevos y descontar stock
+            // --- 3. Crear nuevos y descontar stock ---
             if (!empty($validated['items'])) {
                 foreach ($validated['items'] as $item) {
                     if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
@@ -340,9 +331,20 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 }
             }
 
-            // --- Actualización de Orden y Transacción ---
+            // --- Actualización de Orden ---
             $serviceOrder->update($validated);
+            
+            // --- AÑADIDO: Registro manual si se tocaron items ---
+            // Esto es necesario porque al borrar y recrear, Spatie no detecta "cambios" en atributos del modelo padre automáticamente
+            if ($itemsChanged) {
+                 activity()
+                    ->performedOn($serviceOrder)
+                    ->causedBy(Auth::user())
+                    ->event('updated')
+                    ->log('Se actualizaron los conceptos (refacciones/servicios) de la orden.');
+            }
 
+            // --- Actualización de Transacción ---
             $serviceOrder->load('transaction');
             if ($serviceOrder->transaction) {
                 $customer = $serviceOrder->customer; 
@@ -414,7 +416,6 @@ class ServiceOrderController extends Controller implements HasMiddleware
             DB::transaction(function () use ($serviceOrder) {
                 $serviceOrder->load('items', 'transaction.customer', 'transaction.payments');
 
-                // Devolver stock (incluyendo variantes)
                 foreach ($serviceOrder->items as $item) {
                     if ($item->itemable_type === Product::class && $item->itemable_id) {
                         $product = Product::find($item->itemable_id);

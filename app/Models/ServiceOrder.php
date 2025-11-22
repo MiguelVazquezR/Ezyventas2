@@ -89,9 +89,28 @@ class ServiceOrder extends Model implements HasMedia
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['status', 'technician_name', 'technician_diagnosis', 'final_total', 'discount_amount']) // <-- Añadido
+            ->logOnly([
+                'folio',
+                'customer_name',
+                'customer_phone',
+                'customer_email',
+                'status',
+                'received_at',
+                'promised_at',
+                'item_description',
+                'reported_problems',
+                'technician_name',
+                'technician_diagnosis',
+                'technician_commission_type',
+                'technician_commission_value',
+                'subtotal',
+                'discount_amount',
+                'final_total',
+                'custom_fields'
+            ])
             ->setDescriptionForEvent(fn(string $eventName) => "La orden de servicio ha sido {$this->translateEventName($eventName)}")
-            ->logOnlyDirty()->dontSubmitEmptyLogs();
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs();
     }
 
     private function translateEventName(string $eventName): string
