@@ -149,7 +149,7 @@ const formatKey = (key) => {
 
 <template>
     <div
-        class="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-100 dark:border-gray-700 min-h-60 max-h-96 flex flex-col">
+        class="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-100 dark:border-gray-700 min-h-40 max-h-96 flex flex-col">
         <!-- Header -->
         <div
             class="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center rounded-t-lg">
