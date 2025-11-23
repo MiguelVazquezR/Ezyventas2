@@ -85,11 +85,9 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
         $translations = config('log_translations.ServiceOrder', []);
 
-        // --- CORRECCIÓN: Lógica robusta para formatear actividades y evitar problemas de indexación ---
         $formattedActivities = $serviceOrder->activities->map(function ($activity) use ($translations) {
             $changes = ['before' => [], 'after' => []];
             
-            // Obtener propiedades de forma segura
             $oldProps = $activity->properties->get('old', []);
             $newProps = $activity->properties->get('attributes', []);
 
@@ -100,14 +98,12 @@ class ServiceOrderController extends Controller implements HasMiddleware
             }
             if (is_array($newProps)) {
                 foreach ($newProps as $key => $value) {
-                    // Solo incluir si es nuevo o si cambió respecto al valor anterior
                     if (!array_key_exists($key, $oldProps) || $oldProps[$key] !== $value) {
                         $changes['after'][($translations[$key] ?? $key)] = $value;
                     }
                 }
             }
             
-            // Limpiar 'before' para dejar solo lo que realmente cambió
             $changes['before'] = array_intersect_key($changes['before'], $changes['after']);
 
             return [
@@ -116,12 +112,11 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'event' => $activity->event,
                 'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
                 'timestamp' => $activity->created_at->diffForHumans(),
-                // Asegurar que changes sea un objeto si está vacío
                 'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
             ];
         })
-        ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes'])) // Filtrar updates vacíos
-        ->values(); // Reindexar array para evitar { "0": ... } en JSON
+        ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes']))
+        ->values();
 
         $availableTemplates = Auth::user()->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
@@ -179,6 +174,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'folio' => $folio,
                 'user_id' => $user->id,
                 'branch_id' => $user->branch_id,
+                'received_at' => now(),
                 'customer_id' => $customer?->id,
                 'status' => ServiceOrderStatus::PENDING,
             ]));
@@ -191,7 +187,6 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'cash_register_session_id' => $validated['cash_register_session_id'],
                 'subtotal' => $serviceOrder->subtotal,
                 'total_discount' => $serviceOrder->discount_amount,
-                'total' => $serviceOrder->final_total, 
                 'total_tax' => 0,
                 'channel' => TransactionChannel::SERVICE_ORDER,
                 'status' => $serviceOrder->final_total > 0 ? TransactionStatus::PENDING : TransactionStatus::COMPLETED,
@@ -289,9 +284,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
     {
         DB::transaction(function () use ($request, $serviceOrder) {
             $validated = $request->validated();
-            $itemsChanged = false; // Flag para detectar cambios en items
+            $itemsChanged = false;
 
-            // --- 1. Reponer stock antiguo ---
             $oldItems = $serviceOrder->items()->get();
             foreach ($oldItems as $oldItem) {
                 if ($oldItem->itemable_type === Product::class && $oldItem->itemable_id) {
@@ -303,16 +297,12 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 }
             }
 
-            // --- 2. Comparar si los items cambiaron antes de borrar ---
-            // Simple verificación de conteo o contenido podría hacerse aquí, 
-            // pero como borramos y creamos, asumimos que si hay items en request, hubo acción sobre items.
             if ($oldItems->count() > 0 || !empty($validated['items'])) {
                  $itemsChanged = true;
             }
 
             $serviceOrder->items()->delete();
 
-            // --- 3. Crear nuevos y descontar stock ---
             if (!empty($validated['items'])) {
                 foreach ($validated['items'] as $item) {
                     if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
@@ -331,11 +321,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 }
             }
 
-            // --- Actualización de Orden ---
             $serviceOrder->update($validated);
             
-            // --- AÑADIDO: Registro manual si se tocaron items ---
-            // Esto es necesario porque al borrar y recrear, Spatie no detecta "cambios" en atributos del modelo padre automáticamente
             if ($itemsChanged) {
                  activity()
                     ->performedOn($serviceOrder)
@@ -344,18 +331,18 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     ->log('Se actualizaron los conceptos (refacciones/servicios) de la orden.');
             }
 
-            // --- Actualización de Transacción ---
             $serviceOrder->load('transaction');
             if ($serviceOrder->transaction) {
                 $customer = $serviceOrder->customer; 
-                $oldTotal = $serviceOrder->transaction->total;
+                // Usamos el Accessor 'total' para leer el antiguo, pero NO lo escribimos
+                $oldTotal = $serviceOrder->transaction->total; 
                 $newTotal = $validated['final_total'];
                 $totalDifference = $newTotal - $oldTotal;
 
                 $serviceOrder->transaction->update([
                     'subtotal' => $validated['subtotal'],
                     'total_discount' => $validated['discount_amount'],
-                    'total' => $newTotal,
+                    // 'total' => ... [ELIMINADO]
                 ]);
 
                 if ($customer && $totalDifference != 0) {
@@ -431,7 +418,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
                 if ($customer && $transaction) {
                     $totalPaid = $transaction->payments()->sum('amount');
-                    $totalDebt = $transaction->total;
+                    // Aquí 'total' funciona porque es un GET Accessor
+                    $totalDebt = $transaction->total; 
                     $pendingDebt = $totalDebt - $totalPaid;
 
                     if ($pendingDebt > 0.01) {

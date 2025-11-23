@@ -46,9 +46,7 @@ class TransactionController extends Controller implements HasMiddleware
             ->leftJoin('users', 'transactions.user_id', '=', 'users.id')
             ->where('transactions.branch_id', $branchId)
             ->where('transactions.channel', '!=', TransactionChannel::BALANCE_PAYMENT)
-            // --- INICIO: CORRECCIÓN - Cargar pagos ---
-            ->with(['customer:id,name', 'user:id,name', 'payments']) // <-- Añadido 'payments'
-            // --- FIN: CORRECCIÓN ---
+            ->with(['customer:id,name', 'user:id,name', 'payments'])
             ->select('transactions.*');
 
         if ($request->has('search')) {
@@ -72,9 +70,6 @@ class TransactionController extends Controller implements HasMiddleware
 
         $transactions = $query->paginate($request->input('rows', 20))->withQueryString();
 
-        // Cargar explícitamente los pagos si no se cargaron ya (esto es redundante ahora con el with(), pero seguro)
-        // $transactions->load('payments');
-
         $availableTemplates = $user->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
             ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
@@ -94,7 +89,7 @@ class TransactionController extends Controller implements HasMiddleware
             'user:id,name',
             'branch:id,name',
             'items.itemable',
-            'payments.bankAccount', // Asegúrate que 'payments' ya está aquí
+            'payments.bankAccount',
         ]);
 
         $availableTemplates = Auth::user()->branch->printTemplates()
@@ -128,8 +123,8 @@ class TransactionController extends Controller implements HasMiddleware
             DB::transaction(function () use ($transaction) {
                 $originalStatus = $transaction->status;
 
-                // Solo reponer stock si estaba completada (pendiente no consumió stock)
-                if ($originalStatus === TransactionStatus::COMPLETED) {
+                // CORRECCIÓN: Reponer stock si estaba completada O PENDIENTE.
+                if (in_array($originalStatus, [TransactionStatus::COMPLETED, TransactionStatus::PENDING])) {
                     $this->returnStock($transaction);
                 }
 
@@ -141,7 +136,7 @@ class TransactionController extends Controller implements HasMiddleware
 
                     if ($originalChargeMovement) {
                         $customer = Customer::findOrFail($transaction->customer_id);
-                        $amountToCredit = $originalChargeMovement->amount; // Monto original del cargo
+                        $amountToCredit = $originalChargeMovement->amount; // Monto original del cargo (negativo)
 
                         $customer->balanceMovements()->create([
                             'transaction_id' => $transaction->id,
@@ -179,17 +174,13 @@ class TransactionController extends Controller implements HasMiddleware
         ]);
         $refundMethod = $validated['refund_method'];
 
-        // Cargar pagos para calcular el monto a devolver y verificar si se puede reembolsar
         $transaction->loadMissing('payments');
         $totalPaid = $transaction->payments->sum('amount');
 
-        // Reglas para poder reembolsar:
-        // 1. Debe estar 'completado' O ('pendiente' Y tener pagos)
-        // 2. No debe estar ya 'cancelado' o 'reembolsado'
         $canRefund = (
             $transaction->status === TransactionStatus::COMPLETED ||
             ($transaction->status === TransactionStatus::PENDING && $totalPaid > 0) ||
-            $transaction->status === TransactionStatus::ON_LAYAWAY // <-- Permitir reembolsar apartados
+            $transaction->status === TransactionStatus::ON_LAYAWAY 
         ) && !in_array($transaction->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED]);
 
 
@@ -197,7 +188,6 @@ class TransactionController extends Controller implements HasMiddleware
             return redirect()->back()->with(['error' => 'Esta venta no cumple las condiciones para ser reembolsada.']);
         }
 
-        // Si no se ha pagado nada, no hay nada que reembolsar
         if ($totalPaid <= 0) {
             return redirect()->back()->with(['error' => 'No hay pagos registrados para reembolsar en esta venta.']);
         }
@@ -206,31 +196,29 @@ class TransactionController extends Controller implements HasMiddleware
             return redirect()->back()->with(['error' => 'No se puede abonar a saldo si la venta no tiene un cliente asociado.']);
         }
 
+        // CORRECCIÓN: Definir $user aquí para que esté disponible en el catch
+        $user = Auth::user();
+
         try {
-            DB::transaction(function () use ($transaction, $refundMethod, $totalPaid) { // <-- Pasamos $totalPaid a la transacción
-                // 1. Reponer el stock SIEMPRE que se reembolse (ya sea completada o pendiente con pago)
+            // CORRECCIÓN: Pasar $user al closure con 'use'
+            DB::transaction(function () use ($transaction, $refundMethod, $totalPaid, $user) { 
+                // 1. Reponer el stock SIEMPRE que se reembolse
                 $this->returnStock($transaction);
 
-                $user = Auth::user();
-
-                // --- INICIO: CORRECCIÓN - Usar $totalPaid ---
-                $amountToRefund = $totalPaid; // El monto a devolver es lo que se pagó
-                // --- FIN: CORRECCIÓN ---
-
+                $amountToRefund = $totalPaid; 
 
                 // 2. Procesar según el método de reembolso elegido
                 if ($refundMethod === 'balance') {
                     $customer = Customer::findOrFail($transaction->customer_id);
 
-                    // Siempre se crea un movimiento positivo (a favor) por el monto pagado
                     $customer->balanceMovements()->create([
                         'transaction_id' => $transaction->id,
-                        'type' => CustomerBalanceMovementType::REFUND_CREDIT, // O BALANCE_REFUND si lo prefieres
-                        'amount' => $amountToRefund, // Monto pagado, siempre positivo
+                        'type' => CustomerBalanceMovementType::REFUND_CREDIT, 
+                        'amount' => $amountToRefund, 
                         'balance_after' => $customer->balance + $amountToRefund,
                         'notes' => 'Reembolso (a saldo) de venta #' . $transaction->folio,
                     ]);
-                    $customer->increment('balance', $amountToRefund); // Aumenta el saldo a favor
+                    $customer->increment('balance', $amountToRefund); 
 
                 } elseif ($refundMethod === 'cash') {
                     $activeSession = $user->cashRegisterSessions()
@@ -241,12 +229,11 @@ class TransactionController extends Controller implements HasMiddleware
                         throw new LogicException('No tienes una sesión de caja activa para registrar el retiro de efectivo.');
                     }
 
-                    // Crear el movimiento de egreso por el monto pagado
                     $activeSession->cashMovements()->create([
                         'user_id' => $user->id,
                         'type' => SessionCashMovementType::OUTFLOW,
-                        'amount' => $amountToRefund, // Monto pagado
-                        'description' => "Reembolso en efectivo de venta #" . $transaction->folio, // Asumiendo que no tienes 'description'
+                        'amount' => $amountToRefund, 
+                        'description' => "Reembolso en efectivo de venta #" . $transaction->folio, 
                         'notes' => 'Devolución en efectivo de venta #' . $transaction->folio,
                     ]);
                 }
@@ -254,15 +241,15 @@ class TransactionController extends Controller implements HasMiddleware
                 // 3. Actualizar el estado de la transacción a REEMBOLSADA
                 $transaction->update(['status' => TransactionStatus::REFUNDED]);
 
-                // 4. Si la transacción vino de una cotización, actualizar la cotización
                 $transaction->loadMissing('transactionable');
                 if ($transaction->transactionable instanceof Quote) {
                     $transaction->transactionable->update([
-                        'status' => QuoteStatus::CANCELLED // O un estatus 'REEMBOLSADO' si lo tuvieras
+                        'status' => QuoteStatus::CANCELLED 
                     ]);
                 }
             });
         } catch (LogicException $e) {
+            // CORRECCIÓN: Ahora $user está definido y se puede acceder a $user->id
             Log::warning("Intento de reembolso sin sesión activa/cliente por usuario {$user->id} para transacción {$transaction->id}: " . $e->getMessage());
             return redirect()->back()->with(['error' => $e->getMessage()]);
         } catch (\Exception $e) {
@@ -275,11 +262,9 @@ class TransactionController extends Controller implements HasMiddleware
 
     private function returnStock(Transaction $transaction)
     {
-        // No es necesario cargar items aquí si ya se cargan antes o se asume que están cargados
-        // $transaction->loadMissing('items.itemable');
         foreach ($transaction->items as $item) {
-            if ($item->itemable instanceof Product) {
-                // Asegurarse de que quantity sea numérico antes de incrementar
+            // Verificamos si el item es un Producto (Simple) o una Variante
+            if ($item->itemable instanceof Product || $item->itemable instanceof \App\Models\ProductAttribute) {
                 if (is_numeric($item->quantity)) {
                     $item->itemable->increment('current_stock', $item->quantity);
                 } else {

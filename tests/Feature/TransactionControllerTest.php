@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\CashRegisterSessionStatus;
 use App\Enums\CustomerBalanceMovementType;
 use App\Enums\QuoteStatus;
 use App\Enums\SessionCashMovementType;
@@ -90,11 +91,17 @@ class TransactionControllerTest extends TestCase
 
         // 6. Crear sesión de caja
         $cashRegister = CashRegister::factory()->create(['branch_id' => $this->branch->id]);
+        
         $this->session = CashRegisterSession::factory()->create([
             'cash_register_id' => $cashRegister->id,
-            'user_id' => $this->user->id,
-            'status' => 'abierta'
+            'user_id' => $this->user->id, // Usuario que la abrió (owner)
+            'status' => CashRegisterSessionStatus::OPEN 
         ]);
+
+        // --- CORRECCIÓN CRÍTICA ---
+        // Asignamos explícitamente el usuario a la sesión en la tabla pivote 'cash_register_session_user'.
+        // Esto permite que $user->cashRegisterSessions() devuelva resultados en el controlador.
+        $this->session->users()->attach($this->user->id);
 
         // 7. Autenticar al usuario
         $this->actingAs($this->user);
@@ -167,7 +174,6 @@ class TransactionControllerTest extends TestCase
         ['quote' => $quote, 'transaction' => $transaction] = $this->createSaleFromQuote($initialBalance);
 
         // --- ACT ---
-        // Asumimos que la ruta es POST, ajústala si es PATCH/PUT/DELETE
         $response = $this->post(route('transactions.cancel', $transaction));
 
         // --- ASSERT ---
@@ -178,7 +184,7 @@ class TransactionControllerTest extends TestCase
         // 1. Estatus de Transacción
         $this->assertEquals(TransactionStatus::CANCELLED, $transaction->fresh()->status);
         
-        // 2. Estatus de Cotización (Lógica bidireccional)
+        // 2. Estatus de Cotización
         $this->assertEquals(QuoteStatus::CANCELLED, $quote->fresh()->status);
 
         // 3. Devolución de Stock
@@ -191,7 +197,7 @@ class TransactionControllerTest extends TestCase
             'customer_id' => $this->customer->id,
             'transaction_id' => $transaction->id,
             'type' => CustomerBalanceMovementType::CANCELLATION_CREDIT->value,
-            'amount' => abs($initialBalance), // 530.00
+            'amount' => abs($initialBalance),
             'balance_after' => 0.00,
         ]);
     }
@@ -306,7 +312,7 @@ class TransactionControllerTest extends TestCase
         ]);
 
         // 4. Movimiento de Caja (Salida de efectivo)
-        $this->assertDatabaseHas('cash_register_movements', [
+        $this->assertDatabaseHas('session_cash_movements', [
             'cash_register_session_id' => $this->session->id,
             'type' => SessionCashMovementType::OUTFLOW->value,
             'amount' => 530.00,

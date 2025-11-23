@@ -147,13 +147,11 @@ class ServiceOrderControllerTest extends TestCase
             'item_description' => 'Laptop Dell Latitude',
             'reported_problems' => 'No enciende',
             
-            // CORRECCIÓN 1: 'assign_technician' es requerido y booleano
             'assign_technician' => true, 
             'technician_name' => 'Juan Pérez', 
             'technician_commission_type' => 'percentage',
             'technician_commission_value' => 0,
             
-            // Campos de descuento
             'discount_type' => 'fixed', 
             'discount_value' => 0,
             
@@ -204,10 +202,10 @@ class ServiceOrderControllerTest extends TestCase
         $order = ServiceOrder::latest()->first();
         $transaction = $order->transaction;
 
-        // Verificar Transacción (usamos el accessor 'total')
+        // Verificar Transacción
         $this->assertNotNull($transaction, 'La transacción no se creó');
         $this->assertEquals(1000.00, $transaction->total);
-        $this->assertEquals(TransactionStatus::PENDING->value, $transaction->status);
+        $this->assertEquals(TransactionStatus::PENDING, $transaction->status);
 
         // Verificar Deuda
         $this->assertEquals(-1000.00, $this->customer->fresh()->balance);
@@ -237,12 +235,11 @@ class ServiceOrderControllerTest extends TestCase
             'description' => 'Item Original'
         ]);
         
-        // CORRECCIÓN 2: Usamos 'subtotal' en lugar de 'total'
         $transaction = $order->transaction()->create([
             'branch_id' => $this->branch->id,
             'user_id' => $this->user->id,
             'customer_id' => $this->customer->id,
-            'subtotal' => 100.00, // <-- CORRECTO: subtotal alimenta al accessor 'total'
+            'subtotal' => 100.00, 
             'total_discount' => 0,
             'total_tax' => 0,
             'status' => TransactionStatus::PENDING,
@@ -261,7 +258,7 @@ class ServiceOrderControllerTest extends TestCase
             'status' => $order->status->value,
             'received_at' => $order->received_at->toDateTimeString(),
             
-            'assign_technician' => true, // Agregado
+            'assign_technician' => true, 
             'technician_name' => 'Juan Pérez',
             'technician_commission_type' => 'fixed',
             'technician_commission_value' => 0,
@@ -298,7 +295,7 @@ class ServiceOrderControllerTest extends TestCase
 
         // 3. Saldos (-1000)
         $this->assertEquals(-1000.00, $this->customer->fresh()->balance);
-        $this->assertEquals(1000.00, $transaction->fresh()->total); // Accessor
+        $this->assertEquals(1000.00, $transaction->fresh()->total);
     }
 
     #[Test]
@@ -328,6 +325,7 @@ class ServiceOrderControllerTest extends TestCase
         // Arrange
         $order = ServiceOrder::factory()->create([
             'branch_id' => $this->branch->id,
+            'customer_id' => $this->customer->id, // <-- CORRECCIÓN: Vincular explícitamente al cliente del test
             'status' => ServiceOrderStatus::PENDING,
             'final_total' => 200.00
         ]);
@@ -344,12 +342,10 @@ class ServiceOrderControllerTest extends TestCase
         $this->product->update(['current_stock' => 18]);
         $this->customer->update(['balance' => -200.00]); 
         
-        // CORRECCIÓN 3: Usar 'subtotal' en lugar de 'total' para que el Accessor calcule 200.00
-        // Si poníamos 'total' en create(), se ignoraba y 'subtotal' (si no se enviaba) sería 0 o error.
         $transaction = $order->transaction()->create([
             'branch_id' => $this->branch->id,
             'customer_id' => $this->customer->id,
-            'subtotal' => 200.00, // <-- CORRECTO: Esto permite que $transaction->total sea 200
+            'subtotal' => 200.00,
             'total_discount' => 0,
             'total_tax' => 0,
             'status' => TransactionStatus::PENDING,
@@ -369,7 +365,6 @@ class ServiceOrderControllerTest extends TestCase
         $this->assertEquals(20, $this->product->fresh()->current_stock);
 
         // 2. Deuda Anulada (-200 + 200 = 0)
-        // Ahora sí funcionará porque $transaction->total devolverá 200 en el controlador
         $this->assertEquals(0.00, $this->customer->fresh()->balance);
 
         // 3. Estatus
