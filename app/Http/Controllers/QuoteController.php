@@ -124,6 +124,17 @@ class QuoteController extends Controller implements HasMiddleware
 
             $quote->update($validatedData);
 
+            // --- Registro manual de cambio en items ---
+            // Como borramos y recreamos items, Spatie no detecta cambios en el modelo padre Quote automáticamente.
+            // Agregamos un log manual para indicar que los conceptos cambiaron.
+            if (count($validatedData['items']) > 0 || $quote->items()->count() > 0) {
+                 activity()
+                    ->performedOn($quote)
+                    ->causedBy(Auth::user())
+                    ->event('updated')
+                    ->log('Se actualizaron los conceptos de la cotización.');
+            }
+
             $quote->items()->delete(); 
             foreach ($validatedData['items'] as $item) {
                 $quote->items()->create($item);
@@ -135,7 +146,6 @@ class QuoteController extends Controller implements HasMiddleware
 
     public function show(Quote $quote): Response
     {
-        // CORRECCIÓN: Cargar explícitamente 'product' además de 'product.media'
         $quote->load([
             'customer', 
             'user', 
@@ -146,34 +156,47 @@ class QuoteController extends Controller implements HasMiddleware
                 $morphTo->morphWith([
                     Product::class => ['media'],
                     Service::class => ['media'],
-                    // IMPORTANTE: Cargar 'product' y 'product.media' asegura que la relación padre esté disponible en el JSON
                     ProductAttribute::class => ['product.media'], 
                 ]);
             }
         ]);
 
         $translations = config('log_translations.Quote', []);
+        
+        // --- CORRECCIÓN: Lógica robusta para formatear actividades ---
         $formattedActivities = $quote->activities->map(function ($activity) use ($translations) {
             $changes = ['before' => [], 'after' => []];
-            if (isset($activity->properties['old'])) {
-                foreach ($activity->properties['old'] as $key => $value) {
+            
+            $oldProps = $activity->properties->get('old', []);
+            $newProps = $activity->properties->get('attributes', []);
+
+            if (is_array($oldProps)) {
+                foreach ($oldProps as $key => $value) {
                     $changes['before'][($translations[$key] ?? $key)] = $value;
                 }
             }
-            if (isset($activity->properties['attributes'])) {
-                foreach ($activity->properties['attributes'] as $key => $value) {
-                    $changes['after'][($translations[$key] ?? $key)] = $value;
+            if (is_array($newProps)) {
+                foreach ($newProps as $key => $value) {
+                    if (!array_key_exists($key, $oldProps) || $oldProps[$key] !== $value) {
+                        $changes['after'][($translations[$key] ?? $key)] = $value;
+                    }
                 }
             }
+            
+            $changes['before'] = array_intersect_key($changes['before'], $changes['after']);
+
             return [
                 'id' => $activity->id,
                 'description' => $activity->description,
                 'event' => $activity->event,
                 'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
                 'timestamp' => $activity->created_at->diffForHumans(),
-                'changes' => $changes,
+                // Asegurar estructura consistente para el frontend
+                'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
             ];
-        });
+        })
+        ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes']))
+        ->values(); // Reindexar para garantizar Array en JSON
 
         $subscriptionId = Auth::user()->branch->subscription_id;
         $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
@@ -296,7 +319,6 @@ class QuoteController extends Controller implements HasMiddleware
 
     public function print(Request $request, Quote $quote): Response
     {
-        // CORRECCIÓN: Cargar 'product' también aquí
         $quote->load([
             'customer', 
             'branch.subscription',
@@ -304,7 +326,7 @@ class QuoteController extends Controller implements HasMiddleware
                 $morphTo->morphWith([
                     Product::class => ['media'],
                     Service::class => ['media'],
-                    ProductAttribute::class => ['product.media'], // <-- AQUÍ
+                    ProductAttribute::class => ['product.media'], 
                 ]);
             }
         ]);
