@@ -4,9 +4,9 @@ import { router, usePage, useForm, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from "primevue/usetoast";
-import DiffViewer from '@/Components/DiffViewer.vue';
 import PatternLock from '@/Components/PatternLock.vue';
 import PrintModal from '@/Components/PrintModal.vue';
+import ActivityHistory from '@/Components/ActivityHistory.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
 import { usePermissions } from '@/Composables';
 
@@ -388,7 +388,7 @@ const getPaymentMethodIcon = (method) => {
                             <ul class="space-y-2 text-sm">
                                 <li class="flex items-center">
                                     <i class="pi pi-user w-6 text-gray-500"></i>
-                                     <template v-if="serviceOrder.customer_id">
+                                    <template v-if="serviceOrder.customer_id">
                                         <Link :href="route('customers.show', serviceOrder.customer_id)"
                                             class="text-blue-600 hover:underline flex items-center gap-2">
                                         {{ serviceOrder.customer_name }}
@@ -408,7 +408,8 @@ const getPaymentMethodIcon = (method) => {
                                     </a>
                                 </li>
                                 <li class="flex items-center"><i class="pi pi-envelope w-6 text-gray-500"></i><span
-                                        class="font-medium">{{ serviceOrder.customer_email || 'N/A' }}</span></li>
+                                        class="font-medium">{{
+                                        serviceOrder.customer_email || 'N/A' }}</span></li>
                             </ul>
                         </div>
                         <div>
@@ -480,8 +481,9 @@ const getPaymentMethodIcon = (method) => {
                                 <span>{{ data.description }}</span>
                                 <!-- Añadimos la nota si es un Producto (Refacción) con ID -->
                                 <div v-if="['App\\Models\\Product', 'App\\Models\\ProductAttribute'].includes(data.itemable_type) && data.itemable_id"
-                                     class="text-xs text-gray-500 dark:text-gray-400 italic mt-1">
-                                    (Se {{ isCancelled ? 'devolvió' : 'descontó' }} {{ data.quantity }} unidad(es) {{ isCancelled ? 'al' : 'del' }} stock)
+                                    class="text-xs text-gray-500 dark:text-gray-400 italic mt-1">
+                                    (Se {{ isCancelled ? 'devolvió' : 'descontó' }} {{ data.quantity }} unidad(es) {{
+                                    isCancelled ? 'al' : 'del' }} stock)
                                 </div>
                             </template>
                         </Column>
@@ -508,7 +510,7 @@ const getPaymentMethodIcon = (method) => {
                                 <span>Descuento ({{ serviceOrder.discount_type === 'percentage' ?
                                     `${serviceOrder.discount_value}%` : 'Fijo' }}):</span>
                                 <span class="font-semibold">(-) {{ formatCurrency(serviceOrder.discount_amount)
-                                    }}</span>
+                                }}</span>
                             </div>
                             <div class="flex justify-between font-bold text-lg border-t pt-2 mt-2">
                                 <span>Total:</span>
@@ -651,6 +653,8 @@ const getPaymentMethodIcon = (method) => {
                         adjuntaron imágenes
                         de cierre.</div>
                 </div>
+
+                <ActivityHistory :activities="activities" title="Historial de actividad" />
             </div>
         </div>
 

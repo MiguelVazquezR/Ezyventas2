@@ -41,4 +41,12 @@ class Category extends Model
     {
         return $this->hasMany(Service::class);
     }
+
+    /**
+     * Obtiene los productos globales (Catálogo Base) de esta categoría.
+     */
+    public function globalProducts(): HasMany
+    {
+        return $this->hasMany(GlobalProduct::class);
+    }
 }

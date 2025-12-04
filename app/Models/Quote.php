@@ -59,9 +59,26 @@ class Quote extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['status', 'total_amount', 'expiry_date'])
+            // CORRECCIÓN: Ampliamos los campos vigilados para un historial detallado
+            ->logOnly([
+                'folio',
+                'status',
+                'expiry_date',
+                'subtotal',
+                'total_discount',
+                'total_tax',
+                'shipping_cost',
+                'total_amount',
+                'notes',
+                'recipient_name',
+                'recipient_email',
+                'recipient_phone',
+                'shipping_address',
+                'custom_fields'
+            ])
             ->setDescriptionForEvent(fn(string $eventName) => "La cotización ha sido {$this->translateEventName($eventName)}")
-            ->logOnlyDirty()->dontSubmitEmptyLogs();
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs();
     }
 
     private function translateEventName(string $eventName): string

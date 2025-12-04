@@ -4,8 +4,8 @@ import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
-import DiffViewer from '@/Components/DiffViewer.vue';
 import AddStockModal from './Partials/AddStockModal.vue';
+import ActivityHistory from '@/Components/ActivityHistory.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import { usePermissions } from '@/Composables';
 
@@ -481,70 +481,7 @@ const totalAvailable = computed(() => props.product.available_stock);
                 </div>
 
                 <!-- historial -->
-                <!-- <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2
-                        class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-6 text-gray-800 dark:text-gray-200">
-                        Historial de Actividad</h2>
-                    <div v-if="activities && activities.length > 0" class="relative max-h-[300px] overflow-y-auto pr-2">
-                        <div class="relative pl-6">
-                            <div class="absolute left-10 top-0 h-full border-l-2 border-gray-200 dark:border-gray-700">
-                            </div>
-
-                            <div class="space-y-8">
-                                <div v-for="activity in activities" :key="activity.id" class="relative">
-                                    <div class="absolute left-0 top-1.5 -translate-x-1/2">
-                                        <span
-                                            class="flex w-8 h-8 items-center justify-center text-white rounded-full z-10 shadow-md"
-                                            :class="{
-                                                'bg-blue-500': activity.event === 'created',
-                                                'bg-orange-500': activity.event === 'updated',
-                                                'bg-red-500': activity.event === 'deleted',
-                                                'bg-purple-500': activity.event === 'promo'
-                                            }">
-                                            <i :class="{
-                                                'pi pi-plus': activity.event === 'created',
-                                                'pi pi-pencil': activity.event === 'updated',
-                                                'pi pi-trash': activity.event === 'deleted',
-                                                'pi pi-bolt': activity.event === 'promo'
-                                            }"></i>
-                                        </span>
-                                    </div>
-
-                                    <div class="ml-10">
-                                        <h3 class="font-semibold text-gray-800 dark:text-gray-200 text-lg m-0">{{
-                                            activity.description }}</h3>
-                                        <p class="text-xs text-gray-500 dark:text-gray-400">Por {{ activity.causer }} -
-                                            {{
-                                                activity.timestamp }}</p>
-
-                                        <div v-if="activity.event === 'updated' && Object.keys(activity.changes.after).length > 0"
-                                            class="mt-3 text-sm space-y-2">
-                                            <div v-for="(value, key) in activity.changes.after" :key="key">
-                                                <p class="font-medium text-gray-700 dark:text-gray-300">{{ key }}</p>
-                                                <div v-if="key === 'Descripción'">
-                                                    <DiffViewer :oldValue="activity.changes.before[key]"
-                                                        :newValue="value" />
-                                                </div>
-                                                <div v-else class="flex items-center gap-2 text-xs">
-                                                    <span
-                                                        class="bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 px-2 py-0.5 rounded line-through">{{
-                                                            activity.changes.before[key] || 'Vacío' }}</span>
-                                                    <i class="pi pi-arrow-right text-gray-400"></i>
-                                                    <span
-                                                        class="bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 px-2 py-0.5 rounded font-medium">{{
-                                                            value }}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div v-else class="text-center text-gray-500 py-8">
-                        No hay actividades registradas para este producto.
-                    </div>
-                </div> -->
+                <ActivityHistory :activities="activities" title="Historial de movimientos" />
 
             </div>
         </div>

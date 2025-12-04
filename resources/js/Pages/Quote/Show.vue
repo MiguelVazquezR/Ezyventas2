@@ -6,7 +6,8 @@ import { useConfirm } from 'primevue/useconfirm';
 import DiffViewer from '@/Components/DiffViewer.vue';
 import { usePermissions } from '@/Composables';
 import PatternLock from '@/Components/PatternLock.vue';
-import Dialog from 'primevue/dialog'; // <-- AÑADIDO
+import Dialog from 'primevue/dialog';
+import ActivityHistory from '@/Components/ActivityHistory.vue';
 
 const props = defineProps({
     quote: Object,
@@ -44,7 +45,7 @@ const changeStatus = (newStatusValue, newIndex) => {
     if (newIndex < activeIndex.value || isTerminalStatus.value || newStatusValue === 'cancelada') return;
     const newStatusLabel = steps.value.find(s => s.value === newStatusValue)?.label || newStatusValue;
     const isGeneratingSale = newStatusValue === 'venta_generada';
-    const message = isGeneratingSale 
+    const message = isGeneratingSale
         ? `Al cambiar el estatus a "Venta generada", el sistema creará automáticamente una nueva venta y descontará el inventario. ¿Deseas continuar?`
         : `¿Estás seguro de que quieres cambiar el estatus a "${newStatusLabel}"?`;
 
@@ -115,8 +116,8 @@ const handlePrintAction = () => {
 };
 
 const openPrintWindow = () => {
-    const url = route('quotes.print', { 
-        quote: props.quote.id, 
+    const url = route('quotes.print', {
+        quote: props.quote.id,
         template_id: selectedTemplate.value // Si es null, el backend carga default
     });
     window.open(url, '_blank');
@@ -136,16 +137,16 @@ const actionItems = computed(() => {
     }
 
     // Acción Modificada: Ahora llama a handlePrintAction
-    items.push({ 
-        label: 'Ver PDF / Imprimir', 
-        icon: 'pi pi-print', 
-        command: handlePrintAction 
+    items.push({
+        label: 'Ver PDF / Imprimir',
+        icon: 'pi pi-print',
+        command: handlePrintAction
     });
 
     if (quote.status === 'autorizada' && !quote.transaction_id && hasPermission('quotes.create_sale')) {
         items.push({ label: 'Convertir a venta', icon: 'pi pi-dollar', command: convertToSale });
     }
-    
+
     if (quote.status === 'venta_generada' && hasPermission('quotes.change_status')) {
         items.push({ label: 'Cancelar venta', icon: 'pi pi-times-circle', class: 'text-orange-500', command: cancelSale });
     }
@@ -196,26 +197,29 @@ const hasDetails = computed(() => {
 </script>
 
 <template>
+
     <Head :title="`Cotización #${quote.folio}`" />
     <AppLayout>
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <div>
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Cotización #{{ quote.folio }}</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Cliente: {{ quote.customer?.name || 'Sin cliente' }}</p>
+                <p class="text-gray-500 dark:text-gray-400 mt-1">Cliente: {{ quote.customer?.name || 'Sin cliente' }}
+                </p>
             </div>
             <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined class="mt-4 sm:mt-0" />
         </div>
 
         <!-- MODAL DE SELECCIÓN DE PLANTILLA -->
-        <Dialog v-model:visible="showTemplateDialog" modal header="Seleccionar formato de impresión" :style="{ width: '30rem' }">
+        <Dialog v-model:visible="showTemplateDialog" modal header="Seleccionar formato de impresión"
+            :style="{ width: '30rem' }">
             <p class="text-gray-600 dark:text-gray-300 mb-4">Elige el diseño que deseas usar para este documento.</p>
-            
+
             <div class="space-y-2">
                 <!-- Opción Default -->
-                <div @click="selectedTemplate = null" 
-                     class="p-3 rounded-lg border cursor-pointer transition-colors flex items-center gap-3"
-                     :class="selectedTemplate === null ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'">
+                <div @click="selectedTemplate = null"
+                    class="p-3 rounded-lg border cursor-pointer transition-colors flex items-center gap-3"
+                    :class="selectedTemplate === null ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'">
                     <RadioButton v-model="selectedTemplate" :value="null" class="pointer-events-none" />
                     <div>
                         <div class="font-semibold text-gray-800 dark:text-gray-200">Estándar del Sistema</div>
@@ -224,10 +228,9 @@ const hasDetails = computed(() => {
                 </div>
 
                 <!-- Plantillas Personalizadas -->
-                <div v-for="tpl in printTemplates" :key="tpl.id" 
-                     @click="selectedTemplate = tpl.id"
-                     class="p-3 rounded-lg border cursor-pointer transition-colors flex items-center gap-3"
-                     :class="selectedTemplate === tpl.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'">
+                <div v-for="tpl in printTemplates" :key="tpl.id" @click="selectedTemplate = tpl.id"
+                    class="p-3 rounded-lg border cursor-pointer transition-colors flex items-center gap-3"
+                    :class="selectedTemplate === tpl.id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'">
                     <RadioButton v-model="selectedTemplate" :value="tpl.id" class="pointer-events-none" />
                     <div>
                         <div class="font-semibold text-gray-800 dark:text-gray-200">{{ tpl.name }}</div>
@@ -242,23 +245,27 @@ const hasDetails = computed(() => {
             </div>
 
             <div class="mt-4 pt-4 border-t dark:border-gray-700 text-center">
-                <Link :href="route('print-templates.create', { type: 'cotizacion' })" class="text-xs text-blue-600 hover:underline">
-                    ¿Quieres un diseño diferente? Crea una nueva plantilla aquí.
+                <Link :href="route('print-templates.create', { type: 'cotizacion' })"
+                    class="text-xs text-blue-600 hover:underline">
+                ¿Quieres un diseño diferente? Crea una nueva plantilla aquí.
                 </Link>
             </div>
         </Dialog>
 
         <!-- Resto del contenido de Show.vue (sin cambios mayores) -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-             <!-- (Se mantiene el código original del layout grid...) -->
-             <div class="lg:col-span-2 space-y-6">
+            <!-- (Se mantiene el código original del layout grid...) -->
+            <div class="lg:col-span-2 space-y-6">
                 <!-- Flujo de Estatus -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <!-- ... (Código existente del stepper) ... -->
-                     <h2 class="text-lg font-semibold border-b pb-3 mb-6">Flujo de estatus</h2>
-                    <div v-if="showStatusBanner" class="text-center p-4 rounded-md" :class="{ 'bg-red-50 dark:bg-red-900/20': quote.status === 'rechazada' || quote.status === 'cancelada', 'bg-yellow-50 dark:bg-yellow-900/20': quote.status === 'expirada' }">
-                        <p class="font-semibold" :class="{ 'text-red-700 dark:text-red-300': quote.status === 'rechazada' || quote.status === 'cancelada', 'text-yellow-700 dark:text-yellow-300': quote.status === 'expirada' }">
-                            <span v-if="quote.status === 'cancelada'">Esta venta ha sido cancelada. El stock ha sido devuelto.</span>
+                    <h2 class="text-lg font-semibold border-b pb-3 mb-6">Flujo de estatus</h2>
+                    <div v-if="showStatusBanner" class="text-center p-4 rounded-md"
+                        :class="{ 'bg-red-50 dark:bg-red-900/20': quote.status === 'rechazada' || quote.status === 'cancelada', 'bg-yellow-50 dark:bg-yellow-900/20': quote.status === 'expirada' }">
+                        <p class="font-semibold"
+                            :class="{ 'text-red-700 dark:text-red-300': quote.status === 'rechazada' || quote.status === 'cancelada', 'text-yellow-700 dark:text-yellow-300': quote.status === 'expirada' }">
+                            <span v-if="quote.status === 'cancelada'">Esta venta ha sido cancelada. El stock ha sido
+                                devuelto.</span>
                             <span v-else>Esta cotización ha sido "{{ quote.status.replace('_', ' ') }}".</span>
                         </p>
                     </div>
@@ -267,18 +274,28 @@ const hasDetails = computed(() => {
                             <Step v-for="(step, index) in steps" :key="step.label" :value="index + 1" asChild>
                                 <template #default="{ value, a11yAttrs }">
                                     <div class="flex-auto relative">
-                                        <button class="bg-transparent border-0 inline-flex flex-col gap-2 items-center text-center w-full" @click="changeStatus(step.value, value)" v-bind="a11yAttrs.header" :disabled="!hasPermission('quotes.change_status')">
-                                            <span :class="['w-12 h-12 rounded-full border-2 flex items-center justify-center transition-colors duration-200', { 'bg-primary border-primary text-primary-contrast': value <= activeIndex, 'border-surface-200 dark:border-surface-700': value > activeIndex, 'cursor-pointer hover:border-primary': value > activeIndex && hasPermission('quotes.change_status') }]"><i :class="step.icon" /></span>
-                                            <span :class="['font-medium text-sm', { 'text-primary': value <= activeIndex }]">{{ step.label }}</span>
+                                        <button
+                                            class="bg-transparent border-0 inline-flex flex-col gap-2 items-center text-center w-full"
+                                            @click="changeStatus(step.value, value)" v-bind="a11yAttrs.header"
+                                            :disabled="!hasPermission('quotes.change_status')">
+                                            <span
+                                                :class="['w-12 h-12 rounded-full border-2 flex items-center justify-center transition-colors duration-200', { 'bg-primary border-primary text-primary-contrast': value <= activeIndex, 'border-surface-200 dark:border-surface-700': value > activeIndex, 'cursor-pointer hover:border-primary': value > activeIndex && hasPermission('quotes.change_status') }]"><i
+                                                    :class="step.icon" /></span>
+                                            <span
+                                                :class="['font-medium text-sm', { 'text-primary': value <= activeIndex }]">{{
+                                                    step.label }}</span>
                                         </button>
-                                        <div v-if="index < steps.length - 1" class="absolute top-6 left-[calc(50%+1.5rem)] w-[calc(100%-3rem)]"><Divider /></div>
+                                        <div v-if="index < steps.length - 1"
+                                            class="absolute top-6 left-[calc(50%+1.5rem)] w-[calc(100%-3rem)]">
+                                            <Divider />
+                                        </div>
                                     </div>
                                 </template>
                             </Step>
                         </StepList>
                     </Stepper>
                 </div>
-                
+
                 <!-- Conceptos y Totales -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <!-- ... (Código existente tabla items) ... -->
@@ -286,38 +303,56 @@ const hasDetails = computed(() => {
                     <DataTable :value="quote.items" class="p-datatable-sm">
                         <Column header="Tipo" style="width: 10rem">
                             <template #body="{ data }">
-                                <Tag :value="getItemType(data.itemable_type)" :severity="getItemType(data.itemable_type) === 'Producto' ? 'info' : 'success'" />
+                                <Tag :value="getItemType(data.itemable_type)"
+                                    :severity="getItemType(data.itemable_type) === 'Producto' ? 'info' : 'success'" />
                             </template>
                         </Column>
                         <Column field="description" header="Descripción">
                             <template #body="{ data }">
                                 <div>{{ data.description }}</div>
-                                <div v-if="data.variant_details" class="text-xs text-gray-500 mt-1">({{ Object.values(data.variant_details).join(', ') }})</div>
+                                <div v-if="data.variant_details" class="text-xs text-gray-500 mt-1">({{
+                                    Object.values(data.variant_details).join(', ') }})</div>
                             </template>
                         </Column>
                         <Column field="quantity" header="Cantidad" style="width: 6rem" class="text-center"></Column>
-                        <Column field="unit_price" header="Precio Unit." style="width: 10rem" class="text-right"><template #body="{ data }">{{ formatCurrency(data.unit_price) }}</template></Column>
-                        <Column field="line_total" header="Total" style="width: 10rem" class="text-right"><template #body="{ data }">{{ formatCurrency(data.line_total) }}</template></Column>
+                        <Column field="unit_price" header="Precio Unit." style="width: 10rem" class="text-right">
+                            <template #body="{ data }">{{ formatCurrency(data.unit_price) }}</template>
+                        </Column>
+                        <Column field="line_total" header="Total" style="width: 10rem" class="text-right"><template
+                                #body="{ data }">{{ formatCurrency(data.line_total) }}</template></Column>
                     </DataTable>
                     <div class="mt-4 flex justify-end">
                         <div class="w-full max-w-sm space-y-2 text-sm">
-                            <div class="flex justify-between"><span>Subtotal:</span> <span>{{ formatCurrency(quote.subtotal) }}</span></div>
-                            <div class="flex justify-between"><span>Descuento:</span> <span class="text-red-500">- {{ formatCurrency(quote.total_discount) }}</span></div>
-                            <div class="flex justify-between"><span>Impuestos ({{ quote.tax_type === 'included' ? 'Incluidos' : (quote.tax_rate || 0) + '%' }}):</span><span>{{ formatCurrency(quote.total_tax) }}</span></div>
-                            <div class="flex justify-between"><span>Envío:</span> <span>{{ formatCurrency(quote.shipping_cost) }}</span></div>
-                            <div class="flex justify-between font-bold text-lg border-t pt-2 mt-2"><span>Total:</span><span>{{ formatCurrency(quote.total_amount) }}</span></div>
+                            <div class="flex justify-between"><span>Subtotal:</span> <span>{{
+                                formatCurrency(quote.subtotal) }}</span>
+                            </div>
+                            <div class="flex justify-between"><span>Descuento:</span> <span class="text-red-500">- {{
+                                formatCurrency(quote.total_discount) }}</span></div>
+                            <div class="flex justify-between"><span>Impuestos ({{ quote.tax_type === 'included' ?
+                                'Incluidos' :
+                                (quote.tax_rate || 0) + '%' }}):</span><span>{{ formatCurrency(quote.total_tax)
+                                    }}</span></div>
+                            <div class="flex justify-between"><span>Envío:</span> <span>{{
+                                formatCurrency(quote.shipping_cost) }}</span>
+                            </div>
+                            <div class="flex justify-between font-bold text-lg border-t pt-2 mt-2">
+                                <span>Total:</span><span>{{
+                                    formatCurrency(quote.total_amount) }}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
-                
-                 <div v-if="customFieldDefinitions && customFieldDefinitions.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+
+                <div v-if="customFieldDefinitions && customFieldDefinitions.length > 0"
+                    class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles adicionales</h2>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                         <template v-for="def in customFieldDefinitions" :key="def.id">
                             <div v-if="quote.custom_fields && quote.custom_fields[def.key]" class="py-2">
                                 <span class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ def.name }}</span>
                                 <div class="mt-1 text-gray-800 dark:text-gray-200">
-                                    <PatternLock v-if="def.type === 'pattern'" v-model="quote.custom_fields[def.key]" read-only />
+                                    <PatternLock v-if="def.type === 'pattern'" v-model="quote.custom_fields[def.key]"
+                                        read-only />
                                     <span v-else>{{ getFormattedCustomValue(def, quote.custom_fields[def.key]) }}</span>
                                 </div>
                             </div>
@@ -327,64 +362,60 @@ const hasDetails = computed(() => {
             </div>
 
             <div class="lg:col-span-1 space-y-6">
-                 <!-- ... (Código existente de tarjetas laterales) ... -->
-                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                <!-- ... (Código existente de tarjetas laterales) ... -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles</h2>
                     <ul v-if="hasDetails" class="space-y-2 text-sm">
-                        <li v-if="quote.recipient_name" class="flex justify-between"><span class="font-medium text-gray-500 dark:text-gray-400">Destinatario:</span><span class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_name }}</span></li>
-                        <li v-if="quote.recipient_email" class="flex justify-between"><span class="font-medium text-gray-500 dark:text-gray-400">Email:</span><span class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_email }}</span></li>
-                        <li v-if="quote.recipient_phone" class="flex justify-between"><span class="font-medium text-gray-500 dark:text-gray-400">Teléfono:</span><span class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_phone }}</span></li>
-                        <li v-if="quote.expiry_date" class="flex justify-between"><span class="font-medium text-gray-500 dark:text-gray-400">Expiración:</span><span class="text-gray-800 dark:text-gray-200 text-right">{{ formatDate(quote.expiry_date) }}</span></li>
-                        <li v-if="quote.shipping_address" class="flex flex-col"><span class="font-medium text-gray-500 dark:text-gray-400">Dirección de envío:</span><p class="text-gray-800 dark:text-gray-200 mt-1 whitespace-pre-wrap">{{ quote.shipping_address }}</p></li>
-                        <li v-if="quote.notes" class="flex flex-col"><span class="font-medium text-gray-500 dark:text-gray-400">Notas adicionales:</span><p class="text-gray-800 dark:text-gray-200 mt-1 whitespace-pre-wrap">{{ quote.notes }}</p></li>
+                        <li v-if="quote.recipient_name" class="flex justify-between"><span
+                                class="font-medium text-gray-500 dark:text-gray-400">Destinatario:</span><span
+                                class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_name }}</span>
+                        </li>
+                        <li v-if="quote.recipient_email" class="flex justify-between"><span
+                                class="font-medium text-gray-500 dark:text-gray-400">Email:</span><span
+                                class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_email }}</span>
+                        </li>
+                        <li v-if="quote.recipient_phone" class="flex justify-between"><span
+                                class="font-medium text-gray-500 dark:text-gray-400">Teléfono:</span><span
+                                class="text-gray-800 dark:text-gray-200 text-right">{{ quote.recipient_phone }}</span>
+                        </li>
+                        <li v-if="quote.expiry_date" class="flex justify-between"><span
+                                class="font-medium text-gray-500 dark:text-gray-400">Expiración:</span><span
+                                class="text-gray-800 dark:text-gray-200 text-right">{{ formatDate(quote.expiry_date)
+                                }}</span></li>
+                        <li v-if="quote.shipping_address" class="flex flex-col"><span
+                                class="font-medium text-gray-500 dark:text-gray-400">Dirección de envío:</span>
+                            <p class="text-gray-800 dark:text-gray-200 mt-1 whitespace-pre-wrap">{{
+                                quote.shipping_address }}</p>
+                        </li>
+                        <li v-if="quote.notes" class="flex flex-col"><span
+                                class="font-medium text-gray-500 dark:text-gray-400">Notas adicionales:</span>
+                            <p class="text-gray-800 dark:text-gray-200 mt-1 whitespace-pre-wrap">{{ quote.notes }}</p>
+                        </li>
                     </ul>
-                     <div v-else class="text-center py-4 text-gray-500 dark:text-gray-400">
+                    <div v-else class="text-center py-4 text-gray-500 dark:text-gray-400">
                         <i class="pi pi-info-circle mr-2"></i>
                         <span>No hay detalles adicionales registrados para esta cotización.</span>
                     </div>
                 </div>
 
-                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b pb-3 mb-4">Versiones</h2>
                     <ul class="space-y-2">
                         <li v-for="version in allVersions" :key="version.id">
-                            <Link :href="route('quotes.show', version.id)" class="block p-2 rounded-md transition-colors" :class="version.id === quote.id ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300' : 'hover:bg-gray-100 dark:hover:bg-gray-700'">
-                                <div class="flex justify-between font-semibold"><span>Versión {{ version.version_number }}</span><span>{{ formatCurrency(version.total_amount) }}</span></div>
-                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Creada: {{ formatDate(version.created_at) }}</div>
+                            <Link :href="route('quotes.show', version.id)"
+                                class="block p-2 rounded-md transition-colors"
+                                :class="version.id === quote.id ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300' : 'hover:bg-gray-100 dark:hover:bg-gray-700'">
+                            <div class="flex justify-between font-semibold"><span>Versión {{ version.version_number
+                            }}</span><span>{{ formatCurrency(version.total_amount) }}</span></div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Creada: {{
+                                formatDate(version.created_at) }}
+                            </div>
                             </Link>
                         </li>
                     </ul>
                 </div>
 
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                     <h2 class="text-lg font-semibold border-b pb-3 mb-6">Historial de actividad</h2>
-                     <div v-if="activities && activities.length > 0" class="relative max-h-[350px] overflow-y-auto pr-2">
-                        <div class="relative pl-6">
-                            <div class="absolute left-10 top-0 h-full border-gray-200 dark:border-gray-700"></div>
-                            <div class="space-y-8">
-                                <div v-for="activity in activities" :key="activity.id" class="relative">
-                                    <div class="absolute left-0 top-1.5 -translate-x-1/2">
-                                        <span class="flex w-8 h-8 items-center justify-center text-white rounded-full z-10 shadow-md" :class="{ 'bg-blue-400': activity.event === 'created', 'bg-orange-400': activity.event === 'updated', 'bg-red-400': activity.event === 'deleted', 'bg-indigo-400': activity.event === 'status_changed' }">
-                                            <i :class="{ 'pi pi-plus': activity.event === 'created', 'pi pi-pencil': activity.event === 'updated', 'pi pi-trash': activity.event === 'deleted', 'pi pi-refresh': activity.event === 'status_changed' }"></i>
-                                        </span>
-                                    </div>
-                                    <div class="ml-10">
-                                        <h3 class="font-semibold text-gray-800 dark:text-gray-200 text-lg m-0">{{ activity.description }}</h3>
-                                        <p class="text-xs text-gray-500 dark:text-gray-400">Por {{ activity.causer }} - {{ activity.timestamp }}</p>
-                                         <div v-if="activity.event === 'updated' && Object.keys(activity.changes.after).length > 0" class="mt-3 text-sm space-y-2">
-                                            <div v-for="(value, key) in activity.changes.after" :key="key">
-                                                <p class="font-medium text-gray-700 dark:text-gray-300">{{ key }}</p>
-                                                <div v-if="key === 'Descripción'"><DiffViewer :oldValue="activity.changes.before[key]" :newValue="value" /></div>
-                                                <div v-else class="flex items-center gap-2 text-xs"><span class="bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 px-2 py-0.5 rounded line-through">{{ activity.changes.before[key] || 'Vacío' }}</span><i class="pi pi-arrow-right text-gray-400"></i><span class="bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 px-2 py-0.5 rounded font-medium">{{ value }}</span></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                     <div v-else class="text-center text-gray-500">No hay actividades.</div>
-                </div>
+                <ActivityHistory :activities="activities" title="Historial de actividad" />
             </div>
         </div>
     </AppLayout>
