@@ -193,7 +193,7 @@ const AppleIcon = ref(`
                         Todo lo que necesitas: Punto de venta, inventario, clientes, reportes y más.
                     </p>
                 </div>
-                <img src="@/../../public/images/banner_login.png" :draggable="false"
+                <img src="@/../../public/images/banner_login.webp" :draggable="false"
                     alt="Panel de SaaS POS" class="mt-8 object-cover h-full select-none"
                     onerror="this.src='https://placehold.co/600x400?text=Error+al+cargar+imagen'">
             </div>

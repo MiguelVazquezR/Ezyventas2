@@ -230,7 +230,7 @@ const redirectToGoogle = () => {
                         Únete y obtén control total sobre tus ventas, inventario, clientes y reportes financieros.
                     </p>
                 </div>
-                <img src="@/../../public/images/banner_register.png" :draggable="false"
+                <img src="@/../../public/images/banner_register.webp" :draggable="false"
                     alt="Panel de SaaS POS" class="mt-8 object-cover h-full select-none"
                     onerror="this.src='https://placehold.co/600x400?text=Error+al+cargar+imagen'">
             </div>
