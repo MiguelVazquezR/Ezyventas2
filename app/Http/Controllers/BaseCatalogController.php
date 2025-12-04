@@ -47,7 +47,7 @@ class BaseCatalogController extends Controller
                 'id' => $gp->id,
                 'name' => $gp->name,
                 'sku' => $gp->sku,
-                'image_url' => $gp->getFirstMediaUrl('global-product-images') ?: null,
+                'image_url' => $gp->getFirstMediaUrl('product-general-images') ?: null,
                 'category' => $gp->category?->name ?? 'General',
                 'brand' => $gp->brand?->name ?? '', // Quitamos "Genérico" para ahorrar espacio visual
                 'suggested_price' => $gp->selling_price,
