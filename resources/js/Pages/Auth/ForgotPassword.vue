@@ -113,7 +113,7 @@ const submit = () => {
                         Utilizamos las mejores prácticas y cifrado de datos para proteger la información de tu negocio.
                     </p>
                 </div>
-                <img src="@/../../public/images/banner_forgot_password.png" :draggable="false" alt="Panel de SaaS POS"
+                <img src="@/../../public/images/banner_forgot_password.webp" :draggable="false" alt="Panel de SaaS POS"
                     class="mt-8 object-cover h-full select-none mb-6"
                     onerror="this.src='https://placehold.co/600x400?text=Error+al+cargar+imagen'">
             </div>
