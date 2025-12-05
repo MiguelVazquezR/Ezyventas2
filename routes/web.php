@@ -67,6 +67,10 @@ require __DIR__ . '/web/brands.php';
 require __DIR__ . '/web/providers.php';
 require __DIR__ . '/web/expense-categories.php';
 require __DIR__ . '/web/super-admin.php';
+// borrar despues de migrar en producción
+// require __DIR__ . '/web/migrate-products.php';
+// require __DIR__ . '/web/migrate-customers.php';
+// require __DIR__ . '/web/migrate-transactions.php';
 
 
 //artisan commands -------------------
