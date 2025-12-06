@@ -2,21 +2,18 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\CashRegisterSessionStatus;
 use App\Models\BankAccount;
 use App\Models\CashRegister;
-use App\Models\CashRegisterSession;
 use App\Models\Customer;
 use App\Models\Expense;
 use App\Models\Product;
 use App\Models\ProductAttribute;
-use App\Models\Promotion;
 use App\Models\ServiceOrder;
 use App\Models\Transaction;
-use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
@@ -27,73 +24,116 @@ class DashboardController extends Controller
     {
         $user = Auth::user();
         $branchId = $user->branch_id;
-        $stats = [];
         $isAdmin = !$user->roles()->exists();
+        $stats = [];
 
-        // --- Ventas y Transacciones ---
+        // Clave de caché única por sucursal
+        $cacheKey = "dashboard_stats_branch_{$branchId}";
+
+        // --- 1. Ventas y Transacciones (Datos en tiempo real, sin caché larga) ---
         if ($isAdmin || $user->can('transactions.access')) {
-            $todayTransactions = Transaction::where('branch_id', $branchId)->whereDate('created_at', today())->where('status', 'completado');
-            $totalSales = (clone $todayTransactions)->sum(DB::raw('subtotal - total_discount'));
-            $transactionCount = (clone $todayTransactions)->count();
+            // Optimización: Usar whereBetween aprovecha índices en created_at mejor que whereDate
+            $startOfDay = now()->startOfDay();
+            $endOfDay = now()->endOfDay();
 
-            $stats['today_sales'] = $totalSales;
+            // Hacemos una sola consulta agregada para hoy
+            $todayAggregates = Transaction::where('branch_id', $branchId)
+                ->whereBetween('created_at', [$startOfDay, $endOfDay])
+                ->where('status', 'completado')
+                ->selectRaw('SUM(subtotal - total_discount) as total_sales')
+                ->selectRaw('COUNT(*) as total_count')
+                ->first();
+
+            $totalSales = $todayAggregates->total_sales ?? 0;
+            $transactionCount = $todayAggregates->total_count ?? 0;
+
+            $stats['today_sales'] = (float) $totalSales;
             $stats['average_ticket_today'] = $transactionCount > 0 ? $totalSales / $transactionCount : 0;
-            $stats['yesterday_sales'] = $this->getSalesTotalForPeriod($branchId, today()->subDay(), today()->subDay());
-            $stats['weekly_sales_trend'] = $this->getWeeklySalesTrend($branchId);
+            
+            // Ventas de ayer (Cache 10 min)
+            $stats['yesterday_sales'] = Cache::remember("{$cacheKey}_yesterday", 600, function () use ($branchId) {
+                return $this->getSalesTotalForPeriod($branchId, today()->subDay(), today()->subDay());
+            });
+
+            // Tendencia semanal (Cache 1 hora)
+            $stats['weekly_sales_trend'] = Cache::remember("{$cacheKey}_weekly_trend", 3600, function () use ($branchId) {
+                return $this->getWeeklySalesTrend($branchId);
+            });
         }
 
-        // --- Control Financiero ---
+        // --- 2. Control Financiero ---
         if ($isAdmin || $user->can('financials.access_dashboard')) {
-            $stats['monthly_expenses'] = Expense::where('branch_id', $branchId)
-                ->whereMonth('expense_date', now()->month)
-                ->whereYear('expense_date', now()->year)
-                ->sum('amount');
+            $stats['monthly_expenses'] = Cache::remember("{$cacheKey}_expenses", 3600, function () use ($branchId) {
+                return Expense::where('branch_id', $branchId)
+                    ->whereMonth('expense_date', now()->month)
+                    ->whereYear('expense_date', now()->year)
+                    ->sum('amount');
+            });
         }
+        
         if ($isAdmin || $user->can('financials.manage_cash_registers')) {
-            $cashRegisters = CashRegister::where('branch_id', $branchId)->where('is_active', true)->get();
-            $stats['cash_registers_status'] = [
-                'in_use' => $cashRegisters->where('in_use', true)->count(),
-                'available' => $cashRegisters->where('in_use', false)->count(),
-            ];
+            // Consulta ligera, no requiere caché estricta pero ayuda
+            $stats['cash_registers_status'] = CashRegister::where('branch_id', $branchId)
+                ->where('is_active', true)
+                ->selectRaw("COUNT(CASE WHEN in_use = 1 THEN 1 END) as in_use")
+                ->selectRaw("COUNT(CASE WHEN in_use = 0 THEN 1 END) as available")
+                ->first()
+                ->toArray();
         }
 
-        // --- Productos e Inventario ---
+        // --- 3. Productos e Inventario (LA PARTE MÁS PESADA) ---
         if ($isAdmin || $user->can('products.access')) {
-            $stats['top_selling_products'] = $this->getTopSellingProducts($branchId);
-            $stats['inventory_summary'] = $this->getInventorySummary($branchId);
-            $stats['low_turnover_products'] = $this->getLowTurnoverProducts($branchId);
+            // Cacheamos estos reportes pesados por 30-60 minutos
+            $stats['inventory_summary'] = Cache::remember("{$cacheKey}_inventory", 1800, function () use ($branchId) {
+                return $this->getInventorySummaryOptimized($branchId);
+            });
+
+            $stats['top_selling_products'] = Cache::remember("{$cacheKey}_top_selling", 3600, function () use ($branchId) {
+                return $this->getTopSellingProducts($branchId);
+            });
+
+            $stats['low_turnover_products'] = Cache::remember("{$cacheKey}_low_turnover", 3600, function () use ($branchId) {
+                return $this->getLowTurnoverProducts($branchId);
+            });
         }
 
-        // --- Servicios ---
+        // --- 4. Servicios ---
         if ($isAdmin || $user->can('services.access_order')) {
             $stats['service_orders_status'] = ServiceOrder::where('branch_id', $branchId)
                 ->select('status', DB::raw('count(*) as total'))
-                ->groupBy('status')->get()->pluck('total', 'status.value');
+                ->groupBy('status')
+                ->pluck('total', 'status.value'); // Pluck ejecuta la query inmediatamente
         }
 
-        // --- Clientes ---
+        // --- 5. Clientes ---
         if ($isAdmin || $user->can('customers.access')) {
-            $stats['total_customer_debt'] = Customer::where('branch_id', $branchId)
-                ->where('balance', '<', 0)->sum('balance') * -1;
-            $stats['recent_customers'] = Customer::where('branch_id', $branchId)->latest()->limit(5)->get(['id', 'name']);
-            $stats['frequent_customers'] = Customer::where('branch_id', $branchId)
-                ->withCount(['transactions' => fn($q) => $q->whereMonth('created_at', now()->month)])
-                ->having('transactions_count', '>', 0)
-                ->orderByDesc('transactions_count')->limit(5)->get(['id', 'name', 'transactions_count']);
+            // Deuda total (Cache 1 hora, es un cálculo pesado de suma total)
+            $stats['total_customer_debt'] = Cache::remember("{$cacheKey}_debt", 3600, function () use ($branchId) {
+                return Customer::where('branch_id', $branchId)
+                    ->where('balance', '<', 0)
+                    ->sum('balance') * -1;
+            });
+
+            $stats['recent_customers'] = Customer::where('branch_id', $branchId)
+                ->latest('id') // Optimización: latest id es más rápido que latest created_at si es autoincrement
+                ->limit(5)
+                ->get(['id', 'name']);
+
+            // Clientes frecuentes (Cache 1 hora)
+            $stats['frequent_customers'] = Cache::remember("{$cacheKey}_frequent_cust", 3600, function () use ($branchId) {
+                return Customer::where('branch_id', $branchId)
+                    ->withCount(['transactions' => fn($q) => $q->whereMonth('created_at', now()->month)])
+                    ->orderByDesc('transactions_count') // Ordenar antes del having puede ser más rápido en algunos motores SQL
+                    ->limit(5)
+                    ->get(['id', 'name']);
+            });
         }
 
-        // --- Panel de Cuentas Bancarias ---
-        $userBankAccounts = null;
-        $allSubscriptionBankAccounts = null;
-
-        if ($isAdmin) {
-            $userBankAccounts = BankAccount::whereHas('branches', function ($query) use ($branchId) {
-                $query->where('branch_id', $branchId);
-            })->get();
-        } else {
-            $userBankAccounts = $user->bankAccounts()->get();
-        }
-        // Para el modal de transferencias, se necesitan todas las cuentas de la suscripción.
+        // --- Cuentas Bancarias ---
+        $userBankAccounts = $isAdmin 
+            ? BankAccount::whereHas('branches', fn($q) => $q->where('branch_id', $branchId))->get() 
+            : $user->bankAccounts()->get();
+            
         $allSubscriptionBankAccounts = BankAccount::where('subscription_id', $user->branch->subscription_id)->get();
 
         return Inertia::render('Dashboard', [
@@ -104,193 +144,156 @@ class DashboardController extends Controller
     }
 
     /**
-     * Obtiene los 5 productos con 15 o más días sin ventas, considerando también las ventas de sus variantes.
+     * OPTIMIZADO: Calcula el inventario usando SQL puro en lugar de hidratar miles de modelos.
      */
+    private function getInventorySummaryOptimized($branchId)
+    {
+        // Una sola consulta para obtener todos los agregados
+        $summary = DB::table('products')
+            ->where('branch_id', $branchId)
+            ->selectRaw('COUNT(*) as total_products')
+            ->selectRaw('SUM(cost_price * current_stock) as total_cost')
+            ->selectRaw('SUM(selling_price * current_stock) as total_sale_value')
+            ->selectRaw('SUM(CASE WHEN current_stock > COALESCE(min_stock, 0) THEN 1 ELSE 0 END) as in_stock_count')
+            ->selectRaw('SUM(CASE WHEN current_stock > 0 AND current_stock <= COALESCE(min_stock, 0) THEN 1 ELSE 0 END) as low_stock_count')
+            ->selectRaw('SUM(CASE WHEN current_stock <= 0 THEN 1 ELSE 0 END) as out_of_stock_count')
+            ->first();
+
+        if (!$summary || $summary->total_products == 0) {
+            return null;
+        }
+
+        return [
+            'total_cost' => (float) $summary->total_cost,
+            'total_sale_value' => (float) $summary->total_sale_value,
+            'total_products' => (int) $summary->total_products,
+            'in_stock_count' => (int) $summary->in_stock_count,
+            'low_stock_count' => (int) $summary->low_stock_count,
+            'out_of_stock_count' => (int) $summary->out_of_stock_count,
+        ];
+    }
+
     private function getLowTurnoverProducts($branchId)
     {
         $thresholdDate = now()->subDays(15);
 
-        // --- CORRECCIÓN: La subconsulta ahora busca ventas del producto base O de cualquiera de sus variantes. ---
-        $lastSaleSubquery = Transaction::select('transactions.created_at')
-            ->join('transactions_items', 'transactions.id', '=', 'transactions_items.transaction_id')
-            ->where(function ($query) {
-                // Condición 1: El item vendido es el producto base.
-                $query->where('transactions_items.itemable_type', Product::class)
-                    ->whereColumn('transactions_items.itemable_id', 'products.id');
-            })
-            ->orWhere(function ($query) {
-                // Condición 2: El item vendido es una de las variantes de este producto.
-                $query->where('transactions_items.itemable_type', ProductAttribute::class)
-                    ->whereIn('transactions_items.itemable_id', function ($subQuery) {
-                        $subQuery->select('id')
-                            ->from('product_attributes')
-                            ->whereColumn('product_attributes.product_id', 'products.id');
-                    });
-            })
-            ->latest('transactions.created_at')
-            ->limit(1);
+        // Subconsulta optimizada: solo trae el max created_at
+        $lastSaleSubquery = DB::table('transactions_items')
+            ->join('transactions', 'transactions.id', '=', 'transactions_items.transaction_id')
+            ->where('transactions.branch_id', $branchId) // Filtro de branch en la transacción
+            ->whereRaw("(
+                (transactions_items.itemable_type = ? AND transactions_items.itemable_id = products.id)
+                OR 
+                (transactions_items.itemable_type = ? AND transactions_items.itemable_id IN (
+                    SELECT id FROM product_attributes WHERE product_id = products.id
+                ))
+            )", [Product::class, ProductAttribute::class])
+            ->selectRaw('MAX(transactions.created_at)');
 
-        $lowTurnoverProducts = Product::where('branch_id', $branchId)
+        return Product::where('branch_id', $branchId)
             ->select('id', 'name', 'selling_price', 'current_stock')
             ->selectSub($lastSaleSubquery, 'last_sale_date')
-            ->with('media')
+            ->with('media') // Eager load media
             ->having('last_sale_date', '<', $thresholdDate)
             ->orHavingNull('last_sale_date')
-            ->orderBy('last_sale_date', 'asc')
+            ->orderBy('last_sale_date', 'asc') // Los que nunca se vendieron o hace más tiempo primero
             ->limit(5)
-            ->get();
-
-        return $lowTurnoverProducts->map(function ($product) {
-            $daysSinceSale = $product->last_sale_date ? Carbon::parse($product->last_sale_date)->diffInDays(now()) : null;
-            return [
-                'id' => $product->id,
-                'name' => $product->name,
-                'selling_price' => (float)$product->selling_price,
-                'current_stock' => $product->current_stock,
-                'days_since_last_sale' => $daysSinceSale,
-                'image' => $product->getFirstMediaUrl('product-general-images') ?: 'https://placehold.co/100x100?text=' . urlencode($product->name),
-            ];
-        });
+            ->get()
+            ->map(function ($product) {
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'selling_price' => (float)$product->selling_price,
+                    'current_stock' => $product->current_stock,
+                    'days_since_last_sale' => $product->last_sale_date ? Carbon::parse($product->last_sale_date)->diffInDays(now()) : null,
+                    'image' => $product->getFirstMediaUrl('product-general-images') ?: null, // Quitamos placeholder para aligerar JSON
+                ];
+            });
     }
 
-    /**
-     * Obtiene los 5 productos más vendidos, sumando las ventas de productos base y sus variantes.
-     */
     private function getTopSellingProducts($branchId)
     {
-        // --- CORRECCIÓN: La lógica se reestructura para identificar el itemable (producto o variante) más vendido. ---
         $topItems = DB::table('transactions_items')
             ->join('transactions', 'transactions_items.transaction_id', '=', 'transactions.id')
             ->where('transactions.branch_id', $branchId)
-            ->whereBetween('transactions.created_at', [now()->startOfMonth(), now()->endOfMonth()])
+            ->where('transactions.created_at', '>=', now()->startOfMonth()) // Índice en created_at es vital
             ->select('itemable_id', 'itemable_type', DB::raw('SUM(quantity) as total_sold'))
             ->groupBy('itemable_id', 'itemable_type')
             ->orderByDesc('total_sold')
             ->limit(5)
             ->get();
 
-        if ($topItems->isEmpty()) {
-            return collect();
-        }
+        if ($topItems->isEmpty()) return collect();
 
-        // Separar IDs por tipo
+        // Carga eficiente de modelos
         $productIds = $topItems->where('itemable_type', Product::class)->pluck('itemable_id');
         $attributeIds = $topItems->where('itemable_type', ProductAttribute::class)->pluck('itemable_id');
 
-        // Cargar los modelos necesarios con sus relaciones
         $products = Product::with('media')->whereIn('id', $productIds)->get()->keyBy('id');
         $attributes = ProductAttribute::with(['product.media'])->whereIn('id', $attributeIds)->get()->keyBy('id');
 
-        // Unir y formatear los resultados
         return $topItems->map(function ($item) use ($products, $attributes) {
-            if ($item->itemable_type === Product::class) {
-                $product = $products->get($item->itemable_id);
-                if (!$product) return null;
-
-                return [
-                    'id' => $product->id, // ID del producto padre para el enlace
+            $data = null;
+            
+            if ($item->itemable_type === Product::class && $product = $products->get($item->itemable_id)) {
+                $data = [
+                    'id' => $product->id,
                     'name' => $product->name,
-                    'variant_description' => null, // No es una variante
+                    'variant_description' => null,
                     'selling_price' => (float)$product->selling_price,
-                    'total_sold' => (int)$item->total_sold,
-                    'image' => $product->getFirstMediaUrl('product-general-images') ?: 'https://placehold.co/100x100?text=' . urlencode($product->name),
+                    'image' => $product->getFirstMediaUrl('product-general-images'),
                 ];
+            } elseif ($item->itemable_type === ProductAttribute::class && $attr = $attributes->get($item->itemable_id)) {
+                if ($attr->product) {
+                    $desc = collect($attr->attributes)->map(fn($v, $k) => Str::ucfirst($k) . ': ' . $v)->implode(' / ');
+                    $data = [
+                        'id' => $attr->product->id,
+                        'name' => $attr->product->name,
+                        'variant_description' => $desc,
+                        'selling_price' => (float)($attr->product->selling_price + $attr->selling_price_modifier),
+                        'image' => $attr->product->getFirstMediaUrl('product-general-images'),
+                    ];
+                }
             }
 
-            if ($item->itemable_type === ProductAttribute::class) {
-                $attribute = $attributes->get($item->itemable_id);
-                if (!$attribute || !$attribute->product) return null;
-
-                // Formatear la descripción de la variante
-                $variantDescription = collect($attribute->attributes)->map(function ($value, $key) {
-                    return Str::ucfirst($key) . ': ' . $value;
-                })->implode(' / ');
-
-                return [
-                    'id' => $attribute->product->id, // ID del producto padre para el enlace
-                    'name' => $attribute->product->name,
-                    'variant_description' => $variantDescription,
-                    'selling_price' => (float)($attribute->product->selling_price + $attribute->selling_price_modifier),
-                    'total_sold' => (int)$item->total_sold,
-                    'image' => $attribute->product->getFirstMediaUrl('product-general-images') ?: 'https://placehold.co/100x100?text=' . urlencode($attribute->product->name),
-                ];
+            if ($data) {
+                $data['total_sold'] = (int)$item->total_sold;
+                return $data;
             }
-
             return null;
-        })->filter()->sortByDesc('total_sold')->values(); // Limpiar nulos, reordenar por si acaso y resetear keys
-    }
-
-    private function getInventorySummary($branchId)
-    {
-        $products = Product::where('branch_id', $branchId)->get();
-        $totalProducts = $products->count();
-        if ($totalProducts === 0) {
-            return null;
-        }
-
-        $totalCost = $products->sum(fn($p) => $p->cost_price * $p->current_stock);
-        $totalSaleValue = $products->sum(fn($p) => $p->selling_price * $p->current_stock);
-
-        $inStock = $products->filter(fn($p) => $p->current_stock > ($p->min_stock ?? 0))->count();
-        $lowStock = $products->filter(fn($p) => $p->current_stock > 0 && $p->current_stock <= ($p->min_stock ?? 0))->count();
-        $outOfStock = $totalProducts - $inStock - $lowStock;
-
-        return [
-            'total_cost' => $totalCost,
-            'total_sale_value' => $totalSaleValue,
-            'total_products' => $totalProducts,
-            'in_stock_count' => $inStock,
-            'low_stock_count' => $lowStock,
-            'out_of_stock_count' => $outOfStock,
-        ];
+        })->filter()->values();
     }
 
     private function getSalesTotalForPeriod($branchId, Carbon $start, Carbon $end): float
     {
+        // whereBetween usa índices, whereDate no.
         return Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$start->startOfDay(), $end->endOfDay()])
             ->where('status', 'completado')
             ->sum(DB::raw('subtotal - total_discount'));
     }
 
-    /**
-     * Obtiene la tendencia de ventas de la semana actual.
-     * --- CORREGIDO ---
-     */
     private function getWeeklySalesTrend($branchId): array
     {
-        // Se obtienen las sumas de subtotal y descuento por separado para evitar errores con NULL.
+        $startOfWeek = now()->startOfWeek(Carbon::MONDAY);
+        $endOfWeek = now()->endOfWeek(Carbon::SUNDAY);
+
         $trendData = Transaction::where('branch_id', $branchId)
-            // CORRECCIÓN: La semana ahora comienza en Lunes y termina en Domingo.
-            ->whereBetween('created_at', [now()->startOfWeek(Carbon::MONDAY), now()->endOfWeek(Carbon::SUNDAY)])
+            ->whereBetween('created_at', [$startOfWeek, $endOfWeek])
             ->where('status', 'completado')
-            ->select(
-                DB::raw('DATE(created_at) as date'),
-                DB::raw('SUM(subtotal) as total_subtotal'),
-                DB::raw('SUM(total_discount) as total_discounts')
-            )
+            ->selectRaw('DATE(created_at) as date')
+            ->selectRaw('SUM(subtotal - total_discount) as total')
             ->groupBy('date')
-            ->orderBy('date', 'asc')
-            ->get()
-            ->keyBy('date'); // Se agrupa por fecha para una búsqueda fácil.
+            ->pluck('total', 'date'); // Retorna array [ '2023-10-01' => 500, ... ]
 
         $weekSales = [];
         for ($i = 0; $i < 7; $i++) {
-            // CORRECCIÓN: El ciclo ahora genera los días de Lunes a Domingo.
-            $date = now()->startOfWeek(Carbon::MONDAY)->addDays($i);
+            $date = $startOfWeek->copy()->addDays($i);
             $dateString = $date->format('Y-m-d');
-
-            $dayData = $trendData->get($dateString);
-
-            $total = 0;
-            if ($dayData) {
-                // Se realiza el cálculo en PHP para mayor seguridad.
-                $total = ($dayData->total_subtotal ?? 0) - ($dayData->total_discounts ?? 0);
-            }
-
+            
             $weekSales[] = [
                 'day' => $date->translatedFormat('D'),
-                'total' => (float) $total
+                'total' => (float) ($trendData[$dateString] ?? 0)
             ];
         }
         return $weekSales;
