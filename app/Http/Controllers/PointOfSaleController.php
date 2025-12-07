@@ -34,7 +34,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('can:pos.access', only: ['index']),
+            new Middleware('can:pos.access', only: ['index', 'searchCustomers']),
             new Middleware('can:pos.create_sale', only: ['checkout']),
         ];
     }
@@ -70,7 +70,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
         $joinableSessions = null;
         $availableCashRegisters = null;
-        $userBankAccounts = null; // Cambiado de branchBankAccounts
+        $userBankAccounts = null;
 
         if (!$activeSession) {
             $joinableSessions = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
@@ -126,7 +126,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'joinableSessions' => $joinableSessions,
             'availableCashRegisters' => $availableCashRegisters,
             'availableTemplates' => $availableTemplates,
-            'userBankAccounts' => $userBankAccounts, // Se pasa la nueva variable
+            'userBankAccounts' => $userBankAccounts,
         ];
 
         $agent = new Agent();
@@ -136,9 +136,38 @@ class PointOfSaleController extends Controller implements HasMiddleware
     }
 
     /**
-     * Maneja el checkout de una venta de contado o a crédito.
-     * Ahora delega toda la lógica al TransactionPaymentService.
+     * Endpoint para buscar clientes vía AJAX (AutoComplete).
      */
+    public function searchCustomers(Request $request)
+    {
+        $query = $request->input('query');
+        $branchId = Auth::user()->branch_id;
+
+        if (!$query) {
+            return response()->json([]);
+        }
+
+        $customers = Customer::where('branch_id', $branchId)
+            ->where(function ($q) use ($query) {
+                $q->where('name', 'like', "%{$query}%")
+                  ->orWhere('phone', 'like', "%{$query}%");
+            })
+            ->limit(20) // Limitar resultados para velocidad
+            ->select('id', 'name', 'phone', 'balance', 'credit_limit')
+            ->orderBy('name')
+            ->get()
+            ->map(fn($c) => [
+                'id' => $c->id,
+                'name' => $c->name,
+                'phone' => $c->phone,
+                'balance' => (float) $c->balance,
+                'credit_limit' => (float) $c->credit_limit,
+                'available_credit' => (float) $c->available_credit,
+            ]);
+
+        return response()->json($customers);
+    }
+
     public function checkout(Request $request)
     {
         $validated = $request->validate([
@@ -167,13 +196,12 @@ class PointOfSaleController extends Controller implements HasMiddleware
         $customer = $validated['customerId'] ? Customer::find($validated['customerId']) : null;
 
         try {
-            // ¡Toda la lógica compleja ahora está aquí!
             $transaction = $this->transactionPaymentService->handleNewSale(
                 $validated,
                 $user,
                 $customer,
-                TransactionStatus::PENDING, // Estado inicial
-                CustomerBalanceMovementType::CREDIT_SALE // Tipo de deuda si aplica
+                TransactionStatus::PENDING,
+                CustomerBalanceMovementType::CREDIT_SALE
             );
 
             return redirect()->route('pos.index')
@@ -184,10 +212,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
         }
     }
 
-    /**
-     * Maneja la creación de una transacción de apartado.
-     * Ahora delega toda la lógica al TransactionPaymentService.
-     */
     public function createLayaway(Request $request)
     {
         $validated = $request->validate([
@@ -216,13 +240,12 @@ class PointOfSaleController extends Controller implements HasMiddleware
         $customer = Customer::find($validated['customerId']);
 
         try {
-            // Reutilizamos el mismo método del servicio, solo cambiamos los estados
             $transaction = $this->transactionPaymentService->handleNewSale(
                 $validated,
                 $user,
                 $customer,
-                TransactionStatus::ON_LAYAWAY, // Estado inicial
-                CustomerBalanceMovementType::LAYAWAY_DEBT // Tipo de deuda si aplica
+                TransactionStatus::ON_LAYAWAY,
+                CustomerBalanceMovementType::LAYAWAY_DEBT
             );
 
             return redirect()->route('pos.index')
@@ -247,9 +270,8 @@ class PointOfSaleController extends Controller implements HasMiddleware
             $query->where('category_id', $categoryId);
         }
 
-        // --- Cargar price_tiers explícitamente ---
         $paginatedProducts = $query->with(['media', 'category:id,name', 'productAttributes'])
-            ->orderBy('name', 'asc') // Asegurar un orden consistente
+            ->orderBy('name', 'asc')
             ->cursorPaginate(20)
             ->withQueryString();
 
@@ -262,9 +284,9 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'id' => $product->id,
                 'name' => $product->name,
                 'price' => $promotionData['price'],
-                'original_price' => $promotionData['original_price'], // Precio base antes de promos/tiers
-                'selling_price' => (float) $product->selling_price, // Precio de venta (1 pieza)
-                'price_tiers' => $product->price_tiers ?? [], // <-- AÑADIDO: Incluir price_tiers
+                'original_price' => $promotionData['original_price'],
+                'selling_price' => (float) $product->selling_price,
+                'price_tiers' => $product->price_tiers ?? [],
                 'stock' => $product->available_stock,
                 'reserved_stock' => (int) $product->reserved_stock,
                 'category' => $product->category->name ?? 'Sin categoría',
@@ -281,15 +303,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
         return $paginatedProducts;
     }
 
-    /**
-     * Calcula el precio base considerando promociones de descuento directo.
-     * NO considera precios por volumen aquí, eso se hará en el frontend.
-     */
     private function getPromotionData(Product $product): array
     {
         $now = Carbon::now();
-        // Usar selling_price como base SIEMPRE para descuentos
-        $basePrice = (float)$product->selling_price; // Precio de 1 pieza
+        $basePrice = (float)$product->selling_price;
 
         $promotions = Promotion::where('is_active', true)
             ->where(fn($q) => $q->where('start_date', '<=', $now)->orWhereNull('start_date'))
@@ -306,18 +323,16 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ->get();
 
         if ($promotions->isEmpty()) {
-            // Devolver el precio base (1 pieza)
             return ['price' => $basePrice, 'original_price' => $basePrice, 'promotions' => []];
         }
 
-        $bestPriceAfterDiscount = $basePrice; // Empezar con el precio base
+        $bestPriceAfterDiscount = $basePrice;
 
-        // Calcular SOLO descuentos directos (ITEM_DISCOUNT)
         foreach ($promotions->where('type', PromotionType::ITEM_DISCOUNT) as $promo) {
             $effect = $promo->effects->where('itemable_id', $product->id)->first();
             if (!$effect) continue;
 
-            $promoPrice = $basePrice; // Aplicar descuento sobre el precio base
+            $promoPrice = $basePrice;
             switch ($effect->type) {
                 case PromotionEffectType::FIXED_DISCOUNT:
                     $promoPrice = $basePrice - $effect->value;
@@ -326,12 +341,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     $promoPrice = $basePrice * (1 - ($effect->value / 100));
                     break;
                 case PromotionEffectType::SET_PRICE:
-                    // Si la promo establece un precio fijo, usarlo si es menor
                     $promoPrice = (float)$effect->value < $basePrice ? (float)$effect->value : $basePrice;
                     break;
             }
             $promoPrice = max(0, (float)$promoPrice);
-            // Actualizar el mejor precio encontrado *después de descuentos*
             if ($promoPrice < $bestPriceAfterDiscount) {
                 $bestPriceAfterDiscount = $promoPrice;
             }
@@ -348,9 +361,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         })->values()->all();
 
         return [
-            // 'price' es el mejor precio DESPUÉS de descuentos (para 1 pieza)
             'price' => $bestPriceAfterDiscount,
-            // 'original_price' es el precio ANTES de descuentos (para 1 pieza)
             'original_price' => $basePrice,
             'promotions' => $formattedPromotions,
         ];
@@ -425,7 +436,13 @@ class PointOfSaleController extends Controller implements HasMiddleware
     private function getCustomersData()
     {
         $branchId = Auth::user()->branch_id;
-        return Customer::where('branch_id', $branchId)->select('id', 'name', 'phone', 'balance', 'credit_limit')->orderBy('name')->get()
+        // OPTIMIZACIÓN: Solo traemos los primeros 20 clientes para carga inicial rápida.
+        // El resto se carga vía búsqueda (searchCustomers).
+        return Customer::where('branch_id', $branchId)
+            ->limit(20)
+            ->select('id', 'name', 'phone', 'balance', 'credit_limit')
+            ->orderBy('name')
+            ->get()
             ->map(fn($c) => [
                 'id' => $c->id,
                 'name' => $c->name,

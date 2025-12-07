@@ -19,7 +19,7 @@ use App\Models\SubscriptionVersion;
 use Carbon\Carbon;
 use PHPUnit\Framework\Attributes\Test;
 use Spatie\Permission\Models\Permission;
-use Spatie\Permission\Models\Role;
+use App\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
 class PointOfSaleControllerTest extends TestCase
