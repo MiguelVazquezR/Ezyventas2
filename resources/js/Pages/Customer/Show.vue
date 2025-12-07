@@ -160,6 +160,24 @@ const formatDate = (dateString) => {
     return date.toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
 };
 
+// --- Helper para fecha sin hora (para vencimientos) ---
+const formatDateOnly = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+        return new Date(dateString).toLocaleDateString('es-MX', { dateStyle: 'medium' });
+    } catch (e) {
+        return dateString;
+    }
+};
+
+const isExpired = (dateString) => {
+    if (!dateString) return false;
+    const expiration = new Date(dateString + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    return expiration < today;
+};
+
 const getBalanceClass = (balance) => {
     if (balance > 0) return 'text-green-600 dark:text-green-400';
     if (balance < 0) return 'text-red-600 dark:text-red-400';
@@ -241,7 +259,7 @@ const getTransactionStatusSeverity = (status) => {
             <!-- Columna Derecha: Historial -->
             <div class="lg:col-span-2 space-y-6">
                 <div v-if="activeLayaways && activeLayaways.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-blue-800 dark:text-blue-300">
+                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
                         Apartados activos
                     </h2>
                     <DataTable :value="activeLayaways" class="p-datatable-sm" responsiveLayout="scroll"
@@ -256,6 +274,16 @@ const getTransactionStatusSeverity = (status) => {
                         <Column field="created_at" header="Fecha apartado" sortable>
                             <template #body="{ data }"> {{ formatDate(data.created_at) }}</template>
                         </Column>
+                        
+                        <!-- NUEVA COLUMNA: VENCIMIENTO -->
+                        <Column field="layaway_expiration_date" header="Vencimiento" sortable>
+                            <template #body="{ data }">
+                                <span :class="{'text-red-500 font-bold': isExpired(data.layaway_expiration_date), 'text-gray-700 dark:text-gray-300': !isExpired(data.layaway_expiration_date)}">
+                                    {{ formatDateOnly(data.layaway_expiration_date) }}
+                                </span>
+                            </template>
+                        </Column>
+
                         <Column field="total_items_quantity" header="Unidades" headerClass="text-center" bodyClass="text-center"></Column>
                         <Column field="total_amount" header="Total">
                             <template #body="{ data }">

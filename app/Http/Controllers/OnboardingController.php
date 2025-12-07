@@ -49,6 +49,9 @@ class OnboardingController extends Controller
         $validated = $request->validate([
             'subscription.business_name' => 'nullable|string|max:35', // Razón Social (RFC en México)
             'subscription.commercial_name' => 'required|string|max:255',
+            // --- NUEVOS CAMPOS ---
+            'subscription.contact_phone' => 'nullable|string|max:20',
+            'subscription.address' => 'nullable|string|max:500', // Validamos como string simple
 
             'branches' => 'required|array|min:1',
             'branches.*.id' => 'nullable', // Puede ser int o string temporal
@@ -56,7 +59,7 @@ class OnboardingController extends Controller
             'branches.*.contact_phone' => 'nullable|string|max:20',
             'branches.*.contact_email' => 'nullable|email|max:255',
             'branches.*.is_main' => 'required|boolean',
-            'branches.*.address' => 'nullable|string|max:500',
+            'branches.*.address' => 'nullable|string|max:600',
 
             // --- VALIDACIÓN DE HORARIOS MEJORADA ---
             'branches.*.operating_hours' => 'nullable|array|size:7',
@@ -72,6 +75,11 @@ class OnboardingController extends Controller
             $subscription->update([
                 'commercial_name' => $validated['subscription']['commercial_name'],
                 'business_name' => $validated['subscription']['business_name'],
+                'contact_phone' => $validated['subscription']['contact_phone'],
+                // Guardamos la dirección como array para respetar el cast del Modelo
+                'address' => $validated['subscription']['address'] 
+                    ? ['text' => $validated['subscription']['address']] 
+                    : null,
             ]);
 
             $mainBranchFound = false;

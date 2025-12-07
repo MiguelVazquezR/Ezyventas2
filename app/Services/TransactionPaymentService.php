@@ -64,9 +64,10 @@ class TransactionPaymentService
                 'subtotal' => $validatedData['subtotal'],
                 'total_discount' => $validatedData['total_discount'] ?? 0,
                 'total_tax' => 0,
-                // 'total' => $totalSale,
                 'currency' => 'MXN',
                 'status_changed_at' => $now,
+                // GUARDAR FECHA DE VENCIMIENTO (Solo si viene en los datos)
+                'layaway_expiration_date' => $validatedData['layaway_expiration_date'] ?? null,
             ]);
 
             // 2. Crear Items y manejar Stock

@@ -140,6 +140,8 @@ class CustomerController extends Controller implements HasMiddleware
                 'total_paid' => (float) $totalPaid,
                 'pending_amount' => (float) $transaction->total - $totalPaid,
                 'total_items_quantity' => $transaction->items->sum('quantity'),
+                // --- AGREGADO: Fecha de vencimiento ---
+                'layaway_expiration_date' => $transaction->layaway_expiration_date,
             ];
         });
 

@@ -147,7 +147,8 @@ const actionItems = computed(() => [
 ]);
 
 const getStatusSeverity = (status) => {
-    const map = { completado: 'success', pendiente: 'warn', cancelado: 'danger', reembolsado: 'info' };
+    // Agregamos 'on_layaway' o 'apartado' al mapa por si acaso, aunque el color default sirve
+    const map = { completado: 'success', pendiente: 'warn', cancelado: 'danger', reembolsado: 'info', on_layaway: 'warn', apartado: 'warn' };
     return map[status] || 'secondary';
 };
 
@@ -157,6 +158,17 @@ const formatDate = (dateString) => {
         return new Date(dateString).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
     } catch (e) {
         console.error("Error formatting date:", dateString, e);
+        return dateString;
+    }
+};
+
+// --- NUEVO HELPER PARA FECHAS SIN HORA (VENCIMIENTOS) ---
+const formatDateOnly = (dateString) => {
+    if (!dateString) return '';
+    try {
+        // Agregamos T00:00:00 para asegurar que se interprete como local y no UTC (que podría restar un día)
+        return new Date(dateString).toLocaleDateString('es-MX', { dateStyle: 'long' });
+    } catch (e) {
         return dateString;
     }
 };
@@ -275,6 +287,16 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                                 <Tag :value="localTransaction.status"
                                     :severity="getStatusSeverity(localTransaction.status)" class="capitalize" />
                             </li>
+
+                            <!-- INICIO: FECHA DE VENCIMIENTO APARTADO -->
+                            <li v-if="transaction.layaway_expiration_date" class="flex justify-between items-center bg-purple-50 dark:bg-purple-900/20 p-2 rounded -mx-2">
+                                <span class="text-purple-800 dark:text-purple-300 font-medium">Vencimiento Apartado:</span>
+                                <span class="font-bold text-purple-700 dark:text-purple-200">
+                                    {{ formatDateOnly(transaction.layaway_expiration_date) }}
+                                </span>
+                            </li>
+                            <!-- FIN: FECHA DE VENCIMIENTO APARTADO -->
+
                             <li class="flex justify-between items-center">
                                 <span>Cliente:</span>
                                 <span class="font-medium">
@@ -336,7 +358,7 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
             :available-templates="availableTemplates" />
 
-        <!-- INICIO: Nuevo Modal para Confirmar Reembolso -->
+        <!-- Nuevo Modal para Confirmar Reembolso -->
         <Dialog v-model:visible="isRefundModalVisible" modal header="Confirmar devolución" :style="{ width: '30rem' }">
             <!-- Usamos props.transaction directamente -->
             <div class="p-fluid">
@@ -380,7 +402,6 @@ const paymentMethodIcons = { efectivo: { icon: 'pi pi-money-bill', color: 'text-
                     :loading="refundProcessing" :disabled="refundMethod === 'cash' && !activeSession" />
             </template>
         </Dialog>
-        <!-- FIN: Nuevo Modal -->
 
     </AppLayout>
 </template>

@@ -21,7 +21,8 @@ class PrintController extends Controller
             // --- Añadir validación para los desfases opcionales ---
             'offset_x' => 'nullable|numeric',
             'offset_y' => 'nullable|numeric',
-            // --- Añadir validación para los desfases opcionales ---
+            // --- Validación para abrir cajón ---
+            'open_drawer' => 'nullable|boolean',
         ]);
 
         $template = PrintTemplate::find($validated['template_id']);
@@ -52,12 +53,11 @@ class PrintController extends Controller
             abort(404, 'Data source not found.');
         }
 
-        // --- INICIO: Recoger los desfases y prepararlos en un array de opciones ---
         $options = [
             'offset_x' => $validated['offset_x'] ?? 0,
             'offset_y' => $validated['offset_y'] ?? 0,
+            'open_drawer' => $validated['open_drawer'] ?? false, // Pasamos el booleano
         ];
-        // --- FIN: Recoger los desfases y prepararlos en un array de opciones ---
 
         // Pasar la plantilla, la fuente de datos y las opciones al servicio de codificación
         $operations = PrintEncoderService::encode($template, $dataSource, $options);
