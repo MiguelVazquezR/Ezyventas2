@@ -47,6 +47,9 @@ const isPrinting = ref(false);
 const generalError = ref(null);
 const printMode = ref('plugin');
 
+// --- NUEVO: Estado para abrir cajón ---
+const openDrawer = ref(true); // Por defecto desactivado (opcional)
+
 // --- Lógica de Modo de Impresión ---
 onMounted(() => {
     if (isMobileOrTablet.value) {
@@ -176,9 +179,17 @@ const print = async () => {
                     data_source_type: props.dataSource.type,
                     data_source_id: props.dataSource.id,
                 };
+                
+                // Añadir offsets si es etiqueta
                 if (job.template.type === 'etiqueta') {
                     payload.offset_x = labelOffsetX.value;
                     payload.offset_y = labelOffsetY.value;
+                }
+                
+                // --- NUEVO: Añadir opción de abrir cajón si es ticket ---
+                // Solo enviamos esta opción si es un ticket de venta y el usuario marcó el checkbox
+                if (job.template.type === 'ticket_venta') {
+                    payload.open_drawer = openDrawer.value;
                 }
 
                 console.log(`Generating payload for template ${job.template.id}, copy ${i + 1}/${job.copies}`);
@@ -196,9 +207,9 @@ const print = async () => {
                     });
                 }
 
-                if (!rawCommands) {
+                if (!rawCommands && printMode.value === 'bluetooth') {
                     console.warn(`No raw commands generated for template ${job.template.id}`);
-                    continue; // Skip copy if nothing to print
+                    continue; // Skip copy if nothing to print in BT mode
                 }
 
                 // 2. Send according to mode
@@ -237,6 +248,7 @@ const print = async () => {
 const closeModal = () => {
     emit('update:visible', false);
     printJobs.value = [];
+    openDrawer.value = false; // Resetear checkbox al cerrar
 };
 
 // --- Watchers y Helpers UI ---
@@ -245,6 +257,7 @@ watch(() => props.visible, (newVal) => {
         generalError.value = null;
         pluginError.value = null;
         bluetoothError.value = null;
+        openDrawer.value = false; // Resetear al abrir (o quitar si quieres persistencia)
         isSecureContext.value = window.isSecureContext; // Check secure context for BT
 
         // Cargar impresoras y offsets solo si es necesario y en el modo correcto
@@ -401,6 +414,14 @@ const getTemplateTypeSeverity = (type) => {
                                 :placeholder="isLoadingPluginPrinters ? 'Buscando...' : (pluginPrinters.length === 0 ? 'No hay impresoras (plugin)' : 'Selecciona impresora')"
                                 class="w-full mt-1" :loading="isLoadingPluginPrinters"
                                 :disabled="pluginPrinters.length === 0 || isLoadingPluginPrinters" />
+                            
+                            <!-- NUEVO: Checkbox para Abrir Cajón -->
+                            <div class="flex items-center mt-3 ml-1">
+                                <Checkbox v-model="openDrawer" binary inputId="open-drawer" />
+                                <label for="open-drawer" class="ml-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                                    Abrir cajón de dinero al imprimir
+                                </label>
+                            </div>
                         </div>
                         <!-- <div v-else-if="printJobs.length > 0" class="text-sm text-gray-500 italic">
                             No se han añadido trabajos de ticket.
@@ -419,9 +440,9 @@ const getTemplateTypeSeverity = (type) => {
                     </div>
                     <InlineMessage v-if="pluginError" severity="error" class="mt-3 text-sm">
                         {{ pluginError }}
-                        Si no tienes el plugin instalado, descárgalo desde
-                        <a href="@/../../ezy_plugin_v1.0.0.exe" target="_blank" class="underline font-medium">aquí (v1.0.0 Windows x64)</a>.
-                        Si no puedes descargarlo, envíanos un mensaje al +52 3321705650 o un correo a notificaciones@ezyventas.com.
+                        <!-- Si no tienes el plugin instalado, descárgalo desde
+                        <a href="@/../../ezy_plugin_v1.0.0.exe" target="_blank" class="underline font-medium">aquí (v1.0.0 Windows x64)</a>. -->
+                        Si no tienes el plugin, envíanos un whatsapp al +52 33 2170 5650 o un correo a notificaciones@ezyventas.com para compartirtelo.
                     </InlineMessage>
                     <Message
                         v-if="!isLoadingPluginPrinters && pluginPrinters.length === 0 && !pluginError && (hasTicketJobs || hasLabelJobs)"

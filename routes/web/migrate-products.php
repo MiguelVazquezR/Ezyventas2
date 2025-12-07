@@ -71,7 +71,7 @@ Route::get('/migrate-products', function () {
                 }
 
                 // Parsear los valores (función auxiliar abajo)
-                $rows = parseSqlValues($valuesPart);
+                $rows = parseSqlValues3($valuesPart);
 
                 foreach ($rows as $row) {
                     try {
@@ -80,9 +80,9 @@ Route::get('/migrate-products', function () {
                         // 0:Codigo(SKU), 1:Descripcion, 2:Unidad(Categoria), 11:Costo, 12:Precio
                         // 18:Exi_Ini, 19:Ent_Mes, 20:Sal_Mes (Stock = 18+19-20)
                         
-                        $sku = cleanValue($row[0]);
-                        $name = cleanValue($row[1]);
-                        $unitCode = cleanValue($row[2]); // Usamos 'Unidad' para definir Categoría
+                        $sku = cleanValue3($row[0]);
+                        $name = cleanValue3($row[1]);
+                        $unitCode = cleanValue3($row[2]); // Usamos 'Unidad' para definir Categoría
                         
                         // Determinar ID de Categoría
                         $catId = $categoryIds[$unitCode] ?? $defaultCategory->id;
@@ -91,8 +91,8 @@ Route::get('/migrate-products', function () {
                         $stock = floatval($row[18]) + floatval($row[19]) - floatval($row[20]);
                         
                         // Fechas
-                        $createdAt = parseDate($row[5]);
-                        $updatedAt = parseDate($row[6]);
+                        $createdAt = parseDate3($row[5]);
+                        $updatedAt = parseDate3($row[6]);
 
                         // Crear/Actualizar Producto
                         Product::updateOrCreate(
@@ -161,7 +161,7 @@ Route::get('/migrate-products', function () {
 
 // --- FUNCIONES AUXILIARES ---
 
-function parseSqlValues($string) {
+function parseSqlValues3($string) {
     $rows = [];
     $len = strlen($string);
     $currentVal = '';
@@ -210,12 +210,12 @@ function parseSqlValues($string) {
     return $rows;
 }
 
-function cleanValue($val) {
+function cleanValue3($val) {
     return trim($val, "' ");
 }
 
-function parseDate($dateStr) {
-    $dateStr = cleanValue($dateStr);
+function parseDate3($dateStr) {
+    $dateStr = cleanValue3($dateStr);
     if (empty($dateStr) || $dateStr === '0000-00-00') {
         return now();
     }

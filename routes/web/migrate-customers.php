@@ -47,24 +47,24 @@ Route::get('/migrate-customers', function () {
                         // 6:Ciudad, 7:Estado, 10:Tel1, 11:Tel2, 12:Email, 13:FechaInicio, 
                         // 15:LimiteCredito, 20:SaldoInicial, 21:Cargos, 22:Abonos
                         
-                        $legacyId = cleanValue($row[0]);
-                        $name = cleanValue($row[2]);
-                        $rfc = cleanValue($row[1]);
+                        $legacyId = cleanValue2($row[0]);
+                        $name = cleanValue2($row[2]);
+                        $rfc = cleanValue2($row[1]);
                         
-                        $phone = cleanValue($row[10]);
-                        if (empty($phone)) $phone = cleanValue($row[11]);
+                        $phone = cleanValue2($row[10]);
+                        if (empty($phone)) $phone = cleanValue2($row[11]);
 
-                        $email = cleanValue($row[12]);
+                        $email = cleanValue2($row[12]);
                         if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                             $email = null;
                         }
 
                         $addressData = [
-                            'street'   => cleanValue($row[3]),
-                            'colony'   => cleanValue($row[4]),
-                            'zip_code' => cleanValue($row[5]),
-                            'city'     => cleanValue($row[6]),
-                            'state'    => cleanValue($row[7]),
+                            'street'   => cleanValue2($row[3]),
+                            'colony'   => cleanValue2($row[4]),
+                            'zip_code' => cleanValue2($row[5]),
+                            'city'     => cleanValue2($row[6]),
+                            'state'    => cleanValue2($row[7]),
                             'country'  => 'MX' 
                         ];
 
@@ -74,7 +74,7 @@ Route::get('/migrate-customers', function () {
                         // Ejemplo: Debe 100 (Cargo) y pagó 0. Resultado: 0 - 100 = -100 (Deuda correcta)
                         $balance = floatval($row[22]) - (floatval($row[20]) + floatval($row[21]));
                         
-                        $createdAt = parseDate($row[13]);
+                        $createdAt = parseDate2($row[13]);
                         
                         Customer::updateOrCreate(
                             [
@@ -196,15 +196,15 @@ function parseSqlValuesCustomers($string) {
     return $rows;
 }
 
-if (!function_exists('cleanValue')) {
-    function cleanValue($val) {
+if (!function_exists('cleanValue2')) {
+    function cleanValue2($val) {
         return trim($val, "' ");
     }
 }
 
-if (!function_exists('parseDate')) {
-    function parseDate($dateStr) {
-        $dateStr = cleanValue($dateStr);
+if (!function_exists('parseDate2')) {
+    function parseDate2($dateStr) {
+        $dateStr = cleanValue2($dateStr);
         if (empty($dateStr) || $dateStr === '0000-00-00') {
             return now();
         }

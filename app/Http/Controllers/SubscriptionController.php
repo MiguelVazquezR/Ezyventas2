@@ -187,9 +187,37 @@ class SubscriptionController extends Controller
         $validated = $request->validate([
             'commercial_name' => 'required|string|max:255',
             'business_name' => 'nullable|string|max:255',
+            // --- NUEVOS CAMPOS ---
+            'contact_phone' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:500',
+            // Validación de horario (para la sucursal principal)
+            'operating_hours' => 'nullable|array|size:7',
+            'operating_hours.*.day' => 'required|string',
+            'operating_hours.*.open' => 'required|boolean',
+            'operating_hours.*.from' => 'nullable|date_format:H:i',
+            'operating_hours.*.to' => 'nullable|date_format:H:i',
         ]);
 
-        $user->branch->subscription->update($validated);
+        DB::transaction(function () use ($user, $validated) {
+            // 1. Actualizar Suscripción
+            $user->branch->subscription->update([
+                'commercial_name' => $validated['commercial_name'],
+                'business_name' => $validated['business_name'],
+                'contact_phone' => $validated['contact_phone'],
+                // Guardamos la dirección como array para respetar el cast del Modelo
+                'address' => $validated['address'] 
+                    ? ['text' => $validated['address']] 
+                    : null,
+            ]);
+
+            // 2. Actualizar Horario en la Sucursal del Usuario (Principal)
+            if (isset($validated['operating_hours'])) {
+                $user->branch->update([
+                    'operating_hours' => $validated['operating_hours']
+                ]);
+            }
+        });
+
         return redirect()->back()->with('success', 'Información actualizada con éxito.');
     }
 

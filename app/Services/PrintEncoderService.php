@@ -20,15 +20,15 @@ class PrintEncoderService
      * Actúa como un enrutador para llamar al codificador correcto según el tipo de plantilla y la fuente de datos.
      * @param PrintTemplate $template
      * @param mixed $dataSource
-     * @param array $options Contiene opciones adicionales como los desfases de impresión.
+     * @param array $options Contiene opciones adicionales como los desfases de impresión o abrir cajón.
      * @return array
      */
     public static function encode(PrintTemplate $template, $dataSource, array $options = []): array
     {
         // Un ticket puede ser para una Venta o para una Orden de Servicio
         if ($template->type === TemplateType::SALE_TICKET && ($dataSource instanceof Transaction || $dataSource instanceof ServiceOrder)) {
-            // Las opciones no son necesarias para ESC/POS por ahora
-            return self::encodeEscPos($template, $dataSource);
+            // AHORA PASAMOS $options TAMBIÉN AQUÍ
+            return self::encodeEscPos($template, $dataSource, $options);
         }
 
         // Una etiqueta puede ser para un Producto o una Orden de Servicio
@@ -109,12 +109,20 @@ class PrintEncoderService
     /**
      * Codifica una plantilla de Ticket a un array de operaciones JSON para el plugin.
      */
-    private static function encodeEscPos(PrintTemplate $template, $dataSource): array
+    private static function encodeEscPos(PrintTemplate $template, $dataSource, array $options = []): array
     {
         $config = $template->content['config'] ?? [];
         $elements = $template->content['elements'] ?? [];
 
         $operations = [];
+
+        // --- LÓGICA DE APERTURA DE CAJÓN ---
+        // Si la opción viene activada desde el Modal, agregamos el comando al principio.
+        if (!empty($options['open_drawer'])) {
+            $operations[] = ['nombre' => 'AbrirCajon', 'argumentos' => []];
+        }
+        // -----------------------------------
+
         foreach ($elements as $element) {
             if (($element['type'] === 'image' || $element['type'] === 'local_image') && !empty($element['data']['url'])) {
                 $operations[] = ['nombre' => 'DescargarImagenDeInternetEImprimir', 'argumentos' => [$element['data']['url'], $element['data']['width'] ?? null]];

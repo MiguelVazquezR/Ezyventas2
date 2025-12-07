@@ -102,7 +102,7 @@ class DashboardController extends Controller
             $stats['service_orders_status'] = ServiceOrder::where('branch_id', $branchId)
                 ->select('status', DB::raw('count(*) as total'))
                 ->groupBy('status')
-                ->pluck('total', 'status.value'); // Pluck ejecuta la query inmediatamente
+                ->pluck('total', 'status'); // Pluck ejecuta la query inmediatamente
         }
 
         // --- 5. Clientes ---

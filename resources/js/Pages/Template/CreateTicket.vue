@@ -485,7 +485,7 @@ const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
                                 <img v-if="['image', 'local_image'].includes(element.type)"
                                     :src="element.data.url || 'https://placehold.co/300x150?text=IMG'" 
                                     class="object-contain inline-block"
-                                    :style="{ maxWidth: element.data.width ? (element.data.width + 'px') : '100%' }"
+                                    :style="{ maxWidth: element.data.width ? ((element.data.width * 0.55) + 'px') : '100%' }"
                                 />
 
                                 <!-- Separador -->
@@ -608,7 +608,7 @@ const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
                         </div>
 
                         <InputLabel value="Ancho Máximo (px)" class="mt-4" />
-                        <InputNumber v-model="selectedElement.data.width" class="w-full" :min="10" />
+                        <InputNumber v-model="selectedElement.data.width" class="w-full" :min="10" :max="form.content.config.paperWidth == '58mm' ? 300 : 512" />
                     </div>
 
                     <!-- CODIGO BARRAS -->
