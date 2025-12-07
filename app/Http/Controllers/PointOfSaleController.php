@@ -234,6 +234,8 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'payments.*.bank_account_id' => 'nullable|exists:bank_accounts,id',
             'payments.*.notes' => 'nullable|string|max:255',
             'use_balance' => 'required|boolean',
+            // VALIDACIÓN DE FECHA DE VENCIMIENTO
+            'layaway_expiration_date' => 'required|date|after:today',
         ]);
 
         $user = Auth::user();

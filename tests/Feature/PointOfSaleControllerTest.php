@@ -417,7 +417,8 @@ class PointOfSaleControllerTest extends TestCase
             'payments' => [
                 // Se da un anticipo de $50 en efectivo
                 ['amount' => 50.00, 'method' => 'efectivo', 'bank_account_id' => null]
-            ]
+            ],
+            'layaway_expiration_date' => Carbon::now()->addDays(30)->toDateString() // Fecha de expiración a 30 días
         ];
 
         // --- ACT ---

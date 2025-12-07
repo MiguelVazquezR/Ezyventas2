@@ -408,7 +408,7 @@ class ProductController extends Controller implements HasMiddleware
             })
             ->with([
                 // Cargamos la información necesaria
-                'transaction:id,folio,customer_id,created_at',
+                'transaction:id,folio,customer_id,created_at,layaway_expiration_date', // <--- AGREGADO: layaway_expiration_date
                 'transaction.customer:id,name'
             ])
             ->get();
@@ -421,7 +421,8 @@ class ProductController extends Controller implements HasMiddleware
                 'customer_id' => $item->transaction->customer_id,
                 'quantity' => $item->quantity,
                 'description' => $item->description, // Descripción del item (ej. "Playera (Roja, M)")
-                'date' => $item->transaction->created_at->toDateTimeString(), // Usamos toDateTimeString para consistencia
+                'date' => $item->transaction->created_at->toDateTimeString(),
+                'layaway_expiration_date' => $item->transaction->layaway_expiration_date, // <--- AGREGADO
             ];
         });
         // --- FIN DE MODIFICACIÓN ---

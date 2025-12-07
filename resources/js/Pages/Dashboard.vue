@@ -1,6 +1,7 @@
 <script setup>
 import { Link, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
+import axios from 'axios'; // Importamos Axios
 import AppLayout from '@/Layouts/AppLayout.vue';
 import BankAccountHistoryModal from '@/Components/BankAccountHistoryModal.vue';
 import BankAccountTransferModal from '@/Components/BankAccountTransferModal.vue';
@@ -74,6 +75,32 @@ const onTransferSuccess = () => {
     router.reload({ preserveState: false });
 };
 
+// --- Lógica para Modal de Apartados por Vencer ---
+const isExpiringModalVisible = ref(false);
+const isLoadingExpiring = ref(false);
+const expiringLayaways = ref([]);
+
+const fetchExpiringLayaways = async () => {
+    isExpiringModalVisible.value = true;
+    isLoadingExpiring.value = true;
+    expiringLayaways.value = [];
+    
+    try {
+        const response = await axios.get(route('dashboard.expiring-layaways'));
+        expiringLayaways.value = response.data;
+    } catch (error) {
+        console.error("Error cargando apartados:", error);
+    } finally {
+        isLoadingExpiring.value = false;
+    }
+};
+
+const getExpirationSeverity = (days) => {
+    if (days < 0) return 'danger'; // Vencido
+    if (days <= 2) return 'danger'; // Muy urgente
+    return 'warning'; // Por vencer
+};
+
 </script>
 
 <template>
@@ -85,16 +112,17 @@ const onTransferSuccess = () => {
                 <!-- Fila 1: KPIs Principales -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <Link v-if="stats.today_sales !== undefined" :href="route('transactions.index')"
-                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow border-l-4 border-green-500">
                         <div class="flex justify-between items-start">
                             <div>
-                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Ventas de hoy</h2>
+                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Ventas de hoy</h2>
+                                <small class="text-gray-500">Click para ir a módulo de ventas</small>
                                 <p class="text-3xl font-bold mt-2 text-green-500">{{ formatCurrency(stats.today_sales)
                                     }}
                                 </p>
                             </div>
                             <i
-                                class="pi pi-dollar text-2xl text-green-500 p-3 bg-green-100 dark:bg-green-900/50 rounded-full"></i>
+                                class="pi pi-dollar text-green-500 p-3 bg-green-100 dark:bg-green-900/50 rounded-full"></i>
                         </div>
                         <div v-if="salesChange" class="text-xs mt-2"
                             :class="salesChange.sign === '+' ? 'text-green-500' : 'text-red-500'">
@@ -103,23 +131,31 @@ const onTransferSuccess = () => {
                             <span v-else class="text-gray-500">Sin cambios vs ayer</span>
                         </div>
                     </Link>
-                    <Link v-if="stats.average_ticket_today !== undefined" :href="route('transactions.index')"
-                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
+                    
+                    <!-- NUEVA TARJETA: Apartados por Vencer -->
+                    <!-- Solo se muestra si la variable existe en stats (para usuarios con permiso) -->
+                    <div v-if="stats.expiring_layaways_count !== undefined" 
+                        @click="fetchExpiringLayaways"
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer border-l-4 border-purple-500">
                         <div class="flex justify-between items-start">
                             <div>
-                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Ticket promedio (hoy)
-                                </h2>
-                                <p class="text-3xl font-bold text-blue-500 mt-2">{{
-                                    formatCurrency(stats.average_ticket_today) }}</p>
+                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Apartados por vencer</h2>
+                                <small class="text-gray-500">Click para ver apartados por vencer</small>
+                                <p class="text-3xl font-bold mt-2 text-purple-600 dark:text-purple-400">
+                                    {{ stats.expiring_layaways_count }}
+                                </p>
+                                <p class="text-xs text-gray-400 mt-1">Próximos 5 días</p>
                             </div>
-                            <i class="pi pi-receipt text-blue-500 p-3 bg-blue-100 dark:bg-blue-900/50 rounded-full"></i>
+                            <i class="pi pi-clock text-purple-600 p-3 bg-purple-100 dark:bg-purple-900/50 rounded-full"></i>
                         </div>
-                    </Link>
+                    </div>
+
                     <Link v-if="stats.monthly_expenses !== undefined" :href="route('expenses.index')"
-                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow border-l-4 border-red-500">
                         <div class="flex justify-between items-start">
                             <div>
-                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Gastos del mes</h2>
+                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Gastos del mes</h2>
+                                <small class="text-gray-500">Click para ir a módulo de gastos</small>
                                 <p class="text-3xl font-bold mt-2 text-red-500">{{
                                     formatCurrency(stats.monthly_expenses) }}
                                 </p>
@@ -129,10 +165,11 @@ const onTransferSuccess = () => {
                         </div>
                     </Link>
                     <Link v-if="stats.total_customer_debt !== undefined" :href="route('customers.index')"
-                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow border-l-4 border-cyan-500">
                         <div class="flex justify-between items-start">
                             <div>
-                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Saldo por cobrar</h2>
+                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Saldo por cobrar</h2>
+                                <small class="text-gray-500">Click para ir a módulo de clientes</small>
                                 <p class="text-3xl font-bold mt-2 text-cyan-500">{{
                                     formatCurrency(stats.total_customer_debt) }}</p>
                                 <p class="text-xs text-gray-400">Total de clientes</p>
@@ -394,5 +431,58 @@ const onTransferSuccess = () => {
         <BankAccountTransferModal v-if="selectedAccount" v-model:visible="isTransferModalVisible"
             :account="selectedAccount" :all-accounts="allSubscriptionBankAccounts"
             @transfer-success="onTransferSuccess" />
+
+        <!-- MODAL: Apartados por Vencer -->
+        <Dialog v-model:visible="isExpiringModalVisible" header="Apartados por vencer (Próximos 5 días)" 
+            modal :style="{ width: '50rem' }" :breakpoints="{ '960px': '75vw', '640px': '95vw' }">
+            
+            <div v-if="isLoadingExpiring" class="flex justify-center p-8">
+                <i class="pi pi-spin pi-spinner !text-4xl text-purple-500"></i>
+            </div>
+
+            <div v-else-if="expiringLayaways.length > 0">
+                <DataTable :value="expiringLayaways" class="p-datatable-sm" responsiveLayout="scroll" paginator :rows="5">
+                    <Column field="folio" header="Folio" sortable>
+                        <template #body="{ data }">
+                            <Link :href="route('transactions.show', data.id)" class="text-blue-600 hover:underline">
+                                {{ data.folio }}
+                            </Link>
+                        </template>
+                    </Column>
+                    <Column field="customer_name" header="Cliente" sortable>
+                        <template #body="{ data }">
+                            <Link v-if="data.customer_id" :href="route('customers.show', data.customer_id)" class="text-blue-600 hover:underline">
+                                {{ data.customer_name }}
+                            </Link>
+                            <span v-else>{{ data.customer_name }}</span>
+                            <div v-if="data.customer_phone" class="text-xs text-gray-500">
+                                {{ data.customer_phone }}
+                            </div>
+                        </template>
+                    </Column>
+                    <Column field="expiration_date" header="Vence" sortable>
+                        <template #body="{ data }">
+                            <Tag :value="data.expiration_date" :severity="getExpirationSeverity(data.days_remaining)" />
+                            <div class="text-xs text-gray-500 mt-1">
+                                {{ data.days_remaining < 0 ? `Venció hace ${Math.abs(data.days_remaining)} día(s)` : (data.days_remaining === 0 ? 'Vence hoy' : `En ${data.days_remaining} día(s)`) }}
+                            </div>
+                        </template>
+                    </Column>
+                    <Column field="pending_amount" header="Pendiente" sortable>
+                        <template #body="{ data }">
+                            <span class="font-mono font-bold text-red-500">
+                                {{ formatCurrency(data.pending_amount) }}
+                            </span>
+                        </template>
+                    </Column>
+                </DataTable>
+            </div>
+
+            <div v-else class="text-center py-8 text-gray-500">
+                <i class="pi pi-check-circle !text-4xl text-green-500 mb-2"></i>
+                <p>¡Todo en orden! No hay apartados próximos a vencer.</p>
+            </div>
+        </Dialog>
+
     </AppLayout>
 </template>

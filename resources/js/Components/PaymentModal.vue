@@ -149,12 +149,12 @@ watch(() => props.visible, async (isVisible) => {
                                 @item-select="onCustomerSelect"
                                 @clear="onCustomerClear"
                                 optionLabel="name" 
-                                dropdown 
                                 forceSelection
                                 placeholder="Buscar cliente..." 
                                 class="w-11/12"
                                 :delay="400"
                                 emptyMessage="No se encontraron clientes"
+                                fluid
                             >
                                 <template #option="slotProps">
                                     <div class="flex flex-col">

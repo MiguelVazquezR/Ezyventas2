@@ -20,6 +20,7 @@ Route::get('/', function () {
 
 Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+    Route::get('/dashboard/expiring-layaways', [DashboardController::class, 'getExpiringLayaways'])->name('dashboard.expiring-layaways');
 
     // --- INICIO: RUTAS DE ONBOARDING ---
     Route::prefix('onboarding')->name('onboarding.')->group(function () {
