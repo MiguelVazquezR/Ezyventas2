@@ -24,7 +24,7 @@ const formatCurrency = (value) => {
 const payments = ref([]);
 const useBalance = ref(true);
 
-// --- *** INICIO DE MODIFICACIÓN: Título dinámico *** ---
+// --- Título dinámico ---
 const currentTransactionInfo = computed(() => {
     switch (props.transactionType) {
         case 'contado':
@@ -51,22 +51,19 @@ const currentTransactionInfo = computed(() => {
                 bgColor: '#FFC9E9',
                 textColor: '#862384',
             };
-        // CASO PARA ABONOS A SALDO (CustomerShow.vue)
         case 'balance':
             return {
                 id: 'balance',
                 label: 'Abono a saldo',
-                image: '/images/efectivo.webp', // Reusamos imagen o usamos una genérica
+                image: '/images/efectivo.webp',
                 bgColor: '#E5E7EB',
                 textColor: '#374151',
             };
-        // --- NUEVO CASO ---
-        // CASO PARA ABONOS FLEXIBLES (ServiceOrderShow.vue)
         case 'flexible':
             return {
                 id: 'flexible',
                 label: 'Abono a orden',
-                image: '/images/contado.webp', // Reusamos imagen
+                image: '/images/contado.webp',
                 bgColor: '#E0F2FE',
                 textColor: '#0C4A6E',
             };
@@ -80,10 +77,8 @@ const currentTransactionInfo = computed(() => {
             };
     }
 });
-// --- *** FIN DE MODIFICACIÓN *** ---
 
-
-// --- Botones de Método de Pago (con estilos) ---
+// --- Botones de Método de Pago ---
 const paymentMethodButtons = computed(() => [
     {
         id: 'efectivo',
@@ -125,7 +120,6 @@ const addPaymentMethod = (method) => {
     if (remainingAmount.value > 0.01) {
         amountToAdd = remainingAmount.value;
     }
-    // Para abonos, apartados, o flexibles, es mejor empezar en 0
     else if (props.transactionType === 'balance' || props.transactionType === 'apartado' || props.transactionType === 'flexible') {
         amountToAdd = 0;
     }
@@ -150,7 +144,6 @@ const removePayment = (idToRemove) => {
 const availableCredit = computed(() => props.client?.available_credit || 0);
 const creditDeficit = computed(() => {
     if (props.transactionType !== 'credito') return 0;
-    // Si no hay crédito, todo el restante es déficit
     if (availableCredit.value <= 0 && remainingAmount.value > 0.01) {
         return remainingAmount.value;
     }
@@ -164,35 +157,24 @@ watch(() => props.totalAmount, () => {
     useBalance.value = false;
 });
 
-// --- Métodos de Acción ---
-const handleSubmit = () => {
-    emit('submit', {
-        payments: payments.value.filter(p => p.amount > 0),
-        use_balance: useBalance.value
-    });
-};
-
 // --- Lógica del Botón Finalizar (Computada) ---
-const finalizeButtonLabel = computed(() => {
-    if (props.transactionType === 'balance') return 'Registrar abono';
-    if (props.transactionType === 'apartado') return 'Crear apartado';
-    if (props.transactionType === 'credito') {
-        // Si el restante es positivo, es "Guardar a crédito", si es 0 o negativo, es "Finalizar"
-        return remainingAmount.value > 0.01 ? `Guardar a crédito (${formatCurrency(remainingAmount.value)})` : 'Finalizar venta';
-    }
-    // --- NUEVO CASO ---
-    if (props.transactionType === 'flexible') return 'Registrar abono';
-
-    return 'Finalizar venta'; // Default para 'contado'
-});
-
 const isFinalizeButtonDisabled = computed(() => {
+    // 1. VALIDACIÓN DE CUENTAS BANCARIAS (CRÍTICO)
+    // Si hay algún pago de tarjeta o transferencia con monto > 0 y sin cuenta seleccionada, bloquear.
+    const hasMissingBankAccount = payments.value.some(p => 
+        ['tarjeta', 'transferencia'].includes(p.method) && 
+        p.amount > 0 && 
+        !p.bank_account_id
+    );
+
+    if (hasMissingBankAccount) return true;
+
+    // 2. Validaciones de montos según el tipo
     // Para 'balance' y 'apartado', se debe pagar *algo*
     if (props.transactionType === 'balance' || props.transactionType === 'apartado') {
         return totalPaid.value <= 0.01;
     }
 
-    // --- NUEVO CASO ---
     // Para 'flexible', se debe pagar *algo*, pero PUEDE quedar restante
     if (props.transactionType === 'flexible') {
         return totalPaid.value <= 0.01;
@@ -210,8 +192,28 @@ const isFinalizeButtonDisabled = computed(() => {
     return false;
 });
 
+const finalizeButtonLabel = computed(() => {
+    if (props.transactionType === 'balance') return 'Registrar abono';
+    if (props.transactionType === 'apartado') return 'Crear apartado';
+    if (props.transactionType === 'credito') {
+        return remainingAmount.value > 0.01 ? `Guardar a crédito (${formatCurrency(remainingAmount.value)})` : 'Finalizar venta';
+    }
+    if (props.transactionType === 'flexible') return 'Registrar abono';
+
+    return 'Finalizar venta';
+});
+
+const handleSubmit = () => {
+    // Doble validación por seguridad
+    if (isFinalizeButtonDisabled.value) return;
+
+    emit('submit', {
+        payments: payments.value.filter(p => p.amount > 0),
+        use_balance: useBalance.value
+    });
+};
+
 // --- Configuración Inicial ---
-// Pre-seleccionar "Usar Saldo" si el total es 0 o negativo (ya pagado con saldo)
 if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
     useBalance.value = true;
 }
@@ -219,7 +221,7 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
 
 <template>
     <div class="flex flex-col min-h-[400px]">
-        <!-- --- *** Título dinámico *** --- -->
+        <!-- Título dinámico -->
         <div class="flex items-center gap-3 mb-4 p-3 rounded-lg"
             :style="{ backgroundColor: currentTransactionInfo.bgColor, color: currentTransactionInfo.textColor }">
             <img :src="currentTransactionInfo.image" :alt="currentTransactionInfo.label" class="h-8 w-8 object-contain">
@@ -306,14 +308,15 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
                                 class="!size-8 flex-shrink-0" @click="emit('add-account')"
                                 v-tooltip.bottom="'Agregar cuenta'" />
                         </div>
-                        <small v-if="!payment.bank_account_id && payment.amount > 0" class="p-error text-xs">Se requiere
-                            una cuenta para este tipo de pago.</small>
+                        <small v-if="!payment.bank_account_id && payment.amount > 0" class="p-error text-xs text-red-500">
+                            Se requiere una cuenta para este tipo de pago.
+                        </small>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Espaciador para empujar el botón hacia abajo si no hay pagos -->
+        <!-- Espaciador -->
         <div v-if="payments.length === 0" class="flex-grow"></div>
 
         <!-- Botón de Finalización -->
