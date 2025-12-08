@@ -17,6 +17,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/transactions/{transaction}/exchange', [TransactionController::class, 'exchange'])
         ->name('transactions.exchange');
 
+    Route::get('/transactions/search-products', [TransactionController::class, 'searchProducts'])->name('transactions.search-products');
+
     // Rutas del resource
     Route::resource('transactions', TransactionController::class)->except(['create', 'store', 'edit', 'update', 'destroy']);
 });

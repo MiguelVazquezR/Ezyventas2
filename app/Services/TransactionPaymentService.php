@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\CustomerBalanceMovementType;
 use App\Enums\PaymentMethod;
+use App\Enums\SessionCashMovementType;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Models\Customer;
@@ -16,6 +17,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Exception;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Database\Eloquent\Relations\Relation;
 
 /**
  * Servicio para orquestar operaciones de pago complejas que
@@ -146,10 +148,15 @@ class TransactionPaymentService
         return DB::transaction(function () use ($user, $originalTransaction, $data) {
             $now = now();
             $sessionId = $data['cash_register_session_id'];
-            $returnedItems = $data['returned_items']; // [{ 'item_id': 1, 'quantity': 1 }]
-            $newCartItems = $data['new_items'];       // Items estándar de carrito
+            $returnedItems = $data['returned_items']; 
+            $newCartItems = $data['new_items'];       
             $payments = $data['payments'] ?? [];
             
+            // --- NUEVO: Determinar Cliente ---
+            // Si viene un new_customer_id, lo usamos. Si no, usamos el original.
+            $customerId = $data['new_customer_id'] ?? $originalTransaction->customer_id;
+            $customer = $customerId ? Customer::find($customerId) : null;
+
             // 1. Procesar Devoluciones (Calcular saldo a favor y devolver stock)
             $totalRefundAmount = 0;
             foreach ($returnedItems as $returnItem) {
@@ -161,28 +168,35 @@ class TransactionPaymentService
                     throw new Exception("No puedes devolver más cantidad de la comprada originalmente.");
                 }
 
-                // Calcular valor a reembolsar basado en precio original (unit_price - descuento prorrateado si aplicara, aqui simple)
-                // Nota: unit_price en BD ya suele tener descuentos directos aplicados, pero si hubo descuento global, considerar lógica extra.
-                // Por simplicidad usaremos unit_price almacenado.
                 $refundAmount = $originalItem->unit_price * $returnItem['quantity'];
                 $totalRefundAmount += $refundAmount;
 
-                // Devolver Stock
-                $this->restockSingleItem($originalItem->itemable, $returnItem['quantity']);
-                
-                // Opcional: Marcar item original como devuelto parcial o totalmente (si tienes columna para ello)
+                $itemModel = $originalItem->itemable;
+                if (!$itemModel) {
+                    $type = $originalItem->itemable_type;
+                    $realClass = Relation::getMorphedModel($type) ?? $type;
+                    if (class_exists($realClass)) {
+                        $itemModel = $realClass::find($originalItem->itemable_id);
+                    }
+                }
+
+                if ($itemModel) {
+                    $this->restockSingleItem($itemModel, $returnItem['quantity']);
+                } else {
+                    Log::warning("No se pudo reponer stock para el item {$originalItem->id}. Modelo no encontrado.");
+                }
             }
 
             // 2. Crear la Nueva Transacción (Intercambio)
             $newTransaction = Transaction::create([
                 'cash_register_session_id' => $sessionId,
-                'folio' => self::generateFolio($user->branch_id), // Nuevo folio
-                'customer_id' => $originalTransaction->customer_id,
+                'folio' => self::generateFolio($user->branch_id),
+                'customer_id' => $customerId, // Usamos el ID resuelto (nuevo o viejo)
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
-                'status' => TransactionStatus::COMPLETED, // Los cambios suelen ser inmediatos
+                'status' => TransactionStatus::COMPLETED, 
                 'channel' => TransactionChannel::POS,
-                'subtotal' => $data['subtotal'], // De los nuevos items
+                'subtotal' => $data['subtotal'],
                 'total_discount' => $data['total_discount'] ?? 0,
                 'total_tax' => 0,
                 'currency' => 'MXN',
@@ -197,51 +211,56 @@ class TransactionPaymentService
             $newTotalSale = (float) $newTransaction->total;
             $difference = $newTotalSale - $totalRefundAmount;
 
-            // Registrar el valor del producto devuelto como un "pago" en la nueva transacción
-            // para que cuadren los números de la venta.
             $exchangePaymentAmount = min($newTotalSale, $totalRefundAmount);
             $this->paymentService->processPayments($newTransaction, [[
                 'amount' => $exchangePaymentAmount,
-                'method' => 'intercambio', // Método virtual para reportes
+                'method' => 'intercambio', 
                 'notes' => 'Valor de productos devueltos',
                 'bank_account_id' => null,
             ]], $sessionId);
 
-            // 5. Manejar el Saldo Restante
+            // 5. Manejar el Saldo Restante o Sobrante
             if ($difference > 0.01) {
                 // CASO A: El cliente debe pagar la diferencia
-                // Validar que los pagos cubran la diferencia
-                $totalPaidByCustomer = collect($payments)->sum('amount');
-                if (abs($totalPaidByCustomer - $difference) > 0.01) {
-                    throw new Exception("El pago realizado no cubre la diferencia del cambio ({$difference}).");
-                }
-                
-                // Registrar pagos reales
                 $this->applyDirectPayments($newTransaction, $payments, $sessionId);
 
             } elseif ($difference < -0.01) {
-                // CASO B: Saldo a favor del cliente (Devolución parcial a saldo)
+                // CASO B: Sobra dinero (A favor del cliente)
                 $surplusAmount = abs($difference);
-                $customer = $originalTransaction->customer;
+                $refundType = $data['exchange_refund_type'] ?? 'balance'; // 'balance' o 'cash'
 
-                if (!$customer) {
-                    throw new Exception("Para generar saldo a favor, la venta debe tener un cliente asignado.");
+                if ($refundType === 'balance') {
+                    // --- Opción 1: Abonar a Saldo ---
+                    if (!$customer) {
+                        throw new Exception("Error lógico: Se intentó abonar a saldo sin un cliente asignado.");
+                    }
+
+                    $customer->increment('balance', $surplusAmount);
+                    
+                    $customer->balanceMovements()->create([
+                        'transaction_id' => $newTransaction->id,
+                        'type' => CustomerBalanceMovementType::REFUND_CREDIT,
+                        'amount' => $surplusAmount,
+                        'balance_after' => $customer->balance,
+                        'notes' => "Saldo a favor por cambio de producto. Nueva venta #{$newTransaction->folio}",
+                        'created_at' => $now,
+                    ]);
+                } else {
+                    // --- Opción 2: Devolver Efectivo ---
+                    // Registramos una salida de dinero de la caja
+                    $session = $user->cashRegisterSessions()->find($sessionId);
+                    if ($session) {
+                        $session->cashMovements()->create([
+                            'user_id' => $user->id,
+                            'type' => SessionCashMovementType::OUTFLOW, // Salida
+                            'amount' => $surplusAmount,
+                            'description' => "Devolución excedente cambio #{$newTransaction->folio}",
+                            'notes' => "Diferencia en efectivo entregada al cliente por cambio de producto.",
+                        ]);
+                    }
+                    // No afectamos saldo del cliente, el dinero "salió" físicamente.
                 }
-
-                // Abonar al saldo del cliente
-                $customer->increment('balance', $surplusAmount);
-                
-                $customer->balanceMovements()->create([
-                    'transaction_id' => $newTransaction->id,
-                    'type' => CustomerBalanceMovementType::REFUND_CREDIT, // O tipo "EXCHANGE_SURPLUS"
-                    'amount' => $surplusAmount,
-                    'balance_after' => $customer->balance,
-                    'notes' => "Saldo a favor por cambio de producto. Nueva venta #{$newTransaction->folio}",
-                    'created_at' => $now,
-                ]);
             }
-
-            // Si difference == 0, no se hace nada extra, el "pago de intercambio" cubrió todo.
 
             return $newTransaction;
         });

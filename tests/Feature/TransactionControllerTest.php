@@ -259,7 +259,7 @@ class TransactionControllerTest extends TestCase
         $originalTransaction->update(['status' => TransactionStatus::COMPLETED]);
         
         // Vamos a devolver 1 unidad de la Variante (Precio original 110)
-        // Stock actual Variante: 47
+        // Stock actual Variante: 47 (definido en createSaleFromQuote)
         $itemToReturn = $originalTransaction->items()
             ->where('itemable_type', ProductAttribute::class)
             ->first();
@@ -268,13 +268,9 @@ class TransactionControllerTest extends TestCase
         $newProduct = Product::factory()->create([
             'branch_id' => $this->branch->id,
             'selling_price' => 200.00,
-            'current_stock' => 10
+            'current_stock' => 10,
+            'name' => 'Producto Nuevo'
         ]);
-
-        // Cálculo:
-        // Devolución: 1 * 110 = 110.00
-        // Nueva Compra: 1 * 200 = 200.00
-        // Diferencia a pagar: 90.00
 
         $payload = [
             'cash_register_session_id' => $this->session->id,
@@ -286,7 +282,11 @@ class TransactionControllerTest extends TestCase
                     'id' => $newProduct->id,
                     'quantity' => 1,
                     'unit_price' => 200.00,
-                    // 'product_attribute_id' => null (es producto simple)
+                    // --- AQUÍ ESTABA EL ERROR: Faltaban estos campos ---
+                    'description' => $newProduct->name, 
+                    'discount' => 0,
+                    'product_attribute_id' => null 
+                    // ---------------------------------------------------
                 ]
             ],
             'subtotal' => 200.00,
@@ -302,6 +302,7 @@ class TransactionControllerTest extends TestCase
         // --- ASSERT ---
         $response->assertSessionHasNoErrors();
         $response->assertRedirect();
+        $response->assertSessionHas('success');
 
         // 1. Verificar Stock:
         // Variante (Devuelta): 47 + 1 = 48
@@ -313,14 +314,13 @@ class TransactionControllerTest extends TestCase
         $newTransaction = Transaction::latest('id')->first();
         $this->assertNotEquals($originalTransaction->id, $newTransaction->id);
         $this->assertEquals(TransactionStatus::COMPLETED, $newTransaction->status);
-        $this->assertEquals(200.00, $newTransaction->total); // Total de la nueva venta
+        $this->assertEquals(200.00, $newTransaction->total);
 
-        // 3. Verificar los pagos de la nueva transacción
-        // Debe haber un pago "virtual" por el intercambio (110) y uno real (90)
+        // 3. Verificar los pagos
         $this->assertDatabaseHas('payments', [
             'transaction_id' => $newTransaction->id,
             'amount' => 110.00,
-            'payment_method' => 'intercambio' // O como lo hayas definido en el servicio
+            'payment_method' => 'intercambio'
         ]);
         $this->assertDatabaseHas('payments', [
             'transaction_id' => $newTransaction->id,

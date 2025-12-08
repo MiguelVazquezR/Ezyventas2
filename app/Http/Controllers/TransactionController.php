@@ -109,15 +109,15 @@ class TransactionController extends Controller implements HasMiddleware
             ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
             ->get();
 
-        
+
         $availableCashRegisters = CashRegister::where('branch_id', $branchId)
             ->where('is_active', true)
             ->where('in_use', false)
             ->get(['id', 'name']);
 
         $isOwner = !$user->roles()->exists();
-        $userBankAccounts = $isOwner 
-            ? $user->branch->bankAccounts()->get() 
+        $userBankAccounts = $isOwner
+            ? $user->branch->bankAccounts()->get()
             : $user->bankAccounts()->get();
 
         $joinableSessions = null;
@@ -127,7 +127,7 @@ class TransactionController extends Controller implements HasMiddleware
             ->exists();
 
         if (!$userHasActiveSession) {
-             $joinableSessions = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
+            $joinableSessions = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
                 ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $branchId))
                 ->with('cashRegister:id,name', 'opener:id,name')
                 ->get();
@@ -153,21 +153,30 @@ class TransactionController extends Controller implements HasMiddleware
             'returned_items.*.item_id' => 'required|exists:transactions_items,id',
             'returned_items.*.quantity' => 'required|integer|min:1',
             
-            // Datos para la nueva venta (estructura similar a un carrito)
+            // Datos para la nueva venta
             'new_items' => 'required|array|min:1',
             'new_items.*.id' => 'required|exists:products,id',
             'new_items.*.quantity' => 'required|numeric|min:1',
             'new_items.*.unit_price' => 'required|numeric|min:0',
-            // ... (otros campos del item si son necesarios, como descuento)
+            
+            // Validaciones para campos opcionales
+            'new_items.*.description' => 'required|string', 
+            'new_items.*.discount' => 'nullable|numeric',
+            'new_items.*.product_attribute_id' => 'nullable', 
+
             'subtotal' => 'required|numeric',
             'total_discount' => 'numeric',
             
-            // Pagos (solo si hay diferencia positiva)
             'payments' => 'nullable|array',
             'payments.*.amount' => 'required|numeric|min:0.01',
             'payments.*.method' => 'required|string',
+            'payments.*.bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'payments.*.notes' => 'nullable|string',
             
             'notes' => 'nullable|string|max:255',
+
+            'new_customer_id' => 'nullable|exists:customers,id',
+            'exchange_refund_type' => 'nullable|in:balance,cash',
         ]);
 
         if (in_array($transaction->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED])) {
@@ -217,7 +226,6 @@ class TransactionController extends Controller implements HasMiddleware
             );
 
             return redirect()->back()->with('success', 'Abono registrado con éxito.');
-
         } catch (\Exception $e) {
             Log::error("Error al registrar abono en transacción {$transaction->id}: " . $e->getMessage());
             return redirect()->back()->with(['error' => 'Error: ' . $e->getMessage()]);
@@ -296,7 +304,7 @@ class TransactionController extends Controller implements HasMiddleware
         $canRefund = (
             $transaction->status === TransactionStatus::COMPLETED ||
             ($transaction->status === TransactionStatus::PENDING && $totalPaid > 0) ||
-            $transaction->status === TransactionStatus::ON_LAYAWAY 
+            $transaction->status === TransactionStatus::ON_LAYAWAY
         ) && !in_array($transaction->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED]);
 
 
@@ -315,23 +323,22 @@ class TransactionController extends Controller implements HasMiddleware
         $user = Auth::user();
 
         try {
-            DB::transaction(function () use ($transaction, $refundMethod, $totalPaid, $user) { 
+            DB::transaction(function () use ($transaction, $refundMethod, $totalPaid, $user) {
                 $this->returnStock($transaction);
 
-                $amountToRefund = $totalPaid; 
+                $amountToRefund = $totalPaid;
 
                 if ($refundMethod === 'balance') {
                     $customer = Customer::findOrFail($transaction->customer_id);
 
                     $customer->balanceMovements()->create([
                         'transaction_id' => $transaction->id,
-                        'type' => CustomerBalanceMovementType::REFUND_CREDIT, 
-                        'amount' => $amountToRefund, 
+                        'type' => CustomerBalanceMovementType::REFUND_CREDIT,
+                        'amount' => $amountToRefund,
                         'balance_after' => $customer->balance + $amountToRefund,
                         'notes' => 'Reembolso (a saldo) de venta #' . $transaction->folio,
                     ]);
-                    $customer->increment('balance', $amountToRefund); 
-
+                    $customer->increment('balance', $amountToRefund);
                 } elseif ($refundMethod === 'cash') {
                     $activeSession = $user->cashRegisterSessions()
                         ->where('status', CashRegisterSessionStatus::OPEN)
@@ -344,8 +351,8 @@ class TransactionController extends Controller implements HasMiddleware
                     $activeSession->cashMovements()->create([
                         'user_id' => $user->id,
                         'type' => SessionCashMovementType::OUTFLOW,
-                        'amount' => $amountToRefund, 
-                        'description' => "Reembolso en efectivo de venta #" . $transaction->folio, 
+                        'amount' => $amountToRefund,
+                        'description' => "Reembolso en efectivo de venta #" . $transaction->folio,
                         'notes' => 'Devolución en efectivo de venta #' . $transaction->folio,
                     ]);
                 }
@@ -355,7 +362,7 @@ class TransactionController extends Controller implements HasMiddleware
                 $transaction->loadMissing('transactionable');
                 if ($transaction->transactionable instanceof Quote) {
                     $transaction->transactionable->update([
-                        'status' => QuoteStatus::CANCELLED 
+                        'status' => QuoteStatus::CANCELLED
                     ]);
                 }
             });
@@ -368,6 +375,37 @@ class TransactionController extends Controller implements HasMiddleware
         }
 
         return redirect()->back()->with('success', 'Devolución generada con éxito.');
+    }
+
+    /**
+     * Endpoint ligero para buscar productos (Nombre o SKU) para el modal de intercambio.
+     * Retorna JSON simplificado.
+     */
+    public function searchProducts(Request $request)
+    {
+        $query = $request->input('query');
+        if (!$query) return response()->json([]);
+
+        $user = Auth::user();
+        $products = Product::where('branch_id', $user->branch_id)
+            ->where(function ($q) use ($query) {
+                $q->where('name', 'like', "%{$query}%")
+                    ->orWhere('sku', 'like', "%{$query}%");
+            })
+            ->limit(10)
+            ->get(['id', 'name', 'sku', 'selling_price', 'current_stock']) // Solo campos necesarios
+            ->map(function ($p) {
+                return [
+                    'id' => $p->id,
+                    'name' => $p->name,
+                    'sku' => $p->sku,
+                    'selling_price' => (float) $p->selling_price,
+                    // Si tienes variantes, este es un lugar para expandir lógica,
+                    // por ahora retornamos productos simples o el padre.
+                ];
+            });
+
+        return response()->json($products);
     }
 
     private function returnStock(Transaction $transaction)

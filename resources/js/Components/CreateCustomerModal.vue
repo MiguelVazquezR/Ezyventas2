@@ -38,7 +38,7 @@ const submit = async () => {
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" modal header="Crear Nuevo Cliente"
+    <Dialog :visible="visible" @update:visible="closeModal" modal header="Crear nuevo cliente"
         :style="{ width: '25rem' }">
         <form @submit.prevent="submit" class="p-2 space-y-4">
             <div>
