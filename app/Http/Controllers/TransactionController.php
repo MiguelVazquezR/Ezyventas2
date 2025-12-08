@@ -92,7 +92,6 @@ class TransactionController extends Controller implements HasMiddleware
 
     public function show(Transaction $transaction): Response
     {
-        // ... (código existente del show)
         $transaction->load([
             'customer:id,name,balance,credit_limit',
             'user:id,name',
@@ -174,9 +173,9 @@ class TransactionController extends Controller implements HasMiddleware
             'payments.*.notes' => 'nullable|string',
             
             'notes' => 'nullable|string|max:255',
-
             'new_customer_id' => 'nullable|exists:customers,id',
             'exchange_refund_type' => 'nullable|in:balance,cash',
+            'use_credit_for_shortage' => 'boolean',
         ]);
 
         if (in_array($transaction->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED])) {

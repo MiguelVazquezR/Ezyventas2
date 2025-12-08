@@ -234,12 +234,12 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                                         <del v-if="parseFloat(data.discount_amount || 0) !== 0"
                                             class="text-gray-500 text-xs">
                                             {{ formatCurrency(parseFloat(data.unit_price || 0) +
-                                            parseFloat(data.discount_amount || 0)) }}
+                                                parseFloat(data.discount_amount || 0)) }}
                                         </del>
                                         <p class="font-semibold m-0">{{ formatCurrency(data.unit_price) }}</p>
                                         <p v-if="parseFloat(data.discount_amount) > 0"
                                             class="text-xs text-green-600 m-0">Ahorro: {{
-                                            formatCurrency(data.discount_amount) }}</p>
+                                                formatCurrency(data.discount_amount) }}</p>
                                     </div>
                                 </template>
                             </Column>
@@ -257,14 +257,16 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                     <template #content>
                         <ul class="space-y-3 text-sm">
                             <li class="flex justify-between"><span>Subtotal:</span><span>{{
-                                    formatCurrency(transaction.subtotal) }}</span></li>
+                                formatCurrency(transaction.subtotal) }}</span></li>
                             <li v-if="parseFloat(transaction.total_discount) > 0" class="flex justify-between">
                                 <span>Descuento:</span><span class="text-green-500">- {{
-                                    formatCurrency(transaction.total_discount) }}</span></li>
+                                    formatCurrency(transaction.total_discount) }}</span>
+                            </li>
                             <li class="flex justify-between font-bold text-base border-t pt-2 mt-2">
-                                <span>Total:</span><span>{{ formatCurrency(totalAmount) }}</span></li>
+                                <span>Total:</span><span>{{ formatCurrency(totalAmount) }}</span>
+                            </li>
                             <li class="flex justify-between"><span>Pagado:</span><span class="font-semibold">{{
-                                    formatCurrency(totalPaid) }}</span></li>
+                                formatCurrency(totalPaid) }}</span></li>
                             <li v-if="pendingAmount > 0"
                                 class="flex justify-between font-bold text-red-600 text-lg bg-red-50 dark:bg-red-900/20 p-2 rounded">
                                 <span>Pendiente:</span><span>{{ formatCurrency(pendingAmount) }}</span>
@@ -296,12 +298,12 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                                     <Link v-if="transaction.customer"
                                         :href="route('customers.show', transaction.customer.id)"
                                         class="text-blue-600 hover:underline flex items-center gap-2">{{
-                                        transaction.customer.name }} <i class="pi pi-external-link text-xs"></i></Link>
+                                            transaction.customer.name }} <i class="pi pi-external-link text-xs"></i></Link>
                                     <span v-else>Público en general</span>
                                 </span>
                             </li>
                             <li class="flex justify-between"><span>Cajero:</span><span class="font-medium">{{
-                                    transaction.user?.name || 'N/A' }}</span></li>
+                                transaction.user?.name || 'N/A' }}</span></li>
 
                             <!-- NUEVO: Mostrar Notas (Crucial para ver referencia de intercambio) -->
                             <li v-if="transaction.notes" class="flex flex-col border-t pt-2 mt-2">
@@ -331,7 +333,7 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                                             :class="(paymentMethodIcons[payment.payment_method]?.icon || 'pi-circle') + ' ' + (paymentMethodIcons[payment.payment_method]?.color || 'text-gray-500')"></i>
                                         <span class="capitalize font-medium">
                                             {{ payment.payment_method === 'intercambio' ? 'Intercambio de Producto' :
-                                            payment.payment_method }}
+                                                payment.payment_method }}
                                         </span>
                                     </span>
                                     <span class="font-mono font-semibold">{{ formatCurrency(payment.amount) }}</span>
@@ -378,12 +380,12 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
 
         <!-- Modal de Información de Intercambio (NUEVO) -->
         <ProductExchangeModal v-if="transaction" v-model:visible="isProductExchangeModalVisible"
-            :transaction="transaction" @success="router.reload()" />
+            :transaction="transaction" :user-bank-accounts="userBankAccounts" @success="router.reload()" />
 
         <!-- Modal de Pagos (Para abonos) -->
-        <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="totalAmount"
-            :amount-to-pay="pendingAmount" :client="transaction.customer" :loading="isPaymentProcessing"
-            payment-mode="flexible" @submit="handlePaymentSubmit" />
+        <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="pendingAmount"
+            :client="transaction.customer" :loading="isPaymentProcessing" payment-mode="flexible"
+            @submit="handlePaymentSubmit" />
 
         <!-- Modales de Sesión -->
         <StartSessionModal v-model:visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
