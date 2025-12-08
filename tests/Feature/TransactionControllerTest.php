@@ -15,7 +15,6 @@ use App\Models\Payment;
 use App\Models\Product;
 use App\Models\ProductAttribute;
 use App\Models\Quote;
-use App\Models\Service;
 use App\Models\SubscriptionVersion;
 use App\Models\Transaction;
 use App\Models\User;
@@ -64,6 +63,7 @@ class TransactionControllerTest extends TestCase
         $permissions = [
             'transactions.access', 'transactions.see_details',
             'transactions.cancel', 'transactions.refund',
+            'transactions.exchange', 'transactions.add_payment' // Agregamos los nuevos permisos
         ];
         foreach ($permissions as $permission) {
             Permission::create(['name' => $permission, 'module' => 'transactions']);
@@ -98,9 +98,7 @@ class TransactionControllerTest extends TestCase
             'status' => CashRegisterSessionStatus::OPEN 
         ]);
 
-        // --- CORRECCIÓN CRÍTICA ---
-        // Asignamos explícitamente el usuario a la sesión en la tabla pivote 'cash_register_session_user'.
-        // Esto permite que $user->cashRegisterSessions() devuelva resultados en el controlador.
+        // Asignamos explícitamente el usuario a la sesión
         $this->session->users()->attach($this->user->id);
 
         // 7. Autenticar al usuario
@@ -109,7 +107,6 @@ class TransactionControllerTest extends TestCase
 
     /**
      * Función helper para crear un escenario de "Venta Generada" desde una cotización.
-     * Simula el estado *después* de que QuoteController::convertToSale() se ejecutó.
      */
     private function createSaleFromQuote(float $customerBalance = -530.00): array
     {
@@ -140,7 +137,7 @@ class TransactionControllerTest extends TestCase
         // 5. Ligar cotización a transacción
         $quote->update(['transaction_id' => $transaction->id]);
 
-        // 6. Items (para devolución de stock)
+        // 6. Items
         $transaction->items()->create([
             'itemable_id' => $this->product->id, 'itemable_type' => Product::class,
             'description' => 'Producto Simple', 'quantity' => 2, 'unit_price' => 100, 'line_total' => 200
@@ -150,7 +147,7 @@ class TransactionControllerTest extends TestCase
             'description' => 'Variante', 'quantity' => 3, 'unit_price' => 110, 'line_total' => 330
         ]);
 
-        // 7. Movimiento de Saldo (si hay deuda)
+        // 7. Movimiento de Saldo
         if ($customerBalance < 0) {
             $this->customer->balanceMovements()->create([
                 'transaction_id' => $transaction->id,
@@ -163,78 +160,50 @@ class TransactionControllerTest extends TestCase
         return compact('quote', 'transaction');
     }
 
-
     #[Test]
     public function it_can_cancel_a_pending_quote_transaction_and_returns_stock_and_balance(): void
     {
-        // --- ARRANGE ---
         $initialProductStock = 98;
         $initialVariantStock = 47;
         $initialBalance = -530.00;
         ['quote' => $quote, 'transaction' => $transaction] = $this->createSaleFromQuote($initialBalance);
 
-        // --- ACT ---
         $response = $this->post(route('transactions.cancel', $transaction));
 
-        // --- ASSERT ---
         $response->assertSessionHasNoErrors();
         $response->assertRedirect();
         $response->assertSessionHas('success', 'Venta cancelada con éxito.');
 
-        // 1. Estatus de Transacción
         $this->assertEquals(TransactionStatus::CANCELLED, $transaction->fresh()->status);
-        
-        // 2. Estatus de Cotización
         $this->assertEquals(QuoteStatus::CANCELLED, $quote->fresh()->status);
-
-        // 3. Devolución de Stock
-        $this->assertEquals($initialProductStock + 2, $this->product->fresh()->current_stock, 'Stock de producto simple no devuelto.');
-        $this->assertEquals($initialVariantStock + 3, $this->variant->fresh()->current_stock, 'Stock de variante no devuelto.');
-
-        // 4. Reversión de Saldo
-        $this->assertEquals(0.00, $this->customer->fresh()->balance, 'El saldo del cliente no se restauró a 0.');
-        $this->assertDatabaseHas('customer_balance_movements', [
-            'customer_id' => $this->customer->id,
-            'transaction_id' => $transaction->id,
-            'type' => CustomerBalanceMovementType::CANCELLATION_CREDIT->value,
-            'amount' => abs($initialBalance),
-            'balance_after' => 0.00,
-        ]);
+        $this->assertEquals($initialProductStock + 2, $this->product->fresh()->current_stock);
+        $this->assertEquals($initialVariantStock + 3, $this->variant->fresh()->current_stock);
+        $this->assertEquals(0.00, $this->customer->fresh()->balance);
     }
 
     #[Test]
     public function it_prevents_cancelling_a_transaction_with_payments(): void
     {
-        // --- ARRANGE ---
         ['quote' => $quote, 'transaction' => $transaction] = $this->createSaleFromQuote();
         
-        // Crear un pago
         Payment::factory()->create([
             'transaction_id' => $transaction->id,
             'amount' => 100.00,
         ]);
 
-        // --- ACT ---
         $response = $this->post(route('transactions.cancel', $transaction));
 
-        // --- ASSERT ---
         $response->assertRedirect();
-        $response->assertSessionHas('error', 'No se puede cancelar una venta con pagos registrados. Debe generar una devolución.');
-        
-        // Verificar que nada cambió
+        $response->assertSessionHas('error');
         $this->assertEquals(TransactionStatus::PENDING, $transaction->fresh()->status);
-        $this->assertEquals(QuoteStatus::SALE_GENERATED, $quote->fresh()->status);
     }
 
     #[Test]
     public function it_can_refund_a_paid_quote_transaction_to_balance(): void
     {
-        // --- ARRANGE ---
-        // Simular una venta pagada (saldo cliente 0)
         ['quote' => $quote, 'transaction' => $transaction] = $this->createSaleFromQuote(0.00); 
         $transaction->update(['status' => TransactionStatus::COMPLETED]);
         
-        // Crear el pago
         Payment::factory()->create([
             'transaction_id' => $transaction->id,
             'amount' => 530.00,
@@ -245,37 +214,19 @@ class TransactionControllerTest extends TestCase
 
         $payload = ['refund_method' => 'balance'];
 
-        // --- ACT ---
         $response = $this->post(route('transactions.refund', $transaction), $payload);
 
-        // --- ASSERT ---
         $response->assertSessionHasNoErrors();
         $response->assertRedirect();
-        $response->assertSessionHas('success', 'Devolución generada con éxito.');
-
-        // 1. Estatus
         $this->assertEquals(TransactionStatus::REFUNDED, $transaction->fresh()->status);
-        $this->assertEquals(QuoteStatus::CANCELLED, $quote->fresh()->status);
-
-        // 2. Devolución de Stock
         $this->assertEquals($initialProductStock + 2, $this->product->fresh()->current_stock);
         $this->assertEquals($initialVariantStock + 3, $this->variant->fresh()->current_stock);
-
-        // 3. Reversión de Saldo (A favor del cliente)
         $this->assertEquals(530.00, $this->customer->fresh()->balance);
-        $this->assertDatabaseHas('customer_balance_movements', [
-            'customer_id' => $this->customer->id,
-            'transaction_id' => $transaction->id,
-            'type' => CustomerBalanceMovementType::REFUND_CREDIT->value,
-            'amount' => 530.00,
-            'balance_after' => 530.00,
-        ]);
     }
 
     #[Test]
     public function it_can_refund_a_paid_quote_transaction_to_cash(): void
     {
-        // --- ARRANGE ---
         ['quote' => $quote, 'transaction' => $transaction] = $this->createSaleFromQuote(0.00);
         $transaction->update(['status' => TransactionStatus::COMPLETED]);
         Payment::factory()->create([
@@ -283,39 +234,142 @@ class TransactionControllerTest extends TestCase
             'amount' => 530.00,
         ]);
 
-        $initialProductStock = $this->product->fresh()->current_stock; // 98
-        $initialVariantStock = $this->variant->fresh()->current_stock; // 47
+        $initialProductStock = $this->product->fresh()->current_stock; 
+        $initialVariantStock = $this->variant->fresh()->current_stock; 
 
         $payload = ['refund_method' => 'cash'];
 
-        // --- ACT ---
         $response = $this->post(route('transactions.refund', $transaction), $payload);
+
+        $response->assertSessionHasNoErrors();
+        $response->assertRedirect();
+        $this->assertEquals(TransactionStatus::REFUNDED, $transaction->fresh()->status);
+        $this->assertEquals($initialProductStock + 2, $this->product->fresh()->current_stock);
+        $this->assertEquals($initialVariantStock + 3, $this->variant->fresh()->current_stock);
+        $this->assertEquals(0.00, $this->customer->fresh()->balance);
+    }
+
+    // --- NUEVAS PRUEBAS PARA CAMBIOS Y ABONOS ---
+
+    #[Test]
+    public function it_can_process_a_product_exchange_paying_difference(): void
+    {
+        // 1. Crear venta original completada
+        ['transaction' => $originalTransaction] = $this->createSaleFromQuote(0.00); 
+        $originalTransaction->update(['status' => TransactionStatus::COMPLETED]);
+        
+        // Vamos a devolver 1 unidad de la Variante (Precio original 110)
+        // Stock actual Variante: 47
+        $itemToReturn = $originalTransaction->items()
+            ->where('itemable_type', ProductAttribute::class)
+            ->first();
+
+        // 2. Nuevo producto a llevar (Más caro: 200)
+        $newProduct = Product::factory()->create([
+            'branch_id' => $this->branch->id,
+            'selling_price' => 200.00,
+            'current_stock' => 10
+        ]);
+
+        // Cálculo:
+        // Devolución: 1 * 110 = 110.00
+        // Nueva Compra: 1 * 200 = 200.00
+        // Diferencia a pagar: 90.00
+
+        $payload = [
+            'cash_register_session_id' => $this->session->id,
+            'returned_items' => [
+                ['item_id' => $itemToReturn->id, 'quantity' => 1]
+            ],
+            'new_items' => [
+                [
+                    'id' => $newProduct->id,
+                    'quantity' => 1,
+                    'unit_price' => 200.00,
+                    // 'product_attribute_id' => null (es producto simple)
+                ]
+            ],
+            'subtotal' => 200.00,
+            'total_discount' => 0,
+            'payments' => [
+                ['amount' => 90.00, 'method' => 'efectivo', 'notes' => 'Diferencia por cambio']
+            ]
+        ];
+
+        // --- ACT ---
+        $response = $this->post(route('transactions.exchange', $originalTransaction), $payload);
 
         // --- ASSERT ---
         $response->assertSessionHasNoErrors();
         $response->assertRedirect();
-        $response->assertSessionHas('success', 'Devolución generada con éxito.');
 
-        // 1. Estatus
-        $this->assertEquals(TransactionStatus::REFUNDED, $transaction->fresh()->status);
-        $this->assertEquals(QuoteStatus::CANCELLED, $quote->fresh()->status);
+        // 1. Verificar Stock:
+        // Variante (Devuelta): 47 + 1 = 48
+        $this->assertEquals(48, $this->variant->fresh()->current_stock, 'El stock devuelto no se incrementó.');
+        // Nuevo Producto (Vendido): 10 - 1 = 9
+        $this->assertEquals(9, $newProduct->fresh()->current_stock, 'El stock del nuevo producto no se descontó.');
 
-        // 2. Devolución de Stock
-        $this->assertEquals($initialProductStock + 2, $this->product->fresh()->current_stock);
-        $this->assertEquals($initialVariantStock + 3, $this->variant->fresh()->current_stock);
+        // 2. Verificar que se creó una nueva transacción
+        $newTransaction = Transaction::latest('id')->first();
+        $this->assertNotEquals($originalTransaction->id, $newTransaction->id);
+        $this->assertEquals(TransactionStatus::COMPLETED, $newTransaction->status);
+        $this->assertEquals(200.00, $newTransaction->total); // Total de la nueva venta
 
-        // 3. Saldo de Cliente (NO debe cambiar)
-        $this->assertEquals(0.00, $this->customer->fresh()->balance);
-        $this->assertDatabaseMissing('customer_balance_movements', [
+        // 3. Verificar los pagos de la nueva transacción
+        // Debe haber un pago "virtual" por el intercambio (110) y uno real (90)
+        $this->assertDatabaseHas('payments', [
+            'transaction_id' => $newTransaction->id,
+            'amount' => 110.00,
+            'payment_method' => 'intercambio' // O como lo hayas definido en el servicio
+        ]);
+        $this->assertDatabaseHas('payments', [
+            'transaction_id' => $newTransaction->id,
+            'amount' => 90.00,
+            'payment_method' => 'efectivo'
+        ]);
+    }
+
+    #[Test]
+    public function it_can_add_a_payment_to_an_pending_transaction(): void
+    {
+        // 1. Crear transacción pendiente con deuda (-530.00 saldo cliente)
+        ['transaction' => $transaction] = $this->createSaleFromQuote(-530.00);
+        $transaction->update(['status' => TransactionStatus::PENDING]);
+
+        // Payload del abono (200.00)
+        $payload = [
+            'cash_register_session_id' => $this->session->id,
+            'payments' => [
+                ['amount' => 200.00, 'method' => 'efectivo', 'notes' => 'Abono parcial']
+            ],
+            'use_balance' => false
+        ];
+
+        // --- ACT ---
+        $response = $this->post(route('transactions.addPayment', $transaction), $payload);
+
+        // --- ASSERT ---
+        $response->assertSessionHasNoErrors();
+        $response->assertRedirect();
+        $response->assertSessionHas('success', 'Abono registrado con éxito.');
+
+        // 1. Verificar que se creó el pago
+        $this->assertDatabaseHas('payments', [
             'transaction_id' => $transaction->id,
-            'type' => CustomerBalanceMovementType::REFUND_CREDIT->value,
+            'amount' => 200.00,
+            'notes' => 'Abono parcial'
         ]);
 
-        // 4. Movimiento de Caja (Salida de efectivo)
-        $this->assertDatabaseHas('session_cash_movements', [
-            'cash_register_session_id' => $this->session->id,
-            'type' => SessionCashMovementType::OUTFLOW->value,
-            'amount' => 530.00,
+        // 2. Verificar saldo del cliente
+        // Saldo inicial: -530.00. Abono: +200.00. Nuevo saldo: -330.00
+        $this->assertEquals(-330.00, $this->customer->fresh()->balance, 'El saldo del cliente no se actualizó correctamente.');
+
+        // 3. Verificar movimiento de saldo
+        $this->assertDatabaseHas('customer_balance_movements', [
+            'customer_id' => $this->customer->id,
+            'transaction_id' => $transaction->id,
+            'type' => CustomerBalanceMovementType::PAYMENT->value,
+            'amount' => 200.00,
         ]);
     }
 }

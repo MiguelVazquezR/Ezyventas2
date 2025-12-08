@@ -10,6 +10,7 @@ use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductAttribute;
 use App\Models\Transaction;
+use App\Models\TransactionItem;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -130,6 +131,119 @@ class TransactionPaymentService
             }
 
             return $transaction;
+        });
+    }
+
+    /**
+     * Procesa un CAMBIO de producto (Exchange).
+     * Devuelve items al inventario, saca nuevos items y ajusta la diferencia monetaria.
+     */
+    public function handleProductExchange(
+        User $user,
+        Transaction $originalTransaction,
+        array $data
+    ): Transaction {
+        return DB::transaction(function () use ($user, $originalTransaction, $data) {
+            $now = now();
+            $sessionId = $data['cash_register_session_id'];
+            $returnedItems = $data['returned_items']; // [{ 'item_id': 1, 'quantity': 1 }]
+            $newCartItems = $data['new_items'];       // Items estándar de carrito
+            $payments = $data['payments'] ?? [];
+            
+            // 1. Procesar Devoluciones (Calcular saldo a favor y devolver stock)
+            $totalRefundAmount = 0;
+            foreach ($returnedItems as $returnItem) {
+                $originalItem = TransactionItem::where('transaction_id', $originalTransaction->id)
+                    ->where('id', $returnItem['item_id'])
+                    ->firstOrFail();
+
+                if ($returnItem['quantity'] > $originalItem->quantity) {
+                    throw new Exception("No puedes devolver más cantidad de la comprada originalmente.");
+                }
+
+                // Calcular valor a reembolsar basado en precio original (unit_price - descuento prorrateado si aplicara, aqui simple)
+                // Nota: unit_price en BD ya suele tener descuentos directos aplicados, pero si hubo descuento global, considerar lógica extra.
+                // Por simplicidad usaremos unit_price almacenado.
+                $refundAmount = $originalItem->unit_price * $returnItem['quantity'];
+                $totalRefundAmount += $refundAmount;
+
+                // Devolver Stock
+                $this->restockSingleItem($originalItem->itemable, $returnItem['quantity']);
+                
+                // Opcional: Marcar item original como devuelto parcial o totalmente (si tienes columna para ello)
+            }
+
+            // 2. Crear la Nueva Transacción (Intercambio)
+            $newTransaction = Transaction::create([
+                'cash_register_session_id' => $sessionId,
+                'folio' => self::generateFolio($user->branch_id), // Nuevo folio
+                'customer_id' => $originalTransaction->customer_id,
+                'branch_id' => $user->branch_id,
+                'user_id' => $user->id,
+                'status' => TransactionStatus::COMPLETED, // Los cambios suelen ser inmediatos
+                'channel' => TransactionChannel::POS,
+                'subtotal' => $data['subtotal'], // De los nuevos items
+                'total_discount' => $data['total_discount'] ?? 0,
+                'total_tax' => 0,
+                'currency' => 'MXN',
+                'notes' => "Cambio de producto ref. Venta #{$originalTransaction->folio}. " . ($data['notes'] ?? ''),
+                'status_changed_at' => $now,
+            ]);
+
+            // 3. Crear Nuevos Items y descontar stock
+            $this->createTransactionItems($newTransaction, $newCartItems, TransactionStatus::COMPLETED);
+
+            // 4. Calcular Diferencias
+            $newTotalSale = (float) $newTransaction->total;
+            $difference = $newTotalSale - $totalRefundAmount;
+
+            // Registrar el valor del producto devuelto como un "pago" en la nueva transacción
+            // para que cuadren los números de la venta.
+            $exchangePaymentAmount = min($newTotalSale, $totalRefundAmount);
+            $this->paymentService->processPayments($newTransaction, [[
+                'amount' => $exchangePaymentAmount,
+                'method' => 'intercambio', // Método virtual para reportes
+                'notes' => 'Valor de productos devueltos',
+                'bank_account_id' => null,
+            ]], $sessionId);
+
+            // 5. Manejar el Saldo Restante
+            if ($difference > 0.01) {
+                // CASO A: El cliente debe pagar la diferencia
+                // Validar que los pagos cubran la diferencia
+                $totalPaidByCustomer = collect($payments)->sum('amount');
+                if (abs($totalPaidByCustomer - $difference) > 0.01) {
+                    throw new Exception("El pago realizado no cubre la diferencia del cambio ({$difference}).");
+                }
+                
+                // Registrar pagos reales
+                $this->applyDirectPayments($newTransaction, $payments, $sessionId);
+
+            } elseif ($difference < -0.01) {
+                // CASO B: Saldo a favor del cliente (Devolución parcial a saldo)
+                $surplusAmount = abs($difference);
+                $customer = $originalTransaction->customer;
+
+                if (!$customer) {
+                    throw new Exception("Para generar saldo a favor, la venta debe tener un cliente asignado.");
+                }
+
+                // Abonar al saldo del cliente
+                $customer->increment('balance', $surplusAmount);
+                
+                $customer->balanceMovements()->create([
+                    'transaction_id' => $newTransaction->id,
+                    'type' => CustomerBalanceMovementType::REFUND_CREDIT, // O tipo "EXCHANGE_SURPLUS"
+                    'amount' => $surplusAmount,
+                    'balance_after' => $customer->balance,
+                    'notes' => "Saldo a favor por cambio de producto. Nueva venta #{$newTransaction->folio}",
+                    'created_at' => $now,
+                ]);
+            }
+
+            // Si difference == 0, no se hace nada extra, el "pago de intercambio" cubrió todo.
+
+            return $newTransaction;
         });
     }
 
@@ -433,6 +547,20 @@ class TransactionPaymentService
                 if ($itemModel instanceof ProductAttribute) {
                     Product::find($item['id'])->decrement('current_stock', $item['quantity']);
                 }
+            }
+        }
+    }
+
+    /**
+     * Helper para reponer stock de un item específico (usado en cambios).
+     */
+    private function restockSingleItem($itemModel, $quantity): void
+    {
+        if ($itemModel instanceof Product || $itemModel instanceof ProductAttribute) {
+            $itemModel->increment('current_stock', $quantity);
+            // Si es variante, incrementar también al padre si aplica lógica de stock compartido
+            if ($itemModel instanceof ProductAttribute) {
+                Product::find($itemModel->product_id)->increment('current_stock', $quantity);
             }
         }
     }

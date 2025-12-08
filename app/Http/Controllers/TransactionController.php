@@ -14,6 +14,9 @@ use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Quote;
 use App\Models\Transaction;
+use App\Models\CashRegister;
+use App\Models\CashRegisterSession;
+use App\Services\TransactionPaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -26,6 +29,8 @@ use LogicException;
 
 class TransactionController extends Controller implements HasMiddleware
 {
+    public function __construct(protected TransactionPaymentService $transactionPaymentService) {}
+
     public static function middleware(): array
     {
         return [
@@ -33,11 +38,14 @@ class TransactionController extends Controller implements HasMiddleware
             new Middleware('can:transactions.see_details', only: ['show']),
             new Middleware('can:transactions.cancel', only: ['cancel']),
             new Middleware('can:transactions.refund', only: ['refund']),
+            new Middleware('can:transactions.add_payment', only: ['addPayment']),
+            new Middleware('can:transactions.exchange', only: ['exchange']), // Nuevo permiso recomendado
         ];
     }
 
     public function index(Request $request): Response
     {
+        // ... (código existente del index)
         $user = Auth::user();
         $branchId = $user->branch_id;
 
@@ -84,32 +92,143 @@ class TransactionController extends Controller implements HasMiddleware
 
     public function show(Transaction $transaction): Response
     {
+        // ... (código existente del show)
         $transaction->load([
-            'customer:id,name,balance',
+            'customer:id,name,balance,credit_limit',
             'user:id,name',
             'branch:id,name',
             'items.itemable',
             'payments.bankAccount',
         ]);
 
-        $availableTemplates = Auth::user()->branch->printTemplates()
+        $user = Auth::user();
+        $branchId = $user->branch_id;
+
+        $availableTemplates = $user->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
             ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
             ->get();
 
+        
+        $availableCashRegisters = CashRegister::where('branch_id', $branchId)
+            ->where('is_active', true)
+            ->where('in_use', false)
+            ->get(['id', 'name']);
+
+        $isOwner = !$user->roles()->exists();
+        $userBankAccounts = $isOwner 
+            ? $user->branch->bankAccounts()->get() 
+            : $user->bankAccounts()->get();
+
+        $joinableSessions = null;
+
+        $userHasActiveSession = $user->cashRegisterSessions()
+            ->where('status', CashRegisterSessionStatus::OPEN)
+            ->exists();
+
+        if (!$userHasActiveSession) {
+             $joinableSessions = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
+                ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $branchId))
+                ->with('cashRegister:id,name', 'opener:id,name')
+                ->get();
+        }
+
         return Inertia::render('Transaction/Show', [
             'transaction' => $transaction,
             'availableTemplates' => $availableTemplates,
+            'availableCashRegisters' => $availableCashRegisters,
+            'userBankAccounts' => $userBankAccounts,
+            'joinableSessions' => $joinableSessions,
         ]);
+    }
+
+    /**
+     * Procesa un cambio de productos.
+     */
+    public function exchange(Request $request, Transaction $transaction)
+    {
+        $validated = $request->validate([
+            'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
+            'returned_items' => 'required|array|min:1',
+            'returned_items.*.item_id' => 'required|exists:transactions_items,id',
+            'returned_items.*.quantity' => 'required|integer|min:1',
+            
+            // Datos para la nueva venta (estructura similar a un carrito)
+            'new_items' => 'required|array|min:1',
+            'new_items.*.id' => 'required|exists:products,id',
+            'new_items.*.quantity' => 'required|numeric|min:1',
+            'new_items.*.unit_price' => 'required|numeric|min:0',
+            // ... (otros campos del item si son necesarios, como descuento)
+            'subtotal' => 'required|numeric',
+            'total_discount' => 'numeric',
+            
+            // Pagos (solo si hay diferencia positiva)
+            'payments' => 'nullable|array',
+            'payments.*.amount' => 'required|numeric|min:0.01',
+            'payments.*.method' => 'required|string',
+            
+            'notes' => 'nullable|string|max:255',
+        ]);
+
+        if (in_array($transaction->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED])) {
+            return redirect()->back()->with(['error' => 'No se pueden realizar cambios en transacciones canceladas o reembolsadas.']);
+        }
+
+        try {
+            $newTransaction = $this->transactionPaymentService->handleProductExchange(
+                Auth::user(),
+                $transaction,
+                $validated
+            );
+
+            return redirect()->route('transactions.show', $newTransaction->id)
+                ->with('success', 'Cambio realizado con éxito. Nueva venta #' . $newTransaction->folio);
+
+        } catch (\Exception $e) {
+            Log::error("Error al procesar cambio en transacción {$transaction->id}: " . $e->getMessage());
+            return redirect()->back()->with(['error' => 'Error: ' . $e->getMessage()]);
+        }
+    }
+
+    public function addPayment(Request $request, Transaction $transaction)
+    {
+        // 1. Validaciones básicas
+        $validated = $request->validate([
+            'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
+            'payments' => 'required|array|min:1',
+            'payments.*.amount' => 'required|numeric|min:0.01',
+            'payments.*.method' => 'required|string',
+            'payments.*.bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'payments.*.notes' => 'nullable|string|max:255',
+            'use_balance' => 'boolean',
+        ]);
+
+        // 2. Validar estado de la transacción
+        if (in_array($transaction->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED])) {
+            return redirect()->back()->with(['error' => 'No se pueden agregar pagos a transacciones canceladas o reembolsadas.']);
+        }
+
+        try {
+            // 3. Procesar el pago usando el servicio
+            $this->transactionPaymentService->applyPaymentToTransaction(
+                $transaction,
+                $validated,
+                $validated['cash_register_session_id']
+            );
+
+            return redirect()->back()->with('success', 'Abono registrado con éxito.');
+
+        } catch (\Exception $e) {
+            Log::error("Error al registrar abono en transacción {$transaction->id}: " . $e->getMessage());
+            return redirect()->back()->with(['error' => 'Error: ' . $e->getMessage()]);
+        }
     }
 
     public function cancel(Transaction $transaction)
     {
-        // Cargar pagos para verificar si existen antes de cancelar
         $transaction->loadMissing('payments');
         $totalPaid = $transaction->payments->sum('amount');
 
-        // Aplicar la regla: solo cancelar si no hay pagos
         if ($totalPaid > 0) {
             return redirect()->back()->with(['error' => 'No se puede cancelar una venta con pagos registrados. Debe generar una devolución.']);
         }
@@ -118,17 +237,14 @@ class TransactionController extends Controller implements HasMiddleware
             return redirect()->back()->with(['error' => 'Solo se pueden cancelar ventas pendientes o completadas (sin pagos).']);
         }
 
-
         try {
             DB::transaction(function () use ($transaction) {
                 $originalStatus = $transaction->status;
 
-                // CORRECCIÓN: Reponer stock si estaba completada O PENDIENTE.
                 if (in_array($originalStatus, [TransactionStatus::COMPLETED, TransactionStatus::PENDING])) {
                     $this->returnStock($transaction);
                 }
 
-                // Ajustar saldo solo si fue a crédito (movimiento original existe)
                 if ($transaction->customer_id && in_array($originalStatus, [TransactionStatus::COMPLETED, TransactionStatus::PENDING])) {
                     $originalChargeMovement = $transaction->customerBalanceMovements()
                         ->where('type', CustomerBalanceMovementType::CREDIT_SALE)
@@ -136,12 +252,12 @@ class TransactionController extends Controller implements HasMiddleware
 
                     if ($originalChargeMovement) {
                         $customer = Customer::findOrFail($transaction->customer_id);
-                        $amountToCredit = $originalChargeMovement->amount; // Monto original del cargo (negativo)
+                        $amountToCredit = $originalChargeMovement->amount;
 
                         $customer->balanceMovements()->create([
                             'transaction_id' => $transaction->id,
                             'type' => CustomerBalanceMovementType::CANCELLATION_CREDIT,
-                            'amount' => abs($amountToCredit), // Reversión positiva
+                            'amount' => abs($amountToCredit),
                             'balance_after' => $customer->balance + abs($amountToCredit),
                             'notes' => 'Ajuste por cancelación de venta #' . $transaction->folio,
                         ]);
@@ -196,18 +312,14 @@ class TransactionController extends Controller implements HasMiddleware
             return redirect()->back()->with(['error' => 'No se puede abonar a saldo si la venta no tiene un cliente asociado.']);
         }
 
-        // CORRECCIÓN: Definir $user aquí para que esté disponible en el catch
         $user = Auth::user();
 
         try {
-            // CORRECCIÓN: Pasar $user al closure con 'use'
             DB::transaction(function () use ($transaction, $refundMethod, $totalPaid, $user) { 
-                // 1. Reponer el stock SIEMPRE que se reembolse
                 $this->returnStock($transaction);
 
                 $amountToRefund = $totalPaid; 
 
-                // 2. Procesar según el método de reembolso elegido
                 if ($refundMethod === 'balance') {
                     $customer = Customer::findOrFail($transaction->customer_id);
 
@@ -238,7 +350,6 @@ class TransactionController extends Controller implements HasMiddleware
                     ]);
                 }
 
-                // 3. Actualizar el estado de la transacción a REEMBOLSADA
                 $transaction->update(['status' => TransactionStatus::REFUNDED]);
 
                 $transaction->loadMissing('transactionable');
@@ -249,7 +360,6 @@ class TransactionController extends Controller implements HasMiddleware
                 }
             });
         } catch (LogicException $e) {
-            // CORRECCIÓN: Ahora $user está definido y se puede acceder a $user->id
             Log::warning("Intento de reembolso sin sesión activa/cliente por usuario {$user->id} para transacción {$transaction->id}: " . $e->getMessage());
             return redirect()->back()->with(['error' => $e->getMessage()]);
         } catch (\Exception $e) {
@@ -263,7 +373,6 @@ class TransactionController extends Controller implements HasMiddleware
     private function returnStock(Transaction $transaction)
     {
         foreach ($transaction->items as $item) {
-            // Verificamos si el item es un Producto (Simple) o una Variante
             if ($item->itemable instanceof Product || $item->itemable instanceof \App\Models\ProductAttribute) {
                 if (is_numeric($item->quantity)) {
                     $item->itemable->increment('current_stock', $item->quantity);
