@@ -320,7 +320,7 @@ class ProductController extends Controller implements HasMiddleware
         return redirect()->route('products.index')->with('success', 'Producto actualizado con éxito.');
     }
 
-    public function show(Product $product): Response
+   public function show(Product $product): Response
     {
         $product->load([
             'category',
@@ -375,7 +375,9 @@ class ProductController extends Controller implements HasMiddleware
                 // Only include changes if there are actual differences
                 'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
             ];
-        })->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes'])); // Filter out 'updated' events with no changes shown
+        })
+        ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes'])) // Filter out 'updated' events with no changes shown
+        ->values(); // <--- CORRECCIÓN AQUI: Reindexar para enviar un Array JSON y no un Objeto JSON
 
          // --- INICIO DE MODIFICACIÓN: Obtener Apartados Activos ---
         $productAndVariantIds = $product->productAttributes->pluck('id')->push($product->id);
@@ -406,7 +408,7 @@ class ProductController extends Controller implements HasMiddleware
             })
             ->with([
                 // Cargamos la información necesaria
-                'transaction:id,folio,customer_id,created_at',
+                'transaction:id,folio,customer_id,created_at,layaway_expiration_date', // <--- AGREGADO: layaway_expiration_date
                 'transaction.customer:id,name'
             ])
             ->get();
@@ -419,7 +421,8 @@ class ProductController extends Controller implements HasMiddleware
                 'customer_id' => $item->transaction->customer_id,
                 'quantity' => $item->quantity,
                 'description' => $item->description, // Descripción del item (ej. "Playera (Roja, M)")
-                'date' => $item->transaction->created_at->toDateTimeString(), // Usamos toDateTimeString para consistencia
+                'date' => $item->transaction->created_at->toDateTimeString(),
+                'layaway_expiration_date' => $item->transaction->layaway_expiration_date, // <--- AGREGADO
             ];
         });
         // --- FIN DE MODIFICACIÓN ---

@@ -9,10 +9,9 @@ const props = defineProps({
     templates: Array,
     templateLimit: Number,
     templateUsage: Number,
-    template: Object,
 });
 
-// --- AÑADIDO: Lógica para verificar si se alcanzó el límite ---
+// Lógica para verificar si se alcanzó el límite
 const limitReached = computed(() => {
     if (props.templateLimit === -1) return false;
     return props.templateUsage >= props.templateLimit;
@@ -32,23 +31,34 @@ const confirmDelete = (template) => {
     });
 };
 
-const newTemplateOptions = [
-    {
-        label: 'Nuevo ticket de venta',
-        icon: 'pi pi-receipt',
-        command: () => router.get(route('print-templates.create', { type: 'ticket_venta' }))
-    },
-    {
-        label: 'Nueva etiqueta',
-        icon: 'pi pi-tags',
-        command: () => router.get(route('print-templates.create', { type: 'etiqueta' }))
-    },
-    {
-        label: 'Nueva cotización (Carta/A4)',
-        icon: 'pi pi-file-pdf',
-        command: () => router.get(route('print-templates.create', { type: 'cotizacion' }))
+// MODIFICADO: Convertimos las opciones en una propiedad computada
+// para evaluar los permisos dinámicamente.
+const newTemplateOptions = computed(() => {
+    // Opciones base siempre disponibles (o sujetas a sus propios permisos si fuera necesario)
+    const options = [
+        {
+            label: 'Nuevo ticket de venta',
+            icon: 'pi pi-receipt',
+            command: () => router.get(route('print-templates.create', { type: 'ticket_venta' }))
+        },
+        {
+            label: 'Nueva etiqueta',
+            icon: 'pi pi-tags',
+            command: () => router.get(route('print-templates.create', { type: 'etiqueta' }))
+        }
+    ];
+
+    // Opción condicional basada en el permiso 'quotes.access'
+    if (hasPermission('quotes.access')) {
+        options.push({
+            label: 'Nueva cotización (Carta/A4)',
+            icon: 'pi pi-file-pdf',
+            command: () => router.get(route('print-templates.create', { type: 'cotizacion' }))
+        });
     }
-];
+
+    return options;
+});
 </script>
 
 <template>
@@ -59,10 +69,17 @@ const newTemplateOptions = [
                     <h1 class="text-3xl font-bold">Plantillas personalizadas</h1>
                     <p class="text-gray-500 mt-1">Gestiona las plantillas para tickets, etiquetas y más.</p>
                 </div>
-                <!-- MODIFICADO: Se envuelve en un div para el tooltip y se deshabilita el botón -->
+                
                 <div v-tooltip.bottom="limitReached ? `Límite de ${templateLimit} plantillas alcanzado` : 'Crear nueva plantilla'">
-                    <SplitButton v-if="hasPermission('settings.templates.create')" label="Nueva plantilla" icon="pi pi-plus"
-                        :model="newTemplateOptions" @click="newTemplateOptions[0].command" :disabled="limitReached"/>
+                    <!-- Usamos newTemplateOptions (que ahora es reactivo) -->
+                    <SplitButton 
+                        v-if="hasPermission('settings.templates.create')" 
+                        label="Nueva plantilla" 
+                        icon="pi pi-plus"
+                        :model="newTemplateOptions" 
+                        @click="newTemplateOptions.length > 0 ? newTemplateOptions[0].command() : null" 
+                        :disabled="limitReached"
+                    />
                 </div>
             </header>
 

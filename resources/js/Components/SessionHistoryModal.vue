@@ -145,7 +145,7 @@ const timelineEvents = computed(() => {
         type: 'movement',
         date: mv.created_at,
         status: mv.type === 'ingreso' ? 'Ingreso de efectivo' : 'Retiro de efectivo',
-        color: mv.type === 'ingreso' ? '#3b82f6' : '#ef4444',
+        bgColor: mv.type === 'ingreso' ? '#3b82f6' : '#ef4444',
         icon: mv.type === 'ingreso' ? 'pi pi-arrow-down-left' : 'pi pi-arrow-up-right',
         data: mv,
         userName: mv.user?.name || 'N/A'
@@ -161,7 +161,7 @@ const timelineEvents = computed(() => {
                 type: 'payment',
                 date: p.payment_date || p.created_at,
                 status: `Pago (${p.payment_method})`,
-                color: '#8b5cf6',
+                bgColor: '#8b5cf6',
                 icon: 'pi pi-dollar',
                 data: p,
                 userName: tx?.user?.name || 'N/A',

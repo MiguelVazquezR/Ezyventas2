@@ -1,291 +1,257 @@
 <script setup>
-import { ref, watch, nextTick } from 'vue';
+import { ref, watch, nextTick, computed } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { useConfirm } from 'primevue/useconfirm';
 import axios from 'axios';
-import InputLabel from './InputLabel.vue';
+import InputLabel from '@/Components/InputLabel.vue'; // Ajusta la ruta si es necesario
 
-// --- PROPS Y EMITS ---
-
-// visible: Controla si el modal se muestra o no (conectado con v-model:visible)
-// categoryType: Lo dejamos por compatibilidad, aunque para gastos no se usa,
-// pero el controlador de creación rápida (QuickCreate) podría necesitarlo.
 const props = defineProps({
     visible: Boolean,
 });
 
-// Eventos que el modal emite al componente padre:
-// update:visible: Para que el v-model funcione.
-// created: Cuando se crea una nueva categoría.
-// updated: Cuando se edita una categoría.
-// deleted: Cuando se elimina una categoría.
 const emit = defineEmits(['update:visible', 'created', 'updated', 'deleted']);
 
-// --- REFERENCIAS Y SERVICIOS ---
-const toast = useToast(); // Para mostrar notificaciones
-const confirm = useConfirm(); // Para el diálogo de confirmación de borrado
-const categories = ref([]); // La lista de categorías que se muestra en la tabla
-const loading = ref(false); // Estado de carga para la tabla
-const editingRows = ref([]); // Controla qué filas están en modo de edición
-const newCategoryName = ref(''); // v-model para el input de "Nombre" de la nueva categoría
-const newCategoryDescription = ref(''); // v-model para el input de "Descripción"
-const newCategoryProcessing = ref(false); // Estado de carga para el botón de crear
-const firstInputRef = ref(null); // Referencia al input "Nombre" para hacer focus
+// --- ESTADO ---
+const toast = useToast();
+const confirm = useConfirm();
+const categories = ref([]);
+const loading = ref(false);
+const editingRows = ref([]);
+const newCategoryName = ref('');
+const newCategoryDescription = ref('');
+const newCategoryProcessing = ref(false);
+const firstInputRef = ref(null);
 
-// --- FUNCIONES ---
+// --- ESTADO PARA MIGRACIÓN ---
+const migrationDialogVisible = ref(false);
+const categoryToDelete = ref(null); // La categoría que intentamos borrar
+const targetCategoryId = ref(null); // La categoría destino seleccionada
+const isMigrating = ref(false);
 
-/**
- * Carga la lista de categorías de gastos desde el backend.
- * Se llama cuando el modal se hace visible.
- */
+// Lista de categorías disponibles para migrar (todas menos la que se borra)
+const migrationOptions = computed(() => {
+    if (!categoryToDelete.value) return [];
+    return categories.value.filter(c => c.id !== categoryToDelete.value.id);
+});
+
+// --- CARGA DE DATOS ---
 const fetchCategories = async () => {
     loading.value = true;
     try {
-        // Llama a la ruta 'expense-categories.index' que definimos en PHP
         const response = await axios.get(route('expense-categories.index'));
         categories.value = response.data;
     } catch (error) {
-        console.error("Error al cargar categorías de gastos:", error);
-        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudieron cargar las categorías.', life: 6000 });
+        console.error("Error al cargar:", error);
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudieron cargar las categorías.', life: 3000 });
     } finally {
         loading.value = false;
     }
 };
 
-/**
- * Cierra el modal.
- * Emite el evento 'update:visible' para que el v-model en el padre se actualice.
- */
 const closeModal = () => {
     emit('update:visible', false);
 };
 
-/**
- * Se activa al guardar una fila editada en la tabla.
- */
+// --- EDICIÓN ---
 const onRowEditSave = async (event) => {
-    let { newData, index, data: oldData } = event; // newData tiene los cambios
+    let { newData, index, data: oldData } = event;
 
-    // Validación simple: el nombre no puede estar vacío
     if (!newData.name || newData.name.trim() === '') {
-        toast.add({ severity: 'warn', summary: 'Campo requerido', detail: 'El nombre no puede estar vacío.', life: 6000 });
-        categories.value[index] = oldData; // Revertir los cambios visualmente
+        toast.add({ severity: 'warn', summary: 'Requerido', detail: 'El nombre es obligatorio.', life: 3000 });
+        categories.value[index] = oldData;
         return;
     }
 
     try {
-        // Llama a la ruta 'expense-categories.update'
         await axios.put(route('expense-categories.update', newData.id), {
             name: newData.name,
-            description: newData.description // Enviamos también la descripción
+            description: newData.description
         });
-        
-        // Actualiza el dato en la lista local
         categories.value[index] = newData;
-        
-        // Emite el evento 'updated' al componente padre con la categoría actualizada
         emit('updated', newData);
-        
-        toast.add({ severity: 'success', summary: 'Actualizado', detail: 'Categoría actualizada.', life: 6000 });
+        toast.add({ severity: 'success', summary: 'Actualizado', detail: 'Categoría actualizada.', life: 3000 });
     } catch (error) {
-        console.error("Error al actualizar:", error);
-        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo actualizar la categoría.', life: 6000 });
-        categories.value[index] = oldData; // Revertir si hay error
+        categories.value[index] = oldData;
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo actualizar.', life: 3000 });
     }
 };
 
-/**
- * Muestra el diálogo de confirmación antes de eliminar.
- */
+// --- ELIMINACIÓN ---
 const confirmDelete = (category) => {
     confirm.require({
-        message: `¿Estás seguro de que quieres eliminar la categoría "${category.name}"?`,
+        message: `¿Eliminar "${category.name}"?`,
         header: 'Confirmar eliminación',
-        icon: 'pi pi-info-circle',
-        rejectLabel: 'Cancelar',
-        acceptLabel: 'Eliminar',
-        rejectClass: 'p-button-secondary p-button-outlined',
+        icon: 'pi pi-exclamation-triangle',
         acceptClass: 'p-button-danger',
-        accept: () => {
-            // Si el usuario acepta, llama a la función deleteCategory
-            deleteCategory(category);
-        }
+        accept: () => deleteCategory(category)
     });
 };
 
 /**
- * Llama a la API para eliminar la categoría.
+ * Función principal de borrado.
+ * Si 'migrateToId' tiene valor, se envía al backend para mover gastos.
  */
-const deleteCategory = async (category) => {
+const deleteCategory = async (category, migrateToId = null) => {
     try {
-        // Llama a la ruta 'expense-categories.destroy'
-        await axios.delete(route('expense-categories.destroy', category.id));
+        if (migrateToId) isMigrating.value = true;
+
+        // Axios delete acepta data en la config 'data'
+        await axios.delete(route('expense-categories.destroy', category.id), {
+            data: { migrate_to_id: migrateToId }
+        });
         
-        // Elimina la categoría de la lista local
+        // Éxito
         categories.value = categories.value.filter(c => c.id !== category.id);
-        
-        // Emite el evento 'deleted' al padre con el ID de la categoría eliminada
         emit('deleted', category.id);
-        
-        toast.add({ severity: 'success', summary: 'Eliminado', detail: 'Categoría eliminada.', life: 6000 });
+        toast.add({ severity: 'success', summary: 'Eliminado', detail: 'Categoría eliminada.', life: 3000 });
+
+        // Resetear estado de migración si estaba activo
+        migrationDialogVisible.value = false;
+        categoryToDelete.value = null;
+        targetCategoryId.value = null;
+
     } catch (error) {
-        console.error("Error al eliminar:", error);
-        let detail = 'No se pudo eliminar la categoría.';
-        // Si el backend devuelve un error 422 (porque está en uso), muestra ese mensaje
-        if (error.response && error.response.status === 422) {
-            detail = error.response.data.message; 
+        // MANEJO DE GASTOS HUÉRFANOS
+        if (error.response && error.response.status === 422 && error.response.data.code === 'expenses_exist') {
+            // Guardamos la categoría y abrimos el modal de migración
+            categoryToDelete.value = category;
+            targetCategoryId.value = null; // Resetear selección anterior
+            migrationDialogVisible.value = true;
+            
+            // Opcional: Mostrar aviso
+            // toast.add({ severity: 'info', summary: 'Acción requerida', detail: 'Esta categoría tiene gastos. Selecciona dónde moverlos.', life: 4000 });
+        } else {
+            console.error(error);
+            toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo eliminar la categoría.', life: 3000 });
         }
-        toast.add({ severity: 'error', summary: 'Error', detail: detail, life: 6000 });
+    } finally {
+        isMigrating.value = false;
     }
 };
 
-/**
- * Envía el formulario para crear una nueva categoría.
- */
-const submitNewCategory = async () => {
-    if (!newCategoryName.value || newCategoryName.value.trim() === '') {
+// Acción del botón "Mover y Eliminar" en el modal secundario
+const handleMigration = () => {
+    if (!targetCategoryId.value) {
+        toast.add({ severity: 'warn', summary: 'Atención', detail: 'Selecciona una categoría destino.', life: 3000 });
         return;
     }
+    deleteCategory(categoryToDelete.value, targetCategoryId.value);
+};
+
+// --- CREACIÓN ---
+const submitNewCategory = async () => {
+    if (!newCategoryName.value.trim()) return;
     newCategoryProcessing.value = true;
     try {
-        // Llama a la ruta 'quick-create.expense_categories.store'
-        // NOTA: El QuickCreateController solo acepta 'name'. 
-        // Si queremos enviar 'description' también, hay que actualizar ese controlador.
         const response = await axios.post(route('quick-create.expense_categories.store'), {
             name: newCategoryName.value,
-            description: newCategoryDescription.value // Enviamos la descripción
+            description: newCategoryDescription.value
         });
-        
-        const newCategory = response.data;
-        categories.value.push(newCategory); // Añadir a la lista local
-        
-        // Emite el evento 'created' al padre con la nueva categoría
-        emit('created', newCategory); 
-        
-        // Limpiar inputs
+        categories.value.push(response.data);
+        emit('created', response.data);
         newCategoryName.value = ''; 
         newCategoryDescription.value = '';
-        
-        toast.add({ severity: 'success', summary: 'Creada', detail: 'Categoría creada con éxito.', life: 6000 });
+        toast.add({ severity: 'success', summary: 'Creada', detail: 'Categoría creada.', life: 3000 });
     } catch (error) {
-        console.error("Error al crear:", error);
-        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo crear la categoría.', life: 6000 });
+        toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo crear.', life: 3000 });
     } finally {
         newCategoryProcessing.value = false;
     }
 };
 
-// --- WATCHER ---
-
-/**
- * Observa la prop 'visible'. Cuando cambia a 'true' (o sea, se abre el modal),
- * carga las categorías y hace focus en el primer input.
- */
-watch(() => props.visible, (newValue) => {
-    if (newValue) {
-        fetchCategories(); // Carga los datos frescos
-        
-        // Limpia los campos del formulario de creación
-        newCategoryName.value = '';
-        newCategoryDescription.value = '';
-        
-        // Espera a que el DOM se actualice (nextTick) y luego hace focus
-        nextTick(() => {
-            if (firstInputRef.value) {
-                // Usamos .$el.focus() porque firstInputRef es un componente de PrimeVue,
-                // no un <input> HTML directo.
-                firstInputRef.value?.$el?.focus();
-            }
-        });
+watch(() => props.visible, (val) => {
+    if (val) {
+        fetchCategories();
+        nextTick(() => firstInputRef.value?.$el?.focus());
     }
-}, { immediate: true }); // immediate: true hace que se ejecute una vez al cargar
-
+}, { immediate: true });
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" modal header="Gestionar categorías de gastos"
-        :style="{ width: '35rem' }"> <!-- Un poco más ancho para la descripción -->
-
-        <!-- Formulario para crear nueva categoría -->
-        <form @submit.prevent="submitNewCategory" class="p-2">
-            <div class="flex flex-col gap-3">
-                <InputLabel for="new-category-name" value="Crear nueva categoría" />
-                <div class="flex flex-col sm:flex-row items-start sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
-                    <!-- Input de Nombre -->
-                    <div class="flex-1 w-full sm:w-auto">
-                        <InputText id="new-category-name" ref="firstInputRef" v-model="newCategoryName"
-                            placeholder="Nombre de la categoría" class="w-full" />
-                    </div>
-                    <!-- Input de Descripción -->
-                    <div class="flex-1 w-full sm:w-auto">
-                        <InputText id="new-category-desc" v-model="newCategoryDescription"
-                            placeholder="Descripción (opcional)" class="w-full" />
-                    </div>
-                    <!-- Botón de Crear -->
-                    <Button type="submit" icon="pi pi-plus" :loading="newCategoryProcessing"
-                        :disabled="!newCategoryName || newCategoryProcessing" 
-                        class="w-full sm:w-auto"
-                        />
+    <!-- Modal Principal -->
+    <Dialog :visible="visible" @update:visible="closeModal" modal header="Categorías de Gastos" :style="{ width: '35rem' }">
+        
+        <!-- Formulario Crear -->
+        <form @submit.prevent="submitNewCategory" class="mb-4">
+            <div class="flex flex-col gap-2">
+                <InputLabel for="new-cat" value="Nueva categoría" />
+                <div class="flex gap-2">
+                    <InputText id="new-cat" ref="firstInputRef" v-model="newCategoryName" placeholder="Nombre" class="flex-1" />
+                    <InputText v-model="newCategoryDescription" placeholder="Descripción (opcional)" class="flex-1" />
+                    <Button type="submit" icon="pi pi-plus" :loading="newCategoryProcessing" :disabled="!newCategoryName" />
                 </div>
             </div>
         </form>
 
         <Divider />
 
-        <!-- Lista de categorías existentes -->
-        <div class_="" :style="{ 'max-height': '300px', 'overflow-y': 'auto' }">
+        <!-- Tabla -->
+        <div style="height: 300px; overflow-y: auto;">
             <DataTable :value="categories" v-model:editingRows="editingRows" editMode="row" dataKey="id"
-                @row-edit-save="onRowEditSave" :loading="loading" size="small" stripedRows responsiveLayout="scroll">
+                @row-edit-save="onRowEditSave" :loading="loading" size="small" stripedRows>
                 
-                <!-- Estado de Carga -->
+                <template #empty><div class="text-center p-4 text-gray-500">Sin categorías.</div></template>
                 <template #loading>
-                    <div class="flex justify-center p-4">
-                        <ProgressSpinner style="width: 50px; height: 50px" strokeWidth="8" />
-                    </div>
-                </template>
-                <!-- Mensaje cuando no hay datos -->
-                <template #empty>
-                    <div class="text-center p-4 text-gray-500">
-                        No se encontraron categorías de gastos.
-                    </div>
+                     <div class="flex justify-center p-4"><ProgressSpinner style="width: 40px; height: 40px" /></div>
                 </template>
 
-                <!-- Columna de Nombre (editable) -->
-                <Column field="name" header="Nombre" style="width: 35%">
-                    <template #body="{ data }">
-                        {{ data.name }}
-                    </template>
-                    <template #editor="{ data, field }">
-                        <InputText v-model="data[field]" autofocus class="w-full" />
-                    </template>
+                <Column field="name" header="Nombre" style="width: 40%">
+                    <template #editor="{ data, field }"><InputText v-model="data[field]" autofocus class="w-full" /></template>
                 </Column>
-
-                <!-- Columna de Descripción (editable) -->
-                <Column field="description" header="Descripción" style="width: 45%">
-                    <template #body="{ data }">
-                        {{ data.description }}
-                    </template>
-                    <template #editor="{ data, field }">
-                        <InputText v-model="data[field]" class="w-full" />
-                    </template>
+                <Column field="description" header="Descripción" style="width: 40%">
+                    <template #editor="{ data, field }"><InputText v-model="data[field]" class="w-full" /></template>
                 </Column>
-
-                <!-- Columna de Botones de Edición -->
-                <Column :rowEditor="true" style="width: 10%; min-width: 8rem" bodyStyle="text-align:center"></Column>
-                
-                <!-- Columna de Botón de Eliminar -->
-                <Column style="width: 10%; min-width: 4rem" bodyStyle="text-align:center">
+                <Column :rowEditor="true" style="width: 10%; min-width: 4rem" bodyStyle="text-align: center"></Column>
+                <Column style="width: 10%; min-width: 4rem" bodyStyle="text-align: center">
                     <template #body="{ data }">
-                        <Button @click="confirmDelete(data)" icon="pi pi-trash" severity="danger" text rounded
-                            size="small" vD-tooltip.left="'Eliminar'" />
+                        <Button @click="confirmDelete(data)" icon="pi pi-trash" severity="danger" text rounded size="small" />
                     </template>
                 </Column>
             </DataTable>
         </div>
 
-        <!-- Footer con botón de Cerrar -->
         <template #footer>
             <Button label="Cerrar" severity="secondary" @click="closeModal" />
+        </template>
+    </Dialog>
+
+    <!-- Modal de Migración (Secundario) -->
+    <Dialog v-model:visible="migrationDialogVisible" modal header="⚠ Gastos asociados detectados" :style="{ width: '30rem' }">
+        <div class="p-2">
+            <div class="flex items-start gap-3 mb-4 text-gray-700 dark:text-gray-300">
+                <i class="pi pi-exclamation-circle text-orange-500 text-2xl mt-1"></i>
+                <div>
+                    <p class="mb-2">
+                        La categoría <strong>"{{ categoryToDelete?.name }}"</strong> tiene gastos registrados.
+                    </p>
+                    <p class="text-sm">
+                        Para eliminarla, debes mover estos gastos a otra categoría.
+                    </p>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Mover gastos a:
+                </label>
+                <Select 
+                    v-model="targetCategoryId" 
+                    :options="migrationOptions" 
+                    optionLabel="name" 
+                    optionValue="id" 
+                    placeholder="Selecciona una categoría" 
+                    class="w-full"
+                    filter
+                />
+            </div>
+        </div>
+
+        <template #footer>
+            <Button label="Cancelar" severity="secondary" text @click="migrationDialogVisible = false" />
+            <Button label="Mover y Eliminar" icon="pi pi-arrow-right-arrow-left" severity="danger" 
+                @click="handleMigration" 
+                :loading="isMigrating"
+                :disabled="!targetCategoryId" />
         </template>
     </Dialog>
 </template>

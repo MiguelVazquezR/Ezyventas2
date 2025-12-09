@@ -35,6 +35,7 @@ class Transaction extends Model
         'notes',
         'status_changed_at',
         'invoiced',
+        'layaway_expiration_date',
         'created_at',
         'updated_at',
     ];
@@ -49,6 +50,7 @@ class Transaction extends Model
             'total_tax' => 'decimal:2',
             'status_changed_at' => 'datetime',
             'invoiced' => 'boolean',
+            'layaway_expiration_date' => 'date',
         ];
     }
 

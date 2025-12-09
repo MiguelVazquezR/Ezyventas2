@@ -4,77 +4,81 @@ namespace App\Http\Controllers;
 
 use App\Models\ExpenseCategory;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth; // <-- Importar Auth
+use Illuminate\Support\Facades\Auth;
 
 class ExpenseCategoryController extends Controller
 {
-    /**
-     * Muestra una lista de las categorías de gastos.
-     * Esta función es llamada por el modal de gestión para obtener los datos.
-     */
     public function index()
     {
-        // 1. Obtener el ID de la suscripción del usuario autenticado.
         $subscriptionId = Auth::user()->branch->subscription_id;
-
-        // 2. Buscar todas las categorías de gastos que pertenecen a esa suscripción.
         $categories = ExpenseCategory::where('subscription_id', $subscriptionId)
-            ->latest() // Ordenar por más reciente
+            ->latest()
             ->get();
 
-        // 3. Devolver las categorías como JSON.
         return response()->json($categories);
     }
 
-    /**
-     * Actualiza la categoría de gasto especificada en la base de datos.
-     * Esta función es llamada por la edición en línea del modal.
-     */
     public function update(Request $request, ExpenseCategory $expenseCategory)
     {
-        // 1. Autorización: Asegurarse de que el usuario solo pueda editar sus propias categorías.
         if ($expenseCategory->subscription_id !== Auth::user()->branch->subscription_id) {
             abort(403, 'No autorizado');
         }
 
-        // 2. Validación: Validar los datos de entrada.
-        // 'name' es requerido, 'description' es opcional (nullable).
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
         ]);
 
-        // 3. Actualizar la categoría con los datos validados.
         $expenseCategory->update($validated);
 
-        // 4. Devolver la categoría actualizada como JSON.
         return response()->json($expenseCategory);
     }
 
     /**
-     * Elimina la categoría de gasto especificada de la base de datos.
-     * Esta función es llamada por el botón de eliminar en el modal.
+     * Elimina la categoría. Si tiene gastos, requiere un ID de categoría destino para migrarlos.
      */
-    public function destroy(ExpenseCategory $expenseCategory)
+    public function destroy(Request $request, ExpenseCategory $expenseCategory)
     {
-        // 1. Autorización: Asegurarse de que el usuario solo pueda eliminar sus propias categorías.
         if ($expenseCategory->subscription_id !== Auth::user()->branch->subscription_id) {
             abort(403, 'No autorizado');
         }
 
-        // 2. Validación de negocio: Comprobar si la categoría tiene gastos asociados.
-        // Se usa la relación `expenses()` definida en el modelo ExpenseCategory.
-        if ($expenseCategory->expenses()->exists()) {
-            // 3. Si está en uso, devolver un error 422 (Unprocessable Entity) que el modal pueda leer.
-            return response()->json([
-                'message' => 'No se puede eliminar la categoría porque ya tiene gastos asociados.'
-            ], 422);
+        // 1. Verificar si tiene gastos asociados
+        $expensesCount = $expenseCategory->expenses()->count();
+
+        if ($expensesCount > 0) {
+            // 2. Verificar si el usuario envió la categoría destino
+            $migrateToId = $request->input('migrate_to_id');
+
+            if ($migrateToId) {
+                // Validar que la categoría destino exista y sea de la misma suscripción
+                $targetCategory = ExpenseCategory::where('id', $migrateToId)
+                    ->where('subscription_id', $expenseCategory->subscription_id)
+                    ->where('id', '!=', $expenseCategory->id) // Evitar migrar a sí misma
+                    ->first();
+
+                if (!$targetCategory) {
+                    return response()->json(['message' => 'La categoría de destino no es válida.'], 422);
+                }
+
+                // 3. Mover los gastos a la nueva categoría
+                // Usamos getForeignKeyName() para obtener dinámicamente el nombre de la columna (ej. expense_category_id)
+                $foreignKey = $expenseCategory->expenses()->getForeignKeyName();
+                $expenseCategory->expenses()->update([$foreignKey => $targetCategory->id]);
+
+            } else {
+                // 4. Si hay gastos pero no hay destino, devolver código especial para el Frontend
+                return response()->json([
+                    'message' => 'Esta categoría tiene gastos asociados.',
+                    'code' => 'expenses_exist', // Código clave para el modal Vue
+                    'expenses_count' => $expensesCount
+                ], 422);
+            }
         }
 
-        // 4. Si no está en uso, eliminar la categoría.
+        // 5. Eliminar la categoría (ahora vacía)
         $expenseCategory->delete();
 
-        // 5. Devolver una respuesta de éxito.
         return response()->json(['status' => 'success', 'message' => 'Categoría eliminada con éxito.']);
     }
 }

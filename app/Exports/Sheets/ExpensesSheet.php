@@ -48,7 +48,7 @@ class ExpensesSheet implements FromQuery, WithTitle, WithHeadings, WithMapping, 
 
     public function headings(): array
     {
-        return ['Fecha', 'Categoría', 'Descripción', 'Monto', 'Método de Pago', 'Registrado por'];
+        return ['Fecha', 'Concepto', 'Categoría', 'Descripción', 'Monto', 'Método de Pago', 'Registrado por'];
     }
 
     public function columnFormats(): array
@@ -62,6 +62,7 @@ class ExpensesSheet implements FromQuery, WithTitle, WithHeadings, WithMapping, 
     {
         return [
             $expense->expense_date->format('Y-m-d'),
+            $expense->folio,
             optional($expense->category)->name ?? 'Sin Categoría',
             $expense->description,
             $expense->amount,

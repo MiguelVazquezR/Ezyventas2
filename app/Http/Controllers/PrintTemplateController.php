@@ -72,7 +72,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
         $view = match ($type) {
             'etiqueta' => 'Template/CreateLabel',
             'cotizacion' => 'Template/CreateQuoteTemplate',
-            default => 'Template/CreateTicket',
+            default => 'Template/CreateTicket', // Usamos CreateTicket para clientes también por ahora
         };
 
         return Inertia::render($view, [
@@ -99,7 +99,6 @@ class PrintTemplateController extends Controller implements HasMiddleware
             'name' => 'required|string|max:255',
             'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
             'content' => 'required|array',
-            // Validamos estructura básica, permitiendo config/elements para cotizaciones
             'content.config' => 'required|array', 
             'content.elements' => 'required|array',
             'branch_ids' => 'required|array|min:1',
@@ -111,7 +110,6 @@ class PrintTemplateController extends Controller implements HasMiddleware
                 'name' => $validated['name'],
                 'type' => $validated['type'],
                 'content' => $validated['content'],
-                // Pasamos el tipo explícitamente para determinar el contexto
                 'context_type' => $this->determineContextType($validated['type'], $validated['content']['elements'] ?? []),
             ]);
             $template->branches()->attach($validated['branch_ids']);
@@ -141,7 +139,6 @@ class PrintTemplateController extends Controller implements HasMiddleware
                 'name' => $validated['name'],
                 'type' => $validated['type'],
                 'content' => $validated['content'],
-                // Pasamos el tipo explícitamente para determinar el contexto
                 'context_type' => $this->determineContextType($validated['type'], $validated['content']['elements'] ?? []),
             ]);
             $printTemplate->branches()->sync($validated['branch_ids']);
@@ -157,9 +154,9 @@ class PrintTemplateController extends Controller implements HasMiddleware
         }
 
         $view = match ($printTemplate->type->value) {
-            'etiqueta' => 'Template/EditLabel',
+            'etiqueta' => 'Template/CreateLabel', 
             'cotizacion' => 'Template/CreateQuoteTemplate',
-            default => 'Template/EditTicket',
+            default => 'Template/CreateTicket',
         };
 
         $subscription = Auth::user()->branch->subscription;
@@ -174,7 +171,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
 
         return Inertia::render($view, [
             'template' => $printTemplate, 
-            'printTemplate' => $printTemplate, // Compatibilidad con prop del componente Quote
+            'printTemplate' => $printTemplate,
             'branches' => $subscription->branches()->get(['id', 'name']),
             'templateImages' => $templateImages,
             'customFieldDefinitions' => $customFieldDefinitions,
@@ -204,24 +201,27 @@ class PrintTemplateController extends Controller implements HasMiddleware
      */
     private function determineContextType(string $type, array $elements): string
     {
-        // 1. Prioridad: Si es Cotización, el contexto es QUOTE (exclusivo para módulo de cotizaciones)
         if ($type === TemplateType::QUOTE->value) {
             return TemplateContextType::QUOTE->value;
         }
 
-        // 2. Análisis de contenido para otros tipos (Tickets/Etiquetas)
         $contentString = json_encode($elements);
 
         if (str_contains($contentString, '{{os.')) {
             return TemplateContextType::SERVICE_ORDER->value;
         }
         
-        // Etiquetas de producto o tickets que solo imprimen info de producto
         if (str_contains($contentString, '{{p.')) {
             return TemplateContextType::PRODUCT->value;
         }
 
-        // Tickets de venta (tienen folio o cliente y no son cotizaciones)
+        // --- DETECCIÓN DE CONTEXTO CLIENTE ---
+        // Si detectamos variables específicas de estado de cuenta
+        if (str_contains($contentString, '{{c.')) {
+            return TemplateContextType::CUSTOMER->value;
+        }
+        // -------------------------------------
+
         if (str_contains($contentString, '{{folio') || str_contains($contentString, '{{cliente.')) {
             return TemplateContextType::TRANSACTION->value;
         }

@@ -9,7 +9,8 @@ use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Permission;
-use Spatie\Permission\Models\Role;
+use App\Models\Role;
+use Illuminate\Validation\Rule;
 
 class RolePermissionController extends Controller implements HasMiddleware
 {
@@ -22,7 +23,7 @@ class RolePermissionController extends Controller implements HasMiddleware
         ];
     }
 
-   public function index(): Response
+    public function index(): Response
     {
         $user = Auth::user();
         $branchId = $user->branch_id;
@@ -32,7 +33,7 @@ class RolePermissionController extends Controller implements HasMiddleware
         $roles = Role::where('branch_id', $branchId)
             ->with('permissions:id,name')
             ->get(['id', 'name']);
-        
+
         // 1. Obtener los nombres de los módulos disponibles en la suscripción actual.
         $availableModuleNames = $subscription->getAvailableModuleNames();
 
@@ -55,13 +56,26 @@ class RolePermissionController extends Controller implements HasMiddleware
 
     public function store(Request $request)
     {
+        $user = Auth::user();
+
         $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                // Regla de unicidad personalizada:
+                // Verifica que el nombre sea único en la tabla 'roles', 
+                // pero solo para el branch_id del usuario actual y el guard 'web'.
+                Rule::unique('roles')->where(function ($query) use ($user) {
+                    return $query->where('branch_id', $user->branch_id)
+                        ->where('guard_name', 'web');
+                }),
+            ],
         ]);
 
         Role::create([
             'name' => $request->name,
-            'branch_id' => Auth::user()->branch_id,
+            'branch_id' => $user->branch_id,
             'guard_name' => 'web',
         ]);
 
@@ -92,7 +106,7 @@ class RolePermissionController extends Controller implements HasMiddleware
         if ($role->branch_id !== Auth::user()->branch_id) {
             abort(403);
         }
-        
+
         // Opcional: Validar que el rol no tenga usuarios asignados
         if ($role->users()->count() > 0) {
             return redirect()->back()->with('error', 'No se puede eliminar un rol con usuarios asignados.');

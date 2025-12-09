@@ -23,7 +23,7 @@ return new class extends Migration
             $table->string('technician_commission_type')->nullable(); // 'percentage', 'fixed'
             $table->decimal('technician_commission_value', 10, 2)->nullable();
             $table->string('status');
-            $table->timestamp('received_at');
+            $table->timestamp('received_at')->nullable();
             $table->timestamp('promised_at')->nullable();
             $table->string('item_description');
             $table->text('reported_problems');

@@ -28,6 +28,8 @@ class PermissionSeeder extends Seeder
                 'transactions.see_details' => 'Ver detalles de ventas',
                 'transactions.refund' => 'Generar devoluciones',
                 'transactions.cancel' => 'Cancelar ventas',
+                'transactions.add_payment' => 'Registrar abonos o pagos a ventas',
+                'transactions.exchange' => 'Hacer cambios de productos en ventas',
             ],
             'Productos' => [
                 'products.access' => 'Ver listado de productos',

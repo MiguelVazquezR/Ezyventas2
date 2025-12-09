@@ -1,6 +1,6 @@
 <script setup>
 import { Head, useForm, usePage } from '@inertiajs/vue3';
-import { ref, computed, watch } from 'vue'; // <-- AÑADIDO 'watch'
+import { ref, computed, watch } from 'vue';
 import AppLogo from '@/Components/AuthenticationCardLogo.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -15,11 +15,9 @@ const props = defineProps({
 const page = usePage();
 
 // --- INICIO: SOLUCIÓN para el paso activo ---
-// 1. Leer el paso guardado desde sessionStorage o empezar en 0
 const initialStep = sessionStorage.getItem('onboardingStep') ? parseInt(sessionStorage.getItem('onboardingStep')) : 0;
 const activeStep = ref(initialStep);
 
-// 2. Guardar cualquier cambio en el paso activo en sessionStorage
 watch(activeStep, (newStep) => {
     sessionStorage.setItem('onboardingStep', newStep);
 });
@@ -41,17 +39,29 @@ const createDefaultHours = () => {
     }));
 };
 
+// --- Helper para extraer dirección (dado que el modelo la trata como array) ---
+const getInitialAddress = (addr) => {
+    if (!addr) return '';
+    // Si viene como objeto (array cast), intentamos obtener el campo 'text' o 'line1', sino devolvemos string vacío
+    if (typeof addr === 'object') {
+        return addr.text || addr.line1 || '';
+    }
+    return addr; // Si por alguna razón llega como string
+};
+
 // --- Forms ---
 const form = useForm({
     subscription: {
         commercial_name: props.subscription.commercial_name,
         business_name: props.subscription.business_name || '',
+        // --- NUEVOS CAMPOS ---
+        contact_phone: props.subscription.contact_phone || '',
+        address: getInitialAddress(props.subscription.address),
     },
     branches: props.subscription.branches.map(branch => ({
         ...branch,
-        name: (branch.name || '').replace('Sucursal ', ''), // Quitar prefijo para editar
-        address: branch.address || '', // Simplificado
-        // Asegurar que operating_hours sea un array
+        name: (branch.name || '').replace('Sucursal ', ''),
+        address: branch.address || '',
         operating_hours: (Array.isArray(branch.operating_hours) && branch.operating_hours.length === 7)
             ? branch.operating_hours
             : createDefaultHours(),
@@ -64,14 +74,13 @@ const form = useForm({
     },
     bank_accounts: props.subscription.bank_accounts.map(account => ({
         ...account,
-        balance: parseFloat(account.balance) || 0.00, // Añadir balance
+        balance: parseFloat(account.balance) || 0.00,
         branch_ids: account.branches ? account.branches.map(b => b.id) : [],
     })),
 });
 
 // --- Opciones para Selects ---
 const branchOptions = computed(() => {
-    // Generar IDs temporales para sucursales nuevas para que el MultiSelect funcione
     return form.branches.map((b, index) => {
         if (!b.id) {
             b.id = `temp_${index}`;
@@ -86,15 +95,6 @@ const branchOptions = computed(() => {
 
 // --- Funciones de Formulario ---
 const addBranch = () => {
-    // --- INICIO: CAMBIO - Límite de sucursales eliminado ---
-    // const currentBranches = form.branches.length;
-    // const limit = props.currentLimits.limit_branches.quantity;
-    // if (currentBranches >= limit) {
-    //     alert(`Has alcanzado tu límite de ${limit} sucursales.`);
-    //     return;
-    // }
-    // --- FIN: CAMBIO ---
-
     form.branches.push({
         id: null,
         name: '',
@@ -173,12 +173,11 @@ const saveStep = (step, nextStep = true) => {
         routeName = route('onboarding.store.step2');
         data = { limits: form.limits };
     }
-    // Paso 2 (Cuentas Bancarias) ahora se guarda al final
 
     form.post(routeName, {
         data: data,
         preserveScroll: true,
-        preserveState: true, // Recargar props
+        preserveState: true,
         onSuccess: () => {
             if (nextStep) { activeStep.value++; }
         },
@@ -187,22 +186,16 @@ const saveStep = (step, nextStep = true) => {
     });
 };
 
-// --- CAMBIO: Lógica de Finalización (Una sola petición) ---
 const finishOnboarding = () => {
     saving.value = true;
-    // Se envía todo al endpoint 'finish'
     form.post(route('onboarding.finish'), {
-        // Incluimos los datos de las cuentas bancarias aquí
         data: { bank_accounts: form.bank_accounts },
-        preserveScroll: true, // Mantener scroll por si hay errores
-        // preserveState: false // No es necesario recargar aquí, Inertia redirigirá
+        preserveScroll: true,
         onSuccess: () => {
             sessionStorage.removeItem('onboardingStep');
-            // Inertia se encargará de redirigir al dashboard
         },
         onError: (err) => {
             console.error('Error al finalizar onboarding:', err);
-            // Mostrar mensaje de error al usuario si es necesario
         },
         onFinish: () => {
             saving.value = false;
@@ -227,10 +220,8 @@ const finishOnboarding = () => {
             </div>
 
             <div class="p-4 sm:p-6">
-                <!-- --- ESTRUCTURA DE STEPPER CON 'linear' --- -->
                 <Stepper v-model:value="activeStep" linear>
                     <StepList>
-                        <!-- PASO 1 HEADER -->
                         <Step v-slot="{ activateCallback, value, a11yAttrs }" asChild :value="0">
                             <div class="flex flex-row flex-auto gap-2" v-bind="a11yAttrs.root">
                                 <button class="flex items-center flex-shrink-0 gap-2 p-2 bg-transparent border-0"
@@ -244,8 +235,6 @@ const finishOnboarding = () => {
                                 <Divider />
                             </div>
                         </Step>
-
-                        <!-- PASO 2 HEADER -->
                         <Step v-slot="{ activateCallback, value, a11yAttrs }" asChild :value="1">
                             <div class="flex flex-row flex-auto gap-2" v-bind="a11yAttrs.root">
                                 <button class="flex items-center flex-shrink-0 gap-2 p-2 bg-transparent border-0"
@@ -259,8 +248,6 @@ const finishOnboarding = () => {
                                 <Divider />
                             </div>
                         </Step>
-
-                        <!-- PASO 3 HEADER -->
                         <Step v-slot="{ activateCallback, value, a11yAttrs }" asChild :value="2">
                             <div class="flex flex-row flex-auto gap-2" v-bind="a11yAttrs.root">
                                 <button class="flex items-center flex-shrink-0 gap-2 p-2 bg-transparent border-0"
@@ -279,14 +266,14 @@ const finishOnboarding = () => {
                         <!-- PASO 1: NEGOCIO Y SUCURSALES (CONTENIDO) -->
                         <StepPanel :value="0">
                             <div class="p-4 space-y-6">
-                                <h3 class="text-lg font-semibold border-b pb-2">Información general</h3>
-                                <!-- --- CAMBIO: FloatLabel a InputLabel --- -->
+                                <h3 class="text-lg font-semibold border-b pb-2">Información general del Negocio</h3>
+                                
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <InputLabel for="commercial_name" value="Nombre del negocio *" />
+                                        <InputLabel for="commercial_name" value="Nombre Comercial *" />
                                         <InputText id="commercial_name" v-model="form.subscription.commercial_name"
                                             fluid :invalid="!!form.errors['subscription.commercial_name']"
-                                            class="mt-1 w-full" />
+                                            class="mt-1 w-full" placeholder="Ej. Mi Tienda" />
                                         <InputError class="mt-2"
                                             :message="form.errors['subscription.commercial_name']" />
                                     </div>
@@ -294,33 +281,45 @@ const finishOnboarding = () => {
                                         <InputLabel for="business_name" value="Razón social (Opcional)" />
                                         <InputText id="business_name" v-model="form.subscription.business_name" fluid
                                             :invalid="!!form.errors['subscription.business_name']"
-                                            class="mt-1 w-full" />
+                                            class="mt-1 w-full" placeholder="Ej. Mi Empresa S.A. de C.V."/>
                                         <InputError class="mt-2" :message="form.errors['subscription.business_name']" />
                                     </div>
+                                    
+                                    <!-- --- NUEVOS CAMPOS --- -->
+                                    <div>
+                                        <InputLabel for="contact_phone" value="Teléfono principal" />
+                                        <InputText id="contact_phone" v-model="form.subscription.contact_phone"
+                                            fluid :invalid="!!form.errors['subscription.contact_phone']"
+                                            class="mt-1 w-full" />
+                                        <InputError class="mt-2" :message="form.errors['subscription.contact_phone']" />
+                                    </div>
+                                    <div>
+                                        <InputLabel for="subscription_address" value="Dirección Fiscal / Matriz" />
+                                        <InputText id="subscription_address" v-model="form.subscription.address"
+                                            fluid :invalid="!!form.errors['subscription.address']"
+                                            class="mt-1 w-full" placeholder="Calle, Número, Colonia..." />
+                                        <InputError class="mt-2" :message="form.errors['subscription.address']" />
+                                    </div>
+                                    <!-- --------------------- -->
                                 </div>
-                                <!-- --- FIN CAMBIO --- -->
 
                                 <h3 class="text-lg font-semibold border-b pb-2 mt-6">Sucursales</h3>
-                                <!-- --- INICIO: CAMBIO - Mensaje de Límite --- -->
                                 <Message severity="info" :closable="false">
                                     Registra las sucursales de tu negocio. Podrás añadir más en cualquier momento.
                                 </Message>
-                                <!-- --- FIN: CAMBIO --- -->
-
 
                                 <div v-for="(branch, index) in form.branches" :key="index"
-                                    class="p-4 border rounded-lg space-y-2 relative">
+                                    class="p-4 border rounded-lg space-y-2 relative bg-gray-50 dark:bg-gray-700/30">
                                     <Button v-if="form.branches.length > 1" icon="pi pi-trash" severity="danger" text
                                         rounded @click="removeBranch(index)" class="!absolute top-2 right-2" />
 
-                                    <div class="flex items-center">
+                                    <div class="flex items-center mb-2">
                                         <RadioButton :id="'main_branch_' + index" v-model="branch.is_main" :value="true"
                                             @change="setMainBranch(index)" />
-                                        <label :for="'main_branch_' + index" class="ml-2 font-semibold">Marcar como
+                                        <label :for="'main_branch_' + index" class="ml-2 font-semibold text-sm">Marcar como
                                             sucursal principal</label>
                                     </div>
 
-                                    <!-- --- CAMBIO: FloatLabel a InputLabel --- -->
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                             <InputLabel :for="'branch_name_' + index" value="Nombre *" />
@@ -358,14 +357,10 @@ const finishOnboarding = () => {
                                                 :message="form.errors[`branches.${index}.operating_hours`]" />
                                         </div>
                                     </div>
-                                    <!-- --- FIN CAMBIO --- -->
                                 </div>
 
-                                <!-- --- INICIO: CAMBIO - v-if eliminado --- -->
                                 <Button label="Añadir otra sucursal" icon="pi pi-plus" severity="secondary" outlined
                                     @click="addBranch" />
-                                <!-- --- FIN: CAMBIO --- -->
-
 
                                 <div class="flex justify-end pt-4">
                                     <Button label="Siguiente" icon="pi pi-arrow-right" iconPos="right"
@@ -382,7 +377,6 @@ const finishOnboarding = () => {
                                     tus sucursales.
                                 </Message>
 
-                                <!-- --- CAMBIO: label a InputLabel --- -->
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div>
                                         <InputLabel for="limit_users" value="Usuarios" class="font-semibold" />
@@ -421,7 +415,6 @@ const finishOnboarding = () => {
                                             :message="form.errors['limits.limit_print_templates']" />
                                     </div>
                                 </div>
-                                <!-- --- FIN CAMBIO --- -->
 
                                 <div class="flex justify-between pt-4">
                                     <Button label="Anterior" icon="pi pi-arrow-left" severity="secondary"
@@ -446,7 +439,6 @@ const finishOnboarding = () => {
                                     <Button icon="pi pi-trash" severity="danger" text rounded
                                         @click="removeBankAccount(index)" class="!absolute top-2 right-2" />
 
-                                    <!-- --- CAMBIO: FloatLabel a InputLabel --- -->
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
                                             <InputLabel :for="'bank_name_' + index" value="Nombre del banco *" />
@@ -502,7 +494,6 @@ const finishOnboarding = () => {
                                                 :message="form.errors[`bank_accounts.${index}.branch_ids`]" />
                                         </div>
                                     </div>
-                                    <!-- --- FIN CAMBIO --- -->
                                 </div>
 
                                 <Button label="Añadir cuenta bancaria" icon="pi pi-plus" severity="secondary" outlined
@@ -518,12 +509,10 @@ const finishOnboarding = () => {
                         </StepPanel>
                     </StepPanels>
                 </Stepper>
-                <!-- --- FIN: ESTRUCTURA DE STEPPER CORREGIDA --- -->
             </div>
         </div>
     </div>
 
-    <!-- --- MODAL PARA HORARIOS --- -->
     <Dialog v-model:visible="hoursModalVisible" modal header="Establecer horario semanal" :style="{ width: '38rem' }">
         <div v-if="currentBranchIndex !== null" class="space-y-4 p-2">
             <div v-for="(day, dayIndex) in form.branches[currentBranchIndex].operating_hours" :key="day.day"

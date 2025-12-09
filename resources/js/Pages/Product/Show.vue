@@ -4,8 +4,8 @@ import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
-import DiffViewer from '@/Components/DiffViewer.vue';
 import AddStockModal from './Partials/AddStockModal.vue';
+import ActivityHistory from '@/Components/ActivityHistory.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import { usePermissions } from '@/Composables';
 
@@ -67,6 +67,24 @@ const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
     return date.toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+};
+
+// --- AÑADIDO: Funciones auxiliares para fecha ---
+const formatDateOnly = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+        return new Date(dateString).toLocaleDateString('es-MX', { dateStyle: 'medium' });
+    } catch (e) {
+        return dateString;
+    }
+};
+
+const isExpired = (dateString) => {
+    if (!dateString) return false;
+    const expiration = new Date(dateString + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    return expiration < today;
 };
 
 // --- AÑADIDO: Función para formatear moneda ---
@@ -144,22 +162,54 @@ const getPromotionSummary = (promo) => {
 };
 
 const generalImages = computed(() =>
-    props.product.media.filter(m => m.collection_name === 'product-general-images')
+    (props.product.media || []).filter(m => m.collection_name === 'product-general-images')
 );
 
+// Genera un mapa de 'Opción' -> 'URL Imagen' (ej. 'Rojo' -> 'url...')
 const variantImages = computed(() => {
-    const images = props.product.media.filter(m => m.collection_name === 'product-variant-images');
+    const media = props.product.media || [];
+    const images = media.filter(m => m.collection_name === 'product-variant-images');
     const imageMap = {};
     images.forEach(img => {
-        const option = img.custom_properties.variant_option;
-        if (!imageMap[option]) {
-            imageMap[option] = img.original_url;
+        // Acceso seguro a custom_properties
+        const properties = img.custom_properties || {};
+        const option = properties.variant_option;
+        if (option) {
+            // Convertimos a string para asegurar coincidencias (ej. "24" vs 24)
+            imageMap[String(option)] = img.original_url;
         }
     });
     return imageMap;
 });
 
-const isVariantProduct = computed(() => props.product.product_attributes.length > 0);
+// Función auxiliar para obtener la imagen de una variante buscando coincidencias en sus atributos
+const getVariantImage = (attributes) => {
+    if (!attributes) return null;
+    
+    // Manejar caso donde attributes venga como string JSON
+    let attrs = attributes;
+    if (typeof attrs === 'string') {
+        try {
+            attrs = JSON.parse(attrs);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    if (!attrs || typeof attrs !== 'object') return null;
+
+    // Iteramos sobre los valores de los atributos (ej. "Rojo", "M", "Algodón")
+    for (const value of Object.values(attrs)) {
+        // Convertimos el valor a string para buscar en el mapa
+        const valStr = String(value);
+        if (variantImages.value[valStr]) {
+            return variantImages.value[valStr];
+        }
+    }
+    return null;
+};
+
+const isVariantProduct = computed(() => props.product.product_attributes && props.product.product_attributes.length > 0);
 
 // --- AÑADIDO: Computed property para los niveles de precio ---
 const priceTiers = computed(() => {
@@ -209,38 +259,6 @@ const totalAvailable = computed(() => props.product.available_stock);
                         No hay imágenes generales.
                     </div>
                 </div>
-                <!-- <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2
-                        class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
-                        Tienda en Línea</h2>
-                    <ul class="space-y-3 text-sm">
-                        <li class="flex justify-between">
-                            <span class="text-gray-500 dark:text-gray-400">Mostrar en tienda</span>
-                            <Tag :value="product.show_online ? 'Sí' : 'No'"
-                                :severity="product.show_online ? 'success' : 'danger'">
-                            </Tag>
-                        </li>
-                        <li v-if="product.show_online" class="flex justify-between">
-                            <span class="text-gray-500 dark:text-gray-400">Precio en línea</span>
-                            <span class="font-medium text-gray-800 dark:text-gray-200">{{ new Intl.NumberFormat('es-MX',
-                                {
-                                    style:
-                                        'currency', currency: 'MXN'
-                                }).format(product.online_price || product.selling_price)
-                                }}</span>
-                        </li>
-                        <li class="flex justify-between">
-                            <span class="text-gray-500 dark:text-gray-400">Requiere envío</span>
-                            <Tag :value="product.requires_shipping ? 'Sí' : 'No'"
-                                :severity="product.requires_shipping ? 'info' : 'secondary'"></Tag>
-                        </li>
-                        <li v-if="product.requires_shipping" class="flex justify-between">
-                            <span class="text-gray-500 dark:text-gray-400">Peso</span>
-                            <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.weight || 'N/A' }}
-                                kg</span>
-                        </li>
-                    </ul>
-                </div> -->
             </div>
 
             <!-- Columna Derecha -->
@@ -347,8 +365,9 @@ const totalAvailable = computed(() => props.product.available_stock);
                         <DataTable :value="product.product_attributes" class="p-datatable-sm">
                             <Column header="Imagen">
                                <template #body="{ data }">
-                                    <img v-if="variantImages[data.attributes.Color]"
-                                        :src="variantImages[data.attributes.Color]"
+                                    <!-- CORRECCIÓN: Usamos la función auxiliar robusta getVariantImage -->
+                                    <img v-if="getVariantImage(data.attributes)"
+                                        :src="getVariantImage(data.attributes)"
                                         class="size-12 object-contain rounded-md" />
                                     <div v-else
                                         class="size-12 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
@@ -359,7 +378,6 @@ const totalAvailable = computed(() => props.product.available_stock);
                             <Column v-for="key in Object.keys(product.product_attributes[0]?.attributes || {})"
                                 :key="key" :field="`attributes.${key}`" :header="key"></Column>
                             
-                            <!-- Nuevas Columnas de Stock -->
                             <Column field="current_stock" header="Físico" sortable></Column>
                             <Column field="reserved_stock" header="Apartado" sortable>
                                 <template #body="{ data }">
@@ -411,6 +429,17 @@ const totalAvailable = computed(() => props.product.available_stock);
                                     {{ formatDate(data.date) }}
                                 </template>
                             </Column>
+                            
+                            <!-- NUEVA COLUMNA -->
+                            <Column field="layaway_expiration_date" header="Vencimiento" sortable>
+                                <template #body="{ data }">
+                                    <span :class="{'text-red-500 font-bold': isExpired(data.layaway_expiration_date), 'text-gray-700 dark:text-gray-300': !isExpired(data.layaway_expiration_date)}">
+                                        {{ formatDateOnly(data.layaway_expiration_date) }}
+                                    </span>
+                                </template>
+                            </Column>
+                            <!-- FIN NUEVA COLUMNA -->
+
                             <Column field="customer_name" header="Cliente" sortable>
                                     <template #body="{ data }">
                                     <Link v-if="data.customer_id" :href="route('customers.show', data.customer_id)" class="text-blue-500 hover:underline">
@@ -421,7 +450,6 @@ const totalAvailable = computed(() => props.product.available_stock);
                             </Column>
                             <Column field="folio" header="Apartado #" sortable>
                                 <template #body="{ data }">
-                                    <!-- Asumiendo que tienes una ruta 'transactions.show' -->
                                     <Link :href="route('transactions.show', data.transaction_id)" class="text-blue-500 hover:underline">
                                         {{ data.folio }}
                                     </Link>
@@ -482,70 +510,7 @@ const totalAvailable = computed(() => props.product.available_stock);
                 </div>
 
                 <!-- historial -->
-                <!-- <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2
-                        class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-6 text-gray-800 dark:text-gray-200">
-                        Historial de Actividad</h2>
-                    <div v-if="activities && activities.length > 0" class="relative max-h-[300px] overflow-y-auto pr-2">
-                        <div class="relative pl-6">
-                            <div class="absolute left-10 top-0 h-full border-l-2 border-gray-200 dark:border-gray-700">
-                            </div>
-
-                            <div class="space-y-8">
-                                <div v-for="activity in activities" :key="activity.id" class="relative">
-                                    <div class="absolute left-0 top-1.5 -translate-x-1/2">
-                                        <span
-                                            class="flex w-8 h-8 items-center justify-center text-white rounded-full z-10 shadow-md"
-                                            :class="{
-                                                'bg-blue-500': activity.event === 'created',
-                                                'bg-orange-500': activity.event === 'updated',
-                                                'bg-red-500': activity.event === 'deleted',
-                                                'bg-purple-500': activity.event === 'promo'
-                                            }">
-                                            <i :class="{
-                                                'pi pi-plus': activity.event === 'created',
-                                                'pi pi-pencil': activity.event === 'updated',
-                                                'pi pi-trash': activity.event === 'deleted',
-                                                'pi pi-bolt': activity.event === 'promo'
-                                            }"></i>
-                                        </span>
-                                    </div>
-
-                                    <div class="ml-10">
-                                        <h3 class="font-semibold text-gray-800 dark:text-gray-200 text-lg m-0">{{
-                                            activity.description }}</h3>
-                                        <p class="text-xs text-gray-500 dark:text-gray-400">Por {{ activity.causer }} -
-                                            {{
-                                                activity.timestamp }}</p>
-
-                                        <div v-if="activity.event === 'updated' && Object.keys(activity.changes.after).length > 0"
-                                            class="mt-3 text-sm space-y-2">
-                                            <div v-for="(value, key) in activity.changes.after" :key="key">
-                                                <p class="font-medium text-gray-700 dark:text-gray-300">{{ key }}</p>
-                                                <div v-if="key === 'Descripción'">
-                                                    <DiffViewer :oldValue="activity.changes.before[key]"
-                                                        :newValue="value" />
-                                                </div>
-                                                <div v-else class="flex items-center gap-2 text-xs">
-                                                    <span
-                                                        class="bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 px-2 py-0.5 rounded line-through">{{
-                                                            activity.changes.before[key] || 'Vacío' }}</span>
-                                                    <i class="pi pi-arrow-right text-gray-400"></i>
-                                                    <span
-                                                        class="bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 px-2 py-0.5 rounded font-medium">{{
-                                                            value }}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div v-else class="text-center text-gray-500 py-8">
-                        No hay actividades registradas para este producto.
-                    </div>
-                </div> -->
+                <ActivityHistory :activities="activities" title="Historial de movimientos" />
 
             </div>
         </div>

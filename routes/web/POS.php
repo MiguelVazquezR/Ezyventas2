@@ -19,4 +19,5 @@ Route::middleware('auth')->prefix('pos')->as('pos.')->group(function () {
     Route::post('/checkout', [PointOfSaleController::class, 'checkout'])->name('checkout');
     // para Apartado
     Route::post('/layaway', [PointOfSaleController::class, 'createLayaway'])->name('layaway');
+    Route::get('/pos/customers/search', [PointOfSaleController::class, 'searchCustomers'])->name('customers.search');
 });

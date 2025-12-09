@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Enums\TemplateType;
+use App\Enums\TransactionStatus;
 use App\Models\Branch;
 use App\Models\Customer;
+use App\Models\Payment; // Importamos el modelo Payment
 use App\Models\PrintTemplate;
 use App\Models\Product;
 use App\Models\ServiceOrder;
@@ -18,34 +20,25 @@ class PrintEncoderService
 {
     /**
      * Actúa como un enrutador para llamar al codificador correcto según el tipo de plantilla y la fuente de datos.
-     * @param PrintTemplate $template
-     * @param mixed $dataSource
-     * @param array $options Contiene opciones adicionales como los desfases de impresión.
-     * @return array
      */
     public static function encode(PrintTemplate $template, $dataSource, array $options = []): array
     {
-        // Un ticket puede ser para una Venta o para una Orden de Servicio
-        if ($template->type === TemplateType::SALE_TICKET && ($dataSource instanceof Transaction || $dataSource instanceof ServiceOrder)) {
-            // Las opciones no son necesarias para ESC/POS por ahora
-            return self::encodeEscPos($template, $dataSource);
+        // 1. Ticket de Venta / Orden de Servicio / CLIENTE
+        if ($template->type === TemplateType::SALE_TICKET && 
+           ($dataSource instanceof Transaction || $dataSource instanceof ServiceOrder || $dataSource instanceof Customer)) {
+            return self::encodeEscPos($template, $dataSource, $options);
         }
 
-        // Una etiqueta puede ser para un Producto o una Orden de Servicio
+        // 2. Etiqueta (Producto / OS)
         if ($template->type === TemplateType::LABEL && ($dataSource instanceof Product || $dataSource instanceof ServiceOrder)) {
-            // Pasar las opciones al codificador TSPL
             return self::encodeTspl($template, $dataSource, $options);
         }
 
-        return []; // Devuelve vacío si el tipo no es compatible
+        return [];
     }
 
     /**
-     * Codifica una plantilla de Etiqueta a un array de operaciones JSON (con comandos TSPL crudos).
-     * @param PrintTemplate $template
-     * @param mixed $dataSource
-     * @param array $options
-     * @return array
+     * Codifica una plantilla de Etiqueta (TSPL)
      */
     private static function encodeTspl(PrintTemplate $template, $dataSource, array $options = []): array
     {
@@ -58,22 +51,17 @@ class PrintEncoderService
         $tspl .= "SPEED 4\n";
         $tspl .= "DIRECTION 0\n";
 
-        $dotsPerMm = ($config['dpi'] ?? 203) / 25.4; // Default a 203 dpi si no está seteado
+        $dotsPerMm = ($config['dpi'] ?? 203) / 25.4;
 
-        // --- INICIO: Lógica de Calibración ---
         $offsetX_mm = $options['offset_x'] ?? 0;
         $offsetY_mm = $options['offset_y'] ?? 0;
 
-        // Solo añadir el comando SHIFT si alguno de los desfases es diferente de cero.
         if (is_numeric($offsetX_mm) && is_numeric($offsetY_mm) && ($offsetX_mm != 0 || $offsetY_mm != 0)) {
             $shiftX_dots = round($offsetX_mm * $dotsPerMm);
             $shiftY_dots = round($offsetY_mm * $dotsPerMm);
             $tspl .= "SHIFT {$shiftX_dots},{$shiftY_dots}\n";
         }
         $tspl .= "OFFSET 0\n";
-        // --- FIN: Lógica de Calibración ---
-
-        // CLS (limpiar búfer de imagen) debe llamarse DESPUÉS de SHIFT para evitar resetear el sistema de coordenadas.
         $tspl .= "CLS\n";
 
         foreach ($elements as $element) {
@@ -83,7 +71,6 @@ class PrintEncoderService
 
             switch ($element['type']) {
                 case 'text':
-                    //TEXT X, Y, "font", rotation, x-multiplication, y-multiplication, "content"
                     $fontSize = $element['data']['font_size'];
                     $text = self::replacePlaceholders($element['data']['value'], $dataSource);
                     $tspl .= "TEXT {$x},{$y},\"{$fontSize}\",{$rotation},1,1,\"{$text}\"\n";
@@ -107,14 +94,19 @@ class PrintEncoderService
     }
 
     /**
-     * Codifica una plantilla de Ticket a un array de operaciones JSON para el plugin.
+     * Codifica una plantilla de Ticket (ESC/POS)
      */
-    private static function encodeEscPos(PrintTemplate $template, $dataSource): array
+    private static function encodeEscPos(PrintTemplate $template, $dataSource, array $options = []): array
     {
         $config = $template->content['config'] ?? [];
         $elements = $template->content['elements'] ?? [];
 
         $operations = [];
+
+        if (!empty($options['open_drawer'])) {
+            $operations[] = ['nombre' => 'AbrirCajon', 'argumentos' => []];
+        }
+
         foreach ($elements as $element) {
             if (($element['type'] === 'image' || $element['type'] === 'local_image') && !empty($element['data']['url'])) {
                 $operations[] = ['nombre' => 'DescargarImagenDeInternetEImprimir', 'argumentos' => [$element['data']['url'], $element['data']['width'] ?? null]];
@@ -165,21 +157,21 @@ class PrintEncoderService
                     break;
                case 'barcode':
                     $barcodeData = self::replacePlaceholders($element['data']['value'], $dataSource);
-                    $height = $element['data']['height'] ?? 80; // Get height, default 80
-                    $height = max(1, min(255, (int)$height));    // Clamp value
-                    $fullText .= $gs . 'h' . chr($height) . $gs . 'w' . chr(2) . $gs . 'k' . chr(73) . chr(strlen($barcodeData)) . $barcodeData . "\n"; // Use $height
+                    $height = $element['data']['height'] ?? 80;
+                    $height = max(1, min(255, (int)$height));
+                    $fullText .= $gs . 'h' . chr($height) . $gs . 'w' . chr(2) . $gs . 'k' . chr(73) . chr(strlen($barcodeData)) . $barcodeData . "\n"; 
                     break;
                 case 'qr':
                     $qrData = self::replacePlaceholders($element['data']['value'], $dataSource);
-                    $size = $element['data']['size'] ?? 5; // Get size, default 5
-                    $size = max(1, min(16, (int)$size));   // Clamp value
+                    $size = $element['data']['size'] ?? 5; 
+                    $size = max(1, min(16, (int)$size));
                     $len = strlen($qrData) + 3;
                     $pL = chr($len % 256);
                     $pH = chr($len / 256);
-                    $fullText .= $gs . '(k' . chr(4) . chr(0) . '1A' . chr(50) . chr(0) . $gs . '(k' . chr(3) . chr(0) . '1C' . chr($size) . $gs . '(k' . chr(3) . chr(0) . '1E' . chr(48) . $gs . '(k' . $pL . $pH . '1P0' . $qrData . $gs . '(k' . chr(3) . chr(0) . '1Q0' . "\n"; // Use $size
+                    $fullText .= $gs . '(k' . chr(4) . chr(0) . '1A' . chr(50) . chr(0) . $gs . '(k' . chr(3) . chr(0) . '1C' . chr($size) . $gs . '(k' . chr(3) . chr(0) . '1E' . chr(48) . $gs . '(k' . $pL . $pH . '1P0' . $qrData . $gs . '(k' . chr(3) . chr(0) . '1Q0' . "\n"; 
                     break;
                 case 'sales_table':
-                    if ($dataSource->items()->exists()) {
+                    if (method_exists($dataSource, 'items') && $dataSource->items()->exists()) {
                         $fullText .= str_repeat('-', $widthChars) . "\n";
                         $header = str_pad("Cant", 5) . str_pad("Concepto", $widthChars - 15) . str_pad("Total", 10, ' ', STR_PAD_LEFT);
                         $fullText .= $boldOn . $header . $boldOff . "\n";
@@ -202,11 +194,8 @@ class PrintEncoderService
         return $fullText;
     }
 
-    // --- MÉTODOS AUXILIARES REFACTORIZADOS ---
+    // --- MÉTODOS AUXILIARES ---
 
-    /**
-     * Obtiene los reemplazos para las variables del Negocio (Suscripción).
-     */
     private static function getNegocioReplacements(Subscription $subscription): array
     {
         return [
@@ -217,9 +206,6 @@ class PrintEncoderService
         ];
     }
 
-    /**
-     * Obtiene los reemplazos para las variables de la Sucursal.
-     */
     private static function getSucursalReplacements(Branch $branch): array
     {
         return [
@@ -229,10 +215,6 @@ class PrintEncoderService
         ];
     }
 
-    /**
-     * Obtiene los reemplazos para las variables del Cliente.
-     * Usa la ServiceOrder como fallback para datos de cliente si no existe un Customer.
-     */
     private static function getClienteReplacements(?Customer $customer, ?ServiceOrder $serviceOrder = null): array
     {
         if ($customer) {
@@ -241,6 +223,8 @@ class PrintEncoderService
                 '{{cliente.telefono}}' => $customer->phone ?? '',
                 '{{cliente.email}}' => $customer->email ?? '',
                 '{{cliente.empresa}}' => $customer->company_name ?? '',
+                '{{cliente.rfc}}' => $customer->tax_id ?? '',
+                '{{cliente.direccion}}' => implode(', ', array_filter((array)($customer->address ?? []))),
             ];
         }
         if ($serviceOrder) {
@@ -248,7 +232,9 @@ class PrintEncoderService
                 '{{cliente.nombre}}' => $serviceOrder->customer_name ?? 'N/A',
                 '{{cliente.telefono}}' => $serviceOrder->customer_phone ?? '',
                 '{{cliente.email}}' => $serviceOrder->customer_email ?? '',
-                '{{cliente.empresa}}' => '', // ServiceOrder no tiene "empresa"
+                '{{cliente.empresa}}' => '',
+                '{{cliente.rfc}}' => '',
+                '{{cliente.direccion}}' => '',
             ];
         }
         return [
@@ -256,34 +242,28 @@ class PrintEncoderService
             '{{cliente.telefono}}' => '',
             '{{cliente.email}}' => '',
             '{{cliente.empresa}}' => '',
+            '{{cliente.rfc}}' => '',
+            '{{cliente.direccion}}' => '',
         ];
     }
 
-    /**
-     * Obtiene los reemplazos para las variables del Vendedor (Usuario).
-     */
-    private static function getVendedorReplacements(User $user): array
+    private static function getVendedorReplacements(?User $user): array
     {
         return [
-            '{{vendedor.nombre}}' => $user->name,
+            '{{vendedor.nombre}}' => $user->name ?? 'N/A',
         ];
     }
 
-    /**
-     * Obtiene los reemplazos para las variables de Producto (para etiquetas).
-     */
     private static function getProductoReplacements(Product $product): array
     {
         return [
             '{{p.nombre}}' => $product->name,
             '{{p.precio}}' => number_format($product->selling_price, 2),
             '{{p.sku}}' => $product->sku,
+            '{{p.codigo_barras}}' => $product->barcode ?? $product->sku,
         ];
     }
 
-    /**
-     * Obtiene los reemplazos para las variables de Transacción (Venta).
-     */
     private static function getTransactionReplacements(Transaction $transaction): array
     {
         $transaction->loadMissing('payments');
@@ -302,12 +282,10 @@ class PrintEncoderService
             '{{v.metodos_pago}}' => $paymentMethods,
             '{{v.total_pagado}}' => number_format($totalPaid, 2),
             '{{v.notas_venta}}' => $transaction->notes,
+            '{{v.cambio}}' => number_format(max(0, $totalPaid - $transaction->total), 2),
         ];
     }
 
-    /**
-     * Obtiene los reemplazos para las variables de Orden de Servicio.
-     */
     private static function getServiceOrderReplacements(ServiceOrder $serviceOrder): array
     {
         $replacements = [
@@ -320,36 +298,31 @@ class PrintEncoderService
             '{{os.total}}' => number_format($serviceOrder->final_total, 2),
             '{{os.problemas_reportados}}' => $serviceOrder->reported_problems,
             '{{os.item_description}}' => $serviceOrder->item_description,
+            '{{os.diagnostico}}' => $serviceOrder->diagnosis ?? '',
+            '{{os.fecha_promesa}}' => $serviceOrder->promised_at ? Carbon::parse($serviceOrder->promised_at)->format('d/m/Y') : '',
         ];
 
-        // --- Lógica mejorada para campos personalizados ---
         if (!empty($serviceOrder->custom_fields)) {
             foreach ($serviceOrder->custom_fields as $key => $value) {
-                $printValue = ''; // Valor por defecto
-                
+                $printValue = ''; 
                 if (is_null($value)) {
-                    $printValue = ''; // Imprime nada para valores nulos
+                    $printValue = ''; 
                 } elseif (is_bool($value)) {
-                    $printValue = $value ? 'Si' : 'No'; // Convierte booleano a Si/No
+                    $printValue = $value ? 'Si' : 'No'; 
                 } elseif (is_array($value)) {
-                    // Si es un objeto complejo (como 'desbloqueo') que tiene una clave 'value'
                     if (isset($value['value'])) {
                         $actualValue = $value['value'];
-                        // Si el valor interno también es un array (como en 'pattern')
                         if (is_array($actualValue)) {
                             $printValue = implode(', ', $actualValue);
                         } else {
                             $printValue = (string) $actualValue;
                         }
                     } else {
-                        // Si es un array simple (p. ej. de checkboxes o accesorios)
                         $printValue = implode(', ', $value);
                     }
                 } else {
-                    // Para valores simples como texto, números, etc.
                     $printValue = (string) $value;
                 }
-
                 $replacements["{{os.custom.{$key}}}"] = $printValue;
             }
         }
@@ -357,8 +330,109 @@ class PrintEncoderService
     }
 
     /**
-     * Método principal refactorizado para construir el array de reemplazos.
+     * --- NUEVO: Reemplazos para el Estado de Cuenta del Cliente con BLOQUES VERTICALES ---
      */
+    private static function getCustomerAccountReplacements(Customer $customer): array
+    {
+        $saldoFormatted = $customer->balance < 0 
+            ? '-$' . number_format(abs($customer->balance), 2) . ' (Deuda)'
+            : ($customer->balance > 0 ? '$' . number_format($customer->balance, 2) . ' (A favor)' : '$0.00');
+
+        $pendingSalesQuery = $customer->transactions()
+            ->whereIn('status', [TransactionStatus::PENDING, TransactionStatus::ON_LAYAWAY]);
+        
+        $pendingSalesCount = $pendingSalesQuery->count();
+        $pendingSales = $pendingSalesQuery->get();
+        
+        // --- 1. Generar Bloque del Último Pago ---
+        // Buscamos el último pago usando la relación correcta (Payment) a través de las transacciones del cliente
+        // O más eficientemente, consultando la tabla payments directamente filtrando por transacciones del cliente.
+        $lastPaymentInfo = "Sin pagos registrados.";
+
+        $lastPayment = Payment::whereHas('transaction', function($q) use ($customer) {
+                $q->where('customer_id', $customer->id);
+            })
+            ->latest('created_at') // O 'payment_date' si prefieres
+            ->first();
+
+        if ($lastPayment) {
+            $width = 32; // Ancho seguro para 58mm y 80mm
+            $line = str_repeat('-', $width);
+            
+            // Acceso seguro al valor del Enum o string directo
+            $methodValue = $lastPayment->payment_method;
+            if ($methodValue instanceof \UnitEnum) { // Si es Enum de PHP 8.1+
+                $methodValue = $methodValue->value;
+            }
+            $method = ucfirst($methodValue ?? 'Desconocido');
+
+            $date = Carbon::parse($lastPayment->created_at)->format('d/m/Y H:i');
+            $amount = '$' . number_format($lastPayment->amount, 2);
+            
+            // Formato de bloque vertical
+            $lastPaymentInfo = 
+                  "$line\n"
+                . "ULTIMO PAGO REGISTRADO\n"
+                . "$line\n"
+                . "Fecha:  $date\n"
+                . "Metodo: $method\n"
+                . "Monto:  $amount\n"
+                . "$line";
+        }
+
+        // --- 2. Generar Bloque de Ventas Pendientes ---
+        $pendingSalesInfo = "Sin ventas pendientes.";
+        
+        if ($pendingSalesCount > 0) {
+            $width = 32;
+            $line = str_repeat('-', $width);
+            $separator = str_repeat('.', $width); // Separador más ligero entre items
+            
+            $blocks = "";
+            foreach ($pendingSales as $index => $sale) {
+                $paid = $sale->payments()->sum('amount');
+                $pending = $sale->total - $paid;
+                
+                if ($pending <= 0.01) continue; 
+
+                $folio = $sale->folio ?? $sale->id;
+                $date = Carbon::parse($sale->created_at)->format('d/m/Y H:i');
+                $totalStr = '$' . number_format($sale->total, 2);
+                $pendingStr = '$' . number_format($pending, 2);
+
+                // Bloque para cada venta
+                $blocks .= "Folio: #$folio\n";
+                $blocks .= "Fecha: $date\n";
+                $blocks .= "Total: $totalStr\n";
+                $blocks .= "Debe:  $pendingStr\n";
+                
+                // Añadir separador si no es el último
+                if ($index < $pendingSalesCount - 1) {
+                    $blocks .= "$separator\n";
+                }
+            }
+            
+            $pendingSalesInfo = 
+                  "$line\n"
+                . "VENTAS PENDIENTES\n"
+                . "$line\n"
+                . $blocks
+                . "$line";
+        }
+
+        return [
+            '{{c.saldo_actual}}' => $saldoFormatted,
+            '{{c.credito_disponible}}' => number_format($customer->available_credit, 2),
+            '{{c.limite_credito}}' => number_format($customer->credit_limit, 2),
+            '{{c.conteo_ventas_pendientes}}' => $pendingSalesCount,
+            '{{c.total_deuda}}' => number_format(abs(min(0, $customer->balance)), 2),
+            
+            // Variables actualizadas con formato bloque vertical
+            '{{c.tabla_ultimo_pago}}' => $lastPaymentInfo,
+            '{{c.tabla_ventas_pendientes}}' => $pendingSalesInfo,
+        ];
+    }
+
     private static function replacePlaceholders(string $text, $dataSource): string
     {
         $replacements = [];
@@ -386,19 +460,31 @@ class PrintEncoderService
             $replacements += self::getClienteReplacements($dataSource->customer, $dataSource);
             $replacements += self::getVendedorReplacements($dataSource->user);
 
-            // Si la OS tiene una transacción asociada, carga también las variables de transacción (v.*)
             if ($dataSource->transaction) {
                 $replacements += self::getTransactionReplacements($dataSource->transaction);
             }
+        } 
+        elseif ($dataSource instanceof Customer) {
+            $dataSource->loadMissing(['branch.subscription']);
+            
+            $replacements += self::getCustomerAccountReplacements($dataSource);
+            $replacements += self::getClienteReplacements($dataSource);
+            
+            if ($dataSource->branch) {
+                $replacements += self::getNegocioReplacements($dataSource->branch->subscription);
+                $replacements += self::getSucursalReplacements($dataSource->branch);
+            } else {
+                $replacements['{{sucursal.nombre}}'] = 'Global';
+            }
+            
+            $replacements += self::getVendedorReplacements(auth()->user());
         }
 
-        // Reemplaza los placeholders y luego limpia los que no se encontraron
         $text = str_replace(array_keys($replacements), array_values($replacements), $text);
 
-        // Limpia cualquier placeholder de {{os.custom.*}} que no tuvo un valor
-        // y cualquier variable 'v.*' si no había transacción (ej. en una OS sin pagar)
         $text = preg_replace('/{{os\.custom\.(.*?)}}/', '', $text);
         $text = preg_replace('/{{v\.(.*?)}}/', '', $text);
+        $text = preg_replace('/{{c\.(.*?)}}/', '', $text);
         
         return $text;
     }

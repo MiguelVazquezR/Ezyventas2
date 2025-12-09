@@ -4,9 +4,11 @@ import { Head, router, Link, usePage, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
+import { useToast } from 'primevue/usetoast';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
 import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
+import PrintModal from '@/Components/PrintModal.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 
@@ -15,11 +17,13 @@ const props = defineProps({
     historicalMovements: Array,
     userBankAccounts: Array,
     activeLayaways: Array,
+    availableTemplates: Array,
 });
 
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
 const page = usePage();
+const toast = useToast();
 
 // --- LÓGICA DE SESIÓN CORREGIDA ---
 const activeSession = computed(() => page.props.activeSession);
@@ -31,6 +35,17 @@ const isStartSessionModalVisible = ref(false);
 const isJoinSessionModalVisible = ref(false);
 const sessionModalAwaitingPaymentModal = ref(false);
 const isPaymentProcessing = ref(false);
+
+// --- Lógica para modal de impresión (NUEVO) ---
+const isPrintModalVisible = ref(false);
+const printDataSource = ref(null);
+
+const openPrintModal = () => {
+    // Configuramos el origen de datos como 'customer'
+    printDataSource.value = { type: 'customer', id: props.customer.id };
+    isPrintModalVisible.value = true;
+};
+// ----------------------------------------------
 
 // --- Lógica para modal de ajuste ---
 const isAdjustModalVisible = ref(false);
@@ -56,6 +71,7 @@ const submitAdjustment = () => {
         onSuccess: () => {
             isAdjustModalVisible.value = false;
             adjustForm.reset();
+            toast.add({ severity: 'success', summary: 'Ajuste realizado', detail: 'Saldo actualizado correctamente.', life: 3000 });
         },
         preserveScroll: true,
     });
@@ -73,7 +89,6 @@ const handleOpenAddBalanceFlow = () => {
     }
 };
 
-// Este watcher ahora funciona correctamente para ambos flujos (iniciar y unirse)
 watch(activeSession, (newSession) => {
     if (newSession && sessionModalAwaitingPaymentModal.value) {
         sessionModalAwaitingPaymentModal.value = false;
@@ -82,14 +97,11 @@ watch(activeSession, (newSession) => {
 });
 
 const handleBalancePaymentSubmit = (paymentData) => {
-    // 1. Asegurarnos de que tenemos una sesión activa (el flujo de UI ya debería garantizarlo)
     if (!activeSession.value) {
-        // Esto es un fallback, el botón "Abonar" no debería ser visible sin sesión.
         usePage().props.flash.error = 'No hay una sesión de caja activa para registrar el pago.';
         return;
     }
 
-    // 2. Añadir el ID de la sesión de caja al payload
     const payload = {
         ...paymentData,
         cash_register_session_id: activeSession.value.id
@@ -97,12 +109,18 @@ const handleBalancePaymentSubmit = (paymentData) => {
 
     isPaymentProcessing.value = true;
 
-    // 3. Enviar el payload completo al controlador
     router.post(route('customers.payments.store', props.customer.id), payload, {
         onSuccess: () => {
+            // 1. Cerrar modal de pago
             isPaymentModalVisible.value = false;
+            
+            // 2. Mostrar confirmación visual
+            toast.add({ severity: 'success', summary: 'Abono registrado', detail: 'El saldo ha sido actualizado.', life: 3000 });
+
+            // 3. Abrir modal de impresión automáticamente
+            openPrintModal();
         },
-        onFinish: () => { // Desactivar loading (en éxito o error)
+        onFinish: () => { 
             isPaymentProcessing.value = false;
         },
         preserveScroll: true,
@@ -136,10 +154,14 @@ const actionItems = computed(() => [
     { label: 'Abonar / agregar saldo', icon: 'pi pi-dollar', command: handleOpenAddBalanceFlow, visible: hasPermission('customers.edit') },
     { label: 'Ajuste de saldo manual', icon: 'pi pi-sliders-h', command: openAdjustModal, visible: hasPermission('customers.edit') },
     { separator: true },
+    
+    // Nueva opción para abrir el modal de impresión manualmente
+    { label: 'Imprimir Ficha / Ticket', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('customers.see_details') },
+    
     { label: 'Crear nuevo cliente', icon: 'pi pi-plus', command: () => router.get(route('customers.create')), visible: hasPermission('customers.create') },
     { label: 'Editar cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', props.customer.id)), visible: hasPermission('customers.edit') },
     {
-        label: 'Estado de cuenta',
+        label: 'Estado de cuenta (PDF)',
         icon: 'pi pi-file-pdf',
         command: () => window.open(route('customers.printStatement', props.customer.id), '_blank'),
         visible: hasPermission('customers.see_details')
@@ -160,6 +182,23 @@ const formatDate = (dateString) => {
     return date.toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
 };
 
+const formatDateOnly = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+        return new Date(dateString).toLocaleDateString('es-MX', { dateStyle: 'medium' });
+    } catch (e) {
+        return dateString;
+    }
+};
+
+const isExpired = (dateString) => {
+    if (!dateString) return false;
+    const expiration = new Date(dateString + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    return expiration < today;
+};
+
 const getBalanceClass = (balance) => {
     if (balance > 0) return 'text-green-600 dark:text-green-400';
     if (balance < 0) return 'text-red-600 dark:text-red-400';
@@ -175,6 +214,12 @@ const getTransactionStatusSeverity = (status) => {
         apartado: 'info',
     };
     return map[status] || 'secondary';
+};
+
+// --- Helper para WhatsApp y Teléfono ---
+const sanitizePhone = (phone) => {
+    if (!phone) return '';
+    return phone.replace(/\D/g, ''); // Elimina todo lo que no sea dígito
 };
 
 </script>
@@ -205,10 +250,23 @@ const getTransactionStatusSeverity = (status) => {
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
                         Información de contacto</h2>
-                    <ul class="space-y-3 text-sm">
-                        <li v-if="customer.phone" class="flex items-center"><i
-                                class="pi pi-phone w-6 text-gray-500"></i> <span class="font-medium">{{ customer.phone
-                                }}</span></li>
+                    <ul class="space-y-4 text-sm">
+                        <!-- Teléfono con acciones -->
+                        <li v-if="customer.phone" class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <i class="pi pi-phone text-gray-500"></i>
+                                <span class="font-medium">{{ customer.phone }}</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <a :href="`https://wa.me/${sanitizePhone(customer.phone)}`" target="_blank" rel="noopener noreferrer">
+                                    <Button icon="pi pi-whatsapp" rounded severity="success" size="small" class="!w-8 !h-8" v-tooltip.top="'Enviar WhatsApp'" />
+                                </a>
+                                <a :href="`tel:${sanitizePhone(customer.phone)}`">
+                                    <Button icon="pi pi-phone" rounded severity="info" size="small" class="!w-8 !h-8" v-tooltip.top="'Llamar'" />
+                                </a>
+                            </div>
+                        </li>
+                        
                         <li v-if="customer.email" class="flex items-center"><i
                                 class="pi pi-envelope w-6 text-gray-500"></i> <span class="font-medium">{{
                                     customer.email }}</span></li>
@@ -217,6 +275,7 @@ const getTransactionStatusSeverity = (status) => {
                                     customer.tax_id }}</span></li>
                     </ul>
                 </div>
+                
                 <div v-if="hasPermission('customers.see_financial_info')"
                     class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
@@ -226,6 +285,13 @@ const getTransactionStatusSeverity = (status) => {
                             <span class="text-gray-500">Saldo actual</span>
                             <span :class="getBalanceClass(customer.balance)" class="font-mono font-semibold text-lg">
                                 {{ formatCurrency(customer.balance) }}
+                            </span>
+                        </li>
+                         <!-- NUEVO: Crédito Disponible -->
+                         <li class="flex justify-between items-center">
+                            <span class="text-gray-500">Crédito disponible</span>
+                            <span class="font-mono font-medium text-blue-600 dark:text-blue-400">
+                                {{ formatCurrency(customer.available_credit) }}
                             </span>
                         </li>
                         <li class="flex justify-between items-center">
@@ -241,7 +307,7 @@ const getTransactionStatusSeverity = (status) => {
             <!-- Columna Derecha: Historial -->
             <div class="lg:col-span-2 space-y-6">
                 <div v-if="activeLayaways && activeLayaways.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-blue-800 dark:text-blue-300">
+                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
                         Apartados activos
                     </h2>
                     <DataTable :value="activeLayaways" class="p-datatable-sm" responsiveLayout="scroll"
@@ -256,6 +322,15 @@ const getTransactionStatusSeverity = (status) => {
                         <Column field="created_at" header="Fecha apartado" sortable>
                             <template #body="{ data }"> {{ formatDate(data.created_at) }}</template>
                         </Column>
+                        
+                        <Column field="layaway_expiration_date" header="Vencimiento" sortable>
+                            <template #body="{ data }">
+                                <span :class="{'text-red-500 font-bold': isExpired(data.layaway_expiration_date), 'text-gray-700 dark:text-gray-300': !isExpired(data.layaway_expiration_date)}">
+                                    {{ formatDateOnly(data.layaway_expiration_date) }}
+                                </span>
+                            </template>
+                        </Column>
+
                         <Column field="total_items_quantity" header="Unidades" headerClass="text-center" bodyClass="text-center"></Column>
                         <Column field="total_amount" header="Total">
                             <template #body="{ data }">
@@ -360,6 +435,11 @@ const getTransactionStatusSeverity = (status) => {
         <JoinSessionModal v-model:visible="isJoinSessionModalVisible" :sessions="joinableSessions" />
         <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="0"
             :client="customer" :loading="isPaymentProcessing" payment-mode="balance" @submit="handleBalancePaymentSubmit" />
+        
+        <!-- Modal de Impresión (NUEVO) -->
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
+            :available-templates="availableTemplates" />
+        
         <Dialog v-model:visible="isAdjustModalVisible" header="Ajuste Manual de Saldo" modal
             class="w-full max-w-lg mx-4">
             <form @submit.prevent="submitAdjustment" class="space-y-6">

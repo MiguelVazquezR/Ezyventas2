@@ -23,8 +23,20 @@ const formatCurrency = (value) => {
 // --- Estado Interno: Lista de Pagos y Saldo ---
 const payments = ref([]);
 const useBalance = ref(true);
+const layawayExpirationDate = ref(null); // Nuevo estado para fecha de apartado
 
-// --- *** INICIO DE MODIFICACIÓN: Título dinámico *** ---
+// --- Configurar fecha default al cambiar a modo Apartado ---
+watch(() => props.transactionType, (newType) => {
+    if (newType === 'apartado') {
+        const defaultDate = new Date();
+        defaultDate.setDate(defaultDate.getDate() + 30); // Default 30 días
+        layawayExpirationDate.value = defaultDate;
+    } else {
+        layawayExpirationDate.value = null;
+    }
+}, { immediate: true });
+
+// --- Título dinámico ---
 const currentTransactionInfo = computed(() => {
     switch (props.transactionType) {
         case 'contado':
@@ -51,22 +63,19 @@ const currentTransactionInfo = computed(() => {
                 bgColor: '#FFC9E9',
                 textColor: '#862384',
             };
-        // CASO PARA ABONOS A SALDO (CustomerShow.vue)
         case 'balance':
             return {
                 id: 'balance',
                 label: 'Abono a saldo',
-                image: '/images/efectivo.webp', // Reusamos imagen o usamos una genérica
+                image: '/images/efectivo.webp',
                 bgColor: '#E5E7EB',
                 textColor: '#374151',
             };
-        // --- NUEVO CASO ---
-        // CASO PARA ABONOS FLEXIBLES (ServiceOrderShow.vue)
         case 'flexible':
             return {
                 id: 'flexible',
                 label: 'Abono a orden',
-                image: '/images/contado.webp', // Reusamos imagen
+                image: '/images/contado.webp',
                 bgColor: '#E0F2FE',
                 textColor: '#0C4A6E',
             };
@@ -80,10 +89,8 @@ const currentTransactionInfo = computed(() => {
             };
     }
 });
-// --- *** FIN DE MODIFICACIÓN *** ---
 
-
-// --- Botones de Método de Pago (con estilos) ---
+// --- Botones de Método de Pago ---
 const paymentMethodButtons = computed(() => [
     {
         id: 'efectivo',
@@ -125,7 +132,6 @@ const addPaymentMethod = (method) => {
     if (remainingAmount.value > 0.01) {
         amountToAdd = remainingAmount.value;
     }
-    // Para abonos, apartados, o flexibles, es mejor empezar en 0
     else if (props.transactionType === 'balance' || props.transactionType === 'apartado' || props.transactionType === 'flexible') {
         amountToAdd = 0;
     }
@@ -150,7 +156,6 @@ const removePayment = (idToRemove) => {
 const availableCredit = computed(() => props.client?.available_credit || 0);
 const creditDeficit = computed(() => {
     if (props.transactionType !== 'credito') return 0;
-    // Si no hay crédito, todo el restante es déficit
     if (availableCredit.value <= 0 && remainingAmount.value > 0.01) {
         return remainingAmount.value;
     }
@@ -164,54 +169,59 @@ watch(() => props.totalAmount, () => {
     useBalance.value = false;
 });
 
-// --- Métodos de Acción ---
-const handleSubmit = () => {
-    emit('submit', {
-        payments: payments.value.filter(p => p.amount > 0),
-        use_balance: useBalance.value
-    });
-};
-
 // --- Lógica del Botón Finalizar (Computada) ---
-const finalizeButtonLabel = computed(() => {
-    if (props.transactionType === 'balance') return 'Registrar abono';
-    if (props.transactionType === 'apartado') return 'Crear apartado';
-    if (props.transactionType === 'credito') {
-        // Si el restante es positivo, es "Guardar a crédito", si es 0 o negativo, es "Finalizar"
-        return remainingAmount.value > 0.01 ? `Guardar a crédito (${formatCurrency(remainingAmount.value)})` : 'Finalizar venta';
-    }
-    // --- NUEVO CASO ---
-    if (props.transactionType === 'flexible') return 'Registrar abono';
-
-    return 'Finalizar venta'; // Default para 'contado'
-});
-
 const isFinalizeButtonDisabled = computed(() => {
-    // Para 'balance' y 'apartado', se debe pagar *algo*
+    // 1. VALIDACIÓN DE CUENTAS BANCARIAS
+    const hasMissingBankAccount = payments.value.some(p => 
+        ['tarjeta', 'transferencia'].includes(p.method) && 
+        p.amount > 0 && 
+        !p.bank_account_id
+    );
+    if (hasMissingBankAccount) return true;
+
+    // 2. VALIDACIÓN DE FECHA DE APARTADO
+    if (props.transactionType === 'apartado' && !layawayExpirationDate.value) {
+        return true;
+    }
+
+    // 3. Validaciones de montos según el tipo
     if (props.transactionType === 'balance' || props.transactionType === 'apartado') {
         return totalPaid.value <= 0.01;
     }
-
-    // --- NUEVO CASO ---
-    // Para 'flexible', se debe pagar *algo*, pero PUEDE quedar restante
     if (props.transactionType === 'flexible') {
         return totalPaid.value <= 0.01;
     }
-
-    // Para 'contado', no debe quedar restante
     if (props.transactionType === 'contado') {
         return remainingAmount.value > 0.01;
     }
-
-    // Para 'credito', no debe haber déficit de crédito
     if (props.transactionType === 'credito') {
         return creditDeficit.value > 0;
     }
     return false;
 });
 
+const finalizeButtonLabel = computed(() => {
+    if (props.transactionType === 'balance') return 'Registrar abono';
+    if (props.transactionType === 'apartado') return 'Crear apartado';
+    if (props.transactionType === 'credito') {
+        return remainingAmount.value > 0.01 ? `Guardar a crédito (${formatCurrency(remainingAmount.value)})` : 'Finalizar venta';
+    }
+    if (props.transactionType === 'flexible') return 'Registrar abono';
+
+    return 'Finalizar venta';
+});
+
+const handleSubmit = () => {
+    if (isFinalizeButtonDisabled.value) return;
+
+    emit('submit', {
+        payments: payments.value.filter(p => p.amount > 0),
+        use_balance: useBalance.value,
+        layaway_expiration_date: layawayExpirationDate.value, // Enviamos la fecha seleccionada
+    });
+};
+
 // --- Configuración Inicial ---
-// Pre-seleccionar "Usar Saldo" si el total es 0 o negativo (ya pagado con saldo)
 if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
     useBalance.value = true;
 }
@@ -219,7 +229,7 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
 
 <template>
     <div class="flex flex-col min-h-[400px]">
-        <!-- --- *** Título dinámico *** --- -->
+        <!-- Título dinámico -->
         <div class="flex items-center gap-3 mb-4 p-3 rounded-lg"
             :style="{ backgroundColor: currentTransactionInfo.bgColor, color: currentTransactionInfo.textColor }">
             <img :src="currentTransactionInfo.image" :alt="currentTransactionInfo.label" class="h-8 w-8 object-contain">
@@ -280,7 +290,7 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
         </div>
 
         <!-- Lista de Pagos Editable -->
-        <div v-if="payments.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-3 flex-grow">
+        <div v-if="payments.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-3 flex-grow mb-4">
             <label class="text-sm font-medium text-gray-700 dark:text-gray-300 col-span-full mb-2">Pagos registrados:</label>
             <div v-for="(payment, index) in payments" :key="payment.id"
                 class="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border dark:border-gray-600">
@@ -306,18 +316,31 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
                                 class="!size-8 flex-shrink-0" @click="emit('add-account')"
                                 v-tooltip.bottom="'Agregar cuenta'" />
                         </div>
-                        <small v-if="!payment.bank_account_id && payment.amount > 0" class="p-error text-xs">Se requiere
-                            una cuenta para este tipo de pago.</small>
+                        <small v-if="!payment.bank_account_id && payment.amount > 0" class="p-error text-xs text-red-500">
+                            Se requiere una cuenta para este tipo de pago.
+                        </small>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Espaciador para empujar el botón hacia abajo si no hay pagos -->
-        <div v-if="payments.length === 0" class="flex-grow"></div>
+        <!-- SECCIÓN: CONFIGURACIÓN APARTADO (SOLO VISIBLE SI ES APARTADO) -->
+        <div v-if="transactionType === 'apartado'" class="mb-6 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+            <h4 class="text-sm font-semibold text-purple-800 dark:text-purple-300 mb-3 flex items-center gap-2">
+                <i class="pi pi-calendar-clock"></i> Configuración del Apartado
+            </h4>
+            <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-600 dark:text-gray-400">Fecha límite para liquidar:</label>
+                <DatePicker v-model="layawayExpirationDate" showIcon :minDate="new Date()" dateFormat="dd/mm/yy" class="w-full" />
+                <small class="text-xs text-gray-500">El cliente debe pagar el total antes de esta fecha.</small>
+            </div>
+        </div>
+
+        <!-- Espaciador -->
+        <div v-if="payments.length === 0 && transactionType !== 'apartado'" class="flex-grow"></div>
 
         <!-- Botón de Finalización -->
-        <div class="mt-8">
+        <div class="mt-4">
             <Message v-if="creditDeficit > 0" severity="warn" :closable="false" class="mb-3">
                 El cliente no tiene suficiente crédito.
                 Se excede por {{ formatCurrency(creditDeficit) }}.
