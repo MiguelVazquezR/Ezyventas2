@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CustomerBalanceMovementType;
+use App\Enums\TemplateContextType; // <-- Importado
+use App\Enums\TemplateType;        // <-- Importado
 use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
 use App\Models\CashRegister;
@@ -37,8 +39,6 @@ class CustomerController extends Controller implements HasMiddleware
         $query = Customer::query()
             ->where('branch_id', $branchId);
 
-        // Usamos withSum para sumar la columna 'quantity' de la relación 'layawayItems'
-        // El resultado estará disponible como 'layaway_items_quantity_sum'
         $query->withSum('layawayItems as layaway_items_quantity_sum', 'quantity');
 
         if ($request->has('search')) {
@@ -72,25 +72,19 @@ class CustomerController extends Controller implements HasMiddleware
     {
         $validated = $request->validated();
         $initialBalance = $validated['initial_balance'] ?? 0;
-
-        // Remover 'initial_balance' si existe, para que no falle al crear el cliente
-        // (ya que no es una columna en la BD, 'balance' sí lo es).
         unset($validated['initial_balance']);
 
         DB::transaction(function () use ($validated, $initialBalance) {
-
-            // 1. Crear el cliente y asignar su saldo inicial
             $customer = Customer::create(array_merge($validated, [
                 'branch_id' => Auth::user()->branch_id,
-                'balance' => $initialBalance, // Asignar el saldo inicial
+                'balance' => $initialBalance, 
             ]));
 
-            // 2. Si el saldo inicial es diferente de cero, crear el movimiento
             if ($initialBalance != 0) {
                 $customer->balanceMovements()->create([
                     'type' => CustomerBalanceMovementType::MANUAL_ADJUSTMENT,
                     'amount' => $initialBalance,
-                    'balance_after' => $initialBalance, // Es el primer movimiento
+                    'balance_after' => $initialBalance, 
                     'notes' => 'Saldo Inicial registrado al crear cliente.',
                 ]);
             }
@@ -101,20 +95,24 @@ class CustomerController extends Controller implements HasMiddleware
 
    public function show(Customer $customer): Response
     {
-        // Se cargan las transacciones por separado para la primera tabla.
         $customer->load([
             'transactions' => fn($query) => $query->orderBy('created_at', 'desc'),
-            
-            // Cargamos la relación 'layawayTransactions' (que definimos en el Customer.php)
-            // y también cargamos las sub-relaciones 'payments' e 'items' de esos apartados.
             'layawayTransactions' => function ($query) {
                 $query->with(['payments', 'items'])
                       ->orderBy('created_at', 'desc');
             },
         ]);
 
-        // Se obtienen las cajas registradoras disponibles para el modal de apertura de sesión.
         $user = Auth::user();
+        
+        // --- NUEVO: Obtener Plantillas Filtradas ---
+        // Obtenemos solo plantillas de TICKET o ETIQUETA que sean de contexto CLIENTE o GENERAL
+        $availableTemplates = $user->branch->printTemplates()
+            ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
+            ->whereIn('context_type', [TemplateContextType::CUSTOMER, TemplateContextType::GENERAL])
+            ->get();
+        // -------------------------------------------
+
         $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
             ->where('is_active', true)
             ->where('in_use', false)
@@ -129,7 +127,6 @@ class CustomerController extends Controller implements HasMiddleware
             $userBankAccounts = $user->bankAccounts()->get();
         }
 
-        // Formateamos los apartados para la vista
         $formattedLayaways = $customer->layawayTransactions->map(function ($transaction) {
             $totalPaid = $transaction->payments->sum('amount');
             return [
@@ -140,18 +137,17 @@ class CustomerController extends Controller implements HasMiddleware
                 'total_paid' => (float) $totalPaid,
                 'pending_amount' => (float) $transaction->total - $totalPaid,
                 'total_items_quantity' => $transaction->items->sum('quantity'),
-                // --- AGREGADO: Fecha de vencimiento ---
                 'layaway_expiration_date' => $transaction->layaway_expiration_date,
             ];
         });
 
         return Inertia::render('Customer/Show', [
             'customer' => $customer,
-            // Se pasa el nuevo historial de movimientos calculado a través del accesor en el modelo Customer.
             'historicalMovements' => $customer->historical_movements,
             'availableCashRegisters' => $availableCashRegisters,
             'userBankAccounts' => $userBankAccounts,
-            'activeLayaways' => $formattedLayaways, // <-- Pasamos los apartados formateados a la vista
+            'activeLayaways' => $formattedLayaways, 
+            'availableTemplates' => $availableTemplates, // <-- Pasamos las plantillas a la vista
         ]);
     }
 
@@ -168,12 +164,8 @@ class CustomerController extends Controller implements HasMiddleware
         return redirect()->route('customers.index')->with('success', 'Cliente actualizado con éxito.');
     }
 
-    /**
-     * --- método para ajuste manual de saldo ---
-     */
     public function adjustBalance(Request $request, Customer $customer)
     {
-        // Validar la entrada
         $validated = $request->validate([
             'adjustment_type' => ['required', Rule::in(['add', 'set_total'])],
             'amount' => ['required', 'numeric'],
@@ -187,29 +179,22 @@ class CustomerController extends Controller implements HasMiddleware
             $notes = "Ajuste manual: " . $validated['notes'];
 
             if ($validated['adjustment_type'] === 'add') {
-                // Modo: Sumar/Restar Monto
-                // 'amount' es el monto a sumar/restar (ej: -50 o 100)
                 $adjustmentAmount = $validated['amount'];
                 $newBalance = $currentBalance + $adjustmentAmount;
             } elseif ($validated['adjustment_type'] === 'set_total') {
-                // Modo: Establecer Saldo Total
-                // 'amount' es el nuevo saldo deseado (ej: 0 o -200)
                 $newBalance = $validated['amount'];
-                $adjustmentAmount = $newBalance - $currentBalance; // Calculamos la diferencia
+                $adjustmentAmount = $newBalance - $currentBalance; 
             }
 
-            // Si no hay cambio, no hacemos nada
             if ($adjustmentAmount == 0) {
                 return;
             }
 
-            // Actualizar el saldo del cliente
             $customer->update(['balance' => $newBalance]);
 
-            // Crear el movimiento en el historial
             $customer->balanceMovements()->create([
                 'type' => CustomerBalanceMovementType::MANUAL_ADJUSTMENT,
-                'amount' => $adjustmentAmount, // Registramos la *diferencia*
+                'amount' => $adjustmentAmount, 
                 'balance_after' => $newBalance,
                 'notes' => $notes,
             ]);
@@ -231,17 +216,12 @@ class CustomerController extends Controller implements HasMiddleware
         return redirect()->route('customers.index')->with('success', 'Clientes seleccionados eliminados.');
     }
 
-    /**
-     * --- NUEVO: Método para generar el estado de cuenta imprimible ---
-     */
     public function printStatement(Customer $customer): Response
     {
-        // Cargar la sucursal y la suscripción para los detalles del encabezado
         $customer->load(['branch.subscription']);
 
         return Inertia::render('Customer/PrintStatement', [
             'customer' => $customer,
-            // Usar el accesor que ya define la lógica del historial
             'movements' => $customer->historical_movements,
         ]);
     }

@@ -134,7 +134,14 @@ const handlePaymentSubmit = (paymentData) => {
     };
 
     router.post(route('transactions.addPayment', props.transaction.id), payload, {
-        onSuccess: () => isPaymentModalVisible.value = false,
+        onSuccess: () => {
+            // 1. Cerramos el modal de pago
+            isPaymentModalVisible.value = false;
+
+            // 2. Abrimos automáticamente el modal de impresión
+            // Nota: Inertia ya habrá actualizado las props de la transacción aquí.
+            openPrintModal();
+        },
         onFinish: () => isPaymentProcessing.value = false,
         preserveScroll: true,
     });
@@ -355,7 +362,7 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
         <Dialog v-model:visible="isRefundModalVisible" modal header="Confirmar devolución" :style="{ width: '30rem' }">
             <div class="p-fluid">
                 <p class="mb-4">Vas a generar una devolución para la venta <strong>#{{ props.transaction.folio
-                        }}</strong> por
+                }}</strong> por
                     <strong>{{ formatCurrency(totalPaid) }}</strong>.
                 </p>
                 <div class="flex flex-col gap-3">
