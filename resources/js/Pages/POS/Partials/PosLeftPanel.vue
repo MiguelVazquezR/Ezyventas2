@@ -11,7 +11,7 @@ import ProductDetailModal from './ProductDetailModal.vue';
 import CreateProductModal from '@/Components/CreateProductModal.vue';
 import CashMovementModal from '@/Components/CashMovementModal.vue';
 
-// --- CORRECCIÓN: Uso de sintaxis explícita para evitar error de compilación ---
+// --- Sintaxis explícita para evitar errores de compilación ---
 const props = defineProps({
     products: {
         type: Object,
@@ -112,13 +112,23 @@ const handleCategoryFilter = (categoryId) => {
 };
 
 // --- Lógica de Detección de Entidades (Ventas / Clientes) ---
-const isCheckingEntity = ref(false); // Estado de carga para el spinner
-const isSmartSearchHelpVisible = ref(false); // Estado del modal de ayuda
+const isCheckingEntity = ref(false); 
+const isSmartSearchHelpVisible = ref(false); 
 
-const checkAndRedirect = async (query) => {
+// Helper para corregir errores comunes de lectores de código (ej: V'001 -> V-001)
+const sanitizeInput = (input) => {
+    if (!input) return '';
+    // Reemplaza comilla simple por guion, y limpia espacios extras
+    return input.replace(/'/g, '-').trim();
+};
+
+const checkAndRedirect = async (rawValue) => {
+    const query = sanitizeInput(rawValue);
+    
+    // Validar longitud mínima
     if (!query || query.length < 3) return false; 
 
-    isCheckingEntity.value = true; // Activar spinner
+    isCheckingEntity.value = true;
 
     try {
         const response = await axios.get(route('pos.check-entity'), { params: { query } });
@@ -134,11 +144,16 @@ const checkAndRedirect = async (query) => {
                 accept: () => {
                     let routeName = 'transactions.show';
                     if (result.type === 'customer') routeName = 'customers.show';
-                    if (result.type === 'service_order') routeName = 'service-orders.show'; // Ajusta si tu ruta es diferente
+                    if (result.type === 'service_order') routeName = 'service-orders.show';
+                    
+                    // Limpiar búsqueda si se aceptó ir al detalle
+                    searchTerm.value = '';
                     
                     window.open(route(routeName, result.id), '_blank');
+                    
                 },
                 reject: () => {
+                    // Si cancela, mostramos el término corregido en el input
                     if (searchTerm.value !== query) {
                         searchTerm.value = query;
                     }
@@ -149,47 +164,93 @@ const checkAndRedirect = async (query) => {
     } catch (error) {
         console.error("Error verificando entidad:", error);
     } finally {
-        isCheckingEntity.value = false; // Desactivar spinner
+        isCheckingEntity.value = false;
     }
     return false;
 };
 
-// --- Lógica para Lector de Código de Barras Global ---
+// --- Lógica para Lector de Código de Barras Global (MEJORADA) ---
 let barcodeBuffer = '';
 let barcodeTimer = null;
 
 const handleGlobalKeyDown = async (event) => {
     const activeElement = document.activeElement;
+    
+    // Verificar si el foco está en el input de búsqueda del POS
     const isSearchInput = activeElement.classList.contains('pos-search-input');
+    
+    // Verificar si hay algún OTRO input enfocado (ej: en un modal, o un campo de notas)
+    // Si es el input de búsqueda, SÍ queremos procesar (para detectar Enter y limpiar buffer)
+    // Si es otro input, NO queremos interferir.
     const isOtherInputFocused = ['INPUT', 'TEXTAREA'].includes(activeElement.tagName) && !isSearchInput;
     const isModalVisible = document.querySelector('.p-dialog-mask.p-component-overlay-enter');
 
+    // Si hay un modal abierto o el usuario escribe en otro campo, no interferir.
     if (isOtherInputFocused || isModalVisible) {
         return;
     }
 
+    // Si la tecla es Enter, procesamos el buffer acumulado
     if (event.key === 'Enter') {
-        event.preventDefault();
+        // Si el buffer tiene contenido (vino del scanner o tipeo rápido sin foco)
         if (barcodeBuffer.length > 2) {
-            const handled = await checkAndRedirect(barcodeBuffer);
+            event.preventDefault(); // Prevenir submit de forms si los hubiera
+            
+            // 1. Sanitizar (arreglar V'001 -> V-001)
+            const cleanQuery = sanitizeInput(barcodeBuffer);
+            
+            // 2. Intentar detectar entidad inteligente
+            const handled = await checkAndRedirect(cleanQuery);
+            
+            // 3. Si no fue entidad, ponerlo en el buscador para buscar producto
             if (!handled) {
-                searchTerm.value = barcodeBuffer;
+                searchTerm.value = cleanQuery;
             }
+            
+            barcodeBuffer = '';
+            return;
         }
-        barcodeBuffer = '';
-        return;
+        
+        // Si el buffer está vacío pero estamos en el input de búsqueda y presionamos Enter,
+        // procesamos el valor actual del input manualmente.
+        if (isSearchInput && searchTerm.value.length > 2) {
+             event.preventDefault();
+             await handleManualSearch();
+             return;
+        }
     }
 
+    // Ignorar teclas de control, shift, etc., si vienen solas.
     if (event.key.length > 1) return;
 
+    // Acumular caracteres en el buffer
     barcodeBuffer += event.key;
+
+    // Reiniciar buffer si pasa mucho tiempo (escritura manual lenta vs scanner rápido)
+    // Aumentado a 200ms para ser más tolerante con scanners lentos o lag
     clearTimeout(barcodeTimer);
-    barcodeTimer = setTimeout(() => { barcodeBuffer = ''; }, 100);
+    barcodeTimer = setTimeout(() => { 
+        // Si el buffer se limpia por timeout, asumimos que no fue un scan completo
+        // pero NO borramos el buffer si el usuario está escribiendo en el input enfocado,
+        // ya que el v-model se encarga de eso. El buffer es principalmente para cuando NO hay foco.
+        barcodeBuffer = ''; 
+    }, 200); 
 };
 
+// Manejo manual (cuando el usuario escribe y da Enter)
 const handleManualSearch = async () => {
     if (searchTerm.value.length > 2) {
-        await checkAndRedirect(searchTerm.value);
+        // También sanitizamos lo escrito manualmente por si acaso
+        const cleanQuery = sanitizeInput(searchTerm.value);
+        
+        // Verificamos entidad
+        const handled = await checkAndRedirect(cleanQuery);
+        
+        // Si fue manejado (es entidad), checkAndRedirect ya limpió o gestionó.
+        // Si NO fue manejado, el watcher de `searchTerm` se encargará de filtrar productos.
+        if (!handled && searchTerm.value !== cleanQuery) {
+             searchTerm.value = cleanQuery; // Actualizar con la versión corregida si cambió
+        }
     }
 };
 
@@ -219,8 +280,8 @@ const cardTotal = computed(() => props.activeSession?.totals?.card || 0);
 const transferTotal = computed(() => props.activeSession?.totals?.transfer || 0);
 
 const menuItems = ref([
-    { label: 'Ingresar efectivo', icon: 'pi pi-arrow-down-left', command: () => openCashMovementModal('ingreso') },
-    { label: 'Retirar efectivo', icon: 'pi pi-arrow-up-right', command: () => openCashMovementModal('egreso') },
+    { label: 'Ingresar Efectivo', icon: 'pi pi-arrow-down-left', command: () => openCashMovementModal('ingreso') },
+    { label: 'Retirar Efectivo', icon: 'pi pi-arrow-up-right', command: () => openCashMovementModal('egreso') },
     { separator: true },
 ]);
 
