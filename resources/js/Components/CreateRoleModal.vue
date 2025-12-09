@@ -61,7 +61,7 @@ const submit = async () => {
             error.value = err.response.data.errors.name[0];
         } else {
             console.error("Error creating role:", err);
-            error.value = 'Ocurrió un error inesperado.';
+            error.value = 'Este rol ya existe. Intenta con otro nombre';
         }
     } finally {
         processing.value = false;

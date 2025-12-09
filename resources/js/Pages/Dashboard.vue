@@ -1,6 +1,7 @@
 <script setup>
 import { Link, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
+import axios from 'axios'; // Importamos Axios
 import AppLayout from '@/Layouts/AppLayout.vue';
 import BankAccountHistoryModal from '@/Components/BankAccountHistoryModal.vue';
 import BankAccountTransferModal from '@/Components/BankAccountTransferModal.vue';
@@ -74,6 +75,32 @@ const onTransferSuccess = () => {
     router.reload({ preserveState: false });
 };
 
+// --- Lógica para Modal de Apartados por Vencer ---
+const isExpiringModalVisible = ref(false);
+const isLoadingExpiring = ref(false);
+const expiringLayaways = ref([]);
+
+const fetchExpiringLayaways = async () => {
+    isExpiringModalVisible.value = true;
+    isLoadingExpiring.value = true;
+    expiringLayaways.value = [];
+    
+    try {
+        const response = await axios.get(route('dashboard.expiring-layaways'));
+        expiringLayaways.value = response.data;
+    } catch (error) {
+        console.error("Error cargando apartados:", error);
+    } finally {
+        isLoadingExpiring.value = false;
+    }
+};
+
+const getExpirationSeverity = (days) => {
+    if (days < 0) return 'danger'; // Vencido
+    if (days <= 2) return 'danger'; // Muy urgente
+    return 'warning'; // Por vencer
+};
+
 </script>
 
 <template>
@@ -85,56 +112,71 @@ const onTransferSuccess = () => {
                 <!-- Fila 1: KPIs Principales -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <Link v-if="stats.today_sales !== undefined" :href="route('transactions.index')"
-                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Ventas de hoy</h2>
-                            <p class="text-3xl font-bold mt-2 text-green-500">{{ formatCurrency(stats.today_sales) }}
-                            </p>
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow border-l-4 border-green-500">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Ventas de hoy</h2>
+                                <small class="text-gray-500">Click para ir a módulo de ventas</small>
+                                <p class="text-3xl font-bold mt-2 text-green-500">{{ formatCurrency(stats.today_sales)
+                                    }}
+                                </p>
+                            </div>
+                            <i
+                                class="pi pi-dollar text-green-500 p-3 bg-green-100 dark:bg-green-900/50 rounded-full"></i>
                         </div>
-                        <i
-                            class="pi pi-dollar text-2xl text-green-500 p-3 bg-green-100 dark:bg-green-900/50 rounded-full"></i>
-                    </div>
-                    <div v-if="salesChange" class="text-xs mt-2"
-                        :class="salesChange.sign === '+' ? 'text-green-500' : 'text-red-500'">
-                        <span v-if="salesChange.value > 0">{{ salesChange.sign }}{{ salesChange.value }}% vs ayer</span>
-                        <span v-else class="text-gray-500">Sin cambios vs ayer</span>
-                    </div>
-                    </Link>
-                    <Link v-if="stats.average_ticket_today !== undefined" :href="route('transactions.index')"
-                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Ticket promedio (hoy)
-                            </h2>
-                            <p class="text-3xl font-bold text-blue-500 mt-2">{{
-                                formatCurrency(stats.average_ticket_today) }}</p>
+                        <div v-if="salesChange" class="text-xs mt-2"
+                            :class="salesChange.sign === '+' ? 'text-green-500' : 'text-red-500'">
+                            <span v-if="salesChange.value > 0">{{ salesChange.sign }}{{ salesChange.value }}% vs
+                                ayer</span>
+                            <span v-else class="text-gray-500">Sin cambios vs ayer</span>
                         </div>
-                        <i class="pi pi-receipt text-blue-500 p-3 bg-blue-100 dark:bg-blue-900/50 rounded-full"></i>
-                    </div>
                     </Link>
+                    
+                    <!-- NUEVA TARJETA: Apartados por Vencer -->
+                    <!-- Solo se muestra si la variable existe en stats (para usuarios con permiso) -->
+                    <div v-if="stats.expiring_layaways_count !== undefined" 
+                        @click="fetchExpiringLayaways"
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer border-l-4 border-purple-500">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Apartados por vencer</h2>
+                                <small class="text-gray-500">Click para ver apartados por vencer</small>
+                                <p class="text-3xl font-bold mt-2 text-purple-600 dark:text-purple-400">
+                                    {{ stats.expiring_layaways_count }}
+                                </p>
+                                <p class="text-xs text-gray-400 mt-1">Próximos 5 días</p>
+                            </div>
+                            <i class="pi pi-clock text-purple-600 p-3 bg-purple-100 dark:bg-purple-900/50 rounded-full"></i>
+                        </div>
+                    </div>
+
                     <Link v-if="stats.monthly_expenses !== undefined" :href="route('expenses.index')"
-                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Gastos del mes</h2>
-                            <p class="text-3xl font-bold mt-2 text-red-500">{{ formatCurrency(stats.monthly_expenses) }}
-                            </p>
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow border-l-4 border-red-500">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Gastos del mes</h2>
+                                <small class="text-gray-500">Click para ir a módulo de gastos</small>
+                                <p class="text-3xl font-bold mt-2 text-red-500">{{
+                                    formatCurrency(stats.monthly_expenses) }}
+                                </p>
+                            </div>
+                            <i
+                                class="pi pi-arrow-up-right text-red-500 p-3 bg-red-100 dark:bg-red-900/50 rounded-full"></i>
                         </div>
-                        <i class="pi pi-arrow-up-right text-red-500 p-3 bg-red-100 dark:bg-red-900/50 rounded-full"></i>
-                    </div>
                     </Link>
                     <Link v-if="stats.total_customer_debt !== undefined" :href="route('customers.index')"
-                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Saldo por cobrar</h2>
-                            <p class="text-3xl font-bold mt-2 text-cyan-500">{{
-                                formatCurrency(stats.total_customer_debt) }}</p>
-                            <p class="text-xs text-gray-400">Total de clientes</p>
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow border-l-4 border-cyan-500">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Saldo por cobrar</h2>
+                                <small class="text-gray-500">Click para ir a módulo de clientes</small>
+                                <p class="text-3xl font-bold mt-2 text-cyan-500">{{
+                                    formatCurrency(stats.total_customer_debt) }}</p>
+                                <p class="text-xs text-gray-400">Total de clientes</p>
+                            </div>
+                            <i
+                                class="pi pi-credit-card text-cyan-500 p-3 bg-cyan-100 dark:bg-cyan-900/50 rounded-full"></i>
                         </div>
-                        <i class="pi pi-credit-card text-cyan-500 p-3 bg-cyan-100 dark:bg-cyan-900/50 rounded-full"></i>
-                    </div>
                     </Link>
                 </div>
 
@@ -158,42 +200,44 @@ const onTransferSuccess = () => {
                     <div class="space-y-6">
                         <Link v-if="stats.cash_registers_status" :href="route('cash-registers.index')"
                             class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow block">
-                        <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Estado de cajas</h2>
-                        <div class="mt-3 space-y-2">
-                            <div class="flex justify-between items-center"><span
-                                    class="text-green-500 flex items-center gap-2"><i
-                                        class="pi pi-circle-fill text-xs"></i> En uso</span><span
-                                    class="font-bold text-2xl">{{ stats.cash_registers_status.in_use || 0 }}</span>
+                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Estado de cajas</h2>
+                            <div class="mt-3 space-y-2">
+                                <div class="flex justify-between items-center"><span
+                                        class="text-green-500 flex items-center gap-2"><i
+                                            class="pi pi-circle-fill text-xs"></i> En uso</span><span
+                                        class="font-bold text-2xl">{{ stats.cash_registers_status.in_use || 0 }}</span>
+                                </div>
+                                <div class="flex justify-between items-center"><span
+                                        class="text-gray-400 flex items-center gap-2"><i
+                                            class="pi pi-circle-fill text-xs"></i> Sin usar</span><span
+                                        class="font-bold text-2xl">{{ stats.cash_registers_status.available || 0
+                                        }}</span>
+                                </div>
                             </div>
-                            <div class="flex justify-between items-center"><span
-                                    class="text-gray-400 flex items-center gap-2"><i
-                                        class="pi pi-circle-fill text-xs"></i> Sin usar</span><span
-                                    class="font-bold text-2xl">{{ stats.cash_registers_status.available || 0 }}</span>
-                            </div>
-                        </div>
                         </Link>
                         <Link v-if="stats.service_orders_status" :href="route('service-orders.index')"
                             class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow block">
-                        <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Órdenes de servicio</h2>
-                        <div class="grid grid-cols-2 gap-4 mt-3 text-center">
-                            <div>
-                                <p class="font-bold text-2xl">{{ getServiceOrderStatus('pendiente') }}</p>
-                                <p class="text-xs">Pendientes</p>
+                            <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Órdenes de servicio</h2>
+                            <div class="grid grid-cols-2 gap-4 mt-3 text-center">
+                                <div>
+                                    <p class="font-bold text-2xl">{{ getServiceOrderStatus('pendiente') }}</p>
+                                    <p class="text-xs">Pendientes</p>
+                                </div>
+                                <div>
+                                    <p class="font-bold text-2xl">{{ getServiceOrderStatus('en_proceso') }}</p>
+                                    <p class="text-xs">En proceso</p>
+                                </div>
+                                <div>
+                                    <p class="font-bold text-2xl">{{ getServiceOrderStatus('completado') }}</p>
+                                    <p class="text-xs">Completadas</p>
+                                </div>
+                                <div>
+                                    <p class="font-bold text-2xl text-green-500">{{ getServiceOrderStatus('entregado')
+                                        }}
+                                    </p>
+                                    <p class="text-xs">Entregadas</p>
+                                </div>
                             </div>
-                            <div>
-                                <p class="font-bold text-2xl">{{ getServiceOrderStatus('en_proceso') }}</p>
-                                <p class="text-xs">En proceso</p>
-                            </div>
-                            <div>
-                                <p class="font-bold text-2xl">{{ getServiceOrderStatus('completado') }}</p>
-                                <p class="text-xs">Completadas</p>
-                            </div>
-                            <div>
-                                <p class="font-bold text-2xl text-green-500">{{ getServiceOrderStatus('entregado') }}
-                                </p>
-                                <p class="text-xs">Entregadas</p>
-                            </div>
-                        </div>
                         </Link>
                     </div>
                 </div>
@@ -218,14 +262,17 @@ const onTransferSuccess = () => {
                                             <p class="text-sm text-gray-500">{{ account.bank_name }}</p>
                                         </div>
                                         <div class="flex items-center gap-2">
-                                             <span class="font-mono font-bold">{{ formatCurrency(account.balance) }}</span>
-                                             <Button icon="pi pi-ellipsis-v" text rounded @click="toggleMenu($event, account)" />
+                                            <span class="font-mono font-bold">{{ formatCurrency(account.balance)
+                                                }}</span>
+                                            <Button icon="pi pi-ellipsis-v" text rounded
+                                                @click="toggleMenu($event, account)" />
                                         </div>
                                     </li>
                                 </ul>
                                 <Menu ref="menu" :model="menuItems" :popup="true" />
                             </div>
-                            <p v-else class="text-center text-gray-500 py-4">No tienes cuentas bancarias asignadas para administrar.</p>
+                            <p v-else class="text-center text-gray-500 py-4">No tienes cuentas bancarias asignadas para
+                                administrar.</p>
                         </template>
                     </Card>
                 </div>
@@ -241,22 +288,23 @@ const onTransferSuccess = () => {
                                 :class="{ 'border-b dark:border-gray-700 pb-3': index < stats.top_selling_products.length - 1 }">
                                 <Link :href="route('products.show', product.id)"
                                     class="flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700 p-2 -m-2 rounded-md">
-                                <img :src="product.image" :alt="product.name"
-                                    class="w-12 h-12 rounded-md object-contain">
-                                <div class="flex-grow">
-                                    <p class="font-semibold text-sm m-0">{{ product.name }}</p>
-                                    <p v-if="product.variant_description"
-                                        class="text-xs text-orange-500 m-0 font-medium">
-                                        {{ product.variant_description }}
-                                    </p>
-                                    <p class="text-xs text-gray-500 m-0">{{ product.total_sold }} unidades</p>
-                                </div>
-                                <p class="font-semibold text-sm">{{ formatCurrency(product.selling_price) }}</p>
+                                    <img v-if="product.image" :src="product.image" :alt="product.name"
+                                        class="w-12 h-12 rounded-md object-contain">
+                                    <Avatar v-else :label="getInitials(product.name)" shape="circle" />
+                                    <div class="flex-grow">
+                                        <p class="font-semibold text-sm m-0">{{ product.name }}</p>
+                                        <p v-if="product.variant_description"
+                                            class="text-xs text-orange-500 m-0 font-medium">
+                                            {{ product.variant_description }}
+                                        </p>
+                                        <p class="text-xs text-gray-500 m-0">{{ product.total_sold }} unidades</p>
+                                    </div>
+                                    <p class="font-semibold text-sm">{{ formatCurrency(product.selling_price) }}</p>
                                 </Link>
                             </li>
                         </ul>
                         <Link :href="route('products.index')" class="w-full mt-4">
-                        <Button label="Ver todos los productos" severity="secondary" text class="w-full" />
+                            <Button label="Ver todos los productos" severity="secondary" text class="w-full" />
                         </Link>
                     </div>
 
@@ -270,25 +318,26 @@ const onTransferSuccess = () => {
                                 :class="{ 'border-b dark:border-gray-700 pb-3': index < stats.low_turnover_products.length - 1 }">
                                 <Link :href="route('products.show', product.id)"
                                     class="flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700 p-2 -m-2 rounded-md">
-                                <img :src="product.image" :alt="product.name"
-                                    class="w-12 h-12 rounded-md object-contain flex-shrink-0">
-                                <div class="flex-grow overflow-hidden">
-                                    <p class="font-semibold text-sm truncate m-0">{{ product.name }}</p>
-                                    <p class="text-xs text-gray-500 flex flex-wrap items-center gap-x-2 m-0">
-                                        <span>{{ formatCurrency(product.selling_price) }}</span>
-                                        <span class="text-gray-300 dark:text-gray-600">•</span>
-                                        <span v-if="product.days_since_last_sale !== null">{{
-                                            product.days_since_last_sale }} días sin ventas</span>
-                                        <span v-else>Nunca vendido</span>
-                                        <span class="text-gray-300 dark:text-gray-600">•</span>
-                                        <span>{{ product.current_stock }} existencias</span>
-                                    </p>
-                                </div>
+                                    <img v-if="product.image" :src="product.image" :alt="product.name"
+                                        class="w-12 h-12 rounded-md object-contain flex-shrink-0">
+                                    <Avatar v-else :label="getInitials(product.name)" shape="circle" />
+                                    <div class="flex-grow overflow-hidden">
+                                        <p class="font-semibold text-sm truncate m-0">{{ product.name }}</p>
+                                        <p class="text-xs text-gray-500 flex flex-wrap items-center gap-x-2 m-0">
+                                            <span>{{ formatCurrency(product.selling_price) }}</span>
+                                            <span class="text-gray-300 dark:text-gray-600">•</span>
+                                            <span v-if="product.days_since_last_sale !== null">{{
+                                                product.days_since_last_sale }} días sin ventas</span>
+                                            <span v-else>Nunca vendido</span>
+                                            <span class="text-gray-300 dark:text-gray-600">•</span>
+                                            <span>{{ product.current_stock }} existencias</span>
+                                        </p>
+                                    </div>
                                 </Link>
                             </li>
                         </ul>
                         <Link :href="route('products.index')" class="w-full mt-4">
-                        <Button label="Ver todos" severity="secondary" text class="w-full" />
+                            <Button label="Ver todos los productos" severity="secondary" text class="w-full" />
                         </Link>
                     </div>
                 </div>
@@ -305,12 +354,11 @@ const onTransferSuccess = () => {
                                 <Link v-for="customer in stats.recent_customers" :key="customer.id"
                                     :href="route('customers.show', customer.id)"
                                     class="flex items-center justify-between p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
-                                <div class="flex items-center gap-3">
-                                    <Avatar :label="getInitials(customer.name)" shape="circle"
-                                        class="bg-blue-100 text-blue-600" />
-                                    <span class="text-sm font-medium">{{ customer.name }}</span>
-                                </div>
-                                <i class="pi pi-arrow-right text-xs text-gray-400"></i>
+                                    <div class="flex items-center gap-3">
+                                        <Avatar :label="getInitials(customer.name)" shape="circle" />
+                                        <span class="text-sm font-medium">{{ customer.name }}</span>
+                                    </div>
+                                    <i class="pi pi-arrow-right text-xs text-gray-400"></i>
                                 </Link>
                             </div>
                         </div>
@@ -321,12 +369,12 @@ const onTransferSuccess = () => {
                                 <Link v-for="customer in stats.frequent_customers" :key="customer.id"
                                     :href="route('customers.show', customer.id)"
                                     class="flex items-center justify-between p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">
-                                <div class="flex items-center gap-3">
-                                    <Avatar :label="getInitials(customer.name)" shape="circle"
-                                        class="bg-purple-100 text-purple-600" />
-                                    <span class="text-sm font-medium">{{ customer.name }}</span>
-                                </div>
-                                <span class="text-xs text-gray-500">{{ customer.transactions_count }} compras</span>
+                                    <div class="flex items-center gap-3">
+                                        <Avatar :label="getInitials(customer.name)" shape="circle"
+                                            class="!bg-purple-100 !text-purple-600" />
+                                        <span class="text-sm font-medium">{{ customer.name }}</span>
+                                    </div>
+                                    <span class="text-xs text-gray-500">{{ customer.transactions_count }} compras</span>
                                 </Link>
                             </div>
                         </div>
@@ -354,11 +402,13 @@ const onTransferSuccess = () => {
                             </div>
                             <div class="flex justify-between text-xs mt-2">
                                 <span class="flex items-center gap-1.5"><i
-                                        class="pi pi-circle-fill text-green-500 text-[8px]"></i>Con stock: {{
-                                            stats.inventory_summary.in_stock_count }}</span>
+                                        class="pi pi-circle-fill text-green-500 text-[8px]"></i>Con
+                                    stock: {{
+                                        stats.inventory_summary.in_stock_count }}</span>
                                 <span class="flex items-center gap-1.5"><i
-                                        class="pi pi-circle-fill text-yellow-500 text-[8px]"></i>Bajo stock: {{
-                                            stats.inventory_summary.low_stock_count }}</span>
+                                        class="pi pi-circle-fill text-yellow-500 text-[8px]"></i>Bajo
+                                    stock: {{
+                                        stats.inventory_summary.low_stock_count }}</span>
                                 <span class="flex items-center gap-1.5"><i
                                         class="pi pi-circle-fill text-red-500 text-[8px]"></i>Agotado: {{
                                             stats.inventory_summary.out_of_stock_count }}</span>
@@ -376,17 +426,63 @@ const onTransferSuccess = () => {
         </div>
 
         <!-- Modales -->
-        <BankAccountHistoryModal
-            v-if="selectedAccount"
-            v-model:visible="isHistoryModalVisible"
-            :account="selectedAccount"
-        />
-        <BankAccountTransferModal
-            v-if="selectedAccount"
-            v-model:visible="isTransferModalVisible"
-            :account="selectedAccount"
-            :all-accounts="allSubscriptionBankAccounts"
-            @transfer-success="onTransferSuccess"
-        />
+        <BankAccountHistoryModal v-if="selectedAccount" v-model:visible="isHistoryModalVisible"
+            :account="selectedAccount" />
+        <BankAccountTransferModal v-if="selectedAccount" v-model:visible="isTransferModalVisible"
+            :account="selectedAccount" :all-accounts="allSubscriptionBankAccounts"
+            @transfer-success="onTransferSuccess" />
+
+        <!-- MODAL: Apartados por Vencer -->
+        <Dialog v-model:visible="isExpiringModalVisible" header="Apartados por vencer (Próximos 5 días)" 
+            modal :style="{ width: '50rem' }" :breakpoints="{ '960px': '75vw', '640px': '95vw' }">
+            
+            <div v-if="isLoadingExpiring" class="flex justify-center p-8">
+                <i class="pi pi-spin pi-spinner !text-4xl text-purple-500"></i>
+            </div>
+
+            <div v-else-if="expiringLayaways.length > 0">
+                <DataTable :value="expiringLayaways" class="p-datatable-sm" responsiveLayout="scroll" paginator :rows="5">
+                    <Column field="folio" header="Folio" sortable>
+                        <template #body="{ data }">
+                            <Link :href="route('transactions.show', data.id)" class="text-blue-600 hover:underline">
+                                {{ data.folio }}
+                            </Link>
+                        </template>
+                    </Column>
+                    <Column field="customer_name" header="Cliente" sortable>
+                        <template #body="{ data }">
+                            <Link v-if="data.customer_id" :href="route('customers.show', data.customer_id)" class="text-blue-600 hover:underline">
+                                {{ data.customer_name }}
+                            </Link>
+                            <span v-else>{{ data.customer_name }}</span>
+                            <div v-if="data.customer_phone" class="text-xs text-gray-500">
+                                {{ data.customer_phone }}
+                            </div>
+                        </template>
+                    </Column>
+                    <Column field="expiration_date" header="Vence" sortable>
+                        <template #body="{ data }">
+                            <Tag :value="data.expiration_date" :severity="getExpirationSeverity(data.days_remaining)" />
+                            <div class="text-xs text-gray-500 mt-1">
+                                {{ data.days_remaining < 0 ? `Venció hace ${Math.abs(data.days_remaining)} día(s)` : (data.days_remaining === 0 ? 'Vence hoy' : `En ${data.days_remaining} día(s)`) }}
+                            </div>
+                        </template>
+                    </Column>
+                    <Column field="pending_amount" header="Pendiente" sortable>
+                        <template #body="{ data }">
+                            <span class="font-mono font-bold text-red-500">
+                                {{ formatCurrency(data.pending_amount) }}
+                            </span>
+                        </template>
+                    </Column>
+                </DataTable>
+            </div>
+
+            <div v-else class="text-center py-8 text-gray-500">
+                <i class="pi pi-check-circle !text-4xl text-green-500 mb-2"></i>
+                <p>¡Todo en orden! No hay apartados próximos a vencer.</p>
+            </div>
+        </Dialog>
+
     </AppLayout>
 </template>

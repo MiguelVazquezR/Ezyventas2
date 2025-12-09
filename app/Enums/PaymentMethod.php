@@ -8,4 +8,5 @@ enum PaymentMethod: string
     case CARD = 'tarjeta';
     case TRANSFER = 'transferencia';
     case BALANCE = 'saldo';
+    case EXCHANGE = 'intercambio';
 }

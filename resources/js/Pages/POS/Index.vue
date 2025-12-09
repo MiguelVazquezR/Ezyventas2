@@ -280,6 +280,7 @@ const form = useForm({
     subtotal: 0, total_discount: 0, total: 0,
     payments: [], use_balance: false,
     cash_register_session_id: null,
+    layaway_expiration_date: null,
 });
 
 const handleCheckout = (checkoutData) => {
@@ -288,7 +289,7 @@ const handleCheckout = (checkoutData) => {
         return;
     }
 
-    // 1. Mapear datos base (sin cambios)
+    // 1. Mapear datos base
     form.cartItems = cartItems.value.map(item => ({
         id: item.id,
         product_attribute_id: item.product_attribute_id || null,
@@ -319,6 +320,7 @@ const handleCheckout = (checkoutData) => {
     // 2. Mapear nuevos datos de pago (del MultiPaymentProcessor)
     form.payments = checkoutData.payments;
     form.use_balance = checkoutData.use_balance;
+    form.layaway_expiration_date = checkoutData.layaway_expiration_date; // fecha de vencimiento
 
     // 3. Determinar la ruta basada en el tipo de transacción
     let routeName;

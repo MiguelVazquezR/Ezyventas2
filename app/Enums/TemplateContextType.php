@@ -8,5 +8,6 @@ enum TemplateContextType: string
     case PRODUCT = 'product';
     case SERVICE_ORDER = 'service_order';
     case QUOTE = 'quote';
+    case CUSTOMER = 'customer';
     case GENERAL = 'general'; // Para plantillas sin variables específicas (ej. solo logo y texto fijo)
 }

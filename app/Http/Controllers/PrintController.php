@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Customer; // <-- Importante
 use App\Models\PrintTemplate;
 use App\Models\Product;
 use App\Models\ServiceOrder;
@@ -16,12 +17,12 @@ class PrintController extends Controller
     {
         $validated = $request->validate([
             'template_id' => 'required|exists:print_templates,id',
-            'data_source_type' => 'required|in:transaction,product,service_order',
+            // Agregamos 'customer' a la validación
+            'data_source_type' => 'required|in:transaction,product,service_order,customer', 
             'data_source_id' => 'required|integer',
-            // --- Añadir validación para los desfases opcionales ---
             'offset_x' => 'nullable|numeric',
             'offset_y' => 'nullable|numeric',
-            // --- Añadir validación para los desfases opcionales ---
+            'open_drawer' => 'nullable|boolean',
         ]);
 
         $template = PrintTemplate::find($validated['template_id']);
@@ -31,7 +32,21 @@ class PrintController extends Controller
         }
 
         $dataSource = null;
-        if ($validated['data_source_type'] === 'transaction') {
+
+        // --- Lógica para Cliente ---
+        if ($validated['data_source_type'] === 'customer') {
+            $dataSource = Customer::where('id', $validated['data_source_id'])
+                ->where(function($q) use ($user) {
+                    // Verificación de seguridad: El cliente debe pertenecer a una sucursal de la misma suscripción
+                    $q->whereHas('branch', function($b) use ($user) {
+                        $b->where('subscription_id', $user->branch->subscription_id);
+                    })->orWhereNull('branch_id'); // O ser global si manejas clientes globales (opcional)
+                })->first();
+
+            if (!$dataSource) abort(404);
+        }
+        // ---------------------------
+        elseif ($validated['data_source_type'] === 'transaction') {
             $dataSource = Transaction::with(['customer', 'items.itemable'])->find($validated['data_source_id']);
             if (!$dataSource || $dataSource->branch->subscription_id !== $user->branch->subscription_id) {
                 abort(404);
@@ -52,14 +67,12 @@ class PrintController extends Controller
             abort(404, 'Data source not found.');
         }
 
-        // --- INICIO: Recoger los desfases y prepararlos en un array de opciones ---
         $options = [
             'offset_x' => $validated['offset_x'] ?? 0,
             'offset_y' => $validated['offset_y'] ?? 0,
+            'open_drawer' => $validated['open_drawer'] ?? false,
         ];
-        // --- FIN: Recoger los desfases y prepararlos en un array de opciones ---
 
-        // Pasar la plantilla, la fuente de datos y las opciones al servicio de codificación
         $operations = PrintEncoderService::encode($template, $dataSource, $options);
 
         return response()->json([

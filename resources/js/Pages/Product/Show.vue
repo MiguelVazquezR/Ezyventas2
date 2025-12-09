@@ -69,6 +69,24 @@ const formatDate = (dateString) => {
     return date.toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
 };
 
+// --- AÑADIDO: Funciones auxiliares para fecha ---
+const formatDateOnly = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+        return new Date(dateString).toLocaleDateString('es-MX', { dateStyle: 'medium' });
+    } catch (e) {
+        return dateString;
+    }
+};
+
+const isExpired = (dateString) => {
+    if (!dateString) return false;
+    const expiration = new Date(dateString + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    return expiration < today;
+};
+
 // --- AÑADIDO: Función para formatear moneda ---
 const formatCurrency = (value) => {
     if (value === null || value === undefined) return 'N/A';
@@ -411,6 +429,17 @@ const totalAvailable = computed(() => props.product.available_stock);
                                     {{ formatDate(data.date) }}
                                 </template>
                             </Column>
+                            
+                            <!-- NUEVA COLUMNA -->
+                            <Column field="layaway_expiration_date" header="Vencimiento" sortable>
+                                <template #body="{ data }">
+                                    <span :class="{'text-red-500 font-bold': isExpired(data.layaway_expiration_date), 'text-gray-700 dark:text-gray-300': !isExpired(data.layaway_expiration_date)}">
+                                        {{ formatDateOnly(data.layaway_expiration_date) }}
+                                    </span>
+                                </template>
+                            </Column>
+                            <!-- FIN NUEVA COLUMNA -->
+
                             <Column field="customer_name" header="Cliente" sortable>
                                     <template #body="{ data }">
                                     <Link v-if="data.customer_id" :href="route('customers.show', data.customer_id)" class="text-blue-500 hover:underline">
