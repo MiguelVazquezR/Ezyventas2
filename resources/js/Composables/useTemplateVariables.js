@@ -22,15 +22,31 @@ const getAllVariables = () => ({
         ]
     },
     cliente: {
-        group: 'Cliente',
+        group: 'Cliente (Datos Generales)',
         items: [
             { label: 'Nombre completo', value: '{{cliente.nombre}}' },
             { label: 'Teléfono', value: '{{cliente.telefono}}' },
             { label: 'Email', value: '{{cliente.email}}' },
             { label: 'Empresa', value: '{{cliente.empresa}}' },
             { label: 'Dirección', value: '{{cliente.direccion}}' },
+            { label: 'RFC / Tax ID', value: '{{cliente.rfc}}' },
         ]
     },
+    // --- GRUPO ACTUALIZADO: ESTADO DE CUENTA ---
+    cliente_estado: {
+        group: 'Cliente (Financiero / Estado)',
+        items: [
+            { label: 'Saldo Actual', value: '{{c.saldo_actual}}' },
+            { label: 'Crédito Disponible', value: '{{c.credito_disponible}}' },
+            { label: 'Límite de Crédito', value: '{{c.limite_credito}}' },
+            { label: 'Total Deuda Vencida', value: '{{c.total_deuda}}' },
+            { label: 'Conteo Ventas Pendientes', value: '{{c.conteo_ventas_pendientes}}' },
+            // Variables de TABLAS
+            { label: 'Tabla: Último Pago Detallado', value: '{{c.tabla_ultimo_pago}}' },
+            { label: 'Tabla: Ventas Pendientes', value: '{{c.tabla_ventas_pendientes}}' },
+        ]
+    },
+    // -------------------------------------
     cotizacion: {
         group: 'Cotización',
         items: [
@@ -92,14 +108,15 @@ export function useTemplateVariables(customFieldDefinitionsGetter, context = 'ge
 
         // Lógica actualizada:
         if (context === 'cotizacion') {
-            // Solo mostrar variables específicas de cotización y datos generales
             activeGroups.push(allVars.negocio, allVars.sucursal, allVars.cliente, allVars.cotizacion);
         } else {
-            // Para tickets y etiquetas, mostrar TODO excepto variables de cotización
+            // Base para tickets, etiquetas y clientes
+            activeGroups.push(allVars.negocio, allVars.sucursal, allVars.cliente);
+
+            // Variables específicas según lo que estemos editando
+            activeGroups.push(allVars.cliente_estado);
+            
             activeGroups.push(
-                allVars.negocio, 
-                allVars.sucursal, 
-                allVars.cliente,
                 allVars.transaccion, 
                 allVars.orden_servicio, 
                 allVars.producto
@@ -131,7 +148,6 @@ export function useTemplateVariables(customFieldDefinitionsGetter, context = 'ge
                 });
             }
         } else {
-            // En tickets/etiquetas mostramos campos de OS por defecto
             if (customFieldsByModule['service_orders']) {
                  activeGroups.push({
                     group: 'Campos Personalizados (OS)',
