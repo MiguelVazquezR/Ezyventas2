@@ -195,7 +195,7 @@ const actionItems = computed(() => [
 // Helpers visuales
 const getStatusSeverity = (status) => ({ completado: 'success', pendiente: 'warn', cancelado: 'danger', reembolsado: 'info', on_layaway: 'warn', apartado: 'warn' }[status] || 'secondary');
 const formatDate = (date) => date ? new Date(date).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : '';
-const formatDateOnly = (date) => date ? new Date(date + 'T00:00:00').toLocaleDateString('es-MX', { dateStyle: 'long' }) : '';
+const formatDateOnly = (date) => date ? new Date(date).toLocaleDateString('es-MX', { dateStyle: 'long' }) : '';
 const formatCurrency = (val) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(val) || 0);
 
 // --- ACTUALIZADO: Iconos de métodos de pago (incluyendo intercambio) ---

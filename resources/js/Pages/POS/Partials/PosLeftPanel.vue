@@ -3,6 +3,7 @@ import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import debounce from 'lodash/debounce';
+import { useConfirm } from "primevue/useconfirm";
 import ProductCard from './ProductCard.vue';
 import CategoryFilters from './CategoryFilters.vue';
 import PendingCartsPopover from './PendingCartsPopover.vue';
@@ -10,28 +11,40 @@ import ProductDetailModal from './ProductDetailModal.vue';
 import CreateProductModal from '@/Components/CreateProductModal.vue';
 import CashMovementModal from '@/Components/CashMovementModal.vue';
 
+// --- CORRECCIÓN: Uso de sintaxis explícita para evitar error de compilación ---
 const props = defineProps({
-    products: Object,
-    categories: Array,
-    pendingCarts: Array,
-    filters: Object,
-    activeSession: Object,
+    products: {
+        type: Object,
+        required: true
+    },
+    categories: {
+        type: Array,
+        default: () => []
+    },
+    pendingCarts: {
+        type: Array,
+        default: () => []
+    },
+    filters: {
+        type: Object,
+        default: () => ({})
+    },
+    activeSession: {
+        type: Object,
+        default: null
+    }
 });
 
 const emit = defineEmits(['addToCart', 'resumeCart', 'deleteCart', 'productCreatedAndAddToCart', 'refreshSessionData', 'openCloseSessionModal', 'openHistoryModal']);
+const confirm = useConfirm();
 
-// --- INICIO DE MODIFICACIÓN: Lógica de Scroll simplificada ---
-// 1. Inicializamos 'loadedProducts' directamente con los datos de la primera página
+// --- Lógica de Scroll simplificada ---
 const loadedProducts = ref(props.products.data);
-// 2. 'nextCursor' ahora es 'next_cursor_url'
 const nextCursor = ref(props.products.next_page_url);
 const isLoadingMore = ref(false);
 const productsContainer = ref(null);
-// 3. 'isInitialising' ya no es necesario
 
-// Esta función ahora es mucho más simple y robusta
 const loadMoreProducts = () => {
-    // 4. Comprobamos 'nextCursor' (que viene de 'next_page_url')
     if (!nextCursor.value || isLoadingMore.value) return;
     isLoadingMore.value = true;
 
@@ -40,9 +53,7 @@ const loadMoreProducts = () => {
         preserveScroll: true,
         only: ['products'],
         onSuccess: (page) => {
-            // Añadimos los nuevos productos al final de la lista
             loadedProducts.value.push(...page.props.products.data);
-            // Actualizamos el cursor para la *siguiente* carga
             nextCursor.value = page.props.products.next_page_url;
             isLoadingMore.value = false;
         },
@@ -60,12 +71,14 @@ const handleScroll = (event) => {
 };
 
 onMounted(() => {
-    // 5. Ya no se necesita 'initialiseProductList'
     productsContainer.value?.addEventListener('scroll', handleScroll);
+    window.addEventListener('keydown', handleGlobalKeyDown);
 });
 
 onUnmounted(() => {
     productsContainer.value?.removeEventListener('scroll', handleScroll);
+    window.removeEventListener('keydown', handleGlobalKeyDown);
+    clearTimeout(barcodeTimer);
 });
 
 // --- Lógica de Filtros ---
@@ -90,11 +103,6 @@ const applyFilters = () => {
     });
 };
 
-// watch(() => props.products.data, (newProducts) => {
-//     loadedProducts.value = newProducts;
-//     nextCursor.value = props.products.next_page_url; // Asegúrate de actualizar también el cursor de paginación
-// }, { deep: true }); // 'deep' por si acaso hay cambios anidados que detectar
-
 watch(searchTerm, debounce(applyFilters, 300));
 
 const handleCategoryFilter = (categoryId) => {
@@ -103,31 +111,107 @@ const handleCategoryFilter = (categoryId) => {
     applyFilters();
 };
 
+// --- Lógica de Detección de Entidades (Ventas / Clientes) ---
+const isCheckingEntity = ref(false); // Estado de carga para el spinner
+const isSmartSearchHelpVisible = ref(false); // Estado del modal de ayuda
 
-// --- Lógica del Menú de Sesión y Modales (sin cambios) ---
+const checkAndRedirect = async (query) => {
+    if (!query || query.length < 3) return false; 
+
+    isCheckingEntity.value = true; // Activar spinner
+
+    try {
+        const response = await axios.get(route('pos.check-entity'), { params: { query } });
+        const result = response.data;
+
+        if (result && result.found) {
+            confirm.require({
+                message: result.message,
+                header: 'Entidad Detectada',
+                icon: 'pi pi-info-circle',
+                acceptLabel: 'Ver detalles',
+                rejectLabel: 'Cancelar',
+                accept: () => {
+                    let routeName = 'transactions.show';
+                    if (result.type === 'customer') routeName = 'customers.show';
+                    if (result.type === 'service_order') routeName = 'service-orders.show'; // Ajusta si tu ruta es diferente
+                    
+                    window.open(route(routeName, result.id), '_blank');
+                },
+                reject: () => {
+                    if (searchTerm.value !== query) {
+                        searchTerm.value = query;
+                    }
+                }
+            });
+            return true;
+        }
+    } catch (error) {
+        console.error("Error verificando entidad:", error);
+    } finally {
+        isCheckingEntity.value = false; // Desactivar spinner
+    }
+    return false;
+};
+
+// --- Lógica para Lector de Código de Barras Global ---
+let barcodeBuffer = '';
+let barcodeTimer = null;
+
+const handleGlobalKeyDown = async (event) => {
+    const activeElement = document.activeElement;
+    const isSearchInput = activeElement.classList.contains('pos-search-input');
+    const isOtherInputFocused = ['INPUT', 'TEXTAREA'].includes(activeElement.tagName) && !isSearchInput;
+    const isModalVisible = document.querySelector('.p-dialog-mask.p-component-overlay-enter');
+
+    if (isOtherInputFocused || isModalVisible) {
+        return;
+    }
+
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        if (barcodeBuffer.length > 2) {
+            const handled = await checkAndRedirect(barcodeBuffer);
+            if (!handled) {
+                searchTerm.value = barcodeBuffer;
+            }
+        }
+        barcodeBuffer = '';
+        return;
+    }
+
+    if (event.key.length > 1) return;
+
+    barcodeBuffer += event.key;
+    clearTimeout(barcodeTimer);
+    barcodeTimer = setTimeout(() => { barcodeBuffer = ''; }, 100);
+};
+
+const handleManualSearch = async () => {
+    if (searchTerm.value.length > 2) {
+        await checkAndRedirect(searchTerm.value);
+    }
+};
+
+// --- Lógica del Menú de Sesión y Modales ---
 const menu = ref();
 const toggleMenu = (event) => {
     menu.value.toggle(event);
 };
 
-// Usar 'activeSession.payments' como la única fuente de verdad para el cálculo.
 const cashBalance = computed(() => {
     if (!props.activeSession) return 0;
-
     const cashSales = props.activeSession.payments
         ? props.activeSession.payments
             .filter(p => p && p.payment_method === 'efectivo' && p.status === 'completado')
             .reduce((sum, p) => sum + parseFloat(p.amount), 0)
         : 0;
-
     const inflows = props.activeSession.cash_movements
         .filter(m => m.type === 'ingreso')
         .reduce((sum, m) => sum + parseFloat(m.amount), 0);
-
     const outflows = props.activeSession.cash_movements
         .filter(m => m.type === 'egreso')
         .reduce((sum, m) => sum + parseFloat(m.amount), 0);
-
     return (parseFloat(props.activeSession.opening_cash_balance) || 0) + cashSales + inflows - outflows;
 });
 
@@ -135,8 +219,8 @@ const cardTotal = computed(() => props.activeSession?.totals?.card || 0);
 const transferTotal = computed(() => props.activeSession?.totals?.transfer || 0);
 
 const menuItems = ref([
-    { label: 'Ingresar Efectivo', icon: 'pi pi-arrow-down-left', command: () => openCashMovementModal('ingreso') },
-    { label: 'Retirar Efectivo', icon: 'pi pi-arrow-up-right', command: () => openCashMovementModal('egreso') },
+    { label: 'Ingresar efectivo', icon: 'pi pi-arrow-down-left', command: () => openCashMovementModal('ingreso') },
+    { label: 'Retirar efectivo', icon: 'pi pi-arrow-up-right', command: () => openCashMovementModal('egreso') },
     { separator: true },
 ]);
 
@@ -164,53 +248,6 @@ const isCreateProductModalVisible = ref(false);
 const handleProductCreated = (newProduct) => {
     emit('productCreatedAndAddToCart', newProduct);
 };
-
-// --- Lógica para Lector de Código de Barras Global ---
-let barcodeBuffer = '';
-let barcodeTimer = null;
-
-const handleGlobalKeyDown = (event) => {
-    const activeElement = document.activeElement;
-    const isInputFocused = ['INPUT', 'TEXTAREA'].includes(activeElement.tagName);
-    const isModalVisible = document.querySelector('.p-dialog-mask.p-component-overlay-enter');
-
-    if (isInputFocused || isModalVisible) {
-        return;
-    }
-
-    if (event.key === 'Enter') {
-        event.preventDefault();
-        if (barcodeBuffer.length > 2) {
-            searchTerm.value = barcodeBuffer;
-        }
-        barcodeBuffer = '';
-        return;
-    }
-
-    if (event.key.length > 1) {
-        return;
-    }
-
-    barcodeBuffer += event.key;
-
-    clearTimeout(barcodeTimer);
-    barcodeTimer = setTimeout(() => {
-        barcodeBuffer = '';
-    }, 100);
-};
-
-onMounted(() => {
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    // Añadimos de nuevo el listener de scroll que quitamos de la otra función
-    productsContainer.value?.addEventListener('scroll', handleScroll);
-});
-
-onUnmounted(() => {
-    window.removeEventListener('keydown', handleGlobalKeyDown);
-    clearTimeout(barcodeTimer);
-    // Añadimos de nuevo el listener de scroll que quitamos de la otra función
-    productsContainer.value?.removeEventListener('scroll', handleScroll);
-});
 </script>
 
 <template>
@@ -270,13 +307,23 @@ onUnmounted(() => {
                     </Popover>
                 </div>
             </div>
-            <div class="mb-4">
-                <IconField iconPosition="left">
-                    <InputIcon class="pi pi-search" />
-                    <InputText v-model="searchTerm" placeholder="Escanear o buscar producto por nombre o SKU"
-                        class="w-full" />
-                </IconField>
+            
+            <!-- BARRA DE BÚSQUEDA MEJORADA -->
+            <div class="mb-4 flex gap-2 items-center">
+                <div class="flex-grow">
+                    <IconField iconPosition="left">
+                        <!-- Spinner de carga o Lupa normal -->
+                        <InputIcon v-if="!isCheckingEntity" class="pi pi-search" />
+                        <InputIcon v-else class="pi pi-spin pi-spinner text-blue-500 font-bold" />
+                        
+                        <InputText v-model="searchTerm" @keydown.enter="handleManualSearch" placeholder="Escanear o buscar producto por nombre o SKU"
+                            class="w-full pos-search-input" />
+                    </IconField>
+                </div>
+                <!-- Botón de Información de Búsqueda Inteligente -->
+                <Button label="Búsqueda Inteligente" icon="pi pi-sparkles" text size="small" severity="info" @click="isSmartSearchHelpVisible = true" />
             </div>
+
             <CategoryFilters :categories="categories" :active-category-id="selectedCategoryId"
                 @filter="handleCategoryFilter" />
         </div>
@@ -301,5 +348,67 @@ onUnmounted(() => {
         <CreateProductModal v-model:visible="isCreateProductModalVisible" @created="handleProductCreated" />
         <CashMovementModal v-if="activeSession" v-model:visible="isCashMovementModalVisible" :type="movementType"
             :session-id="activeSession.id" @submitted="handleMovementSubmitted" />
+
+        <!-- MODAL DE AYUDA BÚSQUEDA INTELIGENTE -->
+        <Dialog v-model:visible="isSmartSearchHelpVisible" modal header="🧠 Búsqueda Inteligente" :style="{ width: '50rem' }" :breakpoints="{ '960px': '75vw', '640px': '90vw' }">
+            <div class="p-2 space-y-6">
+                <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg flex gap-4 items-start">
+                    <i class="pi pi-info-circle text-2xl text-blue-600 mt-1"></i>
+                    <div>
+                        <h4 class="font-bold text-lg text-blue-800 dark:text-blue-200 m-0">¿Qué es esto?</h4>
+                        <p class="text-base text-blue-700 dark:text-blue-300 m-0">
+                            La barra de búsqueda principal no solo encuentra productos. Está diseñada para detectar automáticamente 
+                            códigos escaneados de tickets o información de clientes para agilizar tu flujo de trabajo.
+                            Si no cuentas con lector de códigos de barras, también puedes escribir manualmente los folios o números de teléfono y
+                            presionar <kbd class="bg-gray-300 text-gray-600 rounded-md px-1 py-px">Enter</kbd> para activar la búsqueda inteligente.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Sección de Ventas -->
+                    <div class="border dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div class="flex items-center gap-2 mb-2 text-primary">
+                            <i class="pi pi-receipt !text-xl"></i>
+                            <h3 class="font-bold text-lg m-0">Folios de venta</h3>
+                        </div>
+                        <p class="text-sm text-gray-600 dark:text-gray-400 mb-3 m-0">
+                            Escanea el código de barras/QR de un ticket o escribe el folio (ej: <span class="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">V-001</span>, <span class="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">OS-V-005</span>).
+                        </p>
+                        <ul class="text-sm space-y-2 text-gray-700 dark:text-gray-300">
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Cancelaciones rápidas</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Devoluciones y cambios</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Agregar pagos a créditos</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Reimpresión de tickets</li>
+                        </ul>
+                        <small class="block mt-3 text-xs text-gray-500 italic">
+                            * Aplica para ventas fisicas desde punto de venta y Órdenes de Servicio (si el módulo está activo).
+                        </small>
+                    </div>
+
+                    <!-- Sección de Clientes -->
+                    <div class="border dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div class="flex items-center gap-2 mb-2 text-purple-600">
+                            <i class="pi pi-user !text-xl"></i>
+                            <h3 class="font-bold text-lg m-0">Clientes</h3>
+                        </div>
+                        <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                            Escribe el <strong>número de teléfono</strong> (10 dígitos) o busca por <strong>nombre</strong> exacto.
+                        </p>
+                        <ul class="text-sm space-y-2 text-gray-700 dark:text-gray-300">
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Abonar a saldo pendiente</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Revisar historial de apartados</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Imprimir estado de cuenta</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Ajustes de saldo</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <template #footer>
+                <div class="flex justify-end">
+                    <Button label="Entendido" icon="pi pi-check" @click="isSmartSearchHelpVisible = false" autofocus />
+                </div>
+            </template>
+        </Dialog>
     </div>
 </template>

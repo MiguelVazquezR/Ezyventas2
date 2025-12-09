@@ -12,6 +12,7 @@ import PrintModal from '@/Components/PrintModal.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 
+// --- PROPS CORREGIDAS (Sintaxis Simplificada) ---
 const props = defineProps({
     customer: Object,
     historicalMovements: Array,
@@ -25,7 +26,7 @@ const { hasPermission } = usePermissions();
 const page = usePage();
 const toast = useToast();
 
-// --- LÓGICA DE SESIÓN CORREGIDA ---
+// --- LÓGICA DE SESIÓN ---
 const activeSession = computed(() => page.props.activeSession);
 const joinableSessions = computed(() => page.props.joinableSessions);
 const availableCashRegisters = computed(() => page.props.availableCashRegisters);
@@ -36,47 +37,75 @@ const isJoinSessionModalVisible = ref(false);
 const sessionModalAwaitingPaymentModal = ref(false);
 const isPaymentProcessing = ref(false);
 
-// --- Lógica para modal de impresión (NUEVO) ---
+// --- Lógica para modal de impresión ---
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
 
 const openPrintModal = () => {
-    // Configuramos el origen de datos como 'customer'
     printDataSource.value = { type: 'customer', id: props.customer.id };
     isPrintModalVisible.value = true;
 };
-// ----------------------------------------------
 
-// --- Lógica para modal de ajuste ---
+// --- Lógica para modal de ajuste (MEJORADA) ---
 const isAdjustModalVisible = ref(false);
 
 const adjustForm = useForm({
     adjustment_type: 'add', // 'add' o 'set_total'
-    amount: 0,
+    amount: null,
     notes: '',
+    direction: 'credit', // 'credit' (positivo/a favor) o 'debit' (negativo/deuda)
 });
 
-const adjustmentOptions = ref([
-    { label: 'Sumar / restar monto', value: 'add' },
-    { label: 'Establecer saldo total', value: 'set_total' },
+const adjustmentTypeOptions = ref([
+    { label: 'Aplicar movimiento', value: 'add' },
+    { label: 'Definir saldo final', value: 'set_total' },
 ]);
+
+// Opciones dinámicas para la dirección (Acción)
+const adjustmentDirectionOptions = computed(() => {
+    if (adjustForm.adjustment_type === 'add') {
+        return [
+            { label: 'Sumar saldo (+)', value: 'credit', icon: 'pi pi-plus' },
+            { label: 'Restar saldo (-)', value: 'debit', icon: 'pi pi-minus' }
+        ];
+    } else {
+        return [
+            { label: 'Saldo a favor (Positivo)', value: 'credit', icon: 'pi pi-arrow-up' },
+            { label: 'Saldo deudor (Negativo)', value: 'debit', icon: 'pi pi-arrow-down' }
+        ];
+    }
+});
 
 const openAdjustModal = () => {
     adjustForm.reset();
+    adjustForm.direction = 'credit'; // Default a positivo
     isAdjustModalVisible.value = true;
 };
 
 const submitAdjustment = () => {
-    adjustForm.post(route('customers.adjustBalance', props.customer.id), {
+    adjustForm.transform((data) => {
+        // Aseguramos que el monto base sea positivo (magnitud)
+        let finalAmount = Math.abs(Number(data.amount));
+
+        // Aplicamos el signo según la dirección seleccionada
+        if (data.direction === 'debit') {
+            finalAmount = -finalAmount;
+        }
+
+        return {
+            ...data,
+            amount: finalAmount,
+        }
+    }).post(route('customers.adjustBalance', props.customer.id), {
         onSuccess: () => {
             isAdjustModalVisible.value = false;
             adjustForm.reset();
-            toast.add({ severity: 'success', summary: 'Ajuste realizado', detail: 'Saldo actualizado correctamente.', life: 3000 });
         },
         preserveScroll: true,
     });
 };
 
+// --- Resto de lógica (Add Balance, etc.) ---
 const handleOpenAddBalanceFlow = () => {
     if (activeSession.value) {
         isPaymentModalVisible.value = true;
@@ -111,13 +140,8 @@ const handleBalancePaymentSubmit = (paymentData) => {
 
     router.post(route('customers.payments.store', props.customer.id), payload, {
         onSuccess: () => {
-            // 1. Cerrar modal de pago
             isPaymentModalVisible.value = false;
-            
-            // 2. Mostrar confirmación visual
             toast.add({ severity: 'success', summary: 'Abono registrado', detail: 'El saldo ha sido actualizado.', life: 3000 });
-
-            // 3. Abrir modal de impresión automáticamente
             openPrintModal();
         },
         onFinish: () => { 
@@ -154,10 +178,7 @@ const actionItems = computed(() => [
     { label: 'Abonar / agregar saldo', icon: 'pi pi-dollar', command: handleOpenAddBalanceFlow, visible: hasPermission('customers.edit') },
     { label: 'Ajuste de saldo manual', icon: 'pi pi-sliders-h', command: openAdjustModal, visible: hasPermission('customers.edit') },
     { separator: true },
-    
-    // Nueva opción para abrir el modal de impresión manualmente
     { label: 'Imprimir Ficha / Ticket', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('customers.see_details') },
-    
     { label: 'Crear nuevo cliente', icon: 'pi pi-plus', command: () => router.get(route('customers.create')), visible: hasPermission('customers.create') },
     { label: 'Editar cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', props.customer.id)), visible: hasPermission('customers.edit') },
     {
@@ -169,7 +190,6 @@ const actionItems = computed(() => [
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteCustomer, visible: hasPermission('customers.delete') },
 ]);
-
 
 const formatCurrency = (value) => {
     if (value === null || value === undefined) return 'N/A';
@@ -216,10 +236,9 @@ const getTransactionStatusSeverity = (status) => {
     return map[status] || 'secondary';
 };
 
-// --- Helper para WhatsApp y Teléfono ---
 const sanitizePhone = (phone) => {
     if (!phone) return '';
-    return phone.replace(/\D/g, ''); // Elimina todo lo que no sea dígito
+    return phone.replace(/\D/g, ''); 
 };
 
 </script>
@@ -287,7 +306,7 @@ const sanitizePhone = (phone) => {
                                 {{ formatCurrency(customer.balance) }}
                             </span>
                         </li>
-                         <!-- NUEVO: Crédito Disponible -->
+                         <!-- Crédito Disponible -->
                          <li class="flex justify-between items-center">
                             <span class="text-gray-500">Crédito disponible</span>
                             <span class="font-mono font-medium text-blue-600 dark:text-blue-400">
@@ -436,35 +455,51 @@ const sanitizePhone = (phone) => {
         <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="0"
             :client="customer" :loading="isPaymentProcessing" payment-mode="balance" @submit="handleBalancePaymentSubmit" />
         
-        <!-- Modal de Impresión (NUEVO) -->
+        <!-- Modal de Impresión -->
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
             :available-templates="availableTemplates" />
         
+        <!-- MODAL DE AJUSTE MANUAL MEJORADO -->
         <Dialog v-model:visible="isAdjustModalVisible" header="Ajuste Manual de Saldo" modal
             class="w-full max-w-lg mx-4">
             <form @submit.prevent="submitAdjustment" class="space-y-6">
+                <!-- 1. Tipo de Acción -->
                 <div>
-                    <InputLabel value="Tipo de ajuste" class="mb-2" />
-                    <SelectButton v-model="adjustForm.adjustment_type" :options="adjustmentOptions" optionLabel="label"
+                    <InputLabel value="¿Qué deseas hacer?" class="mb-2" />
+                    <SelectButton v-model="adjustForm.adjustment_type" :options="adjustmentTypeOptions" optionLabel="label"
                         optionValue="value" class="w-full" />
                 </div>
 
+                <!-- 2. Dirección / Signo -->
                 <div>
-                    <InputLabel v-if="adjustForm.adjustment_type === 'add'" for="adjust-amount"
-                        value="Monto a sumar / restar" />
-                    <InputLabel v-else for="adjust-amount" value="Nuevo saldo total" />
+                    <InputLabel value="Tipo de movimiento" class="mb-2" />
+                    <SelectButton v-model="adjustForm.direction" :options="adjustmentDirectionOptions" optionLabel="label"
+                        optionValue="value" class="w-full" :allowEmpty="false">
+                        <template #option="slotProps">
+                            <div class="flex items-center gap-2" :class="{
+                                'text-green-600': slotProps.option.value === 'credit',
+                                'text-red-600': slotProps.option.value === 'debit'
+                            }">
+                                <i :class="slotProps.option.icon"></i>
+                                <span>{{ slotProps.option.label }}</span>
+                            </div>
+                        </template>
+                    </SelectButton>
+                </div>
 
+                <!-- 3. Monto (Siempre positivo en UI) -->
+                <div>
+                    <InputLabel for="adjust-amount" :value="adjustForm.adjustment_type === 'add' ? 'Monto del movimiento' : 'Nuevo saldo total'" />
                     <InputNumber id="adjust-amount" v-model="adjustForm.amount" mode="currency" currency="MXN"
-                        locale="es-MX" class="w-full mt-1" :minFractionDigits="2" :maxFractionDigits="2" />
-                    <small v-if="adjustForm.adjustment_type === 'add'" class="text-gray-500">Usa un valor negativo (ej.
-                        -50)
-                        para restar saldo.</small>
+                        locale="es-MX" class="w-full mt-1" :min="0" :minFractionDigits="2" :maxFractionDigits="2" 
+                        placeholder="$0.00" />
+                    <small class="text-gray-500">Ingresa el monto en positivo.</small>
                     <InputError :message="adjustForm.errors.amount" />
                 </div>
 
                 <div>
                     <InputLabel for="adjust-notes" value="Razón del ajuste (Obligatorio)" />
-                    <Textarea id="adjust-notes" v-model="adjustForm.notes" class="w-full mt-1" rows="3" />
+                    <Textarea id="adjust-notes" v-model="adjustForm.notes" class="w-full mt-1" rows="3" placeholder="Ej: Error en cobro anterior, bonificación, etc." />
                     <InputError :message="adjustForm.errors.notes" />
                 </div>
 
