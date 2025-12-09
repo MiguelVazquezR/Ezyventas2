@@ -231,7 +231,7 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
     <div class="flex flex-col min-h-[400px]">
         <!-- Título dinámico -->
         <div class="flex items-center gap-3 mb-4 p-3 rounded-lg"
-            :style="{ backgroundColor: currentTransactionInfo.bgColor, color: currentTransactionInfo.textColor }">
+            :style="{ color: currentTransactionInfo.textColor }">
             <img :src="currentTransactionInfo.image" :alt="currentTransactionInfo.label" class="h-8 w-8 object-contain">
             <h3 class="text-lg font-semibold m-0">{{ currentTransactionInfo.label }}</h3>
         </div>
@@ -266,10 +266,10 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
             <InputSwitch v-model="useBalance" />
         </div>
         <div v-if="effectiveBalanceUsed > 0" class="mb-4">
-            <div class="flex justify-between items-center bg-gray-100 dark:bg-gray-700 p-3 rounded-lg text-sm">
+            <div class="flex justify-between items-center bg-green-100 dark:bg-green-700 p-3 rounded-lg text-sm">
                 <div class="flex items-center gap-2">
                     <i class="pi pi-wallet text-green-600"></i>
-                    <span class="font-medium text-gray-800 dark:text-gray-200">Pago con Saldo</span>
+                    <span class="font-medium text-gray-800 dark:text-gray-200">Pago con saldo</span>
                 </div>
                 <span class="font-semibold font-mono text-gray-800 dark:text-gray-200">
                     {{ formatCurrency(effectiveBalanceUsed) }}
