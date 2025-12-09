@@ -7,7 +7,7 @@ import PaymentModal from '@/Components/PaymentModal.vue';
 import axios from 'axios'; // Importamos Axios para la búsqueda
 
 const props = defineProps({
-    items: Array, 
+    items: Array,
     client: Object,
     customers: Array, // Lista inicial (limitada)
     defaultCustomer: Object,
@@ -161,7 +161,8 @@ const formatCurrency = (value) => {
 <template>
     <div>
         <ConfirmPopup group="cart-actions"></ConfirmPopup>
-        <div class="bg-[#E6E6E6] p-3 rounded-xl shadow-md border border-[#D9D9D9] h-full flex flex-col dark:bg-gray-800 dark:border-gray-700">
+        <div
+            class="bg-[#E6E6E6] p-3 rounded-xl shadow-md border border-[#D9D9D9] h-full flex flex-col dark:bg-gray-800 dark:border-gray-700">
             <!-- Header -->
             <div class="flex justify-between items-center pb-4 border-b border-gray-200 dark:border-gray-700">
                 <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Carrito</h2>
@@ -179,27 +180,21 @@ const formatCurrency = (value) => {
             <!-- Selector de Cliente con AutoComplete -->
             <div class="my-1">
                 <div class="flex items-center gap-2 mb-3">
-                    <AutoComplete 
-                        v-model="selectedCustomerModel" 
-                        :suggestions="filteredCustomers" 
-                        @complete="searchCustomer" 
-                        @item-select="onCustomerSelect"
-                        optionLabel="name" 
-                        forceSelection
-                        placeholder="Buscar cliente (nombre o teléfono)..." 
-                        class="w-full"
-                        :delay="400"
-                        emptyMessage="No se encontraron clientes"
-                        fluid
-                    >
-                        <template #option="slotProps">
-                            <div class="flex flex-col">
-                                <span class="font-bold">{{ slotProps.option.name }}</span>
-                                <span class="text-xs text-gray-500">{{ slotProps.option.phone }}</span>
-                            </div>
-                        </template>
-                    </AutoComplete>
-                    
+                    <IconField iconPosition="left" class="w-full">
+                        <InputIcon class="pi pi-search"></InputIcon>
+                        <AutoComplete v-model="selectedCustomerModel" :suggestions="filteredCustomers"
+                            @complete="searchCustomer" @item-select="onCustomerSelect" optionLabel="name" forceSelection
+                            placeholder="Buscar cliente (nombre o teléfono)..." class="w-full" :delay="400"
+                            emptyMessage="No se encontraron clientes" fluid>
+                            <template #option="slotProps">
+                                <div class="flex flex-col">
+                                    <span class="font-bold">{{ slotProps.option.name }}</span>
+                                    <span class="text-xs text-gray-500">{{ slotProps.option.phone }}</span>
+                                </div>
+                            </template>
+                        </AutoComplete>
+                    </IconField>
+
                     <Button @click="isCreateCustomerModalVisible = true" rounded icon="pi pi-plus" size="small"
                         severity="contrast" v-tooltip.bottom="'Crear nuevo cliente'" />
                 </div>
@@ -228,7 +223,8 @@ const formatCurrency = (value) => {
                             <span
                                 :class="(client.balance || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
                                 class="font-bold">
-                                {{ formatCurrency(client.balance || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' : '' }}
+                                {{ formatCurrency(client.balance || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' :
+                                    '' }}
                             </span>
                         </div>
                         <div class="flex justify-between text-sm">
@@ -237,6 +233,11 @@ const formatCurrency = (value) => {
                                 {{ formatCurrency(client.available_credit || 0) }}
                             </span>
                         </div>
+                        <a :href="route('customers.show', client.id)" target="_blank" rel="noopener noreferrer"
+                        class="text-xs text-blue-500">
+                            Ir a ver detalles
+                            <i class="pi pi-external-link !text-xs ml-1"></i>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -248,14 +249,16 @@ const formatCurrency = (value) => {
                 <Badge :value="items.length" class="!bg-white !text-black dark:!bg-black dark:!text-white"></Badge>
             </p>
             <div class="flex-grow py-1 overflow-y-auto space-y-2">
-                <p v-if="items.length === 0" class="text-gray-500 dark:text-gray-400 text-center mt-8">El carrito está vacío</p>
+                <p v-if="items.length === 0" class="text-gray-500 dark:text-gray-400 text-center mt-8">El carrito está
+                    vacío</p>
                 <CartItem v-for="item in items" :key="item.cartItemId" :item="item"
                     :applied-cart-promo-names="appliedCartPromoNames" @update-quantity="$emit('updateQuantity', $event)"
                     @update-price="$emit('updatePrice', $event)" @remove-item="$emit('removeItem', $event)" />
             </div>
 
             <!-- Detalles del Pago -->
-            <div class="mt-4 p-2 rounded-[10px] border border-[#D9D9D9] bg-white dark:bg-gray-900 dark:border-gray-700 space-y-1">
+            <div
+                class="mt-4 p-2 rounded-[10px] border border-[#D9D9D9] bg-white dark:bg-gray-900 dark:border-gray-700 space-y-1">
                 <div class="flex justify-between items-center text-gray-600 dark:text-gray-300">
                     <span>Subtotal</span><span class="font-medium">{{ formatCurrency(subtotal) }}</span>
                 </div>
@@ -276,31 +279,21 @@ const formatCurrency = (value) => {
                         <span class="font-medium">+{{ formatCurrency(-totalDiscount) }}</span>
                     </div>
                 </div>
-                <div class="flex justify-between items-center font-bold text-lg text-gray-800 dark:text-gray-100 border-t border-dashed border-[#D9D9D9] dark:border-gray-700 pt-1">
+                <div
+                    class="flex justify-between items-center font-bold text-lg text-gray-800 dark:text-gray-100 border-t border-dashed border-[#D9D9D9] dark:border-gray-700 pt-1">
                     <span>Total</span><span>{{ formatCurrency(total) }}</span>
                 </div>
                 <Button @click="$emit('open-payment-modal')" :disabled="items.length === 0"
                     :label="(client && total <= 0 && client.balance >= total) || total === 0 ? 'Finalizar' : 'Pagar'"
-                    icon="pi pi-arrow-right" iconPos="right"
-                    class="w-full mt-2 bg-orange-500 border-none" />
+                    icon="pi pi-arrow-right" iconPos="right" class="w-full mt-2 bg-orange-500 border-none" />
             </div>
         </div>
 
         <!-- Modales -->
         <CreateCustomerModal v-model:visible="isCreateCustomerModalVisible" @created="handleCustomerCreated" />
-        <PaymentModal
-            :visible="props.paymentModalVisible"
-            @update:visible="$emit('close-payment-modal')"
-            :total-amount="total"
-            :client="client"
-            :customers="customers" 
-            :allow-credit="true"
-            :allow-layaway="true"
-            :loading="props.loading"
-            payment-mode="strict"
-            @update:client="$emit('selectCustomer', $event)"
-            @customer-created="handleCustomerCreated"
-            @submit="handlePaymentSubmit"
-        />
+        <PaymentModal :visible="props.paymentModalVisible" @update:visible="$emit('close-payment-modal')"
+            :total-amount="total" :client="client" :customers="customers" :allow-credit="true" :allow-layaway="true"
+            :loading="props.loading" payment-mode="strict" @update:client="$emit('selectCustomer', $event)"
+            @customer-created="handleCustomerCreated" @submit="handlePaymentSubmit" />
     </div>
 </template>
