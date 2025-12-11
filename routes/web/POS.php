@@ -20,4 +20,5 @@ Route::middleware('auth')->prefix('pos')->as('pos.')->group(function () {
     // para Apartado
     Route::post('/layaway', [PointOfSaleController::class, 'createLayaway'])->name('layaway');
     Route::get('/pos/customers/search', [PointOfSaleController::class, 'searchCustomers'])->name('customers.search');
+    Route::get('/check-entity', [PointOfSaleController::class, 'checkEntity'])->name('check-entity');
 });

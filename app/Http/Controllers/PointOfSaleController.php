@@ -17,6 +17,7 @@ use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Promotion;
 use App\Models\Transaction;
+use App\Models\ServiceOrder; // <-- IMPORTADO
 use App\Services\TransactionPaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -34,7 +35,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('can:pos.access', only: ['index', 'searchCustomers']),
+            new Middleware('can:pos.access', only: ['index', 'searchCustomers', 'checkEntity']),
             new Middleware('can:pos.create_sale', only: ['checkout']),
         ];
     }
@@ -84,12 +85,9 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     ->select('id', 'name')->get();
             }
 
-            // --- LÓGICA DE CUENTAS BANCARIAS CORREGIDA ---
             if ($isOwner) {
-                // Si es propietario, obtiene todas las cuentas de la sucursal.
                 $userBankAccounts = Auth::user()->branch->bankAccounts()->get();
             } else {
-                // Si no es propietario, obtiene solo las cuentas asignadas.
                 $userBankAccounts = $user->bankAccounts()->get();
             }
         }
@@ -135,9 +133,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
         return Inertia::render($view, $props);
     }
 
-    /**
-     * Endpoint para buscar clientes vía AJAX (AutoComplete).
-     */
     public function searchCustomers(Request $request)
     {
         $query = $request->input('query');
@@ -152,7 +147,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 $q->where('name', 'like', "%{$query}%")
                   ->orWhere('phone', 'like', "%{$query}%");
             })
-            ->limit(20) // Limitar resultados para velocidad
+            ->limit(20)
             ->select('id', 'name', 'phone', 'balance', 'credit_limit')
             ->orderBy('name')
             ->get()
@@ -166,6 +161,68 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ]);
 
         return response()->json($customers);
+    }
+
+    /**
+     * Verifica si el texto escaneado es una Venta, Orden de Servicio o un Cliente.
+     */
+    public function checkEntity(Request $request)
+    {
+        $query = trim($request->input('query'));
+        if (!$query) return response()->json(null);
+
+        $branchId = Auth::user()->branch_id;
+
+        // 1. Verificar si es un FOLIO DE VENTA (Ej: V-001)
+        $transaction = Transaction::where('branch_id', $branchId)
+            ->where('folio', $query)
+            ->first(['id', 'folio']);
+
+        if ($transaction) {
+            return response()->json([
+                'found' => true,
+                'type' => 'transaction',
+                'id' => $transaction->id,
+                'label' => "Venta Folio: {$transaction->folio}",
+                'message' => "¿Deseas ver los detalles de la venta {$transaction->folio}?"
+            ]);
+        }
+
+        // 2. NUEVO: Verificar si es una ORDEN DE SERVICIO (Ej: OS-V-001)
+        // Se asume que el folio es único por sucursal o globalmente según tu lógica de modelo
+        $serviceOrder = ServiceOrder::where('branch_id', $branchId)
+            ->where('folio', $query)
+            ->first(['id', 'folio']);
+
+        if ($serviceOrder) {
+            return response()->json([
+                'found' => true,
+                'type' => 'service_order',
+                'id' => $serviceOrder->id,
+                'label' => "Orden de Servicio: {$serviceOrder->folio}",
+                'message' => "¿Ir a detalles de la Orden de Servicio {$serviceOrder->folio}?"
+            ]);
+        }
+
+        // 3. Verificar si es un CLIENTE (Teléfono o Nombre)
+        $customer = Customer::where('branch_id', $branchId)
+            ->where(function($q) use ($query) {
+                $q->where('phone', $query)
+                  ->orWhere('name', 'like', $query); // Nombre exacto o parcial
+            })
+            ->first(['id', 'name', 'phone']);
+
+        if ($customer) {
+            return response()->json([
+                'found' => true,
+                'type' => 'customer',
+                'id' => $customer->id,
+                'label' => "Cliente: {$customer->name}",
+                'message' => "Se encontró al cliente {$customer->name}. ¿Ir a detalles?"
+            ]);
+        }
+
+        return response()->json(['found' => false]);
     }
 
     public function checkout(Request $request)
@@ -234,7 +291,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'payments.*.bank_account_id' => 'nullable|exists:bank_accounts,id',
             'payments.*.notes' => 'nullable|string|max:255',
             'use_balance' => 'required|boolean',
-            // VALIDACIÓN DE FECHA DE VENCIMIENTO
             'layaway_expiration_date' => 'required|date|after:today',
         ]);
 
@@ -438,8 +494,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
     private function getCustomersData()
     {
         $branchId = Auth::user()->branch_id;
-        // OPTIMIZACIÓN: Solo traemos los primeros 20 clientes para carga inicial rápida.
-        // El resto se carga vía búsqueda (searchCustomers).
         return Customer::where('branch_id', $branchId)
             ->limit(20)
             ->select('id', 'name', 'phone', 'balance', 'credit_limit')
