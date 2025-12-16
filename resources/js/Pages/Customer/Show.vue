@@ -141,7 +141,7 @@ const handleBalancePaymentSubmit = (paymentData) => {
     router.post(route('customers.payments.store', props.customer.id), payload, {
         onSuccess: () => {
             isPaymentModalVisible.value = false;
-            toast.add({ severity: 'success', summary: 'Abono registrado', detail: 'El saldo ha sido actualizado.', life: 3000 });
+            //toast.add({ severity: 'success', summary: 'Abono registrado', detail: 'El saldo ha sido actualizado.', life: 3000 });
             openPrintModal();
         },
         onFinish: () => { 

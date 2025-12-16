@@ -2,20 +2,20 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\CustomerBalanceMovementType;
-use App\Enums\SessionCashMovementType;
 use App\Enums\CashRegisterSessionStatus;
+use App\Enums\CustomerBalanceMovementType;
 use App\Enums\QuoteStatus;
+use App\Enums\SessionCashMovementType;
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
+use App\Models\CashRegister;
+use App\Models\CashRegisterSession;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Quote;
 use App\Models\Transaction;
-use App\Models\CashRegister;
-use App\Models\CashRegisterSession;
 use App\Services\TransactionPaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -39,13 +39,12 @@ class TransactionController extends Controller implements HasMiddleware
             new Middleware('can:transactions.cancel', only: ['cancel']),
             new Middleware('can:transactions.refund', only: ['refund']),
             new Middleware('can:transactions.add_payment', only: ['addPayment']),
-            new Middleware('can:transactions.exchange', only: ['exchange']), // Nuevo permiso recomendado
+            new Middleware('can:transactions.exchange', only: ['exchange']),
         ];
     }
 
     public function index(Request $request): Response
     {
-        // ... (código existente del index)
         $user = Auth::user();
         $branchId = $user->branch_id;
 
@@ -90,7 +89,7 @@ class TransactionController extends Controller implements HasMiddleware
         ]);
     }
 
-    public function show(Transaction $transaction): Response
+    public function show(Request $request, Transaction $transaction)
     {
         $transaction->load([
             'customer:id,name,balance,credit_limit',
@@ -99,6 +98,21 @@ class TransactionController extends Controller implements HasMiddleware
             'items.itemable',
             'payments.bankAccount',
         ]);
+
+        // --- SOPORTE JSON PARA MODALES (API) ---
+        if ($request->wantsJson()) {
+            $paid = $transaction->payments->sum('amount');
+            // Usamos el accessor 'total' si existe, o calculamos
+            $total = $transaction->total ?? ($transaction->subtotal - $transaction->total_discount + $transaction->total_tax);
+            $balance = $total - $paid;
+
+            // Atributos virtuales para el frontend
+            $transaction->paid_amount = $paid;
+            $transaction->pending_balance = $balance;
+            $transaction->is_paid = $balance <= 0.01;
+
+            return response()->json($transaction);
+        }
 
         $user = Auth::user();
         $branchId = $user->branch_id;
@@ -148,30 +162,39 @@ class TransactionController extends Controller implements HasMiddleware
     {
         $validated = $request->validate([
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
+            
+            // Items devueltos
             'returned_items' => 'required|array|min:1',
             'returned_items.*.item_id' => 'required|exists:transactions_items,id',
             'returned_items.*.quantity' => 'required|integer|min:1',
-            
-            // Datos para la nueva venta
+
+            // Items nuevos
             'new_items' => 'required|array|min:1',
             'new_items.*.id' => 'required|exists:products,id',
             'new_items.*.quantity' => 'required|numeric|min:1',
             'new_items.*.unit_price' => 'required|numeric|min:0',
-            
-            // Validaciones para campos opcionales
-            'new_items.*.description' => 'required|string', 
+            'new_items.*.description' => 'required|string',
             'new_items.*.discount' => 'nullable|numeric',
-            'new_items.*.product_attribute_id' => 'nullable', 
+            // VALIDACIÓN MEJORADA: Verificar que la variante exista
+            'new_items.*.product_attribute_id' => 'nullable|exists:product_attributes,id',
 
+            // Totales
             'subtotal' => 'required|numeric',
             'total_discount' => 'numeric',
-            
+
+            // Pagos adicionales (si hay diferencia en contra)
             'payments' => 'nullable|array',
             'payments.*.amount' => 'required|numeric|min:0.01',
             'payments.*.method' => 'required|string',
             'payments.*.bank_account_id' => 'nullable|exists:bank_accounts,id',
             'payments.*.notes' => 'nullable|string',
-            
+
+            // Deudas a pagar con excedente (si hay diferencia a favor)
+            'debts_to_pay' => 'nullable|array',
+            'debts_to_pay.*.id' => 'required|exists:transactions,id',
+            'debts_to_pay.*.amount' => 'required|numeric|min:0.01',
+
+            // Otros campos
             'notes' => 'nullable|string|max:255',
             'new_customer_id' => 'nullable|exists:customers,id',
             'exchange_refund_type' => 'nullable|in:balance,cash',
@@ -191,16 +214,45 @@ class TransactionController extends Controller implements HasMiddleware
 
             return redirect()->route('transactions.show', $newTransaction->id)
                 ->with('success', 'Cambio realizado con éxito. Nueva venta #' . $newTransaction->folio);
-
         } catch (\Exception $e) {
             Log::error("Error al procesar cambio en transacción {$transaction->id}: " . $e->getMessage());
             return redirect()->back()->with(['error' => 'Error: ' . $e->getMessage()]);
         }
     }
 
+    /**
+     * Endpoint API para obtener deudas pendientes de un cliente.
+     * Usado en el modal de intercambio para distribuir excedentes.
+     */
+    public function pendingDebts(Customer $customer)
+    {
+        $debts = $customer->transactions()
+            ->whereIn('status', [TransactionStatus::PENDING, TransactionStatus::ON_LAYAWAY])
+            ->orderBy('created_at', 'asc') // FIFO
+            ->get(['id', 'folio', 'subtotal', 'total_discount', 'total_tax', 'created_at']);
+
+        // Calcular montos pendientes precisos
+        $debtsWithPendingAmount = $debts->map(function ($txn) {
+            // Calculamos total manual para no depender de accessors si no están cargados
+            $total = ($txn->subtotal - $txn->total_discount) + $txn->total_tax;
+            $paid = $txn->payments()->sum('amount');
+
+            return [
+                'id' => $txn->id,
+                'folio' => $txn->folio,
+                'total' => $total,
+                'pending_amount' => round($total - $paid, 2), // Redondeo para evitar flotantes extraños
+                'created_at' => $txn->created_at,
+            ];
+        })->filter(fn($d) => $d['pending_amount'] > 0.01)->values();
+
+        return response()->json($debtsWithPendingAmount);
+    }
+    
+    // ... métodos addPayment, cancel, refund, searchProducts y returnStock se mantienen igual ...
+    
     public function addPayment(Request $request, Transaction $transaction)
     {
-        // 1. Validaciones básicas
         $validated = $request->validate([
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
             'payments' => 'required|array|min:1',
@@ -211,13 +263,11 @@ class TransactionController extends Controller implements HasMiddleware
             'use_balance' => 'boolean',
         ]);
 
-        // 2. Validar estado de la transacción
         if (in_array($transaction->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED])) {
             return redirect()->back()->with(['error' => 'No se pueden agregar pagos a transacciones canceladas o reembolsadas.']);
         }
 
         try {
-            // 3. Procesar el pago usando el servicio
             $this->transactionPaymentService->applyPaymentToTransaction(
                 $transaction,
                 $validated,
@@ -376,10 +426,6 @@ class TransactionController extends Controller implements HasMiddleware
         return redirect()->back()->with('success', 'Devolución generada con éxito.');
     }
 
-    /**
-     * Endpoint ligero para buscar productos (Nombre o SKU) para el modal de intercambio.
-     * Retorna JSON simplificado.
-     */
     public function searchProducts(Request $request)
     {
         $query = $request->input('query');
@@ -391,16 +437,27 @@ class TransactionController extends Controller implements HasMiddleware
                 $q->where('name', 'like', "%{$query}%")
                     ->orWhere('sku', 'like', "%{$query}%");
             })
+            ->with('productAttributes') // <-- Cargar variantes (relación definida en modelo Product)
             ->limit(10)
-            ->get(['id', 'name', 'sku', 'selling_price', 'current_stock']) // Solo campos necesarios
+            ->get(['id', 'name', 'sku', 'selling_price', 'current_stock', 'description'])
             ->map(function ($p) {
                 return [
                     'id' => $p->id,
                     'name' => $p->name,
                     'sku' => $p->sku,
                     'selling_price' => (float) $p->selling_price,
-                    // Si tienes variantes, este es un lugar para expandir lógica,
-                    // por ahora retornamos productos simples o el padre.
+                    'current_stock' => $p->current_stock, // Stock global o del padre
+                    'description' => $p->description, // Descripción base
+                    // Mapear variantes para el frontend (clave 'variants' que busca el modal Vue)
+                    'variants' => $p->productAttributes->map(function ($variant) {
+                        return [
+                            'id' => $variant->id,
+                            'attributes' => $variant->attributes, // ej. {"Talla": "M", "Color": "Rojo"}
+                            'sku_suffix' => $variant->sku_suffix,
+                            'selling_price_modifier' => (float) $variant->selling_price_modifier,
+                            'current_stock' => $variant->current_stock,
+                        ];
+                    }),
                 ];
             });
 

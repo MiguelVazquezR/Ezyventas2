@@ -17,7 +17,12 @@ Route::middleware('auth')->group(function () {
     Route::post('/transactions/{transaction}/exchange', [TransactionController::class, 'exchange'])
         ->name('transactions.exchange');
 
-    Route::get('/transactions/search-products', [TransactionController::class, 'searchProducts'])->name('transactions.search-products');
+    Route::get('/transactions/search-products', [TransactionController::class, 'searchProducts'])
+        ->name('transactions.search-products');
+
+    // Nueva ruta para obtener deudas pendientes de un cliente (usada en el modal de intercambio)
+    Route::get('/customers/{customer}/pending-debts', [TransactionController::class, 'pendingDebts'])
+        ->name('customers.pending-debts');
 
     // Rutas del resource
     Route::resource('transactions', TransactionController::class)->except(['create', 'store', 'edit', 'update', 'destroy']);
