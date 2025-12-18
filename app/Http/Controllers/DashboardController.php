@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\ExpenseStatus; // Necesario para filtrar gastos pagados
+use App\Enums\ExpenseStatus;
 use App\Enums\TransactionStatus;
 use App\Models\BankAccount;
 use App\Models\CashRegister;
@@ -29,19 +29,17 @@ class DashboardController extends Controller
         $isAdmin = !$user->roles()->exists();
         $stats = [];
 
-        // Actualizamos la key del caché para forzar refresco con la nueva lógica (v2)
-        $cacheKey = "dashboard_stats_branch_{$branchId}_v2";
+        // CAMBIO: Cache v4 para forzar la recarga inmediata de la gráfica corregida
+        $cacheKey = "dashboard_stats_branch_{$branchId}_v4";
 
         // --- 1. Ventas y Transacciones ---
         if ($isAdmin || $user->can('transactions.access')) {
             $startOfDay = now()->startOfDay();
             $endOfDay = now()->endOfDay();
 
-            // CORRECCIÓN: Usar whereNotIn para excluir Canceladas y Cambiadas (consistente con Reportes)
-            // CORRECCIÓN: Agregar '+ total_tax' al cálculo de ventas.
             $todayAggregates = Transaction::where('branch_id', $branchId)
                 ->whereBetween('created_at', [$startOfDay, $endOfDay])
-                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED]) 
+                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
                 ->selectRaw('SUM(subtotal - total_discount + total_tax) as total_sales')
                 ->selectRaw('COUNT(*) as total_count')
                 ->first();
@@ -56,11 +54,11 @@ class DashboardController extends Controller
                 return $this->getSalesTotalForPeriod($branchId, today()->subDay(), today()->subDay());
             });
 
+            // Recuperamos la lógica robusta para la gráfica
             $stats['weekly_sales_trend'] = Cache::remember("{$cacheKey}_weekly_trend", 3600, function () use ($branchId) {
                 return $this->getWeeklySalesTrend($branchId);
             });
 
-            // Conteo de Apartados por Vencer
             $stats['expiring_layaways_count'] = Transaction::where('branch_id', $branchId)
                 ->where('status', TransactionStatus::ON_LAYAWAY)
                 ->whereNotNull('layaway_expiration_date')
@@ -74,14 +72,12 @@ class DashboardController extends Controller
                 return Expense::where('branch_id', $branchId)
                     ->whereMonth('expense_date', now()->month)
                     ->whereYear('expense_date', now()->year)
-                    ->where('status', ExpenseStatus::PAID) // CORRECCIÓN: Solo gastos pagados
+                    ->where('status', ExpenseStatus::PAID)
                     ->sum('amount');
             });
         }
         
         if ($isAdmin || $user->can('financials.manage_cash_registers')) {
-            // CORRECCIÓN: Renombramos alias a 'in_use_count' y 'available_count' 
-            // para evitar conflicto con el cast 'boolean' del modelo CashRegister.
             $stats['cash_registers_status'] = CashRegister::where('branch_id', $branchId)
                 ->where('is_active', true)
                 ->selectRaw("COUNT(CASE WHEN in_use = 1 THEN 1 END) as in_use_count")
@@ -278,31 +274,59 @@ class DashboardController extends Controller
     {
         return Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$start->startOfDay(), $end->endOfDay()])
-            // CORRECCIÓN: Usar whereNotIn y sumar impuestos
             ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
             ->sum(DB::raw('subtotal - total_discount + total_tax'));
     }
 
     private function getWeeklySalesTrend($branchId): array
     {
+        // 1. Definir la semana (Lunes a Domingo)
         $startOfWeek = now()->startOfWeek(Carbon::MONDAY);
         $endOfWeek = now()->endOfWeek(Carbon::SUNDAY);
 
+        // 2. Consulta Robusta (Similar a la versión antigua)
+        // Seleccionamos las columnas individuales para sumarlas en PHP y evitar nulos.
         $trendData = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$startOfWeek, $endOfWeek])
-            // CORRECCIÓN: Usar whereNotIn y sumar impuestos
+            // Usamos la nueva lógica: Excluir Canceladas y Cambiadas (No solo 'completadas')
             ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
-            ->selectRaw('DATE(created_at) as date')
-            ->selectRaw('SUM(subtotal - total_discount + total_tax) as total')
+            ->select(
+                DB::raw('DATE(created_at) as date'),
+                DB::raw('SUM(subtotal) as total_subtotal'),
+                DB::raw('SUM(total_discount) as total_discount'),
+                DB::raw('SUM(total_tax) as total_tax')
+            )
             ->groupBy('date')
-            ->pluck('total', 'date');
+            ->orderBy('date', 'asc')
+            ->get()
+            ->keyBy('date'); // Agrupamos por fecha para fácil acceso en el loop
 
         $weekSales = [];
+        
+        // 3. Iteramos los 7 días de la semana
         for ($i = 0; $i < 7; $i++) {
             $date = $startOfWeek->copy()->addDays($i);
             $dateString = $date->format('Y-m-d');
-            $weekSales[] = ['day' => $date->translatedFormat('D'), 'total' => (float) ($trendData[$dateString] ?? 0)];
+
+            $dayData = $trendData->get($dateString);
+
+            $total = 0;
+            if ($dayData) {
+                // Hacemos la matemática en PHP para manejar valores nulos de forma segura.
+                // Fórmula: (Subtotal - Descuento) + Impuestos
+                $subtotal = $dayData->total_subtotal ?? 0;
+                $discount = $dayData->total_discount ?? 0;
+                $tax = $dayData->total_tax ?? 0;
+                
+                $total = ($subtotal - $discount) + $tax;
+            }
+
+            $weekSales[] = [
+                'day' => $date->translatedFormat('D'), // 'Lun', 'Mar', etc.
+                'total' => (float) $total
+            ];
         }
+        
         return $weekSales;
     }
 }
