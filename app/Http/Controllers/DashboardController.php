@@ -2,7 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\TransactionStatus; // Asegúrate de importar el Enum
+use App\Enums\ExpenseStatus; // Necesario para filtrar gastos pagados
+use App\Enums\TransactionStatus;
 use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\Customer;
@@ -28,17 +29,20 @@ class DashboardController extends Controller
         $isAdmin = !$user->roles()->exists();
         $stats = [];
 
-        $cacheKey = "dashboard_stats_branch_{$branchId}";
+        // Actualizamos la key del caché para forzar refresco con la nueva lógica (v2)
+        $cacheKey = "dashboard_stats_branch_{$branchId}_v2";
 
         // --- 1. Ventas y Transacciones ---
         if ($isAdmin || $user->can('transactions.access')) {
             $startOfDay = now()->startOfDay();
             $endOfDay = now()->endOfDay();
 
+            // CORRECCIÓN: Usar whereNotIn para excluir Canceladas y Cambiadas (consistente con Reportes)
+            // CORRECCIÓN: Agregar '+ total_tax' al cálculo de ventas.
             $todayAggregates = Transaction::where('branch_id', $branchId)
                 ->whereBetween('created_at', [$startOfDay, $endOfDay])
-                ->where('status', TransactionStatus::COMPLETED) // Usar Enum si es posible, o 'completado'
-                ->selectRaw('SUM(subtotal - total_discount) as total_sales')
+                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED]) 
+                ->selectRaw('SUM(subtotal - total_discount + total_tax) as total_sales')
                 ->selectRaw('COUNT(*) as total_count')
                 ->first();
 
@@ -56,8 +60,7 @@ class DashboardController extends Controller
                 return $this->getWeeklySalesTrend($branchId);
             });
 
-            // --- NUEVO: Conteo de Apartados por Vencer (Ligero) ---
-            // Contamos apartados activos cuya fecha de vencimiento es hoy o en los próximos 5 días (o ya vencidos)
+            // Conteo de Apartados por Vencer
             $stats['expiring_layaways_count'] = Transaction::where('branch_id', $branchId)
                 ->where('status', TransactionStatus::ON_LAYAWAY)
                 ->whereNotNull('layaway_expiration_date')
@@ -71,15 +74,18 @@ class DashboardController extends Controller
                 return Expense::where('branch_id', $branchId)
                     ->whereMonth('expense_date', now()->month)
                     ->whereYear('expense_date', now()->year)
+                    ->where('status', ExpenseStatus::PAID) // CORRECCIÓN: Solo gastos pagados
                     ->sum('amount');
             });
         }
         
         if ($isAdmin || $user->can('financials.manage_cash_registers')) {
+            // CORRECCIÓN: Renombramos alias a 'in_use_count' y 'available_count' 
+            // para evitar conflicto con el cast 'boolean' del modelo CashRegister.
             $stats['cash_registers_status'] = CashRegister::where('branch_id', $branchId)
                 ->where('is_active', true)
-                ->selectRaw("COUNT(CASE WHEN in_use = 1 THEN 1 END) as in_use")
-                ->selectRaw("COUNT(CASE WHEN in_use = 0 THEN 1 END) as available")
+                ->selectRaw("COUNT(CASE WHEN in_use = 1 THEN 1 END) as in_use_count")
+                ->selectRaw("COUNT(CASE WHEN in_use = 0 THEN 1 END) as available_count")
                 ->first()
                 ->toArray();
         }
@@ -142,27 +148,21 @@ class DashboardController extends Controller
         ]);
     }
 
-    /**
-     * Endpoint AJAX para cargar el detalle de apartados por vencer.
-     * Retorna JSON para no recargar la página.
-     */
     public function getExpiringLayaways(Request $request)
     {
         $user = Auth::user();
         
-        // Obtenemos los apartados por vencer
-        // Optimizamos usando withSum para obtener lo pagado sin hidratar todos los modelos de pagos
         $layaways = Transaction::where('branch_id', $user->branch_id)
             ->where('status', TransactionStatus::ON_LAYAWAY)
             ->whereNotNull('layaway_expiration_date')
             ->whereDate('layaway_expiration_date', '<=', now()->addDays(5))
-            ->with('customer:id,name,phone') // Cargamos cliente básico
-            ->withSum('payments', 'amount') // Sumamos los pagos realizados
-            ->orderBy('layaway_expiration_date', 'asc') // Los más urgentes primero
+            ->with('customer:id,name,phone')
+            ->withSum('payments', 'amount')
+            ->orderBy('layaway_expiration_date', 'asc')
             ->get()
             ->map(function ($t) {
                 $totalPaid = $t->payments_sum_amount ?? 0;
-                $total = (float) $t->total; // Usando el accesor 'total' del modelo Transaction
+                $total = (float) $t->total;
                 
                 return [
                     'id' => $t->id,
@@ -180,7 +180,6 @@ class DashboardController extends Controller
         return response()->json($layaways);
     }
 
-    // ... (El resto de tus métodos privados se mantienen igual: getInventorySummaryOptimized, etc.)
     private function getInventorySummaryOptimized($branchId)
     {
         $summary = DB::table('products')
@@ -279,8 +278,9 @@ class DashboardController extends Controller
     {
         return Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$start->startOfDay(), $end->endOfDay()])
-            ->where('status', TransactionStatus::COMPLETED)
-            ->sum(DB::raw('subtotal - total_discount'));
+            // CORRECCIÓN: Usar whereNotIn y sumar impuestos
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+            ->sum(DB::raw('subtotal - total_discount + total_tax'));
     }
 
     private function getWeeklySalesTrend($branchId): array
@@ -290,9 +290,10 @@ class DashboardController extends Controller
 
         $trendData = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$startOfWeek, $endOfWeek])
-            ->where('status', TransactionStatus::COMPLETED)
+            // CORRECCIÓN: Usar whereNotIn y sumar impuestos
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
             ->selectRaw('DATE(created_at) as date')
-            ->selectRaw('SUM(subtotal - total_discount) as total')
+            ->selectRaw('SUM(subtotal - total_discount + total_tax) as total')
             ->groupBy('date')
             ->pluck('total', 'date');
 
