@@ -204,14 +204,15 @@ const getExpirationSeverity = (days) => {
                             <div class="mt-3 space-y-2">
                                 <div class="flex justify-between items-center"><span
                                         class="text-green-500 flex items-center gap-2"><i
-                                            class="pi pi-circle-fill text-xs"></i> En uso</span><span
-                                        class="font-bold text-2xl">{{ stats.cash_registers_status.in_use || 0 }}</span>
+                                            class="pi pi-circle-fill text-xs"></i> En uso</span>
+                                            <!-- CORRECCIÓN: Usar nuevo alias .in_use_count -->
+                                            <span class="font-bold text-2xl">{{ stats.cash_registers_status.in_use_count || 0 }}</span>
                                 </div>
                                 <div class="flex justify-between items-center"><span
                                         class="text-gray-400 flex items-center gap-2"><i
-                                            class="pi pi-circle-fill text-xs"></i> Sin usar</span><span
-                                        class="font-bold text-2xl">{{ stats.cash_registers_status.available || 0
-                                        }}</span>
+                                            class="pi pi-circle-fill text-xs"></i> Sin usar</span>
+                                            <!-- CORRECCIÓN: Usar nuevo alias .available_count -->
+                                            <span class="font-bold text-2xl">{{ stats.cash_registers_status.available_count || 0 }}</span>
                                 </div>
                             </div>
                         </Link>
