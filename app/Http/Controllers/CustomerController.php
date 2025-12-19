@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CustomerBalanceMovementType;
-use App\Enums\TemplateContextType; // <-- Importado
-use App\Enums\TemplateType;        // <-- Importado
+use App\Enums\TemplateContextType;
+use App\Enums\TemplateType;
 use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
 use App\Models\CashRegister;
@@ -72,12 +72,19 @@ class CustomerController extends Controller implements HasMiddleware
     {
         $validated = $request->validated();
         $initialBalance = $validated['initial_balance'] ?? 0;
+        
+        // Eliminamos initial_balance del array porque no es una columna de la tabla customers
         unset($validated['initial_balance']);
 
-        DB::transaction(function () use ($validated, $initialBalance) {
+        // IMPORTANTE: Capturamos la dirección manualmente por si el StoreCustomerRequest 
+        // no tiene reglas de validación para 'address' todavía y lo está filtrando.
+        $address = $request->input('address', []);
+
+        DB::transaction(function () use ($validated, $initialBalance, $address) {
             $customer = Customer::create(array_merge($validated, [
                 'branch_id' => Auth::user()->branch_id,
                 'balance' => $initialBalance, 
+                'address' => $address, // Guardamos el JSON/Array de dirección
             ]));
 
             if ($initialBalance != 0) {
@@ -105,13 +112,10 @@ class CustomerController extends Controller implements HasMiddleware
 
         $user = Auth::user();
         
-        // --- NUEVO: Obtener Plantillas Filtradas ---
-        // Obtenemos solo plantillas de TICKET o ETIQUETA que sean de contexto CLIENTE o GENERAL
         $availableTemplates = $user->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
             ->whereIn('context_type', [TemplateContextType::CUSTOMER, TemplateContextType::GENERAL])
             ->get();
-        // -------------------------------------------
 
         $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
             ->where('is_active', true)
@@ -147,7 +151,7 @@ class CustomerController extends Controller implements HasMiddleware
             'availableCashRegisters' => $availableCashRegisters,
             'userBankAccounts' => $userBankAccounts,
             'activeLayaways' => $formattedLayaways, 
-            'availableTemplates' => $availableTemplates, // <-- Pasamos las plantillas a la vista
+            'availableTemplates' => $availableTemplates,
         ]);
     }
 
@@ -160,7 +164,13 @@ class CustomerController extends Controller implements HasMiddleware
 
     public function update(UpdateCustomerRequest $request, Customer $customer)
     {
-        $customer->update($request->validated());
+        // En el update también aseguramos que la dirección pase, aunque lo ideal es que esté en el Request
+        $data = $request->validated();
+        if ($request->has('address')) {
+            $data['address'] = $request->input('address');
+        }
+
+        $customer->update($data);
         return redirect()->route('customers.index')->with('success', 'Cliente actualizado con éxito.');
     }
 
