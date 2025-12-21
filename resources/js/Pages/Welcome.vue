@@ -1,6 +1,8 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
-// SelectButton eliminado, usaremos uno custom
+// Importamos los componentes personalizados
+import DashboardGraph from '@/Components/DashboardGraph.vue';
+import CustomerRelationship from '@/Components/CustomerRelationship.vue'; // NUEVO COMPONENTE
 import AOS from 'aos';
 import 'aos/dist/aos.css';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
@@ -152,7 +154,7 @@ const businessTypes = [
     { title: 'Supermercados', image: '/imagesLanding/biz-supermarket.webp', alt: 'Abarrotes', shortDesc: 'Venta rápida y control de caducidad.', fullDesc: 'Agilidad en la caja es clave. Escanea códigos rápidamente y gestiona miles de productos sin demoras.', features: ['Venta ultra rápida con scanner', 'Control de inventario mínimo y máximo', 'Venta a granel (bascula)', 'Múltiples cajeros simultáneos'] },
     { title: 'Papelerías', image: '/imagesLanding/biz-stationery.webp', alt: 'Papelería', shortDesc: 'Miles de artículos pequeños bajo control.', fullDesc: 'Desde un lápiz hasta paquetes escolares. Organiza la inmensa variedad de artículos pequeños fácilmente.', features: ['Venta unitaria y por paquete', 'Kits escolares pre-armados', 'Búsqueda rápida de productos', 'Control de merma y robo hormiga'] },
     { title: 'Ferreterías', image: '/imagesLanding/biz-hardware.webp', alt: 'Herramientas', shortDesc: 'Inventario pesado y venta a granel.', fullDesc: 'Administra inventarios complejos, ventas por metro, kilo o pieza y mantén el control de tu almacén.', features: ['Venta fraccionada (metros, kilos)', 'Control de lotes', 'Catálogo con fotos para mostrador', 'Facturación instantánea'] },
-    { title: 'Servicios', image: '/imagesLanding/biz-hardware.webp', alt: 'Servicios', shortDesc: 'Reparaciones, citas y mano de obra.', fullDesc: 'No solo productos, vende tu tiempo y experiencia. Gestiona órdenes de servicio y seguimiento.', features: ['Órdenes de servicio', 'Control de estatus', 'Mano de obra', 'Notificaciones WhatsApp'] },
+    { title: 'Servicios', image: '/imagesLanding/biz-services.webp', alt: 'Servicios', shortDesc: 'Reparaciones, citas y mano de obra.', fullDesc: 'No solo productos, vende tu tiempo y experiencia. Gestiona órdenes de servicio y seguimiento.', features: ['Órdenes de servicio', 'Control de estatus', 'Mano de obra', 'Notificaciones WhatsApp'] },
 ];
 
 const selectedBusiness = ref(null);
@@ -534,11 +536,14 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div class="feature-card-modern flex flex-col justify-between" data-aos="fade-right" data-aos-delay="100">
-                            <div class="mb-8">
+                            <div class="mb-8 relative z-10">
                                 <h3 class="text-3xl font-bold text-gray-900 mb-4">Toma decisiones,<br/>no adivinanzas.</h3>
                                 <p class="text-gray-600">Visualiza el pulso de tu negocio al instante. Gráficas de ventas, productos estrella y rendimiento de personal en un solo lugar.</p>
                             </div>
-                            <img src="/imagesLanding/solution-modern-pos.webp" alt="Reportes" class="w-full h-64 object-contain object-bottom drop-shadow-lg transition-transform duration-500 hover:scale-105">
+                            <!-- AQUI ESTÁ EL NUEVO COMPONENTE INTEGRADO -->
+                            <div class="w-full h-full flex items-end justify-center -mb-8 md:-mb-12">
+                                <DashboardGraph />
+                            </div>
                         </div>
                         <div class="feature-card-modern flex flex-col justify-between" data-aos="fade-left" data-aos-delay="200">
                             <div class="mb-8">
@@ -550,15 +555,20 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                             </div>
                         </div>
                     </div>
-                    <div class="feature-card-modern flex flex-col md:flex-row items-center gap-12 bg-gradient-to-br from-gray-900 to-gray-800 text-white p-12 !border-none" data-aos="fade-up">
-                        <div class="w-full md:w-1/2 space-y-6">
-                            <h3 class="text-3xl md:text-4xl font-bold text-white">Fideliza y vende más.</h3>
-                            <p class="text-gray-300 text-lg leading-relaxed">Un cliente anónimo es una oportunidad perdida. Crea perfiles, otorga créditos y conoce quiénes son tus clientes VIP para ofrecerles promociones personalizadas.</p>
-                            <button class="bg-white text-gray-900 px-8 py-3 rounded-full font-bold hover:bg-gray-100 transition-colors">Ver herramientas de Marketing</button>
+                    
+                    <!-- NUEVO COMPONENTE DE CLIENTES INTEGRADO AQUÍ (Versión Light/Moderna) -->
+                    <div class="feature-card-modern flex flex-col md:flex-row items-center gap-12 bg-white text-gray-900 p-12 relative overflow-hidden" data-aos="fade-up">
+                        <div class="w-full md:w-1/2 space-y-6 relative z-10">
+                            <h3 class="text-3xl md:text-4xl font-bold text-gray-900">Fideliza y vende más.</h3>
+                            <p class="text-gray-600 text-lg leading-relaxed">Un cliente anónimo es una oportunidad perdida. Crea perfiles, otorga créditos y conoce quiénes son tus clientes VIP para ofrecerles promociones personalizadas.</p>
+                            <button class="bg-[#F68C0F] text-white px-8 py-3 rounded-full font-bold hover:bg-[#e57f00] shadow-lg hover:shadow-xl transition-all">Ver herramientas de Marketing</button>
                         </div>
-                        <div class="w-full md:w-1/2 flex justify-center">
-                            <img src="/imagesLanding/solution-loyal-clients.webp" alt="CRM Clientes" class="max-w-sm w-full drop-shadow-2xl">
+                        <div class="w-full md:w-1/2 flex justify-center relative z-10">
+                            <CustomerRelationship />
                         </div>
+                        
+                        <!-- Fondo decorativo sutil -->
+                        <div class="absolute inset-0 bg-gradient-to-r from-gray-50 to-white z-0 pointer-events-none"></div>
                     </div>
                 </div>
             </section>
@@ -587,34 +597,50 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                             <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-[#F68C0F] to-orange-400"></div>
                             
                             <h3 class="text-2xl font-bold text-gray-900 mb-2">Plan Esencial</h3>
-                            <p class="text-gray-500 text-sm mb-6">Todo lo que necesitas para operar.</p>
+                            <p class="text-gray-600 text-md mb-6">Todo lo que necesitas para operar.</p>
                             
                             <div class="flex items-baseline gap-1 mb-8">
                                 <span class="text-5xl font-extrabold text-gray-900">${{ isAnnual ? (199 * 0.8).toFixed(0) : '199' }}</span>
                                 <span class="text-gray-500 text-lg">/mes</span>
                             </div>
 
-                            <p class="font-bold text-gray-900 mb-4 text-sm uppercase tracking-wide">Incluye siempre:</p>
-                            <ul class="space-y-4 text-gray-600">
+                            <p class="font-bold text-gray-900 mb-4 text-normal uppercase tracking-wide">Incluye siempre:</p>
+                            <ul class="space-y-4 text-gray-800 text-lg">
                                 <li class="flex items-center gap-3">
-                                    <div class="w-6 h-6 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <span>Inicio</span>
+                                </li>
+                                <li class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>Punto de venta (POS)</span>
                                 </li>
                                 <li class="flex items-center gap-3">
-                                    <div class="w-6 h-6 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
-                                    <span>Control de Inventarios</span>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <span>Historal de ventas</span>
                                 </li>
                                 <li class="flex items-center gap-3">
-                                    <div class="w-6 h-6 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <span>Control de inventario</span>
+                                </li>
+                                <li class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <span>Gastos</span>
+                                </li>
+                                <li class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>Hasta 3 usuarios</span>
                                 </li>
                                 <li class="flex items-center gap-3">
-                                    <div class="w-6 h-6 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <span>1 Caja</span>
+                                </li>
+                                <li class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>1 Sucursal</span>
                                 </li>
                                 <li class="flex items-center gap-3">
-                                    <div class="w-6 h-6 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
-                                    <span>Soporte Técnico</span>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <span>500 productos</span>
                                 </li>
                             </ul>
                         </div>
@@ -637,7 +663,7 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                                             <span class="font-bold text-gray-900">{{ module.name }}</span>
                                             <span v-if="module.active" class="bg-orange-100 text-[#F68C0F] text-[10px] font-bold px-2 py-0.5 rounded-full">AGREGADO</span>
                                         </div>
-                                        <p class="text-sm text-gray-500">{{ module.description }}</p>
+                                        <p class="text-md text-gray-500">{{ module.description }}</p>
                                     </div>
                                     
                                     <div class="text-right flex flex-col items-end gap-2 pl-4">
