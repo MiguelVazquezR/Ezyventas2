@@ -131,9 +131,7 @@ onUnmounted(() => {
         <!-- HEADER DEL DASHBOARD FALSO -->
         <div class="absolute top-0 left-0 right-0 p-6 z-10 flex justify-between items-center bg-white/50 backdrop-blur-sm border-b border-gray-50">
             <div class="flex items-center gap-3">
-                <div class="w-3 h-3 rounded-full bg-red-400"></div>
-                <div class="w-3 h-3 rounded-full bg-yellow-400"></div>
-                <div class="w-3 h-3 rounded-full bg-green-400"></div>
+                <img src="/imagesLanding/ezy-logo-color.webp" class="h-9 w-auto"></img>
             </div>
             <div class="text-xs font-bold text-gray-400 tracking-widest uppercase">Resumen Semanal</div>
         </div>
@@ -207,10 +205,10 @@ onUnmounted(() => {
         >
             <div class="glass-card px-4 py-2 rounded-full border border-white/60 bg-white/40 backdrop-blur-md shadow-lg flex items-center gap-3">
                 <div class="flex -space-x-2">
-                    <div class="w-6 h-6 rounded-full bg-blue-100 border border-white"></div>
-                    <div class="w-6 h-6 rounded-full bg-purple-100 border border-white"></div>
+                    <div class="w-8 h-8 rounded-full bg-blue-100 border border-white flex items-center justify-center text-blue-600 text-[12px] font-bold">R</div>
+                    <div class="w-8 h-8 rounded-full bg-purple-100 border border-white flex items-center justify-center text-purple-600 text-[12px] font-bold">C</div>
                 </div>
-                <div class="text-xs font-bold text-gray-600">
+                <div class="text-sm font-bold text-gray-600">
                     <span class="text-[#F68C0F]">3 Pagos</span> pendientes
                 </div>
             </div>

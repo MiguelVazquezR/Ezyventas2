@@ -2,7 +2,8 @@
 import { Head, Link } from '@inertiajs/vue3';
 // Importamos los componentes personalizados
 import DashboardGraph from '@/Components/DashboardGraph.vue';
-import CustomerRelationship from '@/Components/CustomerRelationship.vue'; // NUEVO COMPONENTE
+import CustomerRelationship from '@/Components/CustomerRelationship.vue';
+import ModernFooter from '@/Components/ModernFooter.vue'; // NUEVO COMPONENTE FOOTER
 import AOS from 'aos';
 import 'aos/dist/aos.css';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
@@ -15,7 +16,6 @@ defineProps({
 });
 
 // --- NAVBAR LOGIC ---
-const footerRef = ref(null);
 const isNavVisible = ref(true);
 const isScrolled = ref(false);
 
@@ -58,14 +58,16 @@ const setupIntersectionObserver = () => {
         ([entry]) => { isNavVisible.value = !entry.isIntersecting; },
         { root: null, threshold: 0, rootMargin: "0px 0px -50px 0px" }
     );
-    if (footerRef.value) observer.observe(footerRef.value);
+    // Nota: El footerRef se usaba antes para ocultar navbar, ahora lo mantenemos simple o quitamos si el nuevo footer es diferente
+    // Para evitar errores si footerRef no existe, simplemente observamos un div centinela o el footer nuevo si le ponemos ref.
+    // Dejaremos el observer genérico.
 };
 
 // --- FAQ LOGIC ---
 const faqs = ref([
-    { question: '¿Necesito hardware especial?', answer: 'No, funciona desde cualquier dispositivo, el sistema se encuentra en la nube. Puedes usar tu computadora, tablet o celular actual.', open: false },
-    { question: '¿Hay un contrato forzoso?', answer: 'No, puedes cancelar tu suscripción en cualquier momento sin penalizaciones. Creemos en ganarnos tu confianza mes a mes.', open: false },
-    { question: '¿Ofrecen soporte técnico?', answer: 'Sí, contamos con soporte técnico prioritario vía chat y correo electrónico para todos nuestros planes, sin costo extra.', open: false }
+    { question: '¿Necesito comprar equipo especial para usar Ezy Ventas?', answer: 'No. Ezy Ventas funciona directamente en la nube. Puedes usar la computadora, tablet o incluso el celular que ya tienes. Si cuentas con lectores de código de barras o impresoras térmicas estándar, también son compatibles.', open: false },
+    { question: 'Tengo varias sucursales, ¿puedo ver todo junto?', answer: 'Sí. Nuestra arquitectura centralizada te permite ver el rendimiento, inventarios y cortes de caja de todas tus sucursales en tiempo real desde una sola cuenta de administrador.', open: false },
+    { question: '¿Hay plazos forzosos o costos de instalación?', answer: 'No hay costos de instalación, ni plazos forzosos, ni letras chiquitas. Tu suscripción es mensual (o anual con descuento) y puedes cancelarla cuando tú decidas sin penalizaciones.', open: false }
 ]);
 
 const toggleFaq = (index) => {
@@ -73,36 +75,36 @@ const toggleFaq = (index) => {
 };
 
 // --- DATOS MOCK PARA INVENTARIO INTERACTIVO (STOCK REAL AGREGADO) ---
-// Agregamos clases de hover específicas para tailwind
 const inventoryMock = [
-    { name: 'Nike Air Max', pieces: 124, icon: '👟', hoverClass: 'hover:shadow-green-200 hover:border-green-300', dotClass: 'bg-green-500' },
+    { name: 'Tenis', pieces: 124, icon: '👟', hoverClass: 'hover:shadow-green-200 hover:border-green-300', dotClass: 'bg-green-500' },
     { name: 'Camiseta Basic', pieces: 42, icon: '👕', hoverClass: 'hover:shadow-yellow-200 hover:border-yellow-300', dotClass: 'bg-yellow-500' },
-    { name: 'Gorra NY', pieces: 8, icon: '🧢', hoverClass: 'hover:shadow-red-200 hover:border-red-300', dotClass: 'bg-red-500' },
+    { name: 'Gorra', pieces: 8, icon: '🧢', hoverClass: 'hover:shadow-red-200 hover:border-red-300', dotClass: 'bg-red-500' },
     { name: 'Jeans Slim', pieces: 85, icon: '👖', hoverClass: 'hover:shadow-green-200 hover:border-green-300', dotClass: 'bg-green-500' },
     { name: 'Calcetines', pieces: 200, icon: '🧦', hoverClass: 'hover:shadow-green-200 hover:border-green-300', dotClass: 'bg-green-500' },
     { name: 'Bufanda', pieces: 0, icon: '🧣', hoverClass: 'hover:shadow-red-200 hover:border-red-300', dotClass: 'bg-red-500' },
 ];
 
 // --- PRECIOS Y MÓDULOS ---
-const isAnnual = ref(true); // Default true para presumir descuento
+const isAnnual = ref(false); // Default true para presumir descuento
 const basePriceMonthly = 199;
 
 const modules = ref([
-    { id: 'reportes', name: 'Reporte financiero', price: 30, active: false, description: 'Estado de resultados y balances.' },
-    { id: 'clientes', name: 'Clientes y Créditos', price: 40, active: false, description: 'Cuentas por cobrar y fidelización.' }, 
-    { id: 'servicios', name: 'Servicios', price: 45, active: false, description: 'Órdenes de servicio y reparaciones.', subItems: ['Catálogo', 'Órdenes'] }, 
-    { id: 'cotizaciones', name: 'Cotizaciones', price: 25, active: false, description: 'Envía propuestas profesionales en PDF.' },
-    { id: 'ecommerce', name: 'Tienda en línea', price: 99, active: false, description: 'Vende tus productos en internet sincronizado.' },
+    { id: 'reportes', name: 'Reporte financiero', price: 25, active: false, description: 'Verifica tus ganancia neta, flujo de dinero, resumen de operaciones.' },
+    { id: 'clientes', name: 'Clientes', price: 30, active: false, description: 'Cuentas por cobrar, apartados, servicios realizados.' }, 
+    { id: 'servicios', name: 'Servicios', price: 50, active: false, description: 'Órdenes de servicio, estatus, listado de servicios.', subItems: ['Catálogo', 'Órdenes'] }, 
+    { id: 'cotizaciones', name: 'Cotizaciones', price: 35, active: false, description: 'Personaliza tus cotizaciones y envía propuestas profesionales.' },
+    // { id: 'ecommerce', name: 'Tienda en línea', price: 99, active: false, description: 'Vende tus productos en internet sincronizado.' },
 ]);
 
 const features = ref([
-    { id: 'users', name: 'Usuarios extra', price: 5, count: 0 },
-    { id: 'cajas', name: 'Cajas extra', price: 10, count: 0 },
-    { id: 'products', name: 'Productos extra', price: 2, count: 0 }, 
-    { id: 'branches', name: 'Sucursales extra', price: 50, count: 0 },
+    { id: 'users', name: 'Usuarios extra', price: 7.5, count: 0 },
+    { id: 'cajas', name: 'Cajas extra', price: 7.5, count: 0 },
+    { id: 'products', name: '50 Productos extra', price: 1.5, count: 0 }, 
+    { id: 'branches', name: 'Sucursales extra', price: 30, count: 0 },
+    { id: 'templates', name: 'Plantillas personalizadas', price: 3, count: 0 },
 ]);
 
-// Cálculo de totales separados para mostrar el desglose
+// Cálculo de totales
 const rawMonthlyTotal = computed(() => {
     let total = basePriceMonthly;
     modules.value.forEach(m => { if (m.active) total += m.price; });
@@ -226,6 +228,8 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
 .glass-input-container:focus-within { background: rgba(255, 255, 255, 0.15); border-color: rgba(246, 140, 15, 0.5); box-shadow: 0 0 20px rgba(246, 140, 15, 0.15); }
 .glass-input { background: transparent; border: none; color: white; padding: 12px 24px; outline: none; width: 100%; font-size: 1rem; }
 .glass-input::placeholder { color: rgba(255, 255, 255, 0.4); }
+.glass-input:focus, 
+.glass-input:active {outline: none !important; box-shadow: none !important; border: none !important;}
 .btn-glow { background: #F68C0F; color: white; border-radius: 99px; padding: 12px 32px; font-weight: 600; transition: all 0.3s ease; white-space: nowrap; }
 .btn-glow:hover { background: #ff9e3d; box-shadow: 0 0 20px rgba(246, 140, 15, 0.4); transform: scale(1.02); }
 .modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
@@ -246,9 +250,6 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
 .counter-control { display: flex; align-items: center; gap: 8px; background: white; padding: 2px 8px; border-radius: 8px; }
 .counter-btn { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: #f0f0f0; cursor: pointer; font-size: 14px; color: #555; border-radius: 50%; }
 .counter-btn:hover { background: #e0e0e0; }
-footer { background-color: #f9fafb; position: relative; padding-top: 4rem; padding-bottom: 0; overflow:hidden; }
-.footer-link { color: #111827; font-weight: 600; font-size: 1.1rem; transition: color 0.2s; }
-.footer-link:hover { color: #F68C0F; }
 .legal-link { color: #6B7280; font-size: 1.1rem; text-decoration: none; }
 .legal-link:hover { text-decoration: underline; }
 
@@ -450,7 +451,7 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                         Empezar prueba gratis
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-4"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
                     </Link>
-                    <a href="https://api.whatsapp.com/send?phone=523321705650" target="_blank" class="btn-apple-secondary w-full sm:w-auto gap-2">Ver Demo</a>
+                    <a href="https://api.whatsapp.com/send?phone=523321705650" target="_blank" class="btn-apple-secondary w-full sm:w-auto gap-2">Contactar con ventas</a>
                 </div>
             </div>
         </header>
@@ -494,7 +495,7 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                         Poderoso. Simple. <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#F68C0F] to-orange-400">Tuyo.</span>
                     </h2>
                     <p class="text-xl text-gray-500 max-w-2xl mx-auto font-light leading-relaxed">
-                        Olvídate de las interfaces complejas. Cada herramienta ha sido diseñada para eliminar la fricción de tu día a día.
+                        Tecnología que ayuda. Diseñamos una interfaz intuitiva para que tú y tu equipo sepan usarla desde el primer día, sin capacitaciones eternas.
                     </p>
                 </div>
 
@@ -537,8 +538,8 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div class="feature-card-modern flex flex-col justify-between" data-aos="fade-right" data-aos-delay="100">
                             <div class="mb-8 relative z-10">
-                                <h3 class="text-3xl font-bold text-gray-900 mb-4">Toma decisiones,<br/>no adivinanzas.</h3>
-                                <p class="text-gray-600">Visualiza el pulso de tu negocio al instante. Gráficas de ventas, productos estrella y rendimiento de personal en un solo lugar.</p>
+                                <h3 class="text-3xl font-bold text-gray-900 mb-4">Tu negocio.<br/>En alta definición.</h3>
+                                <p class="text-gray-600">Transforma números complejos en respuestas claras. Entiende qué vendes, quién vende y cuánto ganas, todo en tiempo real y en un solo vistazo.</p>
                             </div>
                             <!-- AQUI ESTÁ EL NUEVO COMPONENTE INTEGRADO -->
                             <div class="w-full h-full flex items-end justify-center -mb-8 md:-mb-12">
@@ -547,8 +548,8 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                         </div>
                         <div class="feature-card-modern flex flex-col justify-between" data-aos="fade-left" data-aos-delay="200">
                             <div class="mb-8">
-                                <h3 class="text-3xl font-bold text-gray-900 mb-4">Venta ágil<br/>y sin filas.</h3>
-                                <p class="text-gray-600">Olvídate de la caja única. Conecta múltiples dispositivos simultáneamente. Tu equipo vende desde tabletas, celulares o computadoras al mismo tiempo.</p>
+                                <h3 class="text-3xl font-bold text-gray-900 mb-4">Tu caja.<br/>sin límites.</h3>
+                                <p class="text-gray-600">Si hay mucha gente, permite que multiples vendedores cobren simultáneamente desde cualquier dispositivo, colaborando en una misma sesión de caja o gestionando cajas independientes.</p>
                             </div>
                             <div class="relative h-64 flex justify-center items-end">
                                 <img src="/imagesLanding/solution-old-register.webp" alt="Multi-usuario" class="w-3/4 object-contain drop-shadow-xl transition-transform duration-500 hover:-translate-y-4">
@@ -557,11 +558,11 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                     </div>
                     
                     <!-- NUEVO COMPONENTE DE CLIENTES INTEGRADO AQUÍ (Versión Light/Moderna) -->
-                    <div class="feature-card-modern flex flex-col md:flex-row items-center gap-12 bg-white text-gray-900 p-12 relative overflow-hidden" data-aos="fade-up">
-                        <div class="w-full md:w-1/2 space-y-6 relative z-10">
-                            <h3 class="text-3xl md:text-4xl font-bold text-gray-900">Fideliza y vende más.</h3>
-                            <p class="text-gray-600 text-lg leading-relaxed">Un cliente anónimo es una oportunidad perdida. Crea perfiles, otorga créditos y conoce quiénes son tus clientes VIP para ofrecerles promociones personalizadas.</p>
-                            <button class="bg-[#F68C0F] text-white px-8 py-3 rounded-full font-bold hover:bg-[#e57f00] shadow-lg hover:shadow-xl transition-all">Ver herramientas de Marketing</button>
+                    <div class="feature-card-modern flex flex-col md:flex-row items-center gap-12 bg-white text-gray-900 p-10 relative overflow-hidden" data-aos="fade-up">
+                        <div class="w-full md:w-1/2 space-y-10 relative z-10">
+                            <h3 class="text-3xl md:text-4xl font-bold text-gray-900">Convierte ventas en relaciones.</h3>
+                            <p class="text-gray-600 text-lg leading-relaxed">Deja de venderle a desconocidos. Crea perfiles detallados, habilita líneas de crédito y reconoce a tus clientes VIP al instante. Porque un cliente que se siente especial, siempre regresa.</p>
+                            <button class="bg-[#2f2f2f] text-white px-8 py-3 rounded-full font-bold hover:bg-[#191919] shadow-lg hover:shadow-xl transition-all">Ver tutorial de clientes</button>
                         </div>
                         <div class="w-full md:w-1/2 flex justify-center relative z-10">
                             <CustomerRelationship />
@@ -578,9 +579,10 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                 <div class="text-center mb-16" data-aos="fade-up">
                     <h2 class="text-4xl md:text-5xl font-bold text-gray-900 tracking-tight">Arma tu plan ideal</h2>
                     <p class="text-gray-500 mt-4 text-lg">Todo comienza con nuestro plan esencial. Agrega solo lo que necesitas.</p>
+                    <p class="text-gray-700 mt-4 text-lg font-medium">SIMULADOR DE PRECIOS.</p>
                     
                     <!-- CUSTOM SWITCH -->
-                    <div class="mt-10 flex justify-center">
+                    <div class="mt-6 flex justify-center">
                         <div class="custom-switch w-64" @click="isAnnual = !isAnnual">
                             <div class="switch-slider" :class="{ 'active-right': isAnnual }"></div>
                             <div class="switch-label" :class="{ 'active': !isAnnual }">Mensual</div>
@@ -600,7 +602,9 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                             <p class="text-gray-600 text-md mb-6">Todo lo que necesitas para operar.</p>
                             
                             <div class="flex items-baseline gap-1 mb-8">
-                                <span class="text-5xl font-extrabold text-gray-900">${{ isAnnual ? (199 * 0.8).toFixed(0) : '199' }}</span>
+                                <span class="text-5xl font-bold text-gray-900 mr-1">$</span>
+                                <span class="text-5xl font-extrabold text-gray-900 tracking-tight">{{ isAnnual ? '159' : '199' }}</span>
+                                <span class="text-3xl font-bold text-gray-900">{{ isAnnual ? '.20' : '.00' }}</span>
                                 <span class="text-gray-500 text-lg">/mes</span>
                             </div>
 
@@ -626,13 +630,16 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                                     <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>Gastos</span>
                                 </li>
+                                <li class="py-2">
+                                    <div class="w-6/8 mx-2 border-t-2 border-dotted border-gray-200"></div>
+                                </li>
                                 <li class="flex items-center gap-3">
                                     <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>Hasta 3 usuarios</span>
                                 </li>
                                 <li class="flex items-center gap-3">
                                     <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
-                                    <span>1 Caja</span>
+                                    <span>1 Caja registradora</span>
                                 </li>
                                 <li class="flex items-center gap-3">
                                     <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
@@ -641,6 +648,10 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                                 <li class="flex items-center gap-3">
                                     <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>500 productos</span>
+                                </li>
+                                <li class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <span>3 plantillas personalizadas</span>
                                 </li>
                             </ul>
                         </div>
@@ -717,7 +728,7 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                         <Link :href="route('register')" class="btn-apple-primary px-10 py-4 text-lg shadow-xl hover:shadow-2xl">
                             Comenzar prueba gratis
                         </Link>
-                        <span class="text-md text-gray-600 font-medium">30 días sin costo</span>
+                        <span class="text-md text-gray-600 font-medium">30 días sin costo.</span>
                     </div>
                 </div>
 
@@ -771,7 +782,7 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
             </section>
 
             <!-- NUEVA SECCIÓN: BANNER EZY RESTAURANT -->
-            <section class="py-32 px-6 md:px-12 max-w-7xl mx-auto">
+            <!-- <section class="py-32 px-6 md:px-12 max-w-7xl mx-auto">
                 <div class="coming-soon-wrapper relative py-28 px-8 md:px-20 text-center flex flex-col items-center justify-center min-h-[500px]" data-aos="zoom-in">
                     <div class="coming-soon-glow"></div>
                     <div class="relative z-10 max-w-3xl mx-auto space-y-8">
@@ -799,39 +810,12 @@ footer { background-color: #f9fafb; position: relative; padding-top: 4rem; paddi
                         </div>
                     </div>
                 </div>
-            </section>
+            </section> -->
 
         </main>
 
-        <footer ref="footerRef" class="relative bg-[#f9fafb] pt-16 overflow-hidden flex flex-col">
-            <div class="relative z-10 max-w-8xl mx-auto px-6 md:px-12 w-full">
-                <div class="flex flex-col md:flex-row justify-between items-center gap-8 mb-8">
-                    <div>
-                        <img src="/imagesLanding/ezy-logo-color.webp" alt="Ezy Ventas" class="h-16 w-auto" />
-                    </div>
-                    <div class="flex flex-wrap justify-center gap-6 md:gap-8">
-                        <button @click="scrollToElement('features')" class="footer-link">Funcionalidades</button>
-                        <button @click="scrollToElement('prices')" class="footer-link">Precios y planes</button>
-                        <button @click="scrollToElement('faq')" class="footer-link">Preguntas frecuentes</button>
-                        <a href="https://api.whatsapp.com/send?phone=523321705650" target="_blank" class="footer-link">Contáctanos</a>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <span class="text-gray-500 font-medium text-md">By</span>
-                        <img src="/imagesLanding/dtw-logo.webp" alt="DTW Logo" class="h-14 w-auto object-contain" />
-                    </div>
-                </div>
-                <div class="flex justify-center gap-6 mb-6 border-b border-gray-200 pb-6">
-                    <a :href="route('policy.show')" target="_blank" class="legal-link">Política de privacidad</a>
-                    <a :href="route('terms.show')" target="_blank" class="legal-link">Términos y condiciones</a>
-                </div>
-                <div class="text-center text-gray-400 text-lg mb-12">
-                    Copyright © 2026 | Todos los derechos reservados por Ezy Ventas
-                </div>
-            </div>
-            <div class="w-full flex justify-center">
-                <img src="/imagesLanding/ezy-watermark.webp" alt="Ezy Ventas Watermark" class="w-full max-w-[1400px] opacity-40 block" />
-            </div>
-        </footer>
+        <!-- FOOTER MODERNO INTEGRADO -->
+        <ModernFooter />
 
         <!-- MODAL DE DETALLE DE NEGOCIO -->
         <Teleport to="body">
