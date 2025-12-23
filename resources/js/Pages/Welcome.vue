@@ -474,7 +474,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
         <main class="flex-1">
             <!-- SECCIÓN 2: TIPOS DE NEGOCIO (AJUSTADA PARA MÓVIL) -->
             <section id="features" class="py-24 px-6 md:px-12 max-w-[1450px] mx-auto bg-gray-50/50">
-                <div class="text-center mb-10 md:mb-16 space-y-4" data-aos="fade-up">
+                <div class="text-center mb-5 md:mb-16 space-y-4" data-aos="fade-up">
                     <h2 class="text-3xl md:text-5xl font-bold text-gray-900 tracking-tight">Diseñado para tu giro</h2>
                     <p class="text-lg text-gray-500 max-w-3xl mx-auto">Selecciona tu tipo de negocio y descubre por qué Ezy Ventas es tu mejor aliado.</p>
                 </div>
@@ -489,14 +489,14 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                         :data-aos-delay="index * 100">
 
                         <!-- IMAGEN (Izquierda en móvil, Arriba en desktop) -->
-                        <div class="biz-img-container w-16 h-16 md:w-full md:h-[140px] md:mb-4 shrink-0 mr-4 md:mr-0">
+                        <div class="biz-img-container w-32 h-32 md:w-full md:h-[140px] md:mb-4 shrink-0 mr-4 md:mr-0">
                             <img :src="biz.image" :alt="biz.alt" class="biz-img w-full h-full object-contain">
                         </div>
                         
                         <!-- TEXTO (Centro en móvil, Abajo en desktop) -->
                         <div class="flex-1 text-left mt-0 md:mt-auto space-y-1 md:space-y-2">
                             <h3 class="text-lg md:text-xl font-bold text-gray-900 group-hover:text-[#F68C0F] transition-colors leading-tight">{{ biz.title }}</h3>
-                            <p class="text-sm text-gray-500 leading-snug line-clamp-2 md:line-clamp-none">{{ biz.shortDesc }}</p>
+                            <p class="text-md text-gray-500 leading-snug line-clamp-2 md:line-clamp-none">{{ biz.shortDesc }}</p>
                             
                             <!-- Flecha Desktop (Oculta en móvil) -->
                             <div class="hidden md:flex pt-4 items-center gap-2 text-sm font-semibold text-[#F68C0F] action-arrow">
@@ -813,10 +813,10 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
         </main>
 
                     <!-- NUEVA SECCIÓN: BANNER EZY RESTAURANT -->
-            <section class="py-32 px-6 md:px-12 max-w-7xl mx-auto">
-                <div class="coming-soon-wrapper relative py-28 px-8 md:px-20 text-center flex flex-col items-center justify-center min-h-[500px]" data-aos="zoom-in">
+            <section class="py-16 px-4 md:px-8 w-full max-w-[70%] mx-auto">
+                <div class="coming-soon-wrapper relative py-20 px-8 md:px-20 text-center flex flex-col items-center justify-center min-h-[400px]" data-aos="zoom-in">
                     <div class="coming-soon-glow"></div>
-                    <div class="relative z-10 max-w-3xl mx-auto space-y-8">
+                    <div class="relative z-10 max-w-3xl mx-auto space-y-6">
                         <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-gray-700 bg-gray-900/50 backdrop-blur-sm">
                             <span class="relative flex h-2 w-2">
                               <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#F68C0F] opacity-75"></span>
