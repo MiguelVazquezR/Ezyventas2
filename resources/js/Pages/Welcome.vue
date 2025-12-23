@@ -3,7 +3,10 @@ import { Head, Link } from '@inertiajs/vue3';
 // Importamos los componentes personalizados
 import DashboardGraph from '@/Components/DashboardGraph.vue';
 import CustomerRelationship from '@/Components/CustomerRelationship.vue';
-import ModernFooter from '@/Components/ModernFooter.vue'; // NUEVO COMPONENTE FOOTER
+import ModernFooter from '@/Components/ModernFooter.vue'; 
+// --- AQUÍ IMPORTAMOS EL NUEVO BOTÓN ---
+import FrutigerButton from '@/Components/FrutigerButton.vue';
+
 import AOS from 'aos';
 import 'aos/dist/aos.css';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
@@ -58,9 +61,6 @@ const setupIntersectionObserver = () => {
         ([entry]) => { isNavVisible.value = !entry.isIntersecting; },
         { root: null, threshold: 0, rootMargin: "0px 0px -50px 0px" }
     );
-    // Nota: El footerRef se usaba antes para ocultar navbar, ahora lo mantenemos simple o quitamos si el nuevo footer es diferente
-    // Para evitar errores si footerRef no existe, simplemente observamos un div centinela o el footer nuevo si le ponemos ref.
-    // Dejaremos el observer genérico.
 };
 
 // --- FAQ LOGIC ---
@@ -152,11 +152,11 @@ onUnmounted(() => {
 });
 
 const businessTypes = [
-    { title: 'Ropa y Boutiques', image: '/imagesLanding/biz-clothing.webp', alt: 'Artículos de ropa', shortDesc: 'Gestiona tallas, colores y temporadas.', fullDesc: 'La solución perfecta para boutiques. Controla tu inventario con variantes complejas sin perder la cabeza.', features: ['Matriz de Tallas y Colores', 'Impresión de etiquetas de código de barras', 'Gestión de cambios y devoluciones', 'Reportes de prendas más vendidas'] },
+    { title: 'Ropa y Calzado', image: '/imagesLanding/biz-clothing.webp', alt: 'Artículos de ropa', shortDesc: 'Gestiona tallas, colores y temporadas.', fullDesc: 'La solución perfecta para boutiques. Controla tu inventario con variantes complejas sin perder la cabeza.', features: ['Matriz de Tallas y Colores', 'Impresión de etiquetas de código de barras', 'Gestión de cambios y devoluciones', 'Reportes de prendas más vendidas'] },
     { title: 'Supermercados', image: '/imagesLanding/biz-supermarket.webp', alt: 'Abarrotes', shortDesc: 'Venta rápida y control de caducidad.', fullDesc: 'Agilidad en la caja es clave. Escanea códigos rápidamente y gestiona miles de productos sin demoras.', features: ['Venta ultra rápida con scanner', 'Control de inventario mínimo y máximo', 'Venta a granel (bascula)', 'Múltiples cajeros simultáneos'] },
-    { title: 'Papelerías', image: '/imagesLanding/biz-stationery.webp', alt: 'Papelería', shortDesc: 'Miles de artículos pequeños bajo control.', fullDesc: 'Desde un lápiz hasta paquetes escolares. Organiza la inmensa variedad de artículos pequeños fácilmente.', features: ['Venta unitaria y por paquete', 'Kits escolares pre-armados', 'Búsqueda rápida de productos', 'Control de merma y robo hormiga'] },
-    { title: 'Ferreterías', image: '/imagesLanding/biz-hardware.webp', alt: 'Herramientas', shortDesc: 'Inventario pesado y venta a granel.', fullDesc: 'Administra inventarios complejos, ventas por metro, kilo o pieza y mantén el control de tu almacén.', features: ['Venta fraccionada (metros, kilos)', 'Control de lotes', 'Catálogo con fotos para mostrador', 'Facturación instantánea'] },
-    { title: 'Servicios', image: '/imagesLanding/biz-services.webp', alt: 'Servicios', shortDesc: 'Reparaciones, citas y mano de obra.', fullDesc: 'No solo productos, vende tu tiempo y experiencia. Gestiona órdenes de servicio y seguimiento.', features: ['Órdenes de servicio', 'Control de estatus', 'Mano de obra', 'Notificaciones WhatsApp'] },
+    { title: 'Papelerías', image: '/imagesLanding/biz-stationery.webp', alt: 'Papelería', shortDesc: 'Miles de artículos pequeños bajo control.', fullDesc: 'Desde un lápiz hasta paquetes escolares. Organiza la inmensa variedad de artículos pequeños fácilmente.', features: ['Venta unitaria y por paquete', 'Kits escolares', 'Búsqueda rápida de productos', 'Control de merma y robo hormiga'] },
+    { title: 'Ferreterías', image: '/imagesLanding/biz-hardware.webp', alt: 'Herramientas', shortDesc: 'Inventario pesado y venta a granel.', fullDesc: 'Administra inventarios complejos, ventas por metro, kilo o pieza y mantén el control de tu almacén.', features: ['Venta fraccionada (metros, kilos)', 'Precios de mayoreo y menudeo', 'Kits o ventas por paquetes', 'Tickets claros'] },
+    { title: 'Servicios', image: '/imagesLanding/biz-services.webp', alt: 'Servicios', shortDesc: 'Reparaciones, citas y mano de obra.', fullDesc: 'No solo productos, vende tu tiempo y experiencia. Gestiona órdenes de servicio y seguimiento.', features: ['Órdenes de servicio', 'Control de estatus', 'Refacciones', 'Mano de obra','Seguimiento por Whatsapp'] },
 ];
 
 const selectedBusiness = ref(null);
@@ -281,7 +281,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
     position: relative;
     z-index: 10;
     padding: 8px 24px;
-    font-size: 0.95rem;
+    font-size: 1.0rem;
     font-weight: 500;
     color: #6B7280;
     transition: color 0.3s;
@@ -366,10 +366,25 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                     <button @click="scrollToElement('faq')" class="hover:text-[#F68C0F] transition duration-200">Preguntas frecuentes</button>
                     <a href="https://api.whatsapp.com/send?phone=523321705650" target="_blank" class="hover:text-[#F68C0F] transition duration-200">Contacto</a>
                 </div>
-                <div class="flex items-center">
-                    <Link :href="$page.props.auth?.user ? route('dashboard') : route('login')">
-                        <button class="btn-login-nav">Entrar</button>
-                    </Link>
+                
+                <div class="flex items-center gap-4">
+                    <template v-if="$page.props.auth?.user">
+                        <Link :href="route('dashboard')">
+                            <FrutigerButton>Dashboard</FrutigerButton>
+                        </Link>
+                    </template>
+                    <template v-else>
+                        <Link 
+                            v-if="canRegister" 
+                            :href="route('register')" 
+                            class="hidden md:block font-bold text-gray-500 hover:text-[#F68C0F] transition duration-200 text-sm"
+                        >
+                            Registrarse
+                        </Link>
+                        <Link :href="route('login')">
+                            <FrutigerButton>Iniciar sesión</FrutigerButton>
+                        </Link>
+                    </template>
                 </div>
             </div>
         </nav>
@@ -380,8 +395,8 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
             @mousemove="handleMouseMove" 
             class="hero-wrapper relative min-h-screen pt-24 pb-0"
         >
-            <div class="relative z-30 text-center px-4 mb-4" data-aos="fade-down">
-                <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight">
+            <div class="relative z-30 text-center px-4 my-0" data-aos="fade-down">
+                <h1 class="text-[34px] md:text-5xl lg:text-6xl font-bold leading-tight">
                     <span class="text-gradient-elegant">El punto de venta que</span> <br class="hidden md:block"/>
                     <span class="text-[#F68C0F]">se adapta a tu negocio</span>
                 </h1>
@@ -457,33 +472,43 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
         </header>
 
         <main class="flex-1">
-            <!-- SECCIÓN 2: TIPOS DE NEGOCIO -->
+            <!-- SECCIÓN 2: TIPOS DE NEGOCIO (AJUSTADA PARA MÓVIL) -->
             <section id="features" class="py-24 px-6 md:px-12 max-w-[1450px] mx-auto bg-gray-50/50">
-                <div class="text-center mb-16 space-y-4" data-aos="fade-up">
+                <div class="text-center mb-10 md:mb-16 space-y-4" data-aos="fade-up">
                     <h2 class="text-3xl md:text-5xl font-bold text-gray-900 tracking-tight">Diseñado para tu giro</h2>
                     <p class="text-lg text-gray-500 max-w-3xl mx-auto">Selecciona tu tipo de negocio y descubre por qué Ezy Ventas es tu mejor aliado.</p>
                 </div>
                 
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
                     <div 
                         v-for="(biz, index) in businessTypes" 
                         :key="index" 
-                        class="biz-card-bento group"
+                        class="biz-card-bento group !flex-row md:!flex-col !items-center md:!items-stretch !p-4 md:!p-6"
                         @click="openBusinessModal(biz)"
                         data-aos="fade-up"
-                        :data-aos-delay="index * 100"
-                    >
-                        <div class="biz-img-container">
-                            <img :src="biz.image" :alt="biz.alt" class="biz-img">
+                        :data-aos-delay="index * 100">
+
+                        <!-- IMAGEN (Izquierda en móvil, Arriba en desktop) -->
+                        <div class="biz-img-container w-16 h-16 md:w-full md:h-[140px] md:mb-4 shrink-0 mr-4 md:mr-0">
+                            <img :src="biz.image" :alt="biz.alt" class="biz-img w-full h-full object-contain">
                         </div>
-                        <div class="mt-auto space-y-2">
-                            <h3 class="text-xl font-bold text-gray-900 group-hover:text-[#F68C0F] transition-colors">{{ biz.title }}</h3>
-                            <p class="text-sm text-gray-500 leading-snug">{{ biz.shortDesc }}</p>
-                            <div class="pt-4 flex items-center gap-2 text-sm font-semibold text-[#F68C0F] action-arrow">
+                        
+                        <!-- TEXTO (Centro en móvil, Abajo en desktop) -->
+                        <div class="flex-1 text-left mt-0 md:mt-auto space-y-1 md:space-y-2">
+                            <h3 class="text-lg md:text-xl font-bold text-gray-900 group-hover:text-[#F68C0F] transition-colors leading-tight">{{ biz.title }}</h3>
+                            <p class="text-sm text-gray-500 leading-snug line-clamp-2 md:line-clamp-none">{{ biz.shortDesc }}</p>
+                            
+                            <!-- Flecha Desktop (Oculta en móvil) -->
+                            <div class="hidden md:flex pt-4 items-center gap-2 text-sm font-semibold text-[#F68C0F] action-arrow">
                                 <span>Ver beneficios</span>
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
                             </div>
                         </div>
+
+                         <!-- Flecha MÓVIL (Visible solo en móvil) -->
+                         <div class="md:hidden w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-[#F68C0F] shrink-0 ml-2">
+                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                         </div>
                     </div>
                 </div>
             </section>
@@ -586,7 +611,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                         <div class="custom-switch w-64" @click="isAnnual = !isAnnual">
                             <div class="switch-slider" :class="{ 'active-right': isAnnual }"></div>
                             <div class="switch-label" :class="{ 'active': !isAnnual }">Mensual</div>
-                            <div class="switch-label" :class="{ 'active': isAnnual }">Anual <span class="text-[10px] text-red-500 font-bold ml-1">-20%</span></div>
+                            <div class="switch-label" :class="{ 'active': isAnnual }">Anual <span class="text-[12px] text-red-500 font-bold ml-1">-20%</span></div>
                         </div>
                     </div>
                 </div>
@@ -608,49 +633,54 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                                 <span class="text-gray-500 text-lg">/mes</span>
                             </div>
 
-                            <p class="font-bold text-gray-900 mb-4 text-normal uppercase tracking-wide">Incluye siempre:</p>
+                            <p class="font-bold text-gray-900 mb-4 text-normal uppercase tracking-wide">Modulos incluidos:</p>
                             <ul class="space-y-4 text-gray-800 text-lg">
                                 <li class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>Inicio</span>
                                 </li>
                                 <li class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>Punto de venta (POS)</span>
                                 </li>
                                 <li class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>Historal de ventas</span>
                                 </li>
                                 <li class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>Control de inventario</span>
                                 </li>
                                 <li class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>Gastos</span>
+                                </li>
+                                <li class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <span>Control de caja</span>
                                 </li>
                                 <li class="py-2">
                                     <div class="w-6/8 mx-2 border-t-2 border-dotted border-gray-200"></div>
                                 </li>
+                                <p class="font-bold text-gray-900 mb-4 text-normal uppercase tracking-wide">Incluye:</p>
                                 <li class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>Hasta 3 usuarios</span>
                                 </li>
                                 <li class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>1 Caja registradora</span>
                                 </li>
                                 <li class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>1 Sucursal</span>
                                 </li>
                                 <li class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>500 productos</span>
                                 </li>
                                 <li class="flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
+                                    <div class="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F] shrink-0"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg></div>
                                     <span>3 plantillas personalizadas</span>
                                 </li>
                             </ul>
@@ -780,9 +810,10 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                     </a>
                 </div>
             </section>
+        </main>
 
-            <!-- NUEVA SECCIÓN: BANNER EZY RESTAURANT -->
-            <!-- <section class="py-32 px-6 md:px-12 max-w-7xl mx-auto">
+                    <!-- NUEVA SECCIÓN: BANNER EZY RESTAURANT -->
+            <section class="py-32 px-6 md:px-12 max-w-7xl mx-auto">
                 <div class="coming-soon-wrapper relative py-28 px-8 md:px-20 text-center flex flex-col items-center justify-center min-h-[500px]" data-aos="zoom-in">
                     <div class="coming-soon-glow"></div>
                     <div class="relative z-10 max-w-3xl mx-auto space-y-8">
@@ -810,9 +841,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                         </div>
                     </div>
                 </div>
-            </section> -->
-
-        </main>
+            </section>
 
         <!-- FOOTER MODERNO INTEGRADO -->
         <ModernFooter />
@@ -824,32 +853,43 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                     <div class="absolute inset-0 bg-black/40 backdrop-blur-md" @click="closeBusinessModal"></div>
                     <transition name="modal-content" appear>
                         <div class="relative bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col md:flex-row overflow-hidden">
+                            
                             <button @click="closeBusinessModal" class="absolute top-4 right-4 z-20 bg-white/50 hover:bg-white p-2 rounded-full transition-all">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
                             </button>
-                            <div class="w-full md:w-2/5 bg-gray-100 flex items-center justify-center p-8 md:p-12">
-                                <img :src="selectedBusiness.image" :alt="selectedBusiness.alt" class="w-full h-auto object-contain drop-shadow-xl max-h-[300px]">
+
+                            <div class="w-full h-48 sm:h-40 md:h-auto md:w-2/5 bg-gray-100 flex items-center justify-center p-4 md:p-12 relative shrink-0">
+                                
+                                <img 
+                                    :src="selectedBusiness.image" 
+                                    :alt="selectedBusiness.alt" 
+                                    class="h-full w-auto md:w-full md:h-auto object-contain drop-shadow-xl max-h-full"
+                                >
                             </div>
-                            <div class="w-full md:w-3/5 p-8 md:p-12 flex flex-col justify-center">
-                                <h3 class="text-3xl font-bold text-gray-900 mb-2">{{ selectedBusiness.title }}</h3>
-                                <p class="text-lg text-gray-500 mb-6 font-medium">{{ selectedBusiness.fullDesc }}</p>
+
+                            <div class="w-full md:w-3/5 p-6 md:p-12 flex flex-col justify-center">
+                                <h3 class="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{{ selectedBusiness.title }}</h3>
+                                <p class="text-base md:text-lg text-gray-500 mb-6 font-medium">{{ selectedBusiness.fullDesc }}</p>
+                                
                                 <div class="space-y-4 mb-8">
-                                    <h4 class="text-sm font-bold text-gray-400 uppercase tracking-wider">Beneficios Clave</h4>
+                                    <h4 class="text-xs md:text-sm font-bold text-gray-400 uppercase tracking-wider">Beneficios Clave</h4>
                                     <ul class="space-y-3">
                                         <li v-for="(feature, idx) in selectedBusiness.features" :key="idx" class="flex items-start gap-3">
                                             <div class="mt-1 w-5 h-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 flex-shrink-0">
                                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" /></svg>
                                             </div>
-                                            <span class="text-gray-700">{{ feature }}</span>
+                                            <span class="text-sm md:text-base text-gray-700">{{ feature }}</span>
                                         </li>
                                     </ul>
                                 </div>
+                                
                                 <div class="flex flex-col sm:flex-row gap-4 mt-auto">
                                     <Link :href="route('register')" class="btn-apple-primary justify-center text-sm px-8 py-3">
-                                        Probar gratis para mi negocio
+                                        Probar gratis
                                     </Link>
                                 </div>
                             </div>
+
                         </div>
                     </transition>
                 </div>
