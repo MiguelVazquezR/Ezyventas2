@@ -78,6 +78,27 @@ const toggleFaq = (index) => {
     faqs.value[index].open = !faqs.value[index].open;
 };
 
+// --- EZY RESTAURANT WAITING LIST LOGIC ---
+const restaurantEmail = ref('');
+const isSubmittingRestaurant = ref(false);
+const showRestaurantSuccess = ref(false);
+
+const submitRestaurantEmail = () => {
+    if (!restaurantEmail.value || !restaurantEmail.value.includes('@')) return;
+    
+    isSubmittingRestaurant.value = true;
+    
+    // Simular llamada a API
+    setTimeout(() => {
+        isSubmittingRestaurant.value = false;
+        showRestaurantSuccess.value = true;
+        restaurantEmail.value = '';
+        
+        // Ocultar mensaje de éxito después de unos segundos (opcional)
+        // setTimeout(() => showRestaurantSuccess.value = false, 5000);
+    }, 1500);
+};
+
 // --- DATOS MOCK PARA INVENTARIO INTERACTIVO (STOCK REAL AGREGADO) ---
 const inventoryMock = [
     { name: 'Tenis', pieces: 124, icon: '👟', hoverClass: 'hover:shadow-green-200 hover:border-green-300', dotClass: 'bg-green-500' },
@@ -235,6 +256,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
 .glass-input:active {outline: none !important; box-shadow: none !important; border: none !important;}
 .btn-glow { background: #F68C0F; color: white; border-radius: 99px; padding: 12px 32px; font-weight: 600; transition: all 0.3s ease; white-space: nowrap; }
 .btn-glow:hover { background: #ff9e3d; box-shadow: 0 0 20px rgba(246, 140, 15, 0.4); transform: scale(1.02); }
+.btn-glow:disabled { opacity: 0.7; cursor: not-allowed; transform: none; box-shadow: none; }
 .modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
 .modal-content-enter-active { transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
@@ -492,7 +514,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                         :data-aos-delay="index * 50">
                         
                         <!-- Imagen: Superior Derecha -->
-                        <div class="absolute top-4 left-4 w-24 h-24 bg-gray-50/50 rounded-2xl flex items-center justify-center p-2 group-hover:scale-105 transition-transform duration-500">
+                        <div class="absolute top-4 right-4 w-20 h-20 bg-gray-50/50 rounded-2xl flex items-center justify-center p-2 group-hover:scale-105 transition-transform duration-500">
                              <img :src="biz.image" :alt="biz.alt" class="w-full h-full object-contain mix-blend-multiply">
                         </div>
 
@@ -584,7 +606,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                         <div class="w-full md:w-1/2 space-y-10 relative z-10">
                             <h3 class="text-3xl md:text-4xl font-bold text-gray-900">Convierte ventas en relaciones.</h3>
                             <p class="text-gray-600 text-lg leading-relaxed">Deja de venderle a desconocidos. Crea perfiles detallados, habilita líneas de crédito y reconoce a tus clientes VIP al instante. Porque un cliente que se siente especial, siempre regresa.</p>
-                            <!-- <button class="bg-[#2f2f2f] text-white px-8 py-3 rounded-full font-bold hover:bg-[#191919] shadow-lg hover:shadow-xl transition-all">Ver tutorial de clientes</button> -->
+                            <button class="bg-[#2f2f2f] text-white px-8 py-3 rounded-full font-bold hover:bg-[#191919] shadow-lg hover:shadow-xl transition-all">Ver tutorial de clientes</button>
                         </div>
                         <div class="w-full md:w-1/2 flex justify-center relative z-10">
                             <CustomerRelationship />
@@ -798,20 +820,20 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                 </div>
 
                 <!-- Help Box Redesigned (Tarjeta de Ayuda Moderna) -->
-                <div class="mt-16 relative overflow-hidden rounded-[32px] bg-gradient-to-br from-gray-200 to-gray p-8 md:p-12 text-center shadow-2xl" data-aos="zoom-in">
+                <div class="mt-16 relative overflow-hidden rounded-[32px] bg-gradient-to-br from-gray-900 to-black p-8 md:p-12 text-center shadow-2xl" data-aos="zoom-in">
                     <!-- Background Decoration -->
                     <div class="absolute top-0 right-0 w-64 h-64 bg-[#F68C0F] opacity-10 blur-[100px] rounded-full pointer-events-none"></div>
                     <div class="absolute bottom-0 left-0 w-48 h-48 bg-purple-500 opacity-10 blur-[80px] rounded-full pointer-events-none"></div>
 
                     <div class="relative z-10">
-                        <div class="w-16 h-16 bg-white/50 backdrop-blur-lg rounded-2xl flex items-center justify-center mx-auto mb-6 border border-white/10 shadow-lg">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" class="w-8 h-8 stroke-gray-800">
+                        <div class="w-16 h-16 bg-white/10 backdrop-blur-lg rounded-2xl flex items-center justify-center mx-auto mb-6 border border-white/10 shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="white" class="w-8 h-8">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.18.063-2.33.12-3.45.164m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
                             </svg>
                         </div>
                         
-                        <h4 class="text-2xl md:text-3xl font-bold text-gray-900 mb-3">¿Aún tienes dudas?</h4>
-                        <p class="text-gray-600 mb-8 max-w-md mx-auto text-sm md:text-base">Nuestro equipo de expertos está listo para resolver tus inquietudes y ayudarte a configurar tu cuenta.</p>
+                        <h4 class="text-2xl md:text-3xl font-bold text-white mb-3">¿Aún tienes dudas?</h4>
+                        <p class="text-gray-400 mb-8 max-w-md mx-auto text-sm md:text-base">Nuestro equipo de expertos está listo para resolver tus inquietudes y ayudarte a configurar tu cuenta.</p>
                         
                         <a href="https://api.whatsapp.com/send?phone=523321705650" target="_blank" 
                            class="inline-flex items-center justify-center gap-3 bg-white text-gray-900 px-8 py-3.5 rounded-full font-bold hover:bg-gray-100 transition-all shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:shadow-[0_0_30px_rgba(255,255,255,0.5)] transform hover:-translate-y-1 active:scale-95">
@@ -844,12 +866,40 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                         <p class="text-lg md:text-xl text-gray-400 max-w-xl mx-auto leading-relaxed">
                             La gestión de mesas, comandas y cocina reinventada. <br class="hidden md:block">Únete a la lista de espera y sé el primero en probarlo.
                         </p>
-                        <div class="flex justify-center w-full pt-4">
-                            <div class="glass-input-container w-full max-w-md p-1.5">
-                                <input type="email" placeholder="Tu correo electrónico" class="glass-input" />
-                                <button class="btn-glow">Notifíquenme</button>
+                        
+                        <div v-if="!showRestaurantSuccess" class="flex justify-center w-full pt-4">
+                            <div class="glass-input-container w-full max-w-md p-1.5 flex items-center">
+                                <input 
+                                    v-model="restaurantEmail"
+                                    type="email" 
+                                    placeholder="Tu correo electrónico" 
+                                    class="glass-input flex-1"
+                                    @keyup.enter="submitRestaurantEmail"
+                                />
+                                <button 
+                                    @click="submitRestaurantEmail" 
+                                    class="btn-glow flex items-center justify-center min-w-[120px]"
+                                    :disabled="isSubmittingRestaurant || !restaurantEmail"
+                                >
+                                    <span v-if="!isSubmittingRestaurant">Notifíquenme</span>
+                                    <svg v-else class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                </button>
                             </div>
                         </div>
+                        
+                        <div v-else class="flex flex-col items-center justify-center pt-4 animate-fadeIn">
+                            <div class="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mb-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-8 h-8 text-green-400">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                </svg>
+                            </div>
+                            <h3 class="text-xl font-bold text-white mb-1">¡Estás en la lista!</h3>
+                            <p class="text-gray-400">Te notificaremos en cuanto estemos listos.</p>
+                        </div>
+
                     </div>
                 </div>
             </section>

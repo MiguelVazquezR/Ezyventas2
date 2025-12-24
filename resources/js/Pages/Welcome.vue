@@ -89,7 +89,7 @@ const isAnnual = ref(false); // Default true para presumir descuento
 const basePriceMonthly = 199;
 
 const modules = ref([
-    { id: 'reportes', name: 'Reporte financiero', price: 25, active: false, description: 'Verifica tus ganancia neta, flujo de dinero, resumen de operaciones.' },
+    { id: 'reportes', name: 'Reporte financiero', price: 25, active: false, description: 'Verifica tu ganancia neta, flujo de dinero, resumen de operaciones.' },
     { id: 'clientes', name: 'Clientes', price: 30, active: false, description: 'Cuentas por cobrar, apartados, servicios realizados.' }, 
     { id: 'servicios', name: 'Servicios', price: 50, active: false, description: 'Órdenes de servicio, estatus, listado de servicios.', subItems: ['Catálogo', 'Órdenes'] }, 
     { id: 'cotizaciones', name: 'Cotizaciones', price: 35, active: false, description: 'Personaliza tus cotizaciones y envía propuestas profesionales.' },
@@ -690,7 +690,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                     <!-- BUILDER (Columna Derecha) -->
                     <div class="w-full lg:w-2/3" data-aos="fade-left">
                         <div class="bg-gray-50 rounded-3xl p-8 h-full border border-gray-100">
-                            <h3 class="text-xl font-bold text-gray-900 mb-6">Personaliza tu experiencia</h3>
+                            <h3 class="text-xl font-bold text-gray-900 mb-6">Agregar poder (Módulos)</h3>
                             
                             <!-- Módulos (Lista Vertical con estilo premium) -->
                             <div class="space-y-3 mb-8">
