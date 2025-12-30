@@ -1,10 +1,15 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
-import { ref, onMounted, onBeforeUnmount } from 'vue';
-import ApplicationMark from '@/Components/ApplicationMark.vue';
+// Importamos los componentes personalizados
+import DashboardGraph from '@/Components/DashboardGraph.vue';
+import CustomerRelationship from '@/Components/CustomerRelationship.vue';
+import ModernFooter from '@/Components/ModernFooter.vue'; 
+// --- AQUÍ IMPORTAMOS EL NUEVO BOTÓN ---
+import FrutigerButton from '@/Components/FrutigerButton.vue';
+
 import AOS from 'aos';
 import 'aos/dist/aos.css';
-import confetti from "canvas-confetti";
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 
 defineProps({
     canLogin: Boolean,
@@ -13,894 +18,944 @@ defineProps({
     phpVersion: String,
 });
 
-const quantity1 = ref(1);
-const quantity2 = ref(1);
-const showScrollButton = ref(false);
+// --- NAVBAR LOGIC ---
+const isNavVisible = ref(true);
+const isScrolled = ref(false);
 
-// Definir la URL de WhatsApp como una propiedad computada
-const scrollToTop = () => {
-    window.scrollTo({
-        top: 0,
-        behavior: 'smooth'
-    });
+// --- HERO PARALLAX LOGIC ---
+const heroContainer = ref(null);
+const mouseX = ref(0);
+const mouseY = ref(0);
+
+const handleMouseMove = (event) => {
+    if (!heroContainer.value || window.innerWidth < 768) return;
+    const { clientX, clientY, currentTarget } = event;
+    const { clientWidth, clientHeight } = currentTarget;
+    mouseX.value = (clientX / clientWidth) - 0.5;
+    mouseY.value = (clientY / clientHeight) - 0.5;
 };
 
-const launchConfetti = () => {
-    confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 },
-    });
+// Movimiento del teléfono 
+const phoneStyle = {
+    transform: computed(() => `perspective(1000px) rotateY(${mouseX.value * 3}deg) rotateX(${-mouseY.value * 3}deg) translateZ(0)`).value
+};
+
+// Movimiento del Texto de Fondo 
+const textBackStyle = computed(() => ({
+    transform: `translate(${mouseX.value * -15}px, ${mouseY.value * -15}px)`
+}));
+
+// Movimiento de los widgets
+const floatingWidgetStyle = (factorX, factorY) => {
+    return {
+        transform: `translate(${mouseX.value * factorX}px, ${mouseY.value * factorY}px)`
+    };
 };
 
 const handleScroll = () => {
-    showScrollButton.value = window.scrollY > 1000;
+    isScrolled.value = window.scrollY > 50;
 };
 
-const openWhatsapp = () => {
-    const url = 'https://api.whatsapp.com/send?phone=523321705650&text=¡Hola!%20vi%20tu%20página%20y%20me%20interesa%20el%20punto%20de%20venta'
-    window.open(url, '_blank');
+const setupIntersectionObserver = () => {
+    const observer = new IntersectionObserver(
+        ([entry]) => { isNavVisible.value = !entry.isIntersecting; },
+        { root: null, threshold: 0, rootMargin: "0px 0px -50px 0px" }
+    );
+};
+
+// --- FAQ LOGIC ---
+const faqs = ref([
+    { question: '¿Necesito comprar equipo especial para usar Ezy Ventas?', answer: 'No. Ezy Ventas funciona directamente en la nube. Puedes usar la computadora, tablet o incluso el celular que ya tienes. Si cuentas con lectores de código de barras o impresoras térmicas estándar, también son compatibles.', open: false },
+    { question: 'Tengo varias sucursales, ¿puedo ver todo junto?', answer: 'Sí. Nuestra arquitectura centralizada te permite ver el rendimiento, inventarios y cortes de caja de todas tus sucursales en tiempo real desde una sola cuenta de administrador.', open: false },
+    { question: '¿Hay plazos forzosos o costos de instalación?', answer: 'No hay costos de instalación, ni plazos forzosos, ni letras chiquitas. Tu suscripción es mensual (o anual con descuento) y puedes cancelarla cuando tú decidas sin penalizaciones.', open: false }
+]);
+
+const toggleFaq = (index) => {
+    // Cierra otros acordeones para mantener la vista limpia (opcional, pero recomendado en móvil)
+    faqs.value.forEach((faq, i) => {
+        if (i !== index) faq.open = false;
+    });
+    faqs.value[index].open = !faqs.value[index].open;
+};
+
+// --- EZY RESTAURANT WAITING LIST LOGIC ---
+const restaurantEmail = ref('');
+const isSubmittingRestaurant = ref(false);
+const showRestaurantSuccess = ref(false);
+
+const submitRestaurantEmail = () => {
+    if (!restaurantEmail.value || !restaurantEmail.value.includes('@')) return;
+    
+    isSubmittingRestaurant.value = true;
+    
+    // Simular llamada a API
+    setTimeout(() => {
+        isSubmittingRestaurant.value = false;
+        showRestaurantSuccess.value = true;
+        restaurantEmail.value = '';
+        
+        // Ocultar mensaje de éxito después de unos segundos (opcional)
+        // setTimeout(() => showRestaurantSuccess.value = false, 5000);
+    }, 1500);
+};
+
+// --- DATOS MOCK PARA INVENTARIO INTERACTIVO (STOCK REAL AGREGADO) ---
+const inventoryMock = [
+    { name: 'Tenis', pieces: 124, icon: '👟', hoverClass: 'hover:shadow-green-200 hover:border-green-300', dotClass: 'bg-green-500' },
+    { name: 'Camiseta Basic', pieces: 42, icon: '👕', hoverClass: 'hover:shadow-yellow-200 hover:border-yellow-300', dotClass: 'bg-yellow-500' },
+    { name: 'Gorra', pieces: 8, icon: '🧢', hoverClass: 'hover:shadow-red-200 hover:border-red-300', dotClass: 'bg-red-500' },
+    { name: 'Jeans Slim', pieces: 85, icon: '👖', hoverClass: 'hover:shadow-green-200 hover:border-green-300', dotClass: 'bg-green-500' },
+    { name: 'Calcetines', pieces: 200, icon: '🧦', hoverClass: 'hover:shadow-green-200 hover:border-green-300', dotClass: 'bg-green-500' },
+    { name: 'Bufanda', pieces: 0, icon: '🧣', hoverClass: 'hover:shadow-red-200 hover:border-red-300', dotClass: 'bg-red-500' },
+];
+
+// --- PRECIOS Y MÓDULOS ---
+const isAnnual = ref(false); // Default true para presumir descuento
+const basePriceMonthly = 199;
+
+const modules = ref([
+    { id: 'reportes', name: 'Reporte financiero', price: 25, active: false, description: 'Verifica tus ganancia neta, flujo de dinero, resumen de operaciones.' },
+    { id: 'clientes', name: 'Clientes', price: 30, active: false, description: 'Cuentas por cobrar, apartados, servicios realizados.' }, 
+    { id: 'servicios', name: 'Servicios', price: 50, active: false, description: 'Órdenes de servicio, estatus, listado de servicios.', subItems: ['Catálogo', 'Órdenes'] }, 
+    { id: 'cotizaciones', name: 'Cotizaciones', price: 35, active: false, description: 'Personaliza tus cotizaciones y envía propuestas profesionales.' },
+    // { id: 'ecommerce', name: 'Tienda en línea', price: 99, active: false, description: 'Vende tus productos en internet sincronizado.' },
+]);
+
+const features = ref([
+    { id: 'users', name: 'Usuarios extra', price: 7.5, count: 0 },
+    { id: 'cajas', name: 'Cajas extra', price: 7.5, count: 0 },
+    { id: 'products', name: '50 Productos extra', price: 1.5, count: 0 }, 
+    { id: 'branches', name: 'Sucursales extra', price: 30, count: 0 },
+    { id: 'templates', name: 'Plantillas personalizadas', price: 3, count: 0 },
+]);
+
+// Cálculo de totales
+const rawMonthlyTotal = computed(() => {
+    let total = basePriceMonthly;
+    modules.value.forEach(m => { if (m.active) total += m.price; });
+    features.value.forEach(f => { total += (f.count * f.price); });
+    return total;
+});
+
+const finalPrice = computed(() => {
+    if (isAnnual.value) {
+        return (rawMonthlyTotal.value * 0.8).toFixed(2);
+    }
+    return rawMonthlyTotal.value.toFixed(2);
+});
+
+// Helpers para interactividad
+const incrementFeature = (id) => {
+    const feature = features.value.find(f => f.id === id);
+    if (feature) feature.count++;
+};
+const decrementFeature = (id) => {
+    const feature = features.value.find(f => f.id === id);
+    if (feature && feature.count > 0) feature.count--;
+};
+const toggleModule = (id) => {
+    const module = modules.value.find(m => m.id === id);
+    if (module) module.active = !module.active;
+}
+
+// Scroll suave
+const scrollToElement = (id) => {
+    const element = document.getElementById(id);
+    if (element) {
+        element.scrollIntoView({ behavior: 'smooth' });
+    }
 };
 
 onMounted(() => {
     AOS.init();
     window.addEventListener('scroll', handleScroll);
+    setupIntersectionObserver(); 
 });
 
-onBeforeUnmount(() => {
+onUnmounted(() => {
     window.removeEventListener('scroll', handleScroll);
 });
 
+const businessTypes = [
+    { title: 'Ropa y Calzado', image: '/imagesLanding/biz-clothing.webp', alt: 'Artículos de ropa', shortDesc: 'Gestiona tallas, colores y temporadas.', fullDesc: 'La solución perfecta para boutiques. Controla tu inventario con variantes complejas sin perder la cabeza.', features: ['Matriz de Tallas y Colores', 'Impresión de etiquetas de código de barras', 'Gestión de cambios y devoluciones', 'Reportes de prendas más vendidas'] },
+    { title: 'Supermercados', image: '/imagesLanding/biz-supermarket.webp', alt: 'Abarrotes', shortDesc: 'Venta rápida y control de caducidad.', fullDesc: 'Agilidad en la caja es clave. Escanea códigos rápidamente y gestiona miles de productos sin demoras.', features: ['Venta ultra rápida con scanner', 'Control de inventario mínimo y máximo', 'Venta a granel (bascula)', 'Múltiples cajeros simultáneos'] },
+    { title: 'Papelerías', image: '/imagesLanding/biz-stationery.webp', alt: 'Papelería', shortDesc: 'Miles de artículos pequeños bajo control.', fullDesc: 'Desde un lápiz hasta paquetes escolares. Organiza la inmensa variedad de artículos pequeños fácilmente.', features: ['Venta unitaria y por paquete', 'Kits escolares', 'Búsqueda rápida de productos', 'Control de merma y robo hormiga'] },
+    { title: 'Ferreterías', image: '/imagesLanding/biz-hardware.webp', alt: 'Herramientas', shortDesc: 'Inventario pesado y venta a granel.', fullDesc: 'Administra inventarios complejos, ventas por metro, kilo o pieza y mantén el control de tu almacén.', features: ['Venta fraccionada (metros, kilos)', 'Precios de mayoreo y menudeo', 'Kits o ventas por paquetes', 'Tickets claros'] },
+    { title: 'Servicios', image: '/imagesLanding/biz-services.webp', alt: 'Servicios', shortDesc: 'Reparaciones, citas y mano de obra.', fullDesc: 'No solo productos, vende tu tiempo y experiencia. Gestiona órdenes de servicio y seguimiento.', features: ['Órdenes de servicio', 'Control de estatus', 'Refacciones', 'Mano de obra','Seguimiento por Whatsapp'] },
+];
 
+const selectedBusiness = ref(null);
+const isModalOpen = ref(false);
+const openBusinessModal = (biz) => { selectedBusiness.value = biz; isModalOpen.value = true; document.body.style.overflow = 'hidden'; };
+const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => { selectedBusiness.value = null; }, 300); document.body.style.overflow = ''; };
 </script>
 
 <style scoped>
-/* uiverse estilos */
-/* From Uiverse.io by CritCoder */
-.buttonupgrade {
-    width: fit-content;
-    display: flex;
-    padding: 5px 22px;
-    cursor: pointer;
-    border-radius: 30px;
-    text-shadow: 2px 2px 3px rgba(221, 255, 0, 0.3);
-    background: linear-gradient(15deg,
-            #F68C0F,
-            #e6810e,
-            #bb6707,
-            #905209,
-            #F68C0F,
-            #e6810e,
-            #bb6707,
-            #905209) no-repeat;
-    background-size: 300%;
-    color: white;
-    border: none;
-    background-position: left center;
-    box-shadow: 0 20px 10px -14px rgba(246, 140, 15, 0.5);
-    transition:
-        background 0.3s ease,
-        color 0.3s ease;
+@import url('https://fonts.googleapis.com/css2?family=Krub:wght@200;300;400;500;600;700&display=swap');
+
+.font-krub { font-family: 'Krub', sans-serif; }
+
+/* --- ESTILOS GENERALES (Mantenidos) --- */
+.hero-wrapper { position: relative; overflow: hidden; background: radial-gradient(circle at 50% 50%, #ffffff 0%, #fff8f0 40%, #fff0e0 100%); display: flex; flex-direction: column; }
+.big-title-bg { font-size: clamp(3.5rem, 11vw, 11rem); font-weight: 900; line-height: 0.9; text-align: center; color: rgba(0, 0, 0, 0.04); pointer-events: none; white-space: nowrap; z-index: 10; letter-spacing: 4px; }
+.text-gradient-elegant { background: linear-gradient(to bottom right, #000000 30%, #555555 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.premium-widget { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(20px); border-radius: 16px; box-shadow: 0 20px 40px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -3px rgba(0, 0, 0, 0.03), inset 0 0 0 1px rgba(255, 255, 255, 1); border-left: 4px solid #F68C0F; transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); z-index: 30; }
+.premium-widget:hover { transform: scale(1.05) translateY(-5px) !important; box-shadow: 0 25px 50px -12px rgba(246, 140, 15, 0.2); }
+.bottom-glass-bar { width: 100%; background: rgba(255, 255, 255, 0.75); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(80px); border-top: 1px solid rgba(255, 255, 255, 0.8); box-shadow: 0 -10px 40px rgba(0,0,0,0.05); z-index: 40; }
+.btn-apple-primary { background: #1a1a1a; color: white; padding: 14px 32px; border-radius: 99px; font-weight: 600; font-size: 1rem; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); box-shadow: 0 10px 20px rgba(0,0,0,0.1); display: inline-flex; align-items: center; justify-content: center; }
+.btn-apple-primary:hover { transform: translateY(-2px); background: #000; box-shadow: 0 15px 30px rgba(0,0,0,0.2); }
+.btn-apple-secondary { background: white; color: #333; padding: 14px 32px; border-radius: 99px; font-weight: 600; border: 1px solid #ddd; transition: all 0.3s ease; display: inline-flex; align-items: center; justify-content: center; }
+.btn-apple-secondary:hover { border-color: #F68C0F; color: #F68C0F; transform: translateY(-2px); box-shadow: 0 10px 20px rgba(246, 140, 15, 0.08); }
+.navbar-container { width: 100%; z-index: 50; transition: all 0.3s ease-in-out; position: fixed; top: 0; left: 0; }
+.navbar-scrolled { background-color: rgba(255, 255, 255, 0.9); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(0,0,0,0.05); padding-top: 0.8rem; padding-bottom: 0.8rem; }
+.navbar-hidden { transform: translateY(-100%); opacity: 0; pointer-events: none; }
+.btn-login-nav { background: #F68C0F; color: white; padding: 8px 24px; border-radius: 50px; font-weight: 600; font-size: 0.95rem; border: none; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(246, 140, 15, 0.3); }
+.btn-login-nav:hover { background: #e57f00; transform: translateY(-1px); box-shadow: 0 6px 16px rgba(246, 140, 15, 0.5); }
+.biz-card-bento { background: #ffffff; border-radius: 20px; padding: 16px; position: relative; overflow: hidden; transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1); box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 0 0 1px rgba(0,0,0,0.02); display: flex; flex-direction: column; height: 100%; cursor: pointer; border: 1px solid rgba(0,0,0,0.03); }
+.biz-card-bento:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,0.06); border-color: rgba(246, 140, 15, 0.1); }
+.biz-card-bento:hover .biz-img { transform: scale(1.05) rotate(2deg); }
+.biz-card-bento:hover .action-arrow { opacity: 1; transform: translateX(0); }
+.biz-img-container { height: 140px; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; }
+.biz-img { height: 100%; width: auto; object-fit: contain; transition: transform 0.5s ease; filter: drop-shadow(0 10px 15px rgba(0,0,0,0.1)); }
+.action-arrow { opacity: 0; transform: translateX(-10px); transition: all 0.3s ease; color: #F68C0F; }
+.feature-card-modern { background: #FAFAFA; border-radius: 32px; padding: 40px; height: 100%; position: relative; overflow: hidden; transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1); border: 1px solid rgba(0,0,0,0.03); }
+.feature-card-modern:hover { background: white; box-shadow: 0 20px 50px rgba(0,0,0,0.08); transform: translateY(-5px); }
+
+/* --- STOCK INDICATORS (SIMPLES Y ELEGANTES - UPDATED FOR MOBILE) --- */
+.inventory-item-card {
+    background: white;
+    border: 1px solid #F3F4F6;
+    border-radius: 16px;
+    padding: 12px 16px;
+    /* Eliminamos el flex-row forzado para permitir control flexible desde HTML (útil para el rediseño vertical) */
+    display: flex; 
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    position: relative;
+    overflow: hidden;
 }
 
-.buttonupgrade:hover {
-    background-size: 320%;
-    background-position: right center;
-    color: white;
+.inventory-item-card:hover {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 12px 24px rgba(0,0,0,0.06);
+    border-color: transparent; /* El borde lo maneja la clase hover específica */
 }
 
+/* Efecto Hover Glow sutil */
+.hover\:shadow-green-200:hover { box-shadow: 0 10px 30px rgba(74, 222, 128, 0.15); border-color: rgba(74, 222, 128, 0.4); }
+.hover\:shadow-yellow-200:hover { box-shadow: 0 10px 30px rgba(250, 204, 21, 0.15); border-color: rgba(250, 204, 21, 0.4); }
+.hover\:shadow-red-200:hover { box-shadow: 0 10px 30px rgba(248, 113, 113, 0.15); border-color: rgba(248, 113, 113, 0.4); }
 
-/* From Uiverse.io by rahulgarg99 */
-.button1 {
-    line-height: 1;
-    text-decoration: none;
+.coming-soon-wrapper { position: relative; overflow: hidden; background: #050505; border-radius: 40px; color: white; box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.5); border: 1px solid rgba(255, 255, 255, 0.1); }
+.coming-soon-glow { position: absolute; bottom: -50%; left: 50%; transform: translateX(-50%); width: 80%; height: 100%; background: radial-gradient(circle, rgba(246, 140, 15, 0.25) 0%, rgba(0,0,0,0) 70%); filter: blur(80px); pointer-events: none; z-index: 0; }
+.glass-input-container { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 99px; padding: 4px; display: flex; transition: all 0.3s ease; }
+.glass-input-container:focus-within { background: rgba(255, 255, 255, 0.15); border-color: rgba(246, 140, 15, 0.5); box-shadow: 0 0 20px rgba(246, 140, 15, 0.15); }
+.glass-input { background: transparent; border: none; color: white; padding: 12px 24px; outline: none; width: 100%; font-size: 1rem; }
+.glass-input::placeholder { color: rgba(255, 255, 255, 0.4); }
+.glass-input:focus, 
+.glass-input:active {outline: none !important; box-shadow: none !important; border: none !important;}
+.btn-glow { background: #F68C0F; color: white; border-radius: 99px; padding: 12px 32px; font-weight: 600; transition: all 0.3s ease; white-space: nowrap; }
+.btn-glow:hover { background: #ff9e3d; box-shadow: 0 0 20px rgba(246, 140, 15, 0.4); transform: scale(1.02); }
+.btn-glow:disabled { opacity: 0.7; cursor: not-allowed; transform: none; box-shadow: none; }
+.modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
+.modal-content-enter-active { transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.modal-content-leave-active { transition: all 0.2s ease-in; }
+.modal-content-enter-from, .modal-content-leave-to { opacity: 0; transform: scale(0.95) translateY(20px); }
+.faq-card { background: #ffffff; border: 1px solid #E5E7EB; border-radius: 20px; padding: 0 24px; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); cursor: pointer; }
+.faq-card:hover { border-color: rgba(246, 140, 15, 0.4); background: #fffcf8; transform: translateY(-2px); box-shadow: 0 10px 30px rgba(0,0,0,0.03); }
+.faq-card.active { background: #ffffff; box-shadow: 0 15px 40px rgba(246, 140, 15, 0.08); border-color: rgba(246, 140, 15, 0.3); }
+.faq-header { display: flex; justify-content: space-between; align-items: center; padding: 24px 0; gap: 16px; }
+.faq-grid-wrapper { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.4s ease-out, opacity 0.4s ease-out; opacity: 0; }
+.faq-grid-wrapper.grid-open { grid-template-rows: 1fr; opacity: 1; }
+.faq-inner-content { overflow: hidden; }
+.icon-wrapper { width: 36px; height: 36px; border-radius: 50%; background: #F9FAFB; display: flex; align-items: center; justify-content: center; color: #9CA3AF; transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); flex-shrink: 0; }
+.faq-card.active .icon-wrapper { background: #F68C0F; color: white; transform: rotate(180deg); }
+.rotate-180 { transform: rotate(180deg); }
+.counter-control { display: flex; align-items: center; gap: 8px; background: white; padding: 2px 8px; border-radius: 8px; }
+.counter-btn { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; background: #f0f0f0; cursor: pointer; font-size: 14px; color: #555; border-radius: 50%; }
+.counter-btn:hover { background: #e0e0e0; }
+.legal-link { color: #6B7280; font-size: 1.1rem; text-decoration: none; }
+.legal-link:hover { text-decoration: underline; }
+
+/* --- ESTILOS PRECIOS (CUSTOM SWITCH & BUILDER) --- */
+.custom-switch {
+    position: relative;
     display: inline-flex;
-    align-items: center;
-    gap: 0.75rem;
-    background-color: #fff;
-    color: #F68C0F;
-    border-radius: 10rem;
-    padding: 0.75rem 1.5rem;
-    padding-left: 20px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transition: background-color 0.3s;
+    background-color: #F3F4F6;
+    border-radius: 999px;
+    padding: 4px;
+    cursor: pointer;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
 }
-
-.button1__icon-wrapper {
-    flex-shrink: 0;
-    width: 25px;
-    height: 25px;
+.switch-slider {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    width: calc(50% - 4px);
+    background-color: white;
+    border-radius: 999px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.switch-slider.active-right {
+    transform: translateX(100%);
+}
+.switch-label {
     position: relative;
-    color: #fff;
-    background-color: #F68C0F;
-    border-radius: 50%;
-    display: grid;
-    place-items: center;
-    overflow: hidden;
-}
-
-.button1:hover {
-    background-color: #F68C0F;
-    color: white;
-}
-
-.button1:hover .button1__icon-wrapper {
-    color: #F68C0F;
-    background-color: #fff;
-}
-
-.button1__icon-svg--copy {
-    position: absolute;
-    transform: translate(-150%, 150%);
-}
-
-.button1:hover .button1__icon-svg:first-child {
-    transition: transform 0.3s ease-in-out;
-    transform: translate(150%, -150%);
-}
-
-.button1:hover .button1__icon-svg--copy {
-    transition: transform 0.3s ease-in-out 0.1s;
-    transform: translate(0);
-}
-
-/* From Uiverse.io by ayman-ashine */
-.card {
-    --dark: #212121;
-    --darker: #111111;
-    --semidark: #2c2c2c;
-    --lightgray: #e8e8e8;
-    --unit: 10px;
-
-    background-color: var(--darker);
-    box-shadow: 0 0 var(--unit) var(--darker);
-    border: calc(var(--unit) / 2) solid var(--darker);
-    border-radius: var(--unit);
-    position: relative;
-    padding: var(--unit);
-    overflow: hidden;
-}
-
-.card::before {
-    content: "";
-    position: absolute;
-    width: 120%;
-    height: 20%;
-    top: 40%;
-    left: -10%;
-    background: linear-gradient(144deg, #af40ff, #5b42f3 50%, #00ddeb);
-    animation: keyframes-floating-light 2.5s infinite ease-in-out;
-    filter: blur(20px);
-}
-
-@keyframes keyframes-floating-light {
-    0% {
-        transform: rotate(-5deg) translateY(-5%);
-        opacity: 0.5;
-    }
-
-    50% {
-        transform: rotate(5deg) translateY(5%);
-        opacity: 1;
-    }
-
-    100% {
-        transform: rotate(-5deg) translateY(-5%);
-        opacity: 0.5;
-    }
-}
-
-.card::after {
-    content: "";
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    top: 0%;
-    left: 0%;
-    background: linear-gradient(144deg, #af40ff, #5b42f3 50%, #00ddeb);
-    filter: blur(20px);
-    pointer-events: none;
-    animation: keyframes-intro 1s ease-in forwards;
-}
-
-@keyframes keyframes-intro {
-    100% {
-        transform: translate(-100%);
-        opacity: 0;
-    }
-}
-
-.card .image {
-    width: 600px;
-    animation: keyframes-floating-img 10s ease-in-out infinite;
-}
-
-@keyframes keyframes-floating-img {
-    0% {
-        transform: translate(-2%, 2%) scaleY(0.95) rotate(-5deg);
-    }
-
-    50% {
-        transform: translate(2%, -2%) scaleY(1) rotate(5deg);
-    }
-
-    100% {
-        transform: translate(-2%, 2%) scaleY(0.95) rotate(-5deg);
-    }
-}
-
-.card .heading {
-    font-weight: 400;
-    font-size: 17px;
+    z-index: 10;
+    padding: 8px 24px;
+    font-size: 1.0rem;
+    font-weight: 500;
+    color: #6B7280;
+    transition: color 0.3s;
+    user-select: none;
+    width: 50%;
     text-align: center;
-    margin-top: 8px;
-    margin-bottom: 8px;
-    padding-block: var(--unit);
-    color: var(--lightgray);
-    animation: keyframes-flash-text 0.5s infinite;
+}
+.switch-label.active {
+    color: #111827;
+    font-weight: 700;
 }
 
-@keyframes keyframes-flash-text {
-    50% {
-        opacity: 0.5;
-    }
-}
-
-.card .icons {
+/* Modulo de Precios - Estilo Restaurado (Más grande y legible) */
+.module-row {
     display: flex;
-    gap: var(--unit);
+    align-items: center;
+    padding: 16px; /* Padding restaurado */
+    background: white;
+    border-radius: 16px;
+    margin-bottom: 12px; /* Margen restaurado */
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
 }
-
-.card .icons a {
+.module-row.active {
+    border-color: #F68C0F;
+    background: #fffbf5;
+    box-shadow: 0 4px 12px rgba(246, 140, 15, 0.08);
+}
+.checkbox-circle {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid #D1D5DB;
     display: flex;
-    flex-grow: 1;
     align-items: center;
     justify-content: center;
-    background-color: var(--dark);
-    color: var(--lightgray);
-    padding: calc(var(--unit) / 2);
-    border-radius: calc(var(--unit) / 2);
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+.module-row.active .checkbox-circle {
+    background-color: #F68C0F;
+    border-color: #F68C0F;
+    color: white;
 }
 
-.card .icons a:hover {
-    transition: 0.2s;
-    background-color: var(--semidark);
+/* Summary Bar */
+.pricing-summary-bar {
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 20px 50px -10px rgba(0,0,0,0.1);
+    border: 1px solid rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    md:flex-row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24px 40px;
+    margin-top: 32px;
 }
 </style>
 
 <template>
+    <Head title="Ezy Ventas - Punto de Venta" />
 
-    <Head title="Ezy Ventas" />
-    <div class="bg-black2 relative overflow-x-hidden">
-        <img class="object-contain select-none absolute right-0 top-0" :draggable="false"
-            src="@/../../public/imagesLanding/bg-01.webp" alt="Destello neón de adorno en el fondo">
-        <nav class="bg-transparent" data-aos="zoom-in" data-aos-duration="1200">
-            <div class="max-w-8xl mx-auto px-4 md:px-7 py-3">
-                <div class="flex justify-between items-center h-14 bg-[#404040]/30 rounded-full pl-3 pr-2">
-                    <div class="flex">
-                        <!-- Logo -->
-                        <div class="shrink-0 flex items-center">
-                            <ApplicationMark class="block h-10 md:h-12 w-auto" />
-                        </div>
-                    </div>
-                    <div class="flex sm:items-center space-x-12 sm:ms-6">
-                        <Link :href="$page.props.auth?.user ? route('dashboard') : route('login')">
-                        <button class="buttonupgrade">
-                            Iniciar sesión
-                        </button>
+    <div class="min-h-screen bg-white font-krub text-gray-800 overflow-x-hidden flex flex-col">
+        
+        <!-- NAV BAR -->
+        <nav 
+            class="navbar-container py-4 px-4 md:px-8 flex justify-center"
+            :class="{ 
+                'navbar-scrolled': isScrolled || true, 
+                'navbar-hidden': !isNavVisible 
+            }"
+        >
+            <div class="max-w-8xl w-full flex justify-between items-center">
+                <div class="flex items-center gap-2"> 
+                    <img src="/imagesLanding/ezy-logo-color.webp" alt="Ezy Ventas Logo" class="h-9 w-auto" />
+                </div>
+                <div class="hidden lg:flex items-center space-x-10 text-gray-500 font-medium text-[0.95rem] tracking-wide">
+                    <button @click="scrollToElement('features')" class="hover:text-[#F68C0F] transition duration-200">Funcionalidades</button>
+                    <button @click="scrollToElement('prices')" class="hover:text-[#F68C0F] transition duration-200">Precios</button>
+                    <button @click="scrollToElement('faq')" class="hover:text-[#F68C0F] transition duration-200">Preguntas frecuentes</button>
+                    <a href="https://api.whatsapp.com/send?phone=523321705650" target="_blank" class="hover:text-[#F68C0F] transition duration-200">Contacto</a>
+                </div>
+                
+                <div class="flex items-center gap-4">
+                    <template v-if="$page.props.auth?.user">
+                        <Link :href="route('dashboard')">
+                            <FrutigerButton>Dashboard</FrutigerButton>
                         </Link>
-                    </div>
+                    </template>
+                    <template v-else>
+                        <Link 
+                            v-if="canRegister" 
+                            :href="route('register')" 
+                            class="hidden md:block font-bold text-gray-500 hover:text-[#F68C0F] transition duration-200 text-sm"
+                        >
+                            Registrarse
+                        </Link>
+                        <Link :href="route('login')">
+                            <FrutigerButton>Iniciar sesión</FrutigerButton>
+                        </Link>
+                    </template>
                 </div>
             </div>
         </nav>
-        <main class="bg-transparent selection:bg-primary selection:text-white pb-24 relative">
-            <!-- hero -->
-            <section class="mx-6 relative">
-                <figure class="mt-6" data-aos="fade-right" data-aos-duration="1200" data-aos-delay="200">
-                    <img class="object-contain select-none" :draggable="false"
-                        src="@/../../public/imagesLanding/landing-01-mb.webp"
-                        alt="Letrero en neón que dice: Punto de venta. 30 dias gratis">
-                </figure>
-                <figure class="w-[90%] mx-auto mt-6 z-10" data-aos="fade-down" data-aos-duration="1200"
-                    data-aos-delay="1000">
-                    <img class="object-contain select-none" :draggable="false"
-                        src="@/../../public/imagesLanding/landing-02.webp" alt="Tablet que muestra un carrito de compras">
-                </figure>
-                <div class="flex justify-center mt-4" data-aos="fade-up" data-aos-duration="1200" data-aos-delay="1500"
-                    data-aos-offset="500">
-                    <button @click="$inertia.visit('register')" class="button1" style="--clr: #7808d0">
-                        <span class="button1__icon-wrapper">
-                            <svg viewBox="0 0 14 15" fill="none" xmlns="http://www.w3.org/2000/svg"
-                                class="button1__icon-svg" width="10">
-                                <path
-                                    d="M13.376 11.552l-.264-10.44-10.44-.24.024 2.28 6.96-.048L.2 12.56l1.488 1.488 9.432-9.432-.048 6.912 2.304.024z"
-                                    fill="currentColor"></path>
-                            </svg>
-                            <svg viewBox="0 0 14 15" fill="none" width="10" xmlns="http://www.w3.org/2000/svg"
-                                class="button1__icon-svg button1__icon-svg--copy">
-                                <path
-                                    d="M13.376 11.552l-.264-10.44-10.44-.24.024 2.28 6.96-.048L.2 12.56l1.488 1.488 9.432-9.432-.048 6.912 2.304.024z"
-                                    fill="currentColor"></path>
-                            </svg>
-                        </span>
-                        Probar ahora
-                    </button>
+
+        <!-- HERO SECTION -->
+        <header 
+            ref="heroContainer"
+            @mousemove="handleMouseMove" 
+            class="hero-wrapper relative min-h-screen pt-24 pb-0"
+        >
+            <div class="relative z-30 text-center px-4 my-0" data-aos="fade-down">
+                <h1 class="text-[34px] md:text-5xl lg:text-6xl font-bold leading-tight">
+                    <span class="text-gradient-elegant">El punto de venta que</span> <br class="hidden md:block"/>
+                    <span class="text-[#F68C0F]">se adapta a tu negocio</span>
+                </h1>
+            </div>
+
+            <div class="relative flex-1 flex flex-col items-center justify-center w-full px-4 pb-20"> 
+                <div class="absolute inset-0 flex flex-col justify-center items-center pointer-events-none select-none" :style="textBackStyle">
+                    <div class="big-title-bg mb-12 md:mb-12">TU NEGOCIO</div>
+                    <div class="big-title-bg mt-0 md:mt-0">INTELIGENTE</div>
+                </div>
+
+                <div 
+                    class="relative z-20 transition-transform duration-100 ease-out"
+                    :style="phoneStyle"
+                    data-aos="zoom-out" 
+                    data-aos-duration="1000"
+                >
+                    <div class="absolute -bottom-6 left-1/2 -translate-x-1/2 w-[60%] h-16 bg-black/20 blur-[50px] rounded-full"></div>
+                    <img 
+                        src="/imagesLanding/hero-phone.webp" 
+                        alt="App Ezy Ventas" 
+                        class="w-[200px] md:w-[280px] lg:w-[320px] object-contain drop-shadow-2xl mx-auto"
+                    >
+                    <div class="absolute top-10 -left-16 md:-left-24 hidden md:block" :style="floatingWidgetStyle(-30, -15)" data-aos="fade-right" data-aos-delay="200">
+                        <div class="premium-widget p-3 flex items-center gap-4 w-[180px]">
+                            <div class="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center text-green-600 text-2xl font-bold">$</div>
+                            <div>
+                                <p class="text-[14px] text-gray-400 font-bold uppercase tracking-wider">VENTAS HOY</p>
+                                <p class="text-xl font-black text-gray-800">$12,450</p>
+                            </div>
+                        </div>
+                    </div>
+                     <div class="absolute top-20 -right-16 md:-right-24 hidden md:block" :style="floatingWidgetStyle(25, -20)" data-aos="fade-left" data-aos-delay="400">
+                        <div class="premium-widget p-4 w-[180px]">
+                            <div class="flex justify-between items-start mb-1">
+                                <span class="text-[14px] font-bold text-gray-400">PERSONAL</span>
+                                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                            </div>
+                            <div class="flex -space-x-2 items-center">
+                                <div class="w-10 h-10 rounded-full border border-white bg-gray-200 flex items-center justify-center text-[10px] font-bold">JD</div>
+                                <div class="w-10 h-10 rounded-full border border-white bg-[#F68C0F] text-white flex items-center justify-center text-[10px] font-bold">MR</div>
+                                <div class="w-10 h-10 rounded-full border border-white bg-white text-gray-500 flex items-center justify-center text-[10px] font-bold">+3</div>
+                            </div>
+                        </div>
+                    </div>
+                     <div class="absolute bottom-40 -left-12 md:-left-16 hidden md:block" :style="floatingWidgetStyle(-15, 20)" data-aos="fade-up-right" data-aos-delay="500">
+                        <div class="premium-widget p-3 flex items-center gap-6 pr-6">
+                            <div class="bg-gray-100 p-3 rounded-xl">
+                                <img src="/imagesLanding/feature-reader.webp" alt="Scanner" class="w-10 h-10 object-contain">
+                            </div>
+                            <div>
+                                <p class="text-lg font-bold text-gray-800">Escáner</p>
+                                <p class="text-[14px] font-bold text-green-600">CONECTADO</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bottom-glass-bar absolute bottom-8 py-6 md:py-10 px-6 md:px-12 lg:px-20 flex flex-col md:flex-row items-center justify-between gap-6">
+                <div class="text-center md:text-left space-y-1">
+                    <p class="text-xl font-bold text-gray-900">Todo lo que necesitas para crecer</p>
+                    <p class="text-gray-700 font-medium text-lg">Prueba gratuita de 30 días.</p>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+                    <Link :href="route('register')" class="btn-apple-primary w-full sm:w-auto gap-2">
+                        Empezar prueba gratis
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-4"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" /></svg>
+                    </Link>
+                    <a href="https://api.whatsapp.com/send?phone=523321705650" target="_blank" class="btn-apple-secondary w-full sm:w-auto gap-2">Contactar con ventas</a>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1">
+            <!-- SECCIÓN 2: TIPOS DE NEGOCIO (REDIEÑADA A ESTILO APPLE) -->
+            <section id="features" class="py-12 px-4 md:px-12 max-w-[1450px] mx-auto bg-gray-50/50">
+                <div class="text-center mb-8 md:mb-16 space-y-3" data-aos="fade-up">
+                    <h2 class="text-3xl md:text-5xl font-bold text-gray-900 tracking-tight">Diseñado para tu giro</h2>
+                    <p class="text-base md:text-lg text-gray-500 max-w-2xl mx-auto">Selecciona tu tipo de negocio y descubre por qué Ezy Ventas es tu mejor aliado.</p>
+                </div>
+                
+                <div class="flex flex-col gap-4">
+                    <div 
+                        v-for="(biz, index) in businessTypes" 
+                        :key="index" 
+                        class="group relative bg-white rounded-[28px] p-6 shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-300 cursor-pointer h-44"
+                        @click="openBusinessModal(biz)"
+                        data-aos="fade-up"
+                        :data-aos-delay="index * 50">
+                        
+                        <!-- Imagen: Superior Derecha -->
+                        <div class="absolute top-4 right-4 w-20 h-20 bg-gray-50/50 rounded-2xl flex items-center justify-center p-2 group-hover:scale-105 transition-transform duration-500">
+                             <img :src="biz.image" :alt="biz.alt" class="w-full h-full object-contain mix-blend-multiply">
+                        </div>
+
+                        <!-- Contenido: Inferior Izquierda -->
+                        <div class="absolute bottom-6 left-6 right-20">
+                            <h3 class="text-2xl font-bold text-gray-900 mb-1 leading-tight">{{ biz.title }}</h3>
+                            <p class="text-sm text-gray-500 font-medium leading-snug line-clamp-2">{{ biz.shortDesc }}</p>
+                        </div>
+
+                        <!-- Flecha: Inferior Derecha -->
+                        <div class="absolute bottom-6 right-6 w-10 h-10 rounded-full bg-black text-white flex items-center justify-center shadow-lg group-hover:bg-[#F68C0F] transition-colors duration-300">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                        </div>
+                    </div>
                 </div>
             </section>
-            <!-- funcionalidades -->
-            <section class="mt-16 relative">
-                <img class="w-[50%] object-contain select-none absolute left-0 top-0" :draggable="false"
-                    src="@/../../public/imagesLanding/bg-02.webp" alt="Destello neón de adorno en el fondo"
-                    data-aos="fade-right" data-aos-duration="1200" data-aos-delay="800">
-                <p id="features" class="text-xl text-center font-extrabold text-white" data-aos="flip-left"
-                    data-aos-duration="700">FUNCIONALIDAD DE LOS MÓDULOS</p>
-                <!-- Punto de venta -->
-                <article class="mx-6 relative">
-                    <div class="text-white mt-14" data-aos="fade-right" data-aos-duration="1200" data-aos-delay="800">
-                        <h2 class="font-bold text-2xl text-center text-white">Punto de venta</h2>
-                        <p class="text-center text-lg mt-2">
-                            Integración con básculas, impresoras de tickets, lectores de códigos de barra y más.
-                        </p>
-                    </div>
-                    <figure class="w-[90%] mx-auto" data-aos="fade-left" data-aos-duration="1200" data-aos-delay="200">
-                        <img class="object-contain select-none" :draggable="false"
-                            src="@/../../public/imagesLanding/features-01.webp"
-                            alt="Carrito de compras con aparatos electronicos entrando y brillando">
-                    </figure>
-                    <div class="flex justify-between text-white">
-                        <figure class="w-[45%] flex flex-col" data-aos="fade-up" data-aos-duration="500"
-                            data-aos-delay="1100">
-                            <img class="w-[55%] mx-auto object-contain select-none" :draggable="false"
-                                src="@/../../public/imagesLanding/wifi.webp"
-                                alt="Simbolo de wifi con diagonal que indica sin conexion a internet">
-                            <p class="text-center text-xs mt-3">No pierdas ventas: opera sin conexión y sincroniza
-                                después.</p>
-                        </figure>
-                        <img class="w-[36%] object-contain select-none mt-1" :draggable="false" data-aos="fade-up"
-                            data-aos-duration="300" data-aos-delay="1500" src="@/../../public/imagesLanding/printer.webp"
-                            alt="Impresora de tikets pequeña con un tiket surgiendo de ella">
-                    </div>
-                    <p class="text-center text-3xl mt-6 text-white" style="font-family: 'Licorice';" data-aos="fade-up"
-                        data-aos-duration="240" data-aos-delay="1550">
-                        ¡Simplifica tus ventas, todo en uno!
+
+            <!-- SECCIÓN 3: FUNCIONALIDADES -->
+            <section class="py-32 px-6 md:px-12 max-w-[1400px] mx-auto overflow-hidden">
+                <div class="text-center mb-24" data-aos="fade-up">
+                    <h2 class="text-4xl md:text-6xl font-bold tracking-tight text-gray-900 mb-6">
+                        Poderoso. Simple. <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#F68C0F] to-orange-400">Tuyo.</span>
+                    </h2>
+                    <p class="text-xl text-gray-500 max-w-2xl mx-auto font-light leading-relaxed">
+                        Tecnología que ayuda. Diseñamos una interfaz intuitiva para que tú y tu equipo sepan usarla desde el primer día, sin capacitaciones eternas.
                     </p>
-                </article>
-                <!-- Registro de venta -->
-                <article class="mt-14 relative">
-                    <div class="mx-6 z-10">
-                        <div class="text-white text-center" data-aos="fade-right" data-aos-duration="800">
-                            <h2 class="font-bold text-2xl text-white">Registro de ventas</h2>
-                            <p class="text-base mt-2">Accede al historial completo de transacciones en
-                                segundos.
-                            </p>
-                            <ul class="text-base mt-8 *:mt-1 *:flex *:items-center *:space-x-2">
-                                <li>
-                                    <svg width="25" height="25" viewBox="0 0 13 13" fill="none"
-                                        xmlns="http://www.w3.org/2000/svg">
-                                        <g filter="url(#filter0_f_16318_44)">
-                                            <circle cx="6.5" cy="6.5" r="2.5" fill="#410B69" />
-                                        </g>
-                                        <circle cx="6.5" cy="6.5" r="2.5" fill="#7113B5" />
-                                        <circle cx="5.5" cy="5.5" r="2.5" fill="#D9D9D9" />
-                                        <defs>
-                                            <filter id="filter0_f_16318_44" x="0" y="0" width="13" height="13"
-                                                filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-                                                <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                                <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                    result="shape" />
-                                                <feGaussianBlur stdDeviation="2"
-                                                    result="effect1_foregroundBlur_16318_44" />
-                                            </filter>
-                                        </defs>
-                                    </svg>
-                                    <span>Edita ventas</span>
-                                </li>
-                                <li>
-                                    <svg width="25" height="25" viewBox="0 0 13 13" fill="none"
-                                        xmlns="http://www.w3.org/2000/svg">
-                                        <g filter="url(#filter0_f_16318_44)">
-                                            <circle cx="6.5" cy="6.5" r="2.5" fill="#410B69" />
-                                        </g>
-                                        <circle cx="6.5" cy="6.5" r="2.5" fill="#7113B5" />
-                                        <circle cx="5.5" cy="5.5" r="2.5" fill="#D9D9D9" />
-                                        <defs>
-                                            <filter id="filter0_f_16318_44" x="0" y="0" width="13" height="13"
-                                                filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-                                                <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                                <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                    result="shape" />
-                                                <feGaussianBlur stdDeviation="2"
-                                                    result="effect1_foregroundBlur_16318_44" />
-                                            </filter>
-                                        </defs>
-                                    </svg>
-                                    <span>Haz reembolsos</span>
-                                </li>
-                                <li>
-                                    <svg width="25" height="25" viewBox="0 0 13 13" fill="none"
-                                        xmlns="http://www.w3.org/2000/svg">
-                                        <g filter="url(#filter0_f_16318_44)">
-                                            <circle cx="6.5" cy="6.5" r="2.5" fill="#410B69" />
-                                        </g>
-                                        <circle cx="6.5" cy="6.5" r="2.5" fill="#7113B5" />
-                                        <circle cx="5.5" cy="5.5" r="2.5" fill="#D9D9D9" />
-                                        <defs>
-                                            <filter id="filter0_f_16318_44" x="0" y="0" width="13" height="13"
-                                                filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-                                                <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                                <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                    result="shape" />
-                                                <feGaussianBlur stdDeviation="2"
-                                                    result="effect1_foregroundBlur_16318_44" />
-                                            </filter>
-                                        </defs>
-                                    </svg>
-                                    <span>Imprime tickets</span>
-                                </li>
-                            </ul>
-                        </div>
-                        <figure class="w-[95%] mx-auto mt-6" data-aos="fade-left" data-aos-duration="800"
-                            data-aos-delay="400">
-                            <img class="object-contain select-none" :draggable="false"
-                                src="@/../../public/imagesLanding/features-02.webp"
-                                alt="Carrito de compras con aparatos electronicos entrando y brillando">
-                        </figure>
-                    </div>
-                    <img class="w-[50%] object-contain select-none absolute right-0 top-0" :draggable="false"
-                        src="@/../../public/imagesLanding/bg-03.webp" alt="Destello neón de adorno en el fondo"
-                        data-aos="fade-left" data-aos-duration="1200" data-aos-delay="800">
-                </article>
-                <!-- Clientes -->
-                <article class="mt-12 relative">
-                    <img class="object-contain select-none absolute left-0 top-32" :draggable="false"
-                        src="@/../../public/imagesLanding/bg-04.webp" alt="Destello neón de adorno en el fondo"
-                        data-aos="fade-right" data-aos-duration="1200" data-aos-delay="800">
-                    <div class="mx-6 text-end">
-                        <div class="text-white" data-aos="fade-left" data-aos-duration="800">
-                            <h2 class="font-bold text-2xl text-center text-white">Clientes</h2>
-                            <p class="text-center text-base mt-2">
-                                Gestiona toda la información de tus clientes en un solo lugar.
-                            </p>
-                            <ul class="text-base mt-3 *:mt-3">
-                                <li class="flex items-center justify-end space-x-2">
-                                    <svg width="25" height="25" viewBox="0 0 13 13" fill="none"
-                                        xmlns="http://www.w3.org/2000/svg">
-                                        <g filter="url(#filter0_f_16318_47)">
-                                            <circle cx="6.5" cy="6.5" r="2.5" fill="#0B6965" />
-                                        </g>
-                                        <circle cx="6.5" cy="6.5" r="2.5" fill="#13B5AD" />
-                                        <circle cx="5.5" cy="5.5" r="2.5" fill="#D9D9D9" />
-                                        <defs>
-                                            <filter id="filter0_f_16318_47" x="0" y="0" width="13" height="13"
-                                                filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-                                                <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                                <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                    result="shape" />
-                                                <feGaussianBlur stdDeviation="2"
-                                                    result="effect1_foregroundBlur_16318_47" />
-                                            </filter>
-                                        </defs>
-                                    </svg>
-                                    <span>Historial de compras</span>
-                                </li>
-                                <li class="flex items-center justify-end space-x-2">
-                                    <svg width="25" height="25" viewBox="0 0 13 13" fill="none"
-                                        xmlns="http://www.w3.org/2000/svg">
-                                        <g filter="url(#filter0_f_16318_47)">
-                                            <circle cx="6.5" cy="6.5" r="2.5" fill="#0B6965" />
-                                        </g>
-                                        <circle cx="6.5" cy="6.5" r="2.5" fill="#13B5AD" />
-                                        <circle cx="5.5" cy="5.5" r="2.5" fill="#D9D9D9" />
-                                        <defs>
-                                            <filter id="filter0_f_16318_47" x="0" y="0" width="13" height="13"
-                                                filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-                                                <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                                <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                    result="shape" />
-                                                <feGaussianBlur stdDeviation="2"
-                                                    result="effect1_foregroundBlur_16318_47" />
-                                            </filter>
-                                        </defs>
-                                    </svg>
-                                    <span>Ventas a crédito y al contado</span>
-                                </li>
-                                <li class="flex items-center justify-end space-x-2">
-                                    <svg width="25" height="25" viewBox="0 0 13 13" fill="none"
-                                        xmlns="http://www.w3.org/2000/svg">
-                                        <g filter="url(#filter0_f_16318_47)">
-                                            <circle cx="6.5" cy="6.5" r="2.5" fill="#0B6965" />
-                                        </g>
-                                        <circle cx="6.5" cy="6.5" r="2.5" fill="#13B5AD" />
-                                        <circle cx="5.5" cy="5.5" r="2.5" fill="#D9D9D9" />
-                                        <defs>
-                                            <filter id="filter0_f_16318_47" x="0" y="0" width="13" height="13"
-                                                filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-                                                <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                                <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                    result="shape" />
-                                                <feGaussianBlur stdDeviation="2"
-                                                    result="effect1_foregroundBlur_16318_47" />
-                                            </filter>
-                                        </defs>
-                                    </svg>
-                                    <span>Cotizaciones</span>
-                                </li>
-                                <li>y mucho más...</li>
-                            </ul>
-                        </div>
-                        <figure class="w-[95%] mt-3" data-aos="fade-right" data-aos-duration="800" data-aos-delay="300">
-                            <img class="object-contain select-none" :draggable="false"
-                                src="@/../../public/imagesLanding/features-03-mb.webp"
-                                alt="Caras de personas sonriendo y conectadas por lineas de colores neón">
-                        </figure>
-                        <p class="text-center text-3xl mt-6 text-white" style="font-family: 'Licorice';"
-                            data-aos="fade-up" data-aos-duration="240" data-aos-delay="1550">
-                            Mejora la relación con tus clientes
-                        </p>
-                    </div>
-                </article>
-                <!-- Tienda en linea -->
-                <article
-                    class="mt-12 bg-[url('/imagesLanding/features-04-mb.webp')] bg-no-repeat bg-center px-6 pt-20 h-[900px]"
-                    data-aos="zoom-in" data-aos-duration="1800">
-                    <div class="text-white text-center" data-aos="fade-down" data-aos-duration="1600"
-                        data-aos-delay="900">
-                        <h2 class="font-bold text-2xl text-white">Tienda en línea</h2>
-                        <p class="text-base mt-5">
-                            Lleva tu negocio al mundo digital con una tienda en línea integrada.
-                        </p>
-                    </div>
-                    <div class="flex items-center justify-between mt-3">
-                        <img class="w-[30%] object-contain select-none mt-5" :draggable="false"
-                            src="@/../../public/imagesLanding/qr-code.webp"
-                            alt="Código QR con el logo de EzyVentas en el centro" data-aos="fade-right"
-                            data-aos-duration="400" data-aos-delay="1900">
-                        <p class="flex flex-col text-sm text-white text-end" data-aos="fade-left"
-                            data-aos-duration="400" data-aos-delay="1900">
-                            <span>Sincronización con inventario</span>
-                            <span>Seguimiento de pedidos</span>
-                        </p>
-                    </div>
-                    <div class="flex justify-center space-x-10 scale-[70%] mt-28">
-                        <div class="bg-[#c6c6c6]/60 rounded-[10px] h-60 w-96 relative pt-32 px-6 mt-32"
-                            data-aos="fade-down" data-aos-duration="600" data-aos-delay="2000">
-                            <img class="w-[60%] object-contain select-none absolute left-[calc(50%-60px)] -top-10"
-                                :draggable="false" src="@/../../public/imagesLanding/robot-01.webp"
-                                alt="Robot pequeño, blanco con 4 ruedas y 2 ojos grandes">
-                            <div>
-                                <p class="text-[#1D1D1D] text-sm font-medium">Robot de entrega</p>
-                                <p class="text-[#414141] text-sm font-normal">MXN</p>
-                                <p class="text-[#1D1D1D] text-lg font-bold">${{ quantity1 * 90 }} K</p>
-                            </div>
-                            <div class="flex items-center justify-between">
-                                <InputNumber v-model="quantity1" size="small" class="mr-4" :min="1" :max="5" />
-                                <button @click="launchConfetti"
-                                    class="size-8 group flex items-center justify-center rounded-full border border-[#3e3e3e] hover:border-white hover:bg-primary hover:border-transparent hover:text-white transition-all ease-linear duration-200 disabled:bg-gray-300 disabled:cursor-not-allowed disabled:text-black">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                        stroke-width="1.5" stroke="currentColor"
-                                        class="size-5 text-[#3e3e3e] group-hover:text-white transition-all ease-linear duration-200">
-                                        <path stroke-linecap="round" stroke-linejoin="round"
-                                            d="M15.75 10.5V6a3.75 3.75 0 1 0-7.5 0v4.5m11.356-1.993 1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 0 1-1.12-1.243l1.264-12A1.125 1.125 0 0 1 5.513 7.5h12.974c.576 0 1.059.435 1.119 1.007ZM8.625 10.5a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm7.5 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="bg-[#c6c6c6]/60 rounded-[10px] h-[21rem] w-72 relative pt-[14rem] px-6"
-                            data-aos="fade-up" data-aos-duration="600" data-aos-delay="2100">
-                            <img class="w-[60%] object-contain select-none absolute left-[calc(50%-70px)] -top-28"
-                                :draggable="false" src="@/../../public/imagesLanding/robot-02.webp"
-                                alt="Robot Alto, blanco con forma humanoide">
-                            <div>
-                                <p class="text-[#1D1D1D] text-sm font-medium">Robot asistente</p>
-                                <p class="text-[#414141] text-sm font-normal">MXN</p>
-                                <p class="text-[#1D1D1D] text-lg font-bold">${{ quantity2 * 180 }} K</p>
-                            </div>
-                            <div class="flex items-center justify-between">
-                                <InputNumber v-model="quantity2" size="small" class="mr-4" :min="1" :max="5" />
-                                <button @click="launchConfetti"
-                                    class="size-8 group flex items-center justify-center rounded-full border border-[#3e3e3e] hover:border-white hover:bg-primary hover:border-transparent hover:text-white transition-all ease-linear duration-200 disabled:bg-gray-300 disabled:cursor-not-allowed disabled:text-black">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                        stroke-width="1.5" stroke="currentColor"
-                                        class="size-5 text-[#3e3e3e] group-hover:text-white transition-all ease-linear duration-200">
-                                        <path stroke-linecap="round" stroke-linejoin="round"
-                                            d="M15.75 10.5V6a3.75 3.75 0 1 0-7.5 0v4.5m11.356-1.993 1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 0 1-1.12-1.243l1.264-12A1.125 1.125 0 0 1 5.513 7.5h12.974c.576 0 1.059.435 1.119 1.007ZM8.625 10.5a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm7.5 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </article>
-                <!-- Reportes -->
-                <article class="relative mt-4">
-                    <img class="w-[75%] object-contain select-none absolute -right-6 -top-40" :draggable="false"
-                        src="@/../../public/imagesLanding/bg-05.webp" alt="Destello neón de adorno en el fondo"
-                        data-aos="zoom-in" data-aos-duration="1600" data-aos-delay="800">
-                    <img class="w-[60%] object-contain select-none absolute left-0 top-52" :draggable="false"
-                        src="@/../../public/imagesLanding/bg-06.webp" alt="Destello neón de adorno en el fondo"
-                        data-aos="fade-riht" data-aos-duration="1600" data-aos-delay="800">
-                    <div class="mx-6" data-aos="fade-left" data-aos-duration="700" data-aos-offset="450">
-                        <div class="text-center text-white">
-                            <h2 class="font-bold text-2xl text-white">Reportes</h2>
-                            <p class="text-justify text-base mt-3">
-                                Toma decisiones inteligentes con reportes en tiempo real y analisis detallados
-                            </p>
-                        </div>
-                        <figure class="w-[75%] mx-auto mt-12">
-                            <img class="object-contain select-none" :draggable="false"
-                                src="@/../../public/imagesLanding/features-06.webp"
-                                alt="Graficas circulares y una flecha que indica crecimiento">
-                        </figure>
-                        <p class="text-center text-white">
-                            Identifica tendencias y oportunidades de crecimiento
-                        </p>
-                        <figure class="mx-auto mt-6">
-                            <img class="object-contain select-none" :draggable="false"
-                                src="@/../../public/imagesLanding/features-05.webp"
-                                alt="Grafica de barras con colores llamativos neón">
-                        </figure>
-                    </div>
-                </article>
-                <!-- ventajas -->
-                <article class="relative mt-10 mx-6">
-                    <p class="text-white text-2xl font-bold text-center">
-                        ¿Por qué elegir Ezy Ventas?
-                    </p>
-                    <div>
-                        <ol class="text-white text-sm font-normal *:flex *:items-center *:space-x-2 *:mt-7">
-                            <li>
-                                <svg width="24" height="24" viewBox="0 0 14 14" fill="none" class="shrink-0"
-                                    xmlns="http://www.w3.org/2000/svg">
-                                    <g filter="url(#filter0_f_16350_254)">
-                                        <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    </g>
-                                    <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    <circle cx="6.63636" cy="6.63636" r="3.63636" fill="white" />
-                                    <defs>
-                                        <filter id="filter0_f_16350_254" x="0.817472" y="0.817472" width="13.0916"
-                                            height="13.0916" filterUnits="userSpaceOnUse"
-                                            color-interpolation-filters="sRGB">
-                                            <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                result="shape" />
-                                            <feGaussianBlur stdDeviation="1.45455"
-                                                result="effect1_foregroundBlur_16350_254" />
-                                        </filter>
-                                    </defs>
-                                </svg>
-                                <span>Compatible con cualquier dispositivo (Computadoras, tablets y
-                                    smartphones)</span>
-                            </li>
-                            <li>
-                                <svg width="24" height="24" viewBox="0 0 14 14" fill="none" class="shrink-0"
-                                    xmlns="http://www.w3.org/2000/svg">
-                                    <g filter="url(#filter0_f_16350_254)">
-                                        <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    </g>
-                                    <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    <circle cx="6.63636" cy="6.63636" r="3.63636" fill="white" />
-                                    <defs>
-                                        <filter id="filter0_f_16350_254" x="0.817472" y="0.817472" width="13.0916"
-                                            height="13.0916" filterUnits="userSpaceOnUse"
-                                            color-interpolation-filters="sRGB">
-                                            <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                result="shape" />
-                                            <feGaussianBlur stdDeviation="1.45455"
-                                                result="effect1_foregroundBlur_16350_254" />
-                                        </filter>
-                                    </defs>
-                                </svg>
-                                <span>Ingresa desde cualquier lugar </span>
-                            </li>
-                            <li>
-                                <svg width="24" height="24" viewBox="0 0 14 14" fill="none" class="shrink-0"
-                                    xmlns="http://www.w3.org/2000/svg">
-                                    <g filter="url(#filter0_f_16350_254)">
-                                        <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    </g>
-                                    <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    <circle cx="6.63636" cy="6.63636" r="3.63636" fill="white" />
-                                    <defs>
-                                        <filter id="filter0_f_16350_254" x="0.817472" y="0.817472" width="13.0916"
-                                            height="13.0916" filterUnits="userSpaceOnUse"
-                                            color-interpolation-filters="sRGB">
-                                            <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                result="shape" />
-                                            <feGaussianBlur stdDeviation="1.45455"
-                                                result="effect1_foregroundBlur_16350_254" />
-                                        </filter>
-                                    </defs>
-                                </svg>
-                                <span>Gestión de inventario y seguimiento de ventas en tiempo real</span>
-                            </li>
-                            <li>
-                                <svg width="24" height="24" viewBox="0 0 14 14" fill="none" class="shrink-0"
-                                    xmlns="http://www.w3.org/2000/svg">
-                                    <g filter="url(#filter0_f_16350_254)">
-                                        <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    </g>
-                                    <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    <circle cx="6.63636" cy="6.63636" r="3.63636" fill="white" />
-                                    <defs>
-                                        <filter id="filter0_f_16350_254" x="0.817472" y="0.817472" width="13.0916"
-                                            height="13.0916" filterUnits="userSpaceOnUse"
-                                            color-interpolation-filters="sRGB">
-                                            <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                result="shape" />
-                                            <feGaussianBlur stdDeviation="1.45455"
-                                                result="effect1_foregroundBlur_16350_254" />
-                                        </filter>
-                                    </defs>
-                                </svg>
-                                <span>Productos pre-cargados para tiendas de abarrotes y papelerías</span>
-                            </li>
-                            <li>
-                                <svg width="24" height="24" viewBox="0 0 14 14" fill="none" class="shrink-0"
-                                    xmlns="http://www.w3.org/2000/svg">
-                                    <g filter="url(#filter0_f_16350_254)">
-                                        <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    </g>
-                                    <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    <circle cx="6.63636" cy="6.63636" r="3.63636" fill="white" />
-                                    <defs>
-                                        <filter id="filter0_f_16350_254" x="0.817472" y="0.817472" width="13.0916"
-                                            height="13.0916" filterUnits="userSpaceOnUse"
-                                            color-interpolation-filters="sRGB">
-                                            <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                result="shape" />
-                                            <feGaussianBlur stdDeviation="1.45455"
-                                                result="effect1_foregroundBlur_16350_254" />
-                                        </filter>
-                                    </defs>
-                                </svg>
-                                <span>No requiere de instalaciones </span>
-                            </li>
-                            <li>
-                                <svg width="24" height="24" viewBox="0 0 14 14" fill="none" class="shrink-0"
-                                    xmlns="http://www.w3.org/2000/svg">
-                                    <g filter="url(#filter0_f_16350_254)">
-                                        <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    </g>
-                                    <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    <circle cx="6.63636" cy="6.63636" r="3.63636" fill="white" />
-                                    <defs>
-                                        <filter id="filter0_f_16350_254" x="0.817472" y="0.817472" width="13.0916"
-                                            height="13.0916" filterUnits="userSpaceOnUse"
-                                            color-interpolation-filters="sRGB">
-                                            <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                result="shape" />
-                                            <feGaussianBlur stdDeviation="1.45455"
-                                                result="effect1_foregroundBlur_16350_254" />
-                                        </filter>
-                                    </defs>
-                                </svg>
-                                <span>Soporte todo el año</span>
-                            </li>
-                            <li>
-                                <svg width="24" height="24" viewBox="0 0 14 14" fill="none" class="shrink-0"
-                                    xmlns="http://www.w3.org/2000/svg">
-                                    <g filter="url(#filter0_f_16350_254)">
-                                        <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    </g>
-                                    <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    <circle cx="6.63636" cy="6.63636" r="3.63636" fill="white" />
-                                    <defs>
-                                        <filter id="filter0_f_16350_254" x="0.817472" y="0.817472" width="13.0916"
-                                            height="13.0916" filterUnits="userSpaceOnUse"
-                                            color-interpolation-filters="sRGB">
-                                            <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                result="shape" />
-                                            <feGaussianBlur stdDeviation="1.45455"
-                                                result="effect1_foregroundBlur_16350_254" />
-                                        </filter>
-                                    </defs>
-                                </svg>
-                                <span>Actualizaciones y mejoras constantes</span>
-                            </li>
-                            <li>
-                                <svg width="24" height="24" viewBox="0 0 14 14" fill="none" class="shrink-0"
-                                    xmlns="http://www.w3.org/2000/svg">
-                                    <g filter="url(#filter0_f_16350_254)">
-                                        <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    </g>
-                                    <circle cx="7.36293" cy="7.36293" r="3.63636" fill="#D3FF0F" />
-                                    <circle cx="6.63636" cy="6.63636" r="3.63636" fill="white" />
-                                    <defs>
-                                        <filter id="filter0_f_16350_254" x="0.817472" y="0.817472" width="13.0916"
-                                            height="13.0916" filterUnits="userSpaceOnUse"
-                                            color-interpolation-filters="sRGB">
-                                            <feFlood flood-opacity="0" result="BackgroundImageFix" />
-                                            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix"
-                                                result="shape" />
-                                            <feGaussianBlur stdDeviation="1.45455"
-                                                result="effect1_foregroundBlur_16350_254" />
-                                        </filter>
-                                    </defs>
-                                </svg>
-                                <span>No ocupa espacio de almacenamiento, ya que toda la información se guarda en la
-                                    nube.</span>
-                            </li>
-                        </ol>
-                    </div>
-                    <!-- From Uiverse.io by ayman-ashine -->
-                    <div class="card w-[90%] mx-auto mt-12">
-                        <img class="image mx-auto" alt="" src="@/../../public/imagesLanding/landing-08.webp" />
-                        <div class="heading pt-4">
-                            El futuro de las ventas está en tus manos
-                        </div>
-                        <button @click="openWhatsapp"
-                            class="w-full flex items-center justify-center space-x-2 text-center bg-[#212121] text-white rounded-[10px] py-2">
-                            <i class="fa-brands fa-whatsapp"></i>
-                            <span class="font-bold">Contáctanos</span>
-                        </button>
-                    </div>
-                </article>
-            </section>
-            <!-- Recomienda y gana -->
-            <figure @click="$inertia.get(route('landing.create-partner'))" class="relative w-11/12 mt-10 mx-auto hover:scale-105 transition-transform duration-300">
-                <img src="@/../../public/imagesLanding/referalBanner.webp" alt="Banner con anunncio de recomienda y gana"
-                    :draggable="false" class="object-cover select-none w-full hidden lg:block">
-                <img src="@/../../public/imagesLanding/referalBannerMobile.webp" alt="Banner con anunncio de recomienda y gana"
-                    :draggable="false" class="object-cover select-none w-full lg:hidden">
-                <p class="w-[86%] lg:w-[54%] text-white text-xl lg:text-5xl absolute top-5 lg:top-8 left-[7%] lg:left-[23%] text-center tracking-wide"
-                    style="font-family: 'LeagueGothic';">
-                    ¡Recomienda y gana el 50% del pago a cada referido!
-                </p>
-                <p
-                    class="w-[96%] lg:w-[66%] text-white text-sm lg:text-2xl absolute bottom-3 left-[2%] lg:left-[17%] text-center">
-                    Clic para registrarte, genera tu cupón y compártelo con amigos y negocios!
-                </p>
-            </figure>
-            <!-- Simulador -->
-            <!-- <section id="prices" class="mt-24 text-center relative">
-                <img class="w-[40%] object-contain select-none absolute left-0 -top-40" :draggable="false"
-                    src="@/../../public/imagesLanding/bg-07.webp" alt="Destello neón de adorno en el fondo"
-                    data-aos="fade-right" data-aos-duration="1200" data-aos-delay="800">
-                <img class="w-[40%] object-contain select-none absolute right-0 bottom-52" :draggable="false"
-                    src="@/../../public/imagesLanding/bg-08.webp" alt="Destello neón de adorno en el fondo" data-aos="fade-left"
-                    data-aos-duration="1200" data-aos-delay="800">
-                <h2 class="text-white text-2xl font-bold">SIMULADOR</h2>
-                <p class="text-white text-base mt-3">Personaliza tu suscripción con los módulos que necesitas.</p>
-                <img class="object-contain select-none mx-auto" :draggable="false"
-                    src="@/../../public/imagesLanding/sim-01.webp"
-                    alt="Letras con color azul neón que dicen: Con 30 dias gratis de prueba">
-                <div class="mt-14 text-left xl:w-[75%] xl:mx-auto mx-5">
-                    <Simulator id="simulator" />
                 </div>
-            </section> -->
-            <button v-if="showScrollButton" @click="scrollToTop"
-                class="fixed bottom-10 right-4 flex items-center justify-center size-10 rounded-full bg-grayD9">
-                <i class="pi pi-arrow-up animate-bounce text-gray37"></i>
-            </button>
+
+                <div class="space-y-12">
+                    <div class="feature-card-modern group relative flex flex-col md:flex-row items-center gap-12 md:gap-20 p-8 md:p-20" data-aos="fade-up">
+                        <div class="w-full md:w-1/2 space-y-6 z-10">
+                            <div class="inline-block bg-orange-100 text-[#F68C0F] px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider mb-2">Automatización</div>
+                            <h3 class="text-4xl md:text-5xl font-bold text-gray-900 leading-tight">Tu inventario,<br/>siempre exacto.</h3>
+                            <p class="text-lg text-gray-600 leading-relaxed">Deja de contar manualmente. El sistema detecta movimientos y te alerta sobre stock bajo automáticamente. Dile adiós al robo hormiga y hola a la tranquilidad.</p>
+                            <ul class="space-y-3 pt-4">
+                                <li class="flex items-center gap-3 text-gray-700 font-medium"><span class="w-2 h-2 rounded-full bg-green-500"></span>Alertas de stock bajo en tiempo real</li>
+                                <li class="flex items-center gap-3 text-gray-700 font-medium"><span class="w-2 h-2 rounded-full bg-green-500"></span>Carga masiva desde Excel</li>
+                                <li class="flex items-center gap-3 text-gray-700 font-medium"><span class="w-2 h-2 rounded-full bg-green-500"></span>Historial de movimientos por usuario</li>
+                            </ul>
+                        </div>
+                        <div class="w-full md:w-1/2 relative flex justify-center items-center h-[500px] md:h-[400px]">
+                            <!-- Grid con cartas REDISEÑADAS PARA MÓVIL (Verticales) -->
+                            <div class="grid grid-cols-2 gap-3 md:gap-4 w-full max-w-lg">
+                                <div v-for="(prod, i) in inventoryMock" :key="i" 
+                                     class="inventory-item-card group/card !flex-col !items-center !text-center !p-4 gap-3" 
+                                     :class="[prod.hoverClass, i % 2 !== 0 ? 'translate-y-4' : '']">
+                                    
+                                    <!-- Stock Dot (Esquina) -->
+                                    <div class="absolute top-3 right-3 w-2 h-2 rounded-full" :class="prod.dotClass"></div>
+
+                                    <!-- Icono (Arriba y más grande) -->
+                                    <div class="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center text-4xl group-hover/card:scale-110 transition-transform mb-1">
+                                        {{ prod.icon }}
+                                    </div>
+                                    
+                                    <!-- Info (Abajo y centrado) -->
+                                    <div class="w-full">
+                                        <p class="text-md font-bold text-gray-900 truncate leading-tight w-full">{{ prod.name }}</p>
+                                        <p class="text-sm text-gray-500 font-medium mt-1">{{ prod.pieces }} pzas</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div class="feature-card-modern flex flex-col justify-between" data-aos="fade-right" data-aos-delay="100">
+                            <div class="mb-8 relative z-10">
+                                <h3 class="text-3xl font-bold text-gray-900 mb-4">Tu negocio.<br/>En alta definición.</h3>
+                                <p class="text-gray-600">Transforma números complejos en respuestas claras. Entiende qué vendes, quién vende y cuánto ganas, todo en tiempo real y en un solo vistazo.</p>
+                            </div>
+                            <!-- AQUI ESTÁ EL NUEVO COMPONENTE INTEGRADO -->
+                            <div class="w-full h-full flex items-end justify-center -mb-8 md:-mb-12">
+                                <DashboardGraph />
+                            </div>
+                        </div>
+                        <div class="feature-card-modern flex flex-col justify-between" data-aos="fade-left" data-aos-delay="200">
+                            <div class="mb-8">
+                                <h3 class="text-3xl font-bold text-gray-900 mb-4">Tu caja.<br/>sin límites.</h3>
+                                <p class="text-gray-600">Si hay mucha gente, permite que multiples vendedores cobren simultáneamente desde cualquier dispositivo, colaborando en una misma sesión de caja o gestionando cajas independientes.</p>
+                            </div>
+                            <div class="relative h-64 flex justify-center items-end">
+                                <img src="/imagesLanding/solution-old-register.webp" alt="Multi-usuario" class="w-3/4 object-contain drop-shadow-xl transition-transform duration-500 hover:-translate-y-4">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- NUEVO COMPONENTE DE CLIENTES INTEGRADO AQUÍ (Versión Light/Moderna) -->
+                    <div class="feature-card-modern flex flex-col md:flex-row items-center gap-12 bg-white text-gray-900 p-10 relative overflow-hidden" data-aos="fade-up">
+                        <div class="w-full md:w-1/2 space-y-10 relative z-10">
+                            <h3 class="text-3xl md:text-4xl font-bold text-gray-900">Convierte ventas en relaciones.</h3>
+                            <p class="text-gray-600 text-lg leading-relaxed">Deja de venderle a desconocidos. Crea perfiles detallados, habilita líneas de crédito y reconoce a tus clientes VIP al instante. Porque un cliente que se siente especial, siempre regresa.</p>
+                            <button class="bg-[#2f2f2f] text-white px-8 py-3 rounded-full font-bold hover:bg-[#191919] shadow-lg hover:shadow-xl transition-all">Ver tutorial de clientes</button>
+                        </div>
+                        <div class="w-full md:w-1/2 flex justify-center relative z-10">
+                            <CustomerRelationship />
+                        </div>
+                        
+                        <!-- Fondo decorativo sutil -->
+                        <div class="absolute inset-0 bg-gradient-to-r from-gray-50 to-white z-0 pointer-events-none"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECCIÓN 4: PRECIOS (MOBILE OPTIMIZED) -->
+            <section id="prices" class="py-20 px-4 md:px-8 max-w-7xl mx-auto">
+                <!-- Header -->
+                <div class="text-center mb-10" data-aos="fade-up">
+                    <h2 class="text-3xl md:text-5xl font-bold text-gray-900 tracking-tight">Arma tu plan ideal</h2>
+                    <p class="text-gray-500 mt-3 text-base md:text-lg">Comienza con lo esencial, agrega lo que necesites.</p>
+                    
+                    <!-- Switch Mensual/Anual iOS Style -->
+                    <div class="mt-8 flex justify-center">
+                        <div class="p-1 bg-gray-100 rounded-full flex relative w-64 shadow-inner cursor-pointer" @click="isAnnual = !isAnnual">
+                            <div class="absolute top-1 bottom-1 w-[calc(50%-4px)] bg-white rounded-full shadow-sm transition-all duration-300 ease-out"
+                                :class="isAnnual ? 'left-[calc(50%)]' : 'left-1'"></div>
+                            <div class="relative z-10 w-1/2 text-center py-2 text-sm font-semibold transition-colors duration-300"
+                                :class="!isAnnual ? 'text-gray-900' : 'text-gray-500'">Mensual</div>
+                            <div class="relative z-10 w-1/2 text-center py-2 text-sm font-semibold transition-colors duration-300 flex items-center justify-center gap-1"
+                                :class="isAnnual ? 'text-gray-900' : 'text-gray-500'">
+                                Anual <span class="text-[10px] bg-red-100 text-red-600 px-1.5 rounded-full">-20%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col lg:flex-row gap-6 items-start">
+                    
+                    <!-- 1. PLAN BASE (Tarjeta Apple Card Style) -->
+                    <div class="w-full lg:w-1/3" data-aos="fade-up">
+                        <div class="bg-white rounded-[28px] p-6 md:p-8 shadow-xl border border-gray-100 relative overflow-hidden">
+                            <div class="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#F68C0F] to-amber-300"></div>
+                            
+                            <div class="flex justify-between items-start mb-4">
+                                <div>
+                                    <h3 class="text-xl font-bold text-gray-900">Plan Esencial</h3>
+                                    <p class="text-sm text-gray-500 mt-1">El núcleo de tu negocio.</p>
+                                </div>
+                                <div class="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F]">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 1 1 9 0v3.75M3.75 21.75h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H3.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                                </div>
+                            </div>
+
+                            <div class="flex items-baseline gap-1 mb-6 border-b border-gray-100 pb-6">
+                                <span class="text-3xl font-bold text-gray-900">$</span>
+                                <span class="text-5xl font-extrabold text-gray-900 tracking-tighter">{{ isAnnual ? '159' : '199' }}</span>
+                                <span class="text-gray-500 font-medium">/mes</span>
+                            </div>
+
+                            <div class="space-y-3">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">LO QUE OBTIENES</p>
+                                <ul class="space-y-3 text-sm md:text-base text-gray-700">
+                                    <li class="flex items-center gap-3">
+                                        <svg class="w-5 h-5 text-green-500 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                                        <span>Punto de venta ilimitado</span>
+                                    </li>
+                                    <li class="flex items-center gap-3">
+                                        <svg class="w-5 h-5 text-green-500 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                                        <span>Control de Inventarios</span>
+                                    </li>
+                                    <li class="flex items-center gap-3">
+                                        <svg class="w-5 h-5 text-green-500 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                                        <span>Reportes básicos</span>
+                                    </li>
+                                    <!-- Accordion for more info could go here for mobile -->
+                                    <li class="text-xs text-gray-400 pt-2 flex items-center gap-1">
+                                        <span>+ 1 Sucursal, 1 Caja, 3 Usuarios</span>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. CONFIGURADOR (Columna Derecha/Abajo) -->
+                    <div class="w-full lg:w-2/3 space-y-6" data-aos="fade-up" data-aos-delay="100">
+                        
+                        <!-- Módulos (Estilo Settings List) -->
+                        <div class="bg-gray-50 rounded-[28px] p-5 md:p-8 border border-gray-100">
+                            <h3 class="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                <span class="w-1.5 h-1.5 bg-[#F68C0F] rounded-full"></span>
+                                Agrega Poder (Módulos)
+                            </h3>
+                            
+                            <div class="space-y-3">
+                                <div v-for="module in modules" :key="module.id" 
+                                    class="group bg-white rounded-2xl p-4 border border-gray-100 shadow-sm transition-all duration-200 cursor-pointer active:scale-[0.98]"
+                                    :class="{ 'ring-2 ring-[#F68C0F] border-transparent': module.active }"
+                                    @click="toggleModule(module.id)">
+                                    
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex-1 pr-4">
+                                            <div class="flex items-center gap-2 mb-1">
+                                                <span class="font-bold text-gray-900 text-base">{{ module.name }}</span>
+                                                <span v-if="module.active" class="hidden md:inline-block bg-orange-100 text-[#F68C0F] text-[10px] font-bold px-2 py-0.5 rounded-full">ACTIVADO</span>
+                                            </div>
+                                            <p class="text-xs text-gray-500 leading-snug">{{ module.description }}</p>
+                                        </div>
+                                        
+                                        <div class="flex flex-col items-end gap-2">
+                                            <span class="text-sm font-bold text-gray-900">+${{ module.price }}</span>
+                                            <!-- Custom Check Circle -->
+                                            <div class="w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors duration-200"
+                                                :class="module.active ? 'bg-[#F68C0F] border-[#F68C0F]' : 'border-gray-200 bg-gray-50'">
+                                                <svg v-if="module.active" class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Extras (Estilo Grid Compacto) -->
+                        <div class="bg-gray-50 rounded-[28px] p-5 md:p-8 border border-gray-100">
+                            <h3 class="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                <span class="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                                Necesidades Extra
+                            </h3>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div v-for="feat in features" :key="feat.id" class="bg-white p-3.5 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
+                                    <div>
+                                        <p class="text-sm font-bold text-gray-900">{{ feat.name }}</p>
+                                        <p class="text-xs text-gray-500">+${{ feat.price }} <span class="opacity-70">/unidad</span></p>
+                                    </div>
+                                    
+                                    <!-- Stepper iOS Style -->
+                                    <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-3">
+                                        <button @click.stop="decrementFeature(feat.id)" 
+                                                class="w-6 h-6 flex items-center justify-center bg-white rounded shadow-sm text-gray-600 hover:text-red-500 active:scale-90 transition-all disabled:opacity-50"
+                                                :disabled="feat.count <= 0">-</button>
+                                        <span class="text-sm font-bold w-4 text-center tabular-nums">{{ feat.count }}</span>
+                                        <button @click.stop="incrementFeature(feat.id)" 
+                                                class="w-6 h-6 flex items-center justify-center bg-white rounded shadow-sm text-gray-600 hover:text-green-500 active:scale-90 transition-all">+</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- 3. BARRA TOTAL (Sticky Look / High Contrast) -->
+                <div class="mt-8 md:mt-12 bg-[#1a1a1a] rounded-[28px] p-6 md:p-8 shadow-2xl relative overflow-hidden group">
+                    <!-- Glow Effect -->
+                    <div class="absolute -top-24 -right-24 w-64 h-64 bg-[#F68C0F] opacity-10 blur-[80px] rounded-full pointer-events-none group-hover:opacity-20 transition-opacity duration-500"></div>
+                    
+                    <div class="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+                        <div class="text-center md:text-left">
+                            <p class="text-gray-400 text-sm mb-1 font-medium">Inversión mensual estimada</p>
+                            <div class="flex items-center gap-3 justify-center md:justify-start">
+                                <span class="text-4xl md:text-5xl font-bold text-white tracking-tight">${{ finalPrice }}</span>
+                                <span class="text-gray-500 text-lg font-medium">MXN</span>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-2 max-w-xs mx-auto md:mx-0">
+                                Incluye Plan Esencial <span v-if="rawMonthlyTotal > 199">+ complementos seleccionados</span>. Sin contratos forzosos.
+                            </p>
+                        </div>
+
+                        <div class="flex flex-col w-full md:w-auto gap-3">
+                            <Link :href="route('register')" class="w-full md:w-auto bg-white text-black px-8 py-4 rounded-full font-bold text-base md:text-lg hover:scale-105 transition-transform duration-200 shadow-lg flex items-center justify-center gap-2">
+                                Comenzar prueba gratis
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5"><path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clip-rule="evenodd" /></svg>
+                            </Link>
+                            <div class="text-center">
+                                <span class="text-[11px] text-gray-500 font-medium tracking-wide uppercase">30 días de garantía total</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- SECCIÓN 5: PREGUNTAS FRECUENTES (NUEVO DISEÑO MÓVIL) -->
+            <section id="faq" class="py-20 px-4 md:px-12 max-w-4xl mx-auto">
+                <div class="text-center mb-12" data-aos="fade-up">
+                    <h2 class="text-3xl md:text-5xl font-bold text-gray-900 tracking-tight mb-3">Preguntas frecuentes</h2>
+                    <p class="text-gray-500 text-lg">Todo lo que necesitas saber antes de empezar.</p>
+                </div>
+
+                <div class="space-y-4">
+                    <div v-for="(faq, index) in faqs" :key="index" data-aos="fade-up" :data-aos-delay="index * 100">
+                        <div class="faq-card group" :class="{ 'active': faq.open }" @click="toggleFaq(index)">
+                            
+                            <div class="faq-header">
+                                <span class="text-base md:text-lg font-bold text-gray-900 group-hover:text-[#F68C0F] transition-colors leading-snug">{{ faq.question }}</span>
+                                <div class="icon-wrapper shadow-sm">
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" 
+                                         class="w-5 h-5 transition-transform duration-300" 
+                                         :class="{ 'rotate-180': faq.open }">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                    </svg>
+                                </div>
+                            </div>
+                            
+                            <div class="faq-grid-wrapper" :class="{ 'grid-open': faq.open }">
+                                <div class="faq-inner-content">
+                                    <div class="pb-6 text-gray-600 leading-relaxed text-sm md:text-base border-t border-gray-100 pt-4">
+                                        {{ faq.answer }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Help Box Redesigned (Tarjeta de Ayuda Moderna) -->
+                <div class="mt-16 relative overflow-hidden rounded-[32px] bg-gradient-to-br from-gray-900 to-black p-8 md:p-12 text-center shadow-2xl" data-aos="zoom-in">
+                    <!-- Background Decoration -->
+                    <div class="absolute top-0 right-0 w-64 h-64 bg-[#F68C0F] opacity-10 blur-[100px] rounded-full pointer-events-none"></div>
+                    <div class="absolute bottom-0 left-0 w-48 h-48 bg-purple-500 opacity-10 blur-[80px] rounded-full pointer-events-none"></div>
+
+                    <div class="relative z-10">
+                        <div class="w-16 h-16 bg-white/10 backdrop-blur-lg rounded-2xl flex items-center justify-center mx-auto mb-6 border border-white/10 shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="white" class="w-8 h-8">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.18.063-2.33.12-3.45.164m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+                            </svg>
+                        </div>
+                        
+                        <h4 class="text-2xl md:text-3xl font-bold text-white mb-3">¿Aún tienes dudas?</h4>
+                        <p class="text-gray-400 mb-8 max-w-md mx-auto text-sm md:text-base">Nuestro equipo de expertos está listo para resolver tus inquietudes y ayudarte a configurar tu cuenta.</p>
+                        
+                        <a href="https://api.whatsapp.com/send?phone=523321705650" target="_blank" 
+                           class="inline-flex items-center justify-center gap-3 bg-white text-gray-900 px-8 py-3.5 rounded-full font-bold hover:bg-gray-100 transition-all shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:shadow-[0_0_30px_rgba(255,255,255,0.5)] transform hover:-translate-y-1 active:scale-95">
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" class="w-6 h-6">
+                            <span>Chatear con soporte</span>
+                        </a>
+                    </div>
+                </div>
+            </section>
         </main>
-        <!-- footer -->
-        <footer class="bg-black1 p-4">
-            <div class="border-b border-[#373737] w-full"></div>
-            <div class="md:justify-between text-white text-xs my-3">
-                <div class="flex justify-center space-x-3">
-                    <a class="underline" target="_blank" :href="route('terms.show')">Términos y condiciones</a>
-                    <a class="underline" target="_blank" :href="route('policy.show')">Política de privacidad</a>
+
+                    <!-- NUEVA SECCIÓN: BANNER EZY RESTAURANT -->
+            <section class="py-12 px-6 md:px-12 max-w-7xl mx-auto">
+                <div class="coming-soon-wrapper relative py-12 px-8 md:px-20 text-center flex flex-col items-center justify-center min-h-[300px]" data-aos="zoom-in">
+                    <div class="coming-soon-glow"></div>
+                    <div class="relative z-10 max-w-3xl mx-auto space-y-6">
+                        <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-gray-700 bg-gray-900/50 backdrop-blur-sm">
+                            <span class="relative flex h-2 w-2">
+                              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#F68C0F] opacity-75"></span>
+                              <span class="relative inline-flex rounded-full h-2 w-2 bg-[#F68C0F]"></span>
+                            </span>
+                            <span class="text-xs font-bold text-gray-300 tracking-widest uppercase">En Desarrollo</span>
+                        </div>
+                        <div>
+                            <p class="text-xl md:text-2xl text-gray-400 font-light mb-2 tracking-wide">Algo delicioso se está cocinando.</p>
+                            <h2 class="text-5xl md:text-7xl font-bold tracking-tighter text-white drop-shadow-2xl">
+                                Ezy <span class="text-transparent bg-clip-text bg-gradient-to-r from-gray-200 via-white to-gray-400">Restaurant</span>
+                            </h2>
+                        </div>
+                        <p class="text-lg md:text-xl text-gray-400 max-w-xl mx-auto leading-relaxed">
+                            La gestión de mesas, comandas y cocina reinventada. <br class="hidden md:block">Únete a la lista de espera y sé el primero en probarlo.
+                        </p>
+                        
+                        <div v-if="!showRestaurantSuccess" class="flex justify-center w-full pt-4">
+                            <div class="glass-input-container w-full max-w-md p-1.5 flex items-center">
+                                <input 
+                                    v-model="restaurantEmail"
+                                    type="email" 
+                                    placeholder="Tu correo electrónico" 
+                                    class="glass-input flex-1"
+                                    @keyup.enter="submitRestaurantEmail"
+                                />
+                                <button 
+                                    @click="submitRestaurantEmail" 
+                                    class="btn-glow flex items-center justify-center min-w-[120px]"
+                                    :disabled="isSubmittingRestaurant || !restaurantEmail"
+                                >
+                                    <span v-if="!isSubmittingRestaurant">Notifíquenme</span>
+                                    <svg v-else class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div v-else class="flex flex-col items-center justify-center pt-4 animate-fadeIn">
+                            <div class="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mb-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-8 h-8 text-green-400">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                </svg>
+                            </div>
+                            <h3 class="text-xl font-bold text-white mb-1">¡Estás en la lista!</h3>
+                            <p class="text-gray-400">Te notificaremos en cuanto estemos listos.</p>
+                        </div>
+
+                    </div>
                 </div>
-                <p class="mt-3">Copyright &copy; 2024-2025 | Todos los derechos reservador por Ezy Ventas</p>
-            </div>
-            <div class="flex items-center justify-between">
-                <figure class="mt-4">
-                    <img class="w-20 lg:w-[40%]" src="@/../../public/imagesLanding/white_logo.png" alt="">
-                </figure>
-                <figure class="mt-4 cursor-pointer">
-                    <a class="flex justify-end items-center" href="https://app.dtw.com.mx/" target="_blank">
-                        <p class="text-white text-xl">BY</p>
-                        <img class="w-20 lg:w-[10%]" src="@/../../public/imagesLanding/DTW_logo_blanco.png" alt="">
-                    </a>
-                </figure>
-            </div>
-        </footer>
+            </section>
+
+        <!-- FOOTER MODERNO INTEGRADO -->
+        <ModernFooter />
+
+        <!-- MODAL DE DETALLE DE NEGOCIO -->
+        <Teleport to="body">
+            <transition name="modal">
+                <div v-if="isModalOpen && selectedBusiness" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div class="absolute inset-0 bg-black/40 backdrop-blur-md" @click="closeBusinessModal"></div>
+                    <transition name="modal-content" appear>
+                        <div class="relative bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col md:flex-row overflow-hidden">
+                            
+                            <button @click="closeBusinessModal" class="absolute top-4 right-4 z-20 bg-white/50 hover:bg-white p-2 rounded-full transition-all">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                            </button>
+
+                            <div class="w-full h-48 sm:h-40 md:h-auto md:w-2/5 bg-gray-100 flex items-center justify-center p-4 md:p-12 relative shrink-0">
+                                
+                                <img 
+                                    :src="selectedBusiness.image" 
+                                    :alt="selectedBusiness.alt" 
+                                    class="h-full w-auto md:w-full md:h-auto object-contain drop-shadow-xl max-h-full"
+                                >
+                            </div>
+
+                            <div class="w-full md:w-3/5 p-6 md:p-12 flex flex-col justify-center">
+                                <h3 class="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{{ selectedBusiness.title }}</h3>
+                                <p class="text-base md:text-lg text-gray-500 mb-6 font-medium">{{ selectedBusiness.fullDesc }}</p>
+                                
+                                <div class="space-y-4 mb-8">
+                                    <h4 class="text-xs md:text-sm font-bold text-gray-400 uppercase tracking-wider">Beneficios Clave</h4>
+                                    <ul class="space-y-3">
+                                        <li v-for="(feature, idx) in selectedBusiness.features" :key="idx" class="flex items-start gap-3">
+                                            <div class="mt-1 w-5 h-5 rounded-full bg-green-100 flex items-center justify-center text-green-600 flex-shrink-0">
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" /></svg>
+                                            </div>
+                                            <span class="text-sm md:text-base text-gray-700">{{ feature }}</span>
+                                        </li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="flex flex-col sm:flex-row gap-4 mt-auto">
+                                    <Link :href="route('register')" class="btn-apple-primary justify-center text-sm px-8 py-3">
+                                        Probar gratis
+                                    </Link>
+                                </div>
+                            </div>
+
+                        </div>
+                    </transition>
+                </div>
+            </transition>
+        </Teleport>
+
     </div>
 </template>
