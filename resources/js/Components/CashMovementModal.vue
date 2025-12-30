@@ -28,9 +28,20 @@ const form = useForm({
     type: props.type,
 });
 
-// Actualiza el tipo en el formulario si la prop cambia
+// Actualiza el tipo en el formulario si la prop cambia dinámicamente
 watch(() => props.type, (newType) => {
     form.type = newType;
+});
+
+// CORRECCIÓN PRINCIPAL:
+// Observamos cuando el modal se abre para forzar el tipo correcto.
+// Esto soluciona el bug donde form.reset() revertía el tipo a 'ingreso' (valor inicial)
+// provocando que los retiros subsecuentes se registraran incorrectamente.
+watch(() => props.visible, (isOpen) => {
+    if (isOpen) {
+        form.type = props.type;
+        form.clearErrors();
+    }
 });
 
 const modalTitle = computed(() => props.type === 'ingreso' ? 'Registrar Ingreso de Efectivo' : 'Registrar Retiro de Efectivo');
@@ -38,7 +49,7 @@ const amountLabel = computed(() => props.type === 'ingreso' ? 'Monto a Ingresar'
 
 const closeModal = () => {
     emit('update:visible', false);
-    form.reset();
+    form.reset(); // Esto limpia los campos, pero revertía el 'type'. El watcher de arriba lo corrige al volver a abrir.
 };
 
 const submit = () => {
@@ -59,7 +70,8 @@ const submit = () => {
         <form @submit.prevent="submit" class="p-2 space-y-4">
             <div>
                 <InputLabel :for="`movement-amount-${type}`" :value="`${amountLabel} *`" />
-                <InputNumber :id="`movement-amount-${type}`" v-model="form.amount" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" inputClass="w-full" />
+                <!-- Agregado autofocus para mejorar la experiencia -->
+                <InputNumber :id="`movement-amount-${type}`" v-model="form.amount" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" inputClass="w-full" :autofocus="true" />
                 <InputError :message="form.errors.amount" class="mt-1" />
             </div>
              <div>
