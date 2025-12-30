@@ -74,6 +74,27 @@ const toggleFaq = (index) => {
     faqs.value[index].open = !faqs.value[index].open;
 };
 
+// --- EZY RESTAURANT WAITING LIST LOGIC ---
+const restaurantEmail = ref('');
+const isSubmittingRestaurant = ref(false);
+const showRestaurantSuccess = ref(false);
+
+const submitRestaurantEmail = () => {
+    if (!restaurantEmail.value || !restaurantEmail.value.includes('@')) return;
+    
+    isSubmittingRestaurant.value = true;
+    
+    // Simular llamada a API
+    setTimeout(() => {
+        isSubmittingRestaurant.value = false;
+        showRestaurantSuccess.value = true;
+        restaurantEmail.value = '';
+        
+        // Ocultar mensaje de éxito después de unos segundos (opcional)
+        // setTimeout(() => showRestaurantSuccess.value = false, 5000);
+    }, 1500);
+};
+
 // --- DATOS MOCK PARA INVENTARIO INTERACTIVO (STOCK REAL AGREGADO) ---
 const inventoryMock = [
     { name: 'Tenis', pieces: 124, icon: '👟', hoverClass: 'hover:shadow-green-200 hover:border-green-300', dotClass: 'bg-green-500' },
@@ -89,7 +110,7 @@ const isAnnual = ref(false); // Default true para presumir descuento
 const basePriceMonthly = 199;
 
 const modules = ref([
-    { id: 'reportes', name: 'Reporte financiero', price: 25, active: false, description: 'Verifica tu ganancia neta, flujo de dinero, resumen de operaciones.' },
+    { id: 'reportes', name: 'Reporte financiero', price: 25, active: false, description: 'Verifica tus ganancia neta, flujo de dinero, resumen de operaciones.' },
     { id: 'clientes', name: 'Clientes', price: 30, active: false, description: 'Cuentas por cobrar, apartados, servicios realizados.' }, 
     { id: 'servicios', name: 'Servicios', price: 50, active: false, description: 'Órdenes de servicio, estatus, listado de servicios.', subItems: ['Catálogo', 'Órdenes'] }, 
     { id: 'cotizaciones', name: 'Cotizaciones', price: 35, active: false, description: 'Personaliza tus cotizaciones y envía propuestas profesionales.' },
@@ -474,7 +495,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
         <main class="flex-1">
             <!-- SECCIÓN 2: TIPOS DE NEGOCIO (AJUSTADA PARA MÓVIL) -->
             <section id="features" class="py-24 px-6 md:px-12 max-w-[1450px] mx-auto bg-gray-50/50">
-                <div class="text-center mb-5 md:mb-16 space-y-4" data-aos="fade-up">
+                <div class="text-center mb-10 md:mb-16 space-y-4" data-aos="fade-up">
                     <h2 class="text-3xl md:text-5xl font-bold text-gray-900 tracking-tight">Diseñado para tu giro</h2>
                     <p class="text-lg text-gray-500 max-w-3xl mx-auto">Selecciona tu tipo de negocio y descubre por qué Ezy Ventas es tu mejor aliado.</p>
                 </div>
@@ -489,7 +510,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                         :data-aos-delay="index * 100">
 
                         <!-- IMAGEN (Izquierda en móvil, Arriba en desktop) -->
-                        <div class="biz-img-container w-32 h-32 md:w-full md:h-[140px] md:mb-4 shrink-0 mr-4 md:mr-0">
+                        <div class="biz-img-container w-16 h-16 md:w-full md:h-[140px] md:mb-4 shrink-0 mr-4 md:mr-0">
                             <img :src="biz.image" :alt="biz.alt" class="biz-img w-full h-full object-contain">
                         </div>
                         
@@ -690,7 +711,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                     <!-- BUILDER (Columna Derecha) -->
                     <div class="w-full lg:w-2/3" data-aos="fade-left">
                         <div class="bg-gray-50 rounded-3xl p-8 h-full border border-gray-100">
-                            <h3 class="text-xl font-bold text-gray-900 mb-6">Agregar poder (Módulos)</h3>
+                            <h3 class="text-xl font-bold text-gray-900 mb-6">Personaliza tu experiencia</h3>
                             
                             <!-- Módulos (Lista Vertical con estilo premium) -->
                             <div class="space-y-3 mb-8">
@@ -813,7 +834,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
         </main>
 
                     <!-- NUEVA SECCIÓN: BANNER EZY RESTAURANT -->
-            <section class="py-16 px-4 md:px-8 w-full max-w-[70%] mx-auto">
+            <section class="py-16 px-4 md:px-8 w-full max-w-[98%] mx-auto">
                 <div class="coming-soon-wrapper relative py-20 px-8 md:px-20 text-center flex flex-col items-center justify-center min-h-[400px]" data-aos="zoom-in">
                     <div class="coming-soon-glow"></div>
                     <div class="relative z-10 max-w-3xl mx-auto space-y-6">
@@ -833,12 +854,40 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                         <p class="text-lg md:text-xl text-gray-400 max-w-xl mx-auto leading-relaxed">
                             La gestión de mesas, comandas y cocina reinventada. <br class="hidden md:block">Únete a la lista de espera y sé el primero en probarlo.
                         </p>
-                        <div class="flex justify-center w-full pt-4">
-                            <div class="glass-input-container w-full max-w-md p-1.5">
-                                <input type="email" placeholder="Tu correo electrónico" class="glass-input" />
-                                <button class="btn-glow">Notifíquenme</button>
+                        
+                        <div v-if="!showRestaurantSuccess" class="flex justify-center w-full pt-4">
+                            <div class="glass-input-container w-full max-w-md p-1.5 flex items-center">
+                                <input 
+                                    v-model="restaurantEmail"
+                                    type="email" 
+                                    placeholder="Tu correo electrónico" 
+                                    class="glass-input flex-1"
+                                    @keyup.enter="submitRestaurantEmail"
+                                />
+                                <button 
+                                    @click="submitRestaurantEmail" 
+                                    class="btn-glow flex items-center justify-center min-w-[120px]"
+                                    :disabled="isSubmittingRestaurant || !restaurantEmail"
+                                >
+                                    <span v-if="!isSubmittingRestaurant">Notifíquenme</span>
+                                    <svg v-else class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                </button>
                             </div>
                         </div>
+                        
+                        <div v-else class="flex flex-col items-center justify-center pt-4 animate-fadeIn">
+                            <div class="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mb-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-8 h-8 text-green-400">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                </svg>
+                            </div>
+                            <h3 class="text-xl font-bold text-white mb-1">¡Estás en la lista!</h3>
+                            <p class="text-gray-400">Te notificaremos en cuanto estemos listos.</p>
+                        </div>
+
                     </div>
                 </div>
             </section>
