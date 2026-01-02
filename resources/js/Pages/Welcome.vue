@@ -1,10 +1,12 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
+// Importamos axios para conectar con la base de datos
+import axios from 'axios';
+
 // Importamos los componentes personalizados
 import DashboardGraph from '@/Components/DashboardGraph.vue';
 import CustomerRelationship from '@/Components/CustomerRelationship.vue';
 import ModernFooter from '@/Components/ModernFooter.vue'; 
-// --- AQUÍ IMPORTAMOS EL NUEVO BOTÓN ---
 import FrutigerButton from '@/Components/FrutigerButton.vue';
 
 import AOS from 'aos';
@@ -74,25 +76,41 @@ const toggleFaq = (index) => {
     faqs.value[index].open = !faqs.value[index].open;
 };
 
-// --- EZY RESTAURANT WAITING LIST LOGIC ---
+// --- EZY RESTAURANT WAITING LIST LOGIC (ACTUALIZADO CON AXIOS) ---
 const restaurantEmail = ref('');
 const isSubmittingRestaurant = ref(false);
 const showRestaurantSuccess = ref(false);
 
-const submitRestaurantEmail = () => {
-    if (!restaurantEmail.value || !restaurantEmail.value.includes('@')) return;
+const submitRestaurantEmail = async () => {
+    // 1. Validar que sea un correo válido
+    if (!restaurantEmail.value || !restaurantEmail.value.includes('@')) {
+        alert("Por favor ingresa un correo válido.");
+        return;
+    }
     
     isSubmittingRestaurant.value = true;
     
-    // Simular llamada a API
-    setTimeout(() => {
-        isSubmittingRestaurant.value = false;
+    try {
+        // 2. Enviar a la base de datos (Laravel)
+        await axios.post('/unirse-lista', {
+            email: restaurantEmail.value
+        });
+
+        // 3. Éxito
         showRestaurantSuccess.value = true;
         restaurantEmail.value = '';
         
-        // Ocultar mensaje de éxito después de unos segundos (opcional)
-        // setTimeout(() => showRestaurantSuccess.value = false, 5000);
-    }, 1500);
+    } catch (error) {
+        // Manejo de errores
+        if (error.response && error.response.status === 422) {
+            alert('¡Este correo ya está registrado en la lista de espera!');
+        } else {
+            console.error(error);
+            alert('Hubo un error al guardar. Intenta de nuevo.');
+        }
+    } finally {
+        isSubmittingRestaurant.value = false;
+    }
 };
 
 // --- DATOS MOCK PARA INVENTARIO INTERACTIVO (STOCK REAL AGREGADO) ---
@@ -608,7 +626,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                         <div class="w-full md:w-1/2 space-y-10 relative z-10">
                             <h3 class="text-3xl md:text-4xl font-bold text-gray-900">Convierte ventas en relaciones.</h3>
                             <p class="text-gray-600 text-lg leading-relaxed">Deja de venderle a desconocidos. Crea perfiles detallados, habilita líneas de crédito y reconoce a tus clientes VIP al instante. Porque un cliente que se siente especial, siempre regresa.</p>
-                            <button class="bg-[#2f2f2f] text-white px-8 py-3 rounded-full font-bold hover:bg-[#191919] shadow-lg hover:shadow-xl transition-all">Ver tutorial de clientes</button>
+                            <!-- <button class="bg-[#2f2f2f] text-white px-8 py-3 rounded-full font-bold hover:bg-[#191919] shadow-lg hover:shadow-xl transition-all">Ver tutorial de clientes</button> -->
                         </div>
                         <div class="w-full md:w-1/2 flex justify-center relative z-10">
                             <CustomerRelationship />
@@ -711,7 +729,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                     <!-- BUILDER (Columna Derecha) -->
                     <div class="w-full lg:w-2/3" data-aos="fade-left">
                         <div class="bg-gray-50 rounded-3xl p-8 h-full border border-gray-100">
-                            <h3 class="text-xl font-bold text-gray-900 mb-6">Personaliza tu experiencia</h3>
+                            <h3 class="text-xl font-bold text-gray-900 mb-6">Agrega poder (Módulos)</h3>
                             
                             <!-- Módulos (Lista Vertical con estilo premium) -->
                             <div class="space-y-3 mb-8">
@@ -801,8 +819,8 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                                 <span class="text-lg font-medium text-gray-900 group-hover:text-[#F68C0F] transition-colors">{{ faq.question }}</span>
                                 <div class="icon-wrapper">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" 
-                                         class="w-5 h-5 transition-transform duration-300" 
-                                         :class="{ 'rotate-180': faq.open }">
+                                             class="w-5 h-5 transition-transform duration-300" 
+                                             :class="{ 'rotate-180': faq.open }">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
                                     </svg>
                                 </div>
@@ -834,7 +852,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
         </main>
 
                     <!-- NUEVA SECCIÓN: BANNER EZY RESTAURANT -->
-            <section class="py-16 px-4 md:px-8 w-full max-w-[98%] mx-auto">
+            <section class="py-16 px-4 md:px-8 w-full max-w-[68%] mx-auto">
                 <div class="coming-soon-wrapper relative py-20 px-8 md:px-20 text-center flex flex-col items-center justify-center min-h-[400px]" data-aos="zoom-in">
                     <div class="coming-soon-glow"></div>
                     <div class="relative z-10 max-w-3xl mx-auto space-y-6">

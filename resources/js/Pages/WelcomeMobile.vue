@@ -1,5 +1,8 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
+// Importamos axios para conectar con la base de datos
+import axios from 'axios';
+
 // Importamos los componentes personalizados
 import DashboardGraph from '@/Components/DashboardGraph.vue';
 import CustomerRelationship from '@/Components/CustomerRelationship.vue';
@@ -78,25 +81,41 @@ const toggleFaq = (index) => {
     faqs.value[index].open = !faqs.value[index].open;
 };
 
-// --- EZY RESTAURANT WAITING LIST LOGIC ---
+// --- EZY RESTAURANT WAITING LIST LOGIC (CONECTADO A BD) ---
 const restaurantEmail = ref('');
 const isSubmittingRestaurant = ref(false);
 const showRestaurantSuccess = ref(false);
 
-const submitRestaurantEmail = () => {
-    if (!restaurantEmail.value || !restaurantEmail.value.includes('@')) return;
+const submitRestaurantEmail = async () => {
+    // 1. Validación básica
+    if (!restaurantEmail.value || !restaurantEmail.value.includes('@')) {
+        alert("Por favor ingresa un correo válido.");
+        return;
+    }
     
     isSubmittingRestaurant.value = true;
     
-    // Simular llamada a API
-    setTimeout(() => {
-        isSubmittingRestaurant.value = false;
+    try {
+        // 2. Llamada real a la API Laravel
+        await axios.post('/unirse-lista', {
+            email: restaurantEmail.value
+        });
+
+        // 3. Éxito
         showRestaurantSuccess.value = true;
         restaurantEmail.value = '';
         
-        // Ocultar mensaje de éxito después de unos segundos (opcional)
-        // setTimeout(() => showRestaurantSuccess.value = false, 5000);
-    }, 1500);
+    } catch (error) {
+        // Manejo de errores (ej. correo duplicado)
+        if (error.response && error.response.status === 422) {
+            alert('¡Este correo ya está registrado en la lista de espera!');
+        } else {
+            console.error(error);
+            alert('Hubo un error al guardar. Intenta de nuevo.');
+        }
+    } finally {
+        isSubmittingRestaurant.value = false;
+    }
 };
 
 // --- DATOS MOCK PARA INVENTARIO INTERACTIVO (STOCK REAL AGREGADO) ---
@@ -178,10 +197,10 @@ onUnmounted(() => {
 
 const businessTypes = [
     { title: 'Ropa y Calzado', image: '/imagesLanding/biz-clothing.webp', alt: 'Artículos de ropa', shortDesc: 'Gestiona tallas, colores y temporadas.', fullDesc: 'La solución perfecta para boutiques. Controla tu inventario con variantes complejas sin perder la cabeza.', features: ['Matriz de Tallas y Colores', 'Impresión de etiquetas de código de barras', 'Gestión de cambios y devoluciones', 'Reportes de prendas más vendidas'] },
-    { title: 'Supermercados', image: '/imagesLanding/biz-supermarket.webp', alt: 'Abarrotes', shortDesc: 'Venta rápida y control de caducidad.', fullDesc: 'Agilidad en la caja es clave. Escanea códigos rápidamente y gestiona miles de productos sin demoras.', features: ['Venta ultra rápida con scanner', 'Control de inventario mínimo y máximo', 'Venta a granel (bascula)', 'Múltiples cajeros simultáneos'] },
+    { title: 'Supermercados', image: '/imagesLanding/biz-supermarket.webp', alt: 'Abarrotes', shortDesc: 'Venta rápida, tickets detallados,.', fullDesc: 'Agilidad en la caja es clave. Escanea códigos rápidamente y gestiona miles de productos sin demoras.', features: ['Venta ultra rápida con scanner', 'Control de inventario mínimo y máximo', 'Venta a granel (bascula)', 'Múltiples cajeros simultáneos'] },
     { title: 'Papelerías', image: '/imagesLanding/biz-stationery.webp', alt: 'Papelería', shortDesc: 'Miles de artículos pequeños bajo control.', fullDesc: 'Desde un lápiz hasta paquetes escolares. Organiza la inmensa variedad de artículos pequeños fácilmente.', features: ['Venta unitaria y por paquete', 'Kits escolares', 'Búsqueda rápida de productos', 'Control de merma y robo hormiga'] },
     { title: 'Ferreterías', image: '/imagesLanding/biz-hardware.webp', alt: 'Herramientas', shortDesc: 'Inventario pesado y venta a granel.', fullDesc: 'Administra inventarios complejos, ventas por metro, kilo o pieza y mantén el control de tu almacén.', features: ['Venta fraccionada (metros, kilos)', 'Precios de mayoreo y menudeo', 'Kits o ventas por paquetes', 'Tickets claros'] },
-    { title: 'Servicios', image: '/imagesLanding/biz-services.webp', alt: 'Servicios', shortDesc: 'Reparaciones, citas y mano de obra.', fullDesc: 'No solo productos, vende tu tiempo y experiencia. Gestiona órdenes de servicio y seguimiento.', features: ['Órdenes de servicio', 'Control de estatus', 'Refacciones', 'Mano de obra','Seguimiento por Whatsapp'] },
+    { title: 'Servicios', image: '/imagesLanding/biz-services.webp', alt: 'Servicios', shortDesc: 'Reparaciones, estatus y mano de obra.', fullDesc: 'No solo productos, vende tu tiempo y experiencia. Gestiona órdenes de servicio y seguimiento.', features: ['Órdenes de servicio', 'Control de estatus', 'Refacciones', 'Mano de obra','Seguimiento por Whatsapp'] },
 ];
 
 const selectedBusiness = ref(null);
@@ -513,8 +532,8 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                         data-aos="fade-up"
                         :data-aos-delay="index * 50">
                         
-                        <!-- Imagen: Superior Derecha -->
-                        <div class="absolute top-4 right-4 w-20 h-20 bg-gray-50/50 rounded-2xl flex items-center justify-center p-2 group-hover:scale-105 transition-transform duration-500">
+                        <!-- Imagen: Superior Izquierda -->
+                        <div class="absolute top-4 left-4 w-24 h-24 bg-gray-50/50 rounded-2xl flex items-center justify-center p-2 group-hover:scale-105 transition-transform duration-500">
                              <img :src="biz.image" :alt="biz.alt" class="w-full h-full object-contain mix-blend-multiply">
                         </div>
 
@@ -606,7 +625,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                         <div class="w-full md:w-1/2 space-y-10 relative z-10">
                             <h3 class="text-3xl md:text-4xl font-bold text-gray-900">Convierte ventas en relaciones.</h3>
                             <p class="text-gray-600 text-lg leading-relaxed">Deja de venderle a desconocidos. Crea perfiles detallados, habilita líneas de crédito y reconoce a tus clientes VIP al instante. Porque un cliente que se siente especial, siempre regresa.</p>
-                            <button class="bg-[#2f2f2f] text-white px-8 py-3 rounded-full font-bold hover:bg-[#191919] shadow-lg hover:shadow-xl transition-all">Ver tutorial de clientes</button>
+                            <!-- <button class="bg-[#2f2f2f] text-white px-8 py-3 rounded-full font-bold hover:bg-[#191919] shadow-lg hover:shadow-xl transition-all">Ver tutorial de clientes</button> -->
                         </div>
                         <div class="w-full md:w-1/2 flex justify-center relative z-10">
                             <CustomerRelationship />
@@ -624,6 +643,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                 <div class="text-center mb-10" data-aos="fade-up">
                     <h2 class="text-3xl md:text-5xl font-bold text-gray-900 tracking-tight">Arma tu plan ideal</h2>
                     <p class="text-gray-500 mt-3 text-base md:text-lg">Comienza con lo esencial, agrega lo que necesites.</p>
+                    <p class="text-gray-800 mt-3 text-base md:text-lg">SIMULADOR DE PRECIOS</p>
                     
                     <!-- Switch Mensual/Anual iOS Style -->
                     <div class="mt-8 flex justify-center">
@@ -650,7 +670,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                             <div class="flex justify-between items-start mb-4">
                                 <div>
                                     <h3 class="text-xl font-bold text-gray-900">Plan Esencial</h3>
-                                    <p class="text-sm text-gray-500 mt-1">El núcleo de tu negocio.</p>
+                                    <p class="text-md text-gray-500 mt-1">Todo lo que necesitas para operar.</p>
                                 </div>
                                 <div class="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center text-[#F68C0F]">
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 1 1 9 0v3.75M3.75 21.75h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H3.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
@@ -658,29 +678,37 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                             </div>
 
                             <div class="flex items-baseline gap-1 mb-6 border-b border-gray-100 pb-6">
-                                <span class="text-3xl font-bold text-gray-900">$</span>
+                                <span class="text-5xl font-bold text-gray-900">$</span>
                                 <span class="text-5xl font-extrabold text-gray-900 tracking-tighter">{{ isAnnual ? '159' : '199' }}</span>
                                 <span class="text-gray-500 font-medium">/mes</span>
                             </div>
 
                             <div class="space-y-3">
-                                <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">LO QUE OBTIENES</p>
-                                <ul class="space-y-3 text-sm md:text-base text-gray-700">
+                                <p class="text-sm font-bold text-gray-400 uppercase tracking-widest mb-3">LO QUE OBTIENES</p>
+                                <ul class="space-y-3 text-md md:text-base text-gray-700">
                                     <li class="flex items-center gap-3">
                                         <svg class="w-5 h-5 text-green-500 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
                                         <span>Punto de venta ilimitado</span>
                                     </li>
                                     <li class="flex items-center gap-3">
                                         <svg class="w-5 h-5 text-green-500 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
-                                        <span>Control de Inventarios</span>
+                                        <span>Control de Inventario</span>
                                     </li>
                                     <li class="flex items-center gap-3">
                                         <svg class="w-5 h-5 text-green-500 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
                                         <span>Reportes básicos</span>
                                     </li>
+                                    <li class="flex items-center gap-3">
+                                        <svg class="w-5 h-5 text-green-500 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                                        <span>Gastos</span>
+                                    </li>
+                                    <li class="flex items-center gap-3">
+                                        <svg class="w-5 h-5 text-green-500 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                                        <span>Control de caja</span>
+                                    </li>
                                     <!-- Accordion for more info could go here for mobile -->
-                                    <li class="text-xs text-gray-400 pt-2 flex items-center gap-1">
-                                        <span>+ 1 Sucursal, 1 Caja, 3 Usuarios</span>
+                                    <li class="text-md text-gray-500 pt-2 flex items-center gap-1">
+                                        <span>+ 1 Sucursal, 1 Caja, 3 Usuarios, 500 productos, 3 plantillas</span>
                                     </li>
                                 </ul>
                             </div>
@@ -709,7 +737,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                                                 <span class="font-bold text-gray-900 text-base">{{ module.name }}</span>
                                                 <span v-if="module.active" class="hidden md:inline-block bg-orange-100 text-[#F68C0F] text-[10px] font-bold px-2 py-0.5 rounded-full">ACTIVADO</span>
                                             </div>
-                                            <p class="text-xs text-gray-500 leading-snug">{{ module.description }}</p>
+                                            <p class="text-md text-gray-500 leading-snug">{{ module.description }}</p>
                                         </div>
                                         
                                         <div class="flex flex-col items-end gap-2">
@@ -735,8 +763,8 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div v-for="feat in features" :key="feat.id" class="bg-white p-3.5 rounded-xl border border-gray-100 shadow-sm flex items-center justify-between">
                                     <div>
-                                        <p class="text-sm font-bold text-gray-900">{{ feat.name }}</p>
-                                        <p class="text-xs text-gray-500">+${{ feat.price }} <span class="opacity-70">/unidad</span></p>
+                                        <p class="text-md font-bold text-gray-900">{{ feat.name }}</p>
+                                        <p class="text-md text-gray-500">+${{ feat.price }} <span class="opacity-70">/unidad</span></p>
                                     </div>
                                     
                                     <!-- Stepper iOS Style -->
@@ -778,7 +806,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5"><path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clip-rule="evenodd" /></svg>
                             </Link>
                             <div class="text-center">
-                                <span class="text-[11px] text-gray-500 font-medium tracking-wide uppercase">30 días de garantía total</span>
+                                <span class="text-[11px] text-gray-500 font-medium tracking-wide uppercase">30 días sin costo</span>
                             </div>
                         </div>
                     </div>
