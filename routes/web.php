@@ -75,6 +75,9 @@ require __DIR__ . '/web/super-admin.php';
 // require __DIR__ . '/web/migrate-customers.php';
 // require __DIR__ . '/web/migrate-transactions.php';
 
+Route::get('/centro-ayuda', function () {
+    return Inertia::render('HelpCenter');
+})->name('help-center');
 
 //artisan commands -------------------
 Route::get('/clear-all', function () {

@@ -62,7 +62,12 @@ const scrollToElement = (id) => {
                     <h4 class="text-sm font-bold text-white uppercase tracking-widest">Recursos</h4>
                     <ul class="space-y-3 text-sm text-gray-400 font-medium">
                         <li><button @click="scrollToElement('faq')" class="hover:text-[#F68C0F] transition-colors duration-200">Preguntas Frecuentes</button></li>
-                        <!-- <li><a href="#" class="hover:text-[#F68C0F] transition-colors">Centro de Ayuda</a></li> -->
+                        <!-- CAMBIO AQUÍ: Usamos Link y la ruta correcta -->
+                        <li>
+                            <Link :href="route('help-center')" class="hover:text-[#F68C0F] transition-colors">
+                                Centro de Ayuda
+                            </Link>
+                        </li>
                     </ul>
                 </div>
 
