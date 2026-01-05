@@ -141,7 +141,7 @@ const handleBalancePaymentSubmit = (paymentData) => {
     router.post(route('customers.payments.store', props.customer.id), payload, {
         onSuccess: () => {
             isPaymentModalVisible.value = false;
-            toast.add({ severity: 'success', summary: 'Abono registrado', detail: 'El saldo ha sido actualizado.', life: 3000 });
+            //toast.add({ severity: 'success', summary: 'Abono registrado', detail: 'El saldo ha sido actualizado.', life: 3000 });
             openPrintModal();
         },
         onFinish: () => { 
@@ -241,6 +241,45 @@ const sanitizePhone = (phone) => {
     return phone.replace(/\D/g, ''); 
 };
 
+// --- NUEVO: Computed para Google Maps ---
+const hasAddress = computed(() => {
+    return props.customer.address && (props.customer.address.street || props.customer.address.city);
+});
+
+const formattedAddress = computed(() => {
+    if (!hasAddress.value) return 'Sin dirección registrada';
+    const a = props.customer.address;
+    
+    // Construir string legible
+    let parts = [];
+    if (a.street) parts.push(a.street);
+    if (a.exterior_number) parts.push(`#${a.exterior_number}`);
+    if (a.interior_number) parts.push(`Int. ${a.interior_number}`);
+    if (a.neighborhood) parts.push(`Col. ${a.neighborhood}`);
+    if (a.city) parts.push(a.city);
+    if (a.state) parts.push(a.state);
+    if (a.zip_code) parts.push(`CP ${a.zip_code}`);
+    
+    return parts.join(', ');
+});
+
+const googleMapsUrl = computed(() => {
+    if (!hasAddress.value) return '#';
+    const a = props.customer.address;
+    
+    // Construir query para Google Maps
+    const queryParts = [
+        a.street,
+        a.exterior_number,
+        a.neighborhood,
+        a.city,
+        a.state,
+        a.zip_code
+    ].filter(part => part).join(' '); // Unir con espacios para la búsqueda
+    
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(queryParts)}`;
+});
+
 </script>
 
 <template>
@@ -266,6 +305,8 @@ const sanitizePhone = (phone) => {
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <!-- Columna Izquierda: Información -->
             <div class="lg:col-span-1 space-y-6">
+                
+                <!-- Tarjeta: Información de Contacto -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
                         Información de contacto</h2>
@@ -294,7 +335,29 @@ const sanitizePhone = (phone) => {
                                     customer.tax_id }}</span></li>
                     </ul>
                 </div>
+
+                <!-- Tarjeta: Domicilio (NUEVA) -->
+                <div v-if="hasAddress" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <div class="flex justify-between items-center border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
+                        <h2 class="text-lg font-semibold">Domicilio</h2>
+                        <a :href="googleMapsUrl" target="_blank" rel="noopener noreferrer">
+                            <Button icon="pi pi-map-marker" label="Mapa" severity="help" size="small" text outlined />
+                        </a>
+                    </div>
+                    
+                    <div class="text-sm space-y-3">
+                        <p class="text-gray-800 dark:text-gray-200 font-medium">
+                            {{ formattedAddress }}
+                        </p>
+                        
+                        <div v-if="customer.address.cross_streets" class="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md text-xs">
+                            <span class="font-semibold block mb-1 text-gray-500">Referencias:</span>
+                            {{ customer.address.cross_streets }}
+                        </div>
+                    </div>
+                </div>
                 
+                <!-- Tarjeta: Información Financiera -->
                 <div v-if="hasPermission('customers.see_financial_info')"
                     class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">

@@ -2,7 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\TransactionStatus; // Asegúrate de importar el Enum
+use App\Enums\ExpenseStatus;
+use App\Enums\TransactionStatus;
 use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\Customer;
@@ -28,7 +29,8 @@ class DashboardController extends Controller
         $isAdmin = !$user->roles()->exists();
         $stats = [];
 
-        $cacheKey = "dashboard_stats_branch_{$branchId}";
+        // CAMBIO: Cache v4 para forzar la recarga inmediata de la gráfica corregida
+        $cacheKey = "dashboard_stats_branch_{$branchId}_v4";
 
         // --- 1. Ventas y Transacciones ---
         if ($isAdmin || $user->can('transactions.access')) {
@@ -37,8 +39,8 @@ class DashboardController extends Controller
 
             $todayAggregates = Transaction::where('branch_id', $branchId)
                 ->whereBetween('created_at', [$startOfDay, $endOfDay])
-                ->where('status', TransactionStatus::COMPLETED) // Usar Enum si es posible, o 'completado'
-                ->selectRaw('SUM(subtotal - total_discount) as total_sales')
+                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+                ->selectRaw('SUM(subtotal - total_discount + total_tax) as total_sales')
                 ->selectRaw('COUNT(*) as total_count')
                 ->first();
 
@@ -52,12 +54,11 @@ class DashboardController extends Controller
                 return $this->getSalesTotalForPeriod($branchId, today()->subDay(), today()->subDay());
             });
 
+            // Recuperamos la lógica robusta para la gráfica
             $stats['weekly_sales_trend'] = Cache::remember("{$cacheKey}_weekly_trend", 3600, function () use ($branchId) {
                 return $this->getWeeklySalesTrend($branchId);
             });
 
-            // --- NUEVO: Conteo de Apartados por Vencer (Ligero) ---
-            // Contamos apartados activos cuya fecha de vencimiento es hoy o en los próximos 5 días (o ya vencidos)
             $stats['expiring_layaways_count'] = Transaction::where('branch_id', $branchId)
                 ->where('status', TransactionStatus::ON_LAYAWAY)
                 ->whereNotNull('layaway_expiration_date')
@@ -71,6 +72,7 @@ class DashboardController extends Controller
                 return Expense::where('branch_id', $branchId)
                     ->whereMonth('expense_date', now()->month)
                     ->whereYear('expense_date', now()->year)
+                    ->where('status', ExpenseStatus::PAID)
                     ->sum('amount');
             });
         }
@@ -78,8 +80,8 @@ class DashboardController extends Controller
         if ($isAdmin || $user->can('financials.manage_cash_registers')) {
             $stats['cash_registers_status'] = CashRegister::where('branch_id', $branchId)
                 ->where('is_active', true)
-                ->selectRaw("COUNT(CASE WHEN in_use = 1 THEN 1 END) as in_use")
-                ->selectRaw("COUNT(CASE WHEN in_use = 0 THEN 1 END) as available")
+                ->selectRaw("COUNT(CASE WHEN in_use = 1 THEN 1 END) as in_use_count")
+                ->selectRaw("COUNT(CASE WHEN in_use = 0 THEN 1 END) as available_count")
                 ->first()
                 ->toArray();
         }
@@ -142,27 +144,21 @@ class DashboardController extends Controller
         ]);
     }
 
-    /**
-     * Endpoint AJAX para cargar el detalle de apartados por vencer.
-     * Retorna JSON para no recargar la página.
-     */
     public function getExpiringLayaways(Request $request)
     {
         $user = Auth::user();
         
-        // Obtenemos los apartados por vencer
-        // Optimizamos usando withSum para obtener lo pagado sin hidratar todos los modelos de pagos
         $layaways = Transaction::where('branch_id', $user->branch_id)
             ->where('status', TransactionStatus::ON_LAYAWAY)
             ->whereNotNull('layaway_expiration_date')
             ->whereDate('layaway_expiration_date', '<=', now()->addDays(5))
-            ->with('customer:id,name,phone') // Cargamos cliente básico
-            ->withSum('payments', 'amount') // Sumamos los pagos realizados
-            ->orderBy('layaway_expiration_date', 'asc') // Los más urgentes primero
+            ->with('customer:id,name,phone')
+            ->withSum('payments', 'amount')
+            ->orderBy('layaway_expiration_date', 'asc')
             ->get()
             ->map(function ($t) {
                 $totalPaid = $t->payments_sum_amount ?? 0;
-                $total = (float) $t->total; // Usando el accesor 'total' del modelo Transaction
+                $total = (float) $t->total;
                 
                 return [
                     'id' => $t->id,
@@ -180,7 +176,6 @@ class DashboardController extends Controller
         return response()->json($layaways);
     }
 
-    // ... (El resto de tus métodos privados se mantienen igual: getInventorySummaryOptimized, etc.)
     private function getInventorySummaryOptimized($branchId)
     {
         $summary = DB::table('products')
@@ -279,29 +274,59 @@ class DashboardController extends Controller
     {
         return Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$start->startOfDay(), $end->endOfDay()])
-            ->where('status', TransactionStatus::COMPLETED)
-            ->sum(DB::raw('subtotal - total_discount'));
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+            ->sum(DB::raw('subtotal - total_discount + total_tax'));
     }
 
     private function getWeeklySalesTrend($branchId): array
     {
+        // 1. Definir la semana (Lunes a Domingo)
         $startOfWeek = now()->startOfWeek(Carbon::MONDAY);
         $endOfWeek = now()->endOfWeek(Carbon::SUNDAY);
 
+        // 2. Consulta Robusta (Similar a la versión antigua)
+        // Seleccionamos las columnas individuales para sumarlas en PHP y evitar nulos.
         $trendData = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$startOfWeek, $endOfWeek])
-            ->where('status', TransactionStatus::COMPLETED)
-            ->selectRaw('DATE(created_at) as date')
-            ->selectRaw('SUM(subtotal - total_discount) as total')
+            // Usamos la nueva lógica: Excluir Canceladas y Cambiadas (No solo 'completadas')
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+            ->select(
+                DB::raw('DATE(created_at) as date'),
+                DB::raw('SUM(subtotal) as total_subtotal'),
+                DB::raw('SUM(total_discount) as total_discount'),
+                DB::raw('SUM(total_tax) as total_tax')
+            )
             ->groupBy('date')
-            ->pluck('total', 'date');
+            ->orderBy('date', 'asc')
+            ->get()
+            ->keyBy('date'); // Agrupamos por fecha para fácil acceso en el loop
 
         $weekSales = [];
+        
+        // 3. Iteramos los 7 días de la semana
         for ($i = 0; $i < 7; $i++) {
             $date = $startOfWeek->copy()->addDays($i);
             $dateString = $date->format('Y-m-d');
-            $weekSales[] = ['day' => $date->translatedFormat('D'), 'total' => (float) ($trendData[$dateString] ?? 0)];
+
+            $dayData = $trendData->get($dateString);
+
+            $total = 0;
+            if ($dayData) {
+                // Hacemos la matemática en PHP para manejar valores nulos de forma segura.
+                // Fórmula: (Subtotal - Descuento) + Impuestos
+                $subtotal = $dayData->total_subtotal ?? 0;
+                $discount = $dayData->total_discount ?? 0;
+                $tax = $dayData->total_tax ?? 0;
+                
+                $total = ($subtotal - $discount) + $tax;
+            }
+
+            $weekSales[] = [
+                'day' => $date->translatedFormat('D'), // 'Lun', 'Mar', etc.
+                'total' => (float) $total
+            ];
         }
+        
         return $weekSales;
     }
 }

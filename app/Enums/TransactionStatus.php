@@ -9,4 +9,5 @@ enum TransactionStatus: string
     case CANCELLED = 'cancelado';
     case REFUNDED = 'reembolsado';
     case ON_LAYAWAY = 'apartado';
+    case CHANGED = 'cambiado';
 }
