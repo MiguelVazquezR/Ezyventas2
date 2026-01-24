@@ -400,7 +400,7 @@ const handleCheckout = (checkoutData) => {
             <!-- Vista principal del POS (si hay sesión activa) -->
             <template v-if="activeSession">
                 <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
-                    :filters="filters" :active-session="activeSession" @add-to-cart="addToCart"
+                    :filters="filters" :active-session="activeSession" :cart-items="cartItems" @add-to-cart="addToCart"
                     @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
                     @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
                     @refresh-session-data="handleRefreshSessionData" @open-history-modal="isHistoryModalVisible = true"

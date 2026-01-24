@@ -33,6 +33,7 @@ const form = useForm({
     name: props.product.name,
     description: props.product.description,
     sku: props.product.sku,
+    location: props.product.location, // <--- NUEVO CAMPO AGREGADO
     category_id: props.product.category_id,
     brand_id: props.product.brand_id,
     cost_price: props.product.cost_price ? parseFloat(props.product.cost_price) : null,
@@ -357,10 +358,18 @@ const confirmRemoveItem = (event, index) => {
                                 <Editor v-model="form.description" editorStyle="height: 150px" class="mt-1" />
                                 <InputError class="mt-2" :message="form.errors.description" />
                             </div>
-                            <div>
-                                <InputLabel for="sku" value="SKU (Código de barras)" />
-                                <InputText id="sku" v-model="form.sku" class="mt-1 w-full" />
-                                <InputError class="mt-2" :message="form.errors.sku" />
+                            <!-- CORRECCIÓN: Agrupamos SKU y Localización en una fila -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <InputLabel for="sku" value="SKU (Código de barras)" />
+                                    <InputText id="sku" v-model="form.sku" class="mt-1 w-full" />
+                                    <InputError class="mt-2" :message="form.errors.sku" />
+                                </div>
+                                <div>
+                                    <InputLabel for="location" value="Ubicación en Almacén" />
+                                    <InputText id="location" v-model="form.location" class="mt-1 w-full" placeholder="Ej. Pasillo 4, Estante B" />
+                                    <InputError class="mt-2" :message="form.errors.location" />
+                                </div>
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
@@ -594,7 +603,7 @@ const confirmRemoveItem = (event, index) => {
                                                                         class="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center justify-center text-gray-400">
                                                                         <i class="pi pi-image text-2xl"></i>
                                                                     </div>
-                                                                    <Button vD-if="variantImagePreviews[option.value]"
+                                                                    <Button v-if="variantImagePreviews[option.value]"
                                                                         @click="() => {
                                                                             const existingImg = existingVariantImages.find(i => i.custom_properties.variant_option === option.value);
                                                                             if (existingImg) {

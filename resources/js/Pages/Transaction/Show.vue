@@ -1,9 +1,9 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
-import { router, Link, usePage } from '@inertiajs/vue3'; // <-- Importado usePage
+import { ref, computed, watch, nextTick } from 'vue';
+import { router, Link, usePage, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
-import { useToast } from 'primevue/usetoast'; // Importamos toast
+import { useToast } from 'primevue/usetoast';
 import PrintModal from '@/Components/PrintModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
@@ -14,7 +14,6 @@ import ProductExchangeModal from './Partials/ProductExchangeModal.vue';
 const props = defineProps({
     transaction: Object,
     availableTemplates: Array,
-    // Props para gestión de sesión/pagos
     availableCashRegisters: Array,
     userBankAccounts: Array,
     joinableSessions: Array,
@@ -57,9 +56,56 @@ const refundProcessing = ref(false);
 const isPaymentModalVisible = ref(false);
 const isPaymentProcessing = ref(false);
 
-// --- NUEVO: Modal de Información de Intercambio ---
-const isProductExchangeModalVisible = ref(false);
+// --- Modal de Edición de Pago ---
+const isEditPaymentModalVisible = ref(false);
+const editingPaymentId = ref(null);
 
+const editForm = useForm({
+    amount: 0,
+    payment_method: '',
+    bank_account_id: null,
+    notes: ''
+});
+
+// Aseguramos que las cuentas bancarias sean un arreglo válido para evitar errores de renderizado
+const safeBankAccounts = computed(() => Array.isArray(props.userBankAccounts) ? props.userBankAccounts : []);
+
+const openEditPaymentModal = (payment) => {
+    // Resetear errores previos
+    editForm.clearErrors();
+    
+    editingPaymentId.value = payment.id;
+    editForm.amount = parseFloat(payment.amount);
+    
+    // Si payment_method viene como objeto (Enum de Laravel), extraemos el valor
+    editForm.payment_method = typeof payment.payment_method === 'object' && payment.payment_method !== null 
+        ? payment.payment_method.value 
+        : payment.payment_method;
+        
+    editForm.bank_account_id = payment.bank_account_id;
+    editForm.notes = payment.notes || '';
+
+    // Usamos nextTick para evitar el error de onMounted en la inicialización del diálogo
+    nextTick(() => {
+        isEditPaymentModalVisible.value = true;
+    });
+};
+
+const submitEditPayment = () => {
+    editForm.put(route('transactions.updatePayment', { 
+        transaction: props.transaction.id, 
+        payment: editingPaymentId.value 
+    }), {
+        preserveScroll: true,
+        onSuccess: () => {
+            isEditPaymentModalVisible.value = false;
+            toast.add({ severity: 'success', summary: 'Actualizado', detail: 'El pago ha sido modificado correctamente.', life: 3000 });
+        }
+    });
+};
+
+// --- Modal de Información de Intercambio ---
+const isProductExchangeModalVisible = ref(false);
 const openExchangeModal = () => {
     isProductExchangeModalVisible.value = true;
 };
@@ -92,14 +138,12 @@ const canRefund = computed(() => {
     return isCompleted || isPendingWithPayments || isOnLayaway;
 });
 
-// Permitir abono si hay deuda y no está cancelada/reembolsada
 const canAddPayment = computed(() => {
     if (!localTransaction.value?.status) return false;
     const isCancelledOrRefunded = ['cancelado', 'reembolsado'].includes(localTransaction.value.status);
     return !isCancelledOrRefunded && pendingAmount.value > 0.01;
 });
 
-// NUEVO: Regla para permitir intercambio (mientras no esté cancelada o reembolsada)
 const canExchange = computed(() => {
     if (!localTransaction.value?.status) return false;
     return !['cancelado', 'reembolsado'].includes(localTransaction.value.status);
@@ -107,12 +151,11 @@ const canExchange = computed(() => {
 
 // --- Lógica de Acciones ---
 const openPaymentModal = () => {
-    // Verificar sesión activa
     if (!activeSession.value) {
-        if (props.joinableSessions && props.joinableSessions.length > 0) {
+        if (props.joinableSessions && props.joinableSessions?.length > 0) {
             sessionModalAwaitingPayment.value = true;
             isJoinSessionModalVisible.value = true;
-        } else if (props.availableCashRegisters && props.availableCashRegisters.length > 0) {
+        } else if (props.availableCashRegisters && props.availableCashRegisters?.length > 0) {
             sessionModalAwaitingPayment.value = true;
             isStartSessionModalVisible.value = true;
         } else {
@@ -125,21 +168,12 @@ const openPaymentModal = () => {
 
 const handlePaymentSubmit = (paymentData) => {
     if (!activeSession.value) return;
-
     isPaymentProcessing.value = true;
-
-    const payload = {
-        ...paymentData,
-        cash_register_session_id: activeSession.value.id
-    };
+    const payload = { ...paymentData, cash_register_session_id: activeSession.value.id };
 
     router.post(route('transactions.addPayment', props.transaction.id), payload, {
         onSuccess: () => {
-            // 1. Cerramos el modal de pago
             isPaymentModalVisible.value = false;
-
-            // 2. Abrimos automáticamente el modal de impresión
-            // Nota: Inertia ya habrá actualizado las props de la transacción aquí.
             openPrintModal();
         },
         onFinish: () => isPaymentProcessing.value = false,
@@ -161,7 +195,7 @@ const cancelSale = () => {
 };
 
 const openRefundModal = () => {
-    refundMethod.value = props.transaction.customer_id ? 'cash' : 'cash';
+    refundMethod.value = 'cash';
     isRefundModalVisible.value = true;
 };
 
@@ -177,14 +211,9 @@ const confirmRefund = () => {
     });
 };
 
-// --- Menú de Acciones ---
 const actionItems = computed(() => [
     { label: 'Abonar / Liquidar', icon: 'pi pi-dollar', command: openPaymentModal, disabled: !canAddPayment.value, visible: hasPermission('transactions.add_payment') },
-
-    // --- NUEVA OPCIÓN: INTERCAMBIO ---
     { label: 'Intercambiar producto', icon: 'pi pi-sync', command: openExchangeModal, disabled: !canExchange.value, visible: hasPermission('transactions.exchange') },
-    // ---------------------------------
-
     { separator: true },
     { label: 'Imprimir ticket', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
@@ -192,19 +221,24 @@ const actionItems = computed(() => [
     { label: 'Cancelar venta', icon: 'pi pi-times-circle', class: 'text-red-500', command: cancelSale, disabled: !canCancel.value, visible: hasPermission('transactions.cancel') },
 ]);
 
-// Helpers visuales
 const getStatusSeverity = (status) => ({ completado: 'success', pendiente: 'warn', cancelado: 'danger', reembolsado: 'info', on_layaway: 'warn', apartado: 'warn' }[status] || 'secondary');
 const formatDate = (date) => date ? new Date(date).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : '';
 const formatDateOnly = (date) => date ? new Date(date).toLocaleDateString('es-MX', { dateStyle: 'long' }) : '';
 const formatCurrency = (val) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(val) || 0);
 
-// --- ACTUALIZADO: Iconos de métodos de pago (incluyendo intercambio) ---
+const paymentMethods = [
+    { label: 'Efectivo', value: 'efectivo' },
+    { label: 'Tarjeta', value: 'tarjeta' },
+    { label: 'Transferencia', value: 'transferencia' },
+    { label: 'Saldo de Cliente', value: 'saldo' },
+];
+
 const paymentMethodIcons = {
     efectivo: { icon: 'pi pi-money-bill', color: 'text-[#37672B]' },
     tarjeta: { icon: 'pi pi-credit-card', color: 'text-[#063C53]' },
     transferencia: { icon: 'pi pi-arrows-h', color: 'text-[#D2D880]' },
     saldo: { icon: 'pi pi-wallet', color: 'text-purple-500' },
-    intercambio: { icon: 'pi pi-sync', color: 'text-orange-500' } // <--- NUEVO
+    intercambio: { icon: 'pi pi-sync', color: 'text-orange-500' }
 };
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
@@ -218,8 +252,7 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <div>
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Venta #{{ transaction.folio }}</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Realizada el {{ formatDate(transaction.created_at) }}
-                </p>
+                <p class="text-gray-500 dark:text-gray-400 mt-1">Realizada el {{ formatDate(transaction.created_at) }}</p>
             </div>
             <div class="flex items-center gap-2 mt-4 sm:mt-0">
                 <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined />
@@ -238,93 +271,78 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                             <Column header="Precio unitario">
                                 <template #body="{ data }">
                                     <div>
-                                        <del v-if="parseFloat(data.discount_amount || 0) !== 0"
-                                            class="text-gray-500 text-xs">
-                                            {{ formatCurrency(parseFloat(data.unit_price || 0) +
-                                                parseFloat(data.discount_amount || 0)) }}
+                                        <del v-if="parseFloat(data.discount_amount || 0) !== 0" class="text-gray-500 text-xs">
+                                            {{ formatCurrency(parseFloat(data.unit_price || 0) + parseFloat(data.discount_amount || 0)) }}
                                         </del>
                                         <p class="font-semibold m-0">{{ formatCurrency(data.unit_price) }}</p>
-                                        <p v-if="parseFloat(data.discount_amount) > 0"
-                                            class="text-xs text-green-600 m-0">Ahorro: {{
-                                                formatCurrency(data.discount_amount) }}</p>
+                                        <p v-if="parseFloat(data.discount_amount) > 0" class="text-xs text-green-600 m-0">Ahorro: {{ formatCurrency(data.discount_amount) }}</p>
                                     </div>
                                 </template>
                             </Column>
                             <Column field="line_total" header="Total" class="text-right">
                                 <template #body="{ data }">{{ formatCurrency(data.line_total) }}</template>
                             </Column>
+                            <template #empty>
+                                <div class="text-center py-4">No hay conceptos registrados en esta venta.</div>
+                            </template>
                         </DataTable>
                     </template>
                 </Card>
             </div>
+            
             <!-- Columna Derecha -->
             <div class="lg:col-span-1 space-y-6">
                 <Card>
                     <template #title>Resumen financiero</template>
                     <template #content>
                         <ul class="space-y-3 text-sm">
-                            <li class="flex justify-between"><span>Subtotal:</span><span>{{
-                                formatCurrency(transaction.subtotal) }}</span></li>
+                            <li class="flex justify-between"><span>Subtotal:</span><span>{{ formatCurrency(transaction.subtotal) }}</span></li>
                             <li v-if="parseFloat(transaction.total_discount) > 0" class="flex justify-between">
-                                <span>Descuento:</span><span class="text-green-500">- {{
-                                    formatCurrency(transaction.total_discount) }}</span>
+                                <span>Descuento:</span><span class="text-green-500">- {{ formatCurrency(transaction.total_discount) }}</span>
                             </li>
                             <li class="flex justify-between font-bold text-base border-t pt-2 mt-2">
                                 <span>Total:</span><span>{{ formatCurrency(totalAmount) }}</span>
                             </li>
-                            <li class="flex justify-between"><span>Pagado:</span><span class="font-semibold">{{
-                                formatCurrency(totalPaid) }}</span></li>
-                            <li v-if="pendingAmount > 0"
-                                class="flex justify-between font-bold text-red-600 text-lg bg-red-50 dark:bg-red-900/20 p-2 rounded">
+                            <li class="flex justify-between"><span>Pagado:</span><span class="font-semibold">{{ formatCurrency(totalPaid) }}</span></li>
+                            <li v-if="pendingAmount > 0" class="flex justify-between font-bold text-red-600 text-lg bg-red-50 dark:bg-red-900/20 p-2 rounded">
                                 <span>Pendiente:</span><span>{{ formatCurrency(pendingAmount) }}</span>
                             </li>
                         </ul>
                         <div v-if="canAddPayment && hasPermission('transactions.add_payment')" class="mt-4">
-                            <Button label="Abonar a esta cuenta" icon="pi pi-dollar" class="w-full p-button-success"
-                                @click="openPaymentModal" />
+                            <Button label="Abonar a esta cuenta" icon="pi pi-dollar" class="w-full p-button-success" @click="openPaymentModal" />
                         </div>
                     </template>
                 </Card>
+
                 <Card>
                     <template #title>Información de la venta</template>
                     <template #content>
                         <ul class="space-y-3 text-sm">
                             <li class="flex justify-between"><span>Estatus:</span>
-                                <Tag :value="localTransaction.status"
-                                    :severity="getStatusSeverity(localTransaction.status)" class="capitalize" />
+                                <Tag :value="localTransaction.status" :severity="getStatusSeverity(localTransaction.status)" class="capitalize" />
                             </li>
-                            <li v-if="transaction.layaway_expiration_date"
-                                class="flex justify-between items-center bg-purple-50 dark:bg-purple-900/20 p-2 rounded -mx-2">
+                            <li v-if="transaction.layaway_expiration_date" class="flex justify-between items-center bg-purple-50 dark:bg-purple-900/20 p-2 rounded -mx-2">
                                 <span class="text-purple-800 dark:text-purple-300 font-medium">Vencimiento:</span>
-                                <span class="font-bold text-purple-700 dark:text-purple-200">{{
-                                    formatDateOnly(transaction.layaway_expiration_date) }}</span>
+                                <span class="font-bold text-purple-700 dark:text-purple-200">{{ formatDateOnly(transaction.layaway_expiration_date) }}</span>
                             </li>
                             <li class="flex justify-between items-center">
                                 <span>Cliente:</span>
                                 <span class="font-medium">
-                                    <Link v-if="transaction.customer"
-                                        :href="route('customers.show', transaction.customer.id)"
-                                        class="text-blue-600 hover:underline flex items-center gap-2">{{
-                                            transaction.customer.name }} <i class="pi pi-external-link text-xs"></i></Link>
+                                    <Link v-if="transaction.customer" :href="route('customers.show', transaction.customer.id)" class="text-blue-600 hover:underline flex items-center gap-2">
+                                        {{ transaction.customer.name }} <i class="pi pi-external-link text-xs"></i>
+                                    </Link>
                                     <span v-else>Público en general</span>
                                 </span>
                             </li>
-                            <li class="flex justify-between"><span>Cajero:</span><span class="font-medium">{{
-                                transaction.user?.name || 'N/A' }}</span></li>
-
-                            <!-- NUEVO: Mostrar Notas (Crucial para ver referencia de intercambio) -->
+                            <li class="flex justify-between"><span>Cajero:</span><span class="font-medium">{{ transaction.user?.name || 'N/A' }}</span></li>
                             <li v-if="transaction.notes" class="flex flex-col border-t pt-2 mt-2">
-                                <span class="text-gray-500 dark:text-gray-400 mb-1 text-xs uppercase font-bold">Notas /
-                                    Referencia:</span>
-                                <p
-                                    class="text-sm bg-gray-50 dark:bg-gray-700/50 p-2 rounded italic text-gray-700 dark:text-gray-300">
-                                    {{ transaction.notes }}
-                                </p>
+                                <span class="text-gray-500 dark:text-gray-400 mb-1 text-xs uppercase font-bold">Notas / Referencia:</span>
+                                <p class="text-sm bg-gray-50 dark:bg-gray-700/50 p-2 rounded italic text-gray-700 dark:text-gray-300">{{ transaction.notes }}</p>
                             </li>
-                            <!-- ----------------------------------------------------------------- -->
                         </ul>
                     </template>
                 </Card>
+
                 <Card>
                     <template #title>Pagos realizados</template>
                     <template #content>
@@ -335,18 +353,24 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                             <li v-for="payment in localTransaction.payments" :key="payment.id" class="text-sm">
                                 <div class="flex justify-between items-center">
                                     <span class="flex items-center gap-2">
-                                        <!-- Manejo seguro de iconos por si llega un método nuevo -->
-                                        <i class="pi"
-                                            :class="(paymentMethodIcons[payment.payment_method]?.icon || 'pi-circle') + ' ' + (paymentMethodIcons[payment.payment_method]?.color || 'text-gray-500')"></i>
+                                        <i class="pi" :class="(paymentMethodIcons[payment.payment_method]?.icon || 'pi-circle') + ' ' + (paymentMethodIcons[payment.payment_method]?.color || 'text-gray-500')"></i>
                                         <span class="capitalize font-medium">
-                                            {{ payment.payment_method === 'intercambio' ? 'Intercambio de Producto' :
-                                                payment.payment_method }}
+                                            {{ payment.payment_method === 'intercambio' ? 'Intercambio' : payment.payment_method }}
                                         </span>
                                     </span>
-                                    <span class="font-mono font-semibold">{{ formatCurrency(payment.amount) }}</span>
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-mono font-semibold">{{ formatCurrency(payment.amount) }}</span>
+                                        <!-- BOTÓN DE EDICIÓN: Siempre visible si tiene permiso -->
+                                        <Button 
+                                            v-if="hasPermission('transactions.edit_payment')"
+                                            icon="pi pi-pencil" 
+                                            class="p-button-text p-button-sm p-button-rounded" 
+                                            v-tooltip.top="'Editar pago'"
+                                            @click="openEditPaymentModal(payment)" 
+                                        />
+                                    </div>
                                 </div>
-                                <p class="text-xs text-gray-500 ml-6">{{ formatDate(payment.payment_date ||
-                                    payment.created_at) }}</p>
+                                <p class="text-xs text-gray-500 ml-6">{{ formatDate(payment.payment_date || payment.created_at) }}</p>
                             </li>
                         </ul>
                     </template>
@@ -354,50 +378,68 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
             </div>
         </div>
 
-        <!-- Modales -->
-        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
-            :available-templates="availableTemplates" />
+        <!-- Modales de Sistema -->
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource" :available-templates="availableTemplates" />
 
-        <!-- Modal de Reembolso -->
         <Dialog v-model:visible="isRefundModalVisible" modal header="Confirmar devolución" :style="{ width: '30rem' }">
             <div class="p-fluid">
-                <p class="mb-4">Vas a generar una devolución para la venta <strong>#{{ props.transaction.folio
-                }}</strong> por
-                    <strong>{{ formatCurrency(totalPaid) }}</strong>.
-                </p>
+                <p class="mb-4">Vas a generar una devolución para la venta <strong>#{{ props.transaction.folio }}</strong> por <strong>{{ formatCurrency(totalPaid) }}</strong>.</p>
                 <div class="flex flex-col gap-3">
                     <div v-if="props.transaction.customer_id" class="flex items-center">
-                        <RadioButton v-model="refundMethod" inputId="refundBalance" value="balance" /><label
-                            for="refundBalance" class="ml-2">Abonar al saldo del cliente</label>
+                        <RadioButton v-model="refundMethod" inputId="refundBalance" value="balance" /><label for="refundBalance" class="ml-2">Abonar al saldo del cliente</label>
                     </div>
                     <div class="flex items-center">
-                        <RadioButton v-model="refundMethod" inputId="refundCash" value="cash"
-                            :disabled="!activeSession" />
-                        <label for="refundCash" class="ml-2">Retirar efectivo de caja</label><small
-                            v-if="!activeSession" class="ml-2 text-orange-500">(Sin sesión activa)</small>
+                        <RadioButton v-model="refundMethod" inputId="refundCash" value="cash" :disabled="!activeSession" />
+                        <label for="refundCash" class="ml-2">Retirar efectivo de caja</label>
+                        <small v-if="!activeSession" class="ml-2 text-orange-500">(Sin sesión activa)</small>
                     </div>
                 </div>
             </div>
             <template #footer>
                 <Button label="Cancelar" severity="secondary" @click="isRefundModalVisible = false" text />
-                <Button label="Confirmar" icon="pi pi-check" @click="confirmRefund" :loading="refundProcessing"
-                    :disabled="refundMethod === 'cash' && !activeSession" />
+                <Button label="Confirmar" icon="pi pi-check" @click="confirmRefund" :loading="refundProcessing" :disabled="refundMethod === 'cash' && !activeSession" />
             </template>
         </Dialog>
 
-        <!-- Modal de Información de Intercambio (NUEVO) -->
-        <ProductExchangeModal v-if="transaction" v-model:visible="isProductExchangeModalVisible"
-            :transaction="transaction" :user-bank-accounts="userBankAccounts" @success="router.reload()" />
+        <!-- Modal de Edición de Pago (Migrado de Dropdown a Select) -->
+        <Dialog v-model:visible="isEditPaymentModalVisible" modal header="Editar Pago Realizado" :style="{ width: '35rem' }">
+            <div class="p-fluid grid gap-4 mt-2">
+                <div class="field col-12">
+                    <label class="font-bold">Monto del pago</label>
+                    <InputNumber v-model="editForm.amount" mode="currency" currency="MXN" locale="es-MX" :min="0.01" autofocus />
+                    <small v-if="editForm.errors.amount" class="text-red-500">{{ editForm.errors.amount }}</small>
+                </div>
 
-        <!-- Modal de Pagos (Para abonos) -->
-        <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="pendingAmount"
-            :client="transaction.customer" :loading="isPaymentProcessing" payment-mode="flexible"
-            @submit="handlePaymentSubmit" />
+                <div class="field col-12">
+                    <label class="font-bold">Método de pago</label>
+                    <!-- Migrado a Select para PrimeVue 4 -->
+                    <Select v-model="editForm.payment_method" :options="paymentMethods" optionLabel="label" optionValue="value" placeholder="Seleccione método" />
+                    <small v-if="editForm.errors.payment_method" class="text-red-500">{{ editForm.errors.payment_method }}</small>
+                </div>
 
-        <!-- Modales de Sesión -->
-        <StartSessionModal v-model:visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
-            :user-bank-accounts="userBankAccounts" />
+                <!-- Selección de cuenta (Solo si no es efectivo) -->
+                <div v-if="editForm.payment_method !== 'efectivo' && editForm.payment_method !== 'saldo'" class="field col-12">
+                    <label class="font-bold">Cuenta bancaria de destino</label>
+                    <!-- Migrado a Select para PrimeVue 4 y uso de safeBankAccounts -->
+                    <Select v-model="editForm.bank_account_id" :options="safeBankAccounts" optionLabel="name" optionValue="id" placeholder="Seleccione cuenta" showClear />
+                    <small v-if="editForm.errors.bank_account_id" class="text-red-500">{{ editForm.errors.bank_account_id }}</small>
+                </div>
+
+                <div class="field col-12">
+                    <label class="font-bold">Notas internas</label>
+                    <Textarea v-model="editForm.notes" rows="3" placeholder="Referencia de transferencia, folio de tarjeta, etc." />
+                    <small v-if="editForm.errors.notes" class="text-red-500">{{ editForm.errors.notes }}</small>
+                </div>
+            </div>
+            <template #footer>
+                <Button label="Cancelar" severity="secondary" @click="isEditPaymentModalVisible = false" text />
+                <Button label="Guardar Cambios" icon="pi pi-save" @click="submitEditPayment" :loading="editForm.processing" />
+            </template>
+        </Dialog>
+
+        <ProductExchangeModal v-if="transaction" v-model:visible="isProductExchangeModalVisible" :transaction="transaction" :user-bank-accounts="userBankAccounts" @success="router.reload()" />
+        <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="pendingAmount" :client="transaction.customer" :loading="isPaymentProcessing" payment-mode="flexible" @submit="handlePaymentSubmit" />
+        <StartSessionModal v-model:visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters" :user-bank-accounts="userBankAccounts" />
         <JoinSessionModal v-model:visible="isJoinSessionModalVisible" :sessions="joinableSessions" />
-
     </AppLayout>
 </template>

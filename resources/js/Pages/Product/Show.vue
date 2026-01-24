@@ -69,7 +69,7 @@ const formatDate = (dateString) => {
     return date.toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
 };
 
-// --- AÑADIDO: Funciones auxiliares para fecha ---
+// --- Funciones auxiliares para fecha ---
 const formatDateOnly = (dateString) => {
     if (!dateString) return 'N/A';
     try {
@@ -87,7 +87,7 @@ const isExpired = (dateString) => {
     return expiration < today;
 };
 
-// --- AÑADIDO: Función para formatear moneda ---
+// --- Función para formatear moneda ---
 const formatCurrency = (value) => {
     if (value === null || value === undefined) return 'N/A';
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
@@ -165,6 +165,20 @@ const generalImages = computed(() =>
     (props.product.media || []).filter(m => m.collection_name === 'product-general-images')
 );
 
+// --- NUEVA LÓGICA DE GALERÍA CON ZOOM ---
+const selectedImageIndex = ref(0);
+
+const currentGeneralImage = computed(() => {
+    if (generalImages.value && generalImages.value.length > 0) {
+        if (selectedImageIndex.value >= generalImages.value.length) {
+            selectedImageIndex.value = 0;
+        }
+        return generalImages.value[selectedImageIndex.value];
+    }
+    return null;
+});
+// ----------------------------------------
+
 // Genera un mapa de 'Opción' -> 'URL Imagen' (ej. 'Rojo' -> 'url...')
 const variantImages = computed(() => {
     const media = props.product.media || [];
@@ -211,7 +225,7 @@ const getVariantImage = (attributes) => {
 
 const isVariantProduct = computed(() => props.product.product_attributes && props.product.product_attributes.length > 0);
 
-// --- AÑADIDO: Computed property para los niveles de precio ---
+// --- Computed property para los niveles de precio ---
 const priceTiers = computed(() => {
     // Asegurarse de que exista y sea un array antes de ordenar
     if (!props.product.price_tiers || !Array.isArray(props.product.price_tiers)) {
@@ -242,26 +256,36 @@ const totalAvailable = computed(() => props.product.available_stock);
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Columna Izquierda -->
+            <!-- Columna Izquierda (Imágenes) -->
             <div class="lg:col-span-1 space-y-6">
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <Galleria :value="generalImages" :numVisible="3" containerStyle="max-width: 640px;">
-                        <template #item="slotProps">
-                            <img :src="slotProps.item.original_url" :alt="slotProps.item.name" class="h-80 object-contain"
-                                style="width: 100%; display: block;" />
-                        </template>
-                        <template #thumbnail="slotProps">
-                            <img :src="slotProps.item.original_url" :alt="slotProps.item.name" style="display: block;"
-                                class="h-16 w-16 object-cover" />
-                        </template>
-                    </Galleria>
-                    <div v-if="generalImages.length === 0" class="text-center text-gray-500 py-8">
-                        No hay imágenes generales.
+                    <!-- REEMPLAZO DE GALLERIA POR COMPONENTE IMAGE CON PREVIEW -->
+                    <div v-if="generalImages.length > 0">
+                        <div class="flex justify-center mb-4 bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden border border-gray-100 dark:border-gray-600">
+                            <!-- El componente Image tiene la propiedad 'preview' para zoom/fullscreen -->
+                            <Image :src="currentGeneralImage?.original_url" :alt="product.name" preview 
+                                imageClass="w-full h-80 object-contain p-2" />
+                        </div>
+                        
+                        <!-- Tira de Miniaturas -->
+                        <div v-if="generalImages.length > 1" class="flex gap-2 overflow-x-auto py-2 px-1">
+                            <button v-for="(img, index) in generalImages" :key="img.id" 
+                                @click="selectedImageIndex = index"
+                                class="relative rounded-md overflow-hidden border-2 transition-all flex-shrink-0 focus:outline-none"
+                                :class="selectedImageIndex === index ? 'border-primary-500 ring-2 ring-primary-200' : 'border-transparent opacity-70 hover:opacity-100'">
+                                <img :src="img.original_url" :alt="img.name" class="w-16 h-16 object-cover bg-gray-50" />
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div v-else class="text-center text-gray-500 py-8 flex flex-col items-center">
+                        <i class="pi pi-image text-4xl mb-2 text-gray-300"></i>
+                        <p>No hay imágenes generales.</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Columna Derecha -->
+            <!-- Columna Derecha (Información) -->
             <div class="lg:col-span-2 space-y-6">
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -278,6 +302,12 @@ const totalAvailable = computed(() => props.product.available_stock);
                                     <Button v-if="product.sku && hasPermission('pos.access')" @click="openPrintModal" icon="pi pi-print"
                                         text rounded size="small" v-tooltip.bottom="'Imprimir Etiqueta'"></Button>
                                 </li>
+                                <!-- AÑADIDO: Campo de Ubicación -->
+                                <li class="flex">
+                                    <span class="text-gray-500 dark:text-gray-400 w-24">Ubicación</span> 
+                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.location || 'N/A' }}</span>
+                                </li>
+                                <!-- FIN AÑADIDO -->
                                 <li class="flex"><span class="text-gray-500 dark:text-gray-400 w-24">Categoría</span>
                                     <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.category?.name || 'N/A' }}</span>
                                 </li>
@@ -294,7 +324,7 @@ const totalAvailable = computed(() => props.product.available_stock);
                                     <span class="text-gray-500 dark:text-gray-400">Precio (1 pieza)</span> 
                                     <span class="font-medium text-lg text-gray-800 dark:text-gray-200">{{ formatCurrency(product.selling_price) }}</span>
                                 </li>
-                                <!-- --- INICIO: Mostrar Precios de Mayoreo --- -->
+                                <!-- Mostrar Precios de Mayoreo -->
                                 <li v-if="priceTiers.length > 0" class="pt-3 border-t border-gray-200 dark:border-gray-700">
                                     <span class="text-gray-500 dark:text-gray-400 block mb-2 font-medium">Precios de mayoreo:</span>
                                     <table class="w-full text-xs text-left">
@@ -312,7 +342,6 @@ const totalAvailable = computed(() => props.product.available_stock);
                                         </tbody>
                                     </table>
                                 </li>
-                                <!-- --- FIN: Mostrar Precios de Mayoreo --- -->
                                 <li v-if="hasPermission('products.see_cost_price')" class="flex justify-between pt-3 mt-3">
                                     <span class="text-gray-500 dark:text-gray-400">Precio de Compra</span> 
                                     <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatCurrency(product.cost_price) }}</span>
@@ -365,7 +394,6 @@ const totalAvailable = computed(() => props.product.available_stock);
                         <DataTable :value="product.product_attributes" class="p-datatable-sm">
                             <Column header="Imagen">
                                <template #body="{ data }">
-                                    <!-- CORRECCIÓN: Usamos la función auxiliar robusta getVariantImage -->
                                     <img v-if="getVariantImage(data.attributes)"
                                         :src="getVariantImage(data.attributes)"
                                         class="size-12 object-contain rounded-md" />
@@ -420,7 +448,7 @@ const totalAvailable = computed(() => props.product.available_stock);
                         </div>
                     </div>
 
-                    <!-- --- NUEVA SECCIÓN: Tabla de Apartados Activos --- -->
+                    <!-- Tabla de Apartados Activos -->
                     <div v-if="activeLayaways && activeLayaways.length > 0" class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                         <h5 class="font-semibold mb-3 text-gray-800 dark:text-gray-200">Unidades apartadas (detalle)</h5>
                         <DataTable :value="activeLayaways" class="p-datatable-sm" responsiveLayout="scroll" sortField="date" :sortOrder="-1">
@@ -430,7 +458,6 @@ const totalAvailable = computed(() => props.product.available_stock);
                                 </template>
                             </Column>
                             
-                            <!-- NUEVA COLUMNA -->
                             <Column field="layaway_expiration_date" header="Vencimiento" sortable>
                                 <template #body="{ data }">
                                     <span :class="{'text-red-500 font-bold': isExpired(data.layaway_expiration_date), 'text-gray-700 dark:text-gray-300': !isExpired(data.layaway_expiration_date)}">
@@ -438,7 +465,6 @@ const totalAvailable = computed(() => props.product.available_stock);
                                     </span>
                                 </template>
                             </Column>
-                            <!-- FIN NUEVA COLUMNA -->
 
                             <Column field="customer_name" header="Cliente" sortable>
                                     <template #body="{ data }">
@@ -459,7 +485,6 @@ const totalAvailable = computed(() => props.product.available_stock);
                             <Column field="description" header="Descripción (Item)"></Column>
                         </DataTable>
                     </div>
-                    <!-- --- FIN DE NUEVA SECCIÓN --- -->
 
                 </div>
 

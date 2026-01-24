@@ -244,6 +244,10 @@ const getStockSeverity = (product) => {
                         </template>
                     </Column>
                     <Column field="name" header="Nombre" sortable></Column>
+                    
+                    <!-- NUEVA COLUMNA DE UBICACIÓN -->
+                    <Column field="location" header="Ubicación" sortable></Column>
+
                     <Column field="current_stock" header="Existencias" sortable>
                         <template #body="{ data }">
                             <div class="flex items-center space-x-2">

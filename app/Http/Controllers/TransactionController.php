@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\CashRegisterSessionStatus;
 use App\Enums\CustomerBalanceMovementType;
+use App\Enums\PaymentMethod;
 use App\Enums\QuoteStatus;
 use App\Enums\SessionCashMovementType;
 use App\Enums\TemplateContextType;
@@ -13,6 +14,7 @@ use App\Enums\TransactionStatus;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
 use App\Models\Customer;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Quote;
 use App\Models\Transaction;
@@ -39,6 +41,7 @@ class TransactionController extends Controller implements HasMiddleware
             new Middleware('can:transactions.cancel', only: ['cancel']),
             new Middleware('can:transactions.refund', only: ['refund']),
             new Middleware('can:transactions.add_payment', only: ['addPayment']),
+            new Middleware('can:transactions.edit_payment', only: ['updatePayment']),
             new Middleware('can:transactions.exchange', only: ['exchange']),
         ];
     }
@@ -424,6 +427,57 @@ class TransactionController extends Controller implements HasMiddleware
         }
 
         return redirect()->back()->with('success', 'Devolución generada con éxito.');
+    }
+
+    /**
+     * Actualiza un pago existente.
+     */
+    public function updatePayment(Request $request, Transaction $transaction, Payment $payment)
+    {
+        // 1. Validación básica
+        $validated = $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'payment_method' => 'required|string',
+            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'notes' => 'nullable|string|max:255',
+        ]);
+
+        DB::transaction(function () use ($transaction, $payment, $validated) {
+            // 2. Lógica para limpiar bank_account si es efectivo
+            if ($validated['payment_method'] === PaymentMethod::CASH->value) {
+                $validated['bank_account_id'] = null;
+            }
+
+            // 3. Actualizar el pago
+            $payment->update([
+                'amount' => $validated['amount'],
+                'payment_method' => $validated['payment_method'],
+                'bank_account_id' => $validated['bank_account_id'],
+                'notes' => $validated['notes'],
+            ]);
+
+            // 4. Recalcular el estatus de la transacción
+            // Sumamos todos los pagos completados (incluyendo el que acabamos de editar)
+            $totalPaid = $transaction->payments()
+                ->where('status', \App\Enums\PaymentStatus::COMPLETED)
+                ->sum('amount');
+
+            // Actualizamos el estatus basado en el nuevo total pagado
+            if ($totalPaid >= $transaction->total) {
+                if ($transaction->status !== TransactionStatus::COMPLETED) {
+                    $transaction->update(['status' => TransactionStatus::COMPLETED]);
+                }
+            } else {
+                // Si faltaba dinero y estaba completada (por error anterior), la regresamos a pendiente
+                // OJO: Si es 'ON_LAYAWAY' (apartado), quizás quieras mantener ese estatus.
+                // Aquí asumimos lógica simple: Pagada o Pendiente.
+                if ($transaction->status === TransactionStatus::COMPLETED) {
+                    $transaction->update(['status' => TransactionStatus::PENDING]);
+                }
+            }
+        });
+
+        return back()->with('success', 'Pago actualizado correctamente.');
     }
 
     public function searchProducts(Request $request)

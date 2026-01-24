@@ -14,6 +14,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/transactions/{transaction}/payment', [TransactionController::class, 'addPayment'])
         ->name('transactions.addPayment');
 
+    Route::put('/transactions/{transaction}/payments/{payment}', [TransactionController::class, 'updatePayment'])
+        ->name('transactions.updatePayment');
+
     Route::post('/transactions/{transaction}/exchange', [TransactionController::class, 'exchange'])
         ->name('transactions.exchange');
 

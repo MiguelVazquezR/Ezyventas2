@@ -249,7 +249,7 @@ const getTransactionStatusTagSeverity = (status) => {
                 </div>
             </div>
 
-            <!-- KPIs - Ahora 5 KPIs en una fila (o adaptable) -->
+            <!-- KPIs - Ahora 6 KPIs en una fila (o adaptable) -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <!-- Ventas -->
                 <Card @click="openSalesModal" class="cursor-pointer hover:shadow-lg transition-shadow duration-150">
@@ -345,6 +345,7 @@ const getTransactionStatusTagSeverity = (status) => {
                     </template> </Card>
 
                 <!-- KPI: Ticket Promedio (Nuevo) -->
+                <!-- Opcional: Se puede mover a otra fila si se desea 3 por fila, o dejar aquí para grid auto -->
                 <Card> <template #content>
                         <div class="flex items-center justify-between mb-2">
                             <span class="text-gray-500">Monto promedio por venta</span>
@@ -361,6 +362,25 @@ const getTransactionStatusTagSeverity = (status) => {
                         </div>
                         <p class="text-xs text-gray-400 mt-2">vs {{ formatCurrency(kpis.averageTicket.previous) }}
                             periodo ant.</p>
+                    </template>
+                </Card>
+               
+                <!-- Margen de Utilidad (Nuevo) -->
+                <Card>
+                    <template #content>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-gray-500">% Margen de utilidad</span>
+                            <i class="pi pi-percentage p-2 bg-orange-100 text-orange-600 rounded-full"></i>
+                        </div>
+                        <p class="text-2xl font-bold" :class="kpis.utilityMargin.current >= 0 ? 'text-gray-800 dark:text-gray-200' : 'text-red-600'">
+                            {{ kpis.utilityMargin.current }}%
+                        </p>
+                        <div class="flex items-center text-sm mt-1" :class="kpis.utilityMargin.change >= 0 ? 'text-green-500' : 'text-red-500'">
+                            <i class="pi" :class="kpis.utilityMargin.change >= 0 ? 'pi-arrow-up' : 'pi-arrow-down'"></i>
+                            <span class="font-semibold mx-1">{{ Math.abs(kpis.utilityMargin.change) }}%</span>
+                            <span>(puntos)</span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-2">vs {{ kpis.utilityMargin.previous }}% periodo ant.</p>
                     </template>
                 </Card>
             </div>
@@ -618,6 +638,31 @@ const getTransactionStatusTagSeverity = (status) => {
                         </div>
                     </AccordionContent>
                 </AccordionPanel>
+                
+                <!-- AGREGADO: Explicación de Margen de Utilidad -->
+                <AccordionPanel value="3">
+                    <AccordionHeader>% Margen de utilidad</AccordionHeader>
+                    <AccordionContent>
+                        <div class="p-4 space-y-3">
+                            <p class="text-lg m-0">
+                                Indica qué porcentaje de tus ventas se convierte en ganancia real.
+                            </p>
+                            <div class="text-center">
+                                <Tag severity="warn" class="!text-lg !bg-orange-100 !text-orange-600 font-mono">
+                                    (Ganancia Neta / Ventas Totales) * 100
+                                </Tag>
+                            </div>
+                            <div>
+                                <p class="font-semibold text-gray-700 dark:text-gray-300 m-0">Ejemplo:</p>
+                                <p>
+                                    Si vendes $1,000 y gastas $800, tu ganancia es $200. Tu margen es del <strong>20%</strong>.
+                                    Significa que de cada $1 peso que vendes, te quedas con 20 centavos de ganancia.
+                                </p>
+                            </div>
+                        </div>
+                    </AccordionContent>
+                </AccordionPanel>
+
                 <AccordionPanel value="1">
                     <AccordionHeader>Flujo de dinero neto</AccordionHeader>
                     <AccordionContent>
