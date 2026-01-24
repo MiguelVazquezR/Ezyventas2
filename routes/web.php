@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Artisan;
 use Inertia\Inertia;
 use Laravel\Jetstream\Agent;
+use Illuminate\Http\Request;
+use App\Models\Waitlist;
 
 Route::get('/', function () {
     $agent = new Agent();
@@ -73,6 +75,9 @@ require __DIR__ . '/web/super-admin.php';
 // require __DIR__ . '/web/migrate-customers.php';
 // require __DIR__ . '/web/migrate-transactions.php';
 
+Route::get('/centro-ayuda', function () {
+    return Inertia::render('HelpCenter');
+})->name('help-center');
 
 //artisan commands -------------------
 Route::get('/clear-all', function () {
@@ -93,4 +98,19 @@ Route::get('/migrate', function () {
 Route::get('/fix-so', function () {
     Artisan::call('app:fix-service-order-folios');
     return 'fixed!.';
+});
+
+Route::post('/unirse-lista', function (Request $request) {
+    // 1. Validar que es un correo y que no esté repetido
+    $request->validate([
+        'email' => 'required|email|unique:waitlists,email'
+    ]);
+
+    // 2. Crear el registro en la base de datos
+    Waitlist::create([
+        'email' => $request->email
+    ]);
+
+    // 3. Responder que todo salió bien
+    return response()->json(['message' => 'Guardado con éxito']);
 });
