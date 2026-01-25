@@ -205,7 +205,7 @@ const formatCurrency = (value) => {
                     | {{ displayReservedStock }} apartados
                 </span>
             </span>
-            <button class="absolute top-4 right-4 bg-[#5c5c5c]/70 dark:bg-black/50 text-white rounded-[6px] size-7 border border-white flex items-center justify-center"
+            <button class="absolute top-1 right-1 bg-[#5c5c5c]/70 dark:bg-black/50 text-white rounded-[6px] size-7 border border-white flex items-center justify-center"
                 @click="emit('showDetails', product)" v-tooltip.bottom="'Ver detalles'">
                 <i class="pi pi-arrow-up-right-and-arrow-down-left-from-center !text-xs"></i>
             </button>

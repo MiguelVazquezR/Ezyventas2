@@ -99,7 +99,6 @@ const submitEditPayment = () => {
         preserveScroll: true,
         onSuccess: () => {
             isEditPaymentModalVisible.value = false;
-            toast.add({ severity: 'success', summary: 'Actualizado', detail: 'El pago ha sido modificado correctamente.', life: 3000 });
         }
     });
 };
@@ -124,17 +123,26 @@ const pendingAmount = computed(() => {
     return diff < 0.01 ? 0 : diff;
 });
 
-// --- Acciones Permitidas ---
+// --- ACCIONES PERMITIDAS (MODIFICADO) ---
 const canCancel = computed(() => {
     if (!localTransaction.value?.status) return false;
-    return !['cancelado', 'reembolsado'].includes(localTransaction.value.status) && totalPaid.value === 0;
+    const status = localTransaction.value.status;
+    
+    // No se puede cancelar lo ya cancelado o reembolsado
+    if (['cancelado', 'reembolsado'].includes(status)) return false;
+
+    // Se puede cancelar si no tiene pagos...
+    if (totalPaid.value === 0) return true;
+
+    // ...O si es un APARTADO (aunque tenga abonos, el sistema ahora permite cancelarlos y devolver saldo)
+    return status === 'apartado';
 });
 
 const canRefund = computed(() => {
     if (!localTransaction.value?.status) return false;
     const isCompleted = localTransaction.value.status === 'completado';
     const isPendingWithPayments = localTransaction.value.status === 'pendiente' && totalPaid.value > 0;
-    const isOnLayaway = localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway';
+    const isOnLayaway = localTransaction.value.status === 'apartado';
     return isCompleted || isPendingWithPayments || isOnLayaway;
 });
 
@@ -182,13 +190,22 @@ const handlePaymentSubmit = (paymentData) => {
 };
 
 const cancelSale = () => {
+    const isLayaway = localTransaction.value.status === 'apartado';
+    const message = isLayaway 
+        ? `¿Seguro que quieres cancelar este APARTADO? Se liberará el inventario reservado y cualquier abono realizado se devolverá al saldo del cliente.`
+        : `¿Estás seguro de que quieres cancelar la venta #${localTransaction.value.folio}?`;
+
     confirm.require({
-        message: `¿Estás seguro de que quieres cancelar la venta #${localTransaction.value.folio}?`,
-        header: 'Confirmar Cancelación',
+        message: message,
+        header: 'Confirmar cancelación',
+        icon: 'pi pi-exclamation-triangle',
+        acceptClass: 'p-button-danger',
         accept: () => {
             router.post(route('transactions.cancel', localTransaction.value.id), {}, {
                 preserveScroll: true,
-                onSuccess: () => { if (localTransaction.value) localTransaction.value.status = 'cancelado'; }
+                onSuccess: () => { 
+                    // toast.add({ severity: 'success', summary: 'Cancelado', detail: 'Venta/Apartado cancelado con éxito', life: 3000 });
+                }
             });
         }
     });
@@ -218,7 +235,7 @@ const actionItems = computed(() => [
     { label: 'Imprimir ticket', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
     { label: 'Generar devolución', icon: 'pi pi-replay', command: openRefundModal, disabled: !canRefund.value, visible: hasPermission('transactions.refund') },
-    { label: 'Cancelar venta', icon: 'pi pi-times-circle', class: 'text-red-500', command: cancelSale, disabled: !canCancel.value, visible: hasPermission('transactions.cancel') },
+    { label: localTransaction.value.status === 'apartado' ? 'Cancelar apartado' : 'Cancelar venta', icon: 'pi pi-times-circle', class: 'text-red-500', command: cancelSale, disabled: !canCancel.value, visible: hasPermission('transactions.cancel') },
 ]);
 
 const getStatusSeverity = (status) => ({ completado: 'success', pendiente: 'warn', cancelado: 'danger', reembolsado: 'info', on_layaway: 'warn', apartado: 'warn' }[status] || 'secondary');
@@ -362,7 +379,7 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                                         <span class="font-mono font-semibold">{{ formatCurrency(payment.amount) }}</span>
                                         <!-- BOTÓN DE EDICIÓN: Siempre visible si tiene permiso -->
                                         <Button 
-                                            v-if="hasPermission('transactions.edit_payment')"
+                                            v-if="hasPermission('transactions.edit_payment') && localTransaction.status !== 'cancelado' && localTransaction.status !== 'reembolsado'"
                                             icon="pi pi-pencil" 
                                             class="p-button-text p-button-sm p-button-rounded" 
                                             v-tooltip.top="'Editar pago'"
@@ -401,39 +418,59 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
             </template>
         </Dialog>
 
-        <!-- Modal de Edición de Pago (Migrado de Dropdown a Select) -->
-        <Dialog v-model:visible="isEditPaymentModalVisible" modal header="Editar Pago Realizado" :style="{ width: '35rem' }">
-            <div class="p-fluid grid gap-4 mt-2">
-                <div class="field col-12">
-                    <label class="font-bold">Monto del pago</label>
-                    <InputNumber v-model="editForm.amount" mode="currency" currency="MXN" locale="es-MX" :min="0.01" autofocus />
-                    <small v-if="editForm.errors.amount" class="text-red-500">{{ editForm.errors.amount }}</small>
+        <!-- Modal de Edición de Pago (Rediseñado con Tailwind) -->
+        <Dialog v-model:visible="isEditPaymentModalVisible" modal header="Editar Pago Realizado" :style="{ width: '32rem' }">
+            <div class="flex flex-col gap-6 pt-2">
+                
+                <!-- Monto -->
+                <div class="flex flex-col gap-2">
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">Monto del pago</label>
+                    <InputNumber v-model="editForm.amount" mode="currency" currency="MXN" locale="es-MX" :min="0.01" autofocus class="w-full" />
+                    <small v-if="editForm.errors.amount" class="text-red-500 font-medium">{{ editForm.errors.amount }}</small>
                 </div>
 
-                <div class="field col-12">
-                    <label class="font-bold">Método de pago</label>
-                    <!-- Migrado a Select para PrimeVue 4 -->
-                    <Select v-model="editForm.payment_method" :options="paymentMethods" optionLabel="label" optionValue="value" placeholder="Seleccione método" />
-                    <small v-if="editForm.errors.payment_method" class="text-red-500">{{ editForm.errors.payment_method }}</small>
+                <!-- Método -->
+                <div class="flex flex-col gap-2">
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">Método de pago</label>
+                    <Select v-model="editForm.payment_method" :options="paymentMethods" optionLabel="label" optionValue="value" placeholder="Seleccione método" class="w-full" />
+                    <small v-if="editForm.errors.payment_method" class="text-red-500 font-medium">{{ editForm.errors.payment_method }}</small>
                 </div>
 
-                <!-- Selección de cuenta (Solo si no es efectivo) -->
-                <div v-if="editForm.payment_method !== 'efectivo' && editForm.payment_method !== 'saldo'" class="field col-12">
-                    <label class="font-bold">Cuenta bancaria de destino</label>
-                    <!-- Migrado a Select para PrimeVue 4 y uso de safeBankAccounts -->
-                    <Select v-model="editForm.bank_account_id" :options="safeBankAccounts" optionLabel="name" optionValue="id" placeholder="Seleccione cuenta" showClear />
-                    <small v-if="editForm.errors.bank_account_id" class="text-red-500">{{ editForm.errors.bank_account_id }}</small>
+                <!-- Cuenta Bancaria (Mejorada con Slot para mostrar Titular) -->
+                <div v-if="editForm.payment_method !== 'efectivo' && editForm.payment_method !== 'saldo'" class="flex flex-col gap-2">
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">Cuenta bancaria de destino</label>
+                    <Select 
+                        v-model="editForm.bank_account_id" 
+                        :options="safeBankAccounts" 
+                        optionLabel="bank_name" 
+                        optionValue="id" 
+                        placeholder="Seleccione cuenta"  
+                        class="w-full"
+                    >
+                        <template #option="slotProps">
+                            <div class="flex flex-col py-0.5">
+                                <span class="font-semibold text-sm">{{ slotProps.option.bank_name }}</span>
+                                <span class="text-xs text-gray-500 italic">{{ slotProps.option.owner_name }} ({{ slotProps.option.account_name }})</span>
+                            </div>
+                        </template>
+                    </Select>
+                    <small v-if="editForm.errors.bank_account_id" class="text-red-500 font-medium">{{ editForm.errors.bank_account_id }}</small>
                 </div>
 
-                <div class="field col-12">
-                    <label class="font-bold">Notas internas</label>
-                    <Textarea v-model="editForm.notes" rows="3" placeholder="Referencia de transferencia, folio de tarjeta, etc." />
-                    <small v-if="editForm.errors.notes" class="text-red-500">{{ editForm.errors.notes }}</small>
+                <!-- Notas -->
+                <div class="flex flex-col gap-2">
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">Notas internas / Referencia</label>
+                    <Textarea v-model="editForm.notes" rows="3" placeholder="Ej. Folio de transferencia, terminal usada, etc." class="w-full" />
+                    <small v-if="editForm.errors.notes" class="text-red-500 font-medium">{{ editForm.errors.notes }}</small>
                 </div>
+
             </div>
+
             <template #footer>
-                <Button label="Cancelar" severity="secondary" @click="isEditPaymentModalVisible = false" text />
-                <Button label="Guardar Cambios" icon="pi pi-save" @click="submitEditPayment" :loading="editForm.processing" />
+                <div class="flex justify-end items-center gap-3">
+                    <Button label="Cancelar" severity="secondary" @click="isEditPaymentModalVisible = false" text />
+                    <Button label="Guardar Cambios" icon="pi pi-save" @click="submitEditPayment" :loading="editForm.processing" severity="primary" />
+                </div>
             </template>
         </Dialog>
 
