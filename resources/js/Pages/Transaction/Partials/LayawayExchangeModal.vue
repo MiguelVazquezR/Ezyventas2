@@ -69,6 +69,9 @@ const initModal = () => {
     if (activeSession.value) {
         form.cash_register_session_id = activeSession.value.id;
     }
+    // Limpiar búsqueda
+    searchScanQuery.value = '';
+    searchResults.value = [];
 };
 
 // --- Lógica de Carrito ---
@@ -82,10 +85,29 @@ const cartTotal = computed(() => {
     return activeCartItems.value.reduce((sum, item) => sum + (item.quantity * (item.price - item.discount)), 0);
 });
 
-// --- Lógica de Búsqueda ---
-const searchProducts = async () => {
-    if (searchScanQuery.value.length < 2) return;
+// --- Lógica de Búsqueda (Con Debounce) ---
+let debounceTimeout = null;
+
+const handleSearchInput = () => {
+    if (debounceTimeout) clearTimeout(debounceTimeout);
+
+    if (searchScanQuery.value.length < 2) {
+        searchResults.value = [];
+        return;
+    }
+
     isSearching.value = true;
+    debounceTimeout = setTimeout(() => {
+        searchProducts();
+    }, 300); // Esperar 300ms después de dejar de escribir
+};
+
+const searchProducts = async () => {
+    if (searchScanQuery.value.length < 2) {
+        isSearching.value = false;
+        return;
+    }
+
     try {
         const response = await axios.get(route('transactions.search-products'), {
             params: { query: searchScanQuery.value }
@@ -128,8 +150,9 @@ const addToCart = (product, variant = null) => {
         });
     }
 
-    searchScanQuery.value = '';
-    searchResults.value = [];
+    // Opcional: Limpiar búsqueda al agregar
+    // searchScanQuery.value = '';
+    // searchResults.value = [];
     toast.add({ severity: 'success', summary: 'Agregado', detail: 'Producto agregado al carrito', life: 1000 });
 };
 
@@ -139,7 +162,6 @@ const removeFromCart = (index) => {
 
 const formatAttributes = (attrs) => {
     if (!attrs) return '';
-    // Manejo de attrs si vienen como string JSON o objeto
     const attributes = typeof attrs === 'string' ? JSON.parse(attrs) : attrs;
     return Object.values(attributes).join(' / ');
 };
@@ -154,18 +176,13 @@ const newPendingBalance = computed(() => {
 });
 
 const balanceDifference = computed(() => {
-    // Si TotalNuevo > TotalViejo: Diferencia positiva (Debe más)
-    // Si TotalNuevo < TotalViejo: Diferencia negativa (Sobra dinero)
-    // Pero aquí lo importante es comparar contra lo PAGADO para ver la situación real del saldo.
-
-    // Simplemente: Total Nuevo - Lo que ya pagó.
     return cartTotal.value - previousPayments.value;
 });
 
 const differenceStatus = computed(() => {
-    if (balanceDifference.value > 0.01) return 'debt'; // Aún debe dinero (normal en apartados)
-    if (balanceDifference.value < -0.01) return 'refund'; // Pagó de más (excedente)
-    return 'settled'; // Exacto (poco probable pero posible)
+    if (balanceDifference.value > 0.01) return 'debt';
+    if (balanceDifference.value < -0.01) return 'refund';
+    return 'settled';
 });
 
 // --- Envío ---
@@ -184,15 +201,12 @@ const prepareSubmission = () => {
 };
 
 const submitExchange = () => {
-    // 1. Construir Returned Items
-    // CORRECCIÓN: Parsear a entero explícitamente para evitar error de validación "must be an integer"
+    // Parseo explícito a enteros
     form.returned_items = props.transaction.items.map(item => ({
         item_id: item.id,
         quantity: parseInt(item.quantity)
     }));
 
-    // 2. Construir New Items
-    // CORRECCIÓN: Parsear a entero también aquí por seguridad
     form.new_items = activeCartItems.value.map(item => ({
         id: item.product_id,
         quantity: parseInt(item.quantity),
@@ -202,11 +216,9 @@ const submitExchange = () => {
         product_attribute_id: item.product_attribute_id
     }));
 
-    // 3. Totales
     form.subtotal = cartSubtotal.value;
     form.total_discount = activeCartItems.value.reduce((sum, i) => sum + (i.quantity * i.discount), 0);
 
-    // 4. Pago Adicional (Opcional)
     form.payments = [];
     if (form.payment_amount > 0) {
         form.payments.push({
@@ -235,60 +247,64 @@ const formatCurrency = (value) => {
 
 <template>
     <Dialog :visible="visible" @update:visible="val => emit('update:visible', val)" modal
-        header="Modificar Productos del Apartado" :style="{ width: '90vw', maxWidth: '1000px' }" :maximizable="true">
+        header="Modificar productos del apartado" :style="{ width: '90vw', maxWidth: '1000px' }" :maximizable="true">
         <div v-if="step === 1" class="flex flex-col lg:flex-row gap-6 h-full min-h-[500px]">
             <!-- COLUMNA IZQUIERDA: Búsqueda -->
             <div class="lg:w-1/3 flex flex-col gap-4 border-r pr-4">
-                <div class="relative">
-                    <span class="p-input-icon-left w-full">
-                        <i class="pi pi-search" />
-                        <InputText v-model="searchScanQuery" placeholder="Buscar producto..." class="w-full"
-                            @keyup.enter="searchProducts" />
-                    </span>
-                    <Button v-if="searchScanQuery.length >= 2" icon="pi pi-arrow-right"
-                        class="absolute right-0 top-0 p-button-text" @click="searchProducts" />
+                <div class="w-full">
+                    <IconField iconPosition="left" class="w-full">
+                        <InputIcon class="pi pi-search" />
+                        <InputText v-model="searchScanQuery" placeholder="Buscar productos..." class="w-full"
+                            @input="handleSearchInput" autofocus />
+                    </IconField>
                 </div>
 
                 <div class="flex-1 overflow-y-auto max-h-[400px]">
                     <div v-if="isSearching" class="flex justify-center p-4">
-                        <ProgressSpinner style="width: 40px; height: 40px" />
+                        <ProgressSpinner style="width: 30px; height: 30px" />
                     </div>
 
                     <div v-else-if="searchResults.length > 0" class="flex flex-col gap-2">
+                        <!-- Item Compacto -->
                         <div v-for="product in searchResults" :key="product.id"
-                            class="border rounded p-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <p class="font-bold text-sm">{{ product.name }}</p>
-                                    <p class="text-xs text-gray-500">SKU: {{ product.sku }}</p>
-                                    <p class="font-semibold text-blue-600">{{ formatCurrency(product.selling_price) }}
-                                    </p>
-                                    <p class="text-xs">Stock: {{ product.current_stock }}</p>
+                            class="border rounded p-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition group">
+                            <div class="flex justify-between items-center">
+                                <div class="flex-1 min-w-0 pr-2">
+                                    <p class="font-bold text-sm truncate text-gray-800 dark:text-gray-200"
+                                        :title="product.name">{{ product.name }}</p>
+                                    <div class="flex items-center gap-2 text-xs text-gray-500 leading-tight my-0.5">
+                                        <span class="bg-gray-100 dark:bg-gray-700 px-1 rounded">SKU: {{ product.sku
+                                            }}</span>
+                                        <span>Stock: {{ product.current_stock }}</span>
+                                    </div>
+                                    <p class="font-semibold text-blue-600 text-sm">{{
+                                        formatCurrency(product.selling_price) }}</p>
                                 </div>
                                 <Button v-if="product.variants.length === 0" icon="pi pi-plus" size="small" rounded
-                                    @click="addToCart(product)" />
+                                    class="!w-8 !h-8" @click="addToCart(product)" />
                             </div>
 
-                            <!-- Variantes -->
-                            <div v-if="product.variants.length > 0"
-                                class="mt-2 pl-2 border-l-2 border-blue-200 space-y-2">
+                            <!-- Variantes Compactas -->
+                            <div v-if="product.variants.length > 0" class="mt-2 space-y-1">
                                 <div v-for="variant in product.variants" :key="variant.id"
-                                    class="flex justify-between items-center text-sm bg-white dark:bg-gray-700 p-2 rounded">
-                                    <div>
-                                        <span class="block font-medium">{{ formatAttributes(variant.attributes)
-                                            }}</span>
-                                        <span class="text-xs text-gray-500">Stock: {{ variant.current_stock }}</span>
-                                        <span class="text-xs font-bold ml-2">{{ formatCurrency(product.selling_price +
-                                            variant.selling_price_modifier) }}</span>
+                                    class="flex justify-between items-center text-xs bg-gray-50 dark:bg-gray-700/50 p-1.5 rounded border border-gray-100 dark:border-gray-600">
+                                    <div class="flex-1">
+                                        <span class="font-medium text-gray-700 dark:text-gray-300">{{
+                                            formatAttributes(variant.attributes) }}</span>
+                                        <div class="flex gap-2 text-[10px] text-gray-500">
+                                            <span>Stock: {{ variant.current_stock }}</span>
+                                            <span class="font-bold">{{ formatCurrency(product.selling_price +
+                                                variant.selling_price_modifier) }}</span>
+                                        </div>
                                     </div>
-                                    <Button icon="pi pi-plus" size="small" rounded text
+                                    <Button icon="pi pi-plus" size="small" rounded text class="!w-6 !h-6"
                                         @click="addToCart(product, variant)" />
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div v-else-if="searchScanQuery.length > 2" class="text-center text-gray-500 py-4">
+                    <div v-else-if="searchScanQuery.length > 2" class="text-center text-gray-500 py-4 text-sm">
                         No se encontraron productos.
                     </div>
                 </div>
@@ -296,7 +312,7 @@ const formatCurrency = (value) => {
 
             <!-- COLUMNA DERECHA: Carrito de Edición -->
             <div class="lg:w-2/3 flex flex-col h-full">
-                <h3 class="font-bold text-lg mb-2">Contenido Final del Apartado</h3>
+                <h3 class="font-bold text-lg mb-2">Contenido final del apartado</h3>
                 <p class="text-sm text-gray-500 mb-4">Ajusta las cantidades, elimina productos o agrega nuevos desde el
                     panel izquierdo.</p>
 
@@ -314,24 +330,26 @@ const formatCurrency = (value) => {
                         </thead>
                         <tbody>
                             <tr v-for="(item, index) in cart" :key="index"
-                                class="border-b bg-white dark:bg-gray-800 dark:border-gray-700">
-                                <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">
-                                    {{ item.name }}
-                                    <span v-if="item.original_item_id"
-                                        class="ml-2 text-[10px] bg-blue-100 text-blue-800 px-1 py-0.5 rounded border border-blue-200">Original</span>
-                                    <span v-else
-                                        class="ml-2 text-[10px] bg-green-100 text-green-800 px-1 py-0.5 rounded border border-green-200">Nuevo</span>
+                                class="border-b bg-white dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
+                                <td class="px-4 py-2 font-medium text-gray-900 dark:text-white">
+                                    <div class="flex flex-col">
+                                        <span>{{ item.name }}</span>
+                                        <span v-if="item.original_item_id"
+                                            class="w-fit text-[10px] bg-blue-100 text-blue-800 px-1 rounded border border-blue-200 mt-0.5">Original</span>
+                                        <span v-else
+                                            class="w-fit text-[10px] bg-green-100 text-green-800 px-1 rounded border border-green-200 mt-0.5">Nuevo</span>
+                                    </div>
                                 </td>
-                                <td class="px-4 py-3 text-center w-24">
+                                <td class="px-4 py-2 text-center w-24">
                                     <InputNumber v-model="item.quantity" showButtons buttonLayout="horizontal" :min="1"
-                                        inputClass="w-12 text-center p-1" class="h-8" />
+                                        inputClass="w-12 text-center p-1 text-sm" class="h-8" />
                                 </td>
-                                <td class="px-4 py-3 text-right">{{ formatCurrency(item.price) }}</td>
-                                <td class="px-4 py-3 text-right font-bold">{{ formatCurrency(item.quantity * item.price)
+                                <td class="px-4 py-2 text-right">{{ formatCurrency(item.price) }}</td>
+                                <td class="px-4 py-2 text-right font-bold">{{ formatCurrency(item.quantity * item.price)
                                     }}</td>
-                                <td class="px-4 py-3 text-center">
+                                <td class="px-4 py-2 text-center">
                                     <Button icon="pi pi-trash" severity="danger" text rounded size="small"
-                                        @click="removeFromCart(index)" />
+                                        class="!w-8 !h-8" @click="removeFromCart(index)" />
                                 </td>
                             </tr>
                             <tr v-if="cart.length === 0">
@@ -344,10 +362,10 @@ const formatCurrency = (value) => {
 
                 <div class="mt-4 p-4 bg-white dark:bg-gray-800 rounded shadow border flex justify-between items-center">
                     <div>
-                        <p class="text-sm text-gray-500">Total Productos: {{ activeCartItems.length }}</p>
+                        <p class="text-sm text-gray-500">Total productos: {{ activeCartItems.length }}</p>
                     </div>
                     <div class="text-right">
-                        <p class="text-sm text-gray-500 uppercase">Nuevo Total</p>
+                        <p class="text-xs text-gray-500 uppercase">Nuevo total</p>
                         <p class="text-2xl font-bold text-gray-800 dark:text-white">{{ formatCurrency(cartTotal) }}</p>
                     </div>
                 </div>
@@ -359,15 +377,15 @@ const formatCurrency = (value) => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <!-- Resumen -->
                 <div class="space-y-4">
-                    <h3 class="text-xl font-bold border-b pb-2">Resumen Financiero</h3>
+                    <h3 class="text-xl font-bold border-b pb-2">Resumen financiero</h3>
 
                     <div class="flex justify-between items-center py-2">
-                        <span class="text-gray-600">Nuevo Total del Apartado:</span>
+                        <span class="text-gray-600">Nuevo total del apartado:</span>
                         <span class="text-lg font-bold">{{ formatCurrency(cartTotal) }}</span>
                     </div>
 
                     <div class="flex justify-between items-center py-2 text-green-700 bg-green-50 px-2 rounded">
-                        <span>Abonado Anteriormente (Se transfiere):</span>
+                        <span>Abonado anteriormente (se transfiere):</span>
                         <span class="font-bold">- {{ formatCurrency(previousPayments) }}</span>
                     </div>
 
@@ -375,14 +393,14 @@ const formatCurrency = (value) => {
 
                     <div v-if="differenceStatus === 'debt'"
                         class="bg-orange-50 dark:bg-orange-900/20 p-4 rounded border border-orange-200">
-                        <p class="text-orange-800 dark:text-orange-200 font-semibold mb-1">Saldo Pendiente Restante</p>
+                        <p class="text-orange-800 dark:text-orange-200 font-semibold mb-1">Saldo pendiente restante</p>
                         <p class="text-3xl font-bold text-orange-600">{{ formatCurrency(balanceDifference) }}</p>
                         <p class="text-xs text-orange-700 mt-2">Este monto quedará como deuda en el nuevo apartado.</p>
                     </div>
 
                     <div v-if="differenceStatus === 'refund'"
                         class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded border border-blue-200">
-                        <p class="text-blue-800 dark:text-blue-200 font-semibold mb-1">Excedente a Favor</p>
+                        <p class="text-blue-800 dark:text-blue-200 font-semibold mb-1">Excedente a favor</p>
                         <p class="text-3xl font-bold text-blue-600">{{ formatCurrency(Math.abs(balanceDifference)) }}
                         </p>
                         <p class="text-xs text-blue-700 mt-2">El apartado se marcará como <strong>Completado</strong> y
@@ -392,32 +410,32 @@ const formatCurrency = (value) => {
 
                 <!-- Pago Adicional -->
                 <div v-if="differenceStatus === 'debt'" class="space-y-4 border-l pl-8">
-                    <h3 class="text-xl font-bold border-b pb-2">Abonar Diferencia (Opcional)</h3>
+                    <h3 class="text-xl font-bold border-b pb-2">Abonar diferencia (opcional)</h3>
                     <p class="text-sm text-gray-500">Si el cliente desea pagar la diferencia ahora, regístralo aquí. Si
                         no, déjalo en 0 para mantener la deuda.</p>
 
                     <div class="flex flex-col gap-2">
-                        <label class="font-bold">Monto a Pagar Ahora</label>
+                        <label class="font-bold text-sm">Monto a pagar ahora</label>
                         <InputNumber v-model="form.payment_amount" mode="currency" currency="MXN" locale="es-MX"
                             :max="balanceDifference" class="w-full" />
                     </div>
 
                     <div v-if="form.payment_amount > 0" class="space-y-4 animate-fade-in">
                         <div class="flex flex-col gap-2">
-                            <label class="font-bold">Método de Pago</label>
+                            <label class="font-bold text-sm">Método de pago</label>
                             <SelectButton v-model="form.payment_method"
-                                :options="['efectivo', 'tarjeta', 'transferencia']" class="w-full" />
+                                :options="['efectivo', 'tarjeta', 'transferencia']" class="w-full text-sm" />
                         </div>
 
                         <div v-if="form.payment_method !== 'efectivo'" class="flex flex-col gap-2">
-                            <label class="font-bold">Cuenta de Destino</label>
+                            <label class="font-bold text-sm">Cuenta de destino</label>
                             <Dropdown v-model="form.bank_account_id" :options="userBankAccounts" optionLabel="bank_name"
-                                optionValue="id" placeholder="Selecciona cuenta" class="w-full" />
+                                optionValue="id" placeholder="Selecciona cuenta" class="w-full text-sm" />
                         </div>
                     </div>
 
                     <div class="mt-4 p-3 bg-gray-100 rounded text-center">
-                        <p class="text-sm text-gray-600">Nuevo Saldo Pendiente Final</p>
+                        <p class="text-sm text-gray-600">Nuevo saldo pendiente final</p>
                         <p class="text-xl font-bold">{{ formatCurrency(newPendingBalance) }}</p>
                     </div>
                 </div>
@@ -428,7 +446,7 @@ const formatCurrency = (value) => {
             </div>
 
             <div class="flex flex-col gap-2 mt-4">
-                <label>Notas del Cambio</label>
+                <label class="text-sm font-bold">Notas del cambio</label>
                 <Textarea v-model="form.notes" rows="2" placeholder="Motivo del cambio de productos..."
                     class="w-full" />
             </div>
@@ -436,17 +454,17 @@ const formatCurrency = (value) => {
 
         <template #footer>
             <div class="flex justify-between w-full">
-                <Button v-if="step === 2" label="Volver a Editar" icon="pi pi-arrow-left" @click="step = 1" text
+                <Button v-if="step === 2" label="Volver a editar" icon="pi pi-arrow-left" @click="step = 1" text
                     severity="secondary" />
                 <div v-else></div> <!-- Spacer -->
 
                 <div class="flex gap-2">
                     <Button label="Cancelar" severity="secondary" @click="emit('update:visible', false)" text />
 
-                    <Button v-if="step === 1" label="Siguiente: Revisar Saldos" icon="pi pi-arrow-right" iconPos="right"
+                    <Button v-if="step === 1" label="Siguiente: revisar saldos" icon="pi pi-arrow-right" iconPos="right"
                         @click="prepareSubmission" />
 
-                    <Button v-if="step === 2" label="Confirmar Cambio" icon="pi pi-check" severity="success"
+                    <Button v-if="step === 2" label="Confirmar cambio" icon="pi pi-check" severity="success"
                         :loading="form.processing" @click="submitExchange" />
                 </div>
             </div>
