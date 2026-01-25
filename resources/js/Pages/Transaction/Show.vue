@@ -10,6 +10,7 @@ import StartSessionModal from '@/Components/StartSessionModal.vue';
 import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import { usePermissions } from '@/Composables';
 import ProductExchangeModal from './Partials/ProductExchangeModal.vue';
+import LayawayExchangeModal from './Partials/LayawayExchangeModal.vue'; // <--- IMPORTACIÓN NUEVA
 
 const props = defineProps({
     transaction: Object,
@@ -103,10 +104,17 @@ const submitEditPayment = () => {
     });
 };
 
-// --- Modal de Información de Intercambio ---
+// --- Modales de Intercambio ---
 const isProductExchangeModalVisible = ref(false);
+const isLayawayExchangeModalVisible = ref(false); // <--- NUEVO STATE
+
 const openExchangeModal = () => {
-    isProductExchangeModalVisible.value = true;
+    // Si es apartado, abrimos el modal específico
+    if (localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway') {
+        isLayawayExchangeModalVisible.value = true;
+    } else {
+        isProductExchangeModalVisible.value = true;
+    }
 };
 
 // --- Datos Computados de la Transacción ---
@@ -123,18 +131,12 @@ const pendingAmount = computed(() => {
     return diff < 0.01 ? 0 : diff;
 });
 
-// --- ACCIONES PERMITIDAS (MODIFICADO) ---
+// --- ACCIONES PERMITIDAS ---
 const canCancel = computed(() => {
     if (!localTransaction.value?.status) return false;
     const status = localTransaction.value.status;
-    
-    // No se puede cancelar lo ya cancelado o reembolsado
     if (['cancelado', 'reembolsado'].includes(status)) return false;
-
-    // Se puede cancelar si no tiene pagos...
     if (totalPaid.value === 0) return true;
-
-    // ...O si es un APARTADO (aunque tenga abonos, el sistema ahora permite cancelarlos y devolver saldo)
     return status === 'apartado';
 });
 
@@ -154,6 +156,8 @@ const canAddPayment = computed(() => {
 
 const canExchange = computed(() => {
     if (!localTransaction.value?.status) return false;
+    // Permitir intercambio también en apartados
+    if (localTransaction.value.status === 'apartado') return true;
     return !['cancelado', 'reembolsado'].includes(localTransaction.value.status);
 });
 
@@ -203,9 +207,7 @@ const cancelSale = () => {
         accept: () => {
             router.post(route('transactions.cancel', localTransaction.value.id), {}, {
                 preserveScroll: true,
-                onSuccess: () => { 
-                    // toast.add({ severity: 'success', summary: 'Cancelado', detail: 'Venta/Apartado cancelado con éxito', life: 3000 });
-                }
+                onSuccess: () => { }
             });
         }
     });
@@ -230,7 +232,8 @@ const confirmRefund = () => {
 
 const actionItems = computed(() => [
     { label: 'Abonar / Liquidar', icon: 'pi pi-dollar', command: openPaymentModal, disabled: !canAddPayment.value, visible: hasPermission('transactions.add_payment') },
-    { label: 'Intercambiar producto', icon: 'pi pi-sync', command: openExchangeModal, disabled: !canExchange.value, visible: hasPermission('transactions.exchange') },
+    // El comando openExchangeModal ahora decide qué modal abrir según el estatus
+    { label: localTransaction.value.status === 'apartado' ? 'Modificar Apartado' : 'Intercambiar producto', icon: 'pi pi-sync', command: openExchangeModal, disabled: !canExchange.value, visible: hasPermission('transactions.exchange') },
     { separator: true },
     { label: 'Imprimir ticket', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
@@ -377,7 +380,6 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                                     </span>
                                     <div class="flex items-center gap-2">
                                         <span class="font-mono font-semibold">{{ formatCurrency(payment.amount) }}</span>
-                                        <!-- BOTÓN DE EDICIÓN: Siempre visible si tiene permiso -->
                                         <Button 
                                             v-if="hasPermission('transactions.edit_payment') && localTransaction.status !== 'cancelado' && localTransaction.status !== 'reembolsado'"
                                             icon="pi pi-pencil" 
@@ -418,25 +420,19 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
             </template>
         </Dialog>
 
-        <!-- Modal de Edición de Pago (Rediseñado con Tailwind) -->
+        <!-- Modal de Edición de Pago -->
         <Dialog v-model:visible="isEditPaymentModalVisible" modal header="Editar Pago Realizado" :style="{ width: '32rem' }">
             <div class="flex flex-col gap-6 pt-2">
-                
-                <!-- Monto -->
                 <div class="flex flex-col gap-2">
                     <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">Monto del pago</label>
                     <InputNumber v-model="editForm.amount" mode="currency" currency="MXN" locale="es-MX" :min="0.01" autofocus class="w-full" />
                     <small v-if="editForm.errors.amount" class="text-red-500 font-medium">{{ editForm.errors.amount }}</small>
                 </div>
-
-                <!-- Método -->
                 <div class="flex flex-col gap-2">
                     <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">Método de pago</label>
                     <Select v-model="editForm.payment_method" :options="paymentMethods" optionLabel="label" optionValue="value" placeholder="Seleccione método" class="w-full" />
                     <small v-if="editForm.errors.payment_method" class="text-red-500 font-medium">{{ editForm.errors.payment_method }}</small>
                 </div>
-
-                <!-- Cuenta Bancaria (Mejorada con Slot para mostrar Titular) -->
                 <div v-if="editForm.payment_method !== 'efectivo' && editForm.payment_method !== 'saldo'" class="flex flex-col gap-2">
                     <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">Cuenta bancaria de destino</label>
                     <Select 
@@ -456,16 +452,12 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                     </Select>
                     <small v-if="editForm.errors.bank_account_id" class="text-red-500 font-medium">{{ editForm.errors.bank_account_id }}</small>
                 </div>
-
-                <!-- Notas -->
                 <div class="flex flex-col gap-2">
                     <label class="block text-sm font-bold text-gray-700 dark:text-gray-300">Notas internas / Referencia</label>
                     <Textarea v-model="editForm.notes" rows="3" placeholder="Ej. Folio de transferencia, terminal usada, etc." class="w-full" />
                     <small v-if="editForm.errors.notes" class="text-red-500 font-medium">{{ editForm.errors.notes }}</small>
                 </div>
-
             </div>
-
             <template #footer>
                 <div class="flex justify-end items-center gap-3">
                     <Button label="Cancelar" severity="secondary" @click="isEditPaymentModalVisible = false" text />
@@ -474,7 +466,12 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
             </template>
         </Dialog>
 
+        <!-- MODALES DE INTERCAMBIO -->
         <ProductExchangeModal v-if="transaction" v-model:visible="isProductExchangeModalVisible" :transaction="transaction" :user-bank-accounts="userBankAccounts" @success="router.reload()" />
+        
+        <!-- MODAL NUEVO DE APARTADO -->
+        <LayawayExchangeModal v-if="transaction" v-model:visible="isLayawayExchangeModalVisible" :transaction="transaction" :user-bank-accounts="userBankAccounts" @success="router.reload()" />
+
         <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="pendingAmount" :client="transaction.customer" :loading="isPaymentProcessing" payment-mode="flexible" @submit="handlePaymentSubmit" />
         <StartSessionModal v-model:visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters" :user-bank-accounts="userBankAccounts" />
         <JoinSessionModal v-model:visible="isJoinSessionModalVisible" :sessions="joinableSessions" />
