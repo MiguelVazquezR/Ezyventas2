@@ -365,7 +365,7 @@ const handleCheckout = (checkoutData) => {
             <div class="flex flex-col lg:flex-row gap-4 h-[calc(86vh)]">
                 <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden">
                     <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
-                        :filters="filters" :active-session="activeSession" @add-to-cart="addToCart"
+                        :filters="filters" :active-session="activeSession" :cart-items="cartItems" @add-to-cart="addToCart"
                         @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
                         @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
                         @refresh-session-data="handleRefreshSessionData"

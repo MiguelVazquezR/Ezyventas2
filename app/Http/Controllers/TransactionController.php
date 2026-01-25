@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\CashRegisterSessionStatus;
 use App\Enums\CustomerBalanceMovementType;
+use App\Enums\PaymentMethod;
 use App\Enums\QuoteStatus;
 use App\Enums\SessionCashMovementType;
 use App\Enums\TemplateContextType;
@@ -13,7 +14,9 @@ use App\Enums\TransactionStatus;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
 use App\Models\Customer;
+use App\Models\Payment;
 use App\Models\Product;
+use App\Models\ProductAttribute;
 use App\Models\Quote;
 use App\Models\Transaction;
 use App\Services\TransactionPaymentService;
@@ -39,10 +42,12 @@ class TransactionController extends Controller implements HasMiddleware
             new Middleware('can:transactions.cancel', only: ['cancel']),
             new Middleware('can:transactions.refund', only: ['refund']),
             new Middleware('can:transactions.add_payment', only: ['addPayment']),
-            new Middleware('can:transactions.exchange', only: ['exchange']),
+            new Middleware('can:transactions.edit_payment', only: ['updatePayment']),
+            new Middleware('can:transactions.exchange', only: ['exchange', 'exchangeLayaway']), // Permiso compartido
         ];
     }
 
+    // ... (Métodos index y show se mantienen igual) ...
     public function index(Request $request): Response
     {
         $user = Auth::user();
@@ -99,14 +104,11 @@ class TransactionController extends Controller implements HasMiddleware
             'payments.bankAccount',
         ]);
 
-        // --- SOPORTE JSON PARA MODALES (API) ---
         if ($request->wantsJson()) {
             $paid = $transaction->payments->sum('amount');
-            // Usamos el accessor 'total' si existe, o calculamos
             $total = $transaction->total ?? ($transaction->subtotal - $transaction->total_discount + $transaction->total_tax);
             $balance = $total - $paid;
 
-            // Atributos virtuales para el frontend
             $transaction->paid_amount = $paid;
             $transaction->pending_balance = $balance;
             $transaction->is_paid = $balance <= 0.01;
@@ -156,45 +158,32 @@ class TransactionController extends Controller implements HasMiddleware
     }
 
     /**
-     * Procesa un cambio de productos.
+     * Procesa un cambio de productos (Ventas normales).
      */
     public function exchange(Request $request, Transaction $transaction)
     {
         $validated = $request->validate([
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
-            
-            // Items devueltos
             'returned_items' => 'required|array|min:1',
             'returned_items.*.item_id' => 'required|exists:transactions_items,id',
             'returned_items.*.quantity' => 'required|integer|min:1',
-
-            // Items nuevos
             'new_items' => 'required|array|min:1',
             'new_items.*.id' => 'required|exists:products,id',
             'new_items.*.quantity' => 'required|numeric|min:1',
             'new_items.*.unit_price' => 'required|numeric|min:0',
             'new_items.*.description' => 'required|string',
             'new_items.*.discount' => 'nullable|numeric',
-            // VALIDACIÓN MEJORADA: Verificar que la variante exista
             'new_items.*.product_attribute_id' => 'nullable|exists:product_attributes,id',
-
-            // Totales
             'subtotal' => 'required|numeric',
             'total_discount' => 'numeric',
-
-            // Pagos adicionales (si hay diferencia en contra)
             'payments' => 'nullable|array',
             'payments.*.amount' => 'required|numeric|min:0.01',
             'payments.*.method' => 'required|string',
             'payments.*.bank_account_id' => 'nullable|exists:bank_accounts,id',
             'payments.*.notes' => 'nullable|string',
-
-            // Deudas a pagar con excedente (si hay diferencia a favor)
             'debts_to_pay' => 'nullable|array',
             'debts_to_pay.*.id' => 'required|exists:transactions,id',
             'debts_to_pay.*.amount' => 'required|numeric|min:0.01',
-
-            // Otros campos
             'notes' => 'nullable|string|max:255',
             'new_customer_id' => 'nullable|exists:customers,id',
             'exchange_refund_type' => 'nullable|in:balance,cash',
@@ -203,6 +192,11 @@ class TransactionController extends Controller implements HasMiddleware
 
         if (in_array($transaction->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED])) {
             return redirect()->back()->with(['error' => 'No se pueden realizar cambios en transacciones canceladas o reembolsadas.']);
+        }
+        
+        // Evitar usar este método para apartados si existe el otro
+        if ($transaction->status === TransactionStatus::ON_LAYAWAY) {
+            return redirect()->back()->with(['error' => 'Para apartados use la opción "Modificar Apartado".']);
         }
 
         try {
@@ -220,6 +214,64 @@ class TransactionController extends Controller implements HasMiddleware
         }
     }
 
+    /**
+     * Procesa un cambio de productos en APARTADOS.
+     */
+    public function exchangeLayaway(Request $request, Transaction $transaction)
+    {
+        $validated = $request->validate([
+            'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
+            
+            // Items devueltos
+            'returned_items' => 'required|array|min:1',
+            'returned_items.*.item_id' => 'required|exists:transactions_items,id',
+            'returned_items.*.quantity' => 'required|integer|min:1',
+
+            // Items nuevos
+            'new_items' => 'required|array|min:1',
+            'new_items.*.id' => 'required|exists:products,id',
+            'new_items.*.quantity' => 'required|numeric|min:1',
+            'new_items.*.unit_price' => 'required|numeric|min:0',
+            'new_items.*.description' => 'required|string',
+            'new_items.*.discount' => 'nullable|numeric',
+            'new_items.*.product_attribute_id' => 'nullable|exists:product_attributes,id',
+
+            // Totales
+            'subtotal' => 'required|numeric',
+            'total_discount' => 'numeric',
+
+            // Pagos adicionales (si sube el precio)
+            'payments' => 'nullable|array',
+            'payments.*.amount' => 'required|numeric|min:0.01',
+            'payments.*.method' => 'required|string',
+            'payments.*.bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'payments.*.notes' => 'nullable|string',
+
+            'notes' => 'nullable|string|max:255',
+            'new_customer_id' => 'nullable|exists:customers,id',
+        ]);
+
+        if ($transaction->status !== TransactionStatus::ON_LAYAWAY) {
+            return redirect()->back()->with(['error' => 'Esta operación solo es válida para Apartados activos.']);
+        }
+
+        try {
+            $newTransaction = $this->transactionPaymentService->handleLayawayExchange(
+                Auth::user(),
+                $transaction,
+                $validated
+            );
+
+            return redirect()->route('transactions.show', $newTransaction->id)
+                ->with('success', 'Apartado modificado con éxito. Nuevo folio: #' . $newTransaction->folio);
+        } catch (\Exception $e) {
+            Log::error("Error al modificar apartado {$transaction->id}: " . $e->getMessage());
+            return redirect()->back()->with(['error' => 'Error: ' . $e->getMessage()]);
+        }
+    }
+
+    // ... (El resto de métodos se mantienen: pendingDebts, addPayment, cancel, refund, updatePayment, searchProducts, returnStock) ...
+    
     /**
      * Endpoint API para obtener deudas pendientes de un cliente.
      * Usado en el modal de intercambio para distribuir excedentes.
@@ -248,9 +300,7 @@ class TransactionController extends Controller implements HasMiddleware
 
         return response()->json($debtsWithPendingAmount);
     }
-    
-    // ... métodos addPayment, cancel, refund, searchProducts y returnStock se mantienen igual ...
-    
+        
     public function addPayment(Request $request, Transaction $transaction)
     {
         $validated = $request->validate([
@@ -281,63 +331,60 @@ class TransactionController extends Controller implements HasMiddleware
         }
     }
 
+    /**
+     * Cancela una transacción (Venta o Apartado).
+     */
     public function cancel(Transaction $transaction)
     {
-        $transaction->loadMissing('payments');
+        $transaction->loadMissing(['payments', 'customer', 'items.itemable']);
         $totalPaid = $transaction->payments->sum('amount');
+        $isLayaway = in_array($transaction->status, [TransactionStatus::ON_LAYAWAY]);
 
-        if ($totalPaid > 0) {
-            return redirect()->back()->with(['error' => 'No se puede cancelar una venta con pagos registrados. Debe generar una devolución.']);
-        }
-
-        if (!in_array($transaction->status, [TransactionStatus::PENDING, TransactionStatus::COMPLETED])) {
-            return redirect()->back()->with(['error' => 'Solo se pueden cancelar ventas pendientes o completadas (sin pagos).']);
+        // REGLA: Si no es apartado y tiene pagos, forzamos Devolución en lugar de Cancelación simple.
+        if (!$isLayaway && $totalPaid > 0) {
+            return redirect()->back()->with(['error' => 'No se puede cancelar una venta con pagos. Debe generar una devolución.']);
         }
 
         try {
-            DB::transaction(function () use ($transaction) {
-                $originalStatus = $transaction->status;
+            DB::transaction(function () use ($transaction, $isLayaway, $totalPaid) {
+                // 1. Devolver Stock (Inteligente: distingue Físico de Reservado)
+                $this->returnStock($transaction);
 
-                if (in_array($originalStatus, [TransactionStatus::COMPLETED, TransactionStatus::PENDING])) {
-                    $this->returnStock($transaction);
+                // 2. Manejar Saldo del Cliente (Limpiar Deuda)
+                if ($transaction->customer_id) {
+                    $customer = $transaction->customer;
+                    
+                    // Si es apartado, el monto a devolver al saldo es el TOTAL de la venta
+                    // Esto "borra" la deuda (incrementa el balance que estaba en negativo)
+                    // Y si hubo abonos previos, también se los reintegra como saldo a favor.
+                    $amountToCredit = $transaction->total;
+
+                    $customer->balanceMovements()->create([
+                        'transaction_id' => $transaction->id,
+                        'type' => CustomerBalanceMovementType::CANCELLATION_CREDIT,
+                        'amount' => $amountToCredit,
+                        'balance_after' => $customer->balance + $amountToCredit,
+                        'notes' => 'Ajuste por cancelación de ' . ($isLayaway ? 'apartado' : 'venta') . ' #' . $transaction->folio,
+                    ]);
+
+                    $customer->increment('balance', $amountToCredit);
                 }
 
-                if ($transaction->customer_id && in_array($originalStatus, [TransactionStatus::COMPLETED, TransactionStatus::PENDING])) {
-                    $originalChargeMovement = $transaction->customerBalanceMovements()
-                        ->where('type', CustomerBalanceMovementType::CREDIT_SALE)
-                        ->first();
-
-                    if ($originalChargeMovement) {
-                        $customer = Customer::findOrFail($transaction->customer_id);
-                        $amountToCredit = $originalChargeMovement->amount;
-
-                        $customer->balanceMovements()->create([
-                            'transaction_id' => $transaction->id,
-                            'type' => CustomerBalanceMovementType::CANCELLATION_CREDIT,
-                            'amount' => abs($amountToCredit),
-                            'balance_after' => $customer->balance + abs($amountToCredit),
-                            'notes' => 'Ajuste por cancelación de venta #' . $transaction->folio,
-                        ]);
-
-                        $customer->increment('balance', abs($amountToCredit));
-                    }
-                }
-
+                // 3. Actualizar Estatus
                 $transaction->update(['status' => TransactionStatus::CANCELLED]);
 
+                // 4. Cancelar cotización relacionada si existe
                 $transaction->loadMissing('transactionable');
                 if ($transaction->transactionable instanceof Quote) {
-                    $transaction->transactionable->update([
-                        'status' => QuoteStatus::CANCELLED
-                    ]);
+                    $transaction->transactionable->update(['status' => QuoteStatus::CANCELLED]);
                 }
             });
         } catch (\Exception $e) {
             Log::error("Error al cancelar transacción {$transaction->id}: " . $e->getMessage());
-            return redirect()->back()->with(['error' => 'Ocurrió un error inesperado al cancelar la venta.']);
+            return redirect()->back()->with(['error' => 'Ocurrió un error inesperado al cancelar.']);
         }
 
-        return redirect()->back()->with('success', 'Venta cancelada con éxito.');
+        return redirect()->back()->with('success', $isLayaway ? 'Apartado cancelado y stock liberado.' : 'Venta cancelada con éxito.');
     }
 
     public function refund(Request $request, Transaction $transaction)
@@ -426,6 +473,57 @@ class TransactionController extends Controller implements HasMiddleware
         return redirect()->back()->with('success', 'Devolución generada con éxito.');
     }
 
+    /**
+     * Actualiza un pago existente.
+     */
+    public function updatePayment(Request $request, Transaction $transaction, Payment $payment)
+    {
+        // 1. Validación básica
+        $validated = $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'payment_method' => 'required|string',
+            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'notes' => 'nullable|string|max:255',
+        ]);
+
+        DB::transaction(function () use ($transaction, $payment, $validated) {
+            // 2. Lógica para limpiar bank_account si es efectivo
+            if ($validated['payment_method'] === PaymentMethod::CASH->value) {
+                $validated['bank_account_id'] = null;
+            }
+
+            // 3. Actualizar el pago
+            $payment->update([
+                'amount' => $validated['amount'],
+                'payment_method' => $validated['payment_method'],
+                'bank_account_id' => $validated['bank_account_id'],
+                'notes' => $validated['notes'],
+            ]);
+
+            // 4. Recalcular el estatus de la transacción
+            // Sumamos todos los pagos completados (incluyendo el que acabamos de editar)
+            $totalPaid = $transaction->payments()
+                ->where('status', \App\Enums\PaymentStatus::COMPLETED)
+                ->sum('amount');
+
+            // Actualizamos el estatus basado en el nuevo total pagado
+            if ($totalPaid >= $transaction->total) {
+                if ($transaction->status !== TransactionStatus::COMPLETED) {
+                    $transaction->update(['status' => TransactionStatus::COMPLETED]);
+                }
+            } else {
+                // Si faltaba dinero y estaba completada (por error anterior), la regresamos a pendiente
+                // OJO: Si es 'ON_LAYAWAY' (apartado), quizás quieras mantener ese estatus.
+                // Aquí asumimos lógica simple: Pagada o Pendiente.
+                if ($transaction->status === TransactionStatus::COMPLETED) {
+                    $transaction->update(['status' => TransactionStatus::PENDING]);
+                }
+            }
+        });
+
+        return back()->with('success', 'Pago actualizado correctamente.');
+    }
+
     public function searchProducts(Request $request)
     {
         $query = $request->input('query');
@@ -464,14 +562,31 @@ class TransactionController extends Controller implements HasMiddleware
         return response()->json($products);
     }
 
+    /**
+     * Devuelve el stock físico o libera el stock reservado según el estatus de la transacción.
+     */
     private function returnStock(Transaction $transaction)
     {
         foreach ($transaction->items as $item) {
-            if ($item->itemable instanceof Product || $item->itemable instanceof \App\Models\ProductAttribute) {
-                if (is_numeric($item->quantity)) {
-                    $item->itemable->increment('current_stock', $item->quantity);
+            $itemable = $item->itemable;
+            
+            if ($itemable instanceof Product || $itemable instanceof ProductAttribute) {
+                if ($transaction->status === TransactionStatus::ON_LAYAWAY) {
+                    // APARTADO: Quitamos del 'reserved_stock'. El 'current_stock' no se toca 
+                    // porque el producto nunca salió físicamente de la tienda (solo estaba apartado).
+                    $itemable->decrement('reserved_stock', $item->quantity);
+                    
+                    // Si es variante, actualizar también el contador del padre
+                    if ($itemable instanceof ProductAttribute) {
+                        $itemable->product->decrement('reserved_stock', $item->quantity);
+                    }
                 } else {
-                    Log::warning("Skipping stock increment for item {$item->id} in transaction {$transaction->id} due to non-numeric quantity: " . $item->quantity);
+                    // VENTA NORMAL: Devolvemos al 'current_stock' (stock físico disponible).
+                    $itemable->increment('current_stock', $item->quantity);
+                    
+                    if ($itemable instanceof ProductAttribute) {
+                        $itemable->product->increment('current_stock', $item->quantity);
+                    }
                 }
             }
         }

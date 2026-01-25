@@ -3,6 +3,9 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Database\Query\Builder;
 
 class StoreProductRequest extends FormRequest
 {
@@ -21,11 +24,23 @@ class StoreProductRequest extends FormRequest
      */
     public function rules(): array
     {
+        $user = Auth::user();
+
         return [
             // Información General
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'sku' => 'nullable|string|max:255|unique:products,sku',
+            'sku' => [
+                'nullable',
+                'string',
+                'max:255',
+                // CORRECCIÓN: Validación única SOLO para la sucursal actual (branch_id).
+                // Esto permite que otras sucursales (incluso de la misma empresa) usen el mismo SKU.
+                Rule::unique('products')->where(function (Builder $query) use ($user) {
+                    return $query->where('branch_id', $user->branch_id);
+                }),
+            ],
+            'location' => 'nullable|string|max:255',
             'category_id' => 'required|exists:categories,id',
             'brand_id' => 'nullable|exists:brands,id',
 

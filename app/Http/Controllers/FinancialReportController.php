@@ -53,6 +53,27 @@ class FinancialReportController extends Controller
                 : ($netProfitCurrent != 0 ? 100 : 0),
         ];
 
+        // --- NUEVO CÁLCULO: Margen de Utilidad (%) ---
+        // Fórmula: (Ganancia Neta / Ventas Totales) * 100
+        $salesCurrent = $reportData['kpis']['sales']['current'];
+        $salesPrevious = $reportData['kpis']['sales']['previous'];
+
+        $utilityMarginCurrent = $salesCurrent != 0 
+            ? round(($netProfitCurrent / $salesCurrent) * 100, 2) 
+            : 0;
+
+        $utilityMarginPrevious = $salesPrevious != 0 
+            ? round(($netProfitPrevious / $salesPrevious) * 100, 2) 
+            : 0;
+
+        $reportData['kpis']['utilityMargin'] = [
+            'current' => $utilityMarginCurrent,
+            'previous' => $utilityMarginPrevious,
+            'change' => round($utilityMarginCurrent - $utilityMarginPrevious, 2) // Cambio en puntos porcentuales
+        ];
+        // ----------------------------------------------
+
+
         // 3. Ticket Promedio (Optimizado con índices)
         // CORRECCIÓN: Ahora excluimos tanto CANCELLED como CHANGED para que el conteo sea real.
         $salesCountCurrent = Transaction::where('branch_id', $branchId)

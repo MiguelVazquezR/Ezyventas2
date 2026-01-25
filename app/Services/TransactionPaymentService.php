@@ -388,6 +388,187 @@ class TransactionPaymentService
     }
 
     /**
+     * Procesa específicamente cambios en un APARTADO (ON_LAYAWAY).
+     * Mantiene la lógica de stock reservado y transferencia de abonos.
+     */
+    public function handleLayawayExchange(
+        User $user,
+        Transaction $originalTransaction,
+        array $data
+    ): Transaction {
+        return DB::transaction(function () use ($user, $originalTransaction, $data) {
+            $now = now();
+            $sessionId = $data['cash_register_session_id'];
+            $returnedItems = $data['returned_items'];
+            $newCartItems = $data['new_items'];
+            $payments = $data['payments'] ?? [];
+            
+            if ($originalTransaction->status !== TransactionStatus::ON_LAYAWAY) {
+                throw new Exception("Esta función es exclusiva para transacciones en estatus de Apartado.");
+            }
+
+            // Cliente (siempre debe existir en un apartado)
+            $customerId = $data['new_customer_id'] ?? $originalTransaction->customer_id;
+            $customer = Customer::find($customerId);
+            if (!$customer) throw new Exception("Se requiere un cliente válido para operaciones de apartado.");
+
+            // 1. Procesar Devoluciones (Liberar Reserva)
+            foreach ($returnedItems as $returnItem) {
+                $originalItem = TransactionItem::where('transaction_id', $originalTransaction->id)
+                    ->where('id', $returnItem['item_id'])
+                    ->firstOrFail();
+
+                // Recuperar Modelo
+                $itemModel = $originalItem->itemable;
+                if (!$itemModel && class_exists($originalItem->itemable_type)) {
+                    $itemModel = $originalItem->itemable_type::find($originalItem->itemable_id);
+                }
+                
+                // CRÍTICO: En un apartado, devolver significa liberar la reserva.
+                // No tocamos current_stock porque nunca salió físicamente.
+                if ($itemModel) {
+                    $itemModel->decrement('reserved_stock', $returnItem['quantity']);
+                    if ($itemModel instanceof ProductAttribute) {
+                        $itemModel->product->decrement('reserved_stock', $returnItem['quantity']);
+                    }
+                }
+            }
+
+            // 2. Crear Nueva Transacción (Inicialmente como Apartado)
+            $newTransaction = Transaction::create([
+                'cash_register_session_id' => $sessionId,
+                'folio' => self::generateFolio($user->branch_id),
+                'customer_id' => $customerId,
+                'branch_id' => $user->branch_id,
+                'user_id' => $user->id,
+                'status' => TransactionStatus::ON_LAYAWAY, // Nace como apartado
+                'channel' => TransactionChannel::POS,
+                'subtotal' => $data['subtotal'],
+                'total_discount' => $data['total_discount'] ?? 0,
+                'total_tax' => 0,
+                'currency' => 'MXN',
+                'notes' => "Modificación de apartado. Ref. Original #{$originalTransaction->folio}. " . ($data['notes'] ?? ''),
+                'status_changed_at' => $now,
+                'layaway_expiration_date' => $originalTransaction->layaway_expiration_date, // Heredar vencimiento
+            ]);
+
+            // 3. Crear Nuevos Items (Reservar Stock)
+            // Usamos TransactionStatus::ON_LAYAWAY para que el helper sepa que debe incrementar 'reserved_stock'
+            $this->createTransactionItems($newTransaction, $newCartItems, TransactionStatus::ON_LAYAWAY);
+
+            // 4. Transferir Abonos Previos
+            // El dinero que el cliente ya dio, se mueve a la nueva nota.
+            $previousPaymentsTotal = $originalTransaction->payments()->sum('amount');
+            
+            if ($previousPaymentsTotal > 0) {
+                 $this->paymentService->processPayments($newTransaction, [[
+                    'amount' => $previousPaymentsTotal,
+                    'method' => PaymentMethod::EXCHANGE->value, // O un método "TRANSFERENCIA_APARTADO"
+                    'notes' => "Transferencia de abonos del apartado #{$originalTransaction->folio}",
+                    'bank_account_id' => null,
+                ]], $sessionId);
+            }
+
+            // 5. Marcar Original como Cambiada (Cerrarla)
+            $originalTransaction->update(['status' => TransactionStatus::CHANGED]);
+
+            // 6. Calcular Estado Financiero
+            $newTotal = $newTransaction->total;
+            $currentPaid = $previousPaymentsTotal; // Hasta ahora solo tiene lo transferido
+            
+            // ¿Se agregaron nuevos pagos en esta operación?
+            $additionalPaymentsTotal = 0;
+            if (!empty($payments)) {
+                $this->applyDirectPayments($newTransaction, $payments, $sessionId);
+                $additionalPaymentsTotal = collect($payments)->sum('amount');
+            }
+            
+            $totalPaidFinal = $currentPaid + $additionalPaymentsTotal;
+            $remainingBalance = $newTotal - $totalPaidFinal;
+
+            // A) Si ya se pagó todo (o más)
+            if ($remainingBalance <= 0.01) {
+                // Cambiar a COMPLETADO
+                $newTransaction->update(['status' => TransactionStatus::COMPLETED]);
+                
+                // CRÍTICO: Al completarse un apartado, el stock pasa de "Reservado" a "Vendido" (baja físico).
+                $this->finalizeLayawayStock($newTransaction);
+
+                // Manejar Excedente (Saldo a Favor)
+                if ($remainingBalance < -0.01) {
+                    $excess = abs($remainingBalance);
+                    
+                    // Abonar a saldo del cliente
+                    $customer->increment('balance', $excess);
+                    $customer->balanceMovements()->create([
+                        'transaction_id' => $newTransaction->id,
+                        'type' => CustomerBalanceMovementType::REFUND_CREDIT,
+                        'amount' => $excess,
+                        'balance_after' => $customer->balance,
+                        'notes' => "Saldo a favor por modificación de apartado #{$newTransaction->folio} (Excedente)",
+                        'created_at' => $now->copy()->addSecond(),
+                    ]);
+                }
+            } 
+            // B) Si aún debe dinero
+            else {
+                // Se queda como ON_LAYAWAY (ya seteado al crear).
+                // Generar movimiento de deuda "virtual" o actualizar saldo
+                // En tu lógica actual de 'handleNewSale', si hay deuda en apartado, se registra el movimiento negativo en el cliente?
+                // Revisando handleNewSale: Sí, llama a applyDebtToCustomer.
+                
+                // Sin embargo, en un sistema de Apartados, a veces la deuda no se refleja en el saldo global hasta que se vence,
+                // O se refleja como "Saldo Apartado". Dependerá de tu Enum CustomerBalanceMovementType.
+                // Asumiremos que debemos registrar el ajuste de la deuda si cambió el monto total.
+                
+                // NOTA: Para simplificar y no duplicar deuda, lo ideal es recalcular la deuda total.
+                // Si en el original ya había una deuda registrada de (TotalOriginal - PagadoOriginal),
+                // Ahora debemos ajustar esa deuda.
+                
+                // La forma más limpia en historial:
+                // 1. "Cancelar" la deuda del apartado anterior (Paso implícito si consideramos que cerramos la transaccion).
+                //    Pero como handleNewSale registra deuda al inicio, aquí deberíamos registrar la nueva deuda.
+                
+                // Vamos a registrar la nueva deuda total remanente.
+                // Pero antes, debimos haber "cancelado" la deuda anterior si existía.
+                // En handleProductExchange hacemos: "Cancelamos la deuda antigua abonando al saldo".
+                
+                // 6.1 Cancelar deuda anterior (si la hubo)
+                $originalTotal = $originalTransaction->total;
+                $originalDebt = $originalTotal - $previousPaymentsTotal;
+                
+                if ($originalDebt > 0.01) {
+                    $customer->increment('balance', $originalDebt);
+                    $customer->balanceMovements()->create([
+                        'transaction_id' => $originalTransaction->id,
+                        'type' => CustomerBalanceMovementType::CANCELLATION_CREDIT,
+                        'amount' => $originalDebt,
+                        'balance_after' => $customer->balance,
+                        'notes' => "Cancelación deuda apartado anterior #{$originalTransaction->folio} por modificación",
+                        'created_at' => $now,
+                    ]);
+                }
+                
+                // 6.2 Registrar nueva deuda
+                $debtType = defined('App\Enums\CustomerBalanceMovementType::LAYAWAY_DEBT') 
+                    ? CustomerBalanceMovementType::LAYAWAY_DEBT 
+                    : CustomerBalanceMovementType::CREDIT_SALE;
+
+                $this->applyDebtToCustomer(
+                    $newTransaction,
+                    $customer,
+                    $remainingBalance,
+                    $debtType,
+                    "Saldo pendiente por modificación apartado #{$newTransaction->folio}",
+                    $now->copy()->addSecond()
+                );
+            }
+
+            return $newTransaction;
+        });
+    }
+
+    /**
      * Aplica un pago a una transacción existente (ej. Orden de Servicio).
      * Encapsula la lógica de PaymentController@store.
      *

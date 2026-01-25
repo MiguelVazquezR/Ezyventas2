@@ -57,7 +57,7 @@ const onCustomerClear = () => {
 const transactionTypes = computed(() => {
     let types = [
         { id: 'contado', label: 'Pago al contado', image: '/images/contado.webp', bgColor: '#C5E0F7', textColor: '#3D5F9B', description: 'Se liquida el 100% de la venta.', disabled: false },
-        { id: 'credito', label: 'A crédito / pagos', image: '/images/credito.webp', bgColor: '#FFCD87', textColor: '#603814', description: 'Se lo lleva y paga descpues.', disabled: !props.allowCredit || !props.client },
+        { id: 'credito', label: 'A crédito / pagos', image: '/images/credito.webp', bgColor: '#FFCD87', textColor: '#603814', description: 'Se lo lleva y paga después.', disabled: !props.allowCredit || !props.client },
         { id: 'apartado', label: 'Sistema de apartado', image: '/images/apartado.webp', bgColor: '#FFC9E9', textColor: '#862384', description: 'Anticipo para reservar.', disabled: !props.allowLayaway || !props.client },
     ];
     if (!props.allowCredit) types = types.filter(t => t.id !== 'credito');

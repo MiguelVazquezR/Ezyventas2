@@ -70,7 +70,8 @@ class ProductController extends Controller implements HasMiddleware
             $searchTerm = $request->input('search');
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('name', 'LIKE', "%{$searchTerm}%")
-                    ->orWhere('sku', 'LIKE', "%{$searchTerm}%");
+                    ->orWhere('sku', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('location', 'LIKE', "%{$searchTerm}%"); // <-- Búsqueda por ubicación agregada
             });
         }
 

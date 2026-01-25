@@ -4,6 +4,8 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Database\Query\Builder;
 
 class UpdateProductRequest extends FormRequest
 {
@@ -15,11 +17,22 @@ class UpdateProductRequest extends FormRequest
     public function rules(): array
     {
         $productId = $this->route('product')->id;
+        $user = Auth::user();
 
         return [
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'sku' => ['nullable', 'string', 'max:255', Rule::unique('products')->ignore($productId)],
+            'sku' => [
+                'nullable', 
+                'string', 
+                'max:255', 
+                // Validar unicidad por Branch, ignorando el producto actual
+                Rule::unique('products')->ignore($productId)->where(function (Builder $query) use ($user) {
+                    return $query->where('branch_id', $user->branch_id);
+                }),
+            ],
+            'location' => 'nullable|string|max:255', // <-- Nueva validación para localización
+
             'category_id' => 'required|exists:categories,id',
             'brand_id' => 'nullable|exists:brands,id',
             'cost_price' => 'nullable|numeric|min:0',

@@ -37,6 +37,7 @@ const form = useForm({
     name: '',
     description: '',
     sku: '',
+    location: '', // <--- NUEVO CAMPO AGREGADO
     category_id: null,
     brand_id: null,
     cost_price: null,
@@ -327,10 +328,18 @@ const confirmRemoveItem = (event, index) => {
                                 <Editor v-model="form.description" editorStyle="height: 150px" class="mt-1" />
                                 <InputError class="mt-2" :message="form.errors.description" />
                             </div>
-                            <div>
-                                <InputLabel for="sku" value="SKU (Código de barras)" />
-                                <InputText id="sku" v-model="form.sku" class="mt-1 w-full" />
-                                <InputError class="mt-2" :message="form.errors.sku" />
+                            <!-- CORRECCIÓN: Agrupamos SKU y Localización en una fila -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <InputLabel for="sku" value="SKU (Código de barras)" />
+                                    <InputText id="sku" v-model="form.sku" class="mt-1 w-full" />
+                                    <InputError class="mt-2" :message="form.errors.sku" />
+                                </div>
+                                <div>
+                                    <InputLabel for="location" value="Ubicación en Almacén" />
+                                    <InputText id="location" v-model="form.location" class="mt-1 w-full" placeholder="Ej. Pasillo 4, Estante B" />
+                                    <InputError class="mt-2" :message="form.errors.location" />
+                                </div>
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
