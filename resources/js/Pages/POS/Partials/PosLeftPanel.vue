@@ -32,6 +32,10 @@ const props = defineProps({
     activeSession: {
         type: Object,
         default: null
+    },
+    cartItems: { // <--- Nueva prop recibida
+        type: Array,
+        default: () => []
     }
 });
 
@@ -393,7 +397,7 @@ const handleProductCreated = (newProduct) => {
             <template v-if="loadedProducts.length > 0">
                 <div class="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2">
                     <ProductCard v-for="product in loadedProducts" :key="`${product.id}-${product.sku}`"
-                        :product="product" @showDetails="showProductDetails" @addToCart="$emit('addToCart', $event)" />
+                        :product="product" :cart-items="cartItems" @showDetails="showProductDetails" @addToCart="$emit('addToCart', $event)" />
                 </div>
             </template>
             <p v-else-if="!isLoadingMore" class="text-center text-gray-500 mt-8">

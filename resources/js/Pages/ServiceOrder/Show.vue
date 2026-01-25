@@ -131,7 +131,7 @@ const steps = ref([
     { label: 'Pendiente', value: 'pendiente', icon: 'pi pi-inbox' },
     { label: 'En Progreso', value: 'en_progreso', icon: 'pi pi-cog' },
     { label: 'Esperando refacción', value: 'esperando_refaccion', icon: 'pi pi-wrench' },
-    { label: 'Terminado', value: 'terminado', icon: 'pi pi-check-circle' },
+    { label: 'Terminado/Listo para entregar', value: 'terminado', icon: 'pi pi-check-circle' },
     { label: 'Entregado', value: 'entregado', icon: 'pi pi-send' }
 ]);
 

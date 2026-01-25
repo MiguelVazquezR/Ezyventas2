@@ -4,6 +4,7 @@ import { FireIcon } from '@heroicons/vue/24/solid';
 
 const props = defineProps({
     product: Object,
+    cartItems: { type: Array, default: () => [] } // <--- Nueva prop recibida
 });
 
 const emit = defineEmits(['showDetails', 'addToCart']);
@@ -58,6 +59,26 @@ const cardSelectedCombination = computed(() => {
     return props.product.variant_combinations.find(combo =>
         variantTypes.every(name => combo.attributes[name] === cardSelectedVariants.value[name])
     );
+});
+
+// --- NUEVA LÓGICA: Cantidad en Carrito ---
+const quantityInCart = computed(() => {
+    if (!props.cartItems || props.cartItems.length === 0) return 0;
+
+    // 1. Si el producto tiene variantes y el usuario ya seleccionó una combinación válida en la tarjeta
+    if (hasVariants.value && cardSelectedCombination.value) {
+        const item = props.cartItems.find(i => 
+            i.id === props.product.id && 
+            i.product_attribute_id === cardSelectedCombination.value.id
+        );
+        return item ? item.quantity : 0;
+    }
+
+    // 2. Si no tiene variantes (producto simple) O no ha seleccionado variante aún
+    //    En este caso, sumamos TODAS las instancias de este producto en el carrito (incluyendo variantes mixtas si las hubiera)
+    //    Esto da un feedback general de "ya tienes este producto" aunque no especifique cuál variante.
+    const items = props.cartItems.filter(i => i.id === props.product.id);
+    return items.reduce((sum, i) => sum + i.quantity, 0);
 });
 
 // --- MEJORA: Imagen dinámica como propiedad computada ---
@@ -140,7 +161,7 @@ const getPromotionSummary = (promo) => {
         }
         case 'BUNDLE_PRICE': {
             const effect = promo.effects.find(e => e.type === 'SET_PRICE');
-            const productRules = promo.rules.filter(r => r.itemable && (r.type === 'REQUIRES_PRODUCT_QUANTITY' || r.type === 'REQUIRES_PRODUCT'));
+            const productRules = promo.rules.filter(r => r.itemable && (r.type === 'REQUIRES_PRODUCT' || r.type === 'REQUIRES_PRODUCT'));
 
             if (!effect || productRules.length === 0) return promo.description || 'Promoción de paquete.';
 
@@ -167,11 +188,14 @@ const formatCurrency = (value) => {
 <template>
     <div
         class="relative border border-gray-200 dark:border-gray-700 rounded-[15px] overflow-hidden flex flex-col bg-white dark:bg-gray-800 transition-shadow hover:shadow-lg">
-        <div class="m-3">
+        <div class="m-3 relative">
             <img :src="displayImage" :alt="product.name" class="w-full h-40 object-contain bg-[#F2F2F2] rounded-xl">
-            <div class="absolute bottom-2 right-2 cursor-pointer" v-tooltip.bottom="'Ver detalles'">
-                <Button icon="pi pi-arrows-alt" rounded text severity="secondary" class="bg-white/50 dark:bg-black/50"
-                    @click="emit('showDetails', product)" v-tooltip.bottom="'Ver detalles'" />
+            
+            <!-- INDICADOR DE CANTIDAD EN CARRITO -->
+            <div v-if="quantityInCart > 0" 
+                 class="absolute bottom-2 left-2 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-md z-10 flex items-center gap-1 animate-in fade-in zoom-in duration-300">
+                <i class="pi pi-shopping-cart !text-xs"></i>
+                <span>{{ quantityInCart }} en carrito</span>
             </div>
             <span
                 class="absolute top-0 left-0 rounded-none rounded-tl-[15px] rounded-br-[15px] text-sm text-white dark:text-gray-900 px-2 py-1"
@@ -181,7 +205,7 @@ const formatCurrency = (value) => {
                     | {{ displayReservedStock }} apartados
                 </span>
             </span>
-            <button class="absolute top-4 right-4 bg-[#5c5c5c]/70 dark:bg-black/50 text-white rounded-[6px] size-7 border border-white flex items-center justify-center"
+            <button class="absolute top-1 right-1 bg-[#5c5c5c]/70 dark:bg-black/50 text-white rounded-[6px] size-7 border border-white flex items-center justify-center"
                 @click="emit('showDetails', product)" v-tooltip.bottom="'Ver detalles'">
                 <i class="pi pi-arrow-up-right-and-arrow-down-left-from-center !text-xs"></i>
             </button>

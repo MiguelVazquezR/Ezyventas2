@@ -4,7 +4,7 @@ use App\Http\Controllers\TransactionController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->group(function () {
-    // Rutas para acciones específicas
+    // Rutas para acciones especÃ­ficas
     Route::post('transactions/{transaction}/cancel', [TransactionController::class, 'cancel'])
         ->name('transactions.cancel');
 
@@ -14,8 +14,16 @@ Route::middleware('auth')->group(function () {
     Route::post('/transactions/{transaction}/payment', [TransactionController::class, 'addPayment'])
         ->name('transactions.addPayment');
 
+    Route::put('/transactions/{transaction}/payments/{payment}', [TransactionController::class, 'updatePayment'])
+        ->name('transactions.updatePayment');
+
+    // Intercambio normal (Ventas completadas)
     Route::post('/transactions/{transaction}/exchange', [TransactionController::class, 'exchange'])
         ->name('transactions.exchange');
+
+    // NUEVA RUTA: Intercambio exclusivo para Apartados
+    Route::post('/transactions/{transaction}/exchange-layaway', [TransactionController::class, 'exchangeLayaway'])
+        ->name('transactions.exchange-layaway');
 
     Route::get('/transactions/search-products', [TransactionController::class, 'searchProducts'])
         ->name('transactions.search-products');
