@@ -520,6 +520,7 @@ const currentCartTotal = computed(() => {
             :cart-total="currentCartTotal"
             :client="selectedClient"
             @submit="handleOrderSubmit"
+            :loading="form.processing"
         />
     </AppLayout>
 </template>

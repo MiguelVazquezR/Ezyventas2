@@ -212,6 +212,10 @@ const formatCurrency = (value) => {
         </div>
         <div class="px-4 py-2 flex flex-col flex-grow">
             <h3 class="font-bold text-gray-800 dark:text-gray-200 text-lg overflow-hidden m-0">{{ product.name }}</h3>
+            <p v-if="product.sku" class="text-gray-600 dark:text-gray-100 text-xs m-0 flex items-center gap-2">
+                <i class="pi pi-barcode"></i> 
+                <span>{{ product.sku }}</span>
+            </p>
             <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">{{ product.category }}</p>
             <div class="space-y-2 my-2 min-h-[1rem]">
                 <div v-if="hasVariants" class="space-y-3">

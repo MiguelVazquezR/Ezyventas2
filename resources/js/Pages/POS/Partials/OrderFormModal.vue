@@ -6,7 +6,8 @@ import { useToast } from 'primevue/usetoast';
 const props = defineProps({
     visible: Boolean,
     cartTotal: Number,
-    client: Object, // Cliente seleccionado en el POS (opcional)
+    client: Object, 
+    loading: Boolean, // <--- NUEVA PROP para estado de carga
 });
 
 const emit = defineEmits(['update:visible', 'submit']);
@@ -14,31 +15,25 @@ const toast = useToast();
 
 // --- Estado del Formulario ---
 const form = useForm({
-    // Datos de Contacto (Si no hay cliente registrado)
     contact_name: '',
     contact_phone: '',
-    
-    // Logística
     delivery_date: null,
     shipping_address: '',
     shipping_cost: 0,
-    
-    // Notas
     notes: ''
 });
 
 // --- Sincronización ---
 watch(() => props.visible, (newVal) => {
     if (newVal) {
-        // Pre-llenar datos si hay cliente seleccionado
         if (props.client) {
             form.contact_name = props.client.name;
             form.contact_phone = props.client.phone || '';
-            form.shipping_address = props.client.address || ''; // Asumiendo que el cliente tiene dirección
+            form.shipping_address = props.client.address || ''; 
         } else {
             form.reset();
         }
-        form.shipping_cost = 0; // Resetear costo de envío al abrir
+        form.shipping_cost = 0; 
     }
 });
 
@@ -48,9 +43,7 @@ const grandTotal = computed(() => {
 });
 
 const isFormValid = computed(() => {
-    // Validar: Nombre y teléfono obligatorios (sea cliente o invitado)
     if (!form.contact_name || form.contact_name.length < 2) return false;
-    // Validar: Fecha de entrega obligatoria
     if (!form.delivery_date) return false;
     return true;
 });
@@ -64,7 +57,6 @@ const handleSubmit = () => {
 
     emit('submit', {
         ...form.data(),
-        // Enviamos el total calculado para validación
         calculated_total: grandTotal.value 
     });
 };
@@ -84,6 +76,18 @@ const formatCurrency = (value) => {
     >
         <div class="flex flex-col gap-6">
             
+            <!-- NUEVA DESCRIPCIÓN INFORMATIVA -->
+            <div class="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg border border-yellow-200 dark:border-yellow-800 text-sm text-yellow-800 dark:text-yellow-200 flex items-start gap-3">
+                <i class="pi pi-info-circle mt-0.5 text-lg"></i>
+                <div>
+                    <p class="font-bold">¿Para qué sirve un pedido?</p>
+                    <p class="mt-1 leading-relaxed">
+                        Utiliza esta opción para ventas que requieren <strong>entrega a domicilio</strong> o recolección programada. 
+                        El inventario se reservará de inmediato, pero el cobro se puede gestionar posteriormente (ej. pago contra entrega).
+                    </p>
+                </div>
+            </div>
+
             <!-- SECCIÓN 1: Datos de Contacto -->
             <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800">
                 <div class="flex items-center gap-2 mb-3">
@@ -150,8 +154,15 @@ const formatCurrency = (value) => {
 
         <template #footer>
             <div class="flex justify-end gap-2">
-                <Button label="Cancelar" severity="secondary" text @click="emit('update:visible', false)" />
-                <Button label="Confirmar Pedido" icon="pi pi-check" @click="handleSubmit" :disabled="!isFormValid" />
+                <Button label="Cancelar" severity="secondary" text @click="emit('update:visible', false)" :disabled="loading" />
+                <!-- BOTÓN CON ESTADO DE CARGA -->
+                <Button 
+                    label="Confirmar Pedido" 
+                    icon="pi pi-check" 
+                    @click="handleSubmit" 
+                    :disabled="!isFormValid" 
+                    :loading="loading" 
+                />
             </div>
         </template>
     </Dialog>
