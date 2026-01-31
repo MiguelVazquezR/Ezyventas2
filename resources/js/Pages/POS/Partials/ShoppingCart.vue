@@ -4,19 +4,24 @@ import { useConfirm } from "primevue/useconfirm";
 import CartItem from './CartItem.vue';
 import CreateCustomerModal from '@/Components/CreateCustomerModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
-import axios from 'axios'; // Importamos Axios para la búsqueda
+import axios from 'axios'; 
 
 const props = defineProps({
     items: Array,
     client: Object,
-    customers: Array, // Lista inicial (limitada)
+    customers: Array, 
     defaultCustomer: Object,
     activePromotions: Array,
     loading: { type: Boolean, default: false },
     paymentModalVisible: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(['updateQuantity', 'updatePrice', 'removeItem', 'clearCart', 'selectCustomer', 'customerCreated', 'saveCart', 'checkout', 'open-payment-modal', 'close-payment-modal']);
+const emit = defineEmits([
+    'updateQuantity', 'updatePrice', 'removeItem', 'clearCart', 
+    'selectCustomer', 'customerCreated', 'saveCart', 'checkout', 
+    'open-payment-modal', 'close-payment-modal',
+    'open-order-modal' // <-- NUEVO EVENTO
+]);
 
 const confirm = useConfirm();
 const requireConfirmation = (event) => {
@@ -35,18 +40,15 @@ const isCreateCustomerModalVisible = ref(false);
 
 // --- Lógica de AutoComplete ---
 const selectedCustomerModel = ref(props.client);
-const filteredCustomers = ref([]); // Lista dinámica para sugerencias
+const filteredCustomers = ref([]); 
 
-// Sincronizar selectedCustomerModel con props.client
 watch(() => props.client, (newVal) => {
     selectedCustomerModel.value = newVal;
 }, { immediate: true });
 
-// Función de búsqueda asíncrona
 const searchCustomer = async (event) => {
     const query = event.query;
     try {
-        // Asegúrate de que esta ruta existe en tu backend (ver instrucciones abajo)
         const response = await axios.get(route('pos.customers.search'), { params: { query } });
         filteredCustomers.value = response.data;
     } catch (error) {
@@ -55,12 +57,10 @@ const searchCustomer = async (event) => {
     }
 };
 
-// Al seleccionar un cliente del autocomplete
 const onCustomerSelect = (event) => {
     emit('selectCustomer', event.value);
 };
 
-// Limpiar cliente seleccionado
 const clearCustomer = () => {
     selectedCustomerModel.value = null;
     emit('selectCustomer', null);
@@ -69,9 +69,7 @@ const clearCustomer = () => {
 const displayedCustomer = computed(() => props.client || props.defaultCustomer);
 
 const handleCustomerCreated = (newCustomer) => {
-    // Ya no dependemos de localCustomers para todo, solo emitimos y seleccionamos
     emit('customerCreated', newCustomer);
-    // Establecemos el nuevo cliente en el modelo local para que aparezca seleccionado
     selectedCustomerModel.value = newCustomer;
 };
 
@@ -89,7 +87,6 @@ const cartLevelDiscounts = computed(() => {
     if (!props.activePromotions || props.items.length === 0) return applied;
 
     props.activePromotions.forEach(promo => {
-        // Lógica BOGO
         if (promo.type === 'BOGO') {
             const rule = promo.rules.find(r => r.type === 'REQUIRES_PRODUCT_QUANTITY');
             const effect = promo.effects.find(e => e.type === 'FREE_ITEM');
@@ -107,7 +104,6 @@ const cartLevelDiscounts = computed(() => {
                 }
             }
         }
-        // Lógica BUNDLE
         if (promo.type === 'BUNDLE_PRICE') {
             const rules = promo.rules.filter(r => r.type === 'REQUIRES_PRODUCT');
             const effect = promo.effects.find(e => e.type === 'SET_PRICE');
@@ -161,8 +157,7 @@ const formatCurrency = (value) => {
 <template>
     <div>
         <ConfirmPopup group="cart-actions"></ConfirmPopup>
-        <div
-            class="bg-[#E6E6E6] p-3 rounded-xl shadow-md border border-[#D9D9D9] h-full flex flex-col dark:bg-gray-800 dark:border-gray-700">
+        <div class="bg-[#E6E6E6] p-3 rounded-xl shadow-md border border-[#D9D9D9] h-full flex flex-col dark:bg-gray-800 dark:border-gray-700">
             <!-- Header -->
             <div class="flex justify-between items-center pb-4 border-b border-gray-200 dark:border-gray-700">
                 <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Carrito</h2>
@@ -212,7 +207,6 @@ const formatCurrency = (value) => {
                                 </p>
                             </div>
                         </div>
-                        <!-- Botón para quitar cliente seleccionado (solo si no es el default) -->
                         <Button v-if="client" @click="clearCustomer" icon="pi pi-times" rounded variant="outlined"
                             severity="secondary" size="small" class="!size-6" />
                     </div>
@@ -283,9 +277,29 @@ const formatCurrency = (value) => {
                     class="flex justify-between items-center font-bold text-lg text-gray-800 dark:text-gray-100 border-t border-dashed border-[#D9D9D9] dark:border-gray-700 pt-1">
                     <span>Total</span><span>{{ formatCurrency(total) }}</span>
                 </div>
-                <Button @click="$emit('open-payment-modal')" :disabled="items.length === 0"
-                    :label="(client && total <= 0 && client.balance >= total) || total === 0 ? 'Finalizar' : 'Pagar'"
-                    icon="pi pi-arrow-right" iconPos="right" class="w-full mt-2 bg-orange-500 border-none" />
+                
+                <!-- BOTONES DE ACCIÓN (MODIFICADO) -->
+                <div class="flex gap-2 mt-2">
+                    <!-- Nuevo Botón para Pedidos -->
+                    <Button 
+                        label="Crear pedido" 
+                        icon="pi pi-truck" 
+                        severity="info" 
+                        outlined
+                        class="flex-1"
+                        :disabled="items.length === 0"
+                        @click="$emit('open-order-modal')"
+                    />
+                    
+                    <!-- Botón Original de Pagar -->
+                    <Button 
+                        @click="$emit('open-payment-modal')" 
+                        :disabled="items.length === 0"
+                        :label="(client && total <= 0 && client.balance >= total) || total === 0 ? 'Finalizar' : 'Pagar'"
+                        icon="pi pi-arrow-right" iconPos="right" 
+                        class="flex-1 bg-orange-500 border-none" 
+                    />
+                </div>
             </div>
         </div>
 

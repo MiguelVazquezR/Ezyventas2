@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, computed } from 'vue'; // <-- Asegurar computed
+import { ref, watch, computed } from 'vue'; 
 import { Head, useForm, router, usePage } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -10,6 +10,7 @@ import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import CloseSessionModal from '@/Components/CloseSessionModal.vue';
 import SessionHistoryModal from '@/Components/SessionHistoryModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
+import OrderFormModal from './Partials/OrderFormModal.vue'; // <--- IMPORTACIÓN NUEVA
 import { v4 as uuidv4 } from 'uuid';
 
 const props = defineProps({
@@ -32,6 +33,7 @@ const toast = useToast();
 const cartItems = ref([]);
 const selectedClient = ref(null);
 const isPaymentModalVisible = ref(false);
+const isOrderModalVisible = ref(false); // <--- NUEVO ESTADO
 
 // --- Lógica para Drawer del Carrito ---
 const isCartDrawerVisible = ref(false);
@@ -55,37 +57,24 @@ watch(() => page.props.flash.print_data, (newPrintData) => {
 
 // --- Helper CORREGIDO para calcular precio por volumen ---
 const getPriceForQuantity = (productData, quantity) => {
-    // Precio base ANTES de promos directas (precio original de 1 pieza)
-    // Usamos selling_price que viene del backend y representa el precio base original
     const absoluteOriginalPrice = parseFloat(productData.selling_price);
-
-    // Precio base DESPUÉS de promos directas (precio de 1 pieza con promo si aplica)
-    // Usamos productData.price que ya calculó el backend (considerando promos ITEM_DISCOUNT)
     const basePriceAfterDirectPromo = parseFloat(productData.price);
 
-    // Si no hay tiers, la cantidad es 1, o los tiers están vacíos
     if (!productData.price_tiers || productData.price_tiers.length === 0 || quantity <= 1) {
-        // Devolver el precio base (con promo directa si aplica) y el original puro
         return {
             price: basePriceAfterDirectPromo,
-            original_price_base: absoluteOriginalPrice, // El precio original sin promos ni tiers
+            original_price_base: absoluteOriginalPrice, 
             isTierPrice: false
         };
     }
 
-    // Ordenar tiers por cantidad mínima DESCENDENTE para encontrar el mejor aplicable
-    // Asegurarse de que min_quantity sea numérico
     const sortedTiers = [...productData.price_tiers]
-        .map(t => ({ ...t, min_quantity: parseInt(t.min_quantity, 10) })) // Convertir a número
+        .map(t => ({ ...t, min_quantity: parseInt(t.min_quantity, 10) })) 
         .sort((a, b) => b.min_quantity - a.min_quantity);
 
-    // Buscar el primer tier (el más alto) cuya cantidad mínima sea <= a la cantidad actual
     for (const tier of sortedTiers) {
-        // Asegurarse de que min_quantity es un número válido antes de comparar
         if (!isNaN(tier.min_quantity) && quantity >= tier.min_quantity) {
-            // Precio del tier encontrado
             const tierPrice = parseFloat(tier.price);
-            // Devolver el precio del tier y el precio original puro
             return {
                 price: tierPrice,
                 original_price_base: absoluteOriginalPrice,
@@ -94,15 +83,12 @@ const getPriceForQuantity = (productData, quantity) => {
         }
     }
 
-    // Si la cantidad es > 1 pero NO alcanzó ningún tier, DEBE volver al precio base (con promo directa)
     return {
-        price: basePriceAfterDirectPromo, // <- ESTA ES LA CLAVE DE LA CORRECCIÓN
+        price: basePriceAfterDirectPromo,
         original_price_base: absoluteOriginalPrice,
         isTierPrice: false
     };
 };
-// --- FIN: Helper CORREGIDO ---
-
 
 const addToCart = (data) => {
     const { product, variant } = data;
@@ -112,10 +98,9 @@ const addToCart = (data) => {
     const quantityToAdd = 1;
     const targetQuantity = existingItem ? existingItem.quantity + quantityToAdd : 1;
 
-    // Usar datos del producto base para calcular el precio inicial
     const productBaseDataForCalc = {
-        selling_price: product.selling_price, // Precio original base
-        price: product.price,               // Precio base con promo directa (para qty 1)
+        selling_price: product.selling_price, 
+        price: product.price,               
         price_tiers: product.price_tiers
     };
     const { price: calculatedPrice, original_price_base: baseOriginalPrice, isTierPrice } = getPriceForQuantity(productBaseDataForCalc, targetQuantity);
@@ -123,53 +108,46 @@ const addToCart = (data) => {
     if (existingItem) {
         if (targetQuantity <= stock || stock < 0) {
             existingItem.quantity = targetQuantity;
-            // Recalcular solo si no es manual
             if (!existingItem.isManualPrice) {
-                // Usar los datos base guardados en el item existente para recalcular
                 const itemBaseDataForCalc = {
-                    selling_price: existingItem.selling_price, // Original base guardado
-                    price: existingItem.price_qty_1_promo, // Precio qty 1 con promo guardado
+                    selling_price: existingItem.selling_price, 
+                    price: existingItem.price_qty_1_promo, 
                     price_tiers: existingItem.price_tiers
                 };
                 const { price: updatedPrice, original_price_base: updatedOriginalBase, isTierPrice: updatedIsTier } = getPriceForQuantity(itemBaseDataForCalc, existingItem.quantity);
 
-                // Calcular modificador de variante basado en los originales guardados
                 let variantModifier = 0;
                 if (existingItem.product_attribute_id) {
                     variantModifier = (existingItem.original_price ?? existingItem.selling_price) - existingItem.selling_price;
                 }
 
-                existingItem.price = updatedPrice + variantModifier; // Aplicar modificador DESPUÉS
-                // original_price_base no cambia, ya lo tenemos en existingItem.selling_price
+                existingItem.price = updatedPrice + variantModifier; 
                 existingItem.isTierPrice = updatedIsTier;
             }
         } else {
             toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
         }
     } else {
-        // Guardar los precios base importantes en el nuevo item
         const newItem = {
-            ...product, // Copia datos del producto (incluye price_tiers)
+            ...product, 
             cartItemId: cartItemId,
             quantity: quantityToAdd,
-            selling_price: baseOriginalPrice, // Guardar original base (sin promo, sin tier)
-            price_qty_1_promo: product.price, // Guardar precio qty 1 (con promo directa si aplica)
-            price: calculatedPrice, // Precio calculado inicial (tier o promo directa)
-            original_price: baseOriginalPrice, // Usado para calcular subtotal bruto y descuentos
+            selling_price: baseOriginalPrice, 
+            price_qty_1_promo: product.price, 
+            price: calculatedPrice, 
+            original_price: baseOriginalPrice, 
             isTierPrice: isTierPrice,
             isManualPrice: false,
             ...(variant && {
-                price: calculatedPrice + variant.price_modifier, // Aplicar modificador
-                original_price: baseOriginalPrice + variant.price_modifier, // Base + modificador
+                price: calculatedPrice + variant.price_modifier, 
+                original_price: baseOriginalPrice + variant.price_modifier, 
                 sku: `${product.sku}-${variant.sku_suffix}`,
                 stock: variant.stock,
                 selectedVariant: variant.attributes,
                 product_attribute_id: variant.id,
                 image: variant.image_url || product.image,
-                // selling_price y price_qty_1_promo se mantienen del producto base
             })
         };
-        // CORRECCIÓN: Asegurarse de que original_price en variante también sume el modificador
         if (variant) {
             newItem.original_price = baseOriginalPrice + variant.price_modifier;
         }
@@ -185,40 +163,34 @@ const updateCartQuantity = ({ itemId, quantity }) => {
     const item = cartItems.value.find(i => i.cartItemId === itemId);
     if (item) {
         const validQuantity = Math.max(1, quantity || 1);
-        const oldQuantity = item.quantity; // Guardar cantidad anterior por si hay error
-        item.quantity = validQuantity; // Actualizar cantidad primero
+        const oldQuantity = item.quantity;
+        item.quantity = validQuantity; 
 
-        // Recalcular precio basado en la nueva cantidad, *solo si no es manual*
         if (!item.isManualPrice) {
-            // Usar los datos base guardados en el item para recalcular
             const itemBaseDataForCalc = {
-                selling_price: item.selling_price,         // Original base guardado
-                price: item.price_qty_1_promo, // Precio qty 1 con promo guardado
-                price_tiers: item.price_tiers            // Tiers guardados
+                selling_price: item.selling_price,         
+                price: item.price_qty_1_promo, 
+                price_tiers: item.price_tiers            
             };
 
-            // Verificar que los datos base existen antes de calcular
             if (typeof itemBaseDataForCalc.selling_price !== 'undefined' &&
                 typeof itemBaseDataForCalc.price !== 'undefined') {
 
                 const { price: updatedPrice, isTierPrice: updatedIsTier } = getPriceForQuantity(itemBaseDataForCalc, validQuantity);
 
-                // Calcular modificador de variante basado en los originales guardados
                 let variantModifier = 0;
                 if (item.product_attribute_id) {
-                    // Usar original_price (base + modif) y selling_price (base) para obtener modificador
                     variantModifier = (item.original_price ?? item.selling_price) - item.selling_price;
                 }
 
-                item.price = updatedPrice + variantModifier; // Aplicar modificador DESPUÉS
-                item.isTierPrice = updatedIsTier; // Actualizar flag
+                item.price = updatedPrice + variantModifier; 
+                item.isTierPrice = updatedIsTier; 
             } else {
                 console.error("Faltan datos base en el item para recalcular precio:", item);
-                item.quantity = oldQuantity; // Revertir cantidad si hubo error
+                item.quantity = oldQuantity; 
                 toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo recalcular el precio.', life: 3000 });
             }
         }
-        // Si es precio manual, solo se actualiza la cantidad, el precio no cambia
     }
 };
 
@@ -228,7 +200,7 @@ const updateCartPrice = ({ itemId, price }) => {
     if (item) {
         item.price = Math.max(0, price || 0);
         item.isManualPrice = true;
-        item.isTierPrice = false; // Precio manual anula tier
+        item.isTierPrice = false; 
     }
 };
 
@@ -293,15 +265,15 @@ const handleProductCreatedAndAddToCart = (newProduct) => {
     const formattedProduct = {
         id: newProduct.id,
         name: newProduct.name,
-        selling_price: parseFloat(newProduct.selling_price), // Precio base original
-        price: parseFloat(newProduct.selling_price),        // Precio para qty 1 (sin promo directa al crear)
-        original_price: parseFloat(newProduct.selling_price),// Original base para cálculos
+        selling_price: parseFloat(newProduct.selling_price), 
+        price: parseFloat(newProduct.selling_price),        
+        original_price: parseFloat(newProduct.selling_price),
         stock: newProduct.current_stock || 0,
         category: 'Sin categoría',
         image: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' + encodeURIComponent(newProduct.name),
         description: newProduct.description || '',
         sku: newProduct.sku || '',
-        price_tiers: newProduct.price_tiers || [], // Asegurar que price_tiers se pasa
+        price_tiers: newProduct.price_tiers || [], 
         variants: {},
         variant_combinations: [],
         promotions: [],
@@ -310,23 +282,25 @@ const handleProductCreatedAndAddToCart = (newProduct) => {
     router.reload({ preserveState: true, only: ['products'] });
 };
 
-// --- Checkout ---
+// --- Checkout Standard (Ventas) ---
 const form = useForm({
     cartItems: [], customerId: null,
     subtotal: 0, total_discount: 0, total: 0,
     payments: [], use_balance: false,
     cash_register_session_id: null,
     layaway_expiration_date: null,
+    // Campos extra para Pedidos
+    is_order: false,
+    contact_info: null,
+    delivery_date: null,
+    shipping_address: null,
+    shipping_cost: 0,
+    notes: null
 });
 
-const handleCheckout = (checkoutData) => {
-    if (!props.activeSession) {
-        toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar una venta.', life: 5000 });
-        return;
-    }
-
-    // 1. Mapear datos base (sin cambios)
-    form.cartItems = cartItems.value.map(item => ({
+// Helper para construir items del carrito para el backend
+const mapCartItems = () => {
+    return cartItems.value.map(item => ({
         id: item.id,
         product_attribute_id: item.product_attribute_id || null,
         quantity: item.quantity,
@@ -344,52 +318,107 @@ const handleCheckout = (checkoutData) => {
             if (item.price < originalPrice) {
                 return 'Promoción de producto';
             }
-            return null; // Sin descuento o motivo específico
+            return null; 
         })()
     }));
+};
+
+// --- NUEVO: Manejo de Creación de Pedido ---
+const handleOrderSubmit = (orderData) => {
+    if (!props.activeSession) {
+        toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar pedidos.', life: 5000 });
+        return;
+    }
+
+    const currentSubtotal = cartItems.value.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const itemsDiscountTotal = cartItems.value.reduce((acc, item) => {
+        const base = item.original_price ?? item.price;
+        return acc + ((base - item.price) * item.quantity);
+    }, 0);
+
+    form.reset();
+    form.cartItems = mapCartItems();
+    form.customerId = selectedClient.value ? selectedClient.value.id : null;
+    form.subtotal = currentSubtotal;
+    form.total_discount = itemsDiscountTotal; // Asumiendo descuentos de items
+    
+    // Datos específicos del Pedido
+    form.is_order = true;
+    form.contact_info = { 
+        name: orderData.contact_name, 
+        phone: orderData.contact_phone 
+    };
+    form.delivery_date = orderData.delivery_date;
+    form.shipping_address = orderData.shipping_address;
+    form.shipping_cost = orderData.shipping_cost;
+    form.notes = orderData.notes;
+    form.cash_register_session_id = props.activeSession.id;
+    form.total = currentSubtotal + parseFloat(orderData.shipping_cost);
+
+    form.post(route('pos.store-order'), { // <-- RUTA QUE CREAREMOS DESPUÉS
+        onSuccess: () => {
+            clearCart();
+            isOrderModalVisible.value = false;
+            router.reload({ only: ['products'], preserveState: true });
+        },
+        onError: (errors) => {
+            console.error(errors);
+            toast.add({ severity: 'error', summary: 'Error', detail: 'Revisa los datos del pedido.', life: 5000 });
+        }
+    });
+};
+
+// Manejo de venta normal
+const handleCheckout = (checkoutData) => {
+    if (!props.activeSession) {
+        toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar una venta.', life: 5000 });
+        return;
+    }
+
+    form.reset();
+    form.is_order = false;
+    form.cartItems = mapCartItems();
     form.customerId = selectedClient.value ? selectedClient.value.id : null;
     form.subtotal = checkoutData.subtotal;
     form.total_discount = checkoutData.total_discount;
     form.total = checkoutData.total;
     form.cash_register_session_id = props.activeSession.id;
-
-    // 2. Mapear nuevos datos de pago (del MultiPaymentProcessor)
     form.payments = checkoutData.payments;
     form.use_balance = checkoutData.use_balance;
-    form.layaway_expiration_date = checkoutData.layaway_expiration_date; // fecha de vencimiento
+    form.layaway_expiration_date = checkoutData.layaway_expiration_date;
 
-    // 3. Determinar la ruta basada en el tipo de transacción
     let routeName;
     const transactionType = checkoutData.transactionType;
 
     switch (transactionType) {
         case 'contado':
         case 'credito':
-            routeName = 'pos.checkout'; // El backend (checkout) ya maneja la lógica de crédito
+            routeName = 'pos.checkout';
             break;
         case 'apartado':
-            // Esta es la ruta que crearemos en el backend
             routeName = 'pos.layaway';
             break;
         default:
-            toast.add({ severity: 'error', summary: 'Error', detail: 'Tipo de transacción desconocido.', life: 5000 });
             return;
     }
 
-    // 4. Enviar el formulario a la ruta correcta
     form.post(route(routeName), {
         onSuccess: () => {
             clearCart();
-            page.props.flash.success = null; // Limpiar flash de Inertia
-            router.reload({ only: ['products'], preserveState: true }); // Recargar productos (stock)
+            page.props.flash.success = null;
+            router.reload({ only: ['products'], preserveState: true });
         },
         onError: (errors) => {
-            console.error("Error de validación:", errors);
             const errorMessage = errors.default || errors.message || Object.values(errors).flat().join(' ');
-            toast.add({ severity: 'error', summary: 'Error al Procesar', detail: errorMessage || 'Ocurrió un error inesperado.', life: 7000 });
+            toast.add({ severity: 'error', summary: 'Error al Procesar', detail: errorMessage, life: 7000 });
         }
     });
 };
+
+// Computed para pasar el total actual al modal de pedido
+const currentCartTotal = computed(() => {
+    return cartItems.value.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+});
 </script>
 
 <template>
@@ -439,6 +468,7 @@ const handleCheckout = (checkoutData) => {
                         @checkout="handleCheckout" 
                         @open-payment-modal="isPaymentModalVisible = true"
                         @close-payment-modal="isPaymentModalVisible = false"
+                        @open-order-modal="isOrderModalVisible = true"
                         class="h-full" 
                     />
                 </Drawer>
@@ -483,5 +513,13 @@ const handleCheckout = (checkoutData) => {
             @update:visible="isHistoryModalVisible = $event" />
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
             :available-templates="availableTemplates" />
+        
+        <!-- NUEVO MODAL DE PEDIDO -->
+        <OrderFormModal 
+            v-model:visible="isOrderModalVisible"
+            :cart-total="currentCartTotal"
+            :client="selectedClient"
+            @submit="handleOrderSubmit"
+        />
     </AppLayout>
 </template>

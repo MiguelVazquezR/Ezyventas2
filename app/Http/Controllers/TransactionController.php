@@ -563,6 +563,50 @@ class TransactionController extends Controller implements HasMiddleware
     }
 
     /**
+     * NUEVO: Crea un PEDIDO (Order)
+     * Valida datos logísticos y crea transacción con estatus TO_DELIVER
+     */
+     public function storeOrder(Request $request)
+    {
+        $validated = $request->validate([
+            'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
+            'cartItems' => 'required|array|min:1',
+            // Validaciones del carrito - ACTUALIZADAS PARA INCLUIR TODOS LOS DATOS
+            'cartItems.*.id' => 'required|exists:products,id',
+            'cartItems.*.quantity' => 'required|numeric|min:0.01',
+            'cartItems.*.unit_price' => 'required|numeric|min:0',
+            'cartItems.*.description' => 'required|string',
+            'cartItems.*.discount' => 'nullable|numeric',
+            'cartItems.*.product_attribute_id' => 'nullable|exists:product_attributes,id',
+            
+            // Datos del Pedido
+            'contact_info' => 'required|array',
+            'contact_info.name' => 'required|string|min:2',
+            'contact_info.phone' => 'nullable|string',
+            'delivery_date' => 'required|date',
+            'shipping_address' => 'nullable|string',
+            'shipping_cost' => 'numeric|min:0',
+            'customerId' => 'nullable|exists:customers,id',
+            'subtotal' => 'required|numeric',
+            'total_discount' => 'numeric',
+            'notes' => 'nullable|string',
+        ]);
+
+        try {
+            // Mapeo de datos para el servicio
+            $data = $validated;
+            $data['customer_id'] = $validated['customerId'];
+
+            $transaction = $this->transactionPaymentService->handleNewOrder(Auth::user(), $data);
+
+            return redirect()->back()->with('success', "Pedido #{$transaction->folio} creado correctamente.");
+        } catch (\Exception $e) {
+            Log::error("Error creando pedido: " . $e->getMessage());
+            return redirect()->back()->with(['error' => 'Error: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
      * Devuelve el stock físico o libera el stock reservado según el estatus de la transacción.
      */
     private function returnStock(Transaction $transaction)
@@ -571,7 +615,7 @@ class TransactionController extends Controller implements HasMiddleware
             $itemable = $item->itemable;
             
             if ($itemable instanceof Product || $itemable instanceof ProductAttribute) {
-                if ($transaction->status === TransactionStatus::ON_LAYAWAY) {
+                if ($transaction->status === TransactionStatus::ON_LAYAWAY || $transaction->status === TransactionStatus::TO_DELIVER) {
                     // APARTADO: Quitamos del 'reserved_stock'. El 'current_stock' no se toca 
                     // porque el producto nunca salió físicamente de la tienda (solo estaba apartado).
                     $itemable->decrement('reserved_stock', $item->quantity);

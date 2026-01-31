@@ -21,6 +21,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/transactions/{transaction}/exchange', [TransactionController::class, 'exchange'])
         ->name('transactions.exchange');
 
+    Route::post('/pos/store-order', [TransactionController::class, 'storeOrder'])
+        ->name('pos.store-order');
+
     // NUEVA RUTA: Intercambio exclusivo para Apartados
     Route::post('/transactions/{transaction}/exchange-layaway', [TransactionController::class, 'exchangeLayaway'])
         ->name('transactions.exchange-layaway');

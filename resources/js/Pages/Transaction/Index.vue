@@ -44,7 +44,7 @@ const openPrintModal = (transaction) => {
     isPrintModalVisible.value = true;
 };
 
-// --- LÓGICA DE CANCEL/REFUND (Corregida) ---
+// --- LÓGICA DE CANCEL/REFUND (Corregida para Apartados) ---
 const menuItems = computed(() => {
     const transaction = selectedTransactionForMenu.value;
     if (!transaction) return [];
@@ -55,9 +55,18 @@ const menuItems = computed(() => {
 
     const canCancelComputed = (() => {
         if (!transaction || !transaction.status) return false;
-        const isValidStatus = !['cancelado', 'reembolsado'].includes(transaction.status);
+        const status = transaction.status;
+
+        // No se puede cancelar lo ya cancelado o reembolsado
+        const isValidStatus = !['cancelado', 'reembolsado'].includes(status);
+        
         const hasNoPayments = totalPaid === 0;
-        return isValidStatus && hasNoPayments;
+        const isLayaway = status === 'apartado'; // Identificar si es apartado
+        
+        // Permitir cancelar si:
+        // 1. Es un estatus válido Y
+        // 2. (No tiene pagos O es un apartado) -> Los apartados con pagos SÍ se pueden cancelar (devuelven saldo)
+        return isValidStatus && (hasNoPayments || isLayaway);
     })();
 
     const canRefundComputed = (() => {
@@ -93,7 +102,8 @@ const menuItems = computed(() => {
             separator: true
         },
         {
-            label: 'Cancelar venta',
+            // Etiqueta dinámica
+            label: transaction.status === 'apartado' ? 'Cancelar apartado' : 'Cancelar venta',
             icon: 'pi pi-times-circle',
             class: 'text-red-500',
             disabled: !canCancelComputed,
@@ -109,14 +119,22 @@ const toggleMenu = (event, data) => {
 };
 
 const cancelSale = () => {
+    const transaction = selectedTransactionForMenu.value;
+    const isLayaway = transaction.status === 'apartado';
+    
+    // Mensaje dinámico según el tipo
+    const message = isLayaway 
+        ? `¿Seguro que quieres cancelar este APARTADO (#${transaction.folio})? Se liberará el inventario reservado y cualquier abono realizado se devolverá al saldo del cliente.`
+        : `¿Estás seguro? Esta venta no tiene pagos registrados (#${transaction.folio}). El stock será repuesto y el saldo del cliente ajustado si fue a crédito.`;
+
     confirm.require({
-        message: `¿Estás seguro? Esta venta no tiene pagos registrados (#${selectedTransactionForMenu.value.folio}). El stock será repuesto y el saldo del cliente ajustado si fue a crédito.`,
+        message: message,
         header: 'Confirmar cancelación',
         icon: 'pi pi-exclamation-triangle',
         acceptLabel: 'Sí, cancelar',
         rejectLabel: 'No',
         accept: () => {
-            router.post(route('transactions.cancel', selectedTransactionForMenu.value.id), {}, { preserveScroll: true });
+            router.post(route('transactions.cancel', transaction.id), {}, { preserveScroll: true });
         }
     });
 };
@@ -172,7 +190,7 @@ const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: eve
 watch(searchTerm, () => fetchData());
 
 const getStatusSeverity = (status) => {
-    const map = { completado: 'success', pendiente: 'warn', cancelado: 'danger', reembolsado: 'info' };
+    const map = { completado: 'success', pendiente: 'warn', cancelado: 'danger', reembolsado: 'info', apartado: 'warn' };
     return map[status] || 'secondary';
 };
 
