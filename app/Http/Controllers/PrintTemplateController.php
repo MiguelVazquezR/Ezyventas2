@@ -32,7 +32,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
     {
         $subscription = Auth::user()->branch->subscription;
         $currentVersion = $subscription->versions()->latest('start_date')->first();
-        $limit = -1; 
+        $limit = -1;
         if ($currentVersion) {
             $limitItem = $currentVersion->items()->where('item_key', 'limit_print_templates')->first();
             if ($limitItem) {
@@ -94,12 +94,12 @@ class PrintTemplateController extends Controller implements HasMiddleware
         }
 
         $subscription = Auth::user()->branch->subscription;
-        
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
             'content' => 'required|array',
-            'content.config' => 'required|array', 
+            'content.config' => 'required|array',
             'content.elements' => 'required|array',
             'branch_ids' => 'required|array|min:1',
             'branch_ids.*' => ['required', Rule::in($subscription->branches->pluck('id'))],
@@ -154,7 +154,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
         }
 
         $view = match ($printTemplate->type->value) {
-            'etiqueta' => 'Template/CreateLabel', 
+            'etiqueta' => 'Template/CreateLabel',
             'cotizacion' => 'Template/CreateQuoteTemplate',
             default => 'Template/CreateTicket',
         };
@@ -170,7 +170,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
         ]);
 
         return Inertia::render($view, [
-            'template' => $printTemplate, 
+            'template' => $printTemplate,
             'printTemplate' => $printTemplate,
             'branches' => $subscription->branches()->get(['id', 'name']),
             'templateImages' => $templateImages,
@@ -210,7 +210,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
         if (str_contains($contentString, '{{os.')) {
             return TemplateContextType::SERVICE_ORDER->value;
         }
-        
+
         if (str_contains($contentString, '{{p.')) {
             return TemplateContextType::PRODUCT->value;
         }
@@ -220,9 +220,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
         if (str_contains($contentString, '{{c.')) {
             return TemplateContextType::CUSTOMER->value;
         }
-        // -------------------------------------
 
-        if (str_contains($contentString, '{{folio') || str_contains($contentString, '{{cliente.')) {
+        if (str_contains($contentString, '{{v.') || str_contains($contentString, '{{cliente.')) {
             return TemplateContextType::TRANSACTION->value;
         }
 

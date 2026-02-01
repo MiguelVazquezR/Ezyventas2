@@ -12,7 +12,7 @@ import { usePermissions } from '@/Composables';
 import ProductExchangeModal from './Partials/ProductExchangeModal.vue';
 import LayawayExchangeModal from './Partials/LayawayExchangeModal.vue';
 import DatePicker from 'primevue/datepicker'; 
-import Menu from 'primevue/menu'; // <-- IMPORTACIÓN DE MENU
+import Menu from 'primevue/menu'; 
 
 const props = defineProps({
     transaction: Object,
@@ -111,7 +111,16 @@ const openExchangeModal = () => {
     }
 };
 
-// --- Modal de Extender Apartado (NUEVO) ---
+// --- HELPER PARA FECHAS LOCALES ---
+// Convierte el objeto Date a un string "YYYY-MM-DD HH:mm:ss" respetando la hora local del usuario
+const toLocalISOString = (date) => {
+    if (!date) return null;
+    const tzOffset = date.getTimezoneOffset() * 60000; // offset en milisegundos
+    const localISOTime = (new Date(date - tzOffset)).toISOString().slice(0, 19).replace('T', ' ');
+    return localISOTime;
+};
+
+// --- Modal de Extender Apartado ---
 const isExtendLayawayModalVisible = ref(false);
 const newExpirationDate = ref(null);
 const isExtendingLayaway = ref(false);
@@ -128,7 +137,8 @@ const submitExtendLayaway = () => {
     
     isExtendingLayaway.value = true;
     router.put(route('transactions.extend-layaway', props.transaction.id), {
-        new_expiration_date: newExpirationDate.value
+        // Usamos el helper para enviar la hora local exacta
+        new_expiration_date: toLocalISOString(newExpirationDate.value)
     }, {
         onSuccess: () => {
             isExtendLayawayModalVisible.value = false;
@@ -137,7 +147,63 @@ const submitExtendLayaway = () => {
     });
 };
 
-// --- Menú de Acciones (Nuevo) ---
+// --- Modal de Reprogramar Pedido (NUEVO) ---
+const isRescheduleOrderModalVisible = ref(false);
+const newDeliveryDate = ref(null);
+const isReschedulingOrder = ref(false);
+
+const openRescheduleOrderModal = () => {
+    newDeliveryDate.value = props.transaction.delivery_date 
+        ? new Date(props.transaction.delivery_date) 
+        : null;
+    isRescheduleOrderModalVisible.value = true;
+};
+
+const submitRescheduleOrder = () => {
+    if (!newDeliveryDate.value) return;
+    
+    isReschedulingOrder.value = true;
+    router.put(route('transactions.reschedule-order', props.transaction.id), {
+        // Usamos el helper para enviar la hora local exacta
+        new_delivery_date: toLocalISOString(newDeliveryDate.value)
+    }, {
+        onSuccess: () => {
+            isRescheduleOrderModalVisible.value = false;
+        },
+        onFinish: () => isReschedulingOrder.value = false
+    });
+};
+
+// --- Menú de Teléfono (NUEVO) ---
+const phoneMenu = ref();
+const targetPhone = ref('');
+
+const phoneMenuItems = computed(() => [
+    {
+        label: 'Llamar',
+        icon: 'pi pi-phone',
+        command: () => {
+            window.location.href = `tel:${targetPhone.value}`;
+        }
+    },
+    {
+        label: 'Mandar WhatsApp',
+        icon: 'pi pi-whatsapp',
+        command: () => {
+            // Limpiar número (quitar espacios, guiones, parentesis)
+            const cleanNumber = targetPhone.value.replace(/\D/g, ''); 
+            window.open(`https://wa.me/${cleanNumber}`, '_blank');
+        }
+    }
+]);
+
+const togglePhoneMenu = (event, phone) => {
+    if (!phone) return;
+    targetPhone.value = phone;
+    phoneMenu.value.toggle(event);
+};
+
+// --- Menú de Acciones ---
 const actionsMenu = ref();
 const toggleActionsMenu = (event) => {
     actionsMenu.value.toggle(event);
@@ -147,6 +213,7 @@ const toggleActionsMenu = (event) => {
 const localTransaction = ref(props.transaction);
 watch(() => props.transaction, (newVal) => localTransaction.value = newVal, { deep: true });
 
+// Totales incluyendo envío si existe
 const totalAmount = computed(() => parseFloat(localTransaction.value.total));
 const totalPaid = computed(() => {
     if (!Array.isArray(localTransaction.value.payments)) return 0;
@@ -162,8 +229,12 @@ const canCancel = computed(() => {
     if (!localTransaction.value?.status) return false;
     const status = localTransaction.value.status;
     if (['cancelado', 'reembolsado'].includes(status)) return false;
-    if (totalPaid.value === 0) return true;
-    return status === 'apartado';
+    
+    // Permitir cancelar si no hay pagos O si es un tipo especial (apartado/pedido por entregar)
+    const hasNoPayments = totalPaid.value === 0;
+    const isSpecialType = status === 'apartado' || status === 'por_entregar';
+    
+    return hasNoPayments || isSpecialType;
 });
 
 const canRefund = computed(() => {
@@ -220,9 +291,15 @@ const handlePaymentSubmit = (paymentData) => {
 
 const cancelSale = () => {
     const isLayaway = localTransaction.value.status === 'apartado';
-    const message = isLayaway 
-        ? `¿Seguro que quieres cancelar este APARTADO? Se liberará el inventario reservado y cualquier abono realizado se devolverá al saldo del cliente.`
-        : `¿Estás seguro de que quieres cancelar la venta #${localTransaction.value.folio}?`;
+    const isOrder = localTransaction.value.status === 'por_entregar';
+    
+    let message = `¿Estás seguro de que quieres cancelar la venta #${localTransaction.value.folio}?`;
+    
+    if (isLayaway) {
+        message = `¿Seguro que quieres cancelar este APARTADO? Se liberará el inventario reservado y cualquier abono realizado se devolverá al saldo del cliente.`;
+    } else if (isOrder) {
+        message = `¿Seguro que quieres cancelar este PEDIDO? Se liberará el inventario reservado.`;
+    }
 
     confirm.require({
         message: message,
@@ -258,16 +335,33 @@ const confirmRefund = () => {
 const actionItems = computed(() => [
     { label: 'Abonar / Liquidar', icon: 'pi pi-dollar', command: openPaymentModal, disabled: !canAddPayment.value, visible: hasPermission('transactions.add_payment') },
     { label: localTransaction.value.status === 'apartado' ? 'Modificar Apartado' : 'Intercambiar producto', icon: 'pi pi-sync', command: openExchangeModal, disabled: !canExchange.value, visible: hasPermission('transactions.exchange') },
-    // Opción en el menú (además del botón directo)
     { label: 'Extender Vencimiento', icon: 'pi pi-calendar-plus', command: openExtendLayawayModal, visible: localTransaction.value.status === 'apartado' },
     { separator: true },
     { label: 'Imprimir ticket', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
     { label: 'Generar devolución', icon: 'pi pi-replay', command: openRefundModal, disabled: !canRefund.value, visible: hasPermission('transactions.refund') },
-    { label: localTransaction.value.status === 'apartado' ? 'Cancelar apartado' : 'Cancelar venta', icon: 'pi pi-times-circle', class: 'text-red-500', command: cancelSale, disabled: !canCancel.value, visible: hasPermission('transactions.cancel') },
+    { label: localTransaction.value.status === 'apartado' ? 'Cancelar apartado' : (localTransaction.value.status === 'por_entregar' ? 'Cancelar pedido' : 'Cancelar venta'), icon: 'pi pi-times-circle', class: 'text-red-500', command: cancelSale, disabled: !canCancel.value, visible: hasPermission('transactions.cancel') },
 ]);
 
-const getStatusSeverity = (status) => ({ completado: 'success', pendiente: 'warn', cancelado: 'danger', reembolsado: 'info', on_layaway: 'warn', apartado: 'warn' }[status] || 'secondary');
+// Mapas de estatus y formato
+const getStatusSeverity = (status) => ({ 
+    completado: 'success', 
+    pendiente: 'warn', 
+    cancelado: 'danger', 
+    reembolsado: 'info', 
+    on_layaway: 'warn', 
+    apartado: 'warn',
+    por_entregar: 'info',
+    en_ruta: 'primary',
+    entregado_por_pagar: 'warn'
+}[status] || 'secondary');
+
+const formatStatusLabel = (status) => {
+    if (!status) return '';
+    const text = status.replace(/_/g, ' ');
+    return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+};
+
 const formatDate = (date) => date ? new Date(date).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : '';
 const formatDateOnly = (date) => date ? new Date(date).toLocaleDateString('es-MX', { dateStyle: 'long' }) : '';
 const formatCurrency = (val) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(val) || 0);
@@ -297,7 +391,9 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
 
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <div>
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Venta #{{ transaction.folio }}</h1>
+                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">
+                    {{ transaction.status === 'por_entregar' ? `Pedido #${transaction.folio}` : `Venta #${transaction.folio}` }}
+                </h1>
                 <p class="text-gray-500 dark:text-gray-400 mt-1">Realizada el {{ formatDate(transaction.created_at) }}</p>
             </div>
             <!-- Acciones con Botón + Menú -->
@@ -353,6 +449,12 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                     <template #content>
                         <ul class="space-y-3 text-sm">
                             <li class="flex justify-between"><span>Subtotal:</span><span>{{ formatCurrency(transaction.subtotal) }}</span></li>
+                            
+                            <!-- Costo de Envío (NUEVO) -->
+                            <li v-if="parseFloat(transaction.shipping_cost) > 0" class="flex justify-between">
+                                <span>Envío:</span><span class="font-medium text-blue-600">{{ formatCurrency(transaction.shipping_cost) }}</span>
+                            </li>
+
                             <li v-if="parseFloat(transaction.total_discount) > 0" class="flex justify-between">
                                 <span>Descuento:</span><span class="text-green-500">- {{ formatCurrency(transaction.total_discount) }}</span>
                             </li>
@@ -375,17 +477,65 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                     <template #content>
                         <ul class="space-y-3 text-sm">
                             <li class="flex justify-between"><span>Estatus:</span>
-                                <Tag :value="localTransaction.status" :severity="getStatusSeverity(localTransaction.status)" class="capitalize" />
+                                <Tag :value="formatStatusLabel(localTransaction.status)" :severity="getStatusSeverity(localTransaction.status)" />
                             </li>
                             
-                            <!-- Sección de Vencimiento con Botón Integrado -->
+                            <!-- DETALLES DE PEDIDO -->
+                            <li v-if="transaction.delivery_date" class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg -mx-2 border border-blue-100 dark:border-blue-800">
+                                <div class="flex flex-col gap-1">
+                                    <span class="text-blue-800 dark:text-blue-300 font-bold text-xs uppercase mb-1">
+                                        <i class="pi pi-truck mr-1"></i>Entrega Programada
+                                    </span>
+                                    <span class="font-bold text-blue-700 dark:text-blue-200 text-base">
+                                        {{ formatDate(transaction.delivery_date) }}
+                                    </span>
+                                    
+                                    <div v-if="transaction.shipping_address" class="mt-2 text-xs text-blue-700 dark:text-blue-300 flex gap-2">
+                                        <i class="pi pi-map-marker mt-0.5"></i>
+                                        <span>{{ transaction.shipping_address }}</span>
+                                    </div>
+
+                                    <!-- Botón Reprogramar Pedido (NUEVO) -->
+                                    <div v-if="localTransaction.status === 'por_entregar'" class="mt-2">
+                                        <Button 
+                                            label="Reprogramar" 
+                                            icon="pi pi-calendar-plus" 
+                                            size="small" 
+                                            severity="info" 
+                                            outlined
+                                            class="w-full h-8 text-xs" 
+                                            @click="openRescheduleOrderModal" 
+                                        />
+                                    </div>
+                                </div>
+                            </li>
+
+                            <!-- CONTACTO TEMPORAL (MODIFICADO para usar Menú de Teléfono) -->
+                            <li v-if="!transaction.customer && transaction.contact_info" class="flex flex-col border-b pb-2">
+                                <span class="text-gray-500 dark:text-gray-400 mb-1 text-xs font-bold">Datos de Contacto (Invitado):</span>
+                                <div class="flex items-center gap-2">
+                                    <i class="pi pi-user text-gray-400"></i>
+                                    <span class="font-medium">{{ transaction.contact_info.name }}</span>
+                                </div>
+                                <div v-if="transaction.contact_info.phone" class="flex items-center gap-2 mt-1">
+                                    <i class="pi pi-phone text-gray-400"></i>
+                                    <!-- Botón Dropdown en lugar de link directo -->
+                                    <span 
+                                        class="text-blue-600 hover:text-blue-800 cursor-pointer font-medium"
+                                        @click="togglePhoneMenu($event, transaction.contact_info.phone)"
+                                    >
+                                        {{ transaction.contact_info.phone }} <i class="pi pi-angle-down text-xs ml-1"></i>
+                                    </span>
+                                </div>
+                            </li>
+
+                            <!-- Sección de Vencimiento con Botón Integrado (Solo Apartados) -->
                             <li v-if="transaction.layaway_expiration_date" class="bg-purple-50 dark:bg-purple-900/20 p-2 rounded -mx-2">
                                 <div class="flex justify-between items-center">
                                     <span class="text-purple-800 dark:text-purple-300 font-medium">Vencimiento:</span>
                                     <span class="font-bold text-purple-700 dark:text-purple-200">{{ formatDateOnly(transaction.layaway_expiration_date) }}</span>
                                 </div>
                                 
-                                <!-- Botón Extender Fecha (visible solo si es apartado activo) -->
                                 <div v-if="localTransaction.status === 'apartado' || localTransaction.status === 'on_layaway'" class="mt-2">
                                     <Button 
                                         label="Extender fecha" 
@@ -399,15 +549,20 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                                 </div>
                             </li>
 
-                            <li class="flex justify-between items-center">
+                            <!-- Cliente (Solo si está registrado) -->
+                            <li v-if="transaction.customer" class="flex justify-between items-center">
                                 <span>Cliente:</span>
                                 <span class="font-medium">
-                                    <Link v-if="transaction.customer" :href="route('customers.show', transaction.customer.id)" class="text-blue-600 hover:underline flex items-center gap-2">
+                                    <Link :href="route('customers.show', transaction.customer.id)" class="text-blue-600 hover:underline flex items-center gap-2">
                                         {{ transaction.customer.name }} <i class="pi pi-external-link text-xs"></i>
                                     </Link>
-                                    <span v-else>Público en general</span>
                                 </span>
                             </li>
+                            <li v-else-if="!transaction.contact_info" class="flex justify-between items-center">
+                                <span>Cliente:</span>
+                                <span class="font-medium text-gray-500 italic">Público en general</span>
+                            </li>
+
                             <li class="flex justify-between"><span>Cajero:</span><span class="font-medium">{{ transaction.user?.name || 'N/A' }}</span></li>
                             <li v-if="transaction.notes" class="flex flex-col border-t pt-2 mt-2">
                                 <span class="text-gray-500 dark:text-gray-400 mb-1 text-xs uppercase font-bold">Notas / Referencia:</span>
@@ -521,21 +676,41 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
         </Dialog>
 
         <!-- Nuevo Modal de Extender Apartado -->
-        <Dialog v-model:visible="isExtendLayawayModalVisible" modal header="Extender Fecha de Vencimiento" :style="{ width: '25rem' }">
+        <Dialog v-model:visible="isExtendLayawayModalVisible" modal header="Extender fecha de vencimiento" :style="{ width: '25rem' }">
             <div class="flex flex-col gap-4 py-2">
                 <p class="text-sm text-gray-500">Selecciona la nueva fecha límite para liquidar este apartado.</p>
                 <div class="flex flex-col gap-2">
-                    <label class="font-bold text-gray-700 dark:text-gray-300">Nueva Fecha</label>
+                    <label class="font-bold text-gray-700 dark:text-gray-300">Nueva fecha</label>
                     <DatePicker v-model="newExpirationDate" dateFormat="dd/mm/yy" :minDate="new Date()" showIcon class="w-full" />
                 </div>
             </div>
             <template #footer>
                 <div class="flex justify-end gap-2">
                     <Button label="Cancelar" severity="secondary" text @click="isExtendLayawayModalVisible = false" />
-                    <Button label="Guardar Fecha" icon="pi pi-check" @click="submitExtendLayaway" :loading="isExtendingLayaway" />
+                    <Button label="Guardar fecha" icon="pi pi-check" @click="submitExtendLayaway" :loading="isExtendingLayaway" />
                 </div>
             </template>
         </Dialog>
+
+        <!-- Nuevo Modal de Reprogramar Pedido -->
+        <Dialog v-model:visible="isRescheduleOrderModalVisible" modal header="Reprogramar entrega" :style="{ width: '25rem' }">
+            <div class="flex flex-col gap-4 py-2">
+                <p class="text-sm text-gray-500">Selecciona la nueva fecha y hora para la entrega del pedido.</p>
+                <div class="flex flex-col gap-2">
+                    <label class="font-bold text-gray-700 dark:text-gray-300">Nueva fecha de entrega</label>
+                    <DatePicker v-model="newDeliveryDate" showTime hourFormat="12" dateFormat="dd/mm/yy" :minDate="new Date()" showIcon class="w-full" />
+                </div>
+            </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <Button label="Cancelar" severity="secondary" text @click="isRescheduleOrderModalVisible = false" />
+                    <Button label="Guardar fecha" icon="pi pi-check" @click="submitRescheduleOrder" :loading="isReschedulingOrder" />
+                </div>
+            </template>
+        </Dialog>
+
+        <!-- Menu Teléfono -->
+        <Menu ref="phoneMenu" :model="phoneMenuItems" :popup="true" />
 
         <!-- MODALES DE INTERCAMBIO -->
         <ProductExchangeModal v-if="transaction" v-model:visible="isProductExchangeModalVisible" :transaction="transaction" :user-bank-accounts="userBankAccounts" @success="router.reload()" />

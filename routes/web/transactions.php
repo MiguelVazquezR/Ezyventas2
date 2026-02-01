@@ -21,6 +21,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/transactions/{transaction}/exchange', [TransactionController::class, 'exchange'])
         ->name('transactions.exchange');
 
+    Route::put('/transactions/{transaction}/reschedule-order', [TransactionController::class, 'rescheduleOrder'])
+        ->name('transactions.reschedule-order');
+
     Route::put('/transactions/{transaction}/extend-layaway', [TransactionController::class, 'extendLayaway'])
         ->name('transactions.extend-layaway');
 

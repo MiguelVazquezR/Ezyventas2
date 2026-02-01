@@ -29,8 +29,7 @@ class DashboardController extends Controller
         $isAdmin = !$user->roles()->exists();
         $stats = [];
 
-        // CAMBIO: Incrementamos versión de caché para invalidar datos viejos y usar la nueva lógica
-        $cacheKey = "dashboard_stats_branch_{$branchId}_v5";
+        $cacheKey = "dashboard_stats_branch_{$branchId}_v6"; // Subimos versión caché
 
         // --- 1. Ventas y Transacciones ---
         if ($isAdmin || $user->can('transactions.access')) {
@@ -58,10 +57,18 @@ class DashboardController extends Controller
                 return $this->getWeeklySalesTrend($branchId);
             });
 
+            // Apartados por vencer (3 días)
             $stats['expiring_layaways_count'] = Transaction::where('branch_id', $branchId)
                 ->where('status', TransactionStatus::ON_LAYAWAY)
                 ->whereNotNull('layaway_expiration_date')
-                ->whereDate('layaway_expiration_date', '<=', now()->addDays(5))
+                ->whereDate('layaway_expiration_date', '<=', now()->addDays(3))
+                ->count();
+
+            // NUEVO: Pedidos por entregar (Próximos 3 días o vencidos)
+            $stats['upcoming_deliveries_count'] = Transaction::where('branch_id', $branchId)
+                ->where('status', TransactionStatus::TO_DELIVER)
+                ->whereNotNull('delivery_date')
+                ->whereDate('delivery_date', '<=', now()->addDays(3))
                 ->count();
         }
 
@@ -95,7 +102,6 @@ class DashboardController extends Controller
                 return $this->getTopSellingProducts($branchId);
             });
 
-            // OPTIMIZADO: Nueva lógica de baja rotación
             $stats['low_turnover_products'] = Cache::remember("{$cacheKey}_low_turnover", 3600, function () use ($branchId) {
                 return $this->getLowTurnoverProductsOptimized($branchId);
             });
@@ -176,6 +182,44 @@ class DashboardController extends Controller
         return response()->json($layaways);
     }
 
+    /**
+     * NUEVO: Obtiene pedidos por entregar (Próximos)
+     */
+    public function getUpcomingDeliveries(Request $request)
+    {
+        $user = Auth::user();
+        
+        $deliveries = Transaction::where('branch_id', $user->branch_id)
+            ->where('status', TransactionStatus::TO_DELIVER)
+            ->whereNotNull('delivery_date')
+            // Mostramos vencidos y próximos 7 días
+            ->whereDate('delivery_date', '<=', now()->addDays(7))
+            ->with('customer:id,name,phone')
+            ->orderBy('delivery_date', 'asc')
+            ->get()
+            ->map(function ($t) {
+                $deliveryDate = Carbon::parse($t->delivery_date);
+                
+                // Determinar nombre del cliente (registrado o invitado)
+                $clientName = $t->customer ? $t->customer->name : ($t->contact_info['name'] ?? 'Cliente Invitado');
+                $clientPhone = $t->customer ? $t->customer->phone : ($t->contact_info['phone'] ?? '-');
+
+                return [
+                    'id' => $t->id,
+                    'folio' => $t->folio,
+                    'customer_name' => $clientName,
+                    'customer_phone' => $clientPhone,
+                    'delivery_date' => $deliveryDate->format('Y-m-d H:i'),
+                    'days_remaining' => number_format(now()->diffInDays($deliveryDate, false), 0),
+                    'is_today' => $deliveryDate->isToday(),
+                    'shipping_address' => $t->shipping_address,
+                    'notes' => Str::limit($t->notes, 30),
+                ];
+            });
+
+        return response()->json($deliveries);
+    }
+
     private function getInventorySummaryOptimized($branchId)
     {
         $summary = DB::table('products')
@@ -202,27 +246,18 @@ class DashboardController extends Controller
         ];
     }
 
-    /**
-     * MÉTODO OPTIMIZADO PARA ALTO VOLUMEN DE DATOS
-     * Evita subconsultas correlacionadas que causan timeouts.
-     */
     private function getLowTurnoverProductsOptimized($branchId)
     {
-        // Paso 1: Obtener la última fecha de venta de TODOS los items vendidos en esta sucursal de forma eficiente.
-        // Esto usa índices y es una sola consulta agrupada.
         $soldItemsRaw = DB::table('transactions_items')
             ->join('transactions', 'transactions.id', '=', 'transactions_items.transaction_id')
             ->where('transactions.branch_id', $branchId)
-            // Solo nos interesan las ventas válidas para calcular rotación
             ->whereNotIn('transactions.status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED])
             ->select('itemable_id', 'itemable_type', DB::raw('MAX(transactions.created_at) as last_sale'))
             ->groupBy('itemable_id', 'itemable_type')
             ->get();
 
-        // Paso 2: Procesar en memoria (PHP es muy rápido para esto) para mapear Variantes -> Producto Padre
-        $productLastSales = []; // [product_id => Carbon_date]
+        $productLastSales = []; 
         
-        // Obtenemos un mapa de VarianteID -> ProductoID para evitar queries N+1
         $variantIds = $soldItemsRaw->where('itemable_type', ProductAttribute::class)->pluck('itemable_id');
         $variantMap = DB::table('product_attributes')
             ->whereIn('id', $variantIds)
@@ -238,40 +273,31 @@ class DashboardController extends Controller
 
             if ($productId) {
                 $saleDate = Carbon::parse($item->last_sale);
-                // Si ya tenemos fecha para este producto, nos quedamos con la más reciente
                 if (!isset($productLastSales[$productId]) || $saleDate->gt($productLastSales[$productId])) {
                     $productLastSales[$productId] = $saleDate;
                 }
             }
         }
 
-        // Paso 3: Encontrar productos de baja rotación
-        // Prioridad A: Productos que NUNCA se han vendido
         $soldProductIds = array_keys($productLastSales);
         
         $lowTurnoverCollection = collect();
 
-        // Buscamos hasta 5 productos que NO estén en la lista de vendidos
         $neverSoldProducts = Product::where('branch_id', $branchId)
             ->whereNotIn('id', $soldProductIds)
             ->with('media')
             ->limit(5)
             ->get()
             ->map(function ($p) {
-                $p->virtual_last_sale_date = null; // Marcamos como nunca vendido
+                $p->virtual_last_sale_date = null; 
                 return $p;
             });
 
         $lowTurnoverCollection = $lowTurnoverCollection->merge($neverSoldProducts);
 
-        // Prioridad B: Si no completamos 5, buscamos los que tienen la fecha de venta más antigua
         if ($lowTurnoverCollection->count() < 5) {
             $needed = 5 - $lowTurnoverCollection->count();
-            
-            // Ordenamos el array de fechas ascendente (más viejas primero)
             asort($productLastSales);
-            
-            // Tomamos los IDs de los más viejos
             $oldestIds = array_slice(array_keys($productLastSales), 0, $needed);
             
             if (!empty($oldestIds)) {
@@ -282,7 +308,6 @@ class DashboardController extends Controller
                         $p->virtual_last_sale_date = $productLastSales[$p->id];
                     });
                 
-                // Reordenar porque el whereIn no garantiza orden
                 $oldSoldProducts = $oldSoldProducts->sortBy(function($p) {
                     return $p->virtual_last_sale_date->timestamp;
                 });
@@ -291,7 +316,6 @@ class DashboardController extends Controller
             }
         }
 
-        // Paso 4: Formatear para la vista
         return $lowTurnoverCollection->map(function ($product) {
             return [
                 'id' => $product->id,
@@ -300,10 +324,10 @@ class DashboardController extends Controller
                 'current_stock' => $product->current_stock,
                 'days_since_last_sale' => $product->virtual_last_sale_date 
                     ? $product->virtual_last_sale_date->diffInDays(now()) 
-                    : null, // Null significa "Nunca vendido"
+                    : null, 
                 'image' => $product->getFirstMediaUrl('product-general-images') ?: null,
             ];
-        })->values(); // Resetear keys
+        })->values(); 
     }
 
     private function getTopSellingProducts($branchId)
@@ -312,7 +336,7 @@ class DashboardController extends Controller
             ->join('transactions', 'transactions_items.transaction_id', '=', 'transactions.id')
             ->where('transactions.branch_id', $branchId)
             ->where('transactions.created_at', '>=', now()->startOfMonth())
-            ->whereNotIn('transactions.status', [TransactionStatus::CANCELLED]) // Excluir canceladas
+            ->whereNotIn('transactions.status', [TransactionStatus::CANCELLED]) 
             ->select('itemable_id', 'itemable_type', DB::raw('SUM(quantity) as total_sold'))
             ->groupBy('itemable_id', 'itemable_type')
             ->orderByDesc('total_sold')
@@ -355,11 +379,9 @@ class DashboardController extends Controller
 
     private function getWeeklySalesTrend($branchId): array
     {
-        // 1. Definir la semana (Lunes a Domingo)
         $startOfWeek = now()->startOfWeek(Carbon::MONDAY);
         $endOfWeek = now()->endOfWeek(Carbon::SUNDAY);
 
-        // 2. Consulta Robusta
         $trendData = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$startOfWeek, $endOfWeek])
             ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])

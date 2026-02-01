@@ -114,6 +114,17 @@ const getPaymentMethodIcon = (method) => {
     };
     return icons[method] || 'pi pi-question-circle';
 };
+
+const onRowClick = (event) => {
+    const target = event.originalEvent.target;
+    if (target.closest('button') || target.closest('.p-button')) {
+        return;
+    }
+    
+    if (hasPermission('expenses.see_details')) {
+        router.visit(route('expenses.show', event.data.id));
+    }
+};
 </script>
 
 <template>
@@ -154,7 +165,9 @@ const getPaymentMethodIcon = (method) => {
                     :totalRecords="expenses.total" :rows="expenses.per_page" :rowsPerPageOptions="[20, 50, 100, 200]"
                     dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 60rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
-                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} gastos">
+                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} gastos"
+                    rowHover
+                    @row-click="onRowClick">
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
                     <Column field="folio" header="Concepto" sortable></Column>
                     <Column field="expense_date" header="Fecha" sortable>

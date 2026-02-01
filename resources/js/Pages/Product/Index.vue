@@ -8,6 +8,7 @@ import ProductNavigation from './Partials/ProductNavigation.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
+import Image from 'primevue/image'; // <-- IMPORTACIÓN NUEVA
 
 const props = defineProps({
     products: Object,
@@ -140,6 +141,20 @@ const getStockSeverity = (product) => {
     }
     return 'success';
 };
+
+// --- NUEVO: Manejador de clic en la fila ---
+const onRowClick = (event) => {
+    // Evitar navegación si se hizo clic en un botón o imagen interactiva
+    // (Aunque usamos @click.stop, esto es una capa extra de seguridad)
+    const target = event.originalEvent.target;
+    if (target.closest('button') || target.closest('.p-image-preview-indicator') || target.closest('.p-checkbox')) {
+        return;
+    }
+
+    if (hasPermission('products.see_details')) {
+        router.visit(route('products.show', event.data.id));
+    }
+};
 </script>
 
 <template>
@@ -221,22 +236,35 @@ const getStockSeverity = (product) => {
                     dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 75rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} productos"
-                    class="p-datatable-sm">
+                    class="p-datatable-sm"
+                    rowHover
+                    @row-click="onRowClick"> <!-- Evento click en fila -->
+                    
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
+                    
                     <Column header="Imagen" style="width: 5rem">
                         <template #body="{ data }">
-                            <img v-if="data.media && data.media.length > 0" :src="data.media[0].original_url"
-                                :alt="data.name" class="w-12 h-12 rounded-md object-cover">
-                            <div v-else
-                                class="w-12 h-12 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                                <i class="pi pi-image text-2xl text-gray-400 dark:text-gray-500"></i>
+                            <!-- Div contenedor con stop propagation para que el click en la imagen NO abra el show del producto -->
+                            <div @click.stop class="flex items-center justify-center size-12 bg-gray-100">
+                                <Image v-if="data.media && data.media.length > 0" 
+                                    :src="data.media[0].original_url" 
+                                    :alt="data.name" 
+                                    class="rounded-md shadow-sm !h-full" 
+                                    preview 
+                                />
+                                <div v-else
+                                    class="w-12 h-12 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                                    <i class="pi pi-image text-2xl text-gray-400 dark:text-gray-500"></i>
+                                </div>
                             </div>
                         </template>
                     </Column>
+
                     <Column field="sku" header="Código" sortable>
                         <template #body="{ data }">
                             <div class="flex items-center gap-2 -ml-2">
-                                <Button v-if="data.sku && hasPermission('pos.access')" @click="openPrintModal(data)"
+                                <!-- Botón con stop propagation -->
+                                <Button v-if="data.sku && hasPermission('pos.access')" @click.stop="openPrintModal(data)"
                                     icon="pi pi-print" text rounded severity="secondary"
                                     v-tooltip.bottom="'Imprimir Etiqueta'" />
                                 <span>{{ data.sku }}</span>
@@ -272,7 +300,8 @@ const getStockSeverity = (product) => {
                     <Column field="min_stock" header="Exist. mínimas" sortable></Column>
                     <Column headerStyle="width: 5rem; text-align: center">
                         <template #body="{ data }">
-                            <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded
+                            <!-- Botón con stop propagation -->
+                            <Button @click.stop="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded
                                 severity="secondary" aria-haspopup="true" aria-controls="overlay_menu" />
                         </template>
                     </Column>

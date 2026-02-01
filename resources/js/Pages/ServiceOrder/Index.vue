@@ -124,6 +124,20 @@ const getStatusSeverity = (status) => {
     };
     return map[status] || 'secondary';
 };
+
+const onRowClick = (event) => {
+    // Evitamos navegar si se hizo clic en el botón del menú (acciones)
+    // El evento row-click de PrimeVue devuelve { originalEvent, data, index }
+    // Verificamos si el target fue un botón o icono
+    const target = event.originalEvent.target;
+    if (target.closest('button') || target.closest('.p-button')) {
+        return;
+    }
+    
+    if (hasPermission('services.orders.see_details')) {
+        router.visit(route('service-orders.show', event.data.id));
+    }
+};
 </script>
 
 <template>
@@ -164,7 +178,9 @@ const getStatusSeverity = (status) => {
                     :rowsPerPageOptions="[20, 50, 100, 200]" dataKey="id" @page="onPage" @sort="onSort" removableSort
                     tableStyle="min-width: 60rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
-                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} órdenes">
+                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} órdenes"
+                    rowHover
+                    @row-click="onRowClick">
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
                     <Column field="folio" header="Folio" sortable></Column>
                     <Column field="customer_name" header="Cliente" sortable></Column>
