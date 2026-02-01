@@ -205,8 +205,8 @@ class SubscriptionController extends Controller
                 'business_name' => $validated['business_name'],
                 'contact_phone' => $validated['contact_phone'],
                 // Guardamos la dirección como array para respetar el cast del Modelo
-                'address' => $validated['address'] 
-                    ? ['text' => $validated['address']] 
+                'address' => $validated['address']
+                    ? ['text' => $validated['address']]
                     : null,
             ]);
 
@@ -652,8 +652,10 @@ class SubscriptionController extends Controller
                     $reviewUrl = route('admin.payments.show', $payment->id);
 
                     // 3. Enviar el correo (se encolará si Mailable implementa ShouldQueue)
-                    Mail::to($adminUser->email)
-                        ->send(new AdminNewPaymentNotification($subscriptionName, $paymentAmount, $reviewUrl));
+                    if (app()->environment('production')) {
+                        Mail::to($adminUser->email)
+                            ->send(new AdminNewPaymentNotification($subscriptionName, $paymentAmount, $reviewUrl));
+                    }
                 } else {
                     Log::warning("No se encontró un usuario admin (Suscripción ID 1) para notificar el pago pendiente ID: {$payment->id}");
                 }

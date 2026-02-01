@@ -137,6 +137,52 @@ class TransactionPaymentService
     }
 
     /**
+     * Procesa un NUEVO PEDIDO (Order) desde el POS.
+     * Crea una transacción con status TO_DELIVER y reserva stock.
+     */
+    public function handleNewOrder(User $user, array $data): Transaction
+    {
+        return DB::transaction(function () use ($user, $data) {
+            $now = now();
+            $sessionId = $data['cash_register_session_id'];
+
+            // 1. Validar Cliente (Opcional si es guest)
+            $customerId = $data['customer_id'] ?? null;
+
+            // 2. Crear Transacción de Pedido
+            $transaction = Transaction::create([
+                'cash_register_session_id' => $sessionId,
+                'folio' => self::generateFolio($user->branch_id),
+                'customer_id' => $customerId,
+                'contact_info' => $data['contact_info'] ?? null, // JSON para invitados
+                'branch_id' => $user->branch_id,
+                'user_id' => $user->id,
+                'status' => TransactionStatus::TO_DELIVER, // <-- ESTATUS CLAVE
+                'delivery_status' => 'pending',
+                'channel' => TransactionChannel::POS, 
+                'subtotal' => $data['subtotal'],
+                'shipping_cost' => $data['shipping_cost'] ?? 0,
+                'total_discount' => $data['total_discount'] ?? 0,
+                'total_tax' => 0,
+                'currency' => 'MXN',
+                'notes' => $data['notes'] ?? null,
+                'delivery_date' => $data['delivery_date'] ?? null,
+                'shipping_address' => $data['shipping_address'] ?? null,
+                'status_changed_at' => $now,
+            ]);
+
+            // 3. Crear Items y Reservar Stock
+            // Usamos TO_DELIVER para que createTransactionItems sepa que debe incrementar 'reserved_stock'
+            $this->createTransactionItems($transaction, $data['cartItems'], TransactionStatus::TO_DELIVER);
+
+            // NOTA: Por defecto, los pedidos nacen sin pagos (pago contra entrega).
+            // Si en el futuro agregas pagos anticipados, aquí llamarías a $this->applyDirectPayments
+
+            return $transaction;
+        });
+    }
+
+    /**
      * Procesa un CAMBIO de producto (Exchange).
      * Devuelve items al inventario, saca nuevos items y ajusta la diferencia monetaria.
      */
@@ -859,7 +905,7 @@ class TransactionPaymentService
 
             // Lógica de Stock
             if ($itemModel) {
-                if ($status === TransactionStatus::ON_LAYAWAY) {
+                if ($status === TransactionStatus::ON_LAYAWAY || $status === TransactionStatus::TO_DELIVER) {
                     // Apartado
                     $itemModel->increment('reserved_stock', $item['quantity']);
                     if ($itemModel instanceof ProductAttribute) {

@@ -21,21 +21,26 @@ class Transaction extends Model
     protected $fillable = [
         'folio',
         'customer_id',
+        'contact_info', // Nuevo: Datos temporales (Guest)
         'branch_id',
         'user_id',
         'cash_register_session_id',
         'transactionable_id',
         'transactionable_type',
         'status',
+        'delivery_status', // Nuevo: Estatus logístico
         'channel',
         'subtotal',
+        'shipping_cost', // Nuevo: Costo de envío
         'total_discount',
         'total_tax',
         'currency',
         'notes',
+        'shipping_address', // Nuevo: Dirección
         'status_changed_at',
         'invoiced',
         'layaway_expiration_date',
+        'delivery_date', // Nuevo: Fecha pactada
         'created_at',
         'updated_at',
     ];
@@ -46,18 +51,21 @@ class Transaction extends Model
             'status' => TransactionStatus::class,
             'channel' => TransactionChannel::class,
             'subtotal' => 'decimal:2',
+            'shipping_cost' => 'decimal:2', // Nuevo
             'total_discount' => 'decimal:2',
             'total_tax' => 'decimal:2',
             'status_changed_at' => 'datetime',
             'invoiced' => 'boolean',
             'layaway_expiration_date' => 'date',
+            'delivery_date' => 'datetime', // Nuevo
+            'contact_info' => 'array', // Nuevo: Para acceder como $txn->contact_info['name']
         ];
     }
 
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['status'])
+            ->logOnly(['status', 'delivery_status'])
             ->setDescriptionForEvent(fn(string $eventName) => "La transacción ha sido {$this->translateEventName($eventName)}")
             ->logOnlyDirty()->dontSubmitEmptyLogs();
     }
@@ -76,11 +84,12 @@ class Transaction extends Model
 
     /**
      * Calcula el total de la transacción dinámicamente.
+     * AHORA INCLUYE EL COSTO DE ENVÍO.
      */
     protected function total(): Attribute
     {
         return Attribute::make(
-            get: fn() => ($this->subtotal - $this->total_discount) + $this->total_tax,
+            get: fn() => ($this->subtotal - $this->total_discount) + $this->total_tax + ($this->shipping_cost ?? 0),
         );
     }
 
@@ -154,7 +163,7 @@ class Transaction extends Model
     }
 
     /**
-     * CORRECCIÓN: Obtiene los movimientos de saldo del cliente asociados a esta transacción.
+     * Obtiene los movimientos de saldo del cliente asociados a esta transacción.
      */
     public function customerBalanceMovements(): HasMany
     {

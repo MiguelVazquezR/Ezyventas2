@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\SubscriptionPayment;
 use App\Enums\SubscriptionStatus;
-use App\Enums\BillingPeriod;
 use App\Enums\ExpenseStatus;
 use App\Enums\SubscriptionPaymentStatus;
 use App\Mail\PaymentStatusNotification;
@@ -225,12 +224,14 @@ class AdminSubscriptionPaymentController extends Controller
             $subscriptionEmail = $subscription->contact_email; 
 
             if ($subscriptionEmail) {
-                Mail::to($subscriptionEmail)
-                    ->send(new PaymentStatusNotification(
-                        $payment,
-                        'approved',
-                        $subscription->commercial_name,
-                    ));
+                if (app()->environment('production')) {
+                    Mail::to($subscriptionEmail)
+                        ->send(new PaymentStatusNotification(
+                            $payment,
+                            'approved',
+                            $subscription->commercial_name,
+                        ));
+                }
             } else {
                 Log::warning("No se encontró un email de contacto para notificar la aprobación del pago ID: {$payment->id}");
             }

@@ -38,16 +38,16 @@ class TransactionController extends Controller implements HasMiddleware
     {
         return [
             new Middleware('can:transactions.access', only: ['index']),
-            new Middleware('can:transactions.see_details', only: ['show']),
+            new Middleware('can:transactions.see_details', only: ['show', 'extendLayaway']),
             new Middleware('can:transactions.cancel', only: ['cancel']),
             new Middleware('can:transactions.refund', only: ['refund']),
             new Middleware('can:transactions.add_payment', only: ['addPayment']),
             new Middleware('can:transactions.edit_payment', only: ['updatePayment']),
             new Middleware('can:transactions.exchange', only: ['exchange', 'exchangeLayaway']), // Permiso compartido
+            new Middleware('can:transactions.delete', only: ['destroy']),
         ];
     }
 
-    // ... (Métodos index y show se mantienen igual) ...
     public function index(Request $request): Response
     {
         $user = Auth::user();
@@ -61,12 +61,27 @@ class TransactionController extends Controller implements HasMiddleware
             ->with(['customer:id,name', 'user:id,name', 'payments'])
             ->select('transactions.*');
 
+        // Búsqueda General
         if ($request->has('search')) {
             $searchTerm = $request->input('search');
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('transactions.folio', 'LIKE', "%{$searchTerm}%")
                     ->orWhere('customers.name', 'LIKE', "%{$searchTerm}%");
             });
+        }
+
+        // Filtro por Estatus
+        if ($request->has('status') && $request->input('status')) {
+            $query->where('transactions.status', $request->input('status'));
+        }
+
+        // Filtro por Rango de Fechas
+        if ($request->has('date_start') && $request->input('date_start')) {
+            $query->whereDate('transactions.created_at', '>=', $request->input('date_start'));
+        }
+
+        if ($request->has('date_end') && $request->input('date_end')) {
+            $query->whereDate('transactions.created_at', '<=', $request->input('date_end'));
         }
 
         $sortField = $request->input('sortField', 'created_at');
@@ -89,7 +104,8 @@ class TransactionController extends Controller implements HasMiddleware
 
         return Inertia::render('Transaction/Index', [
             'transactions' => $transactions,
-            'filters' => $request->only(['search', 'sortField', 'sortOrder']),
+            // Pasamos los filtros de vuelta al frontend para mantener el estado
+            'filters' => $request->only(['search', 'sortField', 'sortOrder', 'status', 'date_start', 'date_end']),
             'availableTemplates' => $availableTemplates,
         ]);
     }
@@ -193,7 +209,7 @@ class TransactionController extends Controller implements HasMiddleware
         if (in_array($transaction->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED])) {
             return redirect()->back()->with(['error' => 'No se pueden realizar cambios en transacciones canceladas o reembolsadas.']);
         }
-        
+
         // Evitar usar este método para apartados si existe el otro
         if ($transaction->status === TransactionStatus::ON_LAYAWAY) {
             return redirect()->back()->with(['error' => 'Para apartados use la opción "Modificar Apartado".']);
@@ -213,6 +229,26 @@ class TransactionController extends Controller implements HasMiddleware
             return redirect()->back()->with(['error' => 'Error: ' . $e->getMessage()]);
         }
     }
+    
+    /**
+     * Extiende la fecha de vencimiento de un apartado.
+     */
+    public function extendLayaway(Request $request, Transaction $transaction)
+    {
+        $validated = $request->validate([
+            'new_expiration_date' => 'required|date|after:today',
+        ]);
+
+        if ($transaction->status !== TransactionStatus::ON_LAYAWAY) {
+            return back()->with(['error' => 'Solo se puede extender la fecha de apartados activos.']);
+        }
+
+        $transaction->update([
+            'layaway_expiration_date' => $validated['new_expiration_date']
+        ]);
+
+        return back()->with('success', 'Fecha de vencimiento actualizada correctamente.');
+    }
 
     /**
      * Procesa un cambio de productos en APARTADOS.
@@ -221,7 +257,7 @@ class TransactionController extends Controller implements HasMiddleware
     {
         $validated = $request->validate([
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
-            
+
             // Items devueltos
             'returned_items' => 'required|array|min:1',
             'returned_items.*.item_id' => 'required|exists:transactions_items,id',
@@ -271,7 +307,7 @@ class TransactionController extends Controller implements HasMiddleware
     }
 
     // ... (El resto de métodos se mantienen: pendingDebts, addPayment, cancel, refund, updatePayment, searchProducts, returnStock) ...
-    
+
     /**
      * Endpoint API para obtener deudas pendientes de un cliente.
      * Usado en el modal de intercambio para distribuir excedentes.
@@ -300,7 +336,7 @@ class TransactionController extends Controller implements HasMiddleware
 
         return response()->json($debtsWithPendingAmount);
     }
-        
+
     public function addPayment(Request $request, Transaction $transaction)
     {
         $validated = $request->validate([
@@ -353,7 +389,7 @@ class TransactionController extends Controller implements HasMiddleware
                 // 2. Manejar Saldo del Cliente (Limpiar Deuda)
                 if ($transaction->customer_id) {
                     $customer = $transaction->customer;
-                    
+
                     // Si es apartado, el monto a devolver al saldo es el TOTAL de la venta
                     // Esto "borra" la deuda (incrementa el balance que estaba en negativo)
                     // Y si hubo abonos previos, también se los reintegra como saldo a favor.
@@ -385,6 +421,27 @@ class TransactionController extends Controller implements HasMiddleware
         }
 
         return redirect()->back()->with('success', $isLayaway ? 'Apartado cancelado y stock liberado.' : 'Venta cancelada con éxito.');
+    }
+
+    /**
+     * Elimina permanentemente una transacción.
+     */
+    public function destroy(Transaction $transaction)
+    {
+        try {
+            DB::transaction(function () use ($transaction) {
+                // 1. Revertir Stock si la venta estaba activa
+                if (!in_array($transaction->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED])) {
+                    $this->returnStock($transaction);
+                }
+            });
+            $transaction->delete();
+
+            return redirect()->back()->with('success', 'Venta eliminada permanentemente y saldos ajustados.');
+        } catch (\Exception $e) {
+            Log::error("Error al eliminar transacción {$transaction->id}: " . $e->getMessage());
+            return redirect()->back()->with(['error' => 'Ocurrió un error al intentar eliminar la venta.']);
+        }
     }
 
     public function refund(Request $request, Transaction $transaction)
@@ -563,19 +620,63 @@ class TransactionController extends Controller implements HasMiddleware
     }
 
     /**
+     * NUEVO: Crea un PEDIDO (Order)
+     * Valida datos logísticos y crea transacción con estatus TO_DELIVER
+     */
+    public function storeOrder(Request $request)
+    {
+        $validated = $request->validate([
+            'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
+            'cartItems' => 'required|array|min:1',
+            // Validaciones del carrito - ACTUALIZADAS PARA INCLUIR TODOS LOS DATOS
+            'cartItems.*.id' => 'required|exists:products,id',
+            'cartItems.*.quantity' => 'required|numeric|min:0.01',
+            'cartItems.*.unit_price' => 'required|numeric|min:0',
+            'cartItems.*.description' => 'required|string',
+            'cartItems.*.discount' => 'nullable|numeric',
+            'cartItems.*.product_attribute_id' => 'nullable|exists:product_attributes,id',
+
+            // Datos del Pedido
+            'contact_info' => 'required|array',
+            'contact_info.name' => 'required|string|min:2',
+            'contact_info.phone' => 'nullable|string',
+            'delivery_date' => 'required|date',
+            'shipping_address' => 'nullable|string',
+            'shipping_cost' => 'numeric|min:0',
+            'customerId' => 'nullable|exists:customers,id',
+            'subtotal' => 'required|numeric',
+            'total_discount' => 'numeric',
+            'notes' => 'nullable|string',
+        ]);
+
+        try {
+            // Mapeo de datos para el servicio
+            $data = $validated;
+            $data['customer_id'] = $validated['customerId'];
+
+            $transaction = $this->transactionPaymentService->handleNewOrder(Auth::user(), $data);
+
+            return redirect()->back()->with('success', "Pedido #{$transaction->folio} creado correctamente.");
+        } catch (\Exception $e) {
+            Log::error("Error creando pedido: " . $e->getMessage());
+            return redirect()->back()->with(['error' => 'Error: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
      * Devuelve el stock físico o libera el stock reservado según el estatus de la transacción.
      */
     private function returnStock(Transaction $transaction)
     {
         foreach ($transaction->items as $item) {
             $itemable = $item->itemable;
-            
+
             if ($itemable instanceof Product || $itemable instanceof ProductAttribute) {
-                if ($transaction->status === TransactionStatus::ON_LAYAWAY) {
+                if ($transaction->status === TransactionStatus::ON_LAYAWAY || $transaction->status === TransactionStatus::TO_DELIVER) {
                     // APARTADO: Quitamos del 'reserved_stock'. El 'current_stock' no se toca 
                     // porque el producto nunca salió físicamente de la tienda (solo estaba apartado).
                     $itemable->decrement('reserved_stock', $item->quantity);
-                    
+
                     // Si es variante, actualizar también el contador del padre
                     if ($itemable instanceof ProductAttribute) {
                         $itemable->product->decrement('reserved_stock', $item->quantity);
@@ -583,7 +684,7 @@ class TransactionController extends Controller implements HasMiddleware
                 } else {
                     // VENTA NORMAL: Devolvemos al 'current_stock' (stock físico disponible).
                     $itemable->increment('current_stock', $item->quantity);
-                    
+
                     if ($itemable instanceof ProductAttribute) {
                         $itemable->product->increment('current_stock', $item->quantity);
                     }
