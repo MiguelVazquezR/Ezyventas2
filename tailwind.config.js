@@ -42,6 +42,21 @@ export default {
                 black1: '#1A1A1A',
                 black2: '#0D0D0D',
             },
+            // --- ANIMACIONES PERSONALIZADAS ---
+            keyframes: {
+                'swing-with-pause': {
+                    '0%': { transform: 'rotate(0deg)' },
+                    '4%': { transform: 'rotate(30deg)' },
+                    '10%': { transform: 'rotate(-25deg)' },
+                    '12%': { transform: 'rotate(20deg)' },
+                    '16%': { transform: 'rotate(-20deg)' },
+                    '20%': { transform: 'rotate(0deg)' },
+                    '100%': { transform: 'rotate(0deg)' },
+                }
+            },
+            animation: {
+                'swing': 'swing-with-pause 4s infinite ease-in-out',
+            }
         },
     },
     variants: {

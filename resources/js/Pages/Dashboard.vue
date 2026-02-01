@@ -1,7 +1,7 @@
 <script setup>
 import { Link, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
-import axios from 'axios'; // Importamos Axios
+import axios from 'axios'; 
 import AppLayout from '@/Layouts/AppLayout.vue';
 import BankAccountHistoryModal from '@/Components/BankAccountHistoryModal.vue';
 import BankAccountTransferModal from '@/Components/BankAccountTransferModal.vue';
@@ -75,23 +75,48 @@ const onTransferSuccess = () => {
     router.reload({ preserveState: false });
 };
 
-// --- Lógica para Modal de Apartados por Vencer ---
-const isExpiringModalVisible = ref(false);
-const isLoadingExpiring = ref(false);
-const expiringLayaways = ref([]);
+// --- Lógica de Modales de Alerta (Unificado) ---
+const isInfoModalVisible = ref(false);
+const isLoadingModal = ref(false);
+const modalItems = ref([]);
+const activeModalType = ref('layaways'); // 'layaways' | 'deliveries'
+
+const modalTitle = computed(() => {
+    return activeModalType.value === 'layaways' 
+        ? 'Apartados por vencer (Próximos 3 días)' 
+        : 'Próximas entregas de pedidos';
+});
 
 const fetchExpiringLayaways = async () => {
-    isExpiringModalVisible.value = true;
-    isLoadingExpiring.value = true;
-    expiringLayaways.value = [];
+    activeModalType.value = 'layaways';
+    isInfoModalVisible.value = true;
+    isLoadingModal.value = true;
+    modalItems.value = [];
     
     try {
         const response = await axios.get(route('dashboard.expiring-layaways'));
-        expiringLayaways.value = response.data;
+        modalItems.value = response.data;
     } catch (error) {
         console.error("Error cargando apartados:", error);
     } finally {
-        isLoadingExpiring.value = false;
+        isLoadingModal.value = false;
+    }
+};
+
+const fetchUpcomingDeliveries = async () => {
+    activeModalType.value = 'deliveries';
+    isInfoModalVisible.value = true;
+    isLoadingModal.value = true;
+    modalItems.value = [];
+    
+    try {
+        // Asegúrate de agregar esta ruta en tu archivo de rutas
+        const response = await axios.get(route('dashboard.upcoming-deliveries'));
+        modalItems.value = response.data;
+    } catch (error) {
+        console.error("Error cargando pedidos:", error);
+    } finally {
+        isLoadingModal.value = false;
     }
 };
 
@@ -132,47 +157,46 @@ const getExpirationSeverity = (days) => {
                         </div>
                     </Link>
                     
-                    <!-- NUEVA TARJETA: Apartados por Vencer -->
-                    <!-- Solo se muestra si la variable existe en stats (para usuarios con permiso) -->
+                    <!-- Apartados por Vencer -->
                     <div v-if="stats.expiring_layaways_count !== undefined" 
                         @click="fetchExpiringLayaways"
                         class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer border-l-4 border-purple-500 group">
                         <div class="flex justify-between items-start">
                             <div>
                                 <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Apartados por vencer</h2>
-                                <small class="text-gray-500">Click para ver apartados por vencer</small>
+                                <small class="text-gray-500">Click para ver detalles</small>
                                 <p class="text-3xl font-bold mt-2 text-purple-600 dark:text-purple-400">
                                     {{ stats.expiring_layaways_count }}
                                 </p>
-                                <p class="text-xs text-gray-400 mt-1">Próximos 5 días</p>
+                                <p class="text-xs text-gray-400 mt-1">Próximos 3 días</p>
                             </div>
-                            <!-- ANIMACIÓN: Se mueve si hay más de 1 apartado por vencer -->
-                            <div class="p-3 bg-purple-100 dark:bg-purple-900/50 rounded-full text-purple-600" :class="{ 'animate-bounce': stats.expiring_layaways_count > 0 }">
-                                    <i class="pi pi-clock"></i>
-                            </div>
+                                <i class="pi pi-clock p-3 bg-purple-100 dark:bg-purple-900/50 rounded-full text-purple-600" :class="{ 'animate-bounce': stats.expiring_layaways_count > 0 }"></i>
                         </div>
                     </div>
 
-                    <Link v-if="stats.monthly_expenses !== undefined" :href="route('expenses.index')"
-                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow border-l-4 border-red-500">
+                    <!-- NUEVO PANEL: Próximas Entregas -->
+                    <div v-if="stats.upcoming_deliveries_count !== undefined" 
+                        @click="fetchUpcomingDeliveries"
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer border-l-4 border-blue-500 group">
                         <div class="flex justify-between items-start">
                             <div>
-                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Gastos del mes</h2>
-                                <small class="text-gray-500">Click para ir a módulo de gastos</small>
-                                <p class="text-3xl font-bold mt-2 text-red-500">{{
-                                    formatCurrency(stats.monthly_expenses) }}
+                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Próximas entregas</h2>
+                                <small class="text-gray-500">Click para gestionar envíos</small>
+                                <p class="text-3xl font-bold mt-2 text-blue-600 dark:text-blue-400">
+                                    {{ stats.upcoming_deliveries_count }}
                                 </p>
+                                <p class="text-xs text-gray-400 mt-1">Pendientes de entrega</p>
                             </div>
-                            <i
-                                class="pi pi-arrow-up-right text-red-500 p-3 bg-red-100 dark:bg-red-900/50 rounded-full"></i>
+                            <i class="pi pi-truck p-3 bg-blue-100 dark:bg-blue-900/50 rounded-full text-blue-600" :class="{ 'animate-bounce': stats.upcoming_deliveries_count > 0 }"></i>
                         </div>
-                    </Link>
+                    </div>
+
                     <Link v-if="stats.total_customer_debt !== undefined" :href="route('customers.index')"
                         class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow border-l-4 border-cyan-500">
                         <div class="flex justify-between items-start">
                             <div>
                                 <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Saldo por cobrar</h2>
-                                <small class="text-gray-500">Click para ir a módulo de clientes</small>
+                                <small class="text-gray-500">Click para ir a clientes</small>
                                 <p class="text-3xl font-bold mt-2 text-cyan-500">{{
                                     formatCurrency(stats.total_customer_debt) }}</p>
                                 <p class="text-xs text-gray-400">Total de clientes</p>
@@ -208,13 +232,11 @@ const getExpirationSeverity = (days) => {
                                 <div class="flex justify-between items-center"><span
                                         class="text-green-500 flex items-center gap-2"><i
                                             class="pi pi-circle-fill text-xs"></i> En uso</span>
-                                            <!-- CORRECCIÓN: Usar nuevo alias .in_use_count -->
                                             <span class="font-bold text-2xl">{{ stats.cash_registers_status.in_use_count || 0 }}</span>
                                 </div>
                                 <div class="flex justify-between items-center"><span
                                         class="text-gray-400 flex items-center gap-2"><i
                                             class="pi pi-circle-fill text-xs"></i> Sin usar</span>
-                                            <!-- CORRECCIÓN: Usar nuevo alias .available_count -->
                                             <span class="font-bold text-2xl">{{ stats.cash_registers_status.available_count || 0 }}</span>
                                 </div>
                             </div>
@@ -436,28 +458,30 @@ const getExpirationSeverity = (days) => {
             :account="selectedAccount" :all-accounts="allSubscriptionBankAccounts"
             @transfer-success="onTransferSuccess" />
 
-        <!-- MODAL: Apartados por Vencer -->
-        <Dialog v-model:visible="isExpiringModalVisible" header="Apartados por vencer (Próximos 5 días)" 
+        <!-- MODAL UNIFICADO: Apartados y Entregas -->
+        <Dialog v-model:visible="isInfoModalVisible" :header="modalTitle" 
             modal :style="{ width: '50rem' }" :breakpoints="{ '960px': '75vw', '640px': '95vw' }">
             
-            <div v-if="isLoadingExpiring" class="flex justify-center p-8">
+            <div v-if="isLoadingModal" class="flex justify-center p-8">
                 <i class="pi pi-spin pi-spinner !text-4xl text-purple-500"></i>
             </div>
 
-            <div v-else-if="expiringLayaways.length > 0">
-                <!-- MENSAJE INFORMATIVO NUEVO -->
+            <div v-else-if="modalItems.length > 0">
+                <!-- MENSAJE INFORMATIVO DINÁMICO -->
                 <div class="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 p-3 rounded-lg mb-4 text-sm flex gap-3 items-start border border-blue-200 dark:border-blue-800">
                     <i class="pi pi-info-circle mt-0.5 text-lg"></i>
                     <div>
                         <p class="font-bold mb-0">¿Qué deseas hacer?</p>
-                        <p class="mt-0">
-                            Haz clic en el número de <strong>Folio</strong> de la tabla para ver los detalles, 
-                            donde podrás <strong>extender la fecha de vencimiento</strong> o <strong>cancelar</strong> el apartado si es necesario.
+                        <p class="mt-0" v-if="activeModalType === 'layaways'">
+                            Haz clic en el <strong>Folio</strong> para ver detalles, extender la fecha o cancelar el apartado.
+                        </p>
+                        <p class="mt-0" v-else>
+                            Haz clic en el <strong>Folio</strong> para ver detalles, contactar al cliente o marcar el pedido como entregado.
                         </p>
                     </div>
                 </div>
 
-                <DataTable :value="expiringLayaways" class="p-datatable-sm" responsiveLayout="scroll" paginator :rows="5">
+                <DataTable :value="modalItems" class="p-datatable-sm" responsiveLayout="scroll" paginator :rows="5">
                     <Column field="folio" header="Folio" sortable>
                         <template #body="{ data }">
                             <Link :href="route('transactions.show', data.id)" class="text-blue-600 hover:underline font-bold">
@@ -465,30 +489,53 @@ const getExpirationSeverity = (days) => {
                             </Link>
                         </template>
                     </Column>
-                    <Column field="customer_name" header="Cliente" sortable>
+                    
+                    <Column field="customer_name" header="Cliente/Contacto" sortable>
                         <template #body="{ data }">
-                            <Link v-if="data.customer_id" :href="route('customers.show', data.customer_id)" class="text-blue-600 hover:underline">
+                            <Link v-if="data.customer_id" :href="route('customers.show', data.customer_id)" class="text-blue-600 hover:underline font-medium">
                                 {{ data.customer_name }}
                             </Link>
-                            <span v-else>{{ data.customer_name }}</span>
+                            <span v-else class="font-medium">{{ data.customer_name }}</span>
                             <div v-if="data.customer_phone" class="text-xs text-gray-500">
                                 {{ data.customer_phone }}
                             </div>
                         </template>
                     </Column>
-                    <Column field="expiration_date" header="Vence" sortable>
+
+                    <!-- COLUMNA DINÁMICA: Fecha (Vencimiento o Entrega) -->
+                    <Column v-if="activeModalType === 'layaways'" field="expiration_date" header="Vence" sortable>
                         <template #body="{ data }">
                             <Tag :value="data.expiration_date" :severity="getExpirationSeverity(data.days_remaining)" />
                             <div class="text-xs text-gray-500 mt-1">
-                                {{ data.days_remaining < 0 ? `Venció hace ${Math.abs(data.days_remaining)} día(s)` : (data.days_remaining === 0 ? 'Vence hoy' : `En ${data.days_remaining} día(s)`) }}
+                                {{ data.days_remaining < 0 ? `Venció hace ${Math.abs(data.days_remaining)} día(s)` : (data.days_remaining == 0 ? 'Vence hoy' : `En ${data.days_remaining} día(s)`) }}
                             </div>
                         </template>
                     </Column>
-                    <Column field="pending_amount" header="Pendiente" sortable>
+                    <Column v-else field="delivery_date" header="Entrega" sortable>
+                        <template #body="{ data }">
+                            <span class="font-bold text-sm block">{{ data.delivery_date }}</span>
+                            <div class="text-xs text-gray-500 mt-1">
+                                <span v-if="data.is_today" class="text-green-600 font-bold">¡Es hoy!</span>
+                                <span v-else>{{ data.days_remaining < 0 ? `Atrasado ${Math.abs(data.days_remaining)} día(s)` : `En ${data.days_remaining} día(s)` }}</span>
+                            </div>
+                        </template>
+                    </Column>
+
+                    <!-- COLUMNA DINÁMICA: Monto o Dirección -->
+                    <Column v-if="activeModalType === 'layaways'" field="pending_amount" header="Pendiente" sortable>
                         <template #body="{ data }">
                             <span class="font-mono font-bold text-red-500">
                                 {{ formatCurrency(data.pending_amount) }}
                             </span>
+                        </template>
+                    </Column>
+                    <Column v-else header="Dirección/Notas">
+                        <template #body="{ data }">
+                            <div class="text-xs max-w-[200px] truncate" :title="data.shipping_address || data.notes">
+                                <span v-if="data.shipping_address"><i class="pi pi-map-marker text-gray-400 mr-1"></i>{{ data.shipping_address }}</span>
+                                <span v-else-if="data.notes"><i class="pi pi-comment text-gray-400 mr-1"></i>{{ data.notes }}</span>
+                                <span v-else class="text-gray-400 italic">Sin detalles</span>
+                            </div>
                         </template>
                     </Column>
                 </DataTable>
@@ -496,7 +543,8 @@ const getExpirationSeverity = (days) => {
 
             <div v-else class="text-center py-8 text-gray-500">
                 <i class="pi pi-check-circle !text-4xl text-green-500 mb-2"></i>
-                <p>¡Todo en orden! No hay apartados próximos a vencer.</p>
+                <p v-if="activeModalType === 'layaways'">¡Todo en orden! No hay apartados próximos a vencer.</p>
+                <p v-else>¡Excelente! No hay entregas pendientes para los próximos días.</p>
             </div>
         </Dialog>
 

@@ -97,6 +97,20 @@ watch(searchTerm, () => fetchData());
 const formatCurrency = (value) => {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 };
+
+const onRowClick = (event) => {
+    // Evitamos navegar si se hizo clic en el botón del menú (acciones)
+    // El evento row-click de PrimeVue devuelve { originalEvent, data, index }
+    // Verificamos si el target fue un botón o icono
+    const target = event.originalEvent.target;
+    if (target.closest('button') || target.closest('.p-button')) {
+        return;
+    }
+    
+    if (hasPermission('services.catalog.see_details')) {
+        router.visit(route('services.show', event.data.id));
+    }
+};
 </script>
 
 <template>
@@ -135,7 +149,9 @@ const formatCurrency = (value) => {
                     :totalRecords="services.total" :rows="services.per_page" :rowsPerPageOptions="[20, 50, 100, 200]"
                     dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 60rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
-                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} servicios">
+                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} servicios"
+                    rowHover
+                    @row-click="onRowClick">
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
                     <Column field="name" header="Nombre del Servicio" sortable></Column>
                     <Column field="category.name" header="Categoría" sortable></Column>

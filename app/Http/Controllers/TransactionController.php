@@ -38,7 +38,7 @@ class TransactionController extends Controller implements HasMiddleware
     {
         return [
             new Middleware('can:transactions.access', only: ['index']),
-            new Middleware('can:transactions.see_details', only: ['show', 'extendLayaway']),
+            new Middleware('can:transactions.see_details', only: ['show', 'extendLayaway', 'rescheduleOrder']),
             new Middleware('can:transactions.cancel', only: ['cancel']),
             new Middleware('can:transactions.refund', only: ['refund']),
             new Middleware('can:transactions.add_payment', only: ['addPayment']),
@@ -306,7 +306,24 @@ class TransactionController extends Controller implements HasMiddleware
         }
     }
 
-    // ... (El resto de métodos se mantienen: pendingDebts, addPayment, cancel, refund, updatePayment, searchProducts, returnStock) ...
+    /**
+     * Reprograma la fecha de entrega de un pedido.
+     */
+    public function rescheduleOrder(Request $request, Transaction $transaction)
+    {
+        $validated = $request->validate([
+            'new_delivery_date' => 'required|date',
+        ]);
+
+        // Opcional: Validar que sea un pedido pendiente
+        // if ($transaction->status !== TransactionStatus::TO_DELIVER) ...
+
+        $transaction->update([
+            'delivery_date' => $validated['new_delivery_date']
+        ]);
+
+        return back()->with('success', 'Fecha de entrega reprogramada correctamente.');
+    }
 
     /**
      * Endpoint API para obtener deudas pendientes de un cliente.
