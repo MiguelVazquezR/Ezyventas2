@@ -136,7 +136,7 @@ const getExpirationSeverity = (days) => {
                     <!-- Solo se muestra si la variable existe en stats (para usuarios con permiso) -->
                     <div v-if="stats.expiring_layaways_count !== undefined" 
                         @click="fetchExpiringLayaways"
-                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer border-l-4 border-purple-500">
+                        class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer border-l-4 border-purple-500 group">
                         <div class="flex justify-between items-start">
                             <div>
                                 <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Apartados por vencer</h2>
@@ -146,7 +146,10 @@ const getExpirationSeverity = (days) => {
                                 </p>
                                 <p class="text-xs text-gray-400 mt-1">Próximos 5 días</p>
                             </div>
-                            <i class="pi pi-clock text-purple-600 p-3 bg-purple-100 dark:bg-purple-900/50 rounded-full"></i>
+                            <!-- ANIMACIÓN: Se mueve si hay más de 1 apartado por vencer -->
+                            <div class="p-3 bg-purple-100 dark:bg-purple-900/50 rounded-full text-purple-600" :class="{ 'animate-bounce': stats.expiring_layaways_count > 0 }">
+                                    <i class="pi pi-clock"></i>
+                            </div>
                         </div>
                     </div>
 
@@ -442,10 +445,22 @@ const getExpirationSeverity = (days) => {
             </div>
 
             <div v-else-if="expiringLayaways.length > 0">
+                <!-- MENSAJE INFORMATIVO NUEVO -->
+                <div class="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 p-3 rounded-lg mb-4 text-sm flex gap-3 items-start border border-blue-200 dark:border-blue-800">
+                    <i class="pi pi-info-circle mt-0.5 text-lg"></i>
+                    <div>
+                        <p class="font-bold mb-0">¿Qué deseas hacer?</p>
+                        <p class="mt-0">
+                            Haz clic en el número de <strong>Folio</strong> de la tabla para ver los detalles, 
+                            donde podrás <strong>extender la fecha de vencimiento</strong> o <strong>cancelar</strong> el apartado si es necesario.
+                        </p>
+                    </div>
+                </div>
+
                 <DataTable :value="expiringLayaways" class="p-datatable-sm" responsiveLayout="scroll" paginator :rows="5">
                     <Column field="folio" header="Folio" sortable>
                         <template #body="{ data }">
-                            <Link :href="route('transactions.show', data.id)" class="text-blue-600 hover:underline">
+                            <Link :href="route('transactions.show', data.id)" class="text-blue-600 hover:underline font-bold">
                                 {{ data.folio }}
                             </Link>
                         </template>

@@ -10,7 +10,9 @@ import StartSessionModal from '@/Components/StartSessionModal.vue';
 import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import { usePermissions } from '@/Composables';
 import ProductExchangeModal from './Partials/ProductExchangeModal.vue';
-import LayawayExchangeModal from './Partials/LayawayExchangeModal.vue'; // <--- IMPORTACIÓN NUEVA
+import LayawayExchangeModal from './Partials/LayawayExchangeModal.vue';
+import DatePicker from 'primevue/datepicker'; 
+import Menu from 'primevue/menu'; // <-- IMPORTACIÓN DE MENU
 
 const props = defineProps({
     transaction: Object,
@@ -72,21 +74,14 @@ const editForm = useForm({
 const safeBankAccounts = computed(() => Array.isArray(props.userBankAccounts) ? props.userBankAccounts : []);
 
 const openEditPaymentModal = (payment) => {
-    // Resetear errores previos
     editForm.clearErrors();
-    
     editingPaymentId.value = payment.id;
     editForm.amount = parseFloat(payment.amount);
-    
-    // Si payment_method viene como objeto (Enum de Laravel), extraemos el valor
     editForm.payment_method = typeof payment.payment_method === 'object' && payment.payment_method !== null 
         ? payment.payment_method.value 
         : payment.payment_method;
-        
     editForm.bank_account_id = payment.bank_account_id;
     editForm.notes = payment.notes || '';
-
-    // Usamos nextTick para evitar el error de onMounted en la inicialización del diálogo
     nextTick(() => {
         isEditPaymentModalVisible.value = true;
     });
@@ -106,15 +101,46 @@ const submitEditPayment = () => {
 
 // --- Modales de Intercambio ---
 const isProductExchangeModalVisible = ref(false);
-const isLayawayExchangeModalVisible = ref(false); // <--- NUEVO STATE
+const isLayawayExchangeModalVisible = ref(false);
 
 const openExchangeModal = () => {
-    // Si es apartado, abrimos el modal específico
     if (localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway') {
         isLayawayExchangeModalVisible.value = true;
     } else {
         isProductExchangeModalVisible.value = true;
     }
+};
+
+// --- Modal de Extender Apartado (NUEVO) ---
+const isExtendLayawayModalVisible = ref(false);
+const newExpirationDate = ref(null);
+const isExtendingLayaway = ref(false);
+
+const openExtendLayawayModal = () => {
+    newExpirationDate.value = props.transaction.layaway_expiration_date 
+        ? new Date(props.transaction.layaway_expiration_date) 
+        : null;
+    isExtendLayawayModalVisible.value = true;
+};
+
+const submitExtendLayaway = () => {
+    if (!newExpirationDate.value) return;
+    
+    isExtendingLayaway.value = true;
+    router.put(route('transactions.extend-layaway', props.transaction.id), {
+        new_expiration_date: newExpirationDate.value
+    }, {
+        onSuccess: () => {
+            isExtendLayawayModalVisible.value = false;
+        },
+        onFinish: () => isExtendingLayaway.value = false
+    });
+};
+
+// --- Menú de Acciones (Nuevo) ---
+const actionsMenu = ref();
+const toggleActionsMenu = (event) => {
+    actionsMenu.value.toggle(event);
 };
 
 // --- Datos Computados de la Transacción ---
@@ -156,7 +182,6 @@ const canAddPayment = computed(() => {
 
 const canExchange = computed(() => {
     if (!localTransaction.value?.status) return false;
-    // Permitir intercambio también en apartados
     if (localTransaction.value.status === 'apartado') return true;
     return !['cancelado', 'reembolsado'].includes(localTransaction.value.status);
 });
@@ -232,8 +257,9 @@ const confirmRefund = () => {
 
 const actionItems = computed(() => [
     { label: 'Abonar / Liquidar', icon: 'pi pi-dollar', command: openPaymentModal, disabled: !canAddPayment.value, visible: hasPermission('transactions.add_payment') },
-    // El comando openExchangeModal ahora decide qué modal abrir según el estatus
     { label: localTransaction.value.status === 'apartado' ? 'Modificar Apartado' : 'Intercambiar producto', icon: 'pi pi-sync', command: openExchangeModal, disabled: !canExchange.value, visible: hasPermission('transactions.exchange') },
+    // Opción en el menú (además del botón directo)
+    { label: 'Extender Vencimiento', icon: 'pi pi-calendar-plus', command: openExtendLayawayModal, visible: localTransaction.value.status === 'apartado' },
     { separator: true },
     { label: 'Imprimir ticket', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
@@ -274,8 +300,18 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Venta #{{ transaction.folio }}</h1>
                 <p class="text-gray-500 dark:text-gray-400 mt-1">Realizada el {{ formatDate(transaction.created_at) }}</p>
             </div>
+            <!-- Acciones con Botón + Menú -->
             <div class="flex items-center gap-2 mt-4 sm:mt-0">
-                <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined />
+                <Button 
+                    type="button" 
+                    label="Acciones" 
+                    icon="pi pi-chevron-down" 
+                    iconPos="right" 
+                    @click="toggleActionsMenu" 
+                    severity="secondary" 
+                    outlined 
+                />
+                <Menu ref="actionsMenu" :model="actionItems" :popup="true" />
             </div>
         </div>
 
@@ -341,10 +377,28 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                             <li class="flex justify-between"><span>Estatus:</span>
                                 <Tag :value="localTransaction.status" :severity="getStatusSeverity(localTransaction.status)" class="capitalize" />
                             </li>
-                            <li v-if="transaction.layaway_expiration_date" class="flex justify-between items-center bg-purple-50 dark:bg-purple-900/20 p-2 rounded -mx-2">
-                                <span class="text-purple-800 dark:text-purple-300 font-medium">Vencimiento:</span>
-                                <span class="font-bold text-purple-700 dark:text-purple-200">{{ formatDateOnly(transaction.layaway_expiration_date) }}</span>
+                            
+                            <!-- Sección de Vencimiento con Botón Integrado -->
+                            <li v-if="transaction.layaway_expiration_date" class="bg-purple-50 dark:bg-purple-900/20 p-2 rounded -mx-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-purple-800 dark:text-purple-300 font-medium">Vencimiento:</span>
+                                    <span class="font-bold text-purple-700 dark:text-purple-200">{{ formatDateOnly(transaction.layaway_expiration_date) }}</span>
+                                </div>
+                                
+                                <!-- Botón Extender Fecha (visible solo si es apartado activo) -->
+                                <div v-if="localTransaction.status === 'apartado' || localTransaction.status === 'on_layaway'" class="mt-2">
+                                    <Button 
+                                        label="Extender fecha" 
+                                        icon="pi pi-calendar-plus" 
+                                        size="small" 
+                                        severity="help" 
+                                        outlined
+                                        class="w-full h-8 text-xs" 
+                                        @click="openExtendLayawayModal" 
+                                    />
+                                </div>
                             </li>
+
                             <li class="flex justify-between items-center">
                                 <span>Cliente:</span>
                                 <span class="font-medium">
@@ -462,6 +516,23 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                 <div class="flex justify-end items-center gap-3">
                     <Button label="Cancelar" severity="secondary" @click="isEditPaymentModalVisible = false" text />
                     <Button label="Guardar Cambios" icon="pi pi-save" @click="submitEditPayment" :loading="editForm.processing" severity="primary" />
+                </div>
+            </template>
+        </Dialog>
+
+        <!-- Nuevo Modal de Extender Apartado -->
+        <Dialog v-model:visible="isExtendLayawayModalVisible" modal header="Extender Fecha de Vencimiento" :style="{ width: '25rem' }">
+            <div class="flex flex-col gap-4 py-2">
+                <p class="text-sm text-gray-500">Selecciona la nueva fecha límite para liquidar este apartado.</p>
+                <div class="flex flex-col gap-2">
+                    <label class="font-bold text-gray-700 dark:text-gray-300">Nueva Fecha</label>
+                    <DatePicker v-model="newExpirationDate" dateFormat="dd/mm/yy" :minDate="new Date()" showIcon class="w-full" />
+                </div>
+            </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <Button label="Cancelar" severity="secondary" text @click="isExtendLayawayModalVisible = false" />
+                    <Button label="Guardar Fecha" icon="pi pi-check" @click="submitExtendLayaway" :loading="isExtendingLayaway" />
                 </div>
             </template>
         </Dialog>

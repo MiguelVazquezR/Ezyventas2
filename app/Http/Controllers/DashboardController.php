@@ -29,8 +29,8 @@ class DashboardController extends Controller
         $isAdmin = !$user->roles()->exists();
         $stats = [];
 
-        // CAMBIO: Cache v4 para forzar la recarga inmediata de la gráfica corregida
-        $cacheKey = "dashboard_stats_branch_{$branchId}_v4";
+        // CAMBIO: Incrementamos versión de caché para invalidar datos viejos y usar la nueva lógica
+        $cacheKey = "dashboard_stats_branch_{$branchId}_v5";
 
         // --- 1. Ventas y Transacciones ---
         if ($isAdmin || $user->can('transactions.access')) {
@@ -54,7 +54,6 @@ class DashboardController extends Controller
                 return $this->getSalesTotalForPeriod($branchId, today()->subDay(), today()->subDay());
             });
 
-            // Recuperamos la lógica robusta para la gráfica
             $stats['weekly_sales_trend'] = Cache::remember("{$cacheKey}_weekly_trend", 3600, function () use ($branchId) {
                 return $this->getWeeklySalesTrend($branchId);
             });
@@ -96,8 +95,9 @@ class DashboardController extends Controller
                 return $this->getTopSellingProducts($branchId);
             });
 
+            // OPTIMIZADO: Nueva lógica de baja rotación
             $stats['low_turnover_products'] = Cache::remember("{$cacheKey}_low_turnover", 3600, function () use ($branchId) {
-                return $this->getLowTurnoverProducts($branchId);
+                return $this->getLowTurnoverProductsOptimized($branchId);
             });
         }
 
@@ -202,34 +202,108 @@ class DashboardController extends Controller
         ];
     }
 
-    private function getLowTurnoverProducts($branchId)
+    /**
+     * MÉTODO OPTIMIZADO PARA ALTO VOLUMEN DE DATOS
+     * Evita subconsultas correlacionadas que causan timeouts.
+     */
+    private function getLowTurnoverProductsOptimized($branchId)
     {
-        $thresholdDate = now()->subDays(15);
-        $lastSaleSubquery = DB::table('transactions_items')
+        // Paso 1: Obtener la última fecha de venta de TODOS los items vendidos en esta sucursal de forma eficiente.
+        // Esto usa índices y es una sola consulta agrupada.
+        $soldItemsRaw = DB::table('transactions_items')
             ->join('transactions', 'transactions.id', '=', 'transactions_items.transaction_id')
             ->where('transactions.branch_id', $branchId)
-            ->whereRaw("((transactions_items.itemable_type = ? AND transactions_items.itemable_id = products.id) OR (transactions_items.itemable_type = ? AND transactions_items.itemable_id IN (SELECT id FROM product_attributes WHERE product_id = products.id)))", [Product::class, ProductAttribute::class])
-            ->selectRaw('MAX(transactions.created_at)');
+            // Solo nos interesan las ventas válidas para calcular rotación
+            ->whereNotIn('transactions.status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED])
+            ->select('itemable_id', 'itemable_type', DB::raw('MAX(transactions.created_at) as last_sale'))
+            ->groupBy('itemable_id', 'itemable_type')
+            ->get();
 
-        return Product::where('branch_id', $branchId)
-            ->select('id', 'name', 'selling_price', 'current_stock')
-            ->selectSub($lastSaleSubquery, 'last_sale_date')
+        // Paso 2: Procesar en memoria (PHP es muy rápido para esto) para mapear Variantes -> Producto Padre
+        $productLastSales = []; // [product_id => Carbon_date]
+        
+        // Obtenemos un mapa de VarianteID -> ProductoID para evitar queries N+1
+        $variantIds = $soldItemsRaw->where('itemable_type', ProductAttribute::class)->pluck('itemable_id');
+        $variantMap = DB::table('product_attributes')
+            ->whereIn('id', $variantIds)
+            ->pluck('product_id', 'id');
+
+        foreach ($soldItemsRaw as $item) {
+            $productId = null;
+            if ($item->itemable_type === Product::class) {
+                $productId = $item->itemable_id;
+            } elseif ($item->itemable_type === ProductAttribute::class) {
+                $productId = $variantMap[$item->itemable_id] ?? null;
+            }
+
+            if ($productId) {
+                $saleDate = Carbon::parse($item->last_sale);
+                // Si ya tenemos fecha para este producto, nos quedamos con la más reciente
+                if (!isset($productLastSales[$productId]) || $saleDate->gt($productLastSales[$productId])) {
+                    $productLastSales[$productId] = $saleDate;
+                }
+            }
+        }
+
+        // Paso 3: Encontrar productos de baja rotación
+        // Prioridad A: Productos que NUNCA se han vendido
+        $soldProductIds = array_keys($productLastSales);
+        
+        $lowTurnoverCollection = collect();
+
+        // Buscamos hasta 5 productos que NO estén en la lista de vendidos
+        $neverSoldProducts = Product::where('branch_id', $branchId)
+            ->whereNotIn('id', $soldProductIds)
             ->with('media')
-            ->having('last_sale_date', '<', $thresholdDate)
-            ->orHavingNull('last_sale_date')
-            ->orderBy('last_sale_date', 'asc')
             ->limit(5)
             ->get()
-            ->map(function ($product) {
-                return [
-                    'id' => $product->id,
-                    'name' => $product->name,
-                    'selling_price' => (float)$product->selling_price,
-                    'current_stock' => $product->current_stock,
-                    'days_since_last_sale' => $product->last_sale_date ? Carbon::parse($product->last_sale_date)->diffInDays(now()) : null,
-                    'image' => $product->getFirstMediaUrl('product-general-images') ?: null,
-                ];
+            ->map(function ($p) {
+                $p->virtual_last_sale_date = null; // Marcamos como nunca vendido
+                return $p;
             });
+
+        $lowTurnoverCollection = $lowTurnoverCollection->merge($neverSoldProducts);
+
+        // Prioridad B: Si no completamos 5, buscamos los que tienen la fecha de venta más antigua
+        if ($lowTurnoverCollection->count() < 5) {
+            $needed = 5 - $lowTurnoverCollection->count();
+            
+            // Ordenamos el array de fechas ascendente (más viejas primero)
+            asort($productLastSales);
+            
+            // Tomamos los IDs de los más viejos
+            $oldestIds = array_slice(array_keys($productLastSales), 0, $needed);
+            
+            if (!empty($oldestIds)) {
+                $oldSoldProducts = Product::whereIn('id', $oldestIds)
+                    ->with('media')
+                    ->get()
+                    ->each(function($p) use ($productLastSales) {
+                        $p->virtual_last_sale_date = $productLastSales[$p->id];
+                    });
+                
+                // Reordenar porque el whereIn no garantiza orden
+                $oldSoldProducts = $oldSoldProducts->sortBy(function($p) {
+                    return $p->virtual_last_sale_date->timestamp;
+                });
+
+                $lowTurnoverCollection = $lowTurnoverCollection->merge($oldSoldProducts);
+            }
+        }
+
+        // Paso 4: Formatear para la vista
+        return $lowTurnoverCollection->map(function ($product) {
+            return [
+                'id' => $product->id,
+                'name' => $product->name,
+                'selling_price' => (float)$product->selling_price,
+                'current_stock' => $product->current_stock,
+                'days_since_last_sale' => $product->virtual_last_sale_date 
+                    ? $product->virtual_last_sale_date->diffInDays(now()) 
+                    : null, // Null significa "Nunca vendido"
+                'image' => $product->getFirstMediaUrl('product-general-images') ?: null,
+            ];
+        })->values(); // Resetear keys
     }
 
     private function getTopSellingProducts($branchId)
@@ -238,6 +312,7 @@ class DashboardController extends Controller
             ->join('transactions', 'transactions_items.transaction_id', '=', 'transactions.id')
             ->where('transactions.branch_id', $branchId)
             ->where('transactions.created_at', '>=', now()->startOfMonth())
+            ->whereNotIn('transactions.status', [TransactionStatus::CANCELLED]) // Excluir canceladas
             ->select('itemable_id', 'itemable_type', DB::raw('SUM(quantity) as total_sold'))
             ->groupBy('itemable_id', 'itemable_type')
             ->orderByDesc('total_sold')
@@ -284,11 +359,9 @@ class DashboardController extends Controller
         $startOfWeek = now()->startOfWeek(Carbon::MONDAY);
         $endOfWeek = now()->endOfWeek(Carbon::SUNDAY);
 
-        // 2. Consulta Robusta (Similar a la versión antigua)
-        // Seleccionamos las columnas individuales para sumarlas en PHP y evitar nulos.
+        // 2. Consulta Robusta
         $trendData = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$startOfWeek, $endOfWeek])
-            // Usamos la nueva lógica: Excluir Canceladas y Cambiadas (No solo 'completadas')
             ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
             ->select(
                 DB::raw('DATE(created_at) as date'),
@@ -299,11 +372,10 @@ class DashboardController extends Controller
             ->groupBy('date')
             ->orderBy('date', 'asc')
             ->get()
-            ->keyBy('date'); // Agrupamos por fecha para fácil acceso en el loop
+            ->keyBy('date');
 
         $weekSales = [];
         
-        // 3. Iteramos los 7 días de la semana
         for ($i = 0; $i < 7; $i++) {
             $date = $startOfWeek->copy()->addDays($i);
             $dateString = $date->format('Y-m-d');
@@ -312,8 +384,6 @@ class DashboardController extends Controller
 
             $total = 0;
             if ($dayData) {
-                // Hacemos la matemática en PHP para manejar valores nulos de forma segura.
-                // Fórmula: (Subtotal - Descuento) + Impuestos
                 $subtotal = $dayData->total_subtotal ?? 0;
                 $discount = $dayData->total_discount ?? 0;
                 $tax = $dayData->total_tax ?? 0;
@@ -322,7 +392,7 @@ class DashboardController extends Controller
             }
 
             $weekSales[] = [
-                'day' => $date->translatedFormat('D'), // 'Lun', 'Mar', etc.
+                'day' => $date->translatedFormat('D'),
                 'total' => (float) $total
             ];
         }

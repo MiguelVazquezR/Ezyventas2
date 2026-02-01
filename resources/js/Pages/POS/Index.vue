@@ -10,6 +10,7 @@ import CloseSessionModal from '@/Components/CloseSessionModal.vue';
 import SessionHistoryModal from '@/Components/SessionHistoryModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import JoinSessionModal from '@/Components/JoinSessionModal.vue';
+import OrderFormModal from './Partials/OrderFormModal.vue'; // <--- IMPORTACIÓN NUEVA
 import { v4 as uuidv4 } from 'uuid';
 
 const props = defineProps({
@@ -32,6 +33,7 @@ const toast = useToast();
 const cartItems = ref([]);
 const selectedClient = ref(null);
 const isPaymentModalVisible = ref(false);
+const isOrderModalVisible = ref(false); // <--- NUEVO ESTADO
 
 // --- Lógica para Modales ---
 const isStartSessionModalVisible = ref(false);
@@ -77,13 +79,11 @@ const getPriceForQuantity = (productData, quantity) => {
         }
     }
     return {
-        price: basePriceAfterDirectPromo, // <- CORRECCIÓN: Volver al precio base (con promo)
+        price: basePriceAfterDirectPromo, 
         original_price_base: absoluteOriginalPrice,
         isTierPrice: false
     };
 };
-// --- FIN: Helper CORREGIDO ---
-
 
 // --- addToCart CORREGIDO ---
 const addToCart = (data) => {
@@ -126,15 +126,15 @@ const addToCart = (data) => {
             ...product,
             cartItemId: cartItemId,
             quantity: quantityToAdd,
-            selling_price: baseOriginalPrice, // Original base (sin promo, sin tier)
-            price_qty_1_promo: product.price, // Precio qty 1 (con promo directa si aplica)
-            price: calculatedPrice, // Precio calculado inicial
-            original_price: baseOriginalPrice, // Para calcular subtotal bruto y descuentos
+            selling_price: baseOriginalPrice, 
+            price_qty_1_promo: product.price, 
+            price: calculatedPrice, 
+            original_price: baseOriginalPrice, 
             isTierPrice: isTierPrice,
             isManualPrice: false,
             ...(variant && {
                 price: calculatedPrice + variant.price_modifier,
-                original_price: baseOriginalPrice + variant.price_modifier, // Base + modificador
+                original_price: baseOriginalPrice + variant.price_modifier, 
                 sku: `${product.sku}-${variant.sku_suffix}`,
                 stock: variant.stock,
                 selectedVariant: variant.attributes,
@@ -142,7 +142,6 @@ const addToCart = (data) => {
                 image: variant.image_url || product.image,
             })
         };
-        // Asegurar que original_price en variante sume el modificador
         if (variant) {
             newItem.original_price = baseOriginalPrice + variant.price_modifier;
         }
@@ -153,7 +152,6 @@ const addToCart = (data) => {
         }
     }
 };
-// --- FIN: addToCart CORREGIDO ---
 
 // --- updateCartQuantity CORREGIDO ---
 const updateCartQuantity = ({ itemId, quantity }) => {
@@ -185,7 +183,6 @@ const updateCartQuantity = ({ itemId, quantity }) => {
         }
     }
 };
-// --- FIN: updateCartQuantity CORREGIDO ---
 
 // --- updateCartPrice CORREGIDO ---
 const updateCartPrice = ({ itemId, price }) => {
@@ -196,8 +193,6 @@ const updateCartPrice = ({ itemId, price }) => {
         item.isTierPrice = false;
     }
 };
-// --- FIN: updateCartPrice CORREGIDO ---
-
 
 const removeCartItem = (itemId) => {
     cartItems.value = cartItems.value.filter(i => i.cartItemId !== itemId);
@@ -265,7 +260,7 @@ const handleProductCreatedAndAddToCart = (newProduct) => {
         image: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' + encodeURIComponent(newProduct.name),
         description: newProduct.description || '',
         sku: newProduct.sku || '',
-        price_tiers: newProduct.price_tiers || [], // Asegurar que se pasan los tiers
+        price_tiers: newProduct.price_tiers || [], 
         variants: {},
         variant_combinations: [],
         promotions: [],
@@ -281,16 +276,18 @@ const form = useForm({
     payments: [], use_balance: false,
     cash_register_session_id: null,
     layaway_expiration_date: null,
+    // Campos extra para Pedidos
+    is_order: false,
+    contact_info: null,
+    delivery_date: null,
+    shipping_address: null,
+    shipping_cost: 0,
+    notes: null
 });
 
-const handleCheckout = (checkoutData) => {
-    if (!props.activeSession) {
-        toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar una venta.', life: 5000 });
-        return;
-    }
-
-    // 1. Mapear datos base
-    form.cartItems = cartItems.value.map(item => ({
+// Helper para construir items del carrito para el backend (Extracted)
+const mapCartItems = () => {
+    return cartItems.value.map(item => ({
         id: item.id,
         product_attribute_id: item.product_attribute_id || null,
         quantity: item.quantity,
@@ -311,28 +308,82 @@ const handleCheckout = (checkoutData) => {
             return null; // Sin descuento o motivo específico
         })()
     }));
+};
+
+// --- NUEVO: Manejo de Creación de Pedido ---
+const handleOrderSubmit = (orderData) => {
+    if (!props.activeSession) {
+        toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar pedidos.', life: 5000 });
+        return;
+    }
+
+    const currentSubtotal = cartItems.value.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const itemsDiscountTotal = cartItems.value.reduce((acc, item) => {
+        const base = item.original_price ?? item.price;
+        return acc + ((base - item.price) * item.quantity);
+    }, 0);
+
+    form.reset();
+    form.cartItems = mapCartItems();
+    form.customerId = selectedClient.value ? selectedClient.value.id : null;
+    form.subtotal = currentSubtotal;
+    form.total_discount = itemsDiscountTotal; 
+    
+    // Datos específicos del Pedido
+    form.is_order = true;
+    form.contact_info = { 
+        name: orderData.contact_name, 
+        phone: orderData.contact_phone 
+    };
+    form.delivery_date = orderData.delivery_date;
+    form.shipping_address = orderData.shipping_address;
+    form.shipping_cost = orderData.shipping_cost;
+    form.notes = orderData.notes;
+    form.cash_register_session_id = props.activeSession.id;
+    form.total = currentSubtotal + parseFloat(orderData.shipping_cost);
+
+    form.post(route('pos.store-order'), { // <-- RUTA QUE CREAREMOS DESPUÉS
+        onSuccess: () => {
+            clearCart();
+            isOrderModalVisible.value = false;
+            router.reload({ only: ['products'], preserveState: true });
+        },
+        onError: (errors) => {
+            console.error(errors);
+            toast.add({ severity: 'error', summary: 'Error', detail: 'Revisa los datos del pedido.', life: 5000 });
+        }
+    });
+};
+
+const handleCheckout = (checkoutData) => {
+    if (!props.activeSession) {
+        toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar una venta.', life: 5000 });
+        return;
+    }
+
+    // 1. Mapear datos base (usando helper)
+    form.cartItems = mapCartItems();
     form.customerId = selectedClient.value ? selectedClient.value.id : null;
     form.subtotal = checkoutData.subtotal;
     form.total_discount = checkoutData.total_discount;
     form.total = checkoutData.total;
     form.cash_register_session_id = props.activeSession.id;
 
-    // 2. Mapear nuevos datos de pago (del MultiPaymentProcessor)
+    // 2. Mapear nuevos datos de pago
     form.payments = checkoutData.payments;
     form.use_balance = checkoutData.use_balance;
-    form.layaway_expiration_date = checkoutData.layaway_expiration_date; // fecha de vencimiento
+    form.layaway_expiration_date = checkoutData.layaway_expiration_date;
 
-    // 3. Determinar la ruta basada en el tipo de transacción
+    // 3. Determinar la ruta
     let routeName;
     const transactionType = checkoutData.transactionType;
 
     switch (transactionType) {
         case 'contado':
         case 'credito':
-            routeName = 'pos.checkout'; // El backend (checkout) ya maneja la lógica de crédito
+            routeName = 'pos.checkout'; 
             break;
         case 'apartado':
-            // Esta es la ruta que crearemos en el backend
             routeName = 'pos.layaway';
             break;
         default:
@@ -340,12 +391,12 @@ const handleCheckout = (checkoutData) => {
             return;
     }
 
-    // 4. Enviar el formulario a la ruta correcta
+    // 4. Enviar el formulario
     form.post(route(routeName), {
         onSuccess: () => {
             clearCart();
-            page.props.flash.success = null; // Limpiar flash de Inertia
-            router.reload({ only: ['products'], preserveState: true }); // Recargar productos (stock)
+            page.props.flash.success = null; 
+            router.reload({ only: ['products'], preserveState: true }); 
         },
         onError: (errors) => {
             console.error("Error de validación:", errors);
@@ -354,6 +405,11 @@ const handleCheckout = (checkoutData) => {
         }
     });
 };
+
+// Computed para pasar el total actual al modal de pedido
+const currentCartTotal = computed(() => {
+    return cartItems.value.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+});
 </script>
 
 <template>
@@ -391,6 +447,7 @@ const handleCheckout = (checkoutData) => {
                         @checkout="handleCheckout" 
                         @open-payment-modal="isPaymentModalVisible = true"
                         @close-payment-modal="isPaymentModalVisible = false"
+                        @open-order-modal="isOrderModalVisible = true"
                         class="h-full" 
                     />
                 </div>
@@ -450,5 +507,14 @@ const handleCheckout = (checkoutData) => {
             @update:visible="isHistoryModalVisible = $event" />
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
             :available-templates="availableTemplates" />
+        
+        <!-- NUEVO MODAL DE PEDIDO -->
+        <OrderFormModal 
+            v-model:visible="isOrderModalVisible"
+            :cart-total="currentCartTotal"
+            :client="selectedClient"
+            @submit="handleOrderSubmit"
+            :loading="form.processing"
+        />
     </AppLayout>
 </template>

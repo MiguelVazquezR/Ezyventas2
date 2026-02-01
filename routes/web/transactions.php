@@ -21,17 +21,23 @@ Route::middleware('auth')->group(function () {
     Route::post('/transactions/{transaction}/exchange', [TransactionController::class, 'exchange'])
         ->name('transactions.exchange');
 
-    // NUEVA RUTA: Intercambio exclusivo para Apartados
+    Route::put('/transactions/{transaction}/extend-layaway', [TransactionController::class, 'extendLayaway'])
+        ->name('transactions.extend-layaway');
+
+    // Intercambio exclusivo para Apartados
     Route::post('/transactions/{transaction}/exchange-layaway', [TransactionController::class, 'exchangeLayaway'])
         ->name('transactions.exchange-layaway');
+
+    Route::post('/pos/store-order', [TransactionController::class, 'storeOrder'])
+        ->name('pos.store-order');
 
     Route::get('/transactions/search-products', [TransactionController::class, 'searchProducts'])
         ->name('transactions.search-products');
 
-    // Nueva ruta para obtener deudas pendientes de un cliente (usada en el modal de intercambio)
+    // para obtener deudas pendientes de un cliente (usada en el modal de intercambio)
     Route::get('/customers/{customer}/pending-debts', [TransactionController::class, 'pendingDebts'])
         ->name('customers.pending-debts');
 
     // Rutas del resource
-    Route::resource('transactions', TransactionController::class)->except(['create', 'store', 'edit', 'update', 'destroy']);
+    Route::resource('transactions', TransactionController::class)->except(['create', 'store', 'edit', 'update']);
 });
