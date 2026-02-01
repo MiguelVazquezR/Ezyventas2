@@ -24,8 +24,10 @@ class PrintEncoderService
     public static function encode(PrintTemplate $template, $dataSource, array $options = []): array
     {
         // 1. Ticket de Venta / Orden de Servicio / CLIENTE
-        if ($template->type === TemplateType::SALE_TICKET && 
-           ($dataSource instanceof Transaction || $dataSource instanceof ServiceOrder || $dataSource instanceof Customer)) {
+        if (
+            $template->type === TemplateType::SALE_TICKET &&
+            ($dataSource instanceof Transaction || $dataSource instanceof ServiceOrder || $dataSource instanceof Customer)
+        ) {
             return self::encodeEscPos($template, $dataSource, $options);
         }
 
@@ -155,20 +157,20 @@ class PrintEncoderService
                 case 'line_break':
                     $fullText .= "\n";
                     break;
-               case 'barcode':
+                case 'barcode':
                     $barcodeData = self::replacePlaceholders($element['data']['value'], $dataSource);
                     $height = $element['data']['height'] ?? 80;
                     $height = max(1, min(255, (int)$height));
-                    $fullText .= $gs . 'h' . chr($height) . $gs . 'w' . chr(2) . $gs . 'k' . chr(73) . chr(strlen($barcodeData)) . $barcodeData . "\n"; 
+                    $fullText .= $gs . 'h' . chr($height) . $gs . 'w' . chr(2) . $gs . 'k' . chr(73) . chr(strlen($barcodeData)) . $barcodeData . "\n";
                     break;
                 case 'qr':
                     $qrData = self::replacePlaceholders($element['data']['value'], $dataSource);
-                    $size = $element['data']['size'] ?? 5; 
+                    $size = $element['data']['size'] ?? 5;
                     $size = max(1, min(16, (int)$size));
                     $len = strlen($qrData) + 3;
                     $pL = chr($len % 256);
                     $pH = chr($len / 256);
-                    $fullText .= $gs . '(k' . chr(4) . chr(0) . '1A' . chr(50) . chr(0) . $gs . '(k' . chr(3) . chr(0) . '1C' . chr($size) . $gs . '(k' . chr(3) . chr(0) . '1E' . chr(48) . $gs . '(k' . $pL . $pH . '1P0' . $qrData . $gs . '(k' . chr(3) . chr(0) . '1Q0' . "\n"; 
+                    $fullText .= $gs . '(k' . chr(4) . chr(0) . '1A' . chr(50) . chr(0) . $gs . '(k' . chr(3) . chr(0) . '1C' . chr($size) . $gs . '(k' . chr(3) . chr(0) . '1E' . chr(48) . $gs . '(k' . $pL . $pH . '1P0' . $qrData . $gs . '(k' . chr(3) . chr(0) . '1Q0' . "\n";
                     break;
                 case 'sales_table':
                     if (method_exists($dataSource, 'items') && $dataSource->items()->exists()) {
@@ -269,6 +271,8 @@ class PrintEncoderService
         $transaction->loadMissing('payments');
         $paymentMethods = $transaction->payments->pluck('payment_method.value')->unique()->map(fn($method) => ucfirst($method))->implode(', ');
         $totalPaid = $transaction->payments->sum('amount');
+        $total = $transaction->subtotal - $transaction->total_discount + $transaction->total_tax;
+        $remaining = $total - $totalPaid;
 
         return [
             '{{v.folio}}' => $transaction->folio,
@@ -278,11 +282,13 @@ class PrintEncoderService
             '{{v.subtotal}}' => number_format($transaction->subtotal, 2),
             '{{v.descuentos}}' => number_format($transaction->total_discount, 2),
             '{{v.impuestos}}' => number_format($transaction->total_tax, 2),
-            '{{v.total}}' => number_format($transaction->subtotal - $transaction->total_discount + $transaction->total_tax, 2),
+            '{{v.total}}' => number_format($total, 2),
+            '{{v.restante_por_pagar}}' => number_format($remaining, 2),
             '{{v.metodos_pago}}' => $paymentMethods,
             '{{v.total_pagado}}' => number_format($totalPaid, 2),
             '{{v.notas_venta}}' => $transaction->notes,
-            '{{v.cambio}}' => number_format(max(0, $totalPaid - $transaction->total), 2),
+            '{{v.cambio}}' => number_format(max(0, $totalPaid - $total), 2),
+            '{{v.fecha_vencimiento_apartado}}' => $transaction->layaway_expiration_date ? Carbon::parse($transaction->layaway_expiration_date)->format('d/m/Y') : 'No especificado',
         ];
     }
 
@@ -304,11 +310,11 @@ class PrintEncoderService
 
         if (!empty($serviceOrder->custom_fields)) {
             foreach ($serviceOrder->custom_fields as $key => $value) {
-                $printValue = ''; 
+                $printValue = '';
                 if (is_null($value)) {
-                    $printValue = ''; 
+                    $printValue = '';
                 } elseif (is_bool($value)) {
-                    $printValue = $value ? 'Si' : 'No'; 
+                    $printValue = $value ? 'Si' : 'No';
                 } elseif (is_array($value)) {
                     if (isset($value['value'])) {
                         $actualValue = $value['value'];
@@ -334,31 +340,31 @@ class PrintEncoderService
      */
     private static function getCustomerAccountReplacements(Customer $customer): array
     {
-        $saldoFormatted = $customer->balance < 0 
+        $saldoFormatted = $customer->balance < 0
             ? '-$' . number_format(abs($customer->balance), 2) . ' (Deuda)'
             : ($customer->balance > 0 ? '$' . number_format($customer->balance, 2) . ' (A favor)' : '$0.00');
 
         $pendingSalesQuery = $customer->transactions()
             ->whereIn('status', [TransactionStatus::PENDING, TransactionStatus::ON_LAYAWAY]);
-        
+
         $pendingSalesCount = $pendingSalesQuery->count();
         $pendingSales = $pendingSalesQuery->get();
-        
+
         // --- 1. Generar Bloque del Último Pago ---
         // Buscamos el último pago usando la relación correcta (Payment) a través de las transacciones del cliente
         // O más eficientemente, consultando la tabla payments directamente filtrando por transacciones del cliente.
         $lastPaymentInfo = "Sin pagos registrados.";
 
-        $lastPayment = Payment::whereHas('transaction', function($q) use ($customer) {
-                $q->where('customer_id', $customer->id);
-            })
+        $lastPayment = Payment::whereHas('transaction', function ($q) use ($customer) {
+            $q->where('customer_id', $customer->id);
+        })
             ->latest('created_at') // O 'payment_date' si prefieres
             ->first();
 
         if ($lastPayment) {
             $width = 32; // Ancho seguro para 58mm y 80mm
             $line = str_repeat('-', $width);
-            
+
             // Acceso seguro al valor del Enum o string directo
             $methodValue = $lastPayment->payment_method;
             if ($methodValue instanceof \UnitEnum) { // Si es Enum de PHP 8.1+
@@ -368,10 +374,10 @@ class PrintEncoderService
 
             $date = Carbon::parse($lastPayment->created_at)->format('d/m/Y H:i');
             $amount = '$' . number_format($lastPayment->amount, 2);
-            
+
             // Formato de bloque vertical
-            $lastPaymentInfo = 
-                  "$line\n"
+            $lastPaymentInfo =
+                "$line\n"
                 . "ULTIMO PAGO REGISTRADO\n"
                 . "$line\n"
                 . "Fecha:  $date\n"
@@ -382,18 +388,18 @@ class PrintEncoderService
 
         // --- 2. Generar Bloque de Ventas Pendientes ---
         $pendingSalesInfo = "Sin ventas pendientes.";
-        
+
         if ($pendingSalesCount > 0) {
             $width = 32;
             $line = str_repeat('-', $width);
             $separator = str_repeat('.', $width); // Separador más ligero entre items
-            
+
             $blocks = "";
             foreach ($pendingSales as $index => $sale) {
                 $paid = $sale->payments()->sum('amount');
                 $pending = $sale->total - $paid;
-                
-                if ($pending <= 0.01) continue; 
+
+                if ($pending <= 0.01) continue;
 
                 $folio = $sale->folio ?? $sale->id;
                 $date = Carbon::parse($sale->created_at)->format('d/m/Y H:i');
@@ -405,15 +411,15 @@ class PrintEncoderService
                 $blocks .= "Fecha: $date\n";
                 $blocks .= "Total: $totalStr\n";
                 $blocks .= "Debe:  $pendingStr\n";
-                
+
                 // Añadir separador si no es el último
                 if ($index < $pendingSalesCount - 1) {
                     $blocks .= "$separator\n";
                 }
             }
-            
-            $pendingSalesInfo = 
-                  "$line\n"
+
+            $pendingSalesInfo =
+                "$line\n"
                 . "VENTAS PENDIENTES\n"
                 . "$line\n"
                 . $blocks
@@ -426,7 +432,7 @@ class PrintEncoderService
             '{{c.limite_credito}}' => number_format($customer->credit_limit, 2),
             '{{c.conteo_ventas_pendientes}}' => $pendingSalesCount,
             '{{c.total_deuda}}' => number_format(abs(min(0, $customer->balance)), 2),
-            
+
             // Variables actualizadas con formato bloque vertical
             '{{c.tabla_ultimo_pago}}' => $lastPaymentInfo,
             '{{c.tabla_ventas_pendientes}}' => $pendingSalesInfo,
@@ -442,7 +448,6 @@ class PrintEncoderService
             $replacements += self::getProductoReplacements($dataSource);
             $replacements += self::getNegocioReplacements($dataSource->branch->subscription);
             $replacements += self::getSucursalReplacements($dataSource->branch);
-
         } elseif ($dataSource instanceof Transaction) {
             $dataSource->loadMissing(['customer', 'branch.subscription', 'user', 'payments']);
             $replacements += self::getTransactionReplacements($dataSource);
@@ -450,10 +455,9 @@ class PrintEncoderService
             $replacements += self::getSucursalReplacements($dataSource->branch);
             $replacements += self::getClienteReplacements($dataSource->customer);
             $replacements += self::getVendedorReplacements($dataSource->user);
-
         } elseif ($dataSource instanceof ServiceOrder) {
             $dataSource->loadMissing(['branch.subscription', 'user', 'customer', 'transaction.payments']);
-            
+
             $replacements += self::getServiceOrderReplacements($dataSource);
             $replacements += self::getNegocioReplacements($dataSource->branch->subscription);
             $replacements += self::getSucursalReplacements($dataSource->branch);
@@ -463,20 +467,19 @@ class PrintEncoderService
             if ($dataSource->transaction) {
                 $replacements += self::getTransactionReplacements($dataSource->transaction);
             }
-        } 
-        elseif ($dataSource instanceof Customer) {
+        } elseif ($dataSource instanceof Customer) {
             $dataSource->loadMissing(['branch.subscription']);
-            
+
             $replacements += self::getCustomerAccountReplacements($dataSource);
             $replacements += self::getClienteReplacements($dataSource);
-            
+
             if ($dataSource->branch) {
                 $replacements += self::getNegocioReplacements($dataSource->branch->subscription);
                 $replacements += self::getSucursalReplacements($dataSource->branch);
             } else {
                 $replacements['{{sucursal.nombre}}'] = 'Global';
             }
-            
+
             $replacements += self::getVendedorReplacements(auth()->user());
         }
 
@@ -485,7 +488,7 @@ class PrintEncoderService
         $text = preg_replace('/{{os\.custom\.(.*?)}}/', '', $text);
         $text = preg_replace('/{{v\.(.*?)}}/', '', $text);
         $text = preg_replace('/{{c\.(.*?)}}/', '', $text);
-        
+
         return $text;
     }
 }

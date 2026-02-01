@@ -64,24 +64,29 @@ const getAllVariables = () => ({
     transaccion: {
         group: 'Venta / Ticket',
         items: [
-            { label: 'Folio Venta', value: '{{v.folio}}' },
+            { label: 'Folio venta', value: '{{v.folio}}' },
             { label: 'Fecha', value: '{{v.fecha}}' },
             { label: 'Hora', value: '{{v.hora}}' },
-            { label: 'Total Pagado', value: '{{v.total_pagado}}' },
+            { label: 'Subtotal', value: '{{v.subtotal}}' },
+            { label: 'Total', value: '{{v.total}}' },
+            { label: 'Total pagado', value: '{{v.total_pagado}}' },
+            { label: 'Restante por pagar', value: '{{v.restante_por_pagar}}' },
+            { label: 'Descuentos', value: '{{v.descuentos}}' },
             { label: 'Cambio', value: '{{v.cambio}}' },
-            { label: 'Métodos de Pago', value: '{{v.metodos_pago}}' },
+            { label: 'Métodos de pago', value: '{{v.metodos_pago}}' },
             { label: 'Cajero', value: '{{vendedor.nombre}}' },
+            { label: 'Fecha vencimiento de apartado', value: '{{v.fecha_vencimiento_apartado}}' },
         ]
     },
     orden_servicio: {
         group: 'Orden de Servicio',
         items: [
             { label: 'Folio OS', value: '{{os.folio}}' },
-            { label: 'Fecha Recepción', value: '{{os.fecha_recepcion}}' },
+            { label: 'Fecha recepción', value: '{{os.fecha_recepcion}}' },
             { label: 'Equipo', value: '{{os.item_description}}' },
             { label: 'Problemas', value: '{{os.problemas_reportados}}' },
             { label: 'Diagnóstico', value: '{{os.diagnostico}}' },
-            { label: 'Fecha Promesa', value: '{{os.fecha_promesa}}' },
+            { label: 'Fecha promesa', value: '{{os.fecha_promesa}}' },
         ]
     },
     producto: { 

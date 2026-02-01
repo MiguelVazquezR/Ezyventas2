@@ -3,7 +3,6 @@ import { Link, useForm } from '@inertiajs/vue3';
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { v4 as uuidv4 } from 'uuid';
-import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -359,7 +358,8 @@ const labelStyle = computed(() => ({
     height: `${form.content.config.height * pxPerMm.value}px`,
 }));
 
-const tsplFontDotHeights = { 1: 12, 2: 20, 3: 24, 4: 32, 5: 48, 6: 64, 7: 80, 8: 96 };
+// const tsplFontDotHeights = { 1: 12, 2: 20, 3: 24, 4: 32, 5: 48, 6: 64, 7: 80, 8: 96 };
+const tsplFontDotHeights = { 1: 14, 2: 16, 3: 18, 4: 20, 5: 22, 6: 24, 7: 26, 8: 26 };
 
 const getElementStyle = (element) => {
     const xPx = element.data.x * pxPerMm.value;
@@ -614,8 +614,8 @@ const dpiOptions = [203, 300, 600];
                         <InputLabel value="Contenido" />
                         <Textarea v-model="selectedElement.data.value" rows="3" class="w-full mt-1 text-sm font-mono" />
                         
-                        <InputLabel value="Tamaño Fuente (TSPL)" class="mt-4" />
-                        <InputNumber v-model="selectedElement.data.font_size" class="w-full" showButtons :min="1" :max="10" />
+                        <InputLabel value="Tamaño fuente (TSPL)" class="mt-4" />
+                        <InputNumber v-model="selectedElement.data.font_size" class="w-full" showButtons :min="1" :max="8" />
                         <small class="text-gray-500 text-xs">Índice de fuente interna de impresora.</small>
 
                         <!-- MODIFICADO: Iteración de grupos de variables -->
