@@ -288,7 +288,7 @@ class PrintEncoderService
             '{{v.total_pagado}}' => number_format($totalPaid, 2),
             '{{v.notas_venta}}' => $transaction->notes,
             '{{v.cambio}}' => number_format(max(0, $totalPaid - $total), 2),
-            '{{v.fecha_vencimiento_apartado}}' => $transaction->layaway_expiration_date ? Carbon::parse($transaction->layaway_expiration_date)->format('d/m/Y') : 'No especificado',
+            '{{v.fecha_vencimiento_apartado}}' => $transaction->layaway_expiration_date ? Carbon::parse($transaction->layaway_expiration_date)->format('d/m/Y') : 'No aplica',
         ];
     }
 

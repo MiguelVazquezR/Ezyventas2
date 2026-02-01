@@ -4,6 +4,8 @@ import { useLayout } from '@/Layouts/composables/layout';
 import { Link, router, usePage } from '@inertiajs/vue3';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import { usePermissions } from '@/Composables';
+import Popover from 'primevue/popover'; // <-- Importar Popover
+import Badge from 'primevue/badge';     // <-- Importar Badge
 
 const { toggleMenu: toggleSidebar, toggleDarkMode, isDarkTheme } = useLayout();
 const page = usePage();
@@ -18,8 +20,12 @@ const subscription = computed(() => page.props.auth.subscription);
 const currentBranch = computed(() => page.props.auth.current_branch);
 const availableBranches = computed(() => page.props.auth.available_branches);
 
+// Notificaciones
+const notifications = computed(() => page.props.notifications || { total: 0, expiring_layaways: 0, upcoming_deliveries: 0 });
+
 const userMenu = ref();
 const branchMenu = ref();
+const notificationPopover = ref(); // <-- Ref para el popover
 
 const userMenuItems = computed(() => {
     const items = [
@@ -46,6 +52,8 @@ const branchMenuItems = computed(() => {
 
 const toggleUserMenu = (event) => userMenu.value.toggle(event);
 const toggleBranchMenu = (event) => branchMenu.value.toggle(event);
+const toggleNotificationPopover = (event) => notificationPopover.value.toggle(event);
+
 const mobileUserMenuVisible = ref(false);
 
 </script>
@@ -84,11 +92,48 @@ const mobileUserMenuVisible = ref(false);
                     <p class="text-xs text-gray-500 m-0">{{ currentBranch.name }}</p>
                 </div>
             </div>
-            <!-- <div class="layout-config-menu">
-                <button type="button" class="layout-topbar-action" @click="toggleDarkMode">
-                    <i :class="['pi', { 'pi-moon': isDarkTheme, 'pi-sun': !isDarkTheme }]"></i>
-                </button>
-            </div> -->
+
+            <!-- --- BOTÓN DE NOTIFICACIONES (Solo si hay alertas) --- -->
+            <button v-if="notifications.total > 0" 
+                type="button" 
+                class="layout-topbar-action relative mr-2" 
+                @click="toggleNotificationPopover"
+            >
+                <i class="pi pi-bell text-xl text-amber-500" :class="{'animate-swing': notifications.total > 0}"></i>
+            </button>
+            
+            <Popover ref="notificationPopover">
+                <div class="w-64">
+                    <h4 class="font-bold text-gray-700 dark:text-gray-200 mb-2 px-2 text-sm">Pendientes de atención</h4>
+                    <div class="flex flex-col gap-1">
+                        <!-- Item: Apartados -->
+                        <Link v-if="notifications.expiring_layaways > 0" 
+                            :href="route('dashboard')" 
+                            class="flex items-center justify-between p-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/20 text-purple-700 dark:text-purple-300 transition-colors"
+                        >
+                            <div class="flex items-center gap-2">
+                                <i class="pi pi-clock"></i>
+                                <span class="text-sm font-medium">Apartados por vencer</span>
+                            </div>
+                            <Badge :value="notifications.expiring_layaways" class="!bg-purple-500" />
+                        </Link>
+
+                        <!-- Item: Entregas -->
+                        <Link v-if="notifications.upcoming_deliveries > 0" 
+                            :href="route('dashboard')" 
+                            class="flex items-center justify-between p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-700 dark:text-blue-300 transition-colors"
+                        >
+                            <div class="flex items-center gap-2">
+                                <i class="pi pi-truck"></i>
+                                <span class="text-sm font-medium">Próximas entregas</span>
+                            </div>
+                            <Badge :value="notifications.upcoming_deliveries" severity="info" />
+                        </Link>
+                    </div>
+                </div>
+            </Popover>
+            <!-- ----------------------------------------------------- -->
+
             <button type="button" class="layout-topbar-action lg:!hidden" @click="mobileUserMenuVisible = true">
                 <i class="pi pi-user text-xl"></i>
             </button>
@@ -98,10 +143,6 @@ const mobileUserMenuVisible = ref(false);
                     <button @click="toggleUserMenu"
                         class="flex text-sm border-2 border-transparent rounded-full focus:outline-none focus:border-gray-300 transition">
                         <img class="size-9 rounded-full object-cover" :src="user.profile_photo_url" :alt="user.name">
-                        <!-- <div class="flex items-center space-x-3 px-2 py-1">
-                            <span class="text-gray-700 dark:text-gray-200">{{ user.name }}</span>
-                            <i class="pi pi-chevron-down !text-xs text-gray-700 dark:text-gray-200"></i>
-                        </div> -->
                     </button>
                     <Menu ref="userMenu" :model="userMenuItems" :popup="true" />
                 </div>

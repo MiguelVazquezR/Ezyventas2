@@ -3,8 +3,10 @@
 namespace App\Http\Middleware;
 
 use App\Enums\CashRegisterSessionStatus;
+use App\Enums\TransactionStatus; // <-- Importante
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
+use App\Models\Transaction; // <-- Importante
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -31,56 +33,37 @@ class HandleInertiaRequests extends Middleware
                 $subscription = $user->branch->subscription;
 
                 // --- PERMISOS POR EXPIRACIÓN ---
-                // 1. Verificar si la suscripción tiene una versión activa AHORA.
                 $currentVersion = $subscription->currentVersion();
-
                 $isSubscriptionActive = (bool)$currentVersion;
-
-                // 2. Obtener los módulos solo si está activa.
-                //    getAvailableModuleNames() internamente ya hace esta verificación, 
-                //    pero tener $isSubscriptionActive nos sirve para el paso 3.
                 $availableModuleNames = $isSubscriptionActive
                     ? $subscription->getAvailableModuleNames()
                     : [];
 
-                // 3. Asignar permisos según el estado de la suscripción.
                 $permissions = $isOwner
-                    ? Permission::query() // El dueño siempre obtiene permisos de Sistema
-                    ->whereIn('module', $availableModuleNames) // Si está expirada, $availableModuleNames estará vacío
+                    ? Permission::query()
+                    ->whereIn('module', $availableModuleNames)
                     ->orWhere('module', 'Sistema')
                     ->pluck('name')
-                    : ($isSubscriptionActive ? $user->getAllPermissions()->pluck('name') : []); // No-dueño solo obtiene permisos si la suscripción está activa
-
-                // --- FIN: CORRECCIÓN DE PERMISOS POR EXPIRACIÓN ---
+                    : ($isSubscriptionActive ? $user->getAllPermissions()->pluck('name') : []);
 
                 // --- Lógica de Advertencia de Suscripción ---
                 $subscriptionWarning = null;
-                // MODIFICADO: Obtener la versión MÁS RECIENTE (activa o expirada)
-                // Quitamos el filtro de 'end_date' para encontrar también las expiradas.
-                $currentVersion = $subscription->versions()
-                    ->latest('id')
-                    ->first();
+                $currentVersionAll = $subscription->versions()->latest('id')->first();
 
-                if ($currentVersion) {
-                    $endDate = Carbon::parse($currentVersion->end_date)->startOfDay();
+                if ($currentVersionAll) {
+                    $endDate = Carbon::parse($currentVersionAll->end_date)->startOfDay();
                     $today = Carbon::now()->startOfDay();
-
-                    // Usamos diffInDays con 'false' para obtener números negativos si ya pasó
                     $daysRemaining = $today->diffInDays($endDate, false);
+                    $warningThreshold = 5;
 
-                    $warningThreshold = 5; // Mostrar advertencia si faltan 5 días o menos
-
-                    // CASO 1: Expirado ($daysRemaining es negativo)
                     if ($daysRemaining < 0) {
                         $subscriptionWarning = [
                             'daysRemaining' => $daysRemaining,
                             'endDate' => $endDate->translatedFormat('d \d\e F \d\e\l Y'),
                             'message' => "La suscripción expiró el " . $endDate->translatedFormat('d \d\e F'),
-                            'isExpired' => true // Flag para el frontend
+                            'isExpired' => true
                         ];
-                    }
-                    // CASO 2: Vence hoy (0) o en los próximos 5 días (1-5)
-                    elseif ($daysRemaining <= $warningThreshold) {
+                    } elseif ($daysRemaining <= $warningThreshold) {
                         $message = $daysRemaining == 0
                             ? "La suscripción vence hoy"
                             : "La suscripción vence en {$daysRemaining} " . ($daysRemaining === 1 ? 'día' : 'días');
@@ -89,23 +72,60 @@ class HandleInertiaRequests extends Middleware
                             'daysRemaining' => $daysRemaining,
                             'endDate' => $endDate->translatedFormat('d \d\e F \d\e\l Y'),
                             'message' => $message,
-                            'isExpired' => false // Flag para el frontend
+                            'isExpired' => false
                         ];
                     }
-                    // CASO 3: Faltan más de 5 días. $subscriptionWarning se queda en null.
                 }
-                // --- FIN: Lógica de Advertencia de Suscripción ---
 
                 return [
                     'user' => $user,
                     'permissions' => $permissions,
                     'is_subscription_owner' => $isOwner,
                     'subscription' => ['commercial_name' => $subscription->commercial_name],
-                    'subscriptionWarning' => $subscriptionWarning, // Actualizado
+                    'subscriptionWarning' => $subscriptionWarning,
                     'current_branch' => $user->branch,
                     'available_branches' => $subscription->branches()->get(['id', 'name']),
                 ];
             },
+            
+            // --- NUEVO: Notificaciones Globales ---
+            'notifications' => function () use ($request) {
+                $user = $request->user();
+                if (!$user) return null;
+
+                // Solo calculamos si el usuario tiene permiso de ver transacciones (o es dueño)
+                if ($user->roles()->exists() && !$user->can('transactions.access')) {
+                    return [
+                        'expiring_layaways' => 0,
+                        'upcoming_deliveries' => 0,
+                        'total' => 0
+                    ];
+                }
+
+                $branchId = $user->branch_id;
+                
+                // 1. Apartados por vencer (3 días)
+                $expiringLayaways = Transaction::where('branch_id', $branchId)
+                    ->where('status', TransactionStatus::ON_LAYAWAY)
+                    ->whereNotNull('layaway_expiration_date')
+                    ->whereDate('layaway_expiration_date', '<=', now()->addDays(3))
+                    ->count();
+
+                // 2. Próximas entregas (3 días)
+                $upcomingDeliveries = Transaction::where('branch_id', $branchId)
+                    ->where('status', TransactionStatus::TO_DELIVER)
+                    ->whereNotNull('delivery_date')
+                    ->whereDate('delivery_date', '<=', now()->addDays(3))
+                    ->count();
+
+                return [
+                    'expiring_layaways' => $expiringLayaways,
+                    'upcoming_deliveries' => $upcomingDeliveries,
+                    'total' => $expiringLayaways + $upcomingDeliveries
+                ];
+            },
+            // --- FIN Notificaciones ---
+
             'flash' => fn() => [
                 'success' => $request->session()->get('success'),
                 'error' => $request->session()->get('error'),
@@ -115,7 +135,6 @@ class HandleInertiaRequests extends Middleware
                 'show_payment_modal' => $request->session()->get('show_payment_modal'),
             ],
 
-            // CORREGIDO: Busca la sesión en la que el usuario es participante, no solo el que la abrió.
             'activeSession' => function () use ($request) {
                 $user = $request->user();
                 if (!$user) return null;
@@ -126,7 +145,6 @@ class HandleInertiaRequests extends Middleware
                     ->first();
             },
 
-            // AÑADIDO: Busca sesiones a las que el usuario se puede unir si no está en una.
             'joinableSessions' => function () use ($request) {
                 $user = $request->user();
                 if (!$user || $user->cashRegisterSessions()->where('status', CashRegisterSessionStatus::OPEN)->exists()) {
@@ -139,7 +157,6 @@ class HandleInertiaRequests extends Middleware
                     ->get();
             },
 
-            // CORREGIDO: Solo muestra cajas para ABRIR si el usuario no está en una sesión Y no hay otras a las que unirse.
             'availableCashRegisters' => function () use ($request) {
                 $user = $request->user();
                 if (!$user) return [];
