@@ -124,6 +124,11 @@ class PermissionSeeder extends Seeder
             'Sistema' => [
                 'system.branches.switch' => 'Cambiar entre sucursales',
                 'system.bank_accounts.manage' => 'Ver y editar saldos de cuentas bancarias al abrir caja',
+                'dashboard.see_sales' => 'Inicio: Ver ventas del día y semanal',
+                'dashboard.see_layaways' => 'Inicio: Ver panel de ventas apartadas',
+                'dashboard.see_orders' => 'Inicio: Ver panel de pedidos',
+                'dashboard.see_outstanding_balances' => 'Inicio: Ver panel de saldos por cobrar',
+                'dashboard.see_inventory_details' => 'Inicio: Ver detalles de inventario',
             ],
         ];
 

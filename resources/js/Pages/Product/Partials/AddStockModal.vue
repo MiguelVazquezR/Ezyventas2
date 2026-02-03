@@ -35,7 +35,7 @@ const submit = () => {
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" modal header="Dar Entrada a Producto" :style="{ width: '35rem' }">
+    <Dialog :visible="visible" @update:visible="closeModal" modal header="Dar entrada a producto" :style="{ width: '35rem' }">
         <form @submit.prevent="submit" class="p-2">
             <div v-if="!isVariantProduct">
                 <InputLabel for="quantity" value="Cantidad a agregar" />
@@ -55,12 +55,12 @@ const submit = () => {
                         <InputNumber v-model="variant.quantity" :min="0" inputClass="w-20 text-center" />
                     </div>
                 </div>
-                 <InputError :message="form.errors.variants" class="mt-2" />
+                 <InputError :message="form.errors.variants" class="mt-1" />
             </div>
 
             <div class="flex justify-end gap-2 mt-6">
                 <Button type="button" label="Cancelar" severity="secondary" @click="closeModal"></Button>
-                <Button type="submit" label="Confirmar Entrada" :loading="form.processing"></Button>
+                <Button type="submit" label="Confirmar entrada" :loading="form.processing"></Button>
             </div>
         </form>
     </Dialog>

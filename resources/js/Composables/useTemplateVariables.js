@@ -70,6 +70,7 @@ const getAllVariables = () => ({
             { label: 'Subtotal', value: '{{v.subtotal}}' },
             { label: 'Total', value: '{{v.total}}' },
             { label: 'Total pagado', value: '{{v.total_pagado}}' },
+            { label: 'Último pago registrado', value: '{{v.ultimo_pago}}' },
             { label: 'Restante por pagar', value: '{{v.restante_por_pagar}}' },
             { label: 'Descuentos', value: '{{v.descuentos}}' },
             { label: 'Cambio', value: '{{v.cambio}}' },
@@ -93,9 +94,10 @@ const getAllVariables = () => ({
         group: 'Producto',
         items: [
             { label: 'Nombre', value: '{{p.nombre}}' },
+            { label: 'Descripción', value: '{{p.descripcion}}' },
             { label: 'Precio', value: '{{p.precio}}' },
             { label: 'SKU', value: '{{p.sku}}' },
-            { label: 'Código Barras', value: '{{p.codigo_barras}}' },
+            { label: 'Código barras', value: '{{p.codigo_barras}}' },
         ]
     }
 });

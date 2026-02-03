@@ -258,8 +258,14 @@ class PrintEncoderService
 
     private static function getProductoReplacements(Product $product): array
     {
+        // Limpiar etiquetas HTML y decodificar entidades HTML
+        // Esto convierte "<p>Hola <strong>mundo</strong>&nbsp;</p>" en "Hola mundo "
+        $cleanDescription = strip_tags($product->description ?? '');
+        $cleanDescription = html_entity_decode($cleanDescription);
+
         return [
             '{{p.nombre}}' => $product->name,
+            '{{p.descripcion}}' => $cleanDescription, // Usamos la descripción limpia
             '{{p.precio}}' => number_format($product->selling_price, 2),
             '{{p.sku}}' => $product->sku,
             '{{p.codigo_barras}}' => $product->barcode ?? $product->sku,
@@ -286,6 +292,7 @@ class PrintEncoderService
             '{{v.restante_por_pagar}}' => number_format($remaining, 2),
             '{{v.metodos_pago}}' => $paymentMethods,
             '{{v.total_pagado}}' => number_format($totalPaid, 2),
+            '{{v.ultimo_pago}}' => $transaction->payments->last()?->amount ? number_format($transaction->payments->last()->amount, 2) : '0.00',
             '{{v.notas_venta}}' => $transaction->notes,
             '{{v.cambio}}' => number_format(max(0, $totalPaid - $total), 2),
             '{{v.fecha_vencimiento_apartado}}' => $transaction->layaway_expiration_date ? Carbon::parse($transaction->layaway_expiration_date)->format('d/m/Y') : 'No aplica',
