@@ -71,7 +71,7 @@ class ProductController extends Controller implements HasMiddleware
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('name', 'LIKE', "%{$searchTerm}%")
                     ->orWhere('sku', 'LIKE', "%{$searchTerm}%")
-                    ->orWhere('location', 'LIKE', "%{$searchTerm}%"); // <-- Búsqueda por ubicación agregada
+                    ->orWhere('location', 'LIKE', "%{$searchTerm}%");
             });
         }
 
@@ -174,7 +174,6 @@ class ProductController extends Controller implements HasMiddleware
                 foreach (array_keys($request->file('general_images')) as $key) {
                     $mediaItem = $product->addMediaFromRequest("general_images.{$key}")
                         ->toMediaCollection('product-general-images');
-                    // <-- 3. Usar método del Trait -->
                     $this->optimizeMediaLocal($mediaItem);
                 }
             }
@@ -183,7 +182,6 @@ class ProductController extends Controller implements HasMiddleware
                     $mediaItem = $product->addMediaFromRequest("variant_images.{$optionValue}")
                         ->withCustomProperties(['variant_option' => $optionValue])
                         ->toMediaCollection('product-variant-images');
-                    // <-- 3. Usar método del Trait -->
                     $this->optimizeMediaLocal($mediaItem);
                 }
             }
@@ -277,7 +275,6 @@ class ProductController extends Controller implements HasMiddleware
             $product->update($productData);
 
             if (!empty($validatedData['deleted_media_ids'])) {
-                // Use Spatie's method to delete media by ID
                 $product->media()->whereIn('id', $validatedData['deleted_media_ids'])->each(function (Media $media) {
                     $media->delete();
                 });
@@ -286,14 +283,12 @@ class ProductController extends Controller implements HasMiddleware
             if ($request->hasFile('general_images')) {
                 foreach (array_keys($request->file('general_images')) as $key) {
                     $mediaItem = $product->addMediaFromRequest("general_images.{$key}")->toMediaCollection('product-general-images');
-                    // <-- 3. Usar método del Trait -->
                     $this->optimizeMediaLocal($mediaItem);
                 }
             }
             if ($request->hasFile('variant_images')) {
                 foreach (array_keys($request->file('variant_images')) as $optionValue) {
                     $mediaItem = $product->addMediaFromRequest("variant_images.{$optionValue}")->withCustomProperties(['variant_option' => $optionValue])->toMediaCollection('product-variant-images');
-                    // <-- 3. Usar método del Trait -->
                     $this->optimizeMediaLocal($mediaItem);
                 }
             }
@@ -333,13 +328,10 @@ class ProductController extends Controller implements HasMiddleware
         ]);
 
         $promotions = Promotion::query()
-            // Check if the product is directly involved in rules or effects
             ->where(function ($query) use ($product) {
                 $query->whereHas('rules', fn($subQuery) => $subQuery->whereMorphedTo('itemable', $product))
                     ->orWhereHas('effects', fn($subQuery) => $subQuery->whereMorphedTo('itemable', $product));
             })
-            // Also include promotions that apply globally or by category/brand if needed
-            // ->orWhere(function ($query) use ($product) { ... add logic for broader promotion applicability ... })
             ->with(['rules.itemable', 'effects.itemable'])
             ->get();
 
@@ -363,9 +355,7 @@ class ProductController extends Controller implements HasMiddleware
                     }
                 }
             }
-            // Ensure 'before' only contains keys that actually changed or were removed
             $changes['before'] = array_intersect_key($changes['before'], $changes['after']);
-
 
             return [
                 'id' => $activity->id,
@@ -373,17 +363,17 @@ class ProductController extends Controller implements HasMiddleware
                 'event' => $activity->event,
                 'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
                 'timestamp' => $activity->created_at->diffForHumans(),
-                // Only include changes if there are actual differences
                 'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
+                // --- CAMBIO IMPORTANTE: AGREGAR PROPIEDADES EXTRA PARA EL FRONTEND ---
+                'properties' => $activity->properties, 
             ];
         })
-        ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes'])) // Filter out 'updated' events with no changes shown
-        ->values(); // <--- CORRECCIÓN AQUI: Reindexar para enviar un Array JSON y no un Objeto JSON
+        ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes']) || !empty($activity['properties']['reason'])) 
+        // Nota: Agregué la condición !empty($activity['properties']['reason']) para no ocultar eventos de stock que quizás no registren "cambios" convencionales si usaste increment()
+        ->values();
 
-         // --- INICIO DE MODIFICACIÓN: Obtener Apartados Activos ---
         $productAndVariantIds = $product->productAttributes->pluck('id')->push($product->id);
         
-        // Obtenemos los IDs de los itemables (Product y ProductAttribute)
         $itemableIds = [
             Product::class => $product->id,
             ProductAttribute::class => $product->productAttributes->pluck('id')->all(),
@@ -391,11 +381,9 @@ class ProductController extends Controller implements HasMiddleware
 
         $layawayItems = TransactionItem::query()
             ->where(function ($query) use ($itemableIds) {
-                // Busca items que sean el producto principal
                 $query->where('itemable_type', Product::class)
                       ->where('itemable_id', $itemableIds[Product::class]);
                 
-                // Busca items que sean variantes de este producto
                 if (!empty($itemableIds[ProductAttribute::class])) {
                     $query->orWhere(function($q) use ($itemableIds) {
                         $q->where('itemable_type', ProductAttribute::class)
@@ -404,12 +392,10 @@ class ProductController extends Controller implements HasMiddleware
                 }
             })
             ->whereHas('transaction', function ($q) {
-                // Filtra solo por transacciones 'en_apartado'
                 $q->where('status', TransactionStatus::ON_LAYAWAY);
             })
             ->with([
-                // Cargamos la información necesaria
-                'transaction:id,folio,customer_id,created_at,layaway_expiration_date', // <--- AGREGADO: layaway_expiration_date
+                'transaction:id,folio,customer_id,created_at,layaway_expiration_date',
                 'transaction.customer:id,name'
             ])
             ->get();
@@ -421,12 +407,11 @@ class ProductController extends Controller implements HasMiddleware
                 'customer_name' => $item->transaction->customer?->name ?? 'Cliente Eliminado',
                 'customer_id' => $item->transaction->customer_id,
                 'quantity' => $item->quantity,
-                'description' => $item->description, // Descripción del item (ej. "Playera (Roja, M)")
+                'description' => $item->description,
                 'date' => $item->transaction->created_at->toDateTimeString(),
-                'layaway_expiration_date' => $item->transaction->layaway_expiration_date, // <--- AGREGADO
+                'layaway_expiration_date' => $item->transaction->layaway_expiration_date,
             ];
         });
-        // --- FIN DE MODIFICACIÓN ---
 
         $availableTemplates = Auth::user()->branch->printTemplates()
             ->where('type', TemplateType::LABEL)
@@ -444,7 +429,6 @@ class ProductController extends Controller implements HasMiddleware
 
     public function destroy(Product $product)
     {
-        // Add authorization check if needed: $this->authorize('delete', $product);
         $product->delete();
         return redirect()->route('products.index')->with('success', 'Producto eliminado con éxito.');
     }
@@ -455,7 +439,6 @@ class ProductController extends Controller implements HasMiddleware
             'ids' => 'required|array',
             'ids.*' => 'exists:products,id',
         ]);
-        // Add authorization check if needed: $this->authorize('delete-multiple', Product::class);
         Product::whereIn('id', $validated['ids'])->delete();
         return redirect()->route('products.index')->with('success', 'Productos seleccionados eliminados con éxito.');
     }
