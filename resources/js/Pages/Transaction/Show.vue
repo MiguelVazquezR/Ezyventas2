@@ -13,6 +13,7 @@ import ProductExchangeModal from './Partials/ProductExchangeModal.vue';
 import LayawayExchangeModal from './Partials/LayawayExchangeModal.vue';
 import DatePicker from 'primevue/datepicker'; 
 import Menu from 'primevue/menu'; 
+import RadioButton from 'primevue/radiobutton'; 
 
 const props = defineProps({
     transaction: Object,
@@ -50,10 +51,11 @@ const openPrintModal = () => {
     isPrintModalVisible.value = true;
 };
 
-// --- Modal de Reembolso ---
-const isRefundModalVisible = ref(false);
-const refundMethod = ref('cash');
-const refundProcessing = ref(false);
+// --- NUEVO: Modal Unificado de Cancelación/Devolución ---
+const isCancellationModalVisible = ref(false);
+const cancellationAction = ref('refund'); // 'refund' | 'penalty'
+const cancellationRefundMethod = ref('cash'); // 'balance' | 'cash'
+const isCancelling = ref(false);
 
 // --- Modal de Pagos (Abonar) ---
 const isPaymentModalVisible = ref(false);
@@ -112,35 +114,21 @@ const openExchangeModal = () => {
 };
 
 // --- HELPER PARA FECHAS LOCALES ---
-// Convierte el objeto Date a un string "YYYY-MM-DD HH:mm:ss" respetando la hora local del usuario
 const toLocalISOString = (date) => {
     if (!date) return null;
-    const tzOffset = date.getTimezoneOffset() * 60000; // offset en milisegundos
+    const tzOffset = date.getTimezoneOffset() * 60000;
     const localISOTime = (new Date(date - tzOffset)).toISOString().slice(0, 19).replace('T', ' ');
     return localISOTime;
 };
 
 // --- HELPER PARA OBTENER SKU ---
 const getItemSku = (item) => {
-    // Si el producto fue eliminado, itemable será null
-    if (!item.itemable) return '-';
-
-    // Caso 1: Es un Producto simple (tiene sku directo)
-    if (item.itemable.sku) {
-        return item.itemable.sku;
-    }
-
-    // Caso 2: Es una Variante (tiene sku_suffix y relación con padre)
-    // El controlador ahora carga 'itemable.product' si es variante
+    if (!item.itemable) return '';
+    if (item.itemable.sku) return item.itemable.sku;
     if (item.itemable.sku_suffix && item.itemable.product) {
         return `${item.itemable.product.sku}-${item.itemable.sku_suffix}`;
     }
-
-    // Fallback: Si es variante pero no cargó el padre o no tiene sku_suffix
-    if (item.itemable.sku_suffix) {
-        return `...-${item.itemable.sku_suffix}`; 
-    }
-
+    if (item.itemable.sku_suffix) return `...-${item.itemable.sku_suffix}`; 
     return '';
 };
 
@@ -161,7 +149,6 @@ const submitExtendLayaway = () => {
     
     isExtendingLayaway.value = true;
     router.put(route('transactions.extend-layaway', props.transaction.id), {
-        // Usamos el helper para enviar la hora local exacta
         new_expiration_date: toLocalISOString(newExpirationDate.value)
     }, {
         onSuccess: () => {
@@ -171,7 +158,7 @@ const submitExtendLayaway = () => {
     });
 };
 
-// --- Modal de Reprogramar Pedido (NUEVO) ---
+// --- Modal de Reprogramar Pedido ---
 const isRescheduleOrderModalVisible = ref(false);
 const newDeliveryDate = ref(null);
 const isReschedulingOrder = ref(false);
@@ -188,7 +175,6 @@ const submitRescheduleOrder = () => {
     
     isReschedulingOrder.value = true;
     router.put(route('transactions.reschedule-order', props.transaction.id), {
-        // Usamos el helper para enviar la hora local exacta
         new_delivery_date: toLocalISOString(newDeliveryDate.value)
     }, {
         onSuccess: () => {
@@ -198,7 +184,7 @@ const submitRescheduleOrder = () => {
     });
 };
 
-// --- Menú de Teléfono (NUEVO) ---
+// --- Menú de Teléfono ---
 const phoneMenu = ref();
 const targetPhone = ref('');
 
@@ -214,7 +200,6 @@ const phoneMenuItems = computed(() => [
         label: 'Mandar WhatsApp',
         icon: 'pi pi-whatsapp',
         command: () => {
-            // Limpiar número (quitar espacios, guiones, parentesis)
             const cleanNumber = targetPhone.value.replace(/\D/g, ''); 
             window.open(`https://wa.me/${cleanNumber}`, '_blank');
         }
@@ -237,7 +222,6 @@ const toggleActionsMenu = (event) => {
 const localTransaction = ref(props.transaction);
 watch(() => props.transaction, (newVal) => localTransaction.value = newVal, { deep: true });
 
-// Totales incluyendo envío si existe
 const totalAmount = computed(() => parseFloat(localTransaction.value.total));
 const totalPaid = computed(() => {
     if (!Array.isArray(localTransaction.value.payments)) return 0;
@@ -249,24 +233,10 @@ const pendingAmount = computed(() => {
 });
 
 // --- ACCIONES PERMITIDAS ---
-const canCancel = computed(() => {
+const canCancelOrRefund = computed(() => {
     if (!localTransaction.value?.status) return false;
     const status = localTransaction.value.status;
-    if (['cancelado', 'reembolsado'].includes(status)) return false;
-    
-    // Permitir cancelar si no hay pagos O si es un tipo especial (apartado/pedido por entregar)
-    const hasNoPayments = totalPaid.value === 0;
-    const isSpecialType = status === 'apartado' || status === 'por_entregar';
-    
-    return hasNoPayments || isSpecialType;
-});
-
-const canRefund = computed(() => {
-    if (!localTransaction.value?.status) return false;
-    const isCompleted = localTransaction.value.status === 'completado';
-    const isPendingWithPayments = localTransaction.value.status === 'pendiente' && totalPaid.value > 0;
-    const isOnLayaway = localTransaction.value.status === 'apartado';
-    return isCompleted || isPendingWithPayments || isOnLayaway;
+    return !['cancelado', 'reembolsado'].includes(status);
 });
 
 const canAddPayment = computed(() => {
@@ -277,7 +247,7 @@ const canAddPayment = computed(() => {
 
 const canExchange = computed(() => {
     if (!localTransaction.value?.status) return false;
-    if (localTransaction.value.status === 'apartado') return true;
+    if (localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway') return true;
     return !['cancelado', 'reembolsado'].includes(localTransaction.value.status);
 });
 
@@ -313,58 +283,84 @@ const handlePaymentSubmit = (paymentData) => {
     });
 };
 
-const cancelSale = () => {
-    const isLayaway = localTransaction.value.status === 'apartado';
-    const isOrder = localTransaction.value.status === 'por_entregar';
-    
-    let message = `¿Estás seguro de que quieres cancelar la venta #${localTransaction.value.folio}?`;
-    
-    if (isLayaway) {
-        message = `¿Seguro que quieres cancelar este APARTADO? Se liberará el inventario reservado y cualquier abono realizado se devolverá al saldo del cliente.`;
-    } else if (isOrder) {
-        message = `¿Seguro que quieres cancelar este PEDIDO? Se liberará el inventario reservado.`;
+// --- LÓGICA DE CANCELACIÓN / DEVOLUCIÓN UNIFICADA ---
+const initiateCancellation = () => {
+    // Caso 1: No hay dinero de por medio -> Cancelación directa con confirmación simple
+    if (totalPaid.value <= 0) {
+        let message = `¿Seguro que quieres cancelar la venta #${localTransaction.value.folio}? Se liberará el inventario reservado.`;
+        if (localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway') {
+            message = `¿Seguro que quieres cancelar este APARTADO? No hay pagos registrados.`;
+        } else if (localTransaction.value.status === 'por_entregar') {
+            message = `¿Seguro que quieres cancelar este PEDIDO? Se liberará el inventario reservado.`;
+        }
+
+        confirm.require({
+            message: message,
+            header: 'Confirmar cancelación',
+            icon: 'pi pi-exclamation-triangle',
+            acceptClass: 'p-button-danger',
+            accept: () => {
+                router.post(route('transactions.cancel', localTransaction.value.id), {}, { preserveScroll: true });
+            }
+        });
+        return;
     }
 
-    confirm.require({
-        message: message,
-        header: 'Confirmar cancelación',
-        icon: 'pi pi-exclamation-triangle',
-        acceptClass: 'p-button-danger',
-        accept: () => {
-            router.post(route('transactions.cancel', localTransaction.value.id), {}, {
-                preserveScroll: true,
-                onSuccess: () => { }
-            });
+    // Caso 2: Hay dinero -> Abrir Modal Completo
+    cancellationAction.value = 'refund'; // Reset default
+    // Default Refund Method: Caja si hay sesión, sino Saldo si hay cliente
+    if (activeSession.value) {
+        cancellationRefundMethod.value = 'cash';
+    } else if (props.transaction.customer_id) {
+        cancellationRefundMethod.value = 'balance';
+    } else {
+        cancellationRefundMethod.value = null; // No hay opción válida por defecto
+    }
+    
+    isCancellationModalVisible.value = true;
+};
+
+const submitCancellation = () => {
+    isCancelling.value = true;
+    
+    const payload = {
+        action: cancellationAction.value
+    };
+    
+    if (cancellationAction.value === 'refund') {
+        if (!cancellationRefundMethod.value) {
+            toast.add({ severity: 'error', summary: 'Error', detail: 'Selecciona un método de reembolso.', life: 3000 });
+            isCancelling.value = false;
+            return;
         }
-    });
-};
+        payload.refund_method = cancellationRefundMethod.value;
+    }
 
-const openRefundModal = () => {
-    refundMethod.value = 'cash';
-    isRefundModalVisible.value = true;
-};
-
-const confirmRefund = () => {
-    refundProcessing.value = true;
-    router.post(route('transactions.refund', props.transaction.id), { refund_method: refundMethod.value }, {
+    router.post(route('transactions.cancel', props.transaction.id), payload, {
         preserveScroll: true,
         onSuccess: () => {
-            isRefundModalVisible.value = false;
-            if (localTransaction.value) localTransaction.value.status = 'reembolsado';
+            isCancellationModalVisible.value = false;
         },
-        onFinish: () => refundProcessing.value = false
+        onFinish: () => isCancelling.value = false
     });
 };
 
 const actionItems = computed(() => [
     { label: 'Abonar / Liquidar', icon: 'pi pi-dollar', command: openPaymentModal, disabled: !canAddPayment.value, visible: hasPermission('transactions.add_payment') },
-    { label: localTransaction.value.status === 'apartado' ? 'Modificar Apartado' : 'Intercambiar producto', icon: 'pi pi-sync', command: openExchangeModal, disabled: !canExchange.value, visible: hasPermission('transactions.exchange') },
-    { label: 'Extender Vencimiento', icon: 'pi pi-calendar-plus', command: openExtendLayawayModal, visible: localTransaction.value.status === 'apartado' },
+    { label: (localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway') ? 'Modificar Apartado' : 'Intercambiar producto', icon: 'pi pi-sync', command: openExchangeModal, disabled: !canExchange.value, visible: hasPermission('transactions.exchange') },
+    { label: 'Extender Vencimiento', icon: 'pi pi-calendar-plus', command: openExtendLayawayModal, visible: localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway' },
     { separator: true },
     { label: 'Imprimir ticket', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
-    { label: 'Generar devolución', icon: 'pi pi-replay', command: openRefundModal, disabled: !canRefund.value, visible: hasPermission('transactions.refund') },
-    { label: localTransaction.value.status === 'apartado' ? 'Cancelar apartado' : (localTransaction.value.status === 'por_entregar' ? 'Cancelar pedido' : 'Cancelar venta'), icon: 'pi pi-times-circle', class: 'text-red-500', command: cancelSale, disabled: !canCancel.value, visible: hasPermission('transactions.cancel') },
+    // UNIFICADO: Solo una opción de Cancelar/Devolver
+    { 
+        label: 'Cancelar / Devolver', 
+        icon: 'pi pi-times-circle', 
+        class: 'text-red-500', 
+        command: initiateCancellation, 
+        disabled: !canCancelOrRefund.value, 
+        visible: hasPermission('transactions.cancel') || hasPermission('transactions.refund') 
+    },
 ]);
 
 // Mapas de estatus y formato
@@ -445,7 +441,7 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                             <!-- NUEVA COLUMNA DE SKU -->
                             <Column header="SKU">
                                 <template #body="{ data }">
-                                    <span class="text-gray-500 dark:text-gray-400 font-mono text-sm">
+                                    <span class="text-gray-500 dark:text-gray-400 font-mono text-xs">
                                         {{ getItemSku(data) }}
                                     </span>
                                 </template>
@@ -483,7 +479,6 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                         <ul class="space-y-3 text-sm">
                             <li class="flex justify-between"><span>Subtotal:</span><span>{{ formatCurrency(transaction.subtotal) }}</span></li>
                             
-                            <!-- Costo de Envío (NUEVO) -->
                             <li v-if="parseFloat(transaction.shipping_cost) > 0" class="flex justify-between">
                                 <span>Envío:</span><span class="font-medium text-blue-600">{{ formatCurrency(transaction.shipping_cost) }}</span>
                             </li>
@@ -528,7 +523,7 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                                         <span>{{ transaction.shipping_address }}</span>
                                     </div>
 
-                                    <!-- Botón Reprogramar Pedido (NUEVO) -->
+                                    <!-- Botón Reprogramar Pedido -->
                                     <div v-if="localTransaction.status === 'por_entregar'" class="mt-2">
                                         <Button 
                                             label="Reprogramar" 
@@ -543,7 +538,7 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                                 </div>
                             </li>
 
-                            <!-- CONTACTO TEMPORAL (MODIFICADO para usar Menú de Teléfono) -->
+                            <!-- CONTACTO TEMPORAL -->
                             <li v-if="!transaction.customer && transaction.contact_info" class="flex flex-col border-b pb-2">
                                 <span class="text-gray-500 dark:text-gray-400 mb-1 text-xs font-bold">Datos de Contacto (Invitado):</span>
                                 <div class="flex items-center gap-2">
@@ -552,7 +547,6 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                                 </div>
                                 <div v-if="transaction.contact_info.phone" class="flex items-center gap-2 mt-1">
                                     <i class="pi pi-phone text-gray-400"></i>
-                                    <!-- Botón Dropdown en lugar de link directo -->
                                     <span 
                                         class="text-blue-600 hover:text-blue-800 cursor-pointer font-medium"
                                         @click="togglePhoneMenu($event, transaction.contact_info.phone)"
@@ -562,7 +556,7 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                                 </div>
                             </li>
 
-                            <!-- Sección de Vencimiento con Botón Integrado (Solo Apartados) -->
+                            <!-- Sección de Vencimiento -->
                             <li v-if="transaction.layaway_expiration_date" class="bg-purple-50 dark:bg-purple-900/20 p-2 rounded -mx-2">
                                 <div class="flex justify-between items-center">
                                     <span class="text-purple-800 dark:text-purple-300 font-medium">Vencimiento:</span>
@@ -582,7 +576,6 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                                 </div>
                             </li>
 
-                            <!-- Cliente (Solo si está registrado) -->
                             <li v-if="transaction.customer" class="flex justify-between items-center">
                                 <span>Cliente:</span>
                                 <span class="font-medium">
@@ -642,23 +635,66 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
         <!-- Modales de Sistema -->
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource" :available-templates="availableTemplates" />
 
-        <Dialog v-model:visible="isRefundModalVisible" modal header="Confirmar devolución" :style="{ width: '30rem' }">
+        <!-- MODAL UNIFICADO DE CANCELACIÓN Y DEVOLUCIÓN -->
+        <Dialog v-model:visible="isCancellationModalVisible" modal header="Anular Transacción" :style="{ width: '32rem' }">
             <div class="p-fluid">
-                <p class="mb-4">Vas a generar una devolución para la venta <strong>#{{ props.transaction.folio }}</strong> por <strong>{{ formatCurrency(totalPaid) }}</strong>.</p>
-                <div class="flex flex-col gap-3">
-                    <div v-if="props.transaction.customer_id" class="flex items-center">
-                        <RadioButton v-model="refundMethod" inputId="refundBalance" value="balance" /><label for="refundBalance" class="ml-2">Abonar al saldo del cliente</label>
+                <div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800 mb-4 text-sm text-blue-800 dark:text-blue-200">
+                    <i class="pi pi-info-circle mr-1"></i>
+                    Esta venta tiene pagos registrados por <strong>{{ formatCurrency(totalPaid) }}</strong>.
+                </div>
+
+                <div class="flex flex-col gap-4">
+                    <p class="font-bold text-gray-700 dark:text-gray-300">¿Qué deseas hacer con el dinero?</p>
+                    
+                    <!-- Opción 1: Reembolsar -->
+                    <div class="border rounded p-3" :class="cancellationAction === 'refund' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/10' : 'border-gray-200 dark:border-gray-700'">
+                        <div class="flex items-center mb-2">
+                            <RadioButton v-model="cancellationAction" inputId="actionRefund" value="refund" />
+                            <label for="actionRefund" class="ml-2 font-bold cursor-pointer">Devolver al cliente (Reembolso)</label>
+                        </div>
+                        
+                        <!-- Subopciones de Reembolso (Solo si está seleccionado) -->
+                        <div v-if="cancellationAction === 'refund'" class="ml-7 flex flex-col gap-2 mt-2 animate-fade-in">
+                            <div v-if="activeSession" class="flex items-center">
+                                <RadioButton v-model="cancellationRefundMethod" inputId="methodCash" value="cash" />
+                                <label for="methodCash" class="ml-2 text-sm cursor-pointer">Entregar efectivo de caja</label>
+                            </div>
+                            <div v-else class="text-xs text-orange-500 ml-1">
+                                * No hay caja abierta para devolver efectivo.
+                            </div>
+
+                            <div v-if="transaction.customer_id" class="flex items-center">
+                                <RadioButton v-model="cancellationRefundMethod" inputId="methodBalance" value="balance" />
+                                <label for="methodBalance" class="ml-2 text-sm cursor-pointer">Abonar a su saldo a favor</label>
+                            </div>
+                            <div v-else class="text-xs text-orange-500 ml-1">
+                                * No se puede abonar a saldo (Venta sin cliente registrado).
+                            </div>
+                        </div>
                     </div>
-                    <div class="flex items-center">
-                        <RadioButton v-model="refundMethod" inputId="refundCash" value="cash" :disabled="!activeSession" />
-                        <label for="refundCash" class="ml-2">Retirar efectivo de caja</label>
-                        <small v-if="!activeSession" class="ml-2 text-orange-500">(Sin sesión activa)</small>
+
+                    <!-- Opción 2: Penalizar -->
+                    <div class="border rounded p-3" :class="cancellationAction === 'penalty' ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : 'border-gray-200 dark:border-gray-700'">
+                        <div class="flex items-center">
+                            <RadioButton v-model="cancellationAction" inputId="actionPenalty" value="penalty" />
+                            <label for="actionPenalty" class="ml-2 font-bold cursor-pointer text-red-600">Cobrar como penalización</label>
+                        </div>
+                        <p class="text-xs text-gray-500 ml-7 mt-1">
+                            El dinero NO se devuelve. Se cancela la venta pero el negocio retiene el monto pagado.
+                        </p>
                     </div>
                 </div>
             </div>
             <template #footer>
-                <Button label="Cancelar" severity="secondary" @click="isRefundModalVisible = false" text />
-                <Button label="Confirmar" icon="pi pi-check" @click="confirmRefund" :loading="refundProcessing" :disabled="refundMethod === 'cash' && !activeSession" />
+                <Button label="Cancelar" severity="secondary" @click="isCancellationModalVisible = false" text />
+                <Button 
+                    :label="cancellationAction === 'refund' ? 'Confirmar Devolución' : 'Confirmar Penalización'" 
+                    :icon="cancellationAction === 'refund' ? 'pi pi-replay' : 'pi pi-ban'" 
+                    @click="submitCancellation" 
+                    :loading="isCancelling" 
+                    :severity="cancellationAction === 'refund' ? 'primary' : 'danger'"
+                    :disabled="cancellationAction === 'refund' && !cancellationRefundMethod"
+                />
             </template>
         </Dialog>
 
