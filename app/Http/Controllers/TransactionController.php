@@ -28,6 +28,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use LogicException;
 
 class TransactionController extends Controller implements HasMiddleware
@@ -116,7 +117,13 @@ class TransactionController extends Controller implements HasMiddleware
             'customer:id,name,balance,credit_limit',
             'user:id,name',
             'branch:id,name',
-            'items.itemable',
+            // --- CAMBIO: Carga polimórfica específica para obtener datos completos del producto/variante ---
+            'items.itemable' => function (MorphTo $morphTo) {
+                $morphTo->morphWith([
+                    Product::class => [],
+                    ProductAttribute::class => ['product'], // Cargamos el padre para componer el SKU completo
+                ]);
+            },
             'payments.bankAccount',
         ]);
 
