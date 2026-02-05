@@ -69,21 +69,24 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ])
             ->first();
 
-        $joinableSessions = null;
-        $availableCashRegisters = null;
+        $joinableSessions = []; // Inicializamos como array vacío para evitar nulls
+        $availableCashRegisters = []; // Inicializamos como array vacío
         $userBankAccounts = null;
 
+        // Si el usuario NO tiene una sesión activa propia, cargamos opciones
         if (!$activeSession) {
+            // 1. Sesiones activas a las que podría unirse
             $joinableSessions = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
                 ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $branchId))
                 ->with('cashRegister:id,name', 'opener:id,name')
                 ->get();
 
-            if ($joinableSessions->isEmpty()) {
-                $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
-                    ->where('is_active', true)->where('in_use', false)
-                    ->select('id', 'name')->get();
-            }
+            // 2. CORRECCIÓN: Siempre buscar cajas disponibles, independientemente de si hay sesiones activas
+            $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
+                ->where('is_active', true)
+                ->where('in_use', false) // Solo cajas que NO estén siendo usadas
+                ->select('id', 'name')
+                ->get();
 
             if ($isOwner) {
                 $userBankAccounts = Auth::user()->branch->bankAccounts()->get();

@@ -120,6 +120,30 @@ const toLocalISOString = (date) => {
     return localISOTime;
 };
 
+// --- HELPER PARA OBTENER SKU ---
+const getItemSku = (item) => {
+    // Si el producto fue eliminado, itemable será null
+    if (!item.itemable) return '-';
+
+    // Caso 1: Es un Producto simple (tiene sku directo)
+    if (item.itemable.sku) {
+        return item.itemable.sku;
+    }
+
+    // Caso 2: Es una Variante (tiene sku_suffix y relación con padre)
+    // El controlador ahora carga 'itemable.product' si es variante
+    if (item.itemable.sku_suffix && item.itemable.product) {
+        return `${item.itemable.product.sku}-${item.itemable.sku_suffix}`;
+    }
+
+    // Fallback: Si es variante pero no cargó el padre o no tiene sku_suffix
+    if (item.itemable.sku_suffix) {
+        return `...-${item.itemable.sku_suffix}`; 
+    }
+
+    return '';
+};
+
 // --- Modal de Extender Apartado ---
 const isExtendLayawayModalVisible = ref(false);
 const newExpirationDate = ref(null);
@@ -418,6 +442,15 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                     <template #title>Detalles de los conceptos</template>
                     <template #content>
                         <DataTable :value="transaction.items" class="p-datatable-sm">
+                            <!-- NUEVA COLUMNA DE SKU -->
+                            <Column header="SKU">
+                                <template #body="{ data }">
+                                    <span class="text-gray-500 dark:text-gray-400 font-mono text-sm">
+                                        {{ getItemSku(data) }}
+                                    </span>
+                                </template>
+                            </Column>
+                            
                             <Column field="description" header="Descripción"></Column>
                             <Column field="quantity" header="Cantidad" class="text-center"></Column>
                             <Column header="Precio unitario">

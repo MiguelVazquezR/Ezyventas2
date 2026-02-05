@@ -89,6 +89,14 @@ onUnmounted(() => {
 const searchTerm = ref(props.filters.search || '');
 const selectedCategoryId = ref(props.filters.category || null);
 
+// --- Nueva función para limpiar búsqueda ---
+const clearSearch = () => {
+    searchTerm.value = '';
+    // Opcional: Devolver el foco al input después de limpiar para mejor UX
+    const input = document.querySelector('.pos-search-input');
+    if (input) input.focus();
+};
+
 const applyFilters = () => {
     router.get(route('pos.index'), {
         search: searchTerm.value,
@@ -375,16 +383,33 @@ const handleProductCreated = (newProduct) => {
             
             <!-- BARRA DE BÚSQUEDA MEJORADA -->
             <div class="mb-4 flex gap-2 items-center">
-                <div class="flex-grow">
-                    <IconField iconPosition="left">
+                <div class="flex-grow relative"> <!-- Contenedor relativo para el botón absoluto -->
+                    <IconField iconPosition="left" class="w-full">
                         <!-- Spinner de carga o Lupa normal -->
                         <InputIcon v-if="!isCheckingEntity" class="pi pi-search" />
                         <InputIcon v-else class="pi pi-spin pi-spinner text-blue-500 font-bold" />
                         
-                        <InputText v-model="searchTerm" @keydown.enter="handleManualSearch" placeholder="Escanear o buscar producto por nombre o SKU"
-                            class="w-full pos-search-input" />
+                        <!-- Eliminamos showClear y agregamos pr-10 para espacio del botón -->
+                        <InputText 
+                            v-model="searchTerm" 
+                            @keydown.enter="handleManualSearch" 
+                            placeholder="Escanear o buscar producto por nombre o SKU"
+                            class="w-full pos-search-input pr-10" 
+                        />
                     </IconField>
+                    
+                    <!-- Botón Absoluto de Limpieza -->
+                    <button 
+                        v-if="searchTerm"
+                        @click="clearSearch"
+                        class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors z-10 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+                        type="button"
+                        aria-label="Limpiar búsqueda"
+                    >
+                        <i class="pi pi-times text-sm font-bold"></i>
+                    </button>
                 </div>
+
                 <!-- Botón de Información de Búsqueda Inteligente -->
                 <Button label="Búsqueda Inteligente" icon="pi pi-sparkles" text size="small" severity="info" @click="isSmartSearchHelpVisible = true" />
             </div>

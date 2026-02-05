@@ -3,10 +3,11 @@
 namespace App\Http\Middleware;
 
 use App\Enums\CashRegisterSessionStatus;
-use App\Enums\TransactionStatus; // <-- Importante
+use App\Enums\TransactionStatus;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
-use App\Models\Transaction; // <-- Importante
+use App\Models\Transaction;
+use App\Models\Subscription;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -84,7 +85,22 @@ class HandleInertiaRequests extends Middleware
                     'subscription' => ['commercial_name' => $subscription->commercial_name],
                     'subscriptionWarning' => $subscriptionWarning,
                     'current_branch' => $user->branch,
-                    'available_branches' => $subscription->branches()->get(['id', 'name']),
+                    // --- MODIFICACIÓN SUPER ADMIN (ID 1) ---
+                    'available_branches' => function () use ($user, $subscription) {
+                        if ($user->id === 1) {
+                            return Subscription::query()
+                                ->whereHas('branches')
+                                ->with(['branches:id,name,subscription_id'])
+                                ->get(['id', 'commercial_name'])
+                                ->map(function ($sub) {
+                                    return [
+                                        'subscription_name' => $sub->commercial_name,
+                                        'branches' => $sub->branches
+                                    ];
+                                });
+                        }
+                        return $subscription->branches()->get(['id', 'name']);
+                    },
                 ];
             },
             
@@ -93,7 +109,6 @@ class HandleInertiaRequests extends Middleware
                 $user = $request->user();
                 if (!$user) return null;
 
-                // Solo calculamos si el usuario tiene permiso de ver transacciones (o es dueño)
                 if ($user->roles()->exists() && !$user->can('transactions.access')) {
                     return [
                         'expiring_layaways' => 0,
@@ -104,14 +119,12 @@ class HandleInertiaRequests extends Middleware
 
                 $branchId = $user->branch_id;
                 
-                // 1. Apartados por vencer (3 días)
                 $expiringLayaways = Transaction::where('branch_id', $branchId)
                     ->where('status', TransactionStatus::ON_LAYAWAY)
                     ->whereNotNull('layaway_expiration_date')
                     ->whereDate('layaway_expiration_date', '<=', now()->addDays(3))
                     ->count();
 
-                // 2. Próximas entregas (3 días)
                 $upcomingDeliveries = Transaction::where('branch_id', $branchId)
                     ->where('status', TransactionStatus::TO_DELIVER)
                     ->whereNotNull('delivery_date')
@@ -124,7 +137,6 @@ class HandleInertiaRequests extends Middleware
                     'total' => $expiringLayaways + $upcomingDeliveries
                 ];
             },
-            // --- FIN Notificaciones ---
 
             'flash' => fn() => [
                 'success' => $request->session()->get('success'),
@@ -161,16 +173,16 @@ class HandleInertiaRequests extends Middleware
                 $user = $request->user();
                 if (!$user) return [];
 
+                // 1. Verificamos si EL USUARIO ACTUAL ya tiene sesión (para no dejarle abrir 2)
                 $userHasSession = $user->cashRegisterSessions()->where('status', CashRegisterSessionStatus::OPEN)->exists();
 
-                $branchHasAnySession = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
-                    ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $user->branch_id))
-                    ->exists();
+                // 2. CORRECCIÓN: Eliminamos la verificación de si la sucursal tiene sesiones.
+                // Lo único que importa es que el usuario NO tenga sesión y la caja NO esté en uso.
 
-                if (!$userHasSession && !$branchHasAnySession) {
+                if (!$userHasSession) {
                     return CashRegister::where('branch_id', $user->branch_id)
                         ->where('is_active', true)
-                        ->where('in_use', false)
+                        ->where('in_use', false) // Solo cajas disponibles
                         ->get(['id', 'name']);
                 }
 

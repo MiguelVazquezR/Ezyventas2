@@ -4,10 +4,11 @@ import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
-import AddStockModal from './Partials/AddStockModal.vue';
+import ManageStockModal from './Partials/ManageStockModal.vue'; // <-- CAMBIO: Importar nuevo modal
 import ActivityHistory from '@/Components/ActivityHistory.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import { usePermissions } from '@/Composables';
+import Image from 'primevue/image'; 
 
 const props = defineProps({
     product: Object,
@@ -30,7 +31,7 @@ const items = ref([
 ]);
 const localPromotions = ref([...props.promotions]);
 const promoMenus = ref({});
-const showAddStockModal = ref(false);
+const showManageStockModal = ref(false); // <-- CAMBIO: Nombre de variable actualizado
 
 // --- Lógica del Modal de Impresión ---
 const isPrintModalVisible = ref(false);
@@ -50,8 +51,11 @@ const actionItems = ref([
     { label: 'Crear nuevo', icon: 'pi pi-plus', command: () => router.get(route('products.create')), visible: hasPermission('products.create') },
     { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('products.edit', props.product.id)), visible: hasPermission('products.edit') },
     { label: 'Agregar promoción', icon: 'pi pi-tag', command: () => router.get(route('products.promotions.create', props.product.id)), visible: hasPermission('products.manage_promos') },
-    { label: 'Dar entrada a producto', icon: 'pi pi-arrow-down', command: () => showAddStockModal.value = true, visible: hasPermission('products.manage_stock') },
-    // --- Añadido botón de imprimir al menú de acciones ---
+    // --- CAMBIO: Opciones de Stock separadas para mejor UX ---
+    { separator: true },
+    { label: 'Entrada/salida de stock', icon: 'pi pi-box', class: 'text-green-600', command: () => showManageStockModal.value = true, visible: hasPermission('products.manage_stock') },
+    // ---------------------------------------------------------
+    { separator: true },
     { label: 'Imprimir etiqueta', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
     { label: 'Eliminar producto', icon: 'pi pi-trash', class: 'text-red-500', command: () => deleteProduct(), visible: hasPermission('products.delete') },
@@ -539,8 +543,9 @@ const totalAvailable = computed(() => props.product.available_stock);
 
             </div>
         </div>
-        <AddStockModal v-if="product" :visible="showAddStockModal" :product="product"
-            @update:visible="showAddStockModal = false" />
+        <!-- CAMBIO: Uso del nuevo modal unificado ManageStockModal -->
+        <ManageStockModal v-if="product" :visible="showManageStockModal" :products="[product]"
+            @update:visible="showManageStockModal = false" />
             
         <!-- Instancia del Modal de Impresión -->
         <PrintModal 

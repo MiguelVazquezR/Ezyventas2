@@ -4,8 +4,8 @@ import { useLayout } from '@/Layouts/composables/layout';
 import { Link, router, usePage } from '@inertiajs/vue3';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import { usePermissions } from '@/Composables';
-import Popover from 'primevue/popover'; // <-- Importar Popover
-import Badge from 'primevue/badge';     // <-- Importar Badge
+import Popover from 'primevue/popover'; 
+import Badge from 'primevue/badge';     
 
 const { toggleMenu: toggleSidebar, toggleDarkMode, isDarkTheme } = useLayout();
 const page = usePage();
@@ -25,7 +25,7 @@ const notifications = computed(() => page.props.notifications || { total: 0, exp
 
 const userMenu = ref();
 const branchMenu = ref();
-const notificationPopover = ref(); // <-- Ref para el popover
+const notificationPopover = ref(); 
 
 const userMenuItems = computed(() => {
     const items = [
@@ -38,7 +38,28 @@ const userMenuItems = computed(() => {
     return items;
 });
 
+// --- LÓGICA MODIFICADA PARA SUPER ADMIN (ID 1) ---
 const branchMenuItems = computed(() => {
+    // Caso especial: Super Admin (ID 1)
+    if (user.value.id === 1) {
+        // availableBranches viene con estructura agrupada desde el backend
+        // [{ subscription_name: 'Sub A', branches: [...] }, ...]
+        return availableBranches.value.map(group => ({
+            label: group.subscription_name, // Nombre del grupo (Suscripción)
+            items: group.branches.map(branch => ({
+                label: branch.name,
+                icon: branch.id === currentBranch.value.id ? 'pi pi-check-circle text-green-500' : 'pi pi-building',
+                command: () => {
+                    // Evitar recarga si ya estamos en esa sucursal
+                    if (branch.id !== currentBranch.value.id) {
+                        router.put(route('branch.switch', branch.id));
+                    }
+                }
+            }))
+        }));
+    }
+
+    // Caso normal: Lista plana de sucursales de la suscripción actual
     return availableBranches.value
         .filter(branch => branch.id !== currentBranch.value.id)
         .map(branch => ({
@@ -70,21 +91,28 @@ const mobileUserMenuVisible = ref(false);
         </div>
 
         <div class="layout-topbar-actions flex items-center">
-            <div v-if="availableBranches && availableBranches.length > 1 && hasPermission('system.branches.switch')"
+            <!-- Selector de Sucursales (Escritorio) -->
+            <!-- Se añade style para limitar la altura del menú si hay muchas sucursales (admin) -->
+            <div v-if="availableBranches && (availableBranches.length > 1 || user.id === 1) && hasPermission('system.branches.switch')"
                 class="layout-topbar-menu hidden lg:block">
                 <div class="layout-topbar-menu-content">
                     <button @click="toggleBranchMenu"
                         class="flex items-center gap-2 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                        <i class="pi pi-building !text-xl"></i>
+                        <i v-if="user.id === 1" class="pi pi-shield text-blue-500 !text-xl" v-tooltip.bottom="'Modo Soporte'"></i>
+                        <i v-else class="pi pi-building !text-xl"></i>
+                        
                         <div class="text-left">
                             <p class="text-sm font-bold m-0">{{ subscription.commercial_name }}</p>
                             <p class="text-xs text-gray-500 m-0">{{ currentBranch.name }}</p>
                         </div>
                         <i class="pi pi-chevron-down text-xs ml-2"></i>
                     </button>
-                    <Menu ref="branchMenu" :model="branchMenuItems" :popup="true" />
+                    <!-- Agregamos scrollHeight para que el menú de admin no sea infinito -->
+                    <Menu ref="branchMenu" :model="branchMenuItems" :popup="true" class="max-h-96 overflow-y-auto" />
                 </div>
             </div>
+            
+            <!-- Vista estática si solo hay 1 sucursal y no es admin -->
             <div v-else class="flex items-center gap-2 p-2 rounded-md">
                 <i class="pi pi-building !text-xl"></i>
                 <div class="text-left">
@@ -156,12 +184,13 @@ const mobileUserMenuVisible = ref(false);
                 <img class="size-24 rounded-full object-cover mb-4" :src="user.profile_photo_url" :alt="user.name">
                 <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 m-0">{{ user.name }}</h2>
                 <p class="text-sm text-gray-500 dark:text-gray-400 m-0">{{ user.email }}</p>
-                <p class="text-sm font-bold m-0">{{ subscription.commercial_name }}</p>
+                <p v-if="user.id === 1" class="text-xs font-bold text-blue-500 mt-1 uppercase tracking-wide">Super Admin</p>
+                <p v-else class="text-sm font-bold m-0">{{ subscription.commercial_name }}</p>
             </div>
             <Divider />
 
-            <!-- NUEVO: Selector de sucursal para móvil -->
-            <div v-if="availableBranches && availableBranches.length > 1 && hasPermission('system.branches.switch')"
+            <!-- Selector de sucursal para móvil (ADAPTADO PARA ADMIN) -->
+            <div v-if="availableBranches && (availableBranches.length > 1 || user.id === 1) && hasPermission('system.branches.switch')"
                 class="mb-2">
                 <div class="flex items-center gap-2 p-2 rounded-md">
                     <i class="pi pi-building !text-xl"></i>
@@ -169,23 +198,48 @@ const mobileUserMenuVisible = ref(false);
                         <p class="text-sm text-gray-700 m-0">{{ currentBranch.name }}</p>
                     </div>
                 </div>
-                <ul class="flex flex-col gap-2">
+                
+                <div class="flex flex-col gap-2 max-h-[400px] overflow-y-auto">
                     <h2 class="text-base pt-5 mb-0 text-center">Cambiar de sucursal</h2>
-                    <li v-for="item in branchMenuItems" :key="item.label">
-                        <button @click="item.command(); mobileUserMenuVisible = false;"
-                            class="w-full flex items-center p-3 rounded-lg bg-gray-100 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-left">
-                            <i :class="item.icon" class="!text-lg mr-3 text-gray-700 dark:text-gray-400"></i>
-                            <span class="text-sm text-gray-700 dark:text-gray-200">{{ item.label }}</span>
-                        </button>
-                    </li>
-                </ul>
+                    
+                    <template v-for="(item, index) in branchMenuItems" :key="index">
+                        <!-- Caso: Grupo (Admin) -->
+                        <div v-if="item.items" class="mb-2">
+                            <h3 class="text-xs font-bold text-gray-400 uppercase px-3 py-1 bg-gray-50 dark:bg-gray-800 rounded mb-1 sticky top-0">
+                                {{ item.label }}
+                            </h3>
+                            <ul>
+                                <li v-for="subItem in item.items" :key="subItem.label">
+                                    <button @click="subItem.command(); mobileUserMenuVisible = false;"
+                                        class="w-full flex items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
+                                        :class="{'bg-blue-50 dark:bg-blue-900/20': subItem.label === currentBranch.name}">
+                                        <i :class="subItem.icon" class="!text-lg mr-3 text-gray-700 dark:text-gray-400"></i>
+                                        <span class="text-sm text-gray-700 dark:text-gray-200">{{ subItem.label }}</span>
+                                    </button>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <!-- Caso: Item normal (Usuario) -->
+                        <div v-else>
+                            <button @click="item.command(); mobileUserMenuVisible = false;"
+                                class="w-full flex items-center p-3 rounded-lg bg-gray-100 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-left">
+                                <i :class="item.icon" class="!text-lg mr-3 text-gray-700 dark:text-gray-400"></i>
+                                <span class="text-sm text-gray-700 dark:text-gray-200">{{ item.label }}</span>
+                            </button>
+                        </div>
+                    </template>
+                </div>
             </div>
+
+            <!-- Caso: Usuario sin múltiples sucursales -->
             <div v-else class="flex items-center gap-2 p-2 rounded-md">
                 <i class="pi pi-building !text-xl"></i>
                 <div class="text-left">
                     <p class="text-sm text-gray-700 m-0">{{ currentBranch.name }}</p>
                 </div>
             </div>
+            
             <Divider v-if="availableBranches && availableBranches.length > 1" />
 
             <ul class="flex flex-col gap-1">

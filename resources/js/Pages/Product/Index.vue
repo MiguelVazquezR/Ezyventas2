@@ -2,13 +2,13 @@
 import { ref, watch, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import AddBatchStockModal from './Partials/AddBatchStockModal.vue';
+import ManageStockModal from './Partials/ManageStockModal.vue'; // <-- COMPONENTE UNIFICADO
 import ImportProductsModal from './Partials/ImportProductsModal.vue';
 import ProductNavigation from './Partials/ProductNavigation.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
-import Image from 'primevue/image'; // <-- IMPORTACIÓN NUEVA
+import Image from 'primevue/image';
 
 const props = defineProps({
     products: Object,
@@ -27,25 +27,30 @@ const limitReached = computed(() => {
     return props.productUsage >= props.productLimit;
 });
 
-// --- NUEVO: Cálculo del total de unidades ---
 const totalStock = computed(() => {
     if (!props.stockByCategory || props.stockByCategory.length === 0) {
         return 0;
     }
     return props.stockByCategory.reduce((total, category) => {
-        // Aseguramos que el valor es numérico antes de sumar
         return total + (Number(category.products_sum_current_stock) || 0);
     }, 0);
 });
 
-
 const selectedProducts = ref([]);
-const showAddStockModal = ref(false);
+const showManageStockModal = ref(false); // Modal Unificado
+const productsForStockModal = ref([]); // Array de productos para el modal
 const showImportModal = ref(false);
 const searchTerm = ref(props.filters.search || '');
 
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
+
+// --- GESTIÓN DE STOCK (NUEVO) ---
+const openStockModal = (products) => {
+    productsForStockModal.value = Array.isArray(products) ? products : [products];
+    showManageStockModal.value = true;
+};
+// --------------------------------
 
 const openPrintModal = (product) => {
     printDataSource.value = {
@@ -107,6 +112,11 @@ const deleteSingleProduct = () => {
 const menuItems = ref([
     { label: 'Ver', icon: 'pi pi-eye', command: () => { if (selectedProductForMenu.value) router.get(route('products.show', selectedProductForMenu.value.id)); }, visible: hasPermission('products.see_details') },
     { label: 'Editar', icon: 'pi pi-pencil', command: () => { if (selectedProductForMenu.value) router.get(route('products.edit', selectedProductForMenu.value.id)); }, visible: hasPermission('products.edit') },
+    // --- NUEVAS OPCIONES DE STOCK ---
+    { separator: true },
+    { label: 'Entrada/salida de stock', icon: 'pi pi-box', class: 'text-green-600', command: () => openStockModal(selectedProductForMenu.value), visible: hasPermission('products.manage_stock') },
+    // --------------------------------
+    { separator: true },
     { label: 'Agregar promoción', icon: 'pi pi-tag', command: () => { if (selectedProductForMenu.value) router.get(route('products.promotions.create', selectedProductForMenu.value.id)); }, visible: hasPermission('products.manage_promos') },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleProduct, visible: hasPermission('products.delete') },
@@ -131,21 +141,16 @@ const onPage = (event) => fetchData({ page: event.page + 1, rows: event.rows });
 const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: event.sortOrder });
 watch(searchTerm, () => fetchData());
 const getStockSeverity = (product) => {
-    // Calcular el stock disponible (físico - apartado)
     const availableStock = (product.current_stock || 0) - (product.reserved_stock || 0);
 
     if (availableStock <= 0) return 'danger';
-    // Asegurarse de que min_stock existe y es un número antes de comparar
     if (product.min_stock && typeof product.min_stock === 'number' && availableStock <= product.min_stock) {
         return 'warning';
     }
     return 'success';
 };
 
-// --- NUEVO: Manejador de clic en la fila ---
 const onRowClick = (event) => {
-    // Evitar navegación si se hizo clic en un botón o imagen interactiva
-    // (Aunque usamos @click.stop, esto es una capa extra de seguridad)
     const target = event.originalEvent.target;
     if (target.closest('button') || target.closest('.p-image-preview-indicator') || target.closest('.p-checkbox')) {
         return;
@@ -223,8 +228,10 @@ const onRowClick = (event) => {
                     <span class="font-semibold text-sm text-[#373737] dark:text-gray-200">{{ selectedProducts.length }}
                         producto(s) seleccionado(s)</span>
                     <div class="flex items-center gap-2">
-                        <Button v-if="hasPermission('products.manage_stock')" @click="showAddStockModal = true"
-                            label="Dar entrada" icon="pi pi-arrow-down" size="small" severity="secondary" outlined />
+                        <!-- ACCIONES MASIVAS STOCK -->
+                        <Button v-if="hasPermission('products.manage_stock')" @click="openStockModal(selectedProducts)"
+                            label="Ajustar stock" icon="pi pi-box" size="small" severity="info" outlined />
+                            
                         <Button v-if="hasPermission('products.delete')" @click="deleteSelectedProducts" label="Eliminar"
                             icon="pi pi-trash" size="small" severity="danger" outlined />
                     </div>
@@ -238,13 +245,12 @@ const onRowClick = (event) => {
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} productos"
                     class="p-datatable-sm"
                     rowHover
-                    @row-click="onRowClick"> <!-- Evento click en fila -->
+                    @row-click="onRowClick"> 
                     
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
                     
                     <Column header="Imagen" style="width: 5rem">
                         <template #body="{ data }">
-                            <!-- Div contenedor con stop propagation para que el click en la imagen NO abra el show del producto -->
                             <div @click.stop class="flex items-center justify-center size-12 bg-gray-100">
                                 <Image v-if="data.media && data.media.length > 0" 
                                     :src="data.media[0].original_url" 
@@ -263,7 +269,6 @@ const onRowClick = (event) => {
                     <Column field="sku" header="Código" sortable>
                         <template #body="{ data }">
                             <div class="flex items-center gap-2 -ml-2">
-                                <!-- Botón con stop propagation -->
                                 <Button v-if="data.sku && hasPermission('pos.access')" @click.stop="openPrintModal(data)"
                                     icon="pi pi-print" text rounded severity="secondary"
                                     v-tooltip.bottom="'Imprimir Etiqueta'" />
@@ -273,13 +278,11 @@ const onRowClick = (event) => {
                     </Column>
                     <Column field="name" header="Nombre" sortable></Column>
                     
-                    <!-- NUEVA COLUMNA DE UBICACIÓN -->
                     <Column field="location" header="Ubicación" sortable></Column>
 
                     <Column field="current_stock" header="Existencias" sortable>
                         <template #body="{ data }">
                             <div class="flex items-center space-x-2">
-                                <!-- El Tag muestra el stock disponible -->
                                 <Tag :value="(data.current_stock || 0) - (data.reserved_stock || 0)"
                                     :severity="getStockSeverity(data)" />
 
@@ -316,9 +319,10 @@ const onRowClick = (event) => {
             </div>
         </div>
 
-        <!-- Modales -->
-        <AddBatchStockModal :visible="showAddStockModal" :products="selectedProducts"
-            @update:visible="showAddStockModal = false" />
+        <!-- MODAL UNIFICADO DE GESTIÓN DE STOCK -->
+        <ManageStockModal :visible="showManageStockModal" :products="productsForStockModal"
+            @update:visible="showManageStockModal = false" />
+            
         <ImportProductsModal :visible="showImportModal" @update:visible="showImportModal = false" />
 
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
