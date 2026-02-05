@@ -43,7 +43,7 @@ class Subscription extends Model implements HasMedia
     {
         return $this->versions()
             ->where('start_date', '<=', now())
-            ->where('end_date', '>=', now())
+            ->where('end_date', '>=', now()->startOfDay())
             ->latest('id')
             ->first();
     }

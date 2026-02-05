@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, computed } from 'vue'; 
+import { ref, watch, computed, onMounted } from 'vue'; 
 import { Head, useForm, router, usePage } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -10,7 +10,7 @@ import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import CloseSessionModal from '@/Components/CloseSessionModal.vue';
 import SessionHistoryModal from '@/Components/SessionHistoryModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
-import OrderFormModal from './Partials/OrderFormModal.vue'; // <--- IMPORTACIÓN NUEVA
+import OrderFormModal from './Partials/OrderFormModal.vue'; 
 import { v4 as uuidv4 } from 'uuid';
 
 const props = defineProps({
@@ -33,13 +33,11 @@ const toast = useToast();
 const cartItems = ref([]);
 const selectedClient = ref(null);
 const isPaymentModalVisible = ref(false);
-const isOrderModalVisible = ref(false); // <--- NUEVO ESTADO
+const isOrderModalVisible = ref(false);
 
-// --- Lógica para Drawer del Carrito ---
 const isCartDrawerVisible = ref(false);
 const cartItemCount = computed(() => cartItems.value.reduce((acc, item) => acc + item.quantity, 0));
 
-// --- Lógica para Modales ---
 const isStartSessionModalVisible = ref(false);
 const isJoinSessionModalVisible = ref(false);
 const isCloseSessionModalVisible = ref(false);
@@ -55,7 +53,43 @@ watch(() => page.props.flash.print_data, (newPrintData) => {
     }
 }, { immediate: true });
 
-// --- Helper CORREGIDO para calcular precio por volumen ---
+// --- PERSISTENCIA (LOCALSTORAGE) ---
+const userBranchKey = computed(() => {
+    const u = page.props.auth.user;
+    return `pos_data_${u.id}_${u.branch_id}`;
+});
+
+onMounted(() => {
+    const savedCart = localStorage.getItem(`${userBranchKey.value}_cart`);
+    const savedClient = localStorage.getItem(`${userBranchKey.value}_client`);
+    const savedPending = localStorage.getItem(`${userBranchKey.value}_pending`);
+
+    if (savedCart) {
+        try { cartItems.value = JSON.parse(savedCart); } catch (e) { console.error('Error restaurando carrito', e); }
+    }
+    if (savedClient) {
+        try { selectedClient.value = JSON.parse(savedClient); } catch (e) { console.error('Error restaurando cliente', e); }
+    }
+    if (savedPending) {
+        try { pendingCarts.value = JSON.parse(savedPending); } catch (e) { console.error('Error restaurando carritos pendientes', e); }
+    }
+});
+
+watch(cartItems, (newVal) => {
+    localStorage.setItem(`${userBranchKey.value}_cart`, JSON.stringify(newVal));
+}, { deep: true });
+
+watch(selectedClient, (newVal) => {
+    if (newVal) localStorage.setItem(`${userBranchKey.value}_client`, JSON.stringify(newVal));
+    else localStorage.removeItem(`${userBranchKey.value}_client`);
+});
+
+const pendingCarts = ref([]);
+watch(pendingCarts, (newVal) => {
+    localStorage.setItem(`${userBranchKey.value}_pending`, JSON.stringify(newVal));
+}, { deep: true });
+// -----------------------------------
+
 const getPriceForQuantity = (productData, quantity) => {
     const absoluteOriginalPrice = parseFloat(productData.selling_price);
     const basePriceAfterDirectPromo = parseFloat(productData.price);
@@ -114,7 +148,7 @@ const addToCart = (data) => {
                     price: existingItem.price_qty_1_promo, 
                     price_tiers: existingItem.price_tiers
                 };
-                const { price: updatedPrice, original_price_base: updatedOriginalBase, isTierPrice: updatedIsTier } = getPriceForQuantity(itemBaseDataForCalc, existingItem.quantity);
+                const { price: updatedPrice, isTierPrice: updatedIsTier } = getPriceForQuantity(itemBaseDataForCalc, existingItem.quantity);
 
                 let variantModifier = 0;
                 if (existingItem.product_attribute_id) {
@@ -215,7 +249,6 @@ const clearCart = () => {
     isPaymentModalVisible.value = false;
 };
 
-// --- Clientes y Carritos Pendientes ---
 const localCustomers = ref([...props.customers]);
 const handleSelectCustomer = (customer) => selectedClient.value = customer;
 watch(() => props.customers, (newCustomers) => { localCustomers.value = [...newCustomers]; });
@@ -224,7 +257,7 @@ const handleCustomerCreated = (newCustomer) => {
     selectedClient.value = newCustomer;
     toast.add({ severity: 'success', summary: 'Cliente Creado', detail: 'El nuevo cliente ha sido seleccionado.', life: 3000 });
 };
-const pendingCarts = ref([]);
+
 const saveCartToPending = (payload) => {
     if (cartItems.value.length === 0) return;
     pendingCarts.value.push({
@@ -241,7 +274,16 @@ const saveCartToPending = (payload) => {
 const resumePendingCart = (cartId) => {
     const cartToResume = pendingCarts.value.find(c => c.id === cartId);
     if (!cartToResume) return;
-    if (cartItems.value.length > 0) saveCartToPending({ total: cartItems.value.reduce((acc, item) => acc + item.price * item.quantity, 0) });
+    if (cartItems.value.length > 0) {
+        pendingCarts.value.push({
+            id: uuidv4(),
+            client: selectedClient.value || props.defaultCustomer,
+            items: JSON.parse(JSON.stringify(cartItems.value)),
+            time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+            total: cartItems.value.reduce((acc, item) => acc + item.price * item.quantity, 0),
+        });
+    }
+    
     cartItems.value = cartToResume.items;
     selectedClient.value = cartToResume.client.id === props.defaultCustomer.id ? null : cartToResume.client;
     pendingCarts.value = pendingCarts.value.filter(c => c.id !== cartId);
@@ -252,7 +294,6 @@ const deletePendingCart = (cartId) => {
     toast.add({ severity: 'warn', summary: 'Carrito Descartado', detail: 'Se ha eliminado un carrito de la lista de espera.', life: 3000 });
 };
 
-// --- Sesión de Caja ---
 const handleRefreshSessionData = () => {
     router.reload({
         preserveState: true,
@@ -260,7 +301,6 @@ const handleRefreshSessionData = () => {
     });
 };
 
-// --- Creación Rápida de Producto ---
 const handleProductCreatedAndAddToCart = (newProduct) => {
     const formattedProduct = {
         id: newProduct.id,
@@ -282,14 +322,12 @@ const handleProductCreatedAndAddToCart = (newProduct) => {
     router.reload({ preserveState: true, only: ['products'] });
 };
 
-// --- Checkout Standard (Ventas) ---
 const form = useForm({
     cartItems: [], customerId: null,
     subtotal: 0, total_discount: 0, total: 0,
     payments: [], use_balance: false,
     cash_register_session_id: null,
     layaway_expiration_date: null,
-    // Campos extra para Pedidos
     is_order: false,
     contact_info: null,
     delivery_date: null,
@@ -298,7 +336,6 @@ const form = useForm({
     notes: null
 });
 
-// Helper para construir items del carrito para el backend
 const mapCartItems = () => {
     return cartItems.value.map(item => ({
         id: item.id,
@@ -323,7 +360,6 @@ const mapCartItems = () => {
     }));
 };
 
-// --- NUEVO: Manejo de Creación de Pedido ---
 const handleOrderSubmit = (orderData) => {
     if (!props.activeSession) {
         toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar pedidos.', life: 5000 });
@@ -340,9 +376,8 @@ const handleOrderSubmit = (orderData) => {
     form.cartItems = mapCartItems();
     form.customerId = selectedClient.value ? selectedClient.value.id : null;
     form.subtotal = currentSubtotal;
-    form.total_discount = itemsDiscountTotal; // Asumiendo descuentos de items
+    form.total_discount = itemsDiscountTotal; 
     
-    // Datos específicos del Pedido
     form.is_order = true;
     form.contact_info = { 
         name: orderData.contact_name, 
@@ -355,10 +390,11 @@ const handleOrderSubmit = (orderData) => {
     form.cash_register_session_id = props.activeSession.id;
     form.total = currentSubtotal + parseFloat(orderData.shipping_cost);
 
-    form.post(route('pos.store-order'), { // <-- RUTA QUE CREAREMOS DESPUÉS
+    form.post(route('pos.store-order'), { 
         onSuccess: () => {
             clearCart();
             isOrderModalVisible.value = false;
+            toast.add({ severity: 'success', summary: 'Pedido Creado', detail: 'El pedido ha sido registrado correctamente.', life: 3000 });
             router.reload({ only: ['products'], preserveState: true });
         },
         onError: (errors) => {
@@ -368,7 +404,6 @@ const handleOrderSubmit = (orderData) => {
     });
 };
 
-// Manejo de venta normal
 const handleCheckout = (checkoutData) => {
     if (!props.activeSession) {
         toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar una venta.', life: 5000 });
@@ -415,7 +450,6 @@ const handleCheckout = (checkoutData) => {
     });
 };
 
-// Computed para pasar el total actual al modal de pedido
 const currentCartTotal = computed(() => {
     return cartItems.value.reduce((acc, item) => acc + (item.price * item.quantity), 0);
 });
@@ -426,7 +460,6 @@ const currentCartTotal = computed(() => {
     <Head title="Punto de Venta" />
     <AppLayout>
         <div class="relative h-[calc(100vh-100px)]">
-            <!-- Vista principal del POS (si hay sesión activa) -->
             <template v-if="activeSession">
                 <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
                     :filters="filters" :active-session="activeSession" :cart-items="cartItems" @add-to-cart="addToCart"
@@ -435,7 +468,6 @@ const currentCartTotal = computed(() => {
                     @refresh-session-data="handleRefreshSessionData" @open-history-modal="isHistoryModalVisible = true"
                     @open-close-session-modal="isCloseSessionModalVisible = true" class="h-full" />
 
-                <!-- Botón Flotante del Carrito -->
                 <div class="fixed bottom-6 right-6 z-50">
                     <Button @click="isCartDrawerVisible = true" rounded
                         class="!size-16 shadow-lg !bg-white dark:!bg-gray-700 !border !border-[#D9D9D9] dark:!border-gray-600">
@@ -445,7 +477,6 @@ const currentCartTotal = computed(() => {
                     </Button>
                 </div>
 
-                <!-- Drawer del Carrito -->
                 <Drawer v-model:visible="isCartDrawerVisible" position="right" class="!w-full md:!w-[450px]">
                     <template #header>
                         <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Resumen de venta</h2>
@@ -474,7 +505,6 @@ const currentCartTotal = computed(() => {
                 </Drawer>
 
             </template>
-            <!-- Lobby cuando no hay sesión activa -->
             <template v-else>
                 <div class="flex items-center justify-center h-full dark:bg-gray-900 rounded-lg">
                     <div class="text-center p-8">
@@ -519,8 +549,8 @@ const currentCartTotal = computed(() => {
             v-model:visible="isOrderModalVisible"
             :cart-total="currentCartTotal"
             :client="selectedClient"
-            @submit="handleOrderSubmit"
             :loading="form.processing"
+            @submit="handleOrderSubmit"
         />
     </AppLayout>
 </template>

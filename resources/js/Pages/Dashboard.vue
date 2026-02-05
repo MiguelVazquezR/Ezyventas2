@@ -5,12 +5,15 @@ import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import BankAccountHistoryModal from '@/Components/BankAccountHistoryModal.vue';
 import BankAccountTransferModal from '@/Components/BankAccountTransferModal.vue';
+import { usePermissions } from '@/Composables'; 
 
 const props = defineProps({
     stats: Object,
     userBankAccounts: Array,
     allSubscriptionBankAccounts: Array,
 });
+
+const { hasPermission } = usePermissions();
 
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 
@@ -136,7 +139,7 @@ const getExpirationSeverity = (days) => {
             <div v-if="hasStatsToShow">
                 <!-- Fila 1: KPIs Principales -->
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <Link v-if="stats.today_sales !== undefined" :href="route('transactions.index')"
+                    <Link v-if="stats.today_sales !== undefined && hasPermission('dashboard.see_sales')" :href="route('transactions.index')"
                         class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow border-l-4 border-green-500">
                         <div class="flex justify-between items-start">
                             <div>
@@ -158,7 +161,7 @@ const getExpirationSeverity = (days) => {
                     </Link>
                     
                     <!-- Apartados por Vencer -->
-                    <div v-if="stats.expiring_layaways_count !== undefined" 
+                    <div v-if="stats.expiring_layaways_count !== undefined && hasPermission('dashboard.see_layaways')" 
                         @click="fetchExpiringLayaways"
                         class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer border-l-4 border-purple-500 group">
                         <div class="flex justify-between items-start">
@@ -175,7 +178,7 @@ const getExpirationSeverity = (days) => {
                     </div>
 
                     <!-- NUEVO PANEL: Próximas Entregas -->
-                    <div v-if="stats.upcoming_deliveries_count !== undefined" 
+                    <div v-if="stats.upcoming_deliveries_count !== undefined && hasPermission('dashboard.see_orders')" 
                         @click="fetchUpcomingDeliveries"
                         class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer border-l-4 border-blue-500 group">
                         <div class="flex justify-between items-start">
@@ -191,7 +194,7 @@ const getExpirationSeverity = (days) => {
                         </div>
                     </div>
 
-                    <Link v-if="stats.total_customer_debt !== undefined" :href="route('customers.index')"
+                    <Link v-if="stats.total_customer_debt !== undefined && hasPermission('dashboard.see_outstanding_balances')" :href="route('customers.index')"
                         class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow border-l-4 border-cyan-500">
                         <div class="flex justify-between items-start">
                             <div>
@@ -209,7 +212,7 @@ const getExpirationSeverity = (days) => {
 
                 <!-- Fila 2: Gráfico de Ventas y Resumen de Módulos -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-                    <div v-if="stats.weekly_sales_trend"
+                    <div v-if="stats.weekly_sales_trend && hasPermission('dashboard.see_sales')"
                         class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md col-span-1 lg:col-span-2 min-h-[200px]">
                         <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">
                             Tendencia de ventas semanal</h2>
@@ -406,7 +409,7 @@ const getExpirationSeverity = (days) => {
                         </div>
                     </div>
 
-                    <div v-if="stats.inventory_summary" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                    <div v-if="stats.inventory_summary && hasPermission('dashboard.see_inventory_details')" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                         <div class="flex justify-between items-center mb-1">
                             <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400">Total en inventario</h2>
                             <i class="pi pi-box text-gray-400"></i>

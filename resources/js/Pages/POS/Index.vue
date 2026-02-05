@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, computed } from 'vue'; // <-- Asegurar computed
+import { ref, watch, computed, onMounted } from 'vue';
 import { Head, useForm, router, usePage } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -10,7 +10,7 @@ import CloseSessionModal from '@/Components/CloseSessionModal.vue';
 import SessionHistoryModal from '@/Components/SessionHistoryModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import JoinSessionModal from '@/Components/JoinSessionModal.vue';
-import OrderFormModal from './Partials/OrderFormModal.vue'; // <--- IMPORTACIÓN NUEVA
+import OrderFormModal from './Partials/OrderFormModal.vue';
 import { v4 as uuidv4 } from 'uuid';
 
 const props = defineProps({
@@ -33,7 +33,7 @@ const toast = useToast();
 const cartItems = ref([]);
 const selectedClient = ref(null);
 const isPaymentModalVisible = ref(false);
-const isOrderModalVisible = ref(false); // <--- NUEVO ESTADO
+const isOrderModalVisible = ref(false);
 
 // --- Lógica para Modales ---
 const isStartSessionModalVisible = ref(false);
@@ -43,14 +43,54 @@ const isHistoryModalVisible = ref(false);
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
 
-// Observa el flash message del backend para activar el modal de impresión
 watch(() => page.props.flash.print_data, (newPrintData) => {
     if (newPrintData) {
         printDataSource.value = newPrintData;
         isPrintModalVisible.value = true;
-        page.props.flash.print_data = null; // Limpiar para evitar reactivación
+        page.props.flash.print_data = null;
     }
 }, { immediate: true });
+
+// --- PERSISTENCIA (LOCALSTORAGE) ---
+// Claves únicas por usuario y sucursal para evitar conflictos
+const userBranchKey = computed(() => {
+    const u = page.props.auth.user;
+    return `pos_data_${u.id}_${u.branch_id}`;
+});
+
+onMounted(() => {
+    const savedCart = localStorage.getItem(`${userBranchKey.value}_cart`);
+    const savedClient = localStorage.getItem(`${userBranchKey.value}_client`);
+    const savedPending = localStorage.getItem(`${userBranchKey.value}_pending`);
+
+    if (savedCart) {
+        try { cartItems.value = JSON.parse(savedCart); } catch (e) { console.error('Error restaurando carrito', e); }
+    }
+
+    if (savedClient) {
+        try { selectedClient.value = JSON.parse(savedClient); } catch (e) { console.error('Error restaurando cliente', e); }
+    }
+
+    if (savedPending) {
+        try { pendingCarts.value = JSON.parse(savedPending); } catch (e) { console.error('Error restaurando carritos pendientes', e); }
+    }
+});
+
+// Guardado automático
+watch(cartItems, (newVal) => {
+    localStorage.setItem(`${userBranchKey.value}_cart`, JSON.stringify(newVal));
+}, { deep: true });
+
+watch(selectedClient, (newVal) => {
+    if (newVal) localStorage.setItem(`${userBranchKey.value}_client`, JSON.stringify(newVal));
+    else localStorage.removeItem(`${userBranchKey.value}_client`);
+});
+
+const pendingCarts = ref([]);
+watch(pendingCarts, (newVal) => {
+    localStorage.setItem(`${userBranchKey.value}_pending`, JSON.stringify(newVal));
+}, { deep: true });
+// -----------------------------------
 
 // --- Helper CORREGIDO para calcular precio por volumen ---
 const getPriceForQuantity = (productData, quantity) => {
@@ -79,13 +119,12 @@ const getPriceForQuantity = (productData, quantity) => {
         }
     }
     return {
-        price: basePriceAfterDirectPromo, 
+        price: basePriceAfterDirectPromo,
         original_price_base: absoluteOriginalPrice,
         isTierPrice: false
     };
 };
 
-// --- addToCart CORREGIDO ---
 const addToCart = (data) => {
     const { product, variant } = data;
     const cartItemId = variant ? `prod-${product.id}-variant-${variant.id}` : `prod-${product.id}`;
@@ -126,15 +165,15 @@ const addToCart = (data) => {
             ...product,
             cartItemId: cartItemId,
             quantity: quantityToAdd,
-            selling_price: baseOriginalPrice, 
-            price_qty_1_promo: product.price, 
-            price: calculatedPrice, 
-            original_price: baseOriginalPrice, 
+            selling_price: baseOriginalPrice,
+            price_qty_1_promo: product.price,
+            price: calculatedPrice,
+            original_price: baseOriginalPrice,
             isTierPrice: isTierPrice,
             isManualPrice: false,
             ...(variant && {
                 price: calculatedPrice + variant.price_modifier,
-                original_price: baseOriginalPrice + variant.price_modifier, 
+                original_price: baseOriginalPrice + variant.price_modifier,
                 sku: `${product.sku}-${variant.sku_suffix}`,
                 stock: variant.stock,
                 selectedVariant: variant.attributes,
@@ -153,7 +192,6 @@ const addToCart = (data) => {
     }
 };
 
-// --- updateCartQuantity CORREGIDO ---
 const updateCartQuantity = ({ itemId, quantity }) => {
     const item = cartItems.value.find(i => i.cartItemId === itemId);
     if (item) {
@@ -184,7 +222,6 @@ const updateCartQuantity = ({ itemId, quantity }) => {
     }
 };
 
-// --- updateCartPrice CORREGIDO ---
 const updateCartPrice = ({ itemId, price }) => {
     const item = cartItems.value.find(i => i.cartItemId === itemId);
     if (item) {
@@ -202,6 +239,7 @@ const clearCart = () => {
     cartItems.value = [];
     selectedClient.value = null;
     isPaymentModalVisible.value = false;
+    // LocalStorage se limpia automáticamente gracias a los watchers
 };
 
 // --- Clientes y Carritos Pendientes ---
@@ -213,7 +251,7 @@ const handleCustomerCreated = (newCustomer) => {
     selectedClient.value = newCustomer;
     toast.add({ severity: 'success', summary: 'Cliente creado', detail: 'El nuevo cliente ha sido seleccionado.', life: 3000 });
 };
-const pendingCarts = ref([]);
+
 const saveCartToPending = (payload) => {
     if (cartItems.value.length === 0) return;
     pendingCarts.value.push({
@@ -229,7 +267,17 @@ const saveCartToPending = (payload) => {
 const resumePendingCart = (cartId) => {
     const cartToResume = pendingCarts.value.find(c => c.id === cartId);
     if (!cartToResume) return;
-    if (cartItems.value.length > 0) saveCartToPending({ total: cartItems.value.reduce((acc, item) => acc + item.price * item.quantity, 0) });
+    // Si ya hay items, guardarlos en pendientes antes de reanudar el otro
+    if (cartItems.value.length > 0) {
+        pendingCarts.value.push({
+            id: uuidv4(),
+            client: selectedClient.value || props.defaultCustomer,
+            items: JSON.parse(JSON.stringify(cartItems.value)),
+            time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+            total: cartItems.value.reduce((acc, item) => acc + item.price * item.quantity, 0),
+        });
+    }
+
     cartItems.value = cartToResume.items;
     selectedClient.value = cartToResume.client.id === props.defaultCustomer.id ? null : cartToResume.client;
     pendingCarts.value = pendingCarts.value.filter(c => c.id !== cartId);
@@ -247,7 +295,6 @@ const handleRefreshSessionData = () => {
     });
 };
 
-// --- Creación Rápida de Producto ---
 const handleProductCreatedAndAddToCart = (newProduct) => {
     const formattedProduct = {
         id: newProduct.id,
@@ -260,7 +307,7 @@ const handleProductCreatedAndAddToCart = (newProduct) => {
         image: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' + encodeURIComponent(newProduct.name),
         description: newProduct.description || '',
         sku: newProduct.sku || '',
-        price_tiers: newProduct.price_tiers || [], 
+        price_tiers: newProduct.price_tiers || [],
         variants: {},
         variant_combinations: [],
         promotions: [],
@@ -276,7 +323,6 @@ const form = useForm({
     payments: [], use_balance: false,
     cash_register_session_id: null,
     layaway_expiration_date: null,
-    // Campos extra para Pedidos
     is_order: false,
     contact_info: null,
     delivery_date: null,
@@ -285,7 +331,6 @@ const form = useForm({
     notes: null
 });
 
-// Helper para construir items del carrito para el backend (Extracted)
 const mapCartItems = () => {
     return cartItems.value.map(item => ({
         id: item.id,
@@ -305,12 +350,11 @@ const mapCartItems = () => {
             if (item.price < originalPrice) {
                 return 'Promoción de producto';
             }
-            return null; // Sin descuento o motivo específico
+            return null;
         })()
     }));
 };
 
-// --- NUEVO: Manejo de Creación de Pedido ---
 const handleOrderSubmit = (orderData) => {
     if (!props.activeSession) {
         toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar pedidos.', life: 5000 });
@@ -327,13 +371,12 @@ const handleOrderSubmit = (orderData) => {
     form.cartItems = mapCartItems();
     form.customerId = selectedClient.value ? selectedClient.value.id : null;
     form.subtotal = currentSubtotal;
-    form.total_discount = itemsDiscountTotal; 
-    
-    // Datos específicos del Pedido
+    form.total_discount = itemsDiscountTotal;
+
     form.is_order = true;
-    form.contact_info = { 
-        name: orderData.contact_name, 
-        phone: orderData.contact_phone 
+    form.contact_info = {
+        name: orderData.contact_name,
+        phone: orderData.contact_phone
     };
     form.delivery_date = orderData.delivery_date;
     form.shipping_address = orderData.shipping_address;
@@ -342,10 +385,11 @@ const handleOrderSubmit = (orderData) => {
     form.cash_register_session_id = props.activeSession.id;
     form.total = currentSubtotal + parseFloat(orderData.shipping_cost);
 
-    form.post(route('pos.store-order'), { // <-- RUTA QUE CREAREMOS DESPUÉS
+    form.post(route('pos.store-order'), {
         onSuccess: () => {
             clearCart();
             isOrderModalVisible.value = false;
+            toast.add({ severity: 'success', summary: 'Pedido Creado', detail: 'El pedido ha sido registrado correctamente.', life: 3000 });
             router.reload({ only: ['products'], preserveState: true });
         },
         onError: (errors) => {
@@ -361,27 +405,23 @@ const handleCheckout = (checkoutData) => {
         return;
     }
 
-    // 1. Mapear datos base (usando helper)
     form.cartItems = mapCartItems();
     form.customerId = selectedClient.value ? selectedClient.value.id : null;
     form.subtotal = checkoutData.subtotal;
     form.total_discount = checkoutData.total_discount;
     form.total = checkoutData.total;
     form.cash_register_session_id = props.activeSession.id;
-
-    // 2. Mapear nuevos datos de pago
     form.payments = checkoutData.payments;
     form.use_balance = checkoutData.use_balance;
     form.layaway_expiration_date = checkoutData.layaway_expiration_date;
 
-    // 3. Determinar la ruta
     let routeName;
     const transactionType = checkoutData.transactionType;
 
     switch (transactionType) {
         case 'contado':
         case 'credito':
-            routeName = 'pos.checkout'; 
+            routeName = 'pos.checkout';
             break;
         case 'apartado':
             routeName = 'pos.layaway';
@@ -391,22 +431,19 @@ const handleCheckout = (checkoutData) => {
             return;
     }
 
-    // 4. Enviar el formulario
     form.post(route(routeName), {
         onSuccess: () => {
             clearCart();
-            page.props.flash.success = null; 
-            router.reload({ only: ['products'], preserveState: true }); 
+            page.props.flash.success = null;
+            router.reload({ only: ['products'], preserveState: true });
         },
         onError: (errors) => {
-            console.error("Error de validación:", errors);
             const errorMessage = errors.default || errors.message || Object.values(errors).flat().join(' ');
             toast.add({ severity: 'error', summary: 'Error al Procesar', detail: errorMessage || 'Ocurrió un error inesperado.', life: 7000 });
         }
     });
 };
 
-// Computed para pasar el total actual al modal de pedido
 const currentCartTotal = computed(() => {
     return cartItems.value.reduce((acc, item) => acc + (item.price * item.quantity), 0);
 });
@@ -421,35 +458,23 @@ const currentCartTotal = computed(() => {
             <div class="flex flex-col lg:flex-row gap-4 h-[calc(86vh)]">
                 <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden">
                     <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
-                        :filters="filters" :active-session="activeSession" :cart-items="cartItems" @add-to-cart="addToCart"
-                        @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
+                        :filters="filters" :active-session="activeSession" :cart-items="cartItems"
+                        @add-to-cart="addToCart" @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
                         @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
                         @refresh-session-data="handleRefreshSessionData"
                         @open-history-modal="isHistoryModalVisible = true"
                         @open-close-session-modal="isCloseSessionModalVisible = true" class="h-full" />
                 </div>
                 <div class="lg:w-1/3 xl:w-1/4 h-full overflow-hidden">
-                    <ShoppingCart 
-                        :items="cartItems" 
-                        :client="selectedClient" 
-                        :customers="localCustomers"
-                        :default-customer="defaultCustomer" 
-                        :active-promotions="activePromotions"
-                        :loading="form.processing"
-                        :payment-modal-visible="isPaymentModalVisible"
-                        @update-quantity="updateCartQuantity" 
-                        @update-price="updateCartPrice"
-                        @remove-item="removeCartItem" 
-                        @clear-cart="clearCart" 
-                        @select-customer="handleSelectCustomer"
-                        @customer-created="handleCustomerCreated" 
-                        @save-cart="saveCartToPending"
-                        @checkout="handleCheckout" 
-                        @open-payment-modal="isPaymentModalVisible = true"
+                    <ShoppingCart :items="cartItems" :client="selectedClient" :customers="localCustomers"
+                        :default-customer="defaultCustomer" :active-promotions="activePromotions"
+                        :loading="form.processing" :payment-modal-visible="isPaymentModalVisible"
+                        @update-quantity="updateCartQuantity" @update-price="updateCartPrice"
+                        @remove-item="removeCartItem" @clear-cart="clearCart" @select-customer="handleSelectCustomer"
+                        @customer-created="handleCustomerCreated" @save-cart="saveCartToPending"
+                        @checkout="handleCheckout" @open-payment-modal="isPaymentModalVisible = true"
                         @close-payment-modal="isPaymentModalVisible = false"
-                        @open-order-modal="isOrderModalVisible = true"
-                        class="h-full" 
-                    />
+                        @open-order-modal="isOrderModalVisible = true" class="h-full" />
                 </div>
             </div>
         </template>
@@ -459,38 +484,44 @@ const currentCartTotal = computed(() => {
             <div class="flex items-center justify-center h-[calc(100vh-150px)] dark:bg-gray-900 rounded-lg">
                 <div class="text-center p-8">
                     <div
-                        class="bg-sky-100 dark:bg-sky-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
-                        <i class="pi pi-inbox !text-4xl text-sky-500"></i>
+                        class="bg-primary-100 dark:bg-primary-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
+                        <i class="pi pi-inbox !text-4xl text-primary-500"></i>
                     </div>
-                    <!-- Mensaje cambia dependiendo de si hay sesiones para unirse o para crear -->
-                    <h2 v-if="joinableSessions && joinableSessions.length > 0"
+
+                    <!-- CORRECCIÓN VISUAL: Mostrar título de bienvenida si hay opciones, o bloqueo si no -->
+                    <h2 v-if="(joinableSessions && joinableSessions.length > 0) || (availableCashRegisters && availableCashRegisters.length > 0)"
                         class="text-2xl font-bold text-gray-800 dark:text-gray-200">
-                        Sesiones de caja activas
+                        Bienvenido al punto de venta
                     </h2>
                     <h2 v-else class="text-2xl font-bold text-gray-800 dark:text-gray-200">
                         Punto de venta bloqueado
                     </h2>
 
                     <p class="text-gray-600 dark:text-gray-400 mt-2 max-w-md">
-                        <span v-if="joinableSessions && joinableSessions.length > 0">
-                            Hay cajas abiertas por otros usuarios. Únete a una sesión para empezar a vender.
+                        <span
+                            v-if="(joinableSessions && joinableSessions.length > 0) || (availableCashRegisters && availableCashRegisters.length > 0)">
+                            Selecciona una opción para comenzar a registrar ventas.
                         </span>
                         <span v-else>
-                            Necesitas abrir una nueva sesión de caja para poder registrar ventas.
+                            No hay cajas disponibles para unirse o abrir en esta sucursal. Contacta al administrador.
                         </span>
                     </p>
 
-                    <!-- Botones cambian según el contexto -->
-                    <Button v-if="joinableSessions && joinableSessions.length > 0"
-                        @click="isJoinSessionModalVisible = true" label="Unirse a una sesión" icon="pi pi-users"
-                        class="mt-6" />
-                    <Button v-else-if="availableCashRegisters && availableCashRegisters.length > 0"
-                        @click="isStartSessionModalVisible = true" label="Abrir una caja" icon="pi pi-lock-open"
-                        class="mt-6" />
-                    <div v-else class="text-sm text-gray-500 pt-4 mt-8">
-                        <p>No hay cajas disponibles para unirse o abrir en esta sucursal.</p>
+                    <!-- CONTENEDOR DE BOTONES CORREGIDO: Ambos botones pueden aparecer -->
+                    <div class="flex flex-col sm:flex-row gap-4 justify-center mt-6">
+                        <Button v-if="joinableSessions && joinableSessions.length > 0"
+                            @click="isJoinSessionModalVisible = true" label="Unirse a una sesión" icon="pi pi-users"
+                            severity="primary" />
+
+                        <Button v-if="availableCashRegisters && availableCashRegisters.length > 0"
+                            @click="isStartSessionModalVisible = true" label="Abrir una nueva caja"
+                            icon="pi pi-lock-open" severity="success" />
+                    </div>
+
+                    <div v-if="!joinableSessions?.length && !availableCashRegisters?.length"
+                        class="text-sm text-gray-500 pt-4 mt-8">
                         <Button @click="$inertia.visit(route('cash-registers.create'))" label="Crear una caja"
-                            icon="pi pi-inbox" />
+                            icon="pi pi-inbox" text />
                     </div>
                 </div>
             </div>
@@ -507,14 +538,9 @@ const currentCartTotal = computed(() => {
             @update:visible="isHistoryModalVisible = $event" />
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
             :available-templates="availableTemplates" />
-        
+
         <!-- NUEVO MODAL DE PEDIDO -->
-        <OrderFormModal 
-            v-model:visible="isOrderModalVisible"
-            :cart-total="currentCartTotal"
-            :client="selectedClient"
-            @submit="handleOrderSubmit"
-            :loading="form.processing"
-        />
+        <OrderFormModal v-model:visible="isOrderModalVisible" :cart-total="currentCartTotal" :client="selectedClient"
+            :loading="form.processing" @submit="handleOrderSubmit" />
     </AppLayout>
 </template>
