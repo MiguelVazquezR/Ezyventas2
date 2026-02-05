@@ -231,7 +231,17 @@ const confirmRevert = () => {
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 
 const getMinLimit = (limitKey) => {
-    // ... (sin cambios)
+    // --- LÓGICA MODIFICADA ---
+    // Si estamos en modo renovación, permitimos bajar los límites al mínimo absoluto permitido por el sistema (1 o 0),
+    // ignorando la cantidad actual de la suscripción.
+    if (props.mode === 'renew') {
+        if (limitKey === 'limit_branches') return 1;
+        if (limitKey === 'limit_users') return 1;
+        return 0;
+    }
+
+    // Si es modo 'upgrade' (mejora), mantenemos la restricción original: 
+    // no se puede bajar de la cantidad actual contratada.
     const baseVersion = versionToCompare.value;
     if (!baseVersion) {
         if (limitKey === 'limit_branches') return 1;
@@ -521,4 +531,3 @@ const submit = () => {
         </div>
     </AppLayout>
 </template>
-

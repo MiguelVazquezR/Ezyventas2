@@ -114,3 +114,32 @@ Route::post('/unirse-lista', function (Request $request) {
     // 3. Responder que todo salió bien
     return response()->json(['message' => 'Guardado con éxito']);
 });
+
+// --- RUTA DE LIMPIEZA SOLICITADA ---
+Route::get('/cleanup-products-branch-7', function () {
+    $targetBranchId = 7;
+
+    // 1. Buscar los productos
+    $products = \App\Models\Product::query()
+        ->where('branch_id', $targetBranchId)
+        ->where('current_stock', '<=', 0) // Sin stock (0 o negativo)
+        ->whereDoesntHave('transactionItems', function ($query) use ($targetBranchId) {
+            // Verificamos la relación polimórfica (transactionItems)
+            // Y nos aseguramos de que la transacción padre no sea de la sucursal 7
+            $query->whereHas('transaction', function ($q) use ($targetBranchId) {
+                $q->where('branch_id', $targetBranchId);
+            });
+        })
+        ->get();
+
+    $count = $products->count();
+
+    // 2. Eliminar (Iteramos para disparar eventos de Spatie Media Library/ActivityLog si es necesario)
+    \Illuminate\Support\Facades\DB::transaction(function () use ($products) {
+        foreach ($products as $product) {
+            $product->delete();
+        }
+    });
+
+    return "Limpieza completada: Se han eliminado {$count} productos de la sucursal {$targetBranchId} que no tenían stock ni historial de ventas en dicha sucursal.";
+});
