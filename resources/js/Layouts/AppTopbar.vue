@@ -21,7 +21,8 @@ const currentBranch = computed(() => page.props.auth.current_branch);
 const availableBranches = computed(() => page.props.auth.available_branches);
 
 // Notificaciones
-const notifications = computed(() => page.props.notifications || { total: 0, expiring_layaways: 0, upcoming_deliveries: 0 });
+// Actualizado para leer 'expiring_debts' en lugar de 'expiring_layaways'
+const notifications = computed(() => page.props.notifications || { total: 0, expiring_debts: 0, upcoming_deliveries: 0 });
 
 const userMenu = ref();
 const branchMenu = ref();
@@ -134,16 +135,16 @@ const mobileUserMenuVisible = ref(false);
                 <div class="w-64">
                     <h4 class="font-bold text-gray-700 dark:text-gray-200 mb-2 px-2 text-sm">Pendientes de atención</h4>
                     <div class="flex flex-col gap-1">
-                        <!-- Item: Apartados -->
-                        <Link v-if="notifications.expiring_layaways > 0" 
+                        <!-- Item: Vencimientos próximos (Apartados y Créditos) -->
+                        <Link v-if="notifications.expiring_debts > 0" 
                             :href="route('dashboard')" 
                             class="flex items-center justify-between p-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/20 text-purple-700 dark:text-purple-300 transition-colors"
                         >
                             <div class="flex items-center gap-2">
                                 <i class="pi pi-clock"></i>
-                                <span class="text-sm font-medium">Apartados por vencer</span>
+                                <span class="text-sm font-medium">Vencimientos próximos</span>
                             </div>
-                            <Badge :value="notifications.expiring_layaways" class="!bg-purple-500" />
+                            <Badge :value="notifications.expiring_debts" class="!bg-purple-500" />
                         </Link>
 
                         <!-- Item: Entregas -->

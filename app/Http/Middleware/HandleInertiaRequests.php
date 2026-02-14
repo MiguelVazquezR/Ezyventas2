@@ -111,7 +111,7 @@ class HandleInertiaRequests extends Middleware
 
                 if ($user->roles()->exists() && !$user->can('transactions.access')) {
                     return [
-                        'expiring_layaways' => 0,
+                        'expiring_debts' => 0,
                         'upcoming_deliveries' => 0,
                         'total' => 0
                     ];
@@ -119,8 +119,9 @@ class HandleInertiaRequests extends Middleware
 
                 $branchId = $user->branch_id;
                 
-                $expiringLayaways = Transaction::where('branch_id', $branchId)
-                    ->where('status', TransactionStatus::ON_LAYAWAY)
+                // ACTUALIZADO: Busca Apartados (ON_LAYAWAY) Y Créditos (PENDING) por vencer
+                $expiringDebts = Transaction::where('branch_id', $branchId)
+                    ->whereIn('status', [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING])
                     ->whereNotNull('layaway_expiration_date')
                     ->whereDate('layaway_expiration_date', '<=', now()->addDays(3))
                     ->count();
@@ -132,9 +133,9 @@ class HandleInertiaRequests extends Middleware
                     ->count();
 
                 return [
-                    'expiring_layaways' => $expiringLayaways,
+                    'expiring_debts' => $expiringDebts, // Cambiado de expiring_layaways a expiring_debts
                     'upcoming_deliveries' => $upcomingDeliveries,
-                    'total' => $expiringLayaways + $upcomingDeliveries
+                    'total' => $expiringDebts + $upcomingDeliveries
                 ];
             },
 
