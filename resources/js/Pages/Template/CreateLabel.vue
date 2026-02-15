@@ -14,6 +14,7 @@ const props = defineProps([
     'templateLimit',
     'templateUsage',
     'customFieldDefinitions',
+    'contextTypes', // Nueva prop con las opciones de contexto
     'printTemplate' // Prop para modo edición
 ]);
 
@@ -54,6 +55,7 @@ const isJustFinishedDragging = ref(false);
 const form = useForm({
     name: '',
     type: 'etiqueta',
+    context_type: 'pos', // Valor por defecto
     branch_ids: [],
     content: {
         config: {
@@ -73,6 +75,7 @@ onMounted(() => {
         // Modo Edición
         form.name = props.printTemplate.name;
         form.branch_ids = props.printTemplate.branches ? props.printTemplate.branches.map(b => b.id) : [];
+        form.context_type = props.printTemplate.context_type || 'pos'; 
         
         if (props.printTemplate.content) {
             form.content.config = { ...form.content.config, ...props.printTemplate.content.config };
@@ -461,6 +464,11 @@ const dpiOptions = [203, 300, 600];
                             <InputLabel value="Nombre *" />
                             <InputText v-model="form.name" class="w-full p-inputtext-sm" :invalid="!!form.errors.name" />
                             <InputError :message="form.errors.name" class="mt-1" />
+                        </div>
+                        <div>
+                            <InputLabel value="Contexto de uso *" />
+                            <Select v-model="form.context_type" :options="props.contextTypes" optionLabel="label" optionValue="value" class="w-full" :invalid="!!form.errors.context_type" placeholder="Seleccionar contexto" />
+                            <InputError :message="form.errors.context_type" class="mt-1" />
                         </div>
                         <div>
                             <InputLabel value="Sucursales *" />

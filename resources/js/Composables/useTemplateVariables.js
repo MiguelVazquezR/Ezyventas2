@@ -41,6 +41,7 @@ const getAllVariables = () => ({
             { label: 'Límite de Crédito', value: '{{c.limite_credito}}' },
             { label: 'Total Deuda Vencida', value: '{{c.total_deuda}}' },
             { label: 'Conteo Ventas Pendientes', value: '{{c.conteo_ventas_pendientes}}' },
+            { label: 'Último abono a deuda general', value: '{{c.ultimo_abono}}' },
             // Variables de TABLAS
             { label: 'Tabla: Último Pago Detallado', value: '{{c.tabla_ultimo_pago}}' },
             { label: 'Tabla: Ventas Pendientes', value: '{{c.tabla_ventas_pendientes}}' },

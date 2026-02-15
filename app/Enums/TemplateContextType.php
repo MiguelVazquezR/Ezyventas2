@@ -4,8 +4,9 @@ namespace App\Enums;
 
 enum TemplateContextType: string
 {
-    case TRANSACTION = 'transaction';
-    case PRODUCT = 'product';
+    case POS = 'pos'; //solo mostrar en punto de venta
+    case TRANSACTION = 'transaction'; //registro de transaccion
+    case PRODUCT = 'product'; //registro de producto
     case SERVICE_ORDER = 'service_order';
     case QUOTE = 'quote';
     case CUSTOMER = 'customer';
