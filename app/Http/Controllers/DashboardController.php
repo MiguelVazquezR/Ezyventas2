@@ -29,7 +29,7 @@ class DashboardController extends Controller
         $isAdmin = !$user->roles()->exists();
         $stats = [];
 
-        $cacheKey = "dashboard_stats_branch_{$branchId}_v6"; // Subimos versión caché
+        $cacheKey = "dashboard_stats_branch_{$branchId}_v7"; // Subimos versión caché
 
         // --- 1. Ventas y Transacciones ---
         if ($isAdmin || $user->can('transactions.access')) {
@@ -57,14 +57,14 @@ class DashboardController extends Controller
                 return $this->getWeeklySalesTrend($branchId);
             });
 
-            // Apartados por vencer (3 días)
-            $stats['expiring_layaways_count'] = Transaction::where('branch_id', $branchId)
-                ->where('status', TransactionStatus::ON_LAYAWAY)
+            // --- ACTUALIZADO: Apartados Y Créditos por vencer (3 días) ---
+            $stats['expiring_debts_count'] = Transaction::where('branch_id', $branchId)
+                ->whereIn('status', [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING])
                 ->whereNotNull('layaway_expiration_date')
                 ->whereDate('layaway_expiration_date', '<=', now()->addDays(3))
                 ->count();
 
-            // NUEVO: Pedidos por entregar (Próximos 3 días o vencidos)
+            // Pedidos por entregar (Próximos 3 días o vencidos)
             $stats['upcoming_deliveries_count'] = Transaction::where('branch_id', $branchId)
                 ->where('status', TransactionStatus::TO_DELIVER)
                 ->whereNotNull('delivery_date')
@@ -150,12 +150,15 @@ class DashboardController extends Controller
         ]);
     }
 
+    /**
+     * ACTUALIZADO: Obtiene Apartados Y Créditos por vencer
+     */
     public function getExpiringLayaways(Request $request)
     {
         $user = Auth::user();
         
-        $layaways = Transaction::where('branch_id', $user->branch_id)
-            ->where('status', TransactionStatus::ON_LAYAWAY)
+        $debts = Transaction::where('branch_id', $user->branch_id)
+            ->whereIn('status', [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING]) // <-- Incluye Créditos
             ->whereNotNull('layaway_expiration_date')
             ->whereDate('layaway_expiration_date', '<=', now()->addDays(5))
             ->with('customer:id,name,phone')
@@ -169,6 +172,7 @@ class DashboardController extends Controller
                 return [
                     'id' => $t->id,
                     'folio' => $t->folio,
+                    'type' => $t->status === TransactionStatus::ON_LAYAWAY ? 'apartado' : 'credito', // Distintivo para frontend
                     'customer_id' => $t->customer_id,
                     'customer_name' => $t->customer ? $t->customer->name : 'Público en General',
                     'customer_phone' => $t->customer?->phone,
@@ -179,11 +183,11 @@ class DashboardController extends Controller
                 ];
             });
 
-        return response()->json($layaways);
+        return response()->json($debts);
     }
 
     /**
-     * NUEVO: Obtiene pedidos por entregar (Próximos)
+     * Obtiene pedidos por entregar (Próximos)
      */
     public function getUpcomingDeliveries(Request $request)
     {

@@ -163,6 +163,33 @@ const isRescheduleOrderModalVisible = ref(false);
 const newDeliveryDate = ref(null);
 const isReschedulingOrder = ref(false);
 
+// --- NUEVO: Modal de Editar Fecha de Transacción ---
+const isEditDateModalVisible = ref(false);
+const newTransactionDate = ref(null);
+const isUpdatingDate = ref(false);
+
+const openEditDateModal = () => {
+    // Inicializar con la fecha actual de la transacción
+    newTransactionDate.value = props.transaction.created_at 
+        ? new Date(props.transaction.created_at) 
+        : new Date();
+    isEditDateModalVisible.value = true;
+};
+
+const submitUpdateDate = () => {
+    if (!newTransactionDate.value) return;
+    
+    isUpdatingDate.value = true;
+    router.put(route('transactions.update-date', props.transaction.id), {
+        created_at: toLocalISOString(newTransactionDate.value)
+    }, {
+        onSuccess: () => {
+            isEditDateModalVisible.value = false;
+        },
+        onFinish: () => isUpdatingDate.value = false
+    });
+};
+
 const openRescheduleOrderModal = () => {
     newDeliveryDate.value = props.transaction.delivery_date 
         ? new Date(props.transaction.delivery_date) 
@@ -288,10 +315,13 @@ const initiateCancellation = () => {
     // Caso 1: No hay dinero de por medio -> Cancelación directa con confirmación simple
     if (totalPaid.value <= 0) {
         let message = `¿Seguro que quieres cancelar la venta #${localTransaction.value.folio}? Se liberará el inventario reservado.`;
+        
         if (localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway') {
             message = `¿Seguro que quieres cancelar este APARTADO? No hay pagos registrados.`;
         } else if (localTransaction.value.status === 'por_entregar') {
             message = `¿Seguro que quieres cancelar este PEDIDO? Se liberará el inventario reservado.`;
+        } else if (localTransaction.value.status === 'pendiente') {
+            message = `¿Seguro que quieres cancelar esta venta a CRÉDITO (#${localTransaction.value.folio})? Se anulará la deuda del cliente y se liberará el stock.`;
         }
 
         confirm.require({
@@ -345,10 +375,32 @@ const submitCancellation = () => {
     });
 };
 
+// Helper para verificar si es editable la fecha (Apartado o Crédito)
+const canExtendExpiration = computed(() => {
+    return ['apartado', 'on_layaway', 'pendiente'].includes(localTransaction.value.status);
+});
+
 const actionItems = computed(() => [
-    { label: 'Abonar / Liquidar', icon: 'pi pi-dollar', command: openPaymentModal, disabled: !canAddPayment.value, visible: hasPermission('transactions.add_payment') },
-    { label: (localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway') ? 'Modificar Apartado' : 'Intercambiar producto', icon: 'pi pi-sync', command: openExchangeModal, disabled: !canExchange.value, visible: hasPermission('transactions.exchange') },
-    { label: 'Extender Vencimiento', icon: 'pi pi-calendar-plus', command: openExtendLayawayModal, visible: localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway' },
+    { 
+        label: 'Abonar / Liquidar', 
+        icon: 'pi pi-dollar', 
+        command: openPaymentModal, 
+        disabled: !canAddPayment.value, 
+        visible: hasPermission('transactions.add_payment') 
+    },
+    { 
+        label: (localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway') ? 'Modificar Apartado' : 'Intercambiar producto', 
+        icon: 'pi pi-sync', 
+        command: openExchangeModal, 
+        disabled: !canExchange.value, 
+        visible: hasPermission('transactions.exchange') 
+    },
+    { 
+        label: 'Extender Vencimiento', 
+        icon: 'pi pi-calendar-plus', 
+        command: openExtendLayawayModal, 
+        visible: canExtendExpiration.value // Visible para apartado y crédito
+    },
     { separator: true },
     { label: 'Imprimir ticket', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
@@ -414,7 +466,20 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                 <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">
                     {{ transaction.status === 'por_entregar' ? `Pedido #${transaction.folio}` : `Venta #${transaction.folio}` }}
                 </h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Realizada el {{ formatDate(transaction.created_at) }}</p>
+                <div class="flex items-center gap-2 mt-1">
+                    <p class="text-gray-500 dark:text-gray-400 m-0">
+                        Realizada el {{ formatDate(transaction.created_at) }}
+                    </p>
+                    <Button 
+                        icon="pi pi-pencil" 
+                        text
+                        rounded 
+                        size="small" 
+                        severity="secondary"
+                        v-tooltip.bottom="'Editar fecha'"
+                        @click="openEditDateModal"
+                    />
+                </div>
             </div>
             <!-- Acciones con Botón + Menú -->
             <div class="flex items-center gap-2 mt-4 sm:mt-0">
@@ -556,14 +621,14 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                                 </div>
                             </li>
 
-                            <!-- Sección de Vencimiento -->
+                            <!-- Sección de Vencimiento (Apartado y Crédito) -->
                             <li v-if="transaction.layaway_expiration_date" class="bg-purple-50 dark:bg-purple-900/20 p-2 rounded -mx-2">
                                 <div class="flex justify-between items-center">
                                     <span class="text-purple-800 dark:text-purple-300 font-medium">Vencimiento:</span>
                                     <span class="font-bold text-purple-700 dark:text-purple-200">{{ formatDateOnly(transaction.layaway_expiration_date) }}</span>
                                 </div>
                                 
-                                <div v-if="localTransaction.status === 'apartado' || localTransaction.status === 'on_layaway'" class="mt-2">
+                                <div v-if="canExtendExpiration" class="mt-2">
                                     <Button 
                                         label="Extender fecha" 
                                         icon="pi pi-calendar-plus" 
@@ -747,7 +812,7 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
         <!-- Nuevo Modal de Extender Apartado -->
         <Dialog v-model:visible="isExtendLayawayModalVisible" modal header="Extender fecha de vencimiento" :style="{ width: '25rem' }">
             <div class="flex flex-col gap-4 py-2">
-                <p class="text-sm text-gray-500">Selecciona la nueva fecha límite para liquidar este apartado.</p>
+                <p class="text-sm text-gray-500">Selecciona la nueva fecha límite para liquidar este saldo.</p>
                 <div class="flex flex-col gap-2">
                     <label class="font-bold text-gray-700 dark:text-gray-300">Nueva fecha</label>
                     <DatePicker v-model="newExpirationDate" dateFormat="dd/mm/yy" :minDate="new Date()" showIcon class="w-full" />
@@ -774,6 +839,25 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                 <div class="flex justify-end gap-2">
                     <Button label="Cancelar" severity="secondary" text @click="isRescheduleOrderModalVisible = false" />
                     <Button label="Guardar fecha" icon="pi pi-check" @click="submitRescheduleOrder" :loading="isReschedulingOrder" />
+                </div>
+            </template>
+        </Dialog>
+
+        <!-- NUEVO MODAL: Editar Fecha de Creación -->
+        <Dialog v-model:visible="isEditDateModalVisible" modal header="Editar fecha de venta" :style="{ width: '25rem' }">
+            <div class="flex flex-col gap-4 py-2">
+                <Message severity="warn" :closable="false">
+                    Cambiar la fecha afectará los reportes y cortes de caja de ese día.
+                </Message>
+                <div class="flex flex-col gap-2">
+                    <label class="font-bold text-gray-700 dark:text-gray-300">Nueva fecha y hora</label>
+                    <DatePicker v-model="newTransactionDate" showTime hourFormat="12" dateFormat="dd/mm/yy" showIcon class="w-full" />
+                </div>
+            </div>
+            <template #footer>
+                <div class="flex justify-end gap-2">
+                    <Button label="Cancelar" severity="secondary" text @click="isEditDateModalVisible = false" />
+                    <Button label="Actualizar" icon="pi pi-save" @click="submitUpdateDate" :loading="isUpdatingDate" />
                 </div>
             </template>
         </Dialog>

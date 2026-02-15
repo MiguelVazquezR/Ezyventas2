@@ -43,6 +43,25 @@ class PrintTemplateController extends Controller implements HasMiddleware
         return ['limit' => $limit, 'usage' => $usage];
     }
 
+    /**
+     * Obtiene las opciones de contexto formateadas para el selector del frontend.
+     */
+    private function getContextOptions(): array
+    {
+        return collect(TemplateContextType::cases())->map(fn($case) => [
+            'value' => $case->value,
+            'label' => match($case) {
+                TemplateContextType::POS => 'Punto de Venta (Ticket)',
+                TemplateContextType::TRANSACTION => 'Transacción / Venta',
+                TemplateContextType::PRODUCT => 'Producto / Etiqueta',
+                TemplateContextType::SERVICE_ORDER => 'Orden de Servicio',
+                TemplateContextType::QUOTE => 'Cotización',
+                TemplateContextType::CUSTOMER => 'Cliente / Estado de Cuenta',
+                TemplateContextType::GENERAL => 'General',
+            }
+        ])->values()->toArray();
+    }
+
     public function index(): Response
     {
         $subscription = Auth::user()->branch->subscription;
@@ -72,7 +91,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
         $view = match ($type) {
             'etiqueta' => 'Template/CreateLabel',
             'cotizacion' => 'Template/CreateQuoteTemplate',
-            default => 'Template/CreateTicket', // Usamos CreateTicket para clientes también por ahora
+            default => 'Template/CreateTicket',
         };
 
         return Inertia::render($view, [
@@ -81,6 +100,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
             'templateLimit' => $limitData['limit'],
             'templateUsage' => $limitData['usage'],
             'customFieldDefinitions' => $customFieldDefinitions,
+            'contextTypes' => $this->getContextOptions(), // Pasamos las opciones al frontend
         ]);
     }
 
@@ -98,6 +118,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
+            'context_type' => ['required', Rule::enum(TemplateContextType::class)], // Validación del nuevo campo
             'content' => 'required|array',
             'content.config' => 'required|array',
             'content.elements' => 'required|array',
@@ -109,8 +130,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
             $template = $subscription->printTemplates()->create([
                 'name' => $validated['name'],
                 'type' => $validated['type'],
+                'context_type' => $validated['context_type'], // Guardamos el contexto seleccionado manualmente
                 'content' => $validated['content'],
-                'context_type' => $this->determineContextType($validated['type'], $validated['content']['elements'] ?? []),
             ]);
             $template->branches()->attach($validated['branch_ids']);
         });
@@ -127,6 +148,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
+            'context_type' => ['required', Rule::enum(TemplateContextType::class)], // Validación del nuevo campo
             'content' => 'required|array',
             'content.config' => 'required|array',
             'content.elements' => 'required|array',
@@ -138,8 +160,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
             $printTemplate->update([
                 'name' => $validated['name'],
                 'type' => $validated['type'],
+                'context_type' => $validated['context_type'], // Actualizamos el contexto
                 'content' => $validated['content'],
-                'context_type' => $this->determineContextType($validated['type'], $validated['content']['elements'] ?? []),
             ]);
             $printTemplate->branches()->sync($validated['branch_ids']);
         });
@@ -175,6 +197,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
             'branches' => $subscription->branches()->get(['id', 'name']),
             'templateImages' => $templateImages,
             'customFieldDefinitions' => $customFieldDefinitions,
+            'contextTypes' => $this->getContextOptions(), // Pasamos las opciones al frontend
         ]);
     }
 
@@ -193,38 +216,5 @@ class PrintTemplateController extends Controller implements HasMiddleware
         $subscription = Auth::user()->branch->subscription;
         $media = $subscription->addMediaFromRequest('image')->toMediaCollection('template-images');
         return response()->json(['id' => $media->id, 'url' => $media->getUrl(), 'name' => $media->name]);
-    }
-
-    /**
-     * Determina el contexto basándose PRIMERO en el tipo de plantilla, 
-     * y luego en el contenido si es necesario.
-     */
-    private function determineContextType(string $type, array $elements): string
-    {
-        if ($type === TemplateType::QUOTE->value) {
-            return TemplateContextType::QUOTE->value;
-        }
-
-        $contentString = json_encode($elements);
-
-        if (str_contains($contentString, '{{os.')) {
-            return TemplateContextType::SERVICE_ORDER->value;
-        }
-
-        if (str_contains($contentString, '{{p.')) {
-            return TemplateContextType::PRODUCT->value;
-        }
-
-        // --- DETECCIÓN DE CONTEXTO CLIENTE ---
-        // Si detectamos variables específicas de estado de cuenta
-        if (str_contains($contentString, '{{c.')) {
-            return TemplateContextType::CUSTOMER->value;
-        }
-
-        if (str_contains($contentString, '{{v.') || str_contains($contentString, '{{cliente.')) {
-            return TemplateContextType::TRANSACTION->value;
-        }
-
-        return TemplateContextType::GENERAL->value;
     }
 }

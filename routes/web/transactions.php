@@ -31,6 +31,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/transactions/{transaction}/exchange-layaway', [TransactionController::class, 'exchangeLayaway'])
         ->name('transactions.exchange-layaway');
 
+    Route::put('/transactions/{transaction}/update-date', [TransactionController::class, 'updateDate'])
+        ->name('transactions.update-date');
+
     Route::post('/pos/store-order', [TransactionController::class, 'storeOrder'])
         ->name('pos.store-order');
 
