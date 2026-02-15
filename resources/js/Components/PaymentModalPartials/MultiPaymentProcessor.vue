@@ -23,16 +23,17 @@ const formatCurrency = (value) => {
 // --- Estado Interno: Lista de Pagos y Saldo ---
 const payments = ref([]);
 const useBalance = ref(true);
-const layawayExpirationDate = ref(null); // Nuevo estado para fecha de apartado
+const expirationDate = ref(null); // Renombrado internamente para ser más genérico (Apartado o Crédito)
 
-// --- Configurar fecha default al cambiar a modo Apartado ---
+// --- Configurar fecha default al cambiar a modo Apartado O Crédito ---
 watch(() => props.transactionType, (newType) => {
-    if (newType === 'apartado') {
+    // APLICAR REGLA: Si es Apartado O Crédito, requerir fecha y setear 30 días default
+    if (newType === 'apartado' || newType === 'credito') {
         const defaultDate = new Date();
         defaultDate.setDate(defaultDate.getDate() + 30); // Default 30 días
-        layawayExpirationDate.value = defaultDate;
+        expirationDate.value = defaultDate;
     } else {
-        layawayExpirationDate.value = null;
+        expirationDate.value = null;
     }
 }, { immediate: true });
 
@@ -179,8 +180,9 @@ const isFinalizeButtonDisabled = computed(() => {
     );
     if (hasMissingBankAccount) return true;
 
-    // 2. VALIDACIÓN DE FECHA DE APARTADO
-    if (props.transactionType === 'apartado' && !layawayExpirationDate.value) {
+    // 2. VALIDACIÓN DE FECHA DE VENCIMIENTO (APARTADO O CRÉDITO)
+    // Se requiere fecha obligatoria para ambos tipos
+    if ((props.transactionType === 'apartado' || props.transactionType === 'credito') && !expirationDate.value) {
         return true;
     }
 
@@ -195,6 +197,7 @@ const isFinalizeButtonDisabled = computed(() => {
         return remainingAmount.value > 0.01;
     }
     if (props.transactionType === 'credito') {
+        // En crédito, no puedes pasarte del límite de crédito disponible
         return creditDeficit.value > 0;
     }
     return false;
@@ -217,7 +220,7 @@ const handleSubmit = () => {
     emit('submit', {
         payments: payments.value.filter(p => p.amount > 0),
         use_balance: useBalance.value,
-        layaway_expiration_date: layawayExpirationDate.value, // Enviamos la fecha seleccionada
+        layaway_expiration_date: expirationDate.value, // Enviamos la fecha seleccionada (usamos el mismo nombre de variable para backend)
     });
 };
 
@@ -225,6 +228,24 @@ const handleSubmit = () => {
 if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
     useBalance.value = true;
 }
+
+// --- Estilos dinámicos para la sección de fecha ---
+const dateSectionStyle = computed(() => {
+    if (props.transactionType === 'apartado') {
+        return {
+            containerClass: 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800',
+            titleClass: 'text-purple-800 dark:text-purple-300',
+            titleText: 'Configuración del Apartado'
+        };
+    } else if (props.transactionType === 'credito') {
+        return {
+            containerClass: 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800',
+            titleClass: 'text-orange-800 dark:text-orange-300',
+            titleText: 'Vencimiento del Crédito'
+        };
+    }
+    return {};
+});
 </script>
 
 <template>
@@ -324,20 +345,24 @@ if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
             </div>
         </div>
 
-        <!-- SECCIÓN: CONFIGURACIÓN APARTADO (SOLO VISIBLE SI ES APARTADO) -->
-        <div v-if="transactionType === 'apartado'" class="mb-6 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
-            <h4 class="text-sm font-semibold text-purple-800 dark:text-purple-300 mb-3 flex items-center gap-2">
-                <i class="pi pi-calendar-clock"></i> Configuración del Apartado
+        <!-- SECCIÓN: CONFIGURACIÓN DE FECHA (APARTADO O CRÉDITO) -->
+        <div v-if="transactionType === 'apartado' || transactionType === 'credito'" 
+             class="mb-6 p-4 border rounded-lg transition-colors duration-300"
+             :class="dateSectionStyle.containerClass">
+            
+            <h4 class="text-sm font-semibold mb-3 flex items-center gap-2" :class="dateSectionStyle.titleClass">
+                <i class="pi pi-calendar-clock"></i> {{ dateSectionStyle.titleText }}
             </h4>
+            
             <div class="flex flex-col gap-1">
                 <label class="text-xs font-medium text-gray-600 dark:text-gray-400">Fecha límite para liquidar:</label>
-                <DatePicker v-model="layawayExpirationDate" showIcon :minDate="new Date()" dateFormat="dd/mm/yy" class="w-full" />
+                <DatePicker v-model="expirationDate" showIcon :minDate="new Date()" dateFormat="dd/mm/yy" class="w-full" />
                 <small class="text-xs text-gray-500">El cliente debe pagar el total antes de esta fecha.</small>
             </div>
         </div>
 
         <!-- Espaciador -->
-        <div v-if="payments.length === 0 && transactionType !== 'apartado'" class="flex-grow"></div>
+        <div v-if="payments.length === 0 && transactionType !== 'apartado' && transactionType !== 'credito'" class="flex-grow"></div>
 
         <!-- Botón de Finalización -->
         <div class="mt-4">

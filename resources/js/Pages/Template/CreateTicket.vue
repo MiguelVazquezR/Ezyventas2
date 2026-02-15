@@ -17,6 +17,7 @@ const props = defineProps([
     'templateLimit',
     'templateUsage',
     'customFieldDefinitions',
+    'contextTypes', // Nueva prop con las opciones de contexto
     'printTemplate' // Si existe, estamos en modo edición
 ]);
 
@@ -55,6 +56,7 @@ const lastPinchDistance = ref(null); // Para zoom con dos dedos
 const form = useForm({
     name: '',
     type: 'ticket_venta',
+    context_type: 'pos', // Valor por defecto
     branch_ids: [],
     content: {
         config: { 
@@ -72,6 +74,8 @@ onMounted(() => {
         // Modo Edición: Cargar datos
         form.name = props.printTemplate.name;
         form.type = props.printTemplate.type;
+        // Asignar el contexto existente
+        form.context_type = props.printTemplate.context_type || 'pos'; 
         form.branch_ids = props.printTemplate.branches ? props.printTemplate.branches.map(b => b.id) : [];
         
         if (props.printTemplate.content) {
@@ -384,6 +388,12 @@ const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
                             <InputLabel value="Nombre *" />
                             <InputText v-model="form.name" class="w-full p-inputtext-sm" :invalid="!!form.errors.name" />
                             <InputError :message="form.errors.name" class="mt-1" />
+                        </div>
+                        <!-- NUEVO SELECTOR DE CONTEXTO -->
+                        <div>
+                            <InputLabel value="Contexto de uso *" />
+                            <Select v-model="form.context_type" :options="props.contextTypes" optionLabel="label" optionValue="value" class="w-full" :invalid="!!form.errors.context_type" placeholder="Seleccionar contexto" />
+                            <InputError :message="form.errors.context_type" class="mt-1" />
                         </div>
                         <div>
                             <InputLabel value="Sucursales *" />

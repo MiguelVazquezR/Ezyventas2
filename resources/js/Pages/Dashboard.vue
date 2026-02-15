@@ -86,7 +86,7 @@ const activeModalType = ref('layaways'); // 'layaways' | 'deliveries'
 
 const modalTitle = computed(() => {
     return activeModalType.value === 'layaways' 
-        ? 'Apartados por vencer (Próximos 3 días)' 
+        ? 'Vencimientos próximos (Apartados y Créditos)' // Título actualizado
         : 'Próximas entregas de pedidos';
 });
 
@@ -160,20 +160,20 @@ const getExpirationSeverity = (days) => {
                         </div>
                     </Link>
                     
-                    <!-- Apartados por Vencer -->
-                    <div v-if="stats.expiring_layaways_count !== undefined && hasPermission('dashboard.see_layaways')" 
+                    <!-- Apartados y Créditos por Vencer -->
+                    <div v-if="stats.expiring_debts_count !== undefined && hasPermission('dashboard.see_layaways')" 
                         @click="fetchExpiringLayaways"
                         class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer border-l-4 border-purple-500 group">
                         <div class="flex justify-between items-start">
                             <div>
-                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Apartados por vencer</h2>
-                                <small class="text-gray-500">Click para ver detalles</small>
+                                <h2 class="text-sm font-semibold text-gray-500 dark:text-gray-400 m-0">Vencimientos próximos</h2>
+                                <small class="text-gray-500">Apartados y Créditos</small>
                                 <p class="text-3xl font-bold mt-2 text-purple-600 dark:text-purple-400">
-                                    {{ stats.expiring_layaways_count }}
+                                    {{ stats.expiring_debts_count }}
                                 </p>
-                                <p class="text-xs text-gray-400 mt-1">Próximos 3 días</p>
+                                <p class="text-xs text-gray-400 mt-1">Vencen en 3 días o menos</p>
                             </div>
-                                <i class="pi pi-clock p-3 bg-purple-100 dark:bg-purple-900/50 rounded-full text-purple-600" :class="{ 'animate-bounce': stats.expiring_layaways_count > 0 }"></i>
+                                <i class="pi pi-clock p-3 bg-purple-100 dark:bg-purple-900/50 rounded-full text-purple-600" :class="{ 'animate-bounce': stats.expiring_debts_count > 0 }"></i>
                         </div>
                     </div>
 
@@ -476,7 +476,7 @@ const getExpirationSeverity = (days) => {
                     <div>
                         <p class="font-bold mb-0">¿Qué deseas hacer?</p>
                         <p class="mt-0" v-if="activeModalType === 'layaways'">
-                            Haz clic en el <strong>Folio</strong> para ver detalles, extender la fecha o cancelar el apartado.
+                            Haz clic en el <strong>Folio</strong> para ver detalles, extender la fecha o cancelar el apartado/crédito.
                         </p>
                         <p class="mt-0" v-else>
                             Haz clic en el <strong>Folio</strong> para ver detalles, contactar al cliente o marcar el pedido como entregado.
@@ -487,9 +487,15 @@ const getExpirationSeverity = (days) => {
                 <DataTable :value="modalItems" class="p-datatable-sm" responsiveLayout="scroll" paginator :rows="5">
                     <Column field="folio" header="Folio" sortable>
                         <template #body="{ data }">
-                            <Link :href="route('transactions.show', data.id)" class="text-blue-600 hover:underline font-bold">
-                                {{ data.folio }}
-                            </Link>
+                            <div class="flex flex-col">
+                                <Link :href="route('transactions.show', data.id)" class="text-blue-600 hover:underline font-bold">
+                                    {{ data.folio }}
+                                </Link>
+                                <!-- Tag para diferenciar Tipo -->
+                                <Tag :value="data.type === 'apartado' ? 'Apartado' : 'Crédito'" 
+                                     :severity="data.type === 'apartado' ? 'info' : 'warn'" 
+                                     class="mt-1 w-fit text-[10px] px-1 py-0" />
+                            </div>
                         </template>
                     </Column>
                     
@@ -546,7 +552,7 @@ const getExpirationSeverity = (days) => {
 
             <div v-else class="text-center py-8 text-gray-500">
                 <i class="pi pi-check-circle !text-4xl text-green-500 mb-2"></i>
-                <p v-if="activeModalType === 'layaways'">¡Todo en orden! No hay apartados próximos a vencer.</p>
+                <p v-if="activeModalType === 'layaways'">¡Todo en orden! No hay vencimientos próximos.</p>
                 <p v-else>¡Excelente! No hay entregas pendientes para los próximos días.</p>
             </div>
         </Dialog>

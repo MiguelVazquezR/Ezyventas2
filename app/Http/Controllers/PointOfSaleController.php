@@ -113,7 +113,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         $categoryId = $request->input('category');
         $availableTemplates = $user->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
-            ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
+            ->whereIn('context_type', [TemplateContextType::POS, TemplateContextType::GENERAL])
             ->get();
 
         $props = [
@@ -250,6 +250,8 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'payments.*.bank_account_id' => 'nullable|exists:bank_accounts,id',
             'payments.*.notes' => 'nullable|string|max:255',
             'use_balance' => 'required|boolean',
+            //Permitir fecha de vencimiento en checkout (para créditos) ---
+            'layaway_expiration_date' => 'nullable|date',
         ]);
 
         $user = Auth::user();
@@ -266,7 +268,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
             return redirect()->route('pos.index')
                 ->with('success', 'Venta registrada con éxito. Folio: ' . $transaction->folio)
-                ->with('print_data', ['type' => 'transaction', 'id' => $transaction->id]);
+                ->with('print_data', ['type' => 'pos', 'id' => $transaction->id]);
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar la venta: ' . $e->getMessage());
         }
@@ -311,7 +313,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
             return redirect()->route('pos.index')
                 ->with('success', 'Apartado registrado con éxito. Folio: ' . $transaction->folio)
-                ->with('print_data', ['type' => 'transaction', 'id' => $transaction->id]);
+                ->with('print_data', ['type' => 'pos', 'id' => $transaction->id]);
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar el apartado: ' . $e->getMessage());
         }

@@ -121,6 +121,7 @@ class PrintEncoderService
             $operations[] = ['nombre' => 'TextoSegunPaginaDeCodigos', 'argumentos' => [0, $config['codepage'] ?? 'cp850', $rawText]];
         }
 
+        Log::info($operations);
         return $operations;
     }
 
@@ -343,7 +344,7 @@ class PrintEncoderService
     }
 
     /**
-     * --- NUEVO: Reemplazos para el Estado de Cuenta del Cliente con BLOQUES VERTICALES ---
+     * -Reemplazos para el Estado de Cuenta del Cliente con BLOQUES VERTICALES ---
      */
     private static function getCustomerAccountReplacements(Customer $customer): array
     {
@@ -357,30 +358,51 @@ class PrintEncoderService
         $pendingSalesCount = $pendingSalesQuery->count();
         $pendingSales = $pendingSalesQuery->get();
 
+        // --- CALCULO DEL ÚLTIMO ABONO ACUMULADO (MISMA HORA:MINUTO:SEGUNDO) ---
+        $lastPaymentTotal = 0;
+
+        // Obtener el último pago registrado para este cliente
+        $latestPayment = Payment::whereHas('transaction', function ($q) use ($customer) {
+            $q->where('customer_id', $customer->id);
+        })->latest()->first();
+
+        if ($latestPayment) {
+            // Timestamp objetivo para agrupar (YYYY-MM-DD HH:mm:ss)
+            $targetTimestamp = $latestPayment->created_at->format('Y-m-d H:i:s');
+
+            // Sumar todos los pagos del cliente que coincidan exactamente con ese segundo
+            // Esto agrupa los pagos divididos por FIFO
+            $lastPaymentTotal = Payment::whereHas('transaction', function ($q) use ($customer) {
+                $q->where('customer_id', $customer->id);
+            })
+                // Optimizamos la consulta filtrando por un rango pequeño de tiempo (ej. +/- 1 minuto)
+                // para luego filtrar exactamente en PHP/Collection y evitar problemas de SQL raw
+                ->where('created_at', '>=', $latestPayment->created_at->copy()->subMinute())
+                ->where('created_at', '<=', $latestPayment->created_at->copy()->addMinute())
+                ->get()
+                ->filter(function ($p) use ($targetTimestamp) {
+                    return $p->created_at->format('Y-m-d H:i:s') === $targetTimestamp;
+                })
+                ->sum('amount');
+        }
+
         // --- 1. Generar Bloque del Último Pago ---
-        // Buscamos el último pago usando la relación correcta (Payment) a través de las transacciones del cliente
-        // O más eficientemente, consultando la tabla payments directamente filtrando por transacciones del cliente.
         $lastPaymentInfo = "Sin pagos registrados.";
 
-        $lastPayment = Payment::whereHas('transaction', function ($q) use ($customer) {
-            $q->where('customer_id', $customer->id);
-        })
-            ->latest('created_at') // O 'payment_date' si prefieres
-            ->first();
-
-        if ($lastPayment) {
+        // Reutilizamos $latestPayment que ya obtuvimos arriba
+        if ($latestPayment) {
             $width = 32; // Ancho seguro para 58mm y 80mm
             $line = str_repeat('-', $width);
 
             // Acceso seguro al valor del Enum o string directo
-            $methodValue = $lastPayment->payment_method;
+            $methodValue = $latestPayment->payment_method;
             if ($methodValue instanceof \UnitEnum) { // Si es Enum de PHP 8.1+
                 $methodValue = $methodValue->value;
             }
             $method = ucfirst($methodValue ?? 'Desconocido');
 
-            $date = Carbon::parse($lastPayment->created_at)->format('d/m/Y H:i');
-            $amount = '$' . number_format($lastPayment->amount, 2);
+            $date = Carbon::parse($latestPayment->created_at)->format('d/m/Y H:i');
+            $amount = '$' . number_format($latestPayment->amount, 2);
 
             // Formato de bloque vertical
             $lastPaymentInfo =
@@ -439,6 +461,9 @@ class PrintEncoderService
             '{{c.limite_credito}}' => number_format($customer->credit_limit, 2),
             '{{c.conteo_ventas_pendientes}}' => $pendingSalesCount,
             '{{c.total_deuda}}' => number_format(abs(min(0, $customer->balance)), 2),
+
+            // NUEVA VARIABLE
+            '{{c.ultimo_abono}}' => '$' . number_format($lastPaymentTotal, 2),
 
             // Variables actualizadas con formato bloque vertical
             '{{c.tabla_ultimo_pago}}' => $lastPaymentInfo,

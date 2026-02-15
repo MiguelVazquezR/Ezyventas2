@@ -238,8 +238,8 @@ class TransactionController extends Controller implements HasMiddleware
             'new_expiration_date' => 'required|date|after:today',
         ]);
 
-        if ($transaction->status !== TransactionStatus::ON_LAYAWAY) {
-            return back()->with(['error' => 'Solo se puede extender la fecha de apartados activos.']);
+        if (!in_array($transaction->status, [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING])) {
+            return back()->with(['error' => 'Solo se puede extender la fecha de apartados o créditos activos.']);
         }
 
         $transaction->update([
@@ -247,6 +247,21 @@ class TransactionController extends Controller implements HasMiddleware
         ]);
 
         return back()->with('success', 'Fecha de vencimiento actualizada correctamente.');
+    }
+
+    public function updateDate(Request $request, Transaction $transaction)
+    {
+        // Validamos que sea una fecha válida
+        $validated = $request->validate([
+            'created_at' => 'required|date',
+        ]);
+
+        // Actualizamos la fecha de creación
+        $transaction->update([
+            'created_at' => $validated['created_at']
+        ]);
+
+        return back()->with('success', 'Fecha de transacción actualizada correctamente.');
     }
 
     public function exchangeLayaway(Request $request, Transaction $transaction)

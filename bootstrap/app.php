@@ -5,6 +5,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Illuminate\Session\TokenMismatchException; // Importante: Importar esta excepción
 use Inertia\Inertia;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -26,12 +27,24 @@ return Application::configure(basePath: dirname(__DIR__))
         //
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        // --- Se añade un manejador de renderizado para las excepciones HTTP.
+        
+        // 1. Manejar TokenMismatchException (Error 419 / CSRF) explícitamente
+        $exceptions->render(function (TokenMismatchException $e, Request $request) {
+            return Inertia::render('Error', [
+                'status' => 419,
+                // MODIFICADO: Pasamos la URL anterior para que el botón 'Recargar' sepa volver al formulario
+                'redirectUrl' => url()->previous() 
+            ])
+            ->toResponse($request)
+            ->setStatusCode(419);
+        });
+
+        // 2. Manejar excepciones HTTP estándar
         $exceptions->render(function (HttpException $e, Request $request) {
             $status = $e->getStatusCode();
 
             // Solo se activa para los códigos de error que queremos personalizar.
-            if (!in_array($status, [403, 404, 500, 503])) {
+            if (!in_array($status, [403, 404, 419, 500, 503])) {
                 return; // Deja que Laravel maneje los demás errores.
             }
 

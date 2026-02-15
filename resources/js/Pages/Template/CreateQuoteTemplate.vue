@@ -56,6 +56,7 @@ const lastFocusedColumn = ref('col1');
 const form = useForm({
     name: '',
     type: 'cotizacion',
+    context_type: 'quote',
     branch_ids: [],
     content: {
         config: {
