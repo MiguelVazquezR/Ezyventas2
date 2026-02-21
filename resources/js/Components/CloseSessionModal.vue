@@ -1,10 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { useForm, router, usePage } from '@inertiajs/vue3';
-import Dialog from 'primevue/dialog';
-import Button from 'primevue/button';
-import Textarea from 'primevue/textarea';
-import InputNumber from 'primevue/inputnumber';
 import InputLabel from './InputLabel.vue';
 import InputError from './InputError.vue';
 
@@ -18,6 +14,13 @@ const page = usePage();
 
 // --- STATE MANAGEMENT ---
 const view = ref('initial'); // 'initial', 'confirmClose', 'finalClose'
+
+// Controladores para abrir/cerrar detalles (Acordeones)
+const showCashDetails = ref(false);
+const showCardDetails = ref(false);
+const showTransferDetails = ref(false);
+const showInflowDetails = ref(false);
+const showOutflowDetails = ref(false);
 
 // --- COMPUTED PROPERTIES ---
 const isLastUser = computed(() => props.session?.users?.length <= 1);
@@ -35,32 +38,24 @@ const form = useForm({
     notes: '',
 });
 
-// --- Payment Calculations ---
-const cashSales = computed(() => {
-    if (!props.session?.payments) return 0;
-    return (props.session.payments || [])
-        .filter(p => p && p.payment_method === 'efectivo' && p.status === 'completado')
-        .reduce((sum, p) => sum + parseFloat(p.amount), 0);
-});
+// --- LISTAS DETALLADAS ---
+// Filtramos los pagos por método (Abonos o Ventas es igual para la caja si es dinero entrante)
+const cashPaymentsList = computed(() => (props.session?.payments || []).filter(p => p && p.payment_method === 'efectivo' && p.status === 'completado'));
+const cardPaymentsList = computed(() => (props.session?.payments || []).filter(p => p && p.payment_method === 'tarjeta' && p.status === 'completado'));
+const transferPaymentsList = computed(() => (props.session?.payments || []).filter(p => p && p.payment_method === 'transferencia' && p.status === 'completado'));
 
-// AÑADIDO: Propiedades computadas para ventas con tarjeta y transferencia
-const cardSales = computed(() => {
-    if (!props.session?.payments) return 0;
-    return (props.session.payments || [])
-        .filter(p => p && p.payment_method === 'tarjeta' && p.status === 'completado')
-        .reduce((sum, p) => sum + parseFloat(p.amount), 0);
-});
+// Filtramos los movimientos de caja manuales
+const inflowList = computed(() => (props.session?.cash_movements || []).filter(m => m.type === 'ingreso'));
+const outflowList = computed(() => (props.session?.cash_movements || []).filter(m => m.type === 'egreso'));
 
-const transferSales = computed(() => {
-    if (!props.session?.payments) return 0;
-    return (props.session.payments || [])
-        .filter(p => p && p.payment_method === 'transferencia' && p.status === 'completado')
-        .reduce((sum, p) => sum + parseFloat(p.amount), 0);
-});
+// --- CALCULOS TOTALES (Basados en las listas) ---
+const cashSales = computed(() => cashPaymentsList.value.reduce((sum, p) => sum + parseFloat(p.amount), 0));
+const cardSales = computed(() => cardPaymentsList.value.reduce((sum, p) => sum + parseFloat(p.amount), 0));
+const transferSales = computed(() => transferPaymentsList.value.reduce((sum, p) => sum + parseFloat(p.amount), 0));
 
+const inflows = computed(() => inflowList.value.reduce((sum, m) => sum + parseFloat(m.amount), 0));
+const outflows = computed(() => outflowList.value.reduce((sum, m) => sum + parseFloat(m.amount), 0));
 
-const inflows = computed(() => (props.session?.cash_movements || []).filter(m => m.type === 'ingreso').reduce((sum, m) => sum + parseFloat(m.amount), 0));
-const outflows = computed(() => (props.session?.cash_movements || []).filter(m => m.type === 'egreso').reduce((sum, m) => sum + parseFloat(m.amount), 0));
 const expectedCashTotal = computed(() => (parseFloat(props.session?.opening_cash_balance) || 0) + cashSales.value + inflows.value - outflows.value);
 const cashDifference = computed(() => (form.closing_cash_balance === null) ? 0 : form.closing_cash_balance - expectedCashTotal.value);
 
@@ -78,6 +73,11 @@ const closeModal = () => {
     setTimeout(() => {
         form.reset();
         view.value = 'initial';
+        showCashDetails.value = false;
+        showCardDetails.value = false;
+        showTransferDetails.value = false;
+        showInflowDetails.value = false;
+        showOutflowDetails.value = false;
     }, 300);
 };
 
@@ -146,55 +146,165 @@ const submitFinalClose = () => {
                  </div>
              </div>
 
-            <!-- VISTA 3: El Corte de Caja Final (para el último usuario o después de confirmar) -->
+            <!-- VISTA 3: El Corte de Caja Final -->
             <div v-if="isLastUser || view === 'finalClose'">
-                <div class="space-y-2">
-                    <!-- Resumen de Efectivo -->
-                    <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
-                        <h6 class="font-bold mb-2 text-center">Resumen de efectivo</h6>
-                        <div class="space-y-2 text-sm">
-                            <div class="flex justify-between"><span>Fondo inicial:</span> <span class="font-semibold">{{ formatCurrency(session.opening_cash_balance) }}</span></div>
-                            <div class="flex justify-between"><span>(+) Ventas en efectivo:</span> <span class="font-semibold text-green-600">+ {{ formatCurrency(cashSales) }}</span></div>
-                            <div class="flex justify-between"><span>(+) Entradas:</span> <span class="font-semibold text-green-600">+ {{ formatCurrency(inflows) }}</span></div>
-                            <div class="flex justify-between"><span>(-) Salidas:</span> <span class="font-semibold text-red-500">- {{ formatCurrency(outflows) }}</span></div>
-                            <div class="flex justify-between font-bold border-t pt-2 mt-2"><span>Total esperado:</span> <span>{{ formatCurrency(expectedCashTotal) }}</span></div>
+                <div class="space-y-4">
+                    
+                    <!-- Resumen de Efectivo Desplegable -->
+                    <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border dark:border-gray-700">
+                        <h6 class="font-bold mb-3 text-center border-b dark:border-gray-700 pb-2">Resumen de efectivo en caja</h6>
+                        
+                        <div class="space-y-1 text-sm select-none">
+                            <!-- Fondo inicial -->
+                            <div class="flex justify-between p-1">
+                                <span>Fondo inicial:</span> 
+                                <span class="font-semibold">{{ formatCurrency(session.opening_cash_balance) }}</span>
+                            </div>
+                            
+                            <!-- Pagos en Efectivo -->
+                            <div class="flex flex-col">
+                                <div class="flex justify-between items-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 p-1 -mx-1 rounded transition-colors" @click="showCashDetails = !showCashDetails">
+                                    <span class="flex items-center gap-2">
+                                        <i :class="showCashDetails ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" class="text-[10px] text-gray-500 w-3 text-center"></i>
+                                        (+) Pagos y abonos en efectivo:
+                                    </span>
+                                    <span class="font-semibold text-green-600">+ {{ formatCurrency(cashSales) }}</span>
+                                </div>
+                                <div v-show="showCashDetails" class="pl-6 pr-2 py-1 text-xs space-y-2 border-l-2 border-gray-200 dark:border-gray-600 ml-1.5 my-1 max-h-40 overflow-y-auto custom-scrollbar">
+                                    <div v-for="payment in cashPaymentsList" :key="payment.id" class="flex justify-between items-center text-gray-600 dark:text-gray-400">
+                                        <div class="flex flex-col truncate pr-2">
+                                            <span class="font-medium text-gray-800 dark:text-gray-200">Folio #{{ payment.transaction?.folio || 'N/A' }}</span>
+                                            <span v-if="payment.notes" class="italic opacity-75 text-[10px]">{{ payment.notes }}</span>
+                                        </div>
+                                        <span class="font-semibold">{{ formatCurrency(payment.amount) }}</span>
+                                    </div>
+                                    <div v-if="!cashPaymentsList.length" class="text-gray-400 italic">No hay pagos en efectivo.</div>
+                                </div>
+                            </div>
+
+                            <!-- Otras Entradas -->
+                            <div class="flex flex-col">
+                                <div class="flex justify-between items-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 p-1 -mx-1 rounded transition-colors" @click="showInflowDetails = !showInflowDetails">
+                                    <span class="flex items-center gap-2">
+                                        <i :class="showInflowDetails ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" class="text-[10px] text-gray-500 w-3 text-center"></i>
+                                        (+) Otras entradas (manual):
+                                    </span>
+                                    <span class="font-semibold text-green-600">+ {{ formatCurrency(inflows) }}</span>
+                                </div>
+                                <div v-show="showInflowDetails" class="pl-6 pr-2 py-1 text-xs space-y-2 border-l-2 border-gray-200 dark:border-gray-600 ml-1.5 my-1 max-h-40 overflow-y-auto custom-scrollbar">
+                                    <div v-for="mov in inflowList" :key="mov.id" class="flex justify-between items-center text-gray-600 dark:text-gray-400">
+                                        <span class="truncate pr-2 font-medium text-gray-800 dark:text-gray-200">{{ mov.description || 'Ingreso manual' }}</span>
+                                        <span class="font-semibold">{{ formatCurrency(mov.amount) }}</span>
+                                    </div>
+                                    <div v-if="!inflowList.length" class="text-gray-400 italic">No hay entradas adicionales registradas.</div>
+                                </div>
+                            </div>
+
+                            <!-- Salidas -->
+                            <div class="flex flex-col">
+                                <div class="flex justify-between items-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 p-1 -mx-1 rounded transition-colors" @click="showOutflowDetails = !showOutflowDetails">
+                                    <span class="flex items-center gap-2">
+                                        <i :class="showOutflowDetails ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" class="text-[10px] text-gray-500 w-3 text-center"></i>
+                                        (-) Salidas / Retiros:
+                                    </span>
+                                    <span class="font-semibold text-red-500">- {{ formatCurrency(outflows) }}</span>
+                                </div>
+                                <div v-show="showOutflowDetails" class="pl-6 pr-2 py-1 text-xs space-y-2 border-l-2 border-gray-200 dark:border-gray-600 ml-1.5 my-1 max-h-40 overflow-y-auto custom-scrollbar">
+                                    <div v-for="mov in outflowList" :key="mov.id" class="flex justify-between items-center text-gray-600 dark:text-gray-400">
+                                        <span class="truncate pr-2 font-medium text-gray-800 dark:text-gray-200">{{ mov.description || 'Retiro manual' }}</span>
+                                        <span class="font-semibold text-red-500">-{{ formatCurrency(mov.amount) }}</span>
+                                    </div>
+                                    <div v-if="!outflowList.length" class="text-gray-400 italic">No hay salidas registradas.</div>
+                                </div>
+                            </div>
+
+                            <!-- Total Esperado -->
+                            <div class="flex justify-between items-center font-bold text-lg border-t border-gray-300 dark:border-gray-600 pt-2 mt-2 p-1 bg-gray-100 dark:bg-gray-700/50 rounded">
+                                <span>Total esperado en caja:</span> 
+                                <span class="text-primary-600 dark:text-primary-400">{{ formatCurrency(expectedCashTotal) }}</span>
+                            </div>
                         </div>
                     </div>
                     
-                    <!-- AÑADIDO: Resumen de otros métodos de pago -->
-                    <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg">
-                        <h6 class="font-semibold text-center text-md mb-2">Otros métodos de pago (informativo)</h6>
-                        <div class="space-y-2 text-sm">
-                            <div class="flex justify-between">
-                                <span><i class="pi pi-credit-card mr-2 text-blue-500"></i>Ventas con tarjeta:</span> 
-                                <span class="font-semibold">{{ formatCurrency(cardSales) }}</span>
+                    <!-- Resumen de otros métodos de pago -->
+                    <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border dark:border-gray-700">
+                        <h6 class="font-semibold text-center text-sm mb-2 text-gray-600 dark:text-gray-300">Resumen de otros métodos de pago (informativo)</h6>
+                        
+                        <div class="space-y-1 text-sm select-none">
+                            <!-- Pagos con Tarjeta -->
+                            <div class="flex flex-col">
+                                <div class="flex justify-between items-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 p-1 -mx-1 rounded transition-colors" @click="showCardDetails = !showCardDetails">
+                                    <span class="flex items-center gap-2">
+                                        <i :class="showCardDetails ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" class="text-[10px] text-gray-500 w-3 text-center"></i>
+                                        <i class="pi pi-credit-card text-blue-500 w-4"></i>
+                                        Pagos con tarjeta:
+                                    </span>
+                                    <span class="font-semibold">{{ formatCurrency(cardSales) }}</span>
+                                </div>
+                                <div v-show="showCardDetails" class="pl-8 pr-2 py-1 text-xs space-y-2 border-l-2 border-gray-200 dark:border-gray-600 ml-1.5 my-1 max-h-40 overflow-y-auto custom-scrollbar">
+                                    <div v-for="payment in cardPaymentsList" :key="payment.id" class="flex justify-between items-center text-gray-600 dark:text-gray-400">
+                                        <div class="flex flex-col truncate pr-2">
+                                            <span class="font-medium text-gray-800 dark:text-gray-200">Folio #{{ payment.transaction?.folio || 'N/A' }}</span>
+                                        </div>
+                                        <span class="font-semibold">{{ formatCurrency(payment.amount) }}</span>
+                                    </div>
+                                    <div v-if="!cardPaymentsList.length" class="text-gray-400 italic">No hay pagos con tarjeta.</div>
+                                </div>
                             </div>
-                             <div class="flex justify-between">
-                                <span><i class="pi pi-arrows-h mr-2 text-orange-500"></i>Ventas por transferencia:</span> 
-                                <span class="font-semibold">{{ formatCurrency(transferSales) }}</span>
+
+                            <!-- Pagos con Transferencia -->
+                            <div class="flex flex-col mt-1">
+                                <div class="flex justify-between items-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 p-1 -mx-1 rounded transition-colors" @click="showTransferDetails = !showTransferDetails">
+                                    <span class="flex items-center gap-2">
+                                        <i :class="showTransferDetails ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" class="text-[10px] text-gray-500 w-3 text-center"></i>
+                                        <i class="pi pi-arrows-h text-orange-500 w-4"></i>
+                                        Transferencias:
+                                    </span>
+                                    <span class="font-semibold">{{ formatCurrency(transferSales) }}</span>
+                                </div>
+                                <div v-show="showTransferDetails" class="pl-8 pr-2 py-1 text-xs space-y-2 border-l-2 border-gray-200 dark:border-gray-600 ml-1.5 my-1 max-h-40 overflow-y-auto custom-scrollbar">
+                                    <div v-for="payment in transferPaymentsList" :key="payment.id" class="flex justify-between items-center text-gray-600 dark:text-gray-400">
+                                        <div class="flex flex-col truncate pr-2">
+                                            <span class="font-medium text-gray-800 dark:text-gray-200">Folio #{{ payment.transaction?.folio || 'N/A' }}</span>
+                                        </div>
+                                        <span class="font-semibold">{{ formatCurrency(payment.amount) }}</span>
+                                    </div>
+                                    <div v-if="!transferPaymentsList.length" class="text-gray-400 italic">No hay transferencias registradas.</div>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <form @submit.prevent="submitFinalClose" class="space-y-2 mt-4">
+                <form @submit.prevent="submitFinalClose" class="space-y-4 mt-6 border-t dark:border-gray-700 pt-4">
                     <div>
-                        <InputLabel for="closing-balance" value="Monto final en caja (conteo físico) *" />
-                        <InputNumber id="closing-balance" v-model="form.closing_cash_balance" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" inputClass="w-full" />
+                        <InputLabel for="closing-balance" value="Monto final en caja (conteo físico) *" class="!font-bold !text-base" />
+                        <InputNumber id="closing-balance" v-model="form.closing_cash_balance" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-2" inputClass="w-full !text-xl !font-bold !py-3" placeholder="$0.00" />
                         <InputError :message="form.errors.closing_cash_balance" class="mt-1" />
                     </div>
-                    <div v-if="form.closing_cash_balance !== null" class="flex justify-between font-bold text-sm p-3 rounded-lg" :class="{ 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200': cashDifference !== 0, 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200': cashDifference === 0 }">
-                        <span>Diferencia:</span>
-                        <span>{{ formatCurrency(cashDifference) }}</span>
+                    
+                    <!-- Aviso de Diferencia -->
+                    <div v-if="form.closing_cash_balance !== null" class="flex justify-between items-center font-bold text-base p-4 rounded-lg shadow-inner" 
+                        :class="{ 
+                            'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200': cashDifference !== 0, 
+                            'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200': cashDifference === 0 
+                        }">
+                        <div class="flex items-center gap-2">
+                            <i :class="cashDifference === 0 ? 'pi pi-check-circle' : 'pi pi-exclamation-triangle'"></i>
+                            <span>Diferencia de caja:</span>
+                        </div>
+                        <span class="text-xl">{{ formatCurrency(cashDifference) }}</span>
                     </div>
+
                     <div>
-                        <InputLabel for="notes" value="Notas de cierre" />
-                        <Textarea id="notes" v-model="form.notes" rows="3" class="w-full mt-1" />
+                        <InputLabel for="notes" value="Notas de cierre (opcional)" />
+                        <Textarea id="notes" v-model="form.notes" rows="2" class="w-full mt-1" placeholder="Ej. Hubo un sobrante de $50..." />
                     </div>
-                     <div class="flex justify-end gap-2 mt-4">
+
+                    <div class="flex justify-end gap-3 mt-6 pt-2">
                          <Button v-if="!isLastUser" type="button" label="Regresar" severity="secondary" @click="view = 'confirmClose'" text></Button>
-                         <Button type="submit" label="Confirmar cierre" :loading="form.processing" severity="danger"></Button>
-                     </div>
+                         <Button type="submit" label="Confirmar cierre definitivo" icon="pi pi-lock" :loading="form.processing" severity="danger" class="w-full md:w-auto p-button-lg"></Button>
+                    </div>
                 </form>
             </div>
         </div>

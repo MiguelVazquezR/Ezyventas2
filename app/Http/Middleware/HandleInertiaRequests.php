@@ -155,6 +155,8 @@ class HandleInertiaRequests extends Middleware
                 return $user->cashRegisterSessions()
                     ->where('status', CashRegisterSessionStatus::OPEN)
                     ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $user->branch_id))
+                    // carga ansiosa para usuarios, movimientos y los pagos con su transacción (para mostrar los folios)
+                    ->with(['users', 'cashMovements', 'payments.transaction:id,folio'])
                     ->first();
             },
 
