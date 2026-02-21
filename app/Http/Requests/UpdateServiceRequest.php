@@ -17,10 +17,18 @@ class UpdateServiceRequest extends FormRequest
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'category_id' => 'required|exists:categories,id',
-            'base_price' => 'required|numeric|min:0',
-            'duration_estimate' => 'nullable|string|max:255',
             'show_online' => 'boolean',
             'image' => 'nullable|image',
+            
+            'has_variants' => 'boolean',
+            'base_price' => 'nullable|numeric|min:0',
+            'duration_estimate' => 'nullable|string|max:255',
+            
+            'variants' => 'nullable|array',
+            'variants.*.id' => 'nullable',
+            'variants.*.name' => 'required_with:variants|string|max:255',
+            'variants.*.price' => 'required_with:variants|numeric|min:0',
+            'variants.*.duration_estimate' => 'nullable|string|max:255',
         ];
     }
 }

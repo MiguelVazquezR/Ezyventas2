@@ -39,7 +39,7 @@ class ServiceController extends Controller implements HasMiddleware
         $query = Service::query()
             ->join('categories', 'services.category_id', '=', 'categories.id')
             ->where('branch_id', $branchId)
-            ->with('category:id,name')
+            ->with('category:id,name', 'variants')
             // Seleccionar explícitamente las columnas de la tabla principal para evitar conflictos
             ->select('services.*');
 
@@ -85,10 +85,29 @@ class ServiceController extends Controller implements HasMiddleware
             $slug = $baseSlug . '-' . $counter++;
         }
 
-        $service = Service::create(array_merge($validatedData, [
-            'branch_id' => $user->branch_id,
-            'slug' => $slug,
-        ]));
+        // Filtramos para no inyectar campos ajenos a la tabla 'services'
+        $serviceData = collect($validatedData)->except(['has_variants', 'variants', 'image'])->toArray();
+        $serviceData['branch_id'] = $user->branch_id;
+        $serviceData['slug'] = $slug;
+
+        // Si tiene variantes, nos aseguramos que el precio base del padre sea 0
+        if (!empty($validatedData['has_variants'])) {
+            $serviceData['base_price'] = 0;
+            $serviceData['duration_estimate'] = null;
+        }
+
+        $service = Service::create($serviceData);
+
+        // Guardar variantes (si aplica)
+        if (!empty($validatedData['has_variants']) && !empty($validatedData['variants'])) {
+            foreach ($validatedData['variants'] as $variant) {
+                $service->variants()->create([
+                    'name' => $variant['name'],
+                    'price' => $variant['price'],
+                    'duration_estimate' => $variant['duration_estimate'] ?? null,
+                ]);
+            }
+        }
 
         if ($request->hasFile('image')) {
             $mediaItem = $service->addMediaFromRequest('image')->toMediaCollection('service-image');
@@ -101,7 +120,10 @@ class ServiceController extends Controller implements HasMiddleware
     public function edit(Service $service): Response
     {
         $subscriptionId = Auth::user()->branch->subscription_id;
-        $service->load('media');
+        
+        // MODIFICACIÓN: Cargamos explícitamente las variantes para la vista de Edición
+        $service->load(['media', 'variants']); 
+        
         return Inertia::render('Service/Edit', [
             'service' => $service,
             'categories' => Category::where('subscription_id', $subscriptionId)->where('type', 'service')->get(['id', 'name']),
@@ -123,7 +145,49 @@ class ServiceController extends Controller implements HasMiddleware
             $validatedData['slug'] = $slug; // Añadir el nuevo slug a los datos a actualizar
         }
 
-        $service->update($validatedData);
+        // Extraer info de la tabla base
+        $serviceData = collect($validatedData)->except(['has_variants', 'variants', 'image'])->toArray();
+
+        if (!empty($validatedData['has_variants'])) {
+            $serviceData['base_price'] = 0;
+            $serviceData['duration_estimate'] = null;
+        }
+
+        $service->update($serviceData);
+
+        // Sincronizar Variantes (Crear, Actualizar o Eliminar)
+        if (!empty($validatedData['has_variants']) && !empty($validatedData['variants'])) {
+            $existingVariantIds = [];
+            
+            foreach ($validatedData['variants'] as $variantData) {
+                if (isset($variantData['id']) && $variantData['id']) {
+                    // Actualizar variante existente
+                    $variant = $service->variants()->find($variantData['id']);
+                    if ($variant) {
+                        $variant->update([
+                            'name' => $variantData['name'],
+                            'price' => $variantData['price'],
+                            'duration_estimate' => $variantData['duration_estimate'] ?? null,
+                        ]);
+                        $existingVariantIds[] = $variant->id;
+                    }
+                } else {
+                    // Crear variante nueva agregada durante la edición
+                    $newVariant = $service->variants()->create([
+                        'name' => $variantData['name'],
+                        'price' => $variantData['price'],
+                        'duration_estimate' => $variantData['duration_estimate'] ?? null,
+                    ]);
+                    $existingVariantIds[] = $newVariant->id;
+                }
+            }
+            
+            // Eliminar de la base de datos las variantes que el usuario haya borrado dándole al icono del "basurero"
+            $service->variants()->whereNotIn('id', $existingVariantIds)->delete();
+        } else {
+            // Si apagaron el switch completamente, eliminamos todas las variantes atadas a este servicio
+            $service->variants()->delete();
+        }
 
         if ($request->hasFile('image')) {
             $service->clearMediaCollection('service-image');
@@ -136,7 +200,7 @@ class ServiceController extends Controller implements HasMiddleware
 
     public function show(Service $service): Response
     {
-        $service->load(['category', 'media', 'activities.causer']);
+        $service->load(['category', 'media', 'activities.causer', 'variants']);
         $translations = config('log_translations.Service', []);
 
         $formattedActivities = $service->activities->map(function ($activity) use ($translations) {

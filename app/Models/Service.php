@@ -63,4 +63,12 @@ class Service extends Model implements HasMedia
     {
         return $this->morphMany(ServiceOrderItem::class, 'itemable');
     }
+
+    /**
+     * Obtiene las variantes de este servicio (ej. por modelo, calidad, cilindraje).
+     */
+    public function variants()
+    {
+        return $this->hasMany(ServiceVariant::class);
+    }
 }
