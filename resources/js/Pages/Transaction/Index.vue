@@ -12,6 +12,7 @@ import { useToast } from 'primevue/usetoast';
 import DatePicker from 'primevue/datepicker';
 import Select from 'primevue/select';
 import RadioButton from 'primevue/radiobutton';
+import Drawer from 'primevue/drawer'; // NUEVO: Importación del Drawer
 
 const props = defineProps({
     transactions: Object,
@@ -57,7 +58,10 @@ const isCancellationModalVisible = ref(false);
 const cancellationAction = ref('refund'); // 'refund' | 'penalty'
 const cancellationRefundMethod = ref('cash'); // 'balance' | 'cash'
 const isCancelling = ref(false);
-// Usamos selectedTransactionForMenu para la transacción actual
+
+// --- DRAWER DE VISTA RÁPIDA ---
+const isDrawerVisible = ref(false);
+const drawerTransaction = ref(null);
 
 // --- Computado para sesión activa ---
 const activeSession = computed(() => page.props.activeSession);
@@ -121,16 +125,16 @@ const toggleMenu = (event, data) => {
     menu.value.toggle(event);
 };
 
-// --- NAVEGACIÓN POR FILA ---
+// --- NAVEGACIÓN POR FILA (MODIFICADO PARA DRAWER) ---
 const onRowClick = (event) => {
     const target = event.originalEvent.target;
-    if (target.closest('button') || target.closest('.p-button') || target.closest('.p-checkbox')) {
+    // Evitar abrir si se hizo clic en un botón, checkbox o enlace
+    if (target.closest('button') || target.closest('.p-button') || target.closest('.p-checkbox') || target.closest('a')) {
         return;
     }
     
-    if (hasPermission('transactions.see_details')) {
-        router.visit(route('transactions.show', event.data.id));
-    }
+    drawerTransaction.value = event.data;
+    isDrawerVisible.value = true;
 };
 
 const confirmDeleteTransaction = () => {
@@ -293,6 +297,24 @@ const formatDate = (dateString) => {
     } catch (e) { console.error("Error formatting date:", dateString, e); return dateString; }
 };
 
+// NUEVO: Formateador específico para fechas estilo "21 de febrero, 9:34am"
+const formatFriendlyDate = (dateString) => {
+    if (!dateString) return '';
+    try {
+        const d = new Date(dateString);
+        const day = d.getDate();
+        const month = new Intl.DateTimeFormat('es-MX', { month: 'long' }).format(d);
+        let hour = d.getHours();
+        const minute = d.getMinutes().toString().padStart(2, '0');
+        const ampm = hour >= 12 ? 'pm' : 'am';
+        hour = hour % 12;
+        hour = hour ? hour : 12; // el '0' debe ser '12'
+        return `${day} de ${month}, ${hour}:${minute}${ampm}`;
+    } catch (e) {
+        return dateString;
+    }
+};
+
 const formatCurrency = (value) => {
      if (value === null || value === undefined) return '';
      const numberValue = Number(value);
@@ -300,10 +322,18 @@ const formatCurrency = (value) => {
      return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(numberValue);
 };
 
-// Helper para obtener total pagado en template
+// Helper para obtener total pagado
 const getTransactionTotalPaid = (transaction) => {
-    return (Array.isArray(transaction.payments) ? transaction.payments : [])
+    return (Array.isArray(transaction?.payments) ? transaction.payments : [])
         .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+};
+
+// Helper para obtener saldo pendiente
+const getTransactionPending = (transaction) => {
+    if (!transaction) return 0;
+    const total = parseFloat(transaction.total || 0);
+    const paid = getTransactionTotalPaid(transaction);
+    return Math.max(0, total - paid);
 };
 </script>
 
@@ -344,6 +374,7 @@ const getTransactionTotalPaid = (transaction) => {
                     tableStyle="min-width: 60rem"
                     rowHover
                     @row-click="onRowClick"
+                    class="cursor-pointer"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} ventas">
                     
@@ -400,6 +431,103 @@ const getTransactionTotalPaid = (transaction) => {
             :data-source="printDataSource"
             :available-templates="availableTemplates"
         />
+
+        <!-- DRAWER DE VISTA RÁPIDA -->
+        <Drawer v-model:visible="isDrawerVisible" position="right" class="!w-full md:!w-[400px]">
+            <template #header>
+                <div class="flex items-center gap-2">
+                    <span class="font-bold text-lg">Resumen Venta #{{ drawerTransaction?.folio }}</span>
+                </div>
+            </template>
+            
+            <div v-if="drawerTransaction" class="flex flex-col gap-6">
+                <!-- Información General -->
+                <div class="flex flex-col gap-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-500 text-sm">Estatus</span>
+                        <Tag :value="formatStatusLabel(drawerTransaction.status)" :severity="getStatusSeverity(drawerTransaction.status)" />
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-500 text-sm">Fecha</span>
+                        <span class="font-medium text-sm">{{ formatFriendlyDate(drawerTransaction.created_at) }}</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-500 text-sm">Cliente</span>
+                        <span class="font-medium text-sm text-right truncate max-w-[200px]" :title="drawerTransaction.customer?.name || 'Público en general'">
+                            {{ drawerTransaction.customer?.name || 'Público en general' }}
+                        </span>
+                    </div>
+                </div>
+
+                <Divider class="!my-0" />
+
+                <!-- Lista de Artículos -->
+                <div class="flex flex-col gap-2">
+                    <span class="text-gray-500 text-sm font-bold uppercase tracking-wider">Artículos</span>
+                    <ul v-if="drawerTransaction.items && drawerTransaction.items.length" class="flex flex-col gap-3">
+                        <li v-for="item in drawerTransaction.items" :key="item.id" class="flex justify-between text-sm">
+                            <div class="flex flex-col flex-1">
+                                <span class="font-medium leading-tight">
+                                    <span class="text-gray-500 mr-1">{{ Math.round(item.quantity) }}x</span>
+                                    {{ item.description }}
+                                </span>
+                            </div>
+                            <span class="font-semibold ml-2">{{ formatCurrency(item.line_total) }}</span>
+                        </li>
+                    </ul>
+                    <div v-else class="text-sm text-gray-400 italic">No hay artículos registrados.</div>
+                </div>
+
+                <Divider class="!my-0" />
+
+                <!-- Lista de Pagos -->
+                <div class="flex flex-col gap-2">
+                    <span class="text-gray-500 text-sm font-bold uppercase tracking-wider">Historial de Pagos</span>
+                    <ul v-if="drawerTransaction.payments && drawerTransaction.payments.length" class="flex flex-col gap-3 relative border-l-2 border-gray-200 dark:border-gray-700 ml-2 pl-4 py-1">
+                        <li v-for="payment in drawerTransaction.payments" :key="payment.id" class="flex flex-col text-sm relative">
+                            <!-- Timeline dot -->
+                            <div class="absolute w-2 h-2 bg-primary-500 rounded-full -left-[21px] top-1.5"></div>
+                            
+                            <div class="flex justify-between items-start">
+                                <span class="font-medium capitalize">{{ (payment.payment_method || 'Desconocido').replace(/_/g, ' ') }}</span>
+                                <span class="font-bold text-green-600 dark:text-green-400">{{ formatCurrency(payment.amount) }}</span>
+                            </div>
+                            <span class="text-xs text-gray-500">{{ formatFriendlyDate(payment.created_at) }}</span>
+                        </li>
+                    </ul>
+                    <div v-else class="text-sm text-gray-400 italic">No se han registrado pagos.</div>
+                </div>
+
+                <!-- Resumen Total -->
+                <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg flex flex-col gap-1 border dark:border-gray-700">
+                    <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                        <span>Total de la venta:</span>
+                        <span>{{ formatCurrency(drawerTransaction.total) }}</span>
+                    </div>
+                    <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+                        <span>Abonado:</span>
+                        <span>{{ formatCurrency(getTransactionTotalPaid(drawerTransaction)) }}</span>
+                    </div>
+                    <div class="flex justify-between font-bold text-lg mt-2 pt-2 border-t dark:border-gray-600">
+                        <span>Resta:</span>
+                        <span :class="getTransactionPending(drawerTransaction) > 0 ? 'text-red-500' : 'text-green-500'">
+                            {{ formatCurrency(getTransactionPending(drawerTransaction)) }}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Acción Footer -->
+                <div class="mt-auto pt-4 flex gap-2">
+                    <Button 
+                        v-if="hasPermission('transactions.see_details')"
+                        label="Ver detalles completos" 
+                        icon="pi pi-external-link" 
+                        class="w-full" 
+                        @click="router.visit(route('transactions.show', drawerTransaction.id))" 
+                    />
+                </div>
+            </div>
+        </Drawer>
 
         <!-- MODAL UNIFICADO DE CANCELACIÓN Y DEVOLUCIÓN -->
         <Dialog v-model:visible="isCancellationModalVisible" modal header="Anular Transacción" :style="{ width: '32rem' }">
