@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import { useConfirm } from 'primevue/useconfirm';
@@ -14,31 +14,72 @@ const confirm = useConfirm();
 
 let localIdCounter = 0;
 
+// --- LÓGICA DE INICIALIZACIÓN (MÚLTIPLE PROPÓSITO) ---
+onMounted(() => {
+    if (props.form.variants_matrix && props.form.variants_matrix.length > 0) {
+        // 1. Inicializar precios finales
+        props.form.variants_matrix.forEach(v => {
+            if (v.final_price === undefined) {
+                v.final_price = (props.form.selling_price || 0) + Number(v.selling_price_modifier || 0);
+            }
+        });
+
+        // 2. MODO EDICIÓN: Autocompletar los selectores basados en las variantes existentes
+        const initialSelected = {};
+        props.form.variants_matrix.forEach(v => {
+            // Ignoramos las variantes manuales que solo tienen "Detalle"
+            if (v.attributes && !(Object.keys(v.attributes).length === 1 && v.attributes['Detalle'] !== undefined)) {
+                Object.entries(v.attributes).forEach(([key, val]) => {
+                    if (!initialSelected[key]) initialSelected[key] = new Set();
+                    initialSelected[key].add(val);
+                });
+            }
+        });
+        
+        // Asignamos los valores reconstruidos a los MultiSelects
+        Object.keys(initialSelected).forEach(key => {
+            selectedAttributeValues.value[key] = Array.from(initialSelected[key]);
+        });
+    }
+});
+
+// Auto-actualizar Precio Final
+watch(() => props.form.selling_price, (newPrice) => {
+    if (props.form.variants_matrix) {
+        props.form.variants_matrix.forEach(v => {
+            v.final_price = (newPrice || 0) + Number(v.selling_price_modifier || 0);
+        });
+    }
+});
+
+const updateModifier = (variant, newFinalPrice) => {
+    variant.selling_price_modifier = (newFinalPrice || 0) - (props.form.selling_price || 0);
+};
+
 // --- LÓGICA DE ATRIBUTOS POR CATEGORÍA ---
 const selectedAttributeValues = ref({});
 
-// Filtra las definiciones de atributos según la categoría seleccionada
 const categoryAttributes = computed(() => {
     if (!props.form.category_id) return [];
-    // Usamos == en lugar de === para evitar fallos por tipos de datos (String vs Number)
     return props.attributeDefinitions.filter(attr => attr.category_id == props.form.category_id);
 });
 
-// Función robusta para mapear las opciones al MultiSelect
 const getOptions = (attr) => {
     if (!attr || !attr.options) return [];
     return attr.options.map(opt => opt.value);
 };
 
-// Limpia los valores seleccionados si el usuario cambia de categoría
-watch(() => props.form.category_id, () => {
-    selectedAttributeValues.value = {};
+// Limpia solo si el cambio es real (no en la carga inicial)
+watch(() => props.form.category_id, (newVal, oldVal) => {
+    if (oldVal !== null) {
+        selectedAttributeValues.value = {};
+    }
 });
+
 
 // --- GENERADOR DE MATRIZ DE VARIANTES ---
 const generateMatrix = () => {
     const keys = Object.keys(selectedAttributeValues.value).filter(k => selectedAttributeValues.value[k].length > 0);
-    
     if (keys.length === 0) return;
 
     const arrays = keys.map(k => selectedAttributeValues.value[k].map(v => ({ [k]: v })));
@@ -58,15 +99,16 @@ const generateMatrix = () => {
             attributes: combo,
             sku: '',
             selling_price_modifier: 0,
+            final_price: props.form.selling_price || 0,
             current_stock: 0,
         };
     });
 
     props.form.variants_matrix = newMatrix;
-    
     first.value = 0;
     variantSearch.value = '';
 };
+
 
 // --- AGREGAR Y ELIMINAR VARIANTES ---
 const addManualVariant = () => {
@@ -75,6 +117,7 @@ const addManualVariant = () => {
         attributes: { 'Detalle': '' },
         sku: '',
         selling_price_modifier: 0,
+        final_price: props.form.selling_price || 0,
         current_stock: 0,
     });
 };
@@ -83,7 +126,7 @@ const confirmRemoveVariant = (event, index) => {
     confirm.require({
         target: event.currentTarget,
         group: 'inventory-variant-delete',
-        message: '¿Estás seguro de eliminar esta variante?',
+        message: '¿Estás seguro de eliminar esta variante de la lista?',
         icon: 'pi pi-exclamation-triangle',
         acceptClass: 'p-button-danger p-button-sm',
         acceptLabel: 'Sí, eliminar',
@@ -93,6 +136,7 @@ const confirmRemoveVariant = (event, index) => {
         }
     });
 };
+
 
 // --- OPTIMIZACIÓN DE RENDERIZADO (BÚSQUEDA Y PAGINACIÓN) ---
 const variantSearch = ref('');
@@ -135,11 +179,11 @@ watch(variantSearch, () => {
                 <div class="flex gap-4 mt-2">
                     <div class="flex items-center">
                         <RadioButton v-model="form.product_type" inputId="type_simple" value="simple" />
-                        <label for="type_simple" class="ml-2 cursor-pointer font-medium">Producto simple</label>
+                        <label for="type_simple" class="ml-2 cursor-pointer font-medium text-gray-700 dark:text-gray-300">Producto simple</label>
                     </div>
                     <div class="flex items-center">
                         <RadioButton v-model="form.product_type" inputId="type_variant" value="variant" />
-                        <label for="type_variant" class="ml-2 cursor-pointer font-medium">Producto con variantes</label>
+                        <label for="type_variant" class="ml-2 cursor-pointer font-medium text-gray-700 dark:text-gray-300">Producto con variantes</label>
                     </div>
                 </div>
             </div>
@@ -147,7 +191,7 @@ watch(variantSearch, () => {
             <!-- PRODUCTO SIMPLE -->
             <template v-if="form.product_type === 'simple'">
                 <div>
-                    <InputLabel for="current_stock" value="Stock inicial *" />
+                    <InputLabel for="current_stock" value="Stock actual" />
                     <InputNumber v-model="form.current_stock" id="current_stock" class="w-full mt-1" />
                     <InputError :message="form.errors.current_stock" class="mt-2" />
                 </div>
@@ -170,21 +214,21 @@ watch(variantSearch, () => {
             <template v-else>
                 
                 <!-- SECCIÓN: GENERADOR DE ATRIBUTOS -->
-                <div class="col-span-full bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg p-4 mb-2">
+                <div class="col-span-full bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-5 mb-2">
                     <div class="flex justify-between items-center mb-1">
                         <h3 class="font-bold text-gray-800 dark:text-gray-200 m-0">Generador Automático de Variantes</h3>
-                        <Button @click="$emit('open-attributes')" :disabled="!form.category_id" label="Configurar Atributos" icon="pi pi-cog" size="small" outlined />
+                        <Button @click="$emit('open-attributes')" :disabled="!form.category_id" label="Configurar Atributos" icon="pi pi-cog" size="small" outlined severity="secondary" />
                     </div>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                        Selecciona las características (ej. Colores, Tallas) y haz clic en "Generar combinaciones" para crear automáticamente todas las versiones de tu producto.
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-5 max-w-3xl">
+                        Selecciona las características (ej. Colores, Tallas) y haz clic en "Generar combinaciones". El sistema creará automáticamente una matriz con todas las opciones posibles de tu producto.
                     </p>
 
-                    <div v-if="!form.category_id" class="text-sm text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg flex items-center gap-2">
-                        <i class="pi pi-info-circle"></i>
-                        <span>Selecciona primero una <strong>Categoría</strong> en la sección "Información general" para ver los atributos disponibles.</span>
+                    <div v-if="!form.category_id" class="text-sm text-gray-500 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4 rounded-lg flex items-center gap-3">
+                        <i class="pi pi-info-circle text-gray-400 text-xl"></i>
+                        <span>Para comenzar, selecciona primero una <strong>Categoría</strong> en la sección "Información general".</span>
                     </div>
 
-                    <div v-else-if="categoryAttributes.length === 0" class="text-sm text-gray-500 italic text-center p-2">
+                    <div v-else-if="categoryAttributes.length === 0" class="text-sm text-gray-500 italic p-2">
                         Esta categoría no tiene atributos configurados. Haz clic en "Configurar Atributos" para crear los tuyos.
                     </div>
 
@@ -203,35 +247,35 @@ watch(variantSearch, () => {
                         </div>
                         
                         <div class="flex justify-end pt-2">
-                            <Button @click="generateMatrix" label="Generar combinaciones" icon="pi pi-sync" severity="info" :disabled="Object.keys(selectedAttributeValues).length === 0" />
+                            <Button @click="generateMatrix" label="Generar combinaciones" icon="pi pi-sync" severity="secondary" :disabled="Object.keys(selectedAttributeValues).length === 0" />
                         </div>
                     </div>
                 </div>
 
                 <!-- SECCIÓN: TABLA DE VARIANTES GENERADAS -->
-                <div class="col-span-full bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800 mt-2">
+                <div class="col-span-full border border-gray-200 dark:border-gray-700 rounded-lg p-5 mt-2">
                     
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2 gap-4">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                         <div>
-                            <h3 class="font-bold text-blue-800 dark:text-blue-200 m-0">Matriz de Variantes ({{ filteredVariants.length }})</h3>
-                            <p class="text-sm text-blue-600 dark:text-blue-400 m-0">
-                                Asigna inventario inicial, código SKU y modifica el precio si es necesario.
+                            <h3 class="font-bold text-gray-800 dark:text-gray-200 m-0">Matriz de Variantes ({{ filteredVariants.length }})</h3>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 m-0 mt-1">
+                                Asigna inventario inicial, código SKU y el <strong>precio final de venta</strong> para cada opción.
                             </p>
                         </div>
                         
                         <div class="flex gap-2 w-full sm:w-auto">
-                            <Button @click="addManualVariant" label="Añadir variante manual" icon="pi pi-plus" size="small" severity="secondary" />
+                            <Button @click="addManualVariant" label="Añadir variante manual" icon="pi pi-plus" size="small" outlined severity="secondary" />
                         </div>
                     </div>
 
                     <!-- Buscador con explicación -->
-                    <div class="mb-4 bg-white dark:bg-gray-800 p-2 rounded border dark:border-gray-700 flex flex-col sm:flex-row gap-3 items-center">
-                        <IconField iconPosition="left" class="w-full sm:w-64 shrink-0">
+                    <div class="mb-4 bg-gray-50 dark:bg-gray-800/50 p-3 rounded border border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row gap-3 items-center">
+                        <IconField iconPosition="left" class="w-full sm:w-72 shrink-0">
                             <InputIcon class="pi pi-search"></InputIcon>
-                            <InputText v-model="variantSearch" placeholder="Buscar variante o SKU..." class="w-full text-sm" />
+                            <InputText v-model="variantSearch" placeholder="Buscar variante o SKU..." class="w-full text-sm bg-white dark:bg-gray-800" />
                         </IconField>
-                        <span class="text-xs text-gray-500">
-                            <i class="pi pi-lightbulb text-yellow-500 mr-1"></i> Usa el buscador para encontrar rápidamente modelos específicos si tienes un catálogo muy grande.
+                        <span class="text-xs text-gray-500 leading-tight">
+                            <i class="pi pi-filter mr-1"></i> Utiliza esta barra para encontrar rápidamente modelos específicos entre tu matriz.
                         </span>
                     </div>
 
@@ -243,27 +287,27 @@ watch(variantSearch, () => {
                         :first="first" 
                         @page="onPage" 
                         :rowsPerPageOptions="[10, 25, 50]" 
-                        class="mb-2 !bg-transparent" 
+                        class="mb-2 !bg-transparent !p-0" 
                     />
 
                     <!-- Lista Dinámica de Variantes -->
-                    <div class="flex flex-col gap-3">
-                        <div v-if="filteredVariants.length === 0" class="text-center py-6 text-blue-500 italic bg-white dark:bg-gray-800 rounded shadow-sm">
-                            No hay combinaciones en la matriz.
+                    <div class="flex flex-col gap-2">
+                        <div v-if="filteredVariants.length === 0" class="text-center py-8 text-gray-400 italic bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded">
+                            No hay combinaciones registradas o que coincidan con la búsqueda.
                         </div>
 
                         <!-- Encabezados de Tabla (Solo visibles en Escritorio) -->
-                        <div v-if="filteredVariants.length > 0" class="hidden md:flex gap-3 px-3 pb-2 border-b border-blue-200 dark:border-blue-800 text-sm font-semibold text-blue-800 dark:text-blue-200 mt-2">
+                        <div v-if="filteredVariants.length > 0" class="hidden md:flex gap-3 px-4 pb-2 border-b border-gray-200 dark:border-gray-700 text-xs uppercase tracking-wider font-semibold text-gray-500 dark:text-gray-400 mt-2">
                             <div class="w-4/12">Variante / Atributos</div>
-                            <div class="w-3/12" v-tooltip.top="'Agrega un valor si esta variante es más cara (ej. 100)'">Mod. de Precio (+/-)</div>
-                            <div class="w-2/12">Stock Inicial</div>
+                            <div class="w-3/12">Precio Final</div>
+                            <div class="w-2/12">Stock Actual</div>
                             <div class="w-2/12">SKU</div>
-                            <div class="w-1/12 text-right">Acción</div>
+                            <div class="w-1/12 text-right">Acciones</div>
                         </div>
 
                         <!-- Filas (Rows) -->
                         <div v-for="(variant) in paginatedVariants" :key="variant._localId"
-                            class="flex flex-col md:flex-row gap-3 items-start md:items-center bg-white dark:bg-gray-800 p-3 rounded shadow-sm border border-gray-200 dark:border-gray-700 hover:border-blue-300 transition-colors">
+                            class="flex flex-col md:flex-row gap-3 items-start md:items-center bg-white dark:bg-gray-800 p-4 md:p-3 rounded shadow-sm border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
                             
                             <!-- ATRIBUTOS -->
                             <div class="w-full md:w-4/12 flex flex-wrap gap-1">
@@ -271,28 +315,28 @@ watch(variantSearch, () => {
                                     <InputText v-model="variant.attributes['Detalle']" placeholder="Ej: 128GB - Rojo" class="w-full text-sm" required />
                                 </template>
                                 <template v-else>
-                                    <Tag v-for="(val, key) in variant.attributes" :key="key" :value="`${key}: ${val}`" severity="info" rounded class="!text-xs" />
+                                    <Tag v-for="(val, key) in variant.attributes" :key="key" :value="`${key}: ${val}`" severity="secondary" rounded class="!text-xs" />
                                 </template>
                             </div>
 
                             <div class="w-full md:w-3/12">
-                                <InputLabel :value="'Modificador de Precio'" class="text-xs !mb-1 md:hidden text-gray-500" />
-                                <InputNumber v-model="variant.selling_price_modifier" mode="currency" currency="MXN" locale="es-MX"
-                                    placeholder="Ej: 100.00" class="w-full text-sm" inputClass="!w-full" />
+                                <InputLabel :value="'Precio Final'" class="text-xs !mb-1 md:hidden text-gray-500 font-semibold" />
+                                <InputNumber v-model="variant.final_price" @update:modelValue="updateModifier(variant, $event)" mode="currency" currency="MXN" locale="es-MX"
+                                    placeholder="$0.00" class="w-full text-sm" inputClass="!w-full" />
                             </div>
 
                             <div class="w-full md:w-2/12">
-                                <InputLabel :value="'Stock Inicial'" class="text-xs !mb-1 md:hidden text-gray-500" />
-                                <InputNumber v-model="variant.current_stock" placeholder="Stock" class="w-full text-sm" inputClass="!w-full" />
+                                <InputLabel :value="'Stock Actual'" class="text-xs !mb-1 md:hidden text-gray-500 font-semibold" />
+                                <InputNumber v-model="variant.current_stock" placeholder="0" class="w-full text-sm" inputClass="!w-full" />
                             </div>
                             
                             <div class="w-full md:w-2/12">
-                                <InputLabel :value="'SKU'" class="text-xs !mb-1 md:hidden text-gray-500" />
-                                <InputText v-model="variant.sku" placeholder="SKU Variante" class="w-full text-sm" />
+                                <InputLabel :value="'SKU'" class="text-xs !mb-1 md:hidden text-gray-500 font-semibold" />
+                                <InputText v-model="variant.sku" placeholder="Ej: SKU-001" class="w-full text-sm" />
                             </div>
 
                             <div class="w-full md:w-1/12 flex justify-end">
-                                <Button icon="pi pi-trash" severity="danger" text rounded @click="confirmRemoveVariant($event, form.variants_matrix.indexOf(variant))" v-tooltip.top="'Eliminar variante'" />
+                                <Button icon="pi pi-trash" severity="secondary" text rounded @click="confirmRemoveVariant($event, form.variants_matrix.indexOf(variant))" v-tooltip.top="'Eliminar variante'" />
                             </div>
                         </div>
                     </div>
@@ -305,7 +349,7 @@ watch(variantSearch, () => {
                         :first="first" 
                         @page="onPage" 
                         :rowsPerPageOptions="[10, 25, 50]" 
-                        class="mt-3 !bg-transparent border-t border-blue-200 dark:border-blue-800 pt-2" 
+                        class="mt-4 !bg-transparent border-t border-gray-200 dark:border-gray-700 pt-2 !p-0" 
                     />
                     
                     <InputError :message="form.errors.variants_matrix" class="mt-2" />
@@ -313,7 +357,7 @@ watch(variantSearch, () => {
             </template>
         </div>
         
-        <!-- ConfirmPopup local y específico para no hacer conflicto con el de precios -->
+        <!-- ConfirmPopup local para eliminar variantes de la matriz -->
         <ConfirmPopup group="inventory-variant-delete"></ConfirmPopup>
     </div>
 </template>
