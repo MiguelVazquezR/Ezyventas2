@@ -53,6 +53,22 @@ const mainImage = computed(() =>
     props.service.media && props.service.media.length > 0 ? props.service.media[0].original_url : null
 );
 
+// --- LÓGICA DE BÚSQUEDA Y OPTIMIZACIÓN DE VARIANTES ---
+const variantSearch = ref('');
+
+const filteredVariants = computed(() => {
+    if (!props.service.variants) return [];
+    let variants = props.service.variants;
+    
+    if (variantSearch.value.trim()) {
+        const term = variantSearch.value.toLowerCase().trim();
+        variants = variants.filter(v => v.name.toLowerCase().includes(term));
+    }
+    
+    return variants;
+});
+// --- FIN LÓGICA DE BÚSQUEDA ---
+
 // Función para formatear moneda
 const formatCurrency = (value) => {
     const num = Number(value);
@@ -85,7 +101,6 @@ const formatCurrency = (value) => {
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <div v-if="mainImage">
                         <div class="flex justify-center mb-2 bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden border border-gray-100 dark:border-gray-600">
-                            <!-- Uso del componente Image con preview -->
                             <Image :src="mainImage" :alt="service.name" preview imageClass="w-full h-80 object-contain p-2" />
                         </div>
                         <p class="text-xs text-center text-gray-400 mt-2"><i class="pi pi-search-plus mr-1"></i> Clic para ampliar</p>
@@ -162,19 +177,45 @@ const formatCurrency = (value) => {
                     </div>
                     
                     <div v-if="service.description" class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                        <h3 class="font-semibold mb-2 text-gray-800 dark:text-gray-200">Descripción</h3>
+                        <h5 class="font-semibold mb-2 text-gray-800 dark:text-gray-200">Descripción</h5>
                         <div class="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300" v-html="service.description"></div>
                     </div>
                 </div>
 
                 <!-- Tarjeta: Variantes de Servicio -->
                 <div v-if="service.variants && service.variants.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200 flex items-center gap-2">
-                        <i class="pi pi-sitemap text-blue-500"></i>
-                        Variantes del servicio
-                    </h2>
+                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 border-b border-gray-200 dark:border-gray-700 pb-4 mb-4">
+                        <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2 m-0">
+                            <i class="pi pi-sitemap text-blue-500"></i>
+                            Modelos y Variantes ({{ filteredVariants.length }})
+                        </h2>
+                        
+                        <!-- Buscador Inteligente -->
+                        <IconField iconPosition="left" class="w-full sm:w-auto">
+                            <InputIcon class="pi pi-search"></InputIcon>
+                            <InputText v-model="variantSearch" placeholder="Buscar variante/modelo..." class="w-72" />
+                        </IconField>
+                    </div>
                     
-                    <DataTable :value="service.variants" class="p-datatable-sm" responsiveLayout="scroll" rowHover stripedRows>
+                    <!-- Tabla Optimizada con Paginación -->
+                    <DataTable 
+                        :value="filteredVariants" 
+                        class="p-datatable-sm" 
+                        responsiveLayout="scroll" 
+                        rowHover 
+                        stripedRows
+                        paginator 
+                        :rows="10" 
+                        :rowsPerPageOptions="[10, 25, 50, 100]"
+                        paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
+                        currentPageReportTemplate="Mostrando {first} al {last} de {totalRecords}"
+                    >
+                        <template #empty>
+                            <div class="text-center p-4 text-gray-500 italic">
+                                No se encontraron modelos que coincidan con la búsqueda.
+                            </div>
+                        </template>
+                        
                         <Column field="name" header="Variante / Modelo">
                             <template #body="{ data }">
                                 <span class="font-medium text-gray-800 dark:text-gray-200">{{ data.name }}</span>

@@ -51,7 +51,13 @@ class ServiceController extends Controller implements HasMiddleware
             ->whereHas('branches', function ($q) use ($branchId) {
                 $q->where('branches.id', $branchId);
             })
-            ->with(['category:id,name', 'variants', 'branches:id,name'])
+            // OPTIMIZACIÓN: Solo traemos los campos estrictamente necesarios de las variantes
+            // Esto reduce drásticamente el peso del JSON cuando hay miles de variantes
+            ->with([
+                'category:id,name', 
+                'variants:id,service_id,name,price,duration_estimate', 
+                'branches:id,name'
+            ])
             ->select('services.*');
 
         if ($request->has('search')) {
@@ -80,7 +86,6 @@ class ServiceController extends Controller implements HasMiddleware
         $subscriptionId = $user->branch->subscription_id;
         $subscription = $user->branch->subscription;
         
-        // Verificamos el límite sin redirigir
         $currentVersion = $subscription->currentVersion();
         $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_services')->first() : null;
         $limitServices = $limitItem ? $limitItem->quantity : 100;
@@ -91,7 +96,6 @@ class ServiceController extends Controller implements HasMiddleware
             'categories' => Category::where('subscription_id', $subscriptionId)->where('type', 'service')->get(['id', 'name']),
             'branches' => Branch::where('subscription_id', $subscriptionId)->get(['id', 'name']),
             'current_branch_id' => $user->branch_id,
-            // Pasamos la variable a la vista para ocultar el formulario si es true
             'serviceLimitReached' => $serviceLimitReached, 
         ]);
     }
@@ -101,13 +105,11 @@ class ServiceController extends Controller implements HasMiddleware
         $validatedData = $request->validated();
         $user = Auth::user();
 
-        // Validar límite en el backend justo antes de guardar (por seguridad)
         $subscription = $user->branch->subscription;
         $currentVersion = $subscription->currentVersion();
         $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_services')->first() : null;
         $limitServices = $limitItem ? $limitItem->quantity : 100;
         
-        // Calculamos cuántos nuevos servicios/variantes intenta guardar
         $newItemsCount = 1 + (!empty($validatedData['variants']) ? count($validatedData['variants']) : 0);
 
         if ($limitServices !== -1 && ($subscription->services_count + $newItemsCount) > $limitServices) {
@@ -143,12 +145,20 @@ class ServiceController extends Controller implements HasMiddleware
         }
 
         if (!empty($validatedData['has_variants']) && !empty($validatedData['variants'])) {
+            // OPTIMIZACIÓN: Si son muchas variantes, insertarlas en bloque
+            $variantsToInsert = [];
             foreach ($validatedData['variants'] as $variant) {
-                $service->variants()->create([
+                $variantsToInsert[] = [
+                    'service_id' => $service->id,
                     'name' => $variant['name'],
                     'price' => $variant['price'],
                     'duration_estimate' => $variant['duration_estimate'] ?? null,
-                ]);
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            }
+            if (count($variantsToInsert) > 0) {
+                \App\Models\ServiceVariant::insert($variantsToInsert);
             }
         }
 
@@ -179,7 +189,6 @@ class ServiceController extends Controller implements HasMiddleware
         $validatedData = $request->validated();
         $user = Auth::user();
 
-        // Validar límite al agregar nuevas variantes en edición
         $subscription = $user->branch->subscription;
         $currentVersion = $subscription->currentVersion();
         $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_services')->first() : null;
@@ -221,6 +230,7 @@ class ServiceController extends Controller implements HasMiddleware
 
         if (!empty($validatedData['has_variants']) && !empty($validatedData['variants'])) {
             $existingVariantIds = [];
+            $newVariantsToInsert = [];
             
             foreach ($validatedData['variants'] as $variantData) {
                 if (isset($variantData['id']) && $variantData['id']) {
@@ -234,15 +244,31 @@ class ServiceController extends Controller implements HasMiddleware
                         $existingVariantIds[] = $variant->id;
                     }
                 } else {
-                    $newVariant = $service->variants()->create([
+                    $newVariantsToInsert[] = [
+                        'service_id' => $service->id,
                         'name' => $variantData['name'],
                         'price' => $variantData['price'],
                         'duration_estimate' => $variantData['duration_estimate'] ?? null,
-                    ]);
-                    $existingVariantIds[] = $newVariant->id;
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
                 }
             }
-            $service->variants()->whereNotIn('id', $existingVariantIds)->delete();
+
+            if (count($newVariantsToInsert) > 0) {
+                \App\Models\ServiceVariant::insert($newVariantsToInsert);
+                // Obtenemos los IDs de los recién insertados para no borrarlos
+                $newInsertedIds = $service->variants()->where('created_at', '>=', now()->subSeconds(5))->pluck('id')->toArray();
+                $existingVariantIds = array_merge($existingVariantIds, $newInsertedIds);
+            }
+
+            // Eliminar las que ya no están en el array
+            if(count($existingVariantIds) > 0) {
+                $service->variants()->whereNotIn('id', $existingVariantIds)->delete();
+            } else {
+                $service->variants()->delete();
+            }
+            
         } else {
             $service->variants()->delete();
         }
