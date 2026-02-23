@@ -26,6 +26,7 @@ use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use App\Traits\OptimizeMediaLocal;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class ServiceOrderController extends Controller implements HasMiddleware
 {
@@ -50,7 +51,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
         $query = ServiceOrder::query()
             ->where('branch_id', $branchId)
-            ->with('branch:id,name');
+            ->with('branch:id,name', 'transaction.payments');
 
         if ($request->has('search')) {
             $searchTerm = $request->input('search');
@@ -81,13 +82,19 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
     public function show(ServiceOrder $serviceOrder): Response
     {
-        $serviceOrder->load(['branch', 'user', 'customer', 'items.itemable', 'activities.causer', 'media', 'transaction.payments.bankAccount']);
+        $serviceOrder->load(['branch', 'user', 'customer', 'items.itemable' => function (MorphTo $morphTo) {
+            $morphTo->morphWith([
+                \App\Models\Product::class => ['media', 'productAttributes'],
+                \App\Models\Service::class => [],
+                \App\Models\ServiceVariant::class => [],
+            ]);
+        }, 'activities.causer', 'media', 'transaction.payments.bankAccount']);
 
         $translations = config('log_translations.ServiceOrder', []);
 
         $formattedActivities = $serviceOrder->activities->map(function ($activity) use ($translations) {
             $changes = ['before' => [], 'after' => []];
-            
+
             $oldProps = $activity->properties->get('old', []);
             $newProps = $activity->properties->get('attributes', []);
 
@@ -103,7 +110,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     }
                 }
             }
-            
+
             $changes['before'] = array_intersect_key($changes['before'], $changes['after']);
 
             return [
@@ -115,8 +122,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
             ];
         })
-        ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes']))
-        ->values();
+            ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes']))
+            ->values();
 
         $availableTemplates = Auth::user()->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
@@ -197,28 +204,27 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
                 $customer->balanceMovements()->create([
                     'transaction_id' => $transaction->id,
-                    'type' => CustomerBalanceMovementType::CREDIT_SALE, 
+                    'type' => CustomerBalanceMovementType::CREDIT_SALE,
                     'amount' => -$serviceOrder->final_total,
                     'balance_after' => $customer->balance,
                     'notes' => "Cargo por Orden de Servicio #{$serviceOrder->folio}",
-                    'created_at' => $transaction->created_at, 
+                    'created_at' => $transaction->created_at,
                     'updated_at' => $transaction->created_at,
                 ]);
             }
-            
+
             if (!empty($validated['items'])) {
                 foreach ($validated['items'] as $item) {
                     if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
                         unset($item['itemable_id']);
                     }
-                    
+
                     $serviceOrderItem = $serviceOrder->items()->create($item);
 
                     if ($serviceOrderItem->itemable_type === Product::class && $serviceOrderItem->itemable_id) {
                         $product = Product::find($serviceOrderItem->itemable_id);
                         if ($product) $product->decrement('current_stock', $serviceOrderItem->quantity);
-                    }
-                    elseif ($serviceOrderItem->itemable_type === ProductAttribute::class && $serviceOrderItem->itemable_id) {
+                    } elseif ($serviceOrderItem->itemable_type === ProductAttribute::class && $serviceOrderItem->itemable_id) {
                         $variant = ProductAttribute::find($serviceOrderItem->itemable_id);
                         if ($variant) $variant->decrement('current_stock', $serviceOrderItem->quantity);
                     }
@@ -298,7 +304,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
             }
 
             if ($oldItems->count() > 0 || !empty($validated['items'])) {
-                 $itemsChanged = true;
+                $itemsChanged = true;
             }
 
             $serviceOrder->items()->delete();
@@ -308,7 +314,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     if (isset($item['itemable_id']) && $item['itemable_id'] == 0) {
                         unset($item['itemable_id']);
                     }
-                    
+
                     $newServiceOrderItem = $serviceOrder->items()->create($item);
 
                     if ($newServiceOrderItem->itemable_type === Product::class && $newServiceOrderItem->itemable_id) {
@@ -322,9 +328,9 @@ class ServiceOrderController extends Controller implements HasMiddleware
             }
 
             $serviceOrder->update($validated);
-            
+
             if ($itemsChanged) {
-                 activity()
+                activity()
                     ->performedOn($serviceOrder)
                     ->causedBy(Auth::user())
                     ->event('updated')
@@ -333,9 +339,9 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
             $serviceOrder->load('transaction');
             if ($serviceOrder->transaction) {
-                $customer = $serviceOrder->customer; 
+                $customer = $serviceOrder->customer;
                 // Usamos el Accessor 'total' para leer el antiguo, pero NO lo escribimos
-                $oldTotal = $serviceOrder->transaction->total; 
+                $oldTotal = $serviceOrder->transaction->total;
                 $newTotal = $validated['final_total'];
                 $totalDifference = $newTotal - $oldTotal;
 
@@ -399,7 +405,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
         $newStatus = ServiceOrderStatus::from($validated['status']);
 
         if ($newStatus === ServiceOrderStatus::CANCELLED && $oldStatus !== ServiceOrderStatus::CANCELLED) {
-            
+
             DB::transaction(function () use ($serviceOrder) {
                 $serviceOrder->load('items', 'transaction.customer', 'transaction.payments');
 
@@ -419,7 +425,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 if ($customer && $transaction) {
                     $totalPaid = $transaction->payments()->sum('amount');
                     // Aquí 'total' funciona porque es un GET Accessor
-                    $totalDebt = $transaction->total; 
+                    $totalDebt = $transaction->total;
                     $pendingDebt = $totalDebt - $totalPaid;
 
                     if ($pendingDebt > 0.01) {
@@ -436,12 +442,12 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     }
                 }
 
-                if($transaction) {
+                if ($transaction) {
                     $transaction->update(['status' => TransactionStatus::CANCELLED]);
                 }
             });
         }
-        
+
         $serviceOrder->update(['status' => $newStatus->value]);
 
         activity()
@@ -492,7 +498,12 @@ class ServiceOrderController extends Controller implements HasMiddleware
         return [
             'customers' => Customer::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))->get(),
             'products' => Product::where('branch_id', $user->branch_id)->with('productAttributes')->get(),
-            'services' => Service::where('branch_id', $user->branch_id)->get(['id', 'name', 'base_price']),
+            
+            // ACTUALIZADO: Filtramos consultando la tabla pivot de sucursales compartidas
+            'services' => Service::whereHas('branches', function ($q) use ($user) {
+                $q->where('branches.id', $user->branch_id);
+            })->with('variants')->get(),
+            
             'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'service_orders')->get(),
             'userBankAccounts' => $userBankAccounts,
         ];

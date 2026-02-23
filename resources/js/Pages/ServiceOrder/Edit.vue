@@ -26,7 +26,7 @@ const { hasPermission } = usePermissions();
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
-    { label: 'Ódenes de Servicio', url: route('service-orders.index') },
+    { label: 'Órdenes de Servicio', url: route('service-orders.index') },
     { label: `Editar Orden #${props.serviceOrder.folio || props.serviceOrder.id}` }
 ]);
 
@@ -104,28 +104,43 @@ watch([() => form.subtotal, () => form.discount_type, () => form.discount_value]
 }, { immediate: true });
 // --- FIN DE LA LÓGICA MEJORADA ---
 
-// --- INICIO: Lógica de Variantes (Integrada) ---
+// --- INICIO: Lógica de Variantes (Productos y Servicios Integrada) ---
 const showVariantModal = ref(false);
+const showServiceVariantModal = ref(false);
 const productForVariantSelection = ref(null);
+const serviceForVariantSelection = ref(null);
 const itemIndexForVariantSelection = ref(null);
 
 const openVariantSelector = (index) => {
     const item = form.items[index];
     let product = null;
+    let service = null;
 
     // 1. Si es un Producto base
     if (item.itemable_type === 'App\\Models\\Product') {
         product = props.products.find(p => p.id === item.itemable_id);
     } 
-    // 2. Si ya es una Variante (ProductAttribute)
+    // 2. Si ya es una Variante de Producto (ProductAttribute)
     else if (item.itemable_type === 'App\\Models\\ProductAttribute') {
         product = props.products.find(p => p.product_attributes?.some(attr => attr.id === item.itemable_id));
+    }
+    // 3. Si es un Servicio base
+    else if (item.itemable_type === 'App\\Models\\Service') {
+        service = props.services.find(s => s.id === item.itemable_id);
+    }
+    // 4. Si ya es una Variante de Servicio (ServiceVariant)
+    else if (item.itemable_type === 'App\\Models\\ServiceVariant') {
+        service = props.services.find(s => s.variants?.some(v => v.id === item.itemable_id));
     }
 
     if (product) {
         productForVariantSelection.value = product;
         itemIndexForVariantSelection.value = index;
         showVariantModal.value = true;
+    } else if (service) {
+        serviceForVariantSelection.value = service;
+        itemIndexForVariantSelection.value = index;
+        showServiceVariantModal.value = true;
     }
 };
 
@@ -148,12 +163,34 @@ const handleVariantSelected = (variant) => {
     if (!manualSubtotalMode.value) recalculateSubtotal();
 };
 
+const handleServiceVariantSelected = (variant) => {
+    if (itemIndexForVariantSelection.value === null || !form.items[itemIndexForVariantSelection.value]) return;
+    
+    const item = form.items[itemIndexForVariantSelection.value];
+    const service = serviceForVariantSelection.value;
+    
+    // Actualizar a ServiceVariant
+    item.itemable_id = variant.id;
+    item.itemable_type = 'App\\Models\\ServiceVariant';
+
+    item.description = `${service.name} - ${variant.name}`;
+    item.unit_price = parseFloat(variant.price) || 0;
+
+    if (!manualSubtotalMode.value) recalculateSubtotal();
+};
+
 const canSelectVariant = (item) => {
     if (!item.itemable_id) return false;
-    if (item.itemable_type === 'App\\Models\\ProductAttribute') return true;
+    // Si ya está seleccionada una variante, permitir cambiarla
+    if (item.itemable_type === 'App\\Models\\ProductAttribute' || item.itemable_type === 'App\\Models\\ServiceVariant') return true;
+    
     if (item.itemable_type === 'App\\Models\\Product') {
          const p = props.products.find(p => p.id === item.itemable_id);
          return p && p.product_attributes && p.product_attributes.length > 0;
+    }
+    if (item.itemable_type === 'App\\Models\\Service') {
+         const s = props.services.find(s => s.id === item.itemable_id);
+         return s && s.variants && s.variants.length > 0;
     }
     return false;
 };
@@ -188,8 +225,10 @@ const addItem = () => {
         line_total: 0,
     };
     
-    let triggerVariantModal = false;
+    let triggerProductModal = false;
+    let triggerServiceModal = false;
     let productForModal = null;
+    let serviceForModal = null;
 
     if (typeof selectedItem.value === 'object' && selectedItem.value !== null) {
         const selected = selectedItem.value;
@@ -201,10 +240,15 @@ const addItem = () => {
             unit_price: selected.price 
         };
 
-         // Verificar variantes
+        // Verificar variantes (Producto)
         if (selected.itemable_type === 'App\\Models\\Product' && selected.product_attributes && selected.product_attributes.length > 0) {
-            triggerVariantModal = true;
+            triggerProductModal = true;
             productForModal = selected;
+        }
+        // Verificar variantes (Servicio)
+        else if (selected.itemable_type === 'App\\Models\\Service' && selected.variants && selected.variants.length > 0) {
+            triggerServiceModal = true;
+            serviceForModal = selected;
         }
 
     } else if (typeof selectedItem.value === 'string') {
@@ -213,10 +257,14 @@ const addItem = () => {
 
     form.items.push(itemToAdd);
 
-    if (triggerVariantModal) {
+    if (triggerProductModal) {
         productForVariantSelection.value = productForModal;
         itemIndexForVariantSelection.value = form.items.length - 1;
         showVariantModal.value = true;
+    } else if (triggerServiceModal) {
+        serviceForVariantSelection.value = serviceForModal;
+        itemIndexForVariantSelection.value = form.items.length - 1;
+        showServiceVariantModal.value = true;
     }
 
     selectedItem.value = null;
@@ -378,9 +426,9 @@ const submit = () => {
                     </template>
                     <Column header="Tipo" style="width: 15rem">
                         <template #body="{ data, index }">
-                             <!-- Lógica corregida: Si es ProductAttribute, visualmente sigue siendo 'Producto' -->
+                             <!-- Lógica corregida: Si es ServiceVariant o ProductAttribute visualmente se adapta -->
                             <SelectButton 
-                                :model-value="['App\\Models\\Product', 'App\\Models\\ProductAttribute'].includes(form.items[index].itemable_type) ? 'App\\Models\\Product' : form.items[index].itemable_type"
+                                :model-value="['App\\Models\\Product', 'App\\Models\\ProductAttribute'].includes(form.items[index].itemable_type) ? 'App\\Models\\Product' : (['App\\Models\\Service', 'App\\Models\\ServiceVariant'].includes(form.items[index].itemable_type) ? 'App\\Models\\Service' : form.items[index].itemable_type)"
                                 @update:model-value="(val) => form.items[index].itemable_type = val"
                                 :options="itemTypeOptions"
                                 optionLabel="label" 
@@ -398,11 +446,11 @@ const submit = () => {
                     <Column field="description" header="Descripción">
                         <template #body="{ data, index }">
                             <InputText v-model="form.items[index].description" fluid class="w-full" />
-                            <!-- Botón para cambiar variante (lógica corregida) -->
+                            <!-- Botón para cambiar variante -->
                             <div v-if="canSelectVariant(data)" class="text-xs text-gray-500 mt-1">
                                 <Button 
                                     @click="openVariantSelector(index)" 
-                                    :label="data.variant_details ? 'Cambiar variante' : 'Seleccionar variante'" 
+                                    :label="['App\\Models\\ProductAttribute', 'App\\Models\\ServiceVariant'].includes(data.itemable_type) ? 'Cambiar variante' : 'Seleccionar variante'" 
                                     text size="small" class="!p-0" 
                                 />
                             </div>
@@ -568,9 +616,21 @@ const submit = () => {
         <ManageCustomFields ref="manageFieldsComponent" module="service_orders"
             :definitions="props.customFieldDefinitions" />
 
-        <!-- Modal de Variantes -->
-        <SelectVariantModal v-model:visible="showVariantModal" :product="productForVariantSelection"
-            @variant-selected="handleVariantSelected" />
+        <!-- Modal de Variantes (Actualizado para Productos) -->
+        <SelectVariantModal 
+            v-model:visible="showVariantModal" 
+            :item="productForVariantSelection"
+            type="product"
+            @variant-selected="handleVariantSelected" 
+        />
+
+        <!-- NUEVO: Modal de Variantes (Para Servicios) -->
+        <SelectVariantModal 
+            v-model:visible="showServiceVariantModal" 
+            :item="serviceForVariantSelection"
+            type="service"
+            @variant-selected="handleServiceVariantSelected" 
+        />
 
         <ConfirmPopup group="concept-delete" />
     </AppLayout>

@@ -13,7 +13,7 @@ Route::middleware(['auth'])->prefix('subscription')->name('subscription.')->grou
     Route::put('/', [SubscriptionController::class, 'update'])->name('update');
     
     // El endpoint para subir documentos
-    Route::post('/documents', [SubscriptionController::class, 'storeDocument'])->name('documents.store');
+    Route::post('/documents', [SubscriptionController::class, 'storeDocument'])->name('document.store');
     
     // El endpoint para solicitar facturas
     Route::post('/payments/{payment}/request-invoice', [SubscriptionController::class, 'requestInvoice'])->name('payments.request-invoice');
@@ -32,7 +32,7 @@ Route::middleware(['auth'])->prefix('subscription')->name('subscription.')->grou
     Route::post('/manage', [SubscriptionController::class, 'processManagement'])->name('manage.store');
 
     /**
-     * AÑADIDO: Revierte una versión rechazada.
+     * Revierte una versión rechazada.
      * El cliente puede cancelar la actualización y volver a su plan anterior.
      */
     Route::delete('/revert', [SubscriptionController::class, 'revert'])->name('revert');

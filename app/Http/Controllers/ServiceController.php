@@ -6,6 +6,7 @@ use App\Http\Requests\StoreServiceRequest;
 use App\Http\Requests\UpdateServiceRequest;
 use App\Models\Category;
 use App\Models\Service;
+use App\Models\Branch;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -34,25 +35,33 @@ class ServiceController extends Controller implements HasMiddleware
     {
         $user = Auth::user();
         $branchId = $user->branch_id;
+        $subscription = $user->branch->subscription;
 
-        // SOLUCIÓN: Usar JOIN para permitir el ordenamiento por columnas de tablas relacionadas
+        $servicesCount = $subscription->services_count;
+        
+        $currentVersion = $subscription->currentVersion();
+        $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_services')->first() : null;
+        
+        $limitServices = $limitItem ? $limitItem->quantity : 100; 
+        
+        $serviceLimitReached = $limitServices !== -1 && $servicesCount >= $limitServices;
+
         $query = Service::query()
             ->join('categories', 'services.category_id', '=', 'categories.id')
-            ->where('branch_id', $branchId)
-            ->with('category:id,name')
-            // Seleccionar explícitamente las columnas de la tabla principal para evitar conflictos
+            ->whereHas('branches', function ($q) use ($branchId) {
+                $q->where('branches.id', $branchId);
+            })
+            ->with(['category:id,name', 'variants', 'branches:id,name'])
             ->select('services.*');
 
         if ($request->has('search')) {
             $searchTerm = $request->input('search');
-            // Especificar la tabla en la columna 'name' para evitar ambigüedad
             $query->where('services.name', 'LIKE', "%{$searchTerm}%");
         }
 
         $sortField = $request->input('sortField', 'created_at');
         $sortOrder = $request->input('sortOrder', 'desc');
 
-        // Usar el nombre completo de la columna para el ordenamiento
         $sortColumn = $sortField === 'category.name' ? 'categories.name' : $sortField;
         $query->orderBy($sortColumn, $sortOrder);
 
@@ -61,14 +70,29 @@ class ServiceController extends Controller implements HasMiddleware
         return Inertia::render('Service/Index', [
             'services' => $services,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
+            'serviceLimitReached' => $serviceLimitReached, 
         ]);
     }
 
     public function create(): Response
     {
-        $subscriptionId = Auth::user()->branch->subscription_id;
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+        $subscription = $user->branch->subscription;
+        
+        // Verificamos el límite sin redirigir
+        $currentVersion = $subscription->currentVersion();
+        $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_services')->first() : null;
+        $limitServices = $limitItem ? $limitItem->quantity : 100;
+        
+        $serviceLimitReached = $limitServices !== -1 && $subscription->services_count >= $limitServices;
+
         return Inertia::render('Service/Create', [
             'categories' => Category::where('subscription_id', $subscriptionId)->where('type', 'service')->get(['id', 'name']),
+            'branches' => Branch::where('subscription_id', $subscriptionId)->get(['id', 'name']),
+            'current_branch_id' => $user->branch_id,
+            // Pasamos la variable a la vista para ocultar el formulario si es true
+            'serviceLimitReached' => $serviceLimitReached, 
         ]);
     }
 
@@ -77,18 +101,56 @@ class ServiceController extends Controller implements HasMiddleware
         $validatedData = $request->validated();
         $user = Auth::user();
 
+        // Validar límite en el backend justo antes de guardar (por seguridad)
+        $subscription = $user->branch->subscription;
+        $currentVersion = $subscription->currentVersion();
+        $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_services')->first() : null;
+        $limitServices = $limitItem ? $limitItem->quantity : 100;
+        
+        // Calculamos cuántos nuevos servicios/variantes intenta guardar
+        $newItemsCount = 1 + (!empty($validatedData['variants']) ? count($validatedData['variants']) : 0);
+
+        if ($limitServices !== -1 && ($subscription->services_count + $newItemsCount) > $limitServices) {
+            return redirect()->back()->with('error', 'Esta acción excede tu límite de servicios. Mejora tu suscripción.');
+        }
+
         $baseSlug = Str::slug($validatedData['name']);
         $slug = $baseSlug;
         $counter = 1;
-        // El slug debe ser único por sucursal
-        while (Service::where('branch_id', $user->branch_id)->where('slug', $slug)->exists()) {
+        
+        $subscriptionId = $user->branch->subscription_id;
+        while (Service::whereHas('branch', function ($q) use ($subscriptionId) {
+            $q->where('subscription_id', $subscriptionId);
+        })->where('slug', $slug)->exists()) {
             $slug = $baseSlug . '-' . $counter++;
         }
 
-        $service = Service::create(array_merge($validatedData, [
-            'branch_id' => $user->branch_id,
-            'slug' => $slug,
-        ]));
+        $serviceData = collect($validatedData)->except(['has_variants', 'variants', 'image', 'branch_ids'])->toArray();
+        $serviceData['branch_id'] = $user->branch_id; 
+        $serviceData['slug'] = $slug;
+
+        if (!empty($validatedData['has_variants'])) {
+            $serviceData['base_price'] = 0;
+            $serviceData['duration_estimate'] = null;
+        }
+
+        $service = Service::create($serviceData);
+
+        if (!empty($validatedData['branch_ids'])) {
+            $service->branches()->sync($validatedData['branch_ids']);
+        } else {
+            $service->branches()->sync([$user->branch_id]);
+        }
+
+        if (!empty($validatedData['has_variants']) && !empty($validatedData['variants'])) {
+            foreach ($validatedData['variants'] as $variant) {
+                $service->variants()->create([
+                    'name' => $variant['name'],
+                    'price' => $variant['price'],
+                    'duration_estimate' => $variant['duration_estimate'] ?? null,
+                ]);
+            }
+        }
 
         if ($request->hasFile('image')) {
             $mediaItem = $service->addMediaFromRequest('image')->toMediaCollection('service-image');
@@ -100,30 +162,90 @@ class ServiceController extends Controller implements HasMiddleware
 
     public function edit(Service $service): Response
     {
-        $subscriptionId = Auth::user()->branch->subscription_id;
-        $service->load('media');
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+        
+        $service->load(['media', 'variants', 'branches:id']); 
+        
         return Inertia::render('Service/Edit', [
             'service' => $service,
             'categories' => Category::where('subscription_id', $subscriptionId)->where('type', 'service')->get(['id', 'name']),
+            'branches' => Branch::where('subscription_id', $subscriptionId)->get(['id', 'name']),
         ]);
     }
 
     public function update(UpdateServiceRequest $request, Service $service)
     {
         $validatedData = $request->validated();
+        $user = Auth::user();
+
+        // Validar límite al agregar nuevas variantes en edición
+        $subscription = $user->branch->subscription;
+        $currentVersion = $subscription->currentVersion();
+        $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_services')->first() : null;
+        $limitServices = $limitItem ? $limitItem->quantity : 100;
+
+        if (!empty($validatedData['has_variants']) && !empty($validatedData['variants'])) {
+            $newVariantsCount = collect($validatedData['variants'])->filter(fn($v) => empty($v['id']))->count();
+            if ($newVariantsCount > 0 && $limitServices !== -1 && ($subscription->services_count + $newVariantsCount) > $limitServices) {
+                return redirect()->back()->with('error', 'No puedes agregar estas variantes porque excedes el límite de servicios de tu plan.');
+            }
+        }
 
         if ($service->name !== $validatedData['name']) {
             $baseSlug = Str::slug($validatedData['name']);
             $slug = $baseSlug;
             $counter = 1;
-            // Asegurarse de que el nuevo slug sea único, excluyendo el servicio actual
-            while (Service::where('branch_id', $service->branch_id)->where('slug', $slug)->where('id', '!=', $service->id)->exists()) {
+            
+            $subscriptionId = $user->branch->subscription_id;
+            while (Service::whereHas('branch', function ($q) use ($subscriptionId) {
+                $q->where('subscription_id', $subscriptionId);
+            })->where('slug', $slug)->where('id', '!=', $service->id)->exists()) {
                 $slug = $baseSlug . '-' . $counter++;
             }
-            $validatedData['slug'] = $slug; // Añadir el nuevo slug a los datos a actualizar
+            $validatedData['slug'] = $slug;
         }
 
-        $service->update($validatedData);
+        $serviceData = collect($validatedData)->except(['has_variants', 'variants', 'image', 'branch_ids'])->toArray();
+
+        if (!empty($validatedData['has_variants'])) {
+            $serviceData['base_price'] = 0;
+            $serviceData['duration_estimate'] = null;
+        }
+
+        $service->update($serviceData);
+
+        if (!empty($validatedData['branch_ids'])) {
+            $service->branches()->sync($validatedData['branch_ids']);
+        }
+
+        if (!empty($validatedData['has_variants']) && !empty($validatedData['variants'])) {
+            $existingVariantIds = [];
+            
+            foreach ($validatedData['variants'] as $variantData) {
+                if (isset($variantData['id']) && $variantData['id']) {
+                    $variant = $service->variants()->find($variantData['id']);
+                    if ($variant) {
+                        $variant->update([
+                            'name' => $variantData['name'],
+                            'price' => $variantData['price'],
+                            'duration_estimate' => $variantData['duration_estimate'] ?? null,
+                        ]);
+                        $existingVariantIds[] = $variant->id;
+                    }
+                } else {
+                    $newVariant = $service->variants()->create([
+                        'name' => $variantData['name'],
+                        'price' => $variantData['price'],
+                        'duration_estimate' => $variantData['duration_estimate'] ?? null,
+                    ]);
+                    $existingVariantIds[] = $newVariant->id;
+                }
+            }
+            $service->variants()->whereNotIn('id', $existingVariantIds)->delete();
+        } else {
+            $service->variants()->delete();
+        }
 
         if ($request->hasFile('image')) {
             $service->clearMediaCollection('service-image');
@@ -136,7 +258,7 @@ class ServiceController extends Controller implements HasMiddleware
 
     public function show(Service $service): Response
     {
-        $service->load(['category', 'media', 'activities.causer']);
+        $service->load(['category', 'media', 'activities.causer', 'variants', 'branches']);
         $translations = config('log_translations.Service', []);
 
         $formattedActivities = $service->activities->map(function ($activity) use ($translations) {
