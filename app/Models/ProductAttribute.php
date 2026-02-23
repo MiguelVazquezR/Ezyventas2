@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class ProductAttribute extends Model
 {
@@ -59,5 +60,21 @@ class ProductAttribute extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    /**
+     * Inventario de esta variante en cada sucursal
+     */
+    public function branches(): BelongsToMany
+    {
+        return $this->belongsToMany(Branch::class, 'branch_product_attribute')
+            ->using(BranchProductAttribute::class)
+            ->withPivot([
+                'price_modifier',
+                'current_stock',
+                'reserved_stock',
+                'location'
+            ])
+            ->withTimestamps();
     }
 }

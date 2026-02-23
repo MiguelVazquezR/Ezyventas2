@@ -14,7 +14,7 @@ class StoreProductRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true; // Asumimos que si el usuario está logueado, puede crear productos.
+        return true; 
     }
 
     /**
@@ -34,26 +34,29 @@ class StoreProductRequest extends FormRequest
                 'nullable',
                 'string',
                 'max:255',
-                // CORRECCIÓN: Validación única SOLO para la sucursal actual (branch_id).
-                // Esto permite que otras sucursales (incluso de la misma empresa) usen el mismo SKU.
+                // Validación única SOLO para la sucursal actual (branch_id).
                 Rule::unique('products')->where(function (Builder $query) use ($user) {
                     return $query->where('branch_id', $user->branch_id);
                 }),
             ],
             'location' => 'nullable|string|max:255',
+            
+            // NUEVO: Validación de Sucursales Múltiples
+            'branch_ids' => 'required|array|min:1',
+            'branch_ids.*' => 'exists:branches,id',
+
             'category_id' => 'required|exists:categories,id',
             'brand_id' => 'nullable|exists:brands,id',
-
-            // Precios
             'cost_price' => 'nullable|numeric|min:0',
             'provider_id' => 'nullable|exists:providers,id',
             'selling_price' => 'required|numeric|min:0',
+            
             'price_tiers' => 'nullable|array',
             'price_tiers.*.min_quantity' => [
                 'required',
                 'integer',
-                'min:2', // El min 1 es el selling_price
-                'distinct' // No permite dos niveles con la misma cantidad
+                'min:2', 
+                'distinct' 
             ],
             'price_tiers.*.price' => [
                 'required',
@@ -63,9 +66,9 @@ class StoreProductRequest extends FormRequest
 
             // Inventario y Variantes
             'product_type' => 'required|in:simple,variant',
-            'current_stock' => 'required_if:product_type,simple|nullable|integer|min:0',
-            'min_stock' => 'nullable|integer|min:0',
-            'max_stock' => 'nullable|integer|min:0',
+            'current_stock' => 'required_if:product_type,simple|nullable|numeric|min:0',
+            'min_stock' => 'nullable|numeric|min:0',
+            'max_stock' => 'nullable|numeric|min:0',
             'measure_unit' => 'required|string|max:50',
 
             // Variantes (la matriz llega como array)
@@ -85,7 +88,15 @@ class StoreProductRequest extends FormRequest
             'length' => 'nullable|numeric|min:0',
             'width' => 'nullable|numeric|min:0',
             'height' => 'nullable|numeric|min:0',
-            'tags' => 'nullable|array',
+            
+            // Configuraciones Adicionales
+            'delivery_days' => 'nullable|integer|min:0',
+            'tags' => 'nullable|string',
+            'is_featured' => 'boolean',
+            'is_on_sale' => 'boolean',
+            'sale_price' => 'nullable|numeric|min:0',
+            'sale_start_date' => 'nullable|date',
+            'sale_end_date' => 'nullable|date|after_or_equal:sale_start_date',
         ];
     }
 }

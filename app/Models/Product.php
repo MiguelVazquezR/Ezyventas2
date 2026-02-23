@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
@@ -22,18 +23,13 @@ class Product extends Model implements HasMedia
         'name',
         'description',
         'sku',
-        'location',
         'selling_price',
         'price_tiers',
         'cost_price',
-        'current_stock',
-        'reserved_stock',
-        'min_stock',
-        'max_stock',
         'category_id',
         'provider_id',
         'brand_id',
-        'branch_id',
+        'branch_id', // Se mantiene como la Sucursal "Propietaria/Creadora"
         'global_product_id',
         'measure_unit',
         'currency',
@@ -233,5 +229,23 @@ class Product extends Model implements HasMedia
     public function productAttributes(): HasMany
     {
         return $this->hasMany(ProductAttribute::class);
+    }
+
+    /**
+     *  Sucursales donde el producto está disponible y su inventario
+     */
+    public function branches(): BelongsToMany
+    {
+        return $this->belongsToMany(Branch::class, 'branch_product')
+            ->using(BranchProduct::class)
+            ->withPivot([
+                'price_modifier',
+                'current_stock',
+                'reserved_stock',
+                'min_stock',
+                'max_stock',
+                'location'
+            ])
+            ->withTimestamps();
     }
 }

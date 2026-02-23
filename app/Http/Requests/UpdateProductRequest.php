@@ -31,19 +31,24 @@ class UpdateProductRequest extends FormRequest
                     return $query->where('branch_id', $user->branch_id);
                 }),
             ],
-            'location' => 'nullable|string|max:255', // <-- Nueva validación para localización
+            'location' => 'nullable|string|max:255', 
+
+            // NUEVO: Validación de Sucursales Múltiples
+            'branch_ids' => 'required|array|min:1',
+            'branch_ids.*' => 'exists:branches,id',
 
             'category_id' => 'required|exists:categories,id',
             'brand_id' => 'nullable|exists:brands,id',
             'cost_price' => 'nullable|numeric|min:0',
             'provider_id' => 'nullable|exists:providers,id',
             'selling_price' => 'required|numeric|min:0',
+            
             'price_tiers' => 'nullable|array',
             'price_tiers.*.min_quantity' => [
                 'required',
                 'integer',
-                'min:2', // El min 1 es el selling_price
-                'distinct' // No permite dos niveles con la misma cantidad
+                'min:2', 
+                'distinct' 
             ],
             'price_tiers.*.price' => [
                 'required',
@@ -51,18 +56,26 @@ class UpdateProductRequest extends FormRequest
                 'min:0.01'
             ],
             'tax_rate' => 'nullable|numeric',
+            
+            // Inventario y Variantes
             'product_type' => 'required|in:simple,variant',
-            'current_stock' => 'required_if:product_type,simple|nullable|integer|min:0',
-            'min_stock' => 'nullable|integer|min:0',
-            'max_stock' => 'nullable|integer|min:0',
+            'current_stock' => 'required_if:product_type,simple|nullable|numeric|min:0',
+            'min_stock' => 'nullable|numeric|min:0',
+            'max_stock' => 'nullable|numeric|min:0',
             'measure_unit' => 'required|string|max:50',
+            
+            // Variantes (la matriz llega como array)
             'variants_matrix' => 'required_if:product_type,variant|array',
+            
+            // Imágenes
             'general_images' => 'nullable|array|max:5',
             'general_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp,avif',
             'variant_images' => 'nullable|array',
             'variant_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp,avif',
-            'deleted_media_ids' => 'nullable|array', // Para las imágenes a eliminar
+            'deleted_media_ids' => 'nullable|array', 
             'deleted_media_ids.*' => 'integer|exists:media,id',
+            
+            // Tienda en Línea
             'show_online' => 'sometimes|boolean',
             'online_price' => 'nullable|numeric|min:0',
             'requires_shipping' => 'sometimes|boolean',
@@ -70,7 +83,15 @@ class UpdateProductRequest extends FormRequest
             'length' => 'nullable|numeric|min:0',
             'width' => 'nullable|numeric|min:0',
             'height' => 'nullable|numeric|min:0',
-            'tags' => 'nullable|array',
+            
+            // Configuraciones Adicionales
+            'delivery_days' => 'nullable|integer|min:0',
+            'tags' => 'nullable|string',
+            'is_featured' => 'sometimes|boolean',
+            'is_on_sale' => 'sometimes|boolean',
+            'sale_price' => 'nullable|numeric|min:0',
+            'sale_start_date' => 'nullable|date',
+            'sale_end_date' => 'nullable|date|after_or_equal:sale_start_date',
         ];
     }
 }

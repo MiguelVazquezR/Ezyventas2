@@ -9,6 +9,7 @@ use App\Http\Requests\StoreProductRequest;
 use App\Http\Requests\UpdateProductRequest;
 use App\Models\AttributeDefinition;
 use App\Models\Brand;
+use App\Models\Branch;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductAttribute;
@@ -43,69 +44,92 @@ class ProductController extends Controller implements HasMiddleware
         ];
     }
 
-    private function getProductLimitData()
-    {
-        $subscription = Auth::user()->branch->subscription;
-        $currentVersion = $subscription->versions()->latest('start_date')->first();
-        $limit = -1;
-        if ($currentVersion) {
-            $limitItem = $currentVersion->items()->where('item_key', 'limit_products')->first();
-            if ($limitItem) {
-                $limit = $limitItem->quantity;
-            }
-        }
-        // Count products specifically for the current subscription
-        $usage = Product::whereHas('branch.subscription', function ($q) use ($subscription) {
-            $q->where('id', $subscription->id);
-        })->count();
-        return ['limit' => $limit, 'usage' => $usage];
-    }
-
     public function index(Request $request): Response
     {
         $user = Auth::user();
-        $query = Product::query()->where('branch_id', $user->branch_id)->with('media');
+        $branchId = $user->branch_id;
+        $subscription = $user->branch->subscription;
+
+        // Validar límite de productos
+        $productsCount = $subscription->products_count;
+        $currentVersion = $subscription->currentVersion();
+        $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_products')->first() : null;
+        $limitProducts = $limitItem ? $limitItem->quantity : 50; 
+        
+        $productLimitReached = $limitProducts !== -1 && $productsCount >= $limitProducts;
+
+        // Consultamos los productos vinculados a esta sucursal mediante la tabla pivot
+        $query = Product::query()
+            ->with([
+                'category', 
+                'brand', 
+                'media', 
+                'branches' => function ($q) use ($branchId) {
+                    $q->where('branches.id', $branchId);
+                },
+                'productAttributes.branches' => function ($q) use ($branchId) {
+                    $q->where('branches.id', $branchId);
+                }
+            ])
+            ->whereHas('branches', function ($q) use ($branchId) {
+                $q->where('branches.id', $branchId);
+            });
 
         if ($request->has('search')) {
             $searchTerm = $request->input('search');
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('name', 'LIKE', "%{$searchTerm}%")
-                    ->orWhere('sku', 'LIKE', "%{$searchTerm}%")
-                    ->orWhere('location', 'LIKE', "%{$searchTerm}%");
+                  ->orWhere('sku', 'LIKE', "%{$searchTerm}%");
             });
         }
 
         $sortField = $request->input('sortField', 'created_at');
         $sortOrder = $request->input('sortOrder', 'desc');
-        $query->orderBy($sortField, $sortOrder);
+        
+        if ($sortField === 'category.name') {
+            $query->join('categories', 'products.category_id', '=', 'categories.id')
+                  ->orderBy('categories.name', $sortOrder)
+                  ->select('products.*');
+        } else {
+            $query->orderBy($sortField, $sortOrder);
+        }
 
         $products = $query->paginate($request->input('rows', 20))->withQueryString();
 
-        $availableTemplates = $user->branch->printTemplates()
-            ->where('type', TemplateType::LABEL)
-            ->whereIn('context_type', [TemplateContextType::PRODUCT, TemplateContextType::GENERAL])
-            ->get();
+        // Mapeo inteligente: Inyectamos el stock del pivot como si fuera una columna directa 
+        // para que Vue no note la diferencia
+        $products->getCollection()->transform(function ($product) {
+            $branchPivot = $product->branches->first()?->pivot;
+            if ($branchPivot) {
+                $product->current_stock = $branchPivot->current_stock;
+                $product->reserved_stock = $branchPivot->reserved_stock;
+                $product->min_stock = $branchPivot->min_stock;
+                $product->max_stock = $branchPivot->max_stock;
+                $product->location = $branchPivot->location;
+            } else {
+                $product->current_stock = 0;
+            }
 
-        $limitData = $this->getProductLimitData();
-
-        $stockByCategory = Category::query()
-            ->where('type', 'product')
-            ->where('subscription_id', $user->branch->subscription_id)
-            ->withSum(['products' => function ($query) use ($user) {
-                $query->where('branch_id', $user->branch_id);
-            }], 'current_stock')
-            ->get()
-            ->filter(fn($category) => $category->products_sum_current_stock > 0)
-            ->sortBy('name')
-            ->values();
+            // Lo mismo para las variantes
+            if ($product->productAttributes) {
+                $product->productAttributes->transform(function ($variant) {
+                    $vPivot = $variant->branches->first()?->pivot;
+                    if ($vPivot) {
+                        $variant->current_stock = $vPivot->current_stock;
+                        $variant->reserved_stock = $vPivot->reserved_stock;
+                    } else {
+                        $variant->current_stock = 0;
+                    }
+                    return $variant;
+                });
+            }
+            return $product;
+        });
 
         return Inertia::render('Product/Index', [
             'products' => $products,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
-            'productLimit' => $limitData['limit'],
-            'productUsage' => $limitData['usage'],
-            'availableTemplates' => $availableTemplates,
-            'stockByCategory' => $stockByCategory,
+            'productLimitReached' => $productLimitReached,
         ]);
     }
 
@@ -113,298 +137,173 @@ class ProductController extends Controller implements HasMiddleware
     {
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
-        $limitData = $this->getProductLimitData();
-
-        $globalBrands = Brand::whereNull('subscription_id')
-            ->whereHas('businessTypes', function ($query) use ($user) {
-                if ($user->branch && $user->branch->subscription) {
-                    $query->where('business_type_id', $user->branch->subscription->business_type_id);
-                }
-            })->get(['id', 'name']);
-
-        $subscriberBrands = Brand::where('subscription_id', $subscriptionId)->get(['id', 'name']);
-
-        $formattedBrands = [
-            ['label' => 'Mis Marcas', 'items' => $subscriberBrands],
-            ['label' => 'Marcas del Catálogo', 'items' => $globalBrands],
-        ];
-        $categories = Category::where(['subscription_id' => $subscriptionId, 'type' => 'product'])->get(['id', 'name']);
-        $providers = Provider::where('subscription_id', $subscriptionId)->get(['id', 'name']);
-        $attributeDefinitions = AttributeDefinition::with('options')->where('subscription_id', $subscriptionId)->get();
+        $subscription = $user->branch->subscription;
+        
+        $currentVersion = $subscription->currentVersion();
+        $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_products')->first() : null;
+        $limitProducts = $limitItem ? $limitItem->quantity : 50;
+        
+        $productLimitReached = $limitProducts !== -1 && $subscription->products_count >= $limitProducts;
 
         return Inertia::render('Product/Create', [
-            'categories' => $categories,
-            'brands' => $formattedBrands,
-            'providers' => $providers,
-            'attributeDefinitions' => $attributeDefinitions,
-            'productLimit' => $limitData['limit'],
-            'productUsage' => $limitData['usage'],
+            'categories' => Category::where('subscription_id', $subscriptionId)->where('type', 'product')->get(),
+            'brands' => Brand::where('subscription_id', $subscriptionId)->get(),
+            'providers' => Provider::where('subscription_id', $subscriptionId)->get(),
+            // CORRECCIÓN: Agregado with('options') para traer los valores de los atributos
+            'attributeDefinitions' => AttributeDefinition::with('options')->where('subscription_id', $subscriptionId)->get(),
+            'branches' => Branch::where('subscription_id', $subscriptionId)->get(['id', 'name']),
+            'current_branch_id' => $user->branch_id,
+            'productLimitReached' => $productLimitReached,
         ]);
     }
 
     public function store(StoreProductRequest $request)
     {
-        $limitData = $this->getProductLimitData();
-        if ($limitData['limit'] !== -1 && $limitData['usage'] >= $limitData['limit']) {
-            throw ValidationException::withMessages([
-                'limit' => 'Has alcanzado el límite de productos de tu plan.'
-            ]);
+        $validated = $request->validated();
+        $user = Auth::user();
+        $subscription = $user->branch->subscription;
+
+        $currentVersion = $subscription->currentVersion();
+        $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_products')->first() : null;
+        $limitProducts = $limitItem ? $limitItem->quantity : 50;
+        
+        $newItemsCount = 1 + (!empty($validated['variants']) ? count($validated['variants']) : 0);
+
+        if ($limitProducts !== -1 && ($subscription->products_count + $newItemsCount) > $limitProducts) {
+            return redirect()->back()->with('error', 'Excedes tu límite de productos. Mejora tu suscripción.');
         }
 
-        DB::transaction(function () use ($request) {
-            $user = Auth::user();
-            $branch = $user->branch;
-            $validatedData = $request->validated();
-            $baseSlug = Str::slug($validatedData['name']);
-            $slug = $baseSlug;
-            $counter = 1;
-            while (Product::where('branch_id', $branch->id)->where('slug', $slug)->exists()) {
-                $slug = $baseSlug . '-' . $counter++;
-            }
-            $validatedData['slug'] = $slug;
+        DB::transaction(function () use ($validated, $user, $request) {
+            // Se omiten los campos de stock para el modelo padre, ahora van al pivot
+            $productData = collect($validated)->except(['has_variants', 'variants', 'image', 'branch_ids', 'current_stock', 'min_stock', 'max_stock', 'location'])->toArray();
+            
+            $productData['branch_id'] = $user->branch_id;
+            $productData['slug'] = Str::slug($validated['name'] . '-' . uniqid());
 
-            if ($validatedData['product_type'] === 'variant') {
-                $variantsMatrix = $validatedData['variants_matrix'];
-                $validatedData['current_stock'] = collect($variantsMatrix)->where('selected', true)->sum('current_stock');
-            }
-            $productData = collect($validatedData)->except(['general_images', 'variant_images', 'variants_matrix'])->all();
-            $product = Product::create(array_merge($productData, ['branch_id' => $branch->id]));
-
-            if ($request->hasFile('general_images')) {
-                foreach (array_keys($request->file('general_images')) as $key) {
-                    $mediaItem = $product->addMediaFromRequest("general_images.{$key}")
-                        ->toMediaCollection('product-general-images');
-                    $this->optimizeMediaLocal($mediaItem);
-                }
-            }
-            if ($request->hasFile('variant_images')) {
-                foreach (array_keys($request->file('variant_images')) as $optionValue) {
-                    $mediaItem = $product->addMediaFromRequest("variant_images.{$optionValue}")
-                        ->withCustomProperties(['variant_option' => $optionValue])
-                        ->toMediaCollection('product-variant-images');
-                    $this->optimizeMediaLocal($mediaItem);
-                }
+            if (!empty($validated['has_variants'])) {
+                $productData['selling_price'] = 0;
             }
 
-            if ($validatedData['product_type'] === 'variant') {
-                $variantsMatrix = $validatedData['variants_matrix'];
-                foreach ($variantsMatrix as $combination) {
-                    if (empty($combination['selected'])) continue;
-                    $attributes = collect($combination)->except(['selected', 'sku_suffix', 'current_stock', 'min_stock', 'max_stock', 'selling_price', 'row_id'])->all();
-                    $product->productAttributes()->create([
-                        'attributes' => $attributes,
-                        'sku_suffix' => $combination['sku_suffix'],
-                        'current_stock' => $combination['current_stock'],
-                        'min_stock' => $combination['min_stock'],
-                        'max_stock' => $combination['max_stock'],
-                        'selling_price_modifier' => $combination['selling_price'] - $product->selling_price,
+            $product = Product::create($productData);
+
+            // Sincronización Multi-Sucursal (Pivot)
+            $branchesToSync = $request->input('branch_ids', [$user->branch_id]);
+            $syncData = [];
+            foreach ($branchesToSync as $bId) {
+                $syncData[$bId] = [
+                    // Si es la sucursal del usuario, le damos el stock inicial, si es otra, inicia en 0
+                    'current_stock' => ($bId == $user->branch_id) ? ($validated['current_stock'] ?? 0) : 0,
+                    'reserved_stock' => 0,
+                    'min_stock' => $validated['min_stock'] ?? null,
+                    'max_stock' => $validated['max_stock'] ?? null,
+                    'location' => ($bId == $user->branch_id) ? ($validated['location'] ?? null) : null,
+                    'price_modifier' => 0,
+                ];
+            }
+            $product->branches()->sync($syncData);
+
+            // Variantes
+            if (!empty($validated['has_variants']) && !empty($validated['variants'])) {
+                foreach ($validated['variants'] as $variantData) {
+                    $variant = $product->productAttributes()->create([
+                        'attributes' => $variantData['attributes'],
+                        'sku' => $variantData['sku'] ?? null,
+                        'selling_price_modifier' => $variantData['selling_price_modifier'] ?? 0,
                     ]);
+
+                    $variantSyncData = [];
+                    foreach ($branchesToSync as $bId) {
+                        $variantSyncData[$bId] = [
+                            'current_stock' => ($bId == $user->branch_id) ? ($variantData['current_stock'] ?? 0) : 0,
+                            'reserved_stock' => 0,
+                            'price_modifier' => 0,
+                        ];
+                    }
+                    $variant->branches()->sync($variantSyncData);
                 }
+            }
+
+            if ($request->hasFile('image')) {
+                $mediaItem = $product->addMediaFromRequest('image')->toMediaCollection('product-images');
+                $this->optimizeMediaLocal($mediaItem);
             }
         });
 
         return redirect()->route('products.index')->with('success', 'Producto creado con éxito.');
     }
 
-    public function edit(Product $product): Response
+    public function show(Product $product): Response
     {
         $user = Auth::user();
-        $subscriptionId = $user->branch->subscription_id;
-
-        $product->load('productAttributes', 'media');
-
-        $formattedAttributes = $product->productAttributes->mapWithKeys(function ($attr) use ($product) {
-            $key = collect($attr->attributes)->sortKeys()->implode('-');
-            return [$key => [
-                'attributes' => $attr->attributes,
-                'sku_suffix' => $attr->sku_suffix,
-                'current_stock' => $attr->current_stock,
-                'min_stock' => $attr->min_stock,
-                'max_stock' => $attr->max_stock,
-                'selling_price' => $product->selling_price + $attr->selling_price_modifier,
-            ]];
-        });
-
-        $globalBrands = Brand::whereNull('subscription_id')
-            ->whereHas('businessTypes', function ($query) use ($user) {
-                if ($user->branch && $user->branch->subscription) {
-                    $query->where('business_type_id', $user->branch->subscription->business_type_id);
-                }
-            })->get(['id', 'name']);
-
-        $subscriberBrands = Brand::where('subscription_id', $subscriptionId)->get(['id', 'name']);
-
-        $formattedBrands = [
-            ['label' => 'Mis Marcas', 'items' => $subscriberBrands],
-            ['label' => 'Marcas del Catálogo', 'items' => $globalBrands],
-        ];
-
-        return Inertia::render('Product/Edit', [
-            'product' => $product->toArray() + ['formatted_attributes' => $formattedAttributes],
-            'categories' => Category::where(['subscription_id' => $subscriptionId, 'type' => 'product'])->get(['id', 'name']),
-            'brands' => $formattedBrands,
-            'providers' => Provider::where('subscription_id', $subscriptionId)->get(['id', 'name']),
-            'attributeDefinitions' => AttributeDefinition::with('options')->where('subscription_id', $subscriptionId)->get(),
-        ]);
-    }
-
-    public function update(UpdateProductRequest $request, Product $product)
-    {
-        DB::transaction(function () use ($request, $product) {
-            $validatedData = $request->validated();
-
-            if ($product->name !== $validatedData['name']) {
-                $baseSlug = Str::slug($validatedData['name']);
-                $slug = $baseSlug;
-                $counter = 1;
-                while (Product::where('branch_id', $product->branch_id)->where('slug', $slug)->where('id', '!=', $product->id)->exists()) {
-                    $slug = $baseSlug . '-' . $counter++;
-                }
-                $validatedData['slug'] = $slug;
-            } else {
-                unset($validatedData['slug']);
-            }
-
-
-            if ($validatedData['product_type'] === 'variant') {
-                $variantsMatrix = $validatedData['variants_matrix'];
-                $validatedData['current_stock'] = collect($variantsMatrix)->where('selected', true)->sum('current_stock');
-            }
-
-            $productData = collect($validatedData)->except(['general_images', 'variant_images', 'variants_matrix', 'deleted_media_ids'])->all();
-            $product->update($productData);
-
-            if (!empty($validatedData['deleted_media_ids'])) {
-                $product->media()->whereIn('id', $validatedData['deleted_media_ids'])->each(function (Media $media) {
-                    $media->delete();
-                });
-            }
-
-            if ($request->hasFile('general_images')) {
-                foreach (array_keys($request->file('general_images')) as $key) {
-                    $mediaItem = $product->addMediaFromRequest("general_images.{$key}")->toMediaCollection('product-general-images');
-                    $this->optimizeMediaLocal($mediaItem);
-                }
-            }
-            if ($request->hasFile('variant_images')) {
-                foreach (array_keys($request->file('variant_images')) as $optionValue) {
-                    $mediaItem = $product->addMediaFromRequest("variant_images.{$optionValue}")->withCustomProperties(['variant_option' => $optionValue])->toMediaCollection('product-variant-images');
-                    $this->optimizeMediaLocal($mediaItem);
-                }
-            }
-
-            if ($validatedData['product_type'] === 'variant') {
-                $variantsMatrix = $validatedData['variants_matrix'];
-                $product->productAttributes()->delete();
-                foreach ($variantsMatrix as $combination) {
-                    if (empty($combination['selected'])) continue;
-                    $attributes = collect($combination)->except(['selected', 'sku_suffix', 'current_stock', 'min_stock', 'max_stock', 'selling_price', 'row_id'])->all();
-                    $product->productAttributes()->create([
-                        'attributes' => $attributes,
-                        'sku_suffix' => $combination['sku_suffix'],
-                        'current_stock' => $combination['current_stock'],
-                        'min_stock' => $combination['min_stock'],
-                        'max_stock' => $combination['max_stock'],
-                        'selling_price_modifier' => $combination['selling_price'] - $product->selling_price,
-                    ]);
-                }
-            } elseif ($product->product_type === 'simple') {
-                $product->productAttributes()->delete();
-            }
-        });
-
-        return redirect()->route('products.index')->with('success', 'Producto actualizado con éxito.');
-    }
-
-   public function show(Product $product): Response
-    {
+        
         $product->load([
-            'category',
-            'brand',
-            'provider',
-            'productAttributes',
-            'media',
-            'activities.causer'
+            'category', 
+            'brand', 
+            'provider', 
+            'media', 
+            'activities.causer', 
+            'branches',
+            'productAttributes.branches' => function ($q) use ($user) {
+                $q->where('branches.id', $user->branch_id);
+            }
         ]);
 
-        $promotions = Promotion::query()
-            ->where(function ($query) use ($product) {
-                $query->whereHas('rules', fn($subQuery) => $subQuery->whereMorphedTo('itemable', $product))
-                    ->orWhereHas('effects', fn($subQuery) => $subQuery->whereMorphedTo('itemable', $product));
-            })
-            ->with(['rules.itemable', 'effects.itemable'])
-            ->get();
+        // Mapeo del stock para la sucursal actual
+        $branchPivot = $product->branches->where('id', $user->branch_id)->first()?->pivot;
+        if ($branchPivot) {
+            $product->current_stock = $branchPivot->current_stock;
+            $product->reserved_stock = $branchPivot->reserved_stock;
+            $product->min_stock = $branchPivot->min_stock;
+            $product->max_stock = $branchPivot->max_stock;
+            $product->location = $branchPivot->location;
+        }
 
+        if ($product->productAttributes) {
+            $product->productAttributes->transform(function ($variant) {
+                $vPivot = $variant->branches->first()?->pivot;
+                if ($vPivot) {
+                    $variant->current_stock = $vPivot->current_stock;
+                    $variant->reserved_stock = $vPivot->reserved_stock;
+                } else {
+                    $variant->current_stock = 0;
+                }
+                return $variant;
+            });
+        }
 
         $translations = config('log_translations.Product', []);
 
         $formattedActivities = $product->activities->map(function ($activity) use ($translations) {
+            // Misma lógica de historial de actividades que ya tenías
             $changes = ['before' => [], 'after' => []];
-            $oldProps = $activity->properties->get('old', []);
-            $newProps = $activity->properties->get('attributes', []);
-
-            if (is_array($oldProps)) {
-                foreach ($oldProps as $key => $value) {
+            if (isset($activity->properties['old'])) {
+                foreach ($activity->properties['old'] as $key => $value) {
                     $changes['before'][($translations[$key] ?? $key)] = $value;
                 }
             }
-            if (is_array($newProps)) {
-                foreach ($newProps as $key => $value) {
-                    if (!isset($oldProps[$key]) || $oldProps[$key] !== $value) {
-                        $changes['after'][($translations[$key] ?? $key)] = $value;
-                    }
+            if (isset($activity->properties['attributes'])) {
+                foreach ($activity->properties['attributes'] as $key => $value) {
+                    $changes['after'][($translations[$key] ?? $key)] = $value;
                 }
             }
-            $changes['before'] = array_intersect_key($changes['before'], $changes['after']);
-
             return [
                 'id' => $activity->id,
                 'description' => $activity->description,
                 'event' => $activity->event,
                 'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
                 'timestamp' => $activity->created_at->diffForHumans(),
-                'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
-                // --- CAMBIO IMPORTANTE: AGREGAR PROPIEDADES EXTRA PARA EL FRONTEND ---
-                'properties' => $activity->properties, 
+                'changes' => $changes,
             ];
-        })
-        ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes']) || !empty($activity['properties']['reason'])) 
-        // Nota: Agregué la condición !empty($activity['properties']['reason']) para no ocultar eventos de stock que quizás no registren "cambios" convencionales si usaste increment()
-        ->values();
+        });
 
-        $productAndVariantIds = $product->productAttributes->pluck('id')->push($product->id);
-        
-        $itemableIds = [
-            Product::class => $product->id,
-            ProductAttribute::class => $product->productAttributes->pluck('id')->all(),
-        ];
-
-        $layawayItems = TransactionItem::query()
-            ->where(function ($query) use ($itemableIds) {
-                $query->where('itemable_type', Product::class)
-                      ->where('itemable_id', $itemableIds[Product::class]);
-                
-                if (!empty($itemableIds[ProductAttribute::class])) {
-                    $query->orWhere(function($q) use ($itemableIds) {
-                        $q->where('itemable_type', ProductAttribute::class)
-                          ->whereIn('itemable_id', $itemableIds[ProductAttribute::class]);
-                    });
-                }
-            })
-            ->whereHas('transaction', function ($q) {
-                $q->where('status', TransactionStatus::ON_LAYAWAY);
-            })
-            ->with([
-                'transaction:id,folio,customer_id,created_at,layaway_expiration_date',
-                'transaction.customer:id,name'
-            ])
-            ->get();
-        
-        $formattedLayaways = $layawayItems->map(function($item) {
+        // Formateo de apartados activos (usando la relación MorphTo real de tu BD)
+        $formattedLayaways = $product->transactionItems()->whereHas('transaction', function ($q) {
+            $q->where('status', TransactionStatus::PENDING);
+        })->get()->map(function ($item) {
             return [
-                'transaction_id' => $item->transaction->id,
+                'id' => $item->transaction->id,
                 'folio' => $item->transaction->folio,
-                'customer_name' => $item->transaction->customer?->name ?? 'Cliente Eliminado',
+                'customer_name' => $item->transaction->customer->name ?? 'Público en general',
                 'customer_id' => $item->transaction->customer_id,
                 'quantity' => $item->quantity,
                 'description' => $item->description,
@@ -420,11 +319,175 @@ class ProductController extends Controller implements HasMiddleware
 
         return Inertia::render('Product/Show', [
             'product' => $product,
-            'promotions' => $promotions,
             'activities' => $formattedActivities,
             'availableTemplates' => $availableTemplates,
             'activeLayaways' => $formattedLayaways,
         ]);
+    }
+
+    public function edit(Product $product): Response
+    {
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+
+        $product->load(['media', 'branches:id', 'productAttributes.branches']);
+
+        // Inyectar datos pivote a las variables principales para que el form de Edit las reciba
+        $branchPivot = $product->branches->where('id', $user->branch_id)->first()?->pivot;
+        if ($branchPivot) {
+            $product->current_stock = $branchPivot->current_stock;
+            $product->min_stock = $branchPivot->min_stock;
+            $product->max_stock = $branchPivot->max_stock;
+            $product->location = $branchPivot->location;
+        }
+
+        if ($product->productAttributes) {
+            $product->productAttributes->transform(function ($variant) use ($user) {
+                $vPivot = $variant->branches->where('id', $user->branch_id)->first()?->pivot;
+                if ($vPivot) {
+                    $variant->current_stock = $vPivot->current_stock;
+                } else {
+                    $variant->current_stock = 0;
+                }
+                return $variant;
+            });
+        }
+
+        return Inertia::render('Product/Edit', [
+            'product' => $product,
+            'categories' => Category::where('subscription_id', $subscriptionId)->where('type', 'product')->get(),
+            'brands' => Brand::where('subscription_id', $subscriptionId)->get(),
+            'providers' => Provider::where('subscription_id', $subscriptionId)->get(),
+            // CORRECCIÓN: Agregado with('options') también en la edición
+            'attributeDefinitions' => AttributeDefinition::with('options')->where('subscription_id', $subscriptionId)->get(),
+            'branches' => Branch::where('subscription_id', $subscriptionId)->get(['id', 'name']),
+        ]);
+    }
+
+    public function update(UpdateProductRequest $request, Product $product)
+    {
+        $validated = $request->validated();
+        $user = Auth::user();
+
+        // Validar límite si se agregan nuevas variantes
+        $subscription = $user->branch->subscription;
+        $currentVersion = $subscription->currentVersion();
+        $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_products')->first() : null;
+        $limitProducts = $limitItem ? $limitItem->quantity : 50;
+
+        if (!empty($validated['has_variants']) && !empty($validated['variants'])) {
+            $newVariantsCount = collect($validated['variants'])->filter(fn($v) => empty($v['id']))->count();
+            if ($newVariantsCount > 0 && $limitProducts !== -1 && ($subscription->products_count + $newVariantsCount) > $limitProducts) {
+                return redirect()->back()->with('error', 'No puedes agregar estas variantes porque excedes el límite de productos de tu plan.');
+            }
+        }
+
+        DB::transaction(function () use ($validated, $user, $product, $request) {
+            $productData = collect($validated)->except(['has_variants', 'variants', 'image', 'branch_ids', 'current_stock', 'min_stock', 'max_stock', 'location'])->toArray();
+            
+            if ($product->name !== $validated['name']) {
+                $productData['slug'] = Str::slug($validated['name'] . '-' . uniqid());
+            }
+
+            $product->update($productData);
+
+            // Sincronizar sucursales
+            $branchesToSync = $request->input('branch_ids', [$user->branch_id]);
+            $existingBranches = $product->branches->keyBy('id');
+            $syncData = [];
+
+            foreach ($branchesToSync as $bId) {
+                if ($existingBranches->has($bId)) {
+                    // Si es la sucursal que está editando, actualizamos los valores. Si es otra, los mantenemos intactos.
+                    $syncData[$bId] = [
+                        'current_stock' => ($bId == $user->branch_id && isset($validated['current_stock'])) ? $validated['current_stock'] : $existingBranches[$bId]->pivot->current_stock,
+                        'min_stock' => ($bId == $user->branch_id) ? ($validated['min_stock'] ?? null) : $existingBranches[$bId]->pivot->min_stock,
+                        'max_stock' => ($bId == $user->branch_id) ? ($validated['max_stock'] ?? null) : $existingBranches[$bId]->pivot->max_stock,
+                        'location' => ($bId == $user->branch_id) ? ($validated['location'] ?? null) : $existingBranches[$bId]->pivot->location,
+                        'price_modifier' => $existingBranches[$bId]->pivot->price_modifier,
+                    ];
+                } else {
+                    $syncData[$bId] = [
+                        'current_stock' => 0,
+                        'reserved_stock' => 0,
+                        'min_stock' => null,
+                        'max_stock' => null,
+                        'location' => null,
+                        'price_modifier' => 0,
+                    ];
+                }
+            }
+            $product->branches()->sync($syncData);
+
+            // Sincronizar Variantes
+            if (!empty($validated['has_variants']) && !empty($validated['variants'])) {
+                $existingVariantIds = [];
+                
+                foreach ($validated['variants'] as $variantData) {
+                    if (isset($variantData['id']) && $variantData['id']) {
+                        $variant = $product->productAttributes()->find($variantData['id']);
+                        if ($variant) {
+                            $variant->update([
+                                'attributes' => $variantData['attributes'],
+                                'sku' => $variantData['sku'] ?? null,
+                                'selling_price_modifier' => $variantData['selling_price_modifier'] ?? 0,
+                            ]);
+                            $existingVariantIds[] = $variant->id;
+
+                            // Sincronizar pivot de esta variante
+                            $vExistingBranches = $variant->branches->keyBy('id');
+                            $vSyncData = [];
+                            foreach ($branchesToSync as $bId) {
+                                if ($vExistingBranches->has($bId)) {
+                                    $vSyncData[$bId] = [
+                                        'current_stock' => ($bId == $user->branch_id && isset($variantData['current_stock'])) 
+                                            ? $variantData['current_stock'] 
+                                            : $vExistingBranches[$bId]->pivot->current_stock,
+                                        'price_modifier' => $vExistingBranches[$bId]->pivot->price_modifier,
+                                    ];
+                                } else {
+                                    $vSyncData[$bId] = [
+                                        'current_stock' => 0,
+                                        'reserved_stock' => 0,
+                                        'price_modifier' => 0,
+                                    ];
+                                }
+                            }
+                            $variant->branches()->sync($vSyncData);
+                        }
+                    } else {
+                        // Variante completamente nueva
+                        $newVariant = $product->productAttributes()->create([
+                            'attributes' => $variantData['attributes'],
+                            'sku' => $variantData['sku'] ?? null,
+                            'selling_price_modifier' => $variantData['selling_price_modifier'] ?? 0,
+                        ]);
+                        $existingVariantIds[] = $newVariant->id;
+
+                        $vSyncData = [];
+                        foreach ($branchesToSync as $bId) {
+                            $vSyncData[$bId] = [
+                                'current_stock' => ($bId == $user->branch_id) ? ($variantData['current_stock'] ?? 0) : 0,
+                                'reserved_stock' => 0,
+                                'price_modifier' => 0,
+                            ];
+                        }
+                        $newVariant->branches()->sync($vSyncData);
+                    }
+                }
+                $product->productAttributes()->whereNotIn('id', $existingVariantIds)->delete();
+            } else {
+                $product->productAttributes()->delete();
+            }
+
+            if ($request->hasFile('image')) {
+                $product->clearMediaCollection('product-images');
+                $mediaItem = $product->addMediaFromRequest('image')->toMediaCollection('product-images');
+                $this->optimizeMediaLocal($mediaItem);
+            }
+        });
+
+        return redirect()->route('products.index')->with('success', 'Producto actualizado con éxito.');
     }
 
     public function destroy(Product $product)
