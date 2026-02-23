@@ -17,10 +17,21 @@ class StoreServiceRequest extends FormRequest
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'category_id' => 'required|exists:categories,id',
-            'base_price' => 'required|numeric|min:0',
-            'duration_estimate' => 'nullable|string|max:255',
             'show_online' => 'boolean',
-            'image' => 'nullable|image', // Para la imagen principal
+            'image' => 'nullable|image',
+
+            // Campos base actualizados
+            'has_variants' => 'boolean',
+            'base_price' => 'nullable|numeric|min:0',
+            'duration_estimate' => 'nullable|string|max:255',
+            'branch_ids' => 'required|array|min:1',
+            'branch_ids.*' => 'exists:branches,id',
+
+            // Validaciones dinámicas para el array de variantes
+            'variants' => 'nullable|array',
+            'variants.*.name' => 'required_with:variants|string|max:255',
+            'variants.*.price' => 'required_with:variants|numeric|min:0',
+            'variants.*.duration_estimate' => 'nullable|string|max:255',
         ];
     }
 }

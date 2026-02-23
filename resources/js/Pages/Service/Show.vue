@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, Head } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import ActivityHistory from '@/Components/ActivityHistory.vue';
 import { useConfirm } from "primevue/useconfirm";
@@ -26,8 +26,10 @@ const deleteService = () => {
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar el servicio "${props.service.name}"?`,
         header: 'Confirmar Eliminación',
-        icon: 'pi pi-info-circle',
+        icon: 'pi pi-exclamation-triangle',
         acceptClass: 'p-button-danger',
+        acceptLabel: 'Sí, eliminar',
+        rejectLabel: 'Cancelar',
         accept: () => {
             router.delete(route('services.destroy', props.service.id));
         }
@@ -41,75 +43,160 @@ const actionItems = ref([
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteService, visible: hasPermission('services.catalog.delete') },
 ]);
 
+// Lógica para el nuevo Menú de Acciones
+const menu = ref();
+const toggleMenu = (event) => {
+    menu.value.toggle(event);
+};
+
 const mainImage = computed(() =>
     props.service.media && props.service.media.length > 0 ? props.service.media[0].original_url : null
 );
 
+// Función para formatear moneda
+const formatCurrency = (value) => {
+    const num = Number(value);
+    if (isNaN(num)) return '$0.00';
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(num);
+};
+
 </script>
 
 <template>
-    <AppLayout :title="`Servicio: ${service.name}`">
+    <Head :title="`Servicio: ${service.name}`" />
+    <AppLayout>
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
+        
         <!-- Header -->
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{{ service.name }}</h1>
-            <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined class="mt-4 sm:mt-0">
-            </SplitButton>
+            
+            <!-- Botón y Menú de Acciones -->
+            <div class="mt-4 sm:mt-0">
+                <Button label="Acciones" icon="pi pi-chevron-down" iconPos="right" severity="secondary" outlined @click="toggleMenu" />
+                <Menu ref="menu" :model="actionItems" :popup="true" />
+            </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Columna Principal: Detalles -->
-            <div class="lg:col-span-2 space-y-6">
+            
+            <!-- Columna Izquierda (Imagen Principal) -->
+            <div class="lg:col-span-1 space-y-6">
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                        <!-- Imagen -->
-                        <div class="md:col-span-2">
-                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Imagen del servicio</h2>
-                            <img v-if="mainImage" :src="mainImage" :alt="service.name"
-                                class="w-full h-64 object-cover rounded-lg border">
-                            <div v-else
-                                class="w-full h-64 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center text-gray-400">
-                                <i class="pi pi-image text-5xl"></i>
-                            </div>
+                    <div v-if="mainImage">
+                        <div class="flex justify-center mb-2 bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden border border-gray-100 dark:border-gray-600">
+                            <!-- Uso del componente Image con preview -->
+                            <Image :src="mainImage" :alt="service.name" preview imageClass="w-full h-80 object-contain p-2" />
                         </div>
-
-                        <!-- Información -->
-                        <div>
-                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información general</h2>
-                            <ul class="space-y-3 text-sm">
-                                <li class="flex justify-between"><span class="text-gray-500">Categoría</span> <span
-                                        class="font-medium">{{ service.category?.name || 'N/A' }}</span></li>
-                                <li class="flex justify-between"><span class="text-gray-500">Duración estimada</span>
-                                    <span class="font-medium">{{ service.duration_estimate || 'N/A' }}</span></li>
-                                <!-- <li class="flex justify-between">
-                                    <span class="text-gray-500">Visible en Tienda</span>
-                                    <Tag :value="service.show_online ? 'Sí' : 'No'"
-                                        :severity="service.show_online ? 'success' : 'secondary'"></Tag>
-                                </li> -->
-                            </ul>
-                        </div>
-                        <div>
-                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Precio</h2>
-                            <ul class="space-y-3 text-sm">
-                                <li class="flex justify-between items-baseline">
-                                    <span class="text-gray-500">Precio Base</span>
-                                    <span class="font-semibold text-2xl">{{ new Intl.NumberFormat('es-MX', {
-                                        style:
-                                            'currency', currency: 'MXN' }).format(service.base_price) }}</span>
-                                </li>
-                            </ul>
-                        </div>
+                        <p class="text-xs text-center text-gray-400 mt-2"><i class="pi pi-search-plus mr-1"></i> Clic para ampliar</p>
                     </div>
-                    <div v-if="service.description" class="mt-6 pt-4 border-t">
-                        <h3 class="font-semibold mb-2">Descripción</h3>
-                        <div class="prose prose-sm dark:prose-invert max-w-none" v-html="service.description"></div>
+                    <div v-else class="text-center text-gray-500 py-8 flex flex-col items-center">
+                        <i class="pi pi-image !text-5xl mb-2 text-gray-300"></i>
+                        <p>No hay imagen registrada.</p>
                     </div>
                 </div>
             </div>
 
-            <!-- Columna Derecha: Historial -->
-            <div class="lg:col-span-1">
-                <ActivityHistory :activities="activities" title="Historial de actividad" />
+            <!-- Columna Derecha (Información, Variantes e Historial) -->
+            <div class="lg:col-span-2 space-y-6">
+                
+                <!-- Tarjeta: Información General y Precios -->
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
+                                Información general
+                            </h2>
+                            <ul class="space-y-3 text-sm">
+                                <li class="flex items-center justify-between">
+                                    <span class="text-gray-500 dark:text-gray-400">Categoría</span> 
+                                    <Tag v-if="service.category" :value="service.category.name" severity="info" rounded />
+                                    <span v-else class="font-medium text-gray-400 italic">Sin categoría</span>
+                                </li>
+                                <li class="flex items-center justify-between mt-3">
+                                    <span class="text-gray-500 dark:text-gray-400">Duración estimada</span>
+                                    <span class="font-medium text-gray-800 dark:text-gray-200 flex items-center gap-1">
+                                        <i v-if="service.duration_estimate" class="pi pi-clock text-gray-400"></i>
+                                        {{ service.duration_estimate || 'No especificada' }}
+                                    </span>
+                                </li>
+                                <!-- SECCIÓN SUCURSALES -->
+                                <li class="flex flex-col mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">
+                                    <span class="text-gray-500 dark:text-gray-400 mb-2 font-medium">Disponible en:</span>
+                                    <div class="flex flex-wrap gap-1">
+                                        <Tag 
+                                            v-for="branch in service.branches" 
+                                            :key="branch.id" 
+                                            :value="branch.name" 
+                                            severity="secondary" 
+                                            rounded 
+                                        />
+                                        <span v-if="!service.branches || service.branches.length === 0" class="text-gray-400 italic text-sm">No configurado</span>
+                                    </div>
+                                </li>
+                            </ul>
+                        </div>
+                        
+                        <div>
+                            <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
+                                Precio
+                            </h2>
+                            <ul class="space-y-3 text-sm">
+                                <li class="flex justify-between items-baseline">
+                                    <span class="text-gray-500 dark:text-gray-400">Precio General</span>
+                                    
+                                    <span v-if="parseFloat(service.base_price) > 0" class="font-bold text-2xl text-green-600 dark:text-green-400">
+                                        {{ formatCurrency(service.base_price) }}
+                                    </span>
+                                    
+                                    <span v-else-if="service.variants && service.variants.length > 0" class="font-semibold text-lg text-gray-500 italic">
+                                        Variable
+                                    </span>
+                                    
+                                    <span v-else class="font-bold text-2xl text-gray-800 dark:text-gray-200">
+                                        $0.00
+                                    </span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div v-if="service.description" class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <h3 class="font-semibold mb-2 text-gray-800 dark:text-gray-200">Descripción</h3>
+                        <div class="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300" v-html="service.description"></div>
+                    </div>
+                </div>
+
+                <!-- Tarjeta: Variantes de Servicio -->
+                <div v-if="service.variants && service.variants.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                        <i class="pi pi-sitemap text-blue-500"></i>
+                        Variantes del servicio
+                    </h2>
+                    
+                    <DataTable :value="service.variants" class="p-datatable-sm" responsiveLayout="scroll" rowHover stripedRows>
+                        <Column field="name" header="Variante / Modelo">
+                            <template #body="{ data }">
+                                <span class="font-medium text-gray-800 dark:text-gray-200">{{ data.name }}</span>
+                            </template>
+                        </Column>
+                        <Column field="duration_estimate" header="Duración">
+                            <template #body="{ data }">
+                                <span class="text-gray-600 dark:text-gray-400">{{ data.duration_estimate || 'N/A' }}</span>
+                            </template>
+                        </Column>
+                        <Column field="price" header="Precio" class="text-right" headerClass="text-right">
+                            <template #body="{ data }">
+                                <span class="font-semibold text-green-600 dark:text-green-400">
+                                    {{ formatCurrency(data.price) }}
+                                </span>
+                            </template>
+                        </Column>
+                    </DataTable>
+                </div>
+
+                <!-- Tarjeta: Historial de actividad -->
+                <ActivityHistory :activities="activities" title="Historial de movimientos" />
             </div>
         </div>
     </AppLayout>

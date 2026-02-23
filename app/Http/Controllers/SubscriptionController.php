@@ -32,7 +32,7 @@ class SubscriptionController extends Controller
     /**
      * Muestra la página de detalles de la suscripción.
      */
-    public function show(): Response
+     public function show(): Response
     {
         $user = Auth::user();
 
@@ -55,6 +55,7 @@ class SubscriptionController extends Controller
             'products',
             'cashRegisters',
             'printTemplates',
+            'services',
         ])->firstOrFail();
 
         // --- INICIO: Lógica para determinar el estado de la versión ---
@@ -81,15 +82,11 @@ class SubscriptionController extends Controller
         // --- FIN: Lógica de estado ---
 
         // --- INICIO: REGLA 2 - Lógica de Pago Rechazado ---
-        // Obtener el ÚLTIMO pago registrado de la suscripción (independientemente de la versión)
         $lastPayment = $subscription->payments()
             ->latest('created_at')
             ->first();
 
         $lastRejectedPayment = null;
-        // Si el último pago existe y su estado es REJECTED, lo pasamos a la vista.
-        // Si el cliente vuelve a pagar (creando un pago 'pending') o se aprueba uno,
-        // este ya no será el último y el mensaje desaparecerá.
         if ($lastPayment && $lastPayment->status === SubscriptionPaymentStatus::REJECTED) {
             $lastRejectedPayment = $lastPayment;
         }
@@ -110,40 +107,30 @@ class SubscriptionController extends Controller
             'products' => $subscription->products_count,
             'cash_registers' => $subscription->cash_registers_count,
             'print_templates' => $subscription->print_templates_count,
+            'services' => $subscription->services_count,
         ];
 
         // --- INICIO: Lógica de Comparación de Items del Historial ---
-        // Obtenemos la colección de versiones ya cargada
         $versions = $subscription->versions;
 
-        // Iteramos sobre la colección y añadimos los 'processed_items'
         $versions->map(function ($version, $index) use ($versions) {
-            // La versión "anterior" (cronológicamente) es la siguiente en el array
-            // porque están ordenadas por latest('id') (descendente).
             $previousVersion = $versions->get($index + 1);
-
-            // Creamos un mapa de los items anteriores para búsqueda rápida
             $previousItemsMap = $previousVersion ? $previousVersion->items->keyBy('item_key') : collect();
 
-            // Procesamos los items de la versión actual
             $processedItems = $version->items->map(function ($newItem) use ($previousItemsMap) {
                 $previousItem = $previousItemsMap->get($newItem->item_key);
                 $previousQuantity = $previousItem ? $previousItem->quantity : 0;
                 $newQuantity = $newItem->quantity;
-                $status = 'unchanged'; // Default
+                $status = 'unchanged'; 
 
                 if (!$previousItem) {
-                    // El item no existía en la versión anterior
                     $status = 'new';
                 } elseif ($newQuantity > $previousQuantity) {
-                    // La cantidad aumentó
                     $status = 'upgraded';
                 } elseif ($newQuantity < $previousQuantity) {
-                    // La cantidad disminuyó
                     $status = 'downgraded';
                 }
 
-                // Devolvemos un array simple con la info necesaria para la vista
                 return [
                     'name' => $newItem->name,
                     'quantity' => $newQuantity,
@@ -156,14 +143,13 @@ class SubscriptionController extends Controller
                 ];
             });
 
-            // Añadimos la nueva propiedad 'processed_items' a cada objeto de versión
             $version->processed_items = $processedItems;
             return $version;
         });
         // --- FIN: Lógica de Comparación de Items del Historial ---
 
         return Inertia::render('Subscription/Show', [
-            'subscription' => $subscription, // $subscription ahora contiene las versiones con 'processed_items'
+            'subscription' => $subscription,
             'planItems' => $planItems,
             'usageData' => $usageData,
             'subscriptionStatus' => [
@@ -173,6 +159,8 @@ class SubscriptionController extends Controller
             ],
             'pendingPayment' => $pendingPayment,
             'lastRejectedPayment' => $lastRejectedPayment,
+            // AQUÍ SOLUCIONAMOS EL ERROR: Obtenemos explícitamente el archivo de la colección correcta
+            'fiscalDocumentUrl' => $subscription->getFirstMediaUrl('fiscal-documents') ?: null,
         ]);
     }
 

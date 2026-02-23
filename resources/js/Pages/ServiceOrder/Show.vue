@@ -318,7 +318,7 @@ const getItemType = (itemableType) => {
     if (itemableType === 'App\\Models\\Product' || itemableType === 'App\\Models\\ProductAttribute') {
         return { text: 'Refacción', severity: 'info' };
     }
-    if (itemableType === 'App\\Models\\Service') {
+    if (itemableType === 'App\\Models\\Service' || itemableType === 'App\\Models\\ServiceVariant') {
         return { text: 'Servicio', severity: 'success' };
     }
     return { text: 'Otro', severity: 'secondary' };

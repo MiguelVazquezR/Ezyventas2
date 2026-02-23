@@ -99,6 +99,25 @@ const formatKey = (key) => {
     return key.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
 };
 
+// --- FUNCIÓN PARA LIMPIAR ETIQUETAS HTML ---
+const stripHtml = (text) => {
+    if (!text || typeof text !== 'string') return text;
+    
+    // Reemplaza etiquetas HTML por un espacio (para que las palabras no se peguen)
+    let cleanText = text.replace(/<\/?[^>]+(>|$)/g, " ");
+    
+    // Decodifica las entidades HTML más comunes
+    cleanText = cleanText.replace(/&nbsp;/g, ' ')
+                         .replace(/&amp;/g, '&')
+                         .replace(/&lt;/g, '<')
+                         .replace(/&gt;/g, '>')
+                         .replace(/&quot;/g, '"')
+                         .replace(/&#39;/g, "'");
+                         
+    // Elimina espacios múltiples generados por el reemplazo
+    return cleanText.replace(/\s+/g, ' ').trim();
+};
+
 // --- LÓGICA INTELIGENTE DE DESCRIPCIÓN ---
 const getSmartActivityDetails = (activity) => {
     let title = activity.description;
@@ -216,7 +235,6 @@ const getExtraProperties = (activity) => {
                     <div v-for="(activity, index) in activities" :key="activity.id || index" class="relative group">
 
                         <!-- Preparar datos visuales -->
-                        <!-- Usamos const en el template dentro del v-for implícitamente llamando a la función -->
                         <component :is="'script'" setup>
                             const details = getSmartActivityDetails(activity);
                             const extras = getExtraProperties(activity);
@@ -277,9 +295,9 @@ const getExtraProperties = (activity) => {
 
                                         <!-- Valores -->
                                         <div class="w-full">
-                                            <!-- Caso especial: Descripción larga o Objetos -> DiffViewer -->
+                                            <!-- Caso especial: Descripción larga o Objetos -> DiffViewer con stripHtml -->
                                             <div v-if="key.toLowerCase().includes('descripc') || (typeof value === 'string' && value.length > 50) || typeof value === 'object'">
-                                                <DiffViewer :oldValue="activity.changes.before[key]" :newValue="value" />
+                                                <DiffViewer :oldValue="stripHtml(activity.changes.before[key])" :newValue="stripHtml(value)" />
                                             </div>
                                             
                                             <!-- Caso especial: Cambio Numérico Simple (Stock / Precio) -->
@@ -296,14 +314,14 @@ const getExtraProperties = (activity) => {
                                                 </span>
                                             </div>
 
-                                            <!-- Caso General: Inline -->
+                                            <!-- Caso General: Inline con stripHtml aplicado -->
                                             <div v-else class="flex flex-wrap items-center gap-2 text-xs">
-                                                <div class="bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400/80 px-2 py-0.5 rounded border border-red-100 dark:border-red-900/20 line-through opacity-75 truncate max-w-[150px]" :title="activity.changes.before[key]">
-                                                    {{ activity.changes.before[key] || 'Vacío' }}
+                                                <div class="bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400/80 px-2 py-0.5 rounded border border-red-100 dark:border-red-900/20 line-through opacity-75 truncate max-w-[150px]" :title="stripHtml(activity.changes.before[key])">
+                                                    {{ stripHtml(activity.changes.before[key]) || 'Vacío' }}
                                                 </div>
                                                 <i class="pi pi-arrow-right text-gray-300 dark:text-gray-600 text-[10px]"></i>
-                                                <div class="bg-green-50 dark:bg-green-900/10 text-green-700 dark:text-green-300 px-2 py-0.5 rounded border border-green-100 dark:border-green-900/20 font-medium truncate max-w-[150px]" :title="value">
-                                                    {{ value }}
+                                                <div class="bg-green-50 dark:bg-green-900/10 text-green-700 dark:text-green-300 px-2 py-0.5 rounded border border-green-100 dark:border-green-900/20 font-medium truncate max-w-[150px]" :title="stripHtml(value)">
+                                                    {{ stripHtml(value) }}
                                                 </div>
                                             </div>
                                         </div>

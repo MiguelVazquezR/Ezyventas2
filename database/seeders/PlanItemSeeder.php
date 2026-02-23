@@ -42,6 +42,7 @@ class PlanItemSeeder extends Seeder
             ['key' => 'limit_branches', 'name' => 'Sucursales', 'price' => 30, 'quantity' => 1], // 1 sucursal al suscribirse
             ['key' => 'limit_users', 'name' => 'Usuarios', 'price' => 7.5, 'quantity' => 1], // 1 usuario al suscribirse
             ['key' => 'limit_products', 'name' => 'Productos', 'price' => 1.5, 'quantity' => 50], // 500 al suscribirse
+            ['key' => 'limit_services', 'name' => 'Servicios', 'price' => 1.5, 'quantity' => 100], // 100 al suscribirse
             ['key' => 'limit_cash_registers', 'name' => 'Cajas Registradoras', 'price' => 7.5, 'quantity' => 1], // 1 caja al suscribirse
             ['key' => 'limit_print_templates', 'name' => 'Plantillas personalizadas', 'price' => 3, 'quantity' => 1], // 2 plantillas al suscribirse
         ];
