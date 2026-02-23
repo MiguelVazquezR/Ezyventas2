@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -17,7 +18,7 @@ class Service extends Model implements HasMedia
 
     protected $fillable = [
         'category_id',
-        'branch_id',
+        'branch_id', // Se mantiene como la sucursal "Creadora/Dueña"
         'name',
         'description',
         'slug',
@@ -51,9 +52,20 @@ class Service extends Model implements HasMedia
         return $this->belongsTo(Category::class);
     }
 
+    /**
+     * Sucursal dueña original del servicio
+     */
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    /**
+     * NUEVA RELACIÓN: Sucursales donde el servicio está disponible.
+     */
+    public function branches(): BelongsToMany
+    {
+        return $this->belongsToMany(Branch::class, 'branch_service');
     }
 
     /**

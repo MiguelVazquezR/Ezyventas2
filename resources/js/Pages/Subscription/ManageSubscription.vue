@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useForm, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
-import InputError from '@/Components/InputError.vue'; // AÑADIDO
+import InputError from '@/Components/InputError.vue';
 
 // --- Props ---
 const props = defineProps({
@@ -16,7 +16,6 @@ const props = defineProps({
     currentBillingPeriod: String,
     ourBankAccounts: Array,
     hasPendingPayment: Boolean,
-    // --- AÑADIDO: Props para el nuevo Gasto ---
     userBankAccounts: Array, // Cuentas del suscriptor
     expenseCategories: Array, // Categorías de gasto del suscriptor
 });
@@ -41,9 +40,8 @@ const form = useForm({
     mode: props.mode,
     payment_method: 'transferencia',
     proof_of_payment: null,
-    // --- AÑADIDO: Campos para el Gasto ---
-    bank_account_id: null, // ID de la cuenta del suscriptor
-    expense_category_id: null, // ID de la categoría de gasto
+    bank_account_id: null,
+    expense_category_id: null,
 });
 
 // --- Lógica de Versión de Comparación ---
@@ -62,6 +60,34 @@ const allLimitItems = computed(() =>
     props.allPlanItems.filter(item => item.type === 'limit')
 );
 
+// --- Lógica de Límites Mínimos Inteligente ---
+const getMinLimit = (limitKey) => {
+    // Valores mínimos base por defecto del sistema
+    const baseMins = {
+        'limit_branches': 1,
+        'limit_users': 1,
+        'limit_products': 50,
+        'limit_services': 100 // NUEVO MÍNIMO
+    };
+    const baseMin = baseMins[limitKey] || 0;
+
+    // Si estamos en modo renovación, permitimos bajar al mínimo absoluto permitido
+    if (props.mode === 'renew') {
+        return baseMin;
+    }
+
+    // Si es modo 'upgrade', no se puede bajar de la cantidad actual contratada.
+    const baseVersion = versionToCompare.value;
+    if (!baseVersion) {
+        return baseMin;
+    }
+    
+    const item = baseVersion.items.find(i => i.item_key === limitKey);
+    const currentQuantity = item ? item.quantity : 0;
+    
+    return Math.max(baseMin, currentQuantity);
+};
+
 // --- Inicialización del Estado ---
 onMounted(() => {
     if (props.currentVersion) {
@@ -72,29 +98,25 @@ onMounted(() => {
 
         allLimitItems.value.forEach(limit => {
             const currentItem = props.currentVersion.items.find(item => item.item_key === limit.key);
-            limitValues.value[limit.key] = currentItem ? currentItem.quantity : 0;
+            // Aseguramos que respete el mínimo siempre
+            limitValues.value[limit.key] = currentItem 
+                ? Math.max(currentItem.quantity, getMinLimit(limit.key)) 
+                : getMinLimit(limit.key);
         });
     } else {
-        // ... (valores por defecto sin cambios)
         allLimitItems.value.forEach(limit => {
-            if (limit.key === 'limit_branches') limitValues.value[limit.key] = 1;
-            else if (limit.key === 'limit_users') limitValues.value[limit.key] = 1;
-            else if (limit.key === 'limit_products') limitValues.value[limit.key] = 50;
-            else if (limit.key === 'limit_cash_registers') limitValues.value[limit.key] = 1;
-            else if (limit.key === 'limit_print_templates') limitValues.value[limit.key] = 1;
-            else limitValues.value[limit.key] = 0;
+            limitValues.value[limit.key] = getMinLimit(limit.key);
         });
         selectedModules.value = [
             'module_pos', 'module_financial_reports', 'module_transactions',
             'module_products', 'module_expenses', 'module_customers',
-            'module_cash_registers', 'module_settings'
+            'module_services', 'module_cash_registers', 'module_settings' // Módulos default
         ];
     }
 });
 
 // --- Lógica de Precios ---
 const getPrice = (item) => {
-    // ... (sin cambios)
     if (!item) return 0;
     const basePrice = parseFloat(item.monthly_price) || 0;
     return billingPeriod.value === 'anual' ? basePrice * 10 : basePrice;
@@ -102,7 +124,6 @@ const getPrice = (item) => {
 
 // --- Lógica de Costos (Upgrade vs Renew) ---
 const remainingDays = computed(() => {
-    // ... (sin cambios)
     if (props.mode !== 'upgrade' || !versionToCompare.value) return 0;
     const endDate = new Date(versionToCompare.value.end_date);
     const today = new Date();
@@ -110,14 +131,12 @@ const remainingDays = computed(() => {
 });
 
 const totalDaysInPeriod = computed(() => {
-    // ... (sin cambios)
     if (props.mode !== 'upgrade' || !versionToCompare.value) return 365;
     return props.currentBillingPeriod === 'anual' ? 365 : 30;
 });
 
 // --- Sincronización de Formulario y UI ---
 watch([selectedModules, limitValues, billingPeriod], () => {
-    // ... (lógica de cálculo de costos sin cambios)
     form.billing_period = billingPeriod.value;
     const newItems = [];
     let totalCost = 0;
@@ -147,7 +166,7 @@ watch([selectedModules, limitValues, billingPeriod], () => {
 
         newItems.push({ key: limitItem.key, quantity: newQuantity });
         const unitPricePerPackage = getPrice(limitItem);
-        const pricePerUnit = unitPricePerPackage / (limitItem.meta.quantity || 1);
+        const pricePerUnit = unitPricePerPackage / (limitItem.meta?.quantity || 1);
 
         if (props.mode === 'upgrade') {
             const currentItem = versionToCompare.value?.items.find(item => item.item_key === limitItem.key);
@@ -156,8 +175,8 @@ watch([selectedModules, limitValues, billingPeriod], () => {
 
             if (addedQuantity > 0) {
                 const dailyPricePerUnit = (props.currentBillingPeriod === 'anual'
-                    ? (limitItem.monthly_price * 10) / (limitItem.meta.quantity || 1)
-                    : limitItem.monthly_price / (limitItem.meta.quantity || 1)) / totalDaysInPeriod.value;
+                    ? (limitItem.monthly_price * 10) / (limitItem.meta?.quantity || 1)
+                    : limitItem.monthly_price / (limitItem.meta?.quantity || 1)) / totalDaysInPeriod.value;
 
                 totalCost += (dailyPricePerUnit * remainingDays.value * addedQuantity);
             }
@@ -171,17 +190,14 @@ watch([selectedModules, limitValues, billingPeriod], () => {
 
 }, { deep: true, immediate: true });
 
-// --- AÑADIDO: Limpiar categoría si se quita la cuenta ---
 watch(() => form.bank_account_id, (newVal) => {
     if (!newVal) {
         form.expense_category_id = null;
     }
 });
 
-
 // Resumen de items
 const itemsForSummary = computed(() => {
-    // ... (sin cambios)
     const summary = [];
     const currentItemsMap = new Map(versionToCompare.value?.items.map(i => [i.item_key, i.quantity]) || []);
 
@@ -201,16 +217,14 @@ const itemsForSummary = computed(() => {
                     summary.push({ key: item.key, name: planItem.name, quantity: addedQuantity });
                 }
             }
-        } else { // mode === 'renew'
+        } else {
             summary.push({ key: item.key, name: planItem.name, quantity: item.quantity });
         }
     });
     return summary;
 });
 
-// --- Lógica del botón Revertir ---
 const confirmRevert = () => {
-    // ... (sin cambios)
     confirm.require({
         message: '¿Estás seguro de que quieres cancelar esta actualización y volver a tu plan anterior? Se eliminará este intento de pago.',
         header: 'Confirmar Cancelación',
@@ -226,34 +240,8 @@ const confirmRevert = () => {
     });
 };
 
-
-// --- Helpers ---
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 
-const getMinLimit = (limitKey) => {
-    // --- LÓGICA MODIFICADA ---
-    // Si estamos en modo renovación, permitimos bajar los límites al mínimo absoluto permitido por el sistema (1 o 0),
-    // ignorando la cantidad actual de la suscripción.
-    if (props.mode === 'renew') {
-        if (limitKey === 'limit_branches') return 1;
-        if (limitKey === 'limit_users') return 1;
-        return 0;
-    }
-
-    // Si es modo 'upgrade' (mejora), mantenemos la restricción original: 
-    // no se puede bajar de la cantidad actual contratada.
-    const baseVersion = versionToCompare.value;
-    if (!baseVersion) {
-        if (limitKey === 'limit_branches') return 1;
-        if (limitKey === 'limit_users') return 1;
-        return 0;
-    }
-    const item = baseVersion.items.find(i => i.item_key === limitKey);
-    return item ? item.quantity : 0;
-};
-
-
-// --- Manejo de subida de archivo ---
 const onFileSelect = (event) => {
     form.proof_of_payment = event.files[0];
 };
@@ -261,7 +249,6 @@ const onFileRemove = () => {
     form.proof_of_payment = null;
 };
 
-// --- Submit ---
 const submit = () => {
     form.post(route('subscription.manage.store'), {
         onError: (errors) => {
@@ -269,7 +256,6 @@ const submit = () => {
         }
     });
 };
-
 </script>
 
 <template>
@@ -278,7 +264,6 @@ const submit = () => {
 
         <div class="p-4 md:p-6 lg:p-8">
             <header class="mb-6 flex justify-between items-center">
-                <!-- ... (header sin cambios) ... -->
                 <div>
                     <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">
                         {{ mode === 'upgrade' ? 'Mejorar suscripción' : 'Renovar suscripción' }}
@@ -292,7 +277,6 @@ const submit = () => {
                 </div>
             </header>
 
-            <!-- ... (Mensajes de Reintento y Pago Pendiente sin cambios) ... -->
              <Message v-if="isRetry" severity="warn" :closable="false" class="mb-6">
                 Tu pago anterior fue rechazado. Por favor, verifica tus items y vuelve a enviar el comprobante de pago.
             </Message>
@@ -304,7 +288,6 @@ const submit = () => {
                 <!-- Columna de Selección -->
                 <div class="lg:col-span-2 space-y-6">
 
-                    <!-- ... (Selector de Periodo, Módulos, Límites sin cambios) ... -->
                     <Card>
                         <template #title>Periodo de facturación</template>
                         <template #content>
@@ -329,7 +312,7 @@ const submit = () => {
                                         :disabled="(mode === 'upgrade' && activeItemKeys.has(module.key)) || hasPendingPayment" />
                                     <label :for="module.key" class="flex-grow cursor-pointer">
                                         <div class="flex items-center gap-2">
-                                            <i :class="module.meta.icon" class="text-orange-500"></i>
+                                            <i :class="module.meta?.icon" class="text-orange-500"></i>
                                             <span class="font-semibold">{{ module.name }}</span>
                                         </div>
                                         <p class="text-xs text-gray-500">{{ formatCurrency(getPrice(module)) }}/{{
@@ -348,13 +331,16 @@ const submit = () => {
                                     class="flex items-center justify-between">
                                     <div>
                                         <p class="font-semibold m-0">{{ limit.name }}</p>
-                                        <p class="text-xs text-gray-500 m-0">{{ formatCurrency(getPrice(limit) /
-                                            (limit.meta.quantity || 1)) }} por c/u / {{ billingPeriod === 'anual' ?
-                                                'año' : 'mes' }}</p>
+                                        <!-- NUEVA LÓGICA DE TEXTO DE PRECIOS: Se lee mucho mejor -->
+                                        <p class="text-xs text-gray-500 m-0">
+                                            {{ formatCurrency(getPrice(limit)) }} por {{ (limit.meta && limit.meta.quantity > 1) ? `cada ${limit.meta.quantity}` : 'c/u' }} / {{ billingPeriod === 'anual' ? 'año' : 'mes' }}
+                                        </p>
                                     </div>
+                                    <!-- APLICANDO EL STEP CORRESPONDIENTE A PRODUCTOS (50) Y SERVICIOS (100) -->
                                     <InputNumber v-model="limitValues[limit.key]"
                                         :min="getMinLimit(limit.key)"
-                                        :step="limit.key === 'limit_products' ? 50 : 1" showButtons
+                                        :step="limit.key === 'limit_products' ? 50 : (limit.key === 'limit_services' ? 100 : 1)" 
+                                        showButtons
                                         buttonLayout="horizontal" decrementButtonClass="p-button-secondary"
                                         incrementButtonClass="p-button-secondary" incrementButtonIcon="pi pi-plus"
                                         decrementButtonIcon="pi pi-minus"
@@ -373,7 +359,6 @@ const submit = () => {
                         <template #title>Resumen de pago</template>
                         <template #content>
                             <div class="space-y-4">
-                                <!-- ... (Resumen de pago sin cambios) ... -->
                                 <p v-if="mode === 'upgrade'" class="text-sm text-gray-600 dark:text-gray-300">
                                     Se te cobrará un monto prorrateado por los <b>{{ remainingDays }} días</b> restantes
                                     de tu ciclo ({{ currentBillingPeriod }}).
@@ -386,7 +371,6 @@ const submit = () => {
 
                                 <div v-if="itemsForSummary.length > 0"
                                     class="space-y-2 text-sm max-h-48 overflow-y-auto p-1">
-                                    <!-- ... (itemsForSummary loop sin cambios) ... -->
                                     <div v-for="item in itemsForSummary" :key="item.key" class="flex justify-between">
                                         <span>
                                             {{ item.name }}
@@ -424,8 +408,7 @@ const submit = () => {
 
                                     <!-- Cuentas Bancarias del Admin -->
                                     <Accordion :activeIndex="0">
-                                        <!-- ... (loop ourBankAccounts sin cambios) ... -->
-                                        <AccordionPanel v-for="account in ourBankAccounts" :key="account.id">
+                                        <AccordionPanel v-for="account in ourBankAccounts" :key="account.id" :value="account.id">
                                             <AccordionHeader>
                                                 <span class="flex items-center gap-2 w-full">
                                                     <i class="pi pi-building-columns"></i>
@@ -445,7 +428,7 @@ const submit = () => {
                                         </AccordionPanel>
                                     </Accordion>
 
-                                    <!-- --- INICIO: REGISTRO DE GASTO (NUEVO) --- -->
+                                    <!-- --- INICIO: REGISTRO DE GASTO --- -->
                                     <div class="space-y-4 border-t dark:border-gray-700 pt-4">
                                         <h5 class="font-semibold text-sm">Registrar Gasto (Opcional)</h5>
                                         <p class="text-xs text-gray-500 -mt-3">
@@ -484,8 +467,6 @@ const submit = () => {
                                             <InputError :message="form.errors.expense_category_id" />
                                         </div>
                                     </div>
-                                    <!-- --- FIN: REGISTRO DE GASTO (NUEVO) --- -->
-
 
                                     <!-- Subida de Comprobante -->
                                     <div class="border-t dark:border-gray-700 pt-4">
@@ -504,15 +485,12 @@ const submit = () => {
                                 </div>
                                 <!-- --- FIN SECCIÓN DE PAGO --- -->
 
-
-                                <!-- ... (Mensaje de Tarjeta sin cambios) ... -->
                                 <div v-if="form.payment_method === 'card'" class="mt-4">
                                     <Message severity="warn" :closable="false">
                                         El pago con tarjeta estará disponible próximamente.
                                     </Message>
                                 </div>
 
-                                <!-- ... (Botón de Revertir sin cambios) ... -->
                                 <Button v-if="isRetry && !hasPendingPayment" @click="confirmRevert" label="Cancelar y volver al plan anterior"
                                     severity="danger" outlined class="w-full mt-2" />
 

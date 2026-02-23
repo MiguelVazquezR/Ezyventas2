@@ -127,6 +127,43 @@ class Subscription extends Model implements HasMedia
     }
 
     /**
+     * Accesor para calcular el total real de productos:
+     * (Productos base sin variantes) + (Total de variantes de productos)
+     */
+    public function getProductsCountAttribute()
+    {
+        $simpleProducts = $this->products()->doesntHave('productAttributes')->count();
+        
+        $productIds = $this->products()->pluck('products.id');
+        $variantsCount = ProductAttribute::whereIn('product_id', $productIds)->count();
+
+        return $simpleProducts + $variantsCount;
+    }
+
+    /**
+     * NUEVO: Obtiene los servicios asociados a la suscripción.
+     * (Ideal para usar con ->withCount('services') y validar los límites)
+     */
+    public function services(): HasManyThrough
+    {
+        return $this->hasManyThrough(Service::class, Branch::class);
+    }
+
+    /**
+     * Accesor para calcular el total real de servicios:
+     * (Servicios base sin variantes) + (Total de variantes de servicios)
+     */
+    public function getServicesCountAttribute()
+    {
+        $simpleServices = $this->services()->doesntHave('variants')->count();
+        
+        $serviceIds = $this->services()->pluck('services.id');
+        $variantsCount = ServiceVariant::whereIn('service_id', $serviceIds)->count();
+
+        return $simpleServices + $variantsCount;
+    }
+
+    /**
      * Get the branches for the subscription.
      */
     public function branches(): HasMany

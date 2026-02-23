@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ImportServicesModal from './Partials/ImportServicesModal.vue';
@@ -12,6 +12,7 @@ import Divider from 'primevue/divider';
 const props = defineProps({
     services: Object,
     filters: Object,
+    serviceLimitReached: Boolean, // Recibimos el candado desde el backend
 });
 
 const confirm = useConfirm();
@@ -28,7 +29,6 @@ const toggleHeaderMenu = (event) => {
     headerMenu.value.toggle(event);
 };
 const splitButtonItems = ref([
-    //{ label: 'Importar Servicios', icon: 'pi pi-upload', command: () => showImportModal.value = true },
     { label: 'Exportar Servicios', icon: 'pi pi-download', command: () => window.location.href = route('import-export.services.export') },
 ]);
 
@@ -133,14 +133,33 @@ const onRowClick = (event) => {
                             <InputText v-model="searchTerm" placeholder="Buscar servicio..." class="w-full" />
                         </IconField>
                         <ButtonGroup>
-                            <Button v-if="hasPermission('services.catalog.create')" label="Nuevo servicio" icon="pi pi-plus"
-                                @click="router.get(route('services.create'))" severity="warning" />
+                            <!-- El Tooltip le explicará al usuario por qué el botón se deshabilitó -->
+                            <span v-tooltip.bottom="serviceLimitReached ? 'Límite de servicios alcanzado en tu plan actual. Mejora tu suscripción para agregar más.' : ''">
+                                <Button 
+                                    v-if="hasPermission('services.catalog.create')" 
+                                    label="Nuevo servicio" 
+                                    icon="pi pi-plus"
+                                    @click="router.get(route('services.create'))" 
+                                    severity="warning" 
+                                    :disabled="serviceLimitReached"
+                                />
+                            </span>
                             <Button v-if="hasPermission('services.catalog.import_export')" icon="pi pi-chevron-down"
                                 @click="toggleHeaderMenu" severity="warning" />
                         </ButtonGroup>
                         <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" />
                     </div>
                 </div>
+
+                <!-- Barra de Alerta si el límite fue alcanzado -->
+                <Message v-if="serviceLimitReached" severity="warn" :closable="false" class="mb-4">
+                    <div class="flex items-center justify-between w-full">
+                        <span>Has alcanzado el límite de servicios de tu plan.</span>
+                        <Link :href="route('subscription.manage')">
+                            <Button label="Mejorar plan" size="small" outlined severity="warning" class="ml-4" />
+                        </Link>
+                    </div>
+                </Message>
 
                 <!-- Barra de Acciones Masivas -->
                 <div v-if="selectedServices.length > 0"
@@ -179,6 +198,20 @@ const onRowClick = (event) => {
                             <span class="text-gray-500 italic text-sm">{{ data.duration_estimate || 'Variable' }}</span>
                         </template>
                     </Column>
+                    <Column header="Sucursales" style="min-width: 12rem">
+                        <template #body="{ data }">
+                            <div class="flex flex-wrap gap-1">
+                                <Tag 
+                                    v-for="branch in data.branches" 
+                                    :key="branch.id" 
+                                    :value="branch.name" 
+                                    severity="secondary" 
+                                    rounded 
+                                />
+                                <span v-if="!data.branches || data.branches.length === 0" class="text-gray-400 italic text-sm">Ninguna</span>
+                            </div>
+                        </template>
+                    </Column>
                     <Column headerStyle="width: 5rem; text-align: center">
                         <template #body="{ data }"> <Button @click.stop="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
                                 text rounded severity="secondary" /> </template>
@@ -207,11 +240,6 @@ const onRowClick = (event) => {
                 <!-- Contenido Principal -->
                 <div class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-5 pb-6">
                     
-                    <!-- Imagen (Si la tuviera, se puede implementar después) -->
-                    <!-- <div class="w-full h-40 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center mb-2">
-                        <i class="pi pi-image text-4xl text-gray-400"></i>
-                    </div> -->
-
                     <!-- Info Rápida -->
                     <div class="grid grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg border border-gray-100 dark:border-gray-700">
                         <div class="flex flex-col gap-1">
@@ -225,6 +253,20 @@ const onRowClick = (event) => {
                                 {{ drawerService.duration_estimate || 'No especificada' }}
                             </span>
                         </div>
+                        <!-- Mostrar Sucursales -->
+                        <div class="col-span-2 flex flex-col gap-1 border-t dark:border-gray-700 pt-3 mt-1">
+                            <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Disponible en:</span>
+                            <div class="flex flex-wrap gap-1 mt-1">
+                                <Tag 
+                                    v-for="branch in drawerService.branches" 
+                                    :key="branch.id" 
+                                    :value="branch.name" 
+                                    severity="secondary" 
+                                    rounded 
+                                />
+                                <span v-if="!drawerService.branches || drawerService.branches.length === 0" class="text-gray-400 italic text-sm">No disponible</span>
+                            </div>
+                        </div>
                     </div>
 
                     <Divider class="!my-0" />
@@ -233,21 +275,18 @@ const onRowClick = (event) => {
                     <div class="flex flex-col gap-2">
                         <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Precio y Variantes</span>
                         
-                        <!-- Si el precio base es > 0, es un servicio sencillo -->
                         <div v-if="parseFloat(drawerService.base_price) > 0" class="flex items-center justify-between bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 p-3 rounded border border-green-200 dark:border-green-800">
                             <span class="font-semibold">Precio General:</span>
                             <span class="font-bold text-lg">{{ formatCurrency(drawerService.base_price) }}</span>
                         </div>
 
-                        <!-- Si el precio base es 0, asumimos que tiene variantes (o están pendientes de cargar) -->
                         <div v-else-if="parseFloat(drawerService.base_price) === 0" class="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 p-3 rounded border border-blue-200 dark:border-blue-800">
                             <div class="flex items-center gap-2 mb-1">
                                 <i class="pi pi-sitemap"></i>
-                                <span class="font-semibold">Servicio con Variantes</span>
+                                <span class="font-semibold">Servicio con Variantes ({{ drawerService.variants ? drawerService.variants.length : 0 }} variantes)</span>
                             </div>
                             <p class="text-xs opacity-80">Este servicio tiene precios y/o duraciones variables dependiendo del equipo o especificación. Ingresa a los detalles para ver el desglose completo.</p>
                             
-                            <!-- Si eventualmente pasas las variantes en el Index, se renderizarían aquí -->
                             <ul v-if="drawerService.variants && drawerService.variants.length > 0" class="mt-3 flex flex-col gap-2 border-t border-blue-200 dark:border-blue-800 pt-3">
                                 <li v-for="variant in drawerService.variants" :key="variant.id" class="flex justify-between items-center text-sm">
                                     <span class="font-medium truncate pr-2" :title="variant.name">- {{ variant.name }}</span>

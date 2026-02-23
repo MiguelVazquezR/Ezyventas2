@@ -482,7 +482,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
         return redirect()->route('service-orders.index')->with('success', 'Órdenes seleccionadas eliminadas.');
     }
 
-    private function getFormData(): array
+   private function getFormData(): array
     {
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
@@ -498,8 +498,12 @@ class ServiceOrderController extends Controller implements HasMiddleware
         return [
             'customers' => Customer::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))->get(),
             'products' => Product::where('branch_id', $user->branch_id)->with('productAttributes')->get(),
-            // MODIFICADO: Quitamos la restricción de columnas e incluimos ->with('variants')
-            'services' => Service::where('branch_id', $user->branch_id)->with('variants')->get(),
+            
+            // ACTUALIZADO: Filtramos consultando la tabla pivot de sucursales compartidas
+            'services' => Service::whereHas('branches', function ($q) use ($user) {
+                $q->where('branches.id', $user->branch_id);
+            })->with('variants')->get(),
+            
             'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'service_orders')->get(),
             'userBankAccounts' => $userBankAccounts,
         ];

@@ -19,12 +19,14 @@ class StoreServiceRequest extends FormRequest
             'category_id' => 'required|exists:categories,id',
             'show_online' => 'boolean',
             'image' => 'nullable|image',
-            
+
             // Campos base actualizados
             'has_variants' => 'boolean',
             'base_price' => 'nullable|numeric|min:0',
             'duration_estimate' => 'nullable|string|max:255',
-            
+            'branch_ids' => 'required|array|min:1',
+            'branch_ids.*' => 'exists:branches,id',
+
             // Validaciones dinámicas para el array de variantes
             'variants' => 'nullable|array',
             'variants.*.name' => 'required_with:variants|string|max:255',

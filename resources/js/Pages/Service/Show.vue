@@ -43,6 +43,12 @@ const actionItems = ref([
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteService, visible: hasPermission('services.catalog.delete') },
 ]);
 
+// Lógica para el nuevo Menú de Acciones
+const menu = ref();
+const toggleMenu = (event) => {
+    menu.value.toggle(event);
+};
+
 const mainImage = computed(() =>
     props.service.media && props.service.media.length > 0 ? props.service.media[0].original_url : null
 );
@@ -64,8 +70,12 @@ const formatCurrency = (value) => {
         <!-- Header -->
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{{ service.name }}</h1>
-            <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined class="mt-4 sm:mt-0">
-            </SplitButton>
+            
+            <!-- Botón y Menú de Acciones -->
+            <div class="mt-4 sm:mt-0">
+                <Button label="Acciones" icon="pi pi-chevron-down" iconPos="right" severity="secondary" outlined @click="toggleMenu" />
+                <Menu ref="menu" :model="actionItems" :popup="true" />
+            </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -109,6 +119,20 @@ const formatCurrency = (value) => {
                                         <i v-if="service.duration_estimate" class="pi pi-clock text-gray-400"></i>
                                         {{ service.duration_estimate || 'No especificada' }}
                                     </span>
+                                </li>
+                                <!-- SECCIÓN SUCURSALES -->
+                                <li class="flex flex-col mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">
+                                    <span class="text-gray-500 dark:text-gray-400 mb-2 font-medium">Disponible en:</span>
+                                    <div class="flex flex-wrap gap-1">
+                                        <Tag 
+                                            v-for="branch in service.branches" 
+                                            :key="branch.id" 
+                                            :value="branch.name" 
+                                            severity="secondary" 
+                                            rounded 
+                                        />
+                                        <span v-if="!service.branches || service.branches.length === 0" class="text-gray-400 italic text-sm">No configurado</span>
+                                    </div>
                                 </li>
                             </ul>
                         </div>
@@ -171,7 +195,7 @@ const formatCurrency = (value) => {
                     </DataTable>
                 </div>
 
-                <!-- Tarjeta: Historial de actividad (Ahora usa el mismo formato ancho que ProductShow) -->
+                <!-- Tarjeta: Historial de actividad -->
                 <ActivityHistory :activities="activities" title="Historial de movimientos" />
             </div>
         </div>

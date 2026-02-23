@@ -469,8 +469,9 @@ watch(activeSession, (newSession) => {
                         field="name" optionLabel="name" placeholder="Busca o escribe un concepto..." class="w-full"
                         dropdown>
                         <template #option="slotProps">
-                            <div>{{ slotProps.option.name }}
-                                <Tag :value="slotProps.option.type" />
+                            <div>
+                                {{ slotProps.option.name }}
+                                <Tag :value="slotProps.option.type" :severity="slotProps.option.type === 'Servicio' ? 'success' : 'info'" />
                             </div>
                         </template>
                     </AutoComplete>

@@ -19,11 +19,13 @@ class UpdateServiceRequest extends FormRequest
             'category_id' => 'required|exists:categories,id',
             'show_online' => 'boolean',
             'image' => 'nullable|image',
-            
+
             'has_variants' => 'boolean',
             'base_price' => 'nullable|numeric|min:0',
             'duration_estimate' => 'nullable|string|max:255',
-            
+            'branch_ids' => 'required|array|min:1',
+            'branch_ids.*' => 'exists:branches,id',
+
             'variants' => 'nullable|array',
             'variants.*.id' => 'nullable',
             'variants.*.name' => 'required_with:variants|string|max:255',
