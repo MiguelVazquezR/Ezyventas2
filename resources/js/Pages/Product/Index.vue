@@ -2,13 +2,13 @@
 import { ref, watch, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import ManageStockModal from './Partials/ManageStockModal.vue'; // <-- COMPONENTE UNIFICADO
+import ManageStockModal from './Partials/ManageStockModal.vue';
 import ImportProductsModal from './Partials/ImportProductsModal.vue';
 import ProductNavigation from './Partials/ProductNavigation.vue';
+import InventorySummaryModal from './Partials/InventorySummaryModal.vue'; // <-- IMPORTAMOS EL NUEVO MODAL
 import PrintModal from '@/Components/PrintModal.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
-import Image from 'primevue/image';
 
 const props = defineProps({
     products: Object,
@@ -37,13 +37,60 @@ const totalStock = computed(() => {
 });
 
 const selectedProducts = ref([]);
-const showManageStockModal = ref(false); // Modal Unificado
-const productsForStockModal = ref([]); // Array de productos para el modal
+const showManageStockModal = ref(false);
+const productsForStockModal = ref([]);
 const showImportModal = ref(false);
 const searchTerm = ref(props.filters.search || '');
 
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
+
+// --- ESTADOS DEL DRAWER Y MODALES ADICIONALES ---
+const isDrawerVisible = ref(false);
+const selectedProductDetails = ref(null);
+const showInventorySummary = ref(false); // <-- NUEVA REFERENCIA
+
+// --- HELPER FUNCTIONS PARA STOCK Y VARIANTES ---
+// Laravel envía la relación JSON como 'product_attributes' en snake_case
+const getVariants = (product) => {
+    if (!product) return [];
+    return product.product_attributes || product.productAttributes || [];
+};
+
+const hasVariants = (product) => {
+    return getVariants(product).length > 0;
+};
+
+const getCalculatedStock = (product) => {
+    if (!product) return 0;
+    if (hasVariants(product)) {
+        return getVariants(product).reduce((sum, v) => sum + (Number(v.current_stock) || 0), 0);
+    }
+    return Number(product.current_stock) || 0;
+};
+
+const getCalculatedReserved = (product) => {
+    if (!product) return 0;
+    if (hasVariants(product)) {
+        return getVariants(product).reduce((sum, v) => sum + (Number(v.reserved_stock) || 0), 0);
+    }
+    return Number(product.reserved_stock) || 0;
+};
+
+const getAvailableStock = (product) => {
+    return getCalculatedStock(product) - getCalculatedReserved(product);
+};
+
+const getStockSeverity = (product) => {
+    const availableStock = getAvailableStock(product);
+    if (availableStock <= 0) return 'danger';
+    const minStock = Number(product.min_stock);
+    if (minStock && availableStock <= minStock) {
+        return 'warning';
+    }
+    return 'success';
+};
+// ------------------------------------------------
 
 // --- GESTIÓN DE STOCK (NUEVO) ---
 const openStockModal = (products) => {
@@ -112,10 +159,8 @@ const deleteSingleProduct = () => {
 const menuItems = ref([
     { label: 'Ver', icon: 'pi pi-eye', command: () => { if (selectedProductForMenu.value) router.get(route('products.show', selectedProductForMenu.value.id)); }, visible: hasPermission('products.see_details') },
     { label: 'Editar', icon: 'pi pi-pencil', command: () => { if (selectedProductForMenu.value) router.get(route('products.edit', selectedProductForMenu.value.id)); }, visible: hasPermission('products.edit') },
-    // --- NUEVAS OPCIONES DE STOCK ---
     { separator: true },
     { label: 'Entrada/salida de stock', icon: 'pi pi-box', class: 'text-green-600', command: () => openStockModal(selectedProductForMenu.value), visible: hasPermission('products.manage_stock') },
-    // --------------------------------
     { separator: true },
     { label: 'Agregar promoción', icon: 'pi pi-tag', command: () => { if (selectedProductForMenu.value) router.get(route('products.promotions.create', selectedProductForMenu.value.id)); }, visible: hasPermission('products.manage_promos') },
     { separator: true },
@@ -140,24 +185,21 @@ const fetchData = (options = {}) => {
 const onPage = (event) => fetchData({ page: event.page + 1, rows: event.rows });
 const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: event.sortOrder });
 watch(searchTerm, () => fetchData());
-const getStockSeverity = (product) => {
-    const availableStock = (product.current_stock || 0) - (product.reserved_stock || 0);
-
-    if (availableStock <= 0) return 'danger';
-    if (product.min_stock && typeof product.min_stock === 'number' && availableStock <= product.min_stock) {
-        return 'warning';
-    }
-    return 'success';
-};
 
 const onRowClick = (event) => {
     const target = event.originalEvent.target;
+    // Ignorar clic si se hizo sobre un botón, check, o la lupa de la imagen
     if (target.closest('button') || target.closest('.p-image-preview-indicator') || target.closest('.p-checkbox')) {
         return;
     }
 
+    selectedProductDetails.value = event.data;
+    isDrawerVisible.value = true;
+};
+
+const goToDetails = (id) => {
     if (hasPermission('products.see_details')) {
-        router.visit(route('products.show', event.data.id));
+        router.visit(route('products.show', id));
     }
 };
 </script>
@@ -181,6 +223,9 @@ const onRowClick = (event) => {
                                     <Button v-if="hasPermission('products.create')" label="Nuevo producto"
                                         icon="pi pi-plus" @click="router.get(route('products.create'))"
                                         severity="warning" :disabled="limitReached" />
+                                    <!-- NUEVO BOTÓN PARA ABRIR RESUMEN -->
+                                    <Button icon="pi pi-chart-pie" @click="showInventorySummary = true"
+                                        severity="primary" v-tooltip.top="'Ver resumen de inventario'" />
                                     <Button v-if="hasPermission('products.import_export')" icon="pi pi-chevron-down"
                                         @click="toggleHeaderMenu" severity="warning" />
                                 </ButtonGroup>
@@ -189,38 +234,6 @@ const onRowClick = (event) => {
                         </div>
                     </div>
                 </div>
-
-                <!-- MEJORADO: Resumen de Stock por Categoría -->
-                <Panel v-if="stockByCategory && stockByCategory.length > 0" toggleable collapsed
-                    class="mb-6 !shadow-none border dark:border-gray-700">
-                    <template #header>
-                        <div class="flex items-center gap-2 text-gray-800 dark:text-gray-200">
-                            <i class="pi pi-chart-bar"></i>
-                            <span class="font-semibold">Resumen de Inventario</span>
-                        </div>
-                    </template>
-
-                    <div class="text-sm text-gray-700 dark:text-gray-300">
-                        <ul class="space-y-3">
-                            <li v-for="cat in stockByCategory" :key="cat.id"
-                                class="flex justify-between items-baseline">
-                                <span class="text-gray-600 dark:text-gray-400">{{ cat.name }}</span>
-                                <span
-                                    class="flex-grow border-b border-dashed border-gray-300 dark:border-gray-600 mx-2"></span>
-                                <span class="font-medium text-gray-900 dark:text-gray-100">{{
-                                    cat.products_sum_current_stock }}
-                                    unidades</span>
-                            </li>
-                        </ul>
-                        <Divider />
-                        <div class="flex justify-between items-center font-bold text-base mt-2">
-                            <span>Total General</span>
-                            <span class="text-primary-500">{{ new Intl.NumberFormat().format(totalStock) }}
-                                unidades</span>
-                        </div>
-                    </div>
-                </Panel>
-
 
                 <!-- Barra de Acciones Masivas Contextual -->
                 <div v-if="selectedProducts.length > 0"
@@ -231,7 +244,7 @@ const onRowClick = (event) => {
                         <!-- ACCIONES MASIVAS STOCK -->
                         <Button v-if="hasPermission('products.manage_stock')" @click="openStockModal(selectedProducts)"
                             label="Ajustar stock" icon="pi pi-box" size="small" severity="info" outlined />
-                            
+
                         <Button v-if="hasPermission('products.delete')" @click="deleteSelectedProducts" label="Eliminar"
                             icon="pi pi-trash" size="small" severity="danger" outlined />
                     </div>
@@ -243,21 +256,15 @@ const onRowClick = (event) => {
                     dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 75rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} productos"
-                    class="p-datatable-sm"
-                    rowHover
-                    @row-click="onRowClick"> 
-                    
+                    class="p-datatable-sm cursor-pointer" rowHover @row-click="onRowClick">
+
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
-                    
+
                     <Column header="Imagen" style="width: 5rem">
                         <template #body="{ data }">
                             <div @click.stop class="flex items-center justify-center size-12 bg-gray-100">
-                                <Image v-if="data.media && data.media.length > 0" 
-                                    :src="data.media[0].original_url" 
-                                    :alt="data.name" 
-                                    class="rounded-md shadow-sm !h-full" 
-                                    preview 
-                                />
+                                <Image v-if="data.media && data.media.length > 0" :src="data.media[0].original_url"
+                                    :alt="data.name" class="rounded-md shadow-sm !h-full object-cover" preview />
                                 <div v-else
                                     class="w-12 h-12 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
                                     <i class="pi pi-image text-2xl text-gray-400 dark:text-gray-500"></i>
@@ -269,38 +276,68 @@ const onRowClick = (event) => {
                     <Column field="sku" header="Código" sortable>
                         <template #body="{ data }">
                             <div class="flex items-center gap-2 -ml-2">
-                                <Button v-if="data.sku && hasPermission('pos.access')" @click.stop="openPrintModal(data)"
-                                    icon="pi pi-print" text rounded severity="secondary"
-                                    v-tooltip.bottom="'Imprimir Etiqueta'" />
-                                <span>{{ data.sku }}</span>
+                                <Button v-if="data.sku && hasPermission('pos.access')"
+                                    @click.stop="openPrintModal(data)" icon="pi pi-print" text rounded
+                                    severity="secondary" v-tooltip.bottom="'Imprimir etiqueta'" />
+                                <span class="font-mono text-sm">{{ data.sku }}</span>
                             </div>
                         </template>
                     </Column>
                     <Column field="name" header="Nombre" sortable></Column>
-                    
-                    <Column field="location" header="Ubicación" sortable></Column>
 
-                    <Column field="current_stock" header="Existencias" sortable>
+                    <Column header="Sucursales" style="min-width: 10rem">
                         <template #body="{ data }">
-                            <div class="flex items-center space-x-2">
-                                <Tag :value="(data.current_stock || 0) - (data.reserved_stock || 0)"
-                                    :severity="getStockSeverity(data)" />
-
-                                <Tag v-if="data.reserved_stock && data.reserved_stock > 0"
-                                    :value="data.reserved_stock + ' apartado(s)'"
-                                    v-tooltip.bottom="`Stock físico Total: ${data.current_stock}`"
-                                    class="!bg-indigo-100 !text-indigo-600" />
+                            <div class="flex flex-wrap gap-1">
+                                <Tag v-for="branch in data.branches?.slice(0, 2)" :key="branch.id" :value="branch.name"
+                                    severity="info" class="!text-xs" />
+                                <Tag v-if="data.branches?.length > 2" :value="`+${data.branches.length - 2}`"
+                                    severity="secondary" class="!text-xs cursor-help"
+                                    v-tooltip.top="data.branches.slice(2).map(b => b.name).join(', ')" />
                             </div>
                         </template>
                     </Column>
-                    <Column field="selling_price" header="Precio" sortable>
+
+                    <Column field="location" header="Ubicación" sortable>
                         <template #body="{ data }">
-                            {{ new Intl.NumberFormat('es-MX', {
-                                style: 'currency', currency: 'MXN'
-                            }).format(data.selling_price) }}
+                            <span class="text-sm text-gray-600 dark:text-gray-400">
+                                {{ hasVariants(data) ? 'Múltiples (Ver detalle)' : (data.location || '--') }}
+                            </span>
                         </template>
                     </Column>
-                    <Column field="min_stock" header="Exist. mínimas" sortable></Column>
+
+                    <!-- SECCIÓN DINÁMICA DE EXISTENCIAS -->
+                    <Column field="current_stock" header="Existencias" sortable>
+                        <template #body="{ data }">
+                            <div class="flex items-center space-x-2">
+                                <Tag :value="getAvailableStock(data)" :severity="getStockSeverity(data)" />
+
+                                <Tag v-if="getCalculatedReserved(data) > 0"
+                                    :value="getCalculatedReserved(data) + ' apartado(s)'"
+                                    v-tooltip.bottom="`Stock físico Total: ${getCalculatedStock(data)}`"
+                                    class="!bg-indigo-100 !text-indigo-600" />
+
+                                <!-- Tooltip visual de Variantes -->
+                                <i v-if="hasVariants(data)" class="pi pi-sitemap text-gray-400 cursor-help"
+                                    v-tooltip.top="`Se suman las existencias de ${getVariants(data).length} variantes`">
+                                </i>
+                            </div>
+                        </template>
+                    </Column>
+
+                    <Column field="selling_price" header="Precio" sortable>
+                        <template #body="{ data }">
+                            <span class="font-semibold">
+                                {{ new Intl.NumberFormat('es-MX', {
+                                    style: 'currency', currency: 'MXN'
+                                }).format(data.selling_price) }}
+                            </span>
+                        </template>
+                    </Column>
+                    <Column field="min_stock" header="Exist. mínimas" sortable>
+                        <template #body="{ data }">
+                            <span class="text-sm text-gray-500">{{ data.min_stock || '--' }}</span>
+                        </template>
+                    </Column>
                     <Column headerStyle="width: 5rem; text-align: center">
                         <template #body="{ data }">
                             <!-- Botón con stop propagation -->
@@ -319,10 +356,176 @@ const onRowClick = (event) => {
             </div>
         </div>
 
-        <!-- MODAL UNIFICADO DE GESTIÓN DE STOCK -->
+        <!-- DRAWER DE DETALLES DEL PRODUCTO -->
+        <Drawer v-model:visible="isDrawerVisible" position="right"
+            class="w-full md:!w-[32rem] !bg-gray-50 dark:!bg-gray-900">
+            <template #header>
+                <div class="flex items-center gap-2 font-bold text-lg text-gray-800 dark:text-gray-200">
+                    <i class="pi pi-box"></i>
+                    <span>Vista rápida</span>
+                </div>
+            </template>
+
+            <div v-if="selectedProductDetails" class="flex flex-col h-full -mt-2">
+                <!-- Contenedor scrolleable -->
+                <div class="flex-1 overflow-y-auto pb-24 space-y-4 px-1">
+
+                    <!-- Tarjeta Principal (Imagen, nombre, precio) -->
+                    <div
+                        class="bg-white dark:bg-gray-800 rounded-lg p-5 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <div class="flex gap-5 items-start">
+                            <div
+                                class="w-24 h-24 shrink-0 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
+                                <img v-if="selectedProductDetails.media && selectedProductDetails.media.length > 0"
+                                    :src="selectedProductDetails.media[0].original_url"
+                                    class="w-full h-full object-cover" />
+                                <div v-else class="w-full h-full flex items-center justify-center">
+                                    <i class="pi pi-image text-3xl text-gray-400"></i>
+                                </div>
+                            </div>
+                            <div class="flex-1">
+                                <h3 class="font-bold text-gray-900 dark:text-gray-100 leading-tight mb-2">{{
+                                    selectedProductDetails.name }}</h3>
+                                <div class="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                                    SKU: <span class="font-mono text-gray-800 dark:text-gray-200">{{
+                                        selectedProductDetails.sku
+                                        || 'N/A' }}</span>
+                                </div>
+                                <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                                    Categoría: <span class="text-gray-800 dark:text-gray-200">{{
+                                        selectedProductDetails.category?.name || 'N/A' }}</span>
+                                </div>
+                                <div
+                                    class="text-sm text-gray-600 dark:text-gray-400 mb-3 flex flex-wrap items-center gap-1">
+                                    Sucursales:
+                                    <Tag v-for="branch in selectedProductDetails.branches" :key="branch.id"
+                                        :value="branch.name" severity="info" class="!text-[10px]" />
+                                </div>
+                                <div class="text-lg font-bold text-primary-600 dark:text-primary-400">
+                                    {{ new Intl.NumberFormat('es-MX', {
+                                        style: 'currency', currency: 'MXN'
+                                    }).format(selectedProductDetails.selling_price) }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Resumen de Inventario General de la Sucursal -->
+                    <div
+                        class="bg-white dark:bg-gray-800 rounded-lg p-5 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <h4 class="font-bold text-sm text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
+                            <i class="pi pi-warehouse"></i> Inventario local
+
+                            <span v-if="hasVariants(selectedProductDetails)"
+                                class="text-xs font-normal text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full"
+                                v-tooltip.top="'Cálculo sumando todas las variantes de este producto'">
+                                (Total de Variantes)
+                            </span>
+                        </h4>
+
+                        <div class="grid grid-cols-2 gap-y-5 gap-x-4 text-sm">
+                            <div
+                                class="bg-gray-50 dark:bg-gray-900/50 p-3 rounded border border-gray-100 dark:border-gray-700">
+                                <span
+                                    class="block text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider mb-1">Stock
+                                    Físico</span>
+                                <span class="font-semibold text-xl text-gray-800 dark:text-gray-200">{{
+                                    getCalculatedStock(selectedProductDetails) }}</span>
+                            </div>
+                            <div
+                                class="bg-gray-50 dark:bg-gray-900/50 p-3 rounded border border-gray-100 dark:border-gray-700">
+                                <span
+                                    class="block text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider mb-1">Disponible</span>
+                                <span class="font-bold text-xl text-green-600">{{
+                                    getAvailableStock(selectedProductDetails)
+                                    }}</span>
+                            </div>
+                            <div
+                                class="bg-gray-50 dark:bg-gray-900/50 p-3 rounded border border-gray-100 dark:border-gray-700">
+                                <span
+                                    class="block text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider mb-1">Apartados</span>
+                                <span class="font-semibold text-lg text-indigo-500">{{
+                                    getCalculatedReserved(selectedProductDetails) }}</span>
+                            </div>
+                            <div
+                                class="bg-gray-50 dark:bg-gray-900/50 p-3 rounded border border-gray-100 dark:border-gray-700">
+                                <span
+                                    class="block text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider mb-1">Ubicación</span>
+                                <span class="font-medium text-lg text-gray-800 dark:text-gray-200">
+                                    {{ hasVariants(selectedProductDetails) ? 'Múltiples' :
+                                        (selectedProductDetails.location ||
+                                    '--') }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SECCIÓN DINÁMICA DE VARIANTES EN EL DRAWER -->
+                    <div v-if="hasVariants(selectedProductDetails)"
+                        class="bg-white dark:bg-gray-800 rounded-lg p-5 shadow-sm border border-gray-200 dark:border-gray-700">
+                        <h4 class="font-bold text-sm text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
+                            <i class="pi pi-sitemap"></i> Variantes ({{ getVariants(selectedProductDetails).length }})
+                        </h4>
+                        <div class="space-y-3">
+                            <div v-for="variant in getVariants(selectedProductDetails)" :key="variant.id"
+                                class="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-between gap-3">
+                                <div>
+                                    <div class="flex flex-wrap gap-1.5 mb-2">
+                                        <Tag v-for="(val, key) in variant.attributes" :key="key"
+                                            :value="`${key}: ${val}`" severity="secondary" class="!text-xs" />
+                                    </div>
+                                    <!-- Precio calculado de la variante -->
+                                    <div class="font-bold text-primary-600 dark:text-primary-400 text-sm mb-1">
+                                        {{ new Intl.NumberFormat('es-MX', {
+                                            style: 'currency', currency: 'MXN'
+                                        }).format(Number(selectedProductDetails.selling_price) +
+                                        Number(variant.price_modifier
+                                        || variant.selling_price_modifier || 0)) }}
+                                    </div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-400">
+                                        SKU: <span class="font-mono text-gray-800 dark:text-gray-200">{{ variant.sku ||
+                                            variant.sku_suffix || 'N/A' }}</span>
+                                    </div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-1" v-if="variant.location">
+                                        <i class="pi pi-map-marker text-[10px] mr-1"></i>{{ variant.location }}
+                                    </div>
+                                </div>
+                                <div
+                                    class="text-left sm:text-right border-t sm:border-t-0 border-gray-200 dark:border-gray-700 pt-2 sm:pt-0">
+                                    <div class="text-sm font-semibold text-gray-600 dark:text-gray-300">
+                                        Físico: {{ variant.current_stock || 0 }}
+                                    </div>
+                                    <div class="text-sm font-bold text-green-600 mt-1">
+                                        Disp: {{ (variant.current_stock || 0) - (variant.reserved_stock || 0) }}
+                                    </div>
+                                    <div v-if="variant.reserved_stock > 0"
+                                        class="text-xs text-indigo-500 font-medium mt-1">
+                                        ({{ variant.reserved_stock }} apartados)
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer (Botón flotante en el Drawer) -->
+                <div
+                    class="absolute bottom-0 left-0 w-full p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+                    <Button label="Ver todos los detalles" icon="pi pi-external-link" class="w-full" size="large"
+                        severity="primary" @click="goToDetails(selectedProductDetails.id)"
+                        :disabled="!hasPermission('products.see_details')" />
+                </div>
+            </div>
+        </Drawer>
+
+        <!-- NUEVO MODAL DE RESUMEN DE INVENTARIO -->
+        <InventorySummaryModal v-model:visible="showInventorySummary" :stockByCategory="stockByCategory"
+            :totalStock="totalStock" />
+
+        <!-- Modales Independientes -->
         <ManageStockModal :visible="showManageStockModal" :products="productsForStockModal"
             @update:visible="showManageStockModal = false" />
-            
+
         <ImportProductsModal :visible="showImportModal" @update:visible="showImportModal = false" />
 
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"

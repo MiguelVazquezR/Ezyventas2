@@ -123,13 +123,13 @@ const removeVariantImage = (key) => {
 <template>
     <div id="images" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md scroll-mt-24">
         <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
-            Imágenes del Producto
+            Imágenes del producto
         </h2>
 
         <!-- SECCIÓN: IMÁGENES GENERALES -->
         <div>
             <div class="mb-3">
-                <InputLabel value="Imágenes Generales (Máx. 5)" class="text-base font-bold" />
+                <InputLabel value="Imágenes generales (Máx. 5)" class="text-base font-bold" />
                 <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
                     Estas son las fotos principales que verán tus clientes al entrar al producto. Se recomienda usar fondo blanco y buena iluminación.
                 </p>
@@ -150,7 +150,7 @@ const removeVariantImage = (key) => {
                 @select="onGeneralImagesSelect" 
                 :multiple="true" 
                 accept="image/*" 
-                :maxFileSize="5000000" 
+                :maxFileSize="10000000" 
                 :showUploadButton="false" 
                 :showCancelButton="false"
                 chooseLabel="Seleccionar nuevas imágenes"
@@ -158,7 +158,7 @@ const removeVariantImage = (key) => {
             >
                 <template #empty>
                     <div class="flex flex-col items-center justify-center p-6 text-gray-500">
-                        <i class="pi pi-cloud-upload text-4xl mb-3 text-gray-400"></i>
+                        <i class="pi pi-cloud-upload !text-4xl mb-3 text-gray-400"></i>
                         <p class="m-0 text-center">Arrastra y suelta nuevas imágenes aquí, o haz clic para buscarlas en tu equipo.</p>
                     </div>
                 </template>
@@ -170,9 +170,9 @@ const removeVariantImage = (key) => {
         <div v-if="attributesRequiringImages.length > 0 && requiredVariantImagesList.length > 0" class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
             
             <div class="mb-5 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800 flex gap-3 items-start">
-                <i class="pi pi-camera text-blue-500 text-xl mt-0.5"></i>
+                <i class="pi pi-camera text-blue-500 !text-xl mt-0.5"></i>
                 <div>
-                    <h3 class="font-bold text-blue-800 dark:text-blue-200 m-0">Fotografías Específicas Requeridas</h3>
+                    <h5 class="font-bold text-blue-800 dark:text-blue-200 m-0">Fotografías específicas requeridas</h5>
                     <p class="text-sm text-blue-600 dark:text-blue-400 m-0 mt-1">
                         El sistema ha detectado que debes subir una imagen por cada opción de 
                         <strong v-for="(attr, idx) in attributesRequiringImages" :key="attr.id">
@@ -210,7 +210,7 @@ const removeVariantImage = (key) => {
 
                         <!-- Si NO hay imagen: Botón de Subida -->
                         <div v-else @click="triggerFileInput(item.key)" class="w-full h-full flex flex-col items-center justify-center text-gray-400">
-                            <i class="pi pi-image text-3xl mb-2 opacity-50"></i>
+                            <i class="pi pi-image !text-3xl mb-2 opacity-50"></i>
                             <span class="text-xs font-medium">Subir foto</span>
                         </div>
 

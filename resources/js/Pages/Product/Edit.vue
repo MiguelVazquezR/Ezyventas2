@@ -34,6 +34,7 @@ const initialVariantsMatrix = (props.product.product_attributes || []).map(pa =>
     _localId: `db_${pa.id}`,
     attributes: pa.attributes,
     sku: pa.sku_suffix || pa.sku || '',
+    location: pa.location || '',
     selling_price_modifier: parseFloat(pa.selling_price_modifier || 0),
     final_price: parseFloat(props.product.selling_price || 0) + parseFloat(pa.selling_price_modifier || 0),
     current_stock: pa.current_stock || 0,

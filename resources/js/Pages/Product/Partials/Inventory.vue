@@ -22,6 +22,9 @@ onMounted(() => {
             if (v.final_price === undefined) {
                 v.final_price = (props.form.selling_price || 0) + Number(v.selling_price_modifier || 0);
             }
+            if (v.location === undefined) {
+                v.location = '';
+            }
         });
 
         // 2. MODO EDICIÓN: Autocompletar los selectores basados en las variantes existentes
@@ -98,6 +101,7 @@ const generateMatrix = () => {
             _localId: `gen_${localIdCounter++}`,
             attributes: combo,
             sku: '',
+            location: '',
             selling_price_modifier: 0,
             final_price: props.form.selling_price || 0,
             current_stock: 0,
@@ -116,6 +120,7 @@ const addManualVariant = () => {
         _localId: `new_${localIdCounter++}`,
         attributes: { 'Detalle': '' },
         sku: '',
+        location: '',
         selling_price_modifier: 0,
         final_price: props.form.selling_price || 0,
         current_stock: 0,
@@ -216,8 +221,8 @@ watch(variantSearch, () => {
                 <!-- SECCIÓN: GENERADOR DE ATRIBUTOS -->
                 <div class="col-span-full bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-5 mb-2">
                     <div class="flex justify-between items-center mb-1">
-                        <h3 class="font-bold text-gray-800 dark:text-gray-200 m-0">Generador Automático de Variantes</h3>
-                        <Button @click="$emit('open-attributes')" :disabled="!form.category_id" label="Configurar Atributos" icon="pi pi-cog" size="small" outlined severity="secondary" />
+                        <h5 class="font-bold text-gray-800 dark:text-gray-200 m-0">Generador automático de variantes</h5>
+                        <Button @click="$emit('open-attributes')" :disabled="!form.category_id" label="Configurar atributos" icon="pi pi-cog" size="small" outlined severity="secondary" />
                     </div>
                     <p class="text-sm text-gray-500 dark:text-gray-400 mb-5 max-w-3xl">
                         Selecciona las características (ej. Colores, Tallas) y haz clic en "Generar combinaciones". El sistema creará automáticamente una matriz con todas las opciones posibles de tu producto.
@@ -257,9 +262,9 @@ watch(variantSearch, () => {
                     
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                         <div>
-                            <h3 class="font-bold text-gray-800 dark:text-gray-200 m-0">Matriz de Variantes ({{ filteredVariants.length }})</h3>
+                            <h5 class="font-bold text-gray-800 dark:text-gray-200 m-0">Matriz de variantes ({{ filteredVariants.length }})</h5>
                             <p class="text-sm text-gray-500 dark:text-gray-400 m-0 mt-1">
-                                Asigna inventario inicial, código SKU y el <strong>precio final de venta</strong> para cada opción.
+                                Asigna inventario inicial, código SKU, <strong>ubicación</strong> y el precio final de venta para cada opción.
                             </p>
                         </div>
                         
@@ -298,10 +303,11 @@ watch(variantSearch, () => {
 
                         <!-- Encabezados de Tabla (Solo visibles en Escritorio) -->
                         <div v-if="filteredVariants.length > 0" class="hidden md:flex gap-3 px-4 pb-2 border-b border-gray-200 dark:border-gray-700 text-xs uppercase tracking-wider font-semibold text-gray-500 dark:text-gray-400 mt-2">
-                            <div class="w-4/12">Variante / Atributos</div>
-                            <div class="w-3/12">Precio Final</div>
-                            <div class="w-2/12">Stock Actual</div>
+                            <div class="w-3/12">Variante / Atributos</div>
+                            <div class="w-2/12">Precio Final</div>
+                            <div class="w-2/12">Stock</div>
                             <div class="w-2/12">SKU</div>
+                            <div class="w-2/12">Ubicación</div>
                             <div class="w-1/12 text-right">Acciones</div>
                         </div>
 
@@ -310,7 +316,7 @@ watch(variantSearch, () => {
                             class="flex flex-col md:flex-row gap-3 items-start md:items-center bg-white dark:bg-gray-800 p-4 md:p-3 rounded shadow-sm border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
                             
                             <!-- ATRIBUTOS -->
-                            <div class="w-full md:w-4/12 flex flex-wrap gap-1">
+                            <div class="w-full md:w-3/12 flex flex-wrap gap-1">
                                 <template v-if="Object.keys(variant.attributes).length === 1 && Object.keys(variant.attributes)[0] === 'Detalle'">
                                     <InputText v-model="variant.attributes['Detalle']" placeholder="Ej: 128GB - Rojo" class="w-full text-sm" required />
                                 </template>
@@ -319,7 +325,7 @@ watch(variantSearch, () => {
                                 </template>
                             </div>
 
-                            <div class="w-full md:w-3/12">
+                            <div class="w-full md:w-2/12">
                                 <InputLabel :value="'Precio Final'" class="text-xs !mb-1 md:hidden text-gray-500 font-semibold" />
                                 <InputNumber v-model="variant.final_price" @update:modelValue="updateModifier(variant, $event)" mode="currency" currency="MXN" locale="es-MX"
                                     placeholder="$0.00" class="w-full text-sm" inputClass="!w-full" />
@@ -333,6 +339,12 @@ watch(variantSearch, () => {
                             <div class="w-full md:w-2/12">
                                 <InputLabel :value="'SKU'" class="text-xs !mb-1 md:hidden text-gray-500 font-semibold" />
                                 <InputText v-model="variant.sku" placeholder="Ej: SKU-001" class="w-full text-sm" />
+                            </div>
+                            
+                            <!-- NUEVO: Campo de Ubicación -->
+                            <div class="w-full md:w-2/12">
+                                <InputLabel :value="'Ubicación'" class="text-xs !mb-1 md:hidden text-gray-500 font-semibold" />
+                                <InputText v-model="variant.location" placeholder="Ej: A-3" class="w-full text-sm" />
                             </div>
 
                             <div class="w-full md:w-1/12 flex justify-end">

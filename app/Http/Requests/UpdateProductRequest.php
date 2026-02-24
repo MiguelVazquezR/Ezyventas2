@@ -66,6 +66,12 @@ class UpdateProductRequest extends FormRequest
             
             // Variantes (la matriz llega como array)
             'variants_matrix' => 'required_if:product_type,variant|array',
+            'variants_matrix.*.id' => 'nullable|integer',
+            'variants_matrix.*.attributes' => 'required|array',
+            'variants_matrix.*.sku' => 'nullable|string|max:255',
+            'variants_matrix.*.location' => 'nullable|string|max:255',
+            'variants_matrix.*.current_stock' => 'nullable|numeric|min:0',
+            'variants_matrix.*.selling_price_modifier' => 'nullable|numeric',
             
             // Imágenes
             'general_images' => 'nullable|array|max:5',

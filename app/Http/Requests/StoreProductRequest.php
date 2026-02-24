@@ -9,42 +9,30 @@ use Illuminate\Database\Query\Builder;
 
 class StoreProductRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
         return true; 
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
-     */
     public function rules(): array
     {
         $user = Auth::user();
 
         return [
-            // Información General
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'sku' => [
                 'nullable',
                 'string',
                 'max:255',
-                // Validación única SOLO para la sucursal actual (branch_id).
                 Rule::unique('products')->where(function (Builder $query) use ($user) {
                     return $query->where('branch_id', $user->branch_id);
                 }),
             ],
-            'location' => 'nullable|string|max:255',
             
-            // NUEVO: Validación de Sucursales Múltiples
+            'location' => 'nullable|string|max:255',
             'branch_ids' => 'required|array|min:1',
             'branch_ids.*' => 'exists:branches,id',
-
             'category_id' => 'required|exists:categories,id',
             'brand_id' => 'nullable|exists:brands,id',
             'cost_price' => 'nullable|numeric|min:0',
@@ -64,23 +52,25 @@ class StoreProductRequest extends FormRequest
                 'min:0.01'
             ],
 
-            // Inventario y Variantes
             'product_type' => 'required|in:simple,variant',
             'current_stock' => 'required_if:product_type,simple|nullable|numeric|min:0',
             'min_stock' => 'nullable|numeric|min:0',
             'max_stock' => 'nullable|numeric|min:0',
             'measure_unit' => 'required|string|max:50',
 
-            // Variantes (la matriz llega como array)
+            // Validamos explícitamente el array y sus atributos internos para que Laravel no los descarte
             'variants_matrix' => 'required_if:product_type,variant|array',
+            'variants_matrix.*.attributes' => 'required|array',
+            'variants_matrix.*.sku' => 'nullable|string|max:255',
+            'variants_matrix.*.location' => 'nullable|string|max:255',
+            'variants_matrix.*.current_stock' => 'nullable|numeric|min:0',
+            'variants_matrix.*.selling_price_modifier' => 'nullable|numeric',
 
-            // Imágenes
             'general_images' => 'nullable|array|max:5',
             'general_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp,avif',
             'variant_images' => 'nullable|array',
             'variant_images.*' => 'image|mimes:jpeg,png,jpg,gif,webp,avif',
 
-            // Tienda en Línea
             'show_online' => 'boolean',
             'online_price' => 'nullable|numeric|min:0',
             'requires_shipping' => 'boolean',
@@ -89,7 +79,6 @@ class StoreProductRequest extends FormRequest
             'width' => 'nullable|numeric|min:0',
             'height' => 'nullable|numeric|min:0',
             
-            // Configuraciones Adicionales
             'delivery_days' => 'nullable|integer|min:0',
             'tags' => 'nullable|string',
             'is_featured' => 'boolean',
