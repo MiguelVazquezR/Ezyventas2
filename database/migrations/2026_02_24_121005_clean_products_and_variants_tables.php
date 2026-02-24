@@ -14,20 +14,33 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('products', function (Blueprint $table) {
-            $table->dropColumn([
+            $columnsToDrop = [
                 'location',
                 'current_stock',
                 'min_stock',
                 'max_stock'
-            ]);
+            ];
+            
+            // Verificamos si existe reserved_stock en la tabla maestra para eliminarlo
+            if (Schema::hasColumn('products', 'reserved_stock')) {
+                $columnsToDrop[] = 'reserved_stock';
+            }
+
+            $table->dropColumn($columnsToDrop);
         });
 
         Schema::table('product_attributes', function (Blueprint $table) {
-            $table->dropColumn([
+            $columnsToDrop = [
                 'current_stock',
                 'min_stock',
                 'max_stock'
-            ]);
+            ];
+
+            if (Schema::hasColumn('product_attributes', 'reserved_stock')) {
+                $columnsToDrop[] = 'reserved_stock';
+            }
+
+            $table->dropColumn($columnsToDrop);
         });
     }
 
@@ -38,6 +51,7 @@ return new class extends Migration
     {
         Schema::table('products', function (Blueprint $table) {
             $table->integer('current_stock')->default(0);
+            $table->integer('reserved_stock')->default(0);
             $table->integer('min_stock')->nullable();
             $table->integer('max_stock')->nullable();
             $table->string('location')->nullable();
@@ -45,6 +59,7 @@ return new class extends Migration
 
         Schema::table('product_attributes', function (Blueprint $table) {
             $table->integer('current_stock')->nullable();
+            $table->integer('reserved_stock')->default(0);
             $table->integer('min_stock')->nullable();
             $table->integer('max_stock')->nullable();
         });
