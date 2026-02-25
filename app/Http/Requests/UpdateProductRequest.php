@@ -33,7 +33,6 @@ class UpdateProductRequest extends FormRequest
             ],
             'location' => 'nullable|string|max:255', 
 
-            // NUEVO: Validación de Sucursales Múltiples
             'branch_ids' => 'required|array|min:1',
             'branch_ids.*' => 'exists:branches,id',
 
@@ -64,13 +63,15 @@ class UpdateProductRequest extends FormRequest
             'max_stock' => 'nullable|numeric|min:0',
             'measure_unit' => 'required|string|max:50',
             
-            // Variantes (la matriz llega como array)
+            // Variantes
             'variants_matrix' => 'required_if:product_type,variant|array',
             'variants_matrix.*.id' => 'nullable|integer',
             'variants_matrix.*.attributes' => 'required|array',
             'variants_matrix.*.sku' => 'nullable|string|max:255',
             'variants_matrix.*.location' => 'nullable|string|max:255',
             'variants_matrix.*.current_stock' => 'nullable|numeric|min:0',
+            'variants_matrix.*.min_stock' => 'nullable|numeric|min:0', // NUEVO
+            'variants_matrix.*.max_stock' => 'nullable|numeric|min:0', // NUEVO
             'variants_matrix.*.selling_price_modifier' => 'nullable|numeric',
             
             // Imágenes

@@ -4,7 +4,7 @@ import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
-import ManageStockModal from './Partials/ManageStockModal.vue'; // <-- CAMBIO: Importar nuevo modal
+import ManageStockModal from './Partials/ManageStockModal.vue';
 import ActivityHistory from '@/Components/ActivityHistory.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import { usePermissions } from '@/Composables';
@@ -20,8 +20,6 @@ const props = defineProps({
 
 const toast = useToast();
 const confirm = useConfirm();
-
-// composables
 const { hasPermission } = usePermissions();
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
@@ -29,9 +27,10 @@ const items = ref([
     { label: 'Productos', url: route('products.index') },
     { label: props.product.name }
 ]);
+
 const localPromotions = ref([...props.promotions]);
 const promoMenus = ref({});
-const showManageStockModal = ref(false); // <-- CAMBIO: Nombre de variable actualizado
+const showManageStockModal = ref(false);
 
 // --- Lógica del Modal de Impresión ---
 const isPrintModalVisible = ref(false);
@@ -46,24 +45,29 @@ const openPrintModal = () => {
 };
 // --- Fin de la lógica de impresión ---
 
+// --- Lógica para Menú de Acciones ---
+const actionMenu = ref(null);
 
 const actionItems = ref([
     { label: 'Crear nuevo', icon: 'pi pi-plus', command: () => router.get(route('products.create')), visible: hasPermission('products.create') },
     { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('products.edit', props.product.id)), visible: hasPermission('products.edit') },
     { label: 'Agregar promoción', icon: 'pi pi-tag', command: () => router.get(route('products.promotions.create', props.product.id)), visible: hasPermission('products.manage_promos') },
-    // --- CAMBIO: Opciones de Stock separadas para mejor UX ---
     { separator: true },
-    { label: 'Entrada/salida de stock', icon: 'pi pi-box', class: 'text-green-600', command: () => showManageStockModal.value = true, visible: hasPermission('products.manage_stock') },
-    // ---------------------------------------------------------
+    { label: 'Entrada/salida stock', icon: 'pi pi-box', class: 'text-green-600', command: () => showManageStockModal.value = true, visible: hasPermission('products.manage_stock') },
     { separator: true },
     { label: 'Imprimir etiqueta', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
     { label: 'Eliminar producto', icon: 'pi pi-trash', class: 'text-red-500', command: () => deleteProduct(), visible: hasPermission('products.delete') },
 ]);
 
+const toggleActionMenu = (event) => {
+    actionMenu.value.toggle(event);
+};
+// -----------------------------------
+
 const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text).then(() => {
-        toast.add({ severity: 'success', summary: 'Copiado', detail: 'SKU copiado al portapapeles', life: 7000 });
+        toast.add({ severity: 'success', summary: 'Copiado', detail: 'SKU copiado al portapapeles', life: 3000 });
     });
 };
 
@@ -73,7 +77,6 @@ const formatDate = (dateString) => {
     return date.toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
 };
 
-// --- Funciones auxiliares para fecha ---
 const formatDateOnly = (dateString) => {
     if (!dateString) return 'N/A';
     try {
@@ -91,7 +94,6 @@ const isExpired = (dateString) => {
     return expiration < today;
 };
 
-// --- Función para formatear moneda ---
 const formatCurrency = (value) => {
     if (value === null || value === undefined) return 'N/A';
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
@@ -112,7 +114,7 @@ const togglePromotionStatus = (promo) => {
 const deleteProduct = () => {
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar "${props.product.name}"? Esta acción no se puede deshacer.`,
-        header: 'Confirmación de Eliminación',
+        header: 'Confirmar eliminación',
         icon: 'pi pi-exclamation-triangle',
         acceptClass: 'p-button-danger',
         acceptLabel: 'Sí, eliminar',
@@ -126,7 +128,7 @@ const deleteProduct = () => {
 const deletePromotion = (promo) => {
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar la promoción "${promo.name}"? Esta acción no se puede deshacer.`,
-        header: 'Confirmación de Eliminación',
+        header: 'Confirmar eliminación',
         icon: 'pi pi-exclamation-triangle',
         acceptClass: 'p-button-danger',
         acceptLabel: 'Sí, eliminar',
@@ -169,7 +171,6 @@ const generalImages = computed(() =>
     (props.product.media || []).filter(m => m.collection_name === 'product-general-images')
 );
 
-// --- NUEVA LÓGICA DE GALERÍA CON ZOOM ---
 const selectedImageIndex = ref(0);
 
 const currentGeneralImage = computed(() => {
@@ -181,44 +182,39 @@ const currentGeneralImage = computed(() => {
     }
     return null;
 });
-// ----------------------------------------
 
-// Genera un mapa de 'Opción' -> 'URL Imagen' (ej. 'Rojo' -> 'url...')
+// Extrae las imágenes de variantes mapeadas por variant_key
 const variantImages = computed(() => {
     const media = props.product.media || [];
     const images = media.filter(m => m.collection_name === 'product-variant-images');
     const imageMap = {};
     images.forEach(img => {
-        // Acceso seguro a custom_properties
         const properties = img.custom_properties || {};
-        const option = properties.variant_option;
+        // El controlador guarda la propiedad bajo 'variant_key'
+        const option = properties.variant_key || properties.variant_option;
         if (option) {
-            // Convertimos a string para asegurar coincidencias (ej. "24" vs 24)
             imageMap[String(option)] = img.original_url;
         }
     });
     return imageMap;
 });
 
-// Función auxiliar para obtener la imagen de una variante buscando coincidencias en sus atributos
-const getVariantImage = (attributes) => {
-    if (!attributes) return null;
+const getVariantImage = (variant) => {
+    if (!variant) return null;
     
-    // Manejar caso donde attributes venga como string JSON
-    let attrs = attributes;
-    if (typeof attrs === 'string') {
-        try {
-            attrs = JSON.parse(attrs);
-        } catch (e) {
-            return null;
-        }
+    // Primero, buscar si la key de la imagen coincide con el ID de la variante
+    if (variant.id && variantImages.value[String(variant.id)]) {
+        return variantImages.value[String(variant.id)];
     }
-
+    
+    // Si no, buscar por valor de atributo (como "Rojo" o "L")
+    let attrs = variant.attributes;
+    if (typeof attrs === 'string') {
+        try { attrs = JSON.parse(attrs); } catch (e) { return null; }
+    }
     if (!attrs || typeof attrs !== 'object') return null;
 
-    // Iteramos sobre los valores de los atributos (ej. "Rojo", "M", "Algodón")
     for (const value of Object.values(attrs)) {
-        // Convertimos el valor a string para buscar en el mapa
         const valStr = String(value);
         if (variantImages.value[valStr]) {
             return variantImages.value[valStr];
@@ -229,325 +225,295 @@ const getVariantImage = (attributes) => {
 
 const isVariantProduct = computed(() => props.product.product_attributes && props.product.product_attributes.length > 0);
 
-// --- Computed property para los niveles de precio ---
 const priceTiers = computed(() => {
-    // Asegurarse de que exista y sea un array antes de ordenar
-    if (!props.product.price_tiers || !Array.isArray(props.product.price_tiers)) {
-        return [];
-    }
-    // Ordenar por cantidad mínima ascendente
+    if (!props.product.price_tiers || !Array.isArray(props.product.price_tiers)) return [];
     return [...props.product.price_tiers].sort((a, b) => a.min_quantity - b.min_quantity);
 });
 
-// --- Computed para totales (para variantes) ---
-// El backend ya nos da estos totales en el `product` padre
 const totalStock = computed(() => props.product.current_stock);
 const totalReserved = computed(() => props.product.reserved_stock);
 const totalAvailable = computed(() => props.product.available_stock);
 </script>
 
 <template>
-
     <Head :title="`Producto: ${product.name}`" />
     <AppLayout>
         <Breadcrumb :home="home" :model="items" class="!bg-transparent !p-0" />
 
-        <!-- Header -->
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
-            <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{{ product.name }}</h1>
-            <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined class="mt-4 sm:mt-0">
-            </SplitButton>
+        <!-- Header Minimalista -->
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end mt-2 mb-6 gap-4">
+            <div>
+                <div class="flex items-center gap-3 mb-1">
+                    <Tag v-if="product.is_on_sale" severity="danger" value="En Oferta" rounded></Tag>
+                    <Tag v-if="product.is_featured" severity="info" value="Destacado" rounded></Tag>
+                    <span class="text-xs font-semibold text-gray-500 tracking-wider uppercase">
+                        {{ product.category?.name || 'Sin categoría' }}
+                    </span>
+                </div>
+                <h1 class="text-3xl font-black text-gray-900 dark:text-white tracking-tight leading-none">{{ product.name }}</h1>
+            </div>
+            
+            <!-- Reemplazo de SplitButton por Button + Menu -->
+            <div>
+                <Button label="Acciones" icon="pi pi-cog" @click="toggleActionMenu" severity="secondary" outlined class="w-full sm:w-auto" />
+                <Menu ref="actionMenu" :model="actionItems" :popup="true" />
+            </div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Columna Izquierda (Imágenes) -->
-            <div class="lg:col-span-1 space-y-6">
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <!-- REEMPLAZO DE GALLERIA POR COMPONENTE IMAGE CON PREVIEW -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            <!-- COLUMNA IZQUIERDA: Galería e Info Rápida -->
+            <div class="lg:col-span-3 space-y-6">
+                <!-- Galería Limpia -->
+                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/60 p-4">
                     <div v-if="generalImages.length > 0">
-                        <div class="flex justify-center mb-4 bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden border border-gray-100 dark:border-gray-600">
-                            <!-- El componente Image tiene la propiedad 'preview' para zoom/fullscreen -->
+                        <div class="flex justify-center mb-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl overflow-hidden">
                             <Image :src="currentGeneralImage?.original_url" :alt="product.name" preview 
-                                imageClass="w-full h-80 object-contain p-2" />
+                                imageClass="w-full h-56 object-contain p-2 transition-transform duration-300 hover:scale-105" />
                         </div>
                         
-                        <!-- Tira de Miniaturas -->
-                        <div v-if="generalImages.length > 1" class="flex gap-2 overflow-x-auto py-2 px-1">
+                        <!-- Miniaturas -->
+                        <div v-if="generalImages.length > 1" class="flex gap-2 overflow-x-auto py-1">
                             <button v-for="(img, index) in generalImages" :key="img.id" 
                                 @click="selectedImageIndex = index"
-                                class="relative rounded-md overflow-hidden border-2 transition-all flex-shrink-0 focus:outline-none"
-                                :class="selectedImageIndex === index ? 'border-primary-500 ring-2 ring-primary-200' : 'border-transparent opacity-70 hover:opacity-100'">
-                                <img :src="img.original_url" :alt="img.name" class="w-16 h-16 object-cover bg-gray-50" />
+                                class="relative rounded-lg overflow-hidden border-2 transition-all flex-shrink-0 focus:outline-none h-14 w-14"
+                                :class="selectedImageIndex === index ? 'border-primary-500' : 'border-transparent opacity-60 hover:opacity-100'">
+                                <img :src="img.original_url" :alt="img.name" class="w-full h-full object-cover bg-gray-100 dark:bg-gray-700" />
                             </button>
                         </div>
                     </div>
                     
-                    <div v-else class="text-center text-gray-500 py-8 flex flex-col items-center">
-                        <i class="pi pi-image text-4xl mb-2 text-gray-300"></i>
-                        <p>No hay imágenes generales.</p>
+                    <div v-else class="text-center text-gray-400 dark:text-gray-500 py-12 flex flex-col items-center bg-gray-50 dark:bg-gray-900/30 rounded-xl">
+                        <i class="pi pi-image text-4xl mb-3 opacity-50"></i>
+                        <span class="text-sm font-medium">Sin imagen general</span>
+                    </div>
+                </div>
+
+                <!-- Tarjetas de Información Rápida (Grid) -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                        <div class="flex justify-between items-start mb-1">
+                            <span class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">SKU</span>
+                            <div class="flex gap-1">
+                                <i v-if="product.sku" @click="copyToClipboard(product.sku)" class="pi pi-copy text-gray-400 hover:text-primary-500 cursor-pointer text-xs transition-colors" v-tooltip.top="'Copiar'"></i>
+                                <i v-if="product.sku && hasPermission('pos.access')" @click="openPrintModal" class="pi pi-print text-gray-400 hover:text-primary-500 cursor-pointer text-xs transition-colors" v-tooltip.top="'Imprimir'"></i>
+                            </div>
+                        </div>
+                        <div class="font-mono font-medium text-gray-900 dark:text-gray-100 truncate text-sm" :title="product.sku">{{ product.sku || 'N/A' }}</div>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                        <span class="text-[10px] block text-gray-500 uppercase font-bold tracking-wider mb-1">Ubicación</span>
+                        <div class="font-medium text-gray-900 dark:text-gray-100 text-sm truncate" :title="product.location">{{ product.location || '--' }}</div>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                        <span class="text-[10px] block text-gray-500 uppercase font-bold tracking-wider mb-1">Marca</span>
+                        <div class="font-medium text-gray-900 dark:text-gray-100 text-sm truncate">{{ product.brand?.name || '--' }}</div>
+                    </div>
+                    <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                        <span class="text-[10px] block text-gray-500 uppercase font-bold tracking-wider mb-1">Proveedor</span>
+                        <div class="font-medium text-gray-900 dark:text-gray-100 text-sm truncate">{{ product.provider?.name || '--' }}</div>
+                    </div>
+                </div>
+
+                <!-- Detalles de Precios Avanzados -->
+                <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                    <h3 class="text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <i class="pi pi-tag text-primary-500"></i> Estructura de precios
+                    </h3>
+                    
+                    <div class="flex justify-between items-center py-2">
+                        <span class="text-sm text-gray-600 dark:text-gray-400">Precio de venta</span>
+                        <span class="text-xl font-bold text-gray-900 dark:text-white">{{ formatCurrency(product.selling_price) }}</span>
+                    </div>
+
+                    <div v-if="hasPermission('products.see_cost_price')" class="flex justify-between items-center py-2 border-t border-gray-100 dark:border-gray-700/50 mt-1">
+                        <span class="text-sm text-gray-600 dark:text-gray-400">Precio de costo</span>
+                        <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">{{ formatCurrency(product.cost_price) }}</span>
+                    </div>
+
+                    <div v-if="priceTiers.length > 0" class="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700/50">
+                        <span class="text-xs text-gray-500 dark:text-gray-400 block mb-3 font-semibold">Precios por volumen:</span>
+                        <div class="space-y-2">
+                            <div v-for="(tier, index) in priceTiers" :key="index" class="flex justify-between items-center text-sm bg-gray-50 dark:bg-gray-900/40 px-3 py-2 rounded-lg">
+                                <span class="text-gray-600 dark:text-gray-400">Desde <span class="font-bold">{{ tier.min_quantity }}</span> uds</span>
+                                <span class="font-bold text-primary-600 dark:text-primary-400">{{ formatCurrency(tier.price) }}</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Columna Derecha (Información) -->
-            <div class="lg:col-span-2 space-y-6">
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <h2
-                                class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
-                                Información general</h2>
-                            <ul class="space-y-3 text-sm">
-                                <li class="flex items-center">
-                                    <span class="text-gray-500 dark:text-gray-400 w-24">SKU</span>
-                                    <span class="font-medium text-gray-800 dark:text-gray-200 mr-2">{{ product.sku || 'N/A' }}</span>
-                                    <Button v-if="product.sku" @click="copyToClipboard(product.sku)" icon="pi pi-copy"
-                                        text rounded size="small" v-tooltip.bottom="'Copiar SKU'"></Button>
-                                    <Button v-if="product.sku && hasPermission('pos.access')" @click="openPrintModal" icon="pi pi-print"
-                                        text rounded size="small" v-tooltip.bottom="'Imprimir Etiqueta'"></Button>
-                                </li>
-                                <!-- AÑADIDO: Campo de Ubicación -->
-                                <li class="flex">
-                                    <span class="text-gray-500 dark:text-gray-400 w-24">Ubicación</span> 
-                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.location || 'N/A' }}</span>
-                                </li>
-                                <!-- FIN AÑADIDO -->
-                                <li class="flex"><span class="text-gray-500 dark:text-gray-400 w-24">Categoría</span>
-                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.category?.name || 'N/A' }}</span>
-                                </li>
-                                <li class="flex"><span class="text-gray-500 dark:text-gray-400 w-24">Marca</span> <span
-                                        class="font-medium text-gray-800 dark:text-gray-200">{{ product.brand?.name || 'N/A' }}</span></li>
-                            </ul>
-                        </div>
-                        <div>
-                            <h2
-                                class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
-                                Precios</h2>
-                            <ul class="space-y-3 text-sm">
-                                <li class="flex justify-between items-center">
-                                    <span class="text-gray-500 dark:text-gray-400">Precio (1 pieza)</span> 
-                                    <span class="font-medium text-lg text-gray-800 dark:text-gray-200">{{ formatCurrency(product.selling_price) }}</span>
-                                </li>
-                                <!-- Mostrar Precios de Mayoreo -->
-                                <li v-if="priceTiers.length > 0" class="pt-3 border-t border-gray-200 dark:border-gray-700">
-                                    <span class="text-gray-500 dark:text-gray-400 block mb-2 font-medium">Precios de mayoreo:</span>
-                                    <table class="w-full text-xs text-left">
-                                        <thead class="text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700">
-                                            <tr>
-                                                <th class="px-2 py-1">Desde (cant.)</th>
-                                                <th class="px-2 py-1 text-right">Precio unitario</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr v-for="(tier, index) in priceTiers" :key="index" class="border-b dark:border-gray-700">
-                                                <td class="px-2 py-1">{{ tier.min_quantity }}</td>
-                                                <td class="px-2 py-1 text-right font-semibold">{{ formatCurrency(tier.price) }}</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </li>
-                                <li v-if="hasPermission('products.see_cost_price')" class="flex justify-between pt-3 mt-3">
-                                    <span class="text-gray-500 dark:text-gray-400">Precio de Compra</span> 
-                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ formatCurrency(product.cost_price) }}</span>
-                                </li>
-                                <li class="flex justify-between">
-                                    <span class="text-gray-500 dark:text-gray-400">Proveedor</span>
-                                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ product.provider?.name || 'N/A' }}</span>
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
-                    <div v-if="product.description" class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                        <h3 class="font-semibold mb-2 text-gray-800 dark:text-gray-200">Descripción</h3>
-                        <div class="prose prose-sm dark:prose-invert max-w-none" v-html="product.description"></div>
-                    </div>
+            <!-- COLUMNA DERECHA: Inventario, Descripción, Promociones y Layouts -->
+            <div class="lg:col-span-9 space-y-6">
+                
+                <!-- Sección: Descripción (Minimalista) -->
+                <div v-if="product.description" class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                    <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 flex items-center gap-2">
+                        <i class="pi pi-align-left text-gray-400"></i> Descripción del producto
+                    </h3>
+                    <div class="prose prose-sm prose-gray dark:prose-invert max-w-none text-gray-600 dark:text-gray-400 leading-relaxed" v-html="product.description"></div>
                 </div>
 
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2
-                        class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
-                        Inventario y variantes</h2>
+                <!-- Sección: Inventario y Variantes -->
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                    <div class="flex justify-between items-center mb-5">
+                        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                            <i class="pi pi-box text-blue-500"></i> Inventario y variantes
+                        </h3>
+                        <Button v-if="hasPermission('products.manage_stock')" label="Ajustar stock" icon="pi pi-sort-alt" size="small" outlined @click="showManageStockModal = true" class="!py-1" />
+                    </div>
 
-                    <!-- Vista para Producto Simple -->
-                    <div v-if="!isVariantProduct" class="grid grid-cols-4 gap-4 text-center">
-                        <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Stock Físico</p>
-                            <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ totalStock }}
-                            </p>
+                    <!-- Indicadores (Cards) -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                        <div class="bg-gray-50 dark:bg-gray-900/40 p-4 rounded-xl border border-gray-100 dark:border-gray-700/50 flex flex-col justify-center items-center text-center transition-colors hover:bg-gray-100 dark:hover:bg-gray-900/60">
+                            <span class="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Stock físico</span>
+                            <span class="text-2xl font-black text-gray-800 dark:text-gray-100">{{ totalStock }}</span>
                         </div>
-                        <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Apartados</p>
-                            <p class="text-2xl font-bold" :class="totalReserved > 0 ? 'text-blue-600' : 'text-gray-800 dark:text-gray-200'">
-                                {{ totalReserved }}
-                            </p>
+                        <div class="bg-green-50/50 dark:bg-green-900/10 p-4 rounded-xl border border-green-100 dark:border-green-900/30 flex flex-col justify-center items-center text-center transition-colors hover:bg-green-50 dark:hover:bg-green-900/20">
+                            <span class="text-[11px] font-bold text-green-600 dark:text-green-500 uppercase tracking-wider mb-1">Disponible</span>
+                            <span class="text-2xl font-black text-green-600 dark:text-green-400">{{ totalAvailable }}</span>
                         </div>
-                        <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Disponible</p>
-                            <p class="text-2xl font-bold" :class="totalAvailable > 0 ? 'text-green-600' : 'text-red-600'">
-                                {{ totalAvailable }}
-                            </p>
+                        <div class="bg-indigo-50/50 dark:bg-indigo-900/10 p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/30 flex flex-col justify-center items-center text-center transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
+                            <span class="text-[11px] font-bold text-indigo-600 dark:text-indigo-500 uppercase tracking-wider mb-1">Apartados</span>
+                            <span class="text-2xl font-black text-indigo-600 dark:text-indigo-400">{{ totalReserved }}</span>
                         </div>
-                        <div>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">Stock mínimo</p>
-                            <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.min_stock || 'N/A' }}</p>
+                        <div class="bg-gray-50 dark:bg-gray-900/40 p-4 rounded-xl border border-gray-100 dark:border-gray-700/50 flex flex-col justify-center items-center text-center transition-colors hover:bg-gray-100 dark:hover:bg-gray-900/60">
+                            <span class="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Stock mínimo</span>
+                            <span class="text-2xl font-black text-gray-400 dark:text-gray-500">{{ product.min_stock || '--' }}</span>
                         </div>
                     </div>
 
-                    <!-- Vista para Producto con Variantes -->
-                    <div v-else>
-                        <DataTable :value="product.product_attributes" class="p-datatable-sm">
-                            <Column header="Imagen">
+                    <!-- Tabla de Variantes (Solo si existen) -->
+                    <div v-if="isVariantProduct" class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+                        <DataTable :value="product.product_attributes" class="p-datatable-sm" stripedRows>
+                            <Column headerStyle="width: 4rem" bodyStyle="padding: 0.5rem">
                                <template #body="{ data }">
-                                    <img v-if="getVariantImage(data.attributes)"
-                                        :src="getVariantImage(data.attributes)"
-                                        class="size-12 object-contain rounded-md" />
+                                    <img v-if="getVariantImage(data)"
+                                        :src="getVariantImage(data)"
+                                        class="w-10 h-10 object-cover rounded-md border border-gray-100 dark:border-gray-700" />
                                     <div v-else
-                                        class="size-12 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                                        <i class="pi pi-image text-2xl text-gray-400 dark:text-gray-500"></i>
+                                        class="w-10 h-10 rounded-md bg-gray-100 dark:bg-gray-800 flex items-center justify-center border border-gray-100 dark:border-gray-700">
+                                        <i class="pi pi-image text-gray-400 text-sm"></i>
                                     </div>
                                 </template>
                             </Column>
-                            <Column v-for="key in Object.keys(product.product_attributes[0]?.attributes || {})"
-                                :key="key" :field="`attributes.${key}`" :header="key"></Column>
                             
-                            <Column field="current_stock" header="Físico" sortable></Column>
-                            <Column field="reserved_stock" header="Apartado" sortable>
+                            <!-- Atributos Dinámicos -->
+                            <Column v-for="key in Object.keys(product.product_attributes[0]?.attributes || {})"
+                                :key="key" :field="`attributes.${key}`" :header="key" class="font-medium text-sm"></Column>
+                            
+                            <!-- Stocks -->
+                            <Column field="current_stock" header="Físico" sortable class="text-sm"></Column>
+                            <Column field="reserved_stock" header="Apartado" sortable class="text-sm">
                                 <template #body="{ data }">
-                                    <span :class="data.reserved_stock > 0 ? 'text-blue-600 font-semibold' : ''">{{ data.reserved_stock }}</span>
+                                    <span v-if="data.reserved_stock > 0" class="text-indigo-600 font-bold bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-md">{{ data.reserved_stock }}</span>
+                                    <span v-else class="text-gray-400">-</span>
                                 </template>
                             </Column>
-                            <Column field="available_stock" header="Disponible" sortable>
+                            <Column field="available_stock" header="Disp." sortable class="text-sm">
                                  <template #body="{ data }">
-                                    <span :class="data.available_stock > 0 ? 'text-green-600' : 'text-red-600 font-semibold'">{{ data.available_stock }}</span>
+                                    <span :class="data.available_stock > 0 ? 'text-green-600 font-semibold' : 'text-red-500 font-bold'">{{ data.available_stock }}</span>
                                 </template>
                             </Column>
 
-                            <Column header="Precio">
+                            <Column header="Precio final" class="text-sm font-semibold text-right" headerClass="text-right">
                                  <template #body="{ data }">
                                     {{ formatCurrency(parseFloat(product.selling_price) + parseFloat(data.selling_price_modifier)) }}
                                 </template>
                             </Column>
                         </DataTable>
+                    </div>
 
-                        <!-- Totales para producto con variantes -->
-                        <div class="grid grid-cols-4 gap-4 text-center mt-6 pt-4 border-t dark:border-gray-700">
-                            <div>
-                                <p class="text-sm text-gray-500 dark:text-gray-400">Total físico</p>
-                                <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ totalStock }}</p>
-                            </div>
-                            <div>
-                                <p class="text-sm text-gray-500 dark:text-gray-400">Total apartados</p>
-                                <p class="text-2xl font-bold text-blue-600">{{ totalReserved }}</p>
-                            </div>
-                            <div>
-                                <p class="text-sm text-gray-500 dark:text-gray-400">Total disponible</p>
-                                <p class="text-2xl font-bold" :class="totalAvailable > 0 ? 'text-green-600' : 'text-red-600'">
-                                    {{ totalAvailable }}
-                                </p>
-                            </div>
-                             <div>
-                                <p class="text-sm text-gray-500 dark:text-gray-400">Stock mínimo</p>
-                                <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ product.min_stock || 'N/A' }}</p>
-                            </div>
+                    <!-- Apartados Activos (Tabla Minimalista) -->
+                    <div v-if="activeLayaways && activeLayaways.length > 0" class="mt-8">
+                        <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                            <i class="pi pi-clock text-indigo-400"></i> Detalle de apartados activos
+                        </h4>
+                        <div class="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+                            <DataTable :value="activeLayaways" class="p-datatable-sm" responsiveLayout="scroll" sortField="date" :sortOrder="-1">
+                                <Column field="date" header="Fecha" sortable class="text-xs">
+                                    <template #body="{ data }">{{ formatDateOnly(data.date) }}</template>
+                                </Column>
+                                <Column field="folio" header="Folio" sortable class="text-xs font-mono">
+                                    <template #body="{ data }">
+                                        <Link :href="route('transactions.show', data.transaction_id)" class="text-primary-600 hover:text-primary-700 font-bold">{{ data.folio }}</Link>
+                                    </template>
+                                </Column>
+                                <Column field="customer_name" header="Cliente" class="text-xs">
+                                    <template #body="{ data }">
+                                        <Link v-if="data.customer_id" :href="route('customers.show', data.customer_id)" class="text-gray-700 dark:text-gray-300 hover:text-primary-600">{{ data.customer_name }}</Link>
+                                        <span v-else class="text-gray-500 italic">{{ data.customer_name }}</span>
+                                    </template>
+                                </Column>
+                                <Column field="quantity" header="Cant." headerClass="text-center" bodyClass="text-center text-xs font-bold"></Column>
+                                <Column field="layaway_expiration_date" header="Vence" sortable class="text-xs text-right" headerClass="text-right">
+                                    <template #body="{ data }">
+                                        <span :class="isExpired(data.layaway_expiration_date) ? 'text-red-500 font-bold bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded' : 'text-gray-500'">
+                                            {{ formatDateOnly(data.layaway_expiration_date) }}
+                                        </span>
+                                    </template>
+                                </Column>
+                            </DataTable>
                         </div>
                     </div>
-
-                    <!-- Tabla de Apartados Activos -->
-                    <div v-if="activeLayaways && activeLayaways.length > 0" class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                        <h5 class="font-semibold mb-3 text-gray-800 dark:text-gray-200">Unidades apartadas (detalle)</h5>
-                        <DataTable :value="activeLayaways" class="p-datatable-sm" responsiveLayout="scroll" sortField="date" :sortOrder="-1">
-                            <Column field="date" header="Fecha apartado" sortable>
-                                <template #body="{ data }">
-                                    {{ formatDate(data.date) }}
-                                </template>
-                            </Column>
-                            
-                            <Column field="layaway_expiration_date" header="Vencimiento" sortable>
-                                <template #body="{ data }">
-                                    <span :class="{'text-red-500 font-bold': isExpired(data.layaway_expiration_date), 'text-gray-700 dark:text-gray-300': !isExpired(data.layaway_expiration_date)}">
-                                        {{ formatDateOnly(data.layaway_expiration_date) }}
-                                    </span>
-                                </template>
-                            </Column>
-
-                            <Column field="customer_name" header="Cliente" sortable>
-                                    <template #body="{ data }">
-                                    <Link v-if="data.customer_id" :href="route('customers.show', data.customer_id)" class="text-blue-500 hover:underline">
-                                        {{ data.customer_name }}
-                                    </Link>
-                                    <span v-else>{{ data.customer_name }}</span>
-                                </template>
-                            </Column>
-                            <Column field="folio" header="Apartado #" sortable>
-                                <template #body="{ data }">
-                                    <Link :href="route('transactions.show', data.transaction_id)" class="text-blue-500 hover:underline">
-                                        {{ data.folio }}
-                                    </Link>
-                                </template>
-                            </Column>
-                            <Column field="quantity" header="Cant." headerClass="text-center" bodyClass="text-center"></Column>
-                            <Column field="description" header="Descripción (Item)"></Column>
-                        </DataTable>
-                    </div>
-
                 </div>
 
-                <!-- Promociones -->
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2
-                        class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
-                        Promociones</h2>
-                    <div v-if="localPromotions && localPromotions.length > 0" class="space-y-4">
-                        <div v-for="promo in localPromotions" :key="promo.id" class="p-3 rounded-lg transition-colors"
-                            :class="promo.is_active
-                                ? 'border border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20'
-                                : 'border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-700/20 opacity-60'">
-                            <div class="flex justify-between items-start">
-                                <div>
-                                    <p class="font-bold"
-                                        :class="promo.is_active ? 'text-yellow-800 dark:text-yellow-200' : 'text-gray-600 dark:text-gray-400'">
-                                        {{ promo.name }}</p>
-                                    <p class="text-sm mt-1"
-                                        :class="promo.is_active ? 'text-yellow-700 dark:text-yellow-300' : 'text-gray-500 dark:text-gray-400'">
-                                        {{ getPromotionSummary(promo) }}</p>
-                                    <div class="text-xs mt-2 space-x-4"
-                                        :class="promo.is_active ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-400 dark:text-gray-500'">
-                                        <span v-if="promo.start_date"><i
-                                                class="pi pi-calendar-plus mr-1"></i><strong>Inicio:</strong> {{
-                                                    formatDate(promo.start_date) }}</span>
-                                        <span v-if="promo.end_date"><i
-                                                class="pi pi-calendar-times mr-1"></i><strong>Fin:</strong>
-                                            {{ formatDate(promo.end_date) }}</span>
-                                    </div>
-                                </div>
-                                <div class="flex-shrink-0 ml-4 flex items-center gap-2">
-                                    <Tag :value="promo.is_active ? 'Activa' : 'Inactiva'"
-                                        :severity="promo.is_active ? 'warning' : 'secondary'"></Tag>
-                                    <Button v-if="hasPermission('products.manage_promos')" icon="pi pi-ellipsis-v" text rounded severity="secondary"
-                                        @click="promoMenus[promo.id].toggle($event)" />
+                <!-- Sección: Promociones (Tarjetas Limpias) -->
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                    <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
+                        <i class="pi pi-percentage text-yellow-500"></i> Promociones vinculadas
+                    </h3>
+                    
+                    <div v-if="localPromotions && localPromotions.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div v-for="promo in localPromotions" :key="promo.id" 
+                            class="relative bg-white dark:bg-gray-900/30 rounded-xl border shadow-sm transition-all flex flex-col justify-between"
+                            :class="promo.is_active ? 'border-l-4 border-l-yellow-400 border-gray-200 dark:border-gray-700' : 'border-l-4 border-l-gray-300 border-gray-200 dark:border-gray-700 opacity-70'">
+                            
+                            <div class="p-4">
+                                <div class="flex justify-between items-start mb-2">
+                                    <h4 class="font-bold text-gray-800 dark:text-gray-100 line-clamp-1 pr-2" :title="promo.name">{{ promo.name }}</h4>
+                                    <!-- Menú de opciones (3 puntos) -->
+                                    <Button v-if="hasPermission('products.manage_promos')" icon="pi pi-ellipsis-v" text rounded size="small" class="!w-6 !h-6 !text-gray-400" @click="promoMenus[promo.id].toggle($event)" />
                                     <Menu :ref="el => { if (el) promoMenus[promo.id] = el }" :model="[
                                         { label: promo.is_active ? 'Inactivar' : 'Reactivar', icon: promo.is_active ? 'pi pi-power-off' : 'pi pi-check', command: () => togglePromotionStatus(promo) },
-                                        { label: 'Eliminar', icon: 'pi pi-trash', command: () => deletePromotion(promo) }
+                                        { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: () => deletePromotion(promo) }
                                     ]" :popup="true" />
+                                </div>
+                                
+                                <p class="text-sm text-gray-600 dark:text-gray-400 leading-snug mb-4 h-10 line-clamp-2" :title="getPromotionSummary(promo)">
+                                    {{ getPromotionSummary(promo) }}
+                                </p>
+                                
+                                <div class="flex justify-between items-end mt-auto">
+                                    <div class="text-[10px] text-gray-500 uppercase font-semibold">
+                                        <div v-if="promo.start_date || promo.end_date">
+                                            Vence: <span class="text-gray-700 dark:text-gray-300">{{ formatDateOnly(promo.end_date) || 'Sin fecha' }}</span>
+                                        </div>
+                                    </div>
+                                    <Tag :value="promo.is_active ? 'Activa' : 'Inactiva'" :severity="promo.is_active ? 'success' : 'secondary'" class="!text-[10px]"></Tag>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div v-else class="text-center text-gray-500 dark:text-gray-400 py-4">
-                        Este producto no tiene promociones asignadas.
+                    <div v-else class="text-center text-gray-400 dark:text-gray-500 py-6 border border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
+                        <span class="text-sm">No hay promociones activas para este producto.</span>
                     </div>
                 </div>
 
-                <!-- historial -->
-                <ActivityHistory :activities="activities" title="Historial de movimientos" />
+                <!-- Sección: Historial de Actividad -->
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                    <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
+                        <i class="pi pi-history text-gray-400"></i> Historial de movimientos
+                    </h3>
+                    <ActivityHistory :activities="activities" />
+                </div>
 
             </div>
         </div>
-        <!-- CAMBIO: Uso del nuevo modal unificado ManageStockModal -->
+
         <ManageStockModal v-if="product" :visible="showManageStockModal" :products="[product]"
             @update:visible="showManageStockModal = false" />
             
-        <!-- Instancia del Modal de Impresión -->
         <PrintModal 
             v-if="printDataSource"
             v-model:visible="isPrintModalVisible"
@@ -556,3 +522,10 @@ const totalAvailable = computed(() => props.product.available_stock);
         />
     </AppLayout>
 </template>
+
+<style scoped>
+.prose { max-width: 100%; }
+:deep(.p-datatable.p-datatable-sm .p-datatable-tbody > tr > td) {
+    padding: 0.75rem 0.5rem;
+}
+</style>

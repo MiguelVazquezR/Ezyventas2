@@ -3,9 +3,6 @@ import { useForm } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
-import Select from 'primevue/select';
-import InputNumber from 'primevue/inputnumber';
-import Message from 'primevue/message';
 
 const props = defineProps({
     visible: Boolean,
@@ -17,13 +14,18 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible']);
 
+// Helper para obtener variantes sin importar si vienen en snake_case o camelCase
+const getVariants = (prod) => {
+    return prod.product_attributes || prod.productAttributes || [];
+};
+
 // Detectar si es edición de un solo producto o masiva
 const isSingleMode = computed(() => props.products.length === 1);
 const singleProduct = computed(() => isSingleMode.value ? props.products[0] : null);
 
 // Detectar si el producto único tiene variantes
 const isVariantProduct = computed(() => {
-    return isSingleMode.value && singleProduct.value.product_attributes && singleProduct.value.product_attributes.length > 0;
+    return isSingleMode.value && getVariants(singleProduct.value).length > 0;
 });
 
 const operation = ref('entry'); // 'entry' | 'exit'
@@ -31,22 +33,22 @@ const operation = ref('entry'); // 'entry' | 'exit'
 // --- LISTAS DE MOTIVOS DINÁMICAS ---
 const entryReasons = [
     'Compra / Reabastecimiento',
-    'Devolución de Cliente',
-    'Ajuste de Inventario (+)',
-    'Inventario Inicial',
-    'Producción Interna',
+    'Devolución de cliente',
+    'Ajuste de inventario (+)',
+    'Inventario inicial',
+    'Producción interna',
     'Otro'
 ];
 
 const exitReasons = [
-    'Venta Externa',
+    'Venta externa',
     'Merma / Caducado',
-    'Producto Dañado',
+    'Producto dañado',
     'Robo / Pérdida',
-    'Uso Interno',
+    'Uso interno',
     'Regalo / Cortesía',
-    'Ajuste de Inventario (-)',
-    'Devolución a Proveedor',
+    'Ajuste de inventario (-)',
+    'Devolución a proveedor',
     'Otro'
 ];
 
@@ -78,10 +80,10 @@ watch(() => props.visible, (isVisible) => {
             form.quantity = 1;
             
             if (isVariantProduct.value) {
-                form.variants = singleProduct.value.product_attributes.map(v => ({
+                form.variants = getVariants(singleProduct.value).map(v => ({
                     id: v.id,
                     attributes: v.attributes,
-                    current_stock: v.current_stock,
+                    current_stock: v.current_stock || 0,
                     quantity: 0
                 }));
             } else {
@@ -89,14 +91,25 @@ watch(() => props.visible, (isVisible) => {
             }
             form.products = [];
         } else {
-            // MODO: MASIVO (BATCH)
+            // MODO: MASIVO (BATCH) SOPORTA VARIANTES
             form.type = 'simple';
-            form.products = props.products.map(p => ({
-                id: p.id,
-                name: p.name,
-                current_stock: p.current_stock,
-                quantity: 0
-            }));
+            form.products = props.products.map(p => {
+                const variants = getVariants(p);
+                const hasVariants = variants.length > 0;
+                return {
+                    id: p.id,
+                    name: p.name,
+                    is_variant: hasVariants,
+                    current_stock: hasVariants ? 0 : (p.current_stock || 0),
+                    quantity: 0,
+                    variants: hasVariants ? variants.map(v => ({
+                        id: v.id,
+                        attributes: v.attributes,
+                        current_stock: v.current_stock || 0,
+                        quantity: 0
+                    })) : []
+                };
+            });
             form.variants = [];
         }
         
@@ -132,14 +145,14 @@ const submit = () => {
     }
 };
 
-const operationLabel = computed(() => operation.value === 'entry' ? 'Dar Entrada' : 'Dar Salida');
+const operationLabel = computed(() => operation.value === 'entry' ? 'Dar entrada' : 'Dar salida');
 const operationColor = computed(() => operation.value === 'entry' ? 'success' : 'danger');
 const iconClass = computed(() => operation.value === 'entry' ? 'pi pi-arrow-down' : 'pi pi-arrow-up');
 
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" modal :header="isSingleMode ? `Gestión de Stock: ${singleProduct?.name}` : 'Gestión Masiva de Stock'" :style="{ width: '40rem' }">
+    <Dialog :visible="visible" @update:visible="closeModal" modal :header="isSingleMode ? `Gestión de stock: ${singleProduct?.name}` : 'Gestión masiva de stock'" :style="{ width: '45rem' }">
         
         <div class="mb-4 flex flex-col gap-4">
             <!-- Selector de Operación -->
@@ -177,16 +190,16 @@ const iconClass = computed(() => operation.value === 'entry' ? 'pi pi-arrow-down
 
         <form @submit.prevent="submit" class="space-y-4">
             
-            <!-- CASO 1: PRODUCTO SIMPLE -->
+            <!-- CASO 1: PRODUCTO SIMPLE ÚNICO -->
             <div v-if="isSingleMode && !isVariantProduct">
                 <div class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border dark:border-gray-700 text-center">
-                    <p class="text-sm text-gray-500 mb-1">Stock Actual</p>
-                    <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ singleProduct.current_stock }}</p>
+                    <p class="text-sm text-gray-500 mb-1">Stock Actual Físico</p>
+                    <p class="text-2xl font-bold text-gray-800 dark:text-gray-200">{{ singleProduct.current_stock || 0 }}</p>
                 </div>
 
                 <div>
                     <InputLabel for="quantity" :value="`Cantidad a ${operation === 'entry' ? 'agregar' : 'retirar'}`" />
-                    <InputNumber id="quantity" v-model="form.quantity" class="w-full mt-1" :min="1" showButtons buttonLayout="horizontal" inputClass="text-center font-bold">
+                    <InputNumber fluid id="quantity" v-model="form.quantity" class="w-full mt-1" :min="1" showButtons buttonLayout="horizontal" inputClass="text-center font-bold">
                         <template #incrementbuttonicon>
                             <span class="pi pi-plus" />
                         </template>
@@ -198,10 +211,10 @@ const iconClass = computed(() => operation.value === 'entry' ? 'pi pi-arrow-down
                 </div>
             </div>
 
-            <!-- CASO 2: PRODUCTO CON VARIANTES -->
+            <!-- CASO 2: PRODUCTO CON VARIANTES ÚNICO -->
             <div v-if="isSingleMode && isVariantProduct">
-                <Message severity="info" :closable="false" class="mb-2">Ingresa la cantidad para cada variante.</Message>
-                <div class="space-y-2 max-h-[40vh] overflow-y-auto pr-1 border rounded-lg p-2 dark:border-gray-700">
+                <Message severity="info" :closable="false" class="mb-2">Ingresa la cantidad para cada variante afectada.</Message>
+                <div class="space-y-2 max-h-[50vh] overflow-y-auto pr-1 border rounded-lg p-2 dark:border-gray-700">
                     <div v-for="(variant, index) in form.variants" :key="variant.id" class="flex items-center justify-between p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded">
                          <div class="text-sm">
                             <div class="font-semibold text-gray-700 dark:text-gray-200">
@@ -211,25 +224,46 @@ const iconClass = computed(() => operation.value === 'entry' ? 'pi pi-arrow-down
                             </div>
                             <span class="text-xs text-gray-500">Stock actual: {{ variant.current_stock }}</span>
                          </div>
-                        <InputNumber v-model="variant.quantity" :min="0" placeholder="0" class="w-24" inputClass="text-center" />
+                        <InputNumber fluid v-model="variant.quantity" :min="0" placeholder="0" class="!w-24" showButtons inputClass="text-center" />
                     </div>
                 </div>
                 <InputError :message="form.errors.variants" />
             </div>
 
-            <!-- CASO 3: MODO MASIVO -->
+            <!-- CASO 3: MODO MASIVO (BATCH) -->
             <div v-if="!isSingleMode">
                  <Message :severity="operation === 'entry' ? 'success' : 'warn'" :closable="false" class="mb-2">
-                    La {{ operation === 'entry' ? 'entrada' : 'salida' }} se aplicará a todos los productos seleccionados.
+                    Ingresa las cantidades para los productos y variantes que deseas afectar.
                  </Message>
                  
-                 <div class="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
-                    <div v-for="(prod, index) in form.products" :key="prod.id" class="flex items-center justify-between p-3 border rounded-lg dark:border-gray-700">
-                        <div class="overflow-hidden">
-                            <p class="font-bold text-sm truncate">{{ prod.name }}</p>
-                            <p class="text-xs text-gray-500">Stock actual: {{ prod.current_stock }}</p>
+                 <div class="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                    <div v-for="(prod, index) in form.products" :key="prod.id" class="p-3 border rounded-lg dark:border-gray-700 flex flex-col gap-2">
+                        
+                        <!-- Header del Producto en la lista -->
+                        <div class="flex items-center justify-between">
+                            <div class="overflow-hidden">
+                                <p class="font-bold text-sm truncate">{{ prod.name }}</p>
+                                <p v-if="!prod.is_variant" class="text-xs text-gray-500">Stock actual: {{ prod.current_stock }}</p>
+                                <p v-else class="text-xs text-indigo-500 font-medium">Contiene variantes</p>
+                            </div>
+                            <InputNumber v-if="!prod.is_variant" fluid v-model="prod.quantity" :min="0" placeholder="0" class="!w-28" showButtons inputClass="text-center" />
                         </div>
-                        <InputNumber v-model="prod.quantity" :min="0" placeholder="0" class="w-28" showButtons inputClass="text-center" />
+
+                        <!-- Lista de Variantes Anidadas -->
+                        <div v-if="prod.is_variant" class="pl-3 pr-1 mt-1 space-y-2 border-l-2 border-gray-100 dark:border-gray-800">
+                            <div v-for="(variant, vIndex) in prod.variants" :key="variant.id" class="flex items-center justify-between bg-gray-50 dark:bg-gray-800/50 p-2 rounded">
+                                <div class="text-xs">
+                                    <div class="font-semibold text-gray-700 dark:text-gray-300">
+                                        <span v-for="(value, key) in variant.attributes" :key="key" class="mr-1">
+                                            {{ value }}
+                                        </span>
+                                    </div>
+                                    <span class="text-gray-500">Stock actual: {{ variant.current_stock }}</span>
+                                </div>
+                                <InputNumber fluid v-model="variant.quantity" :min="0" placeholder="0" class="!w-24" showButtons inputClass="text-center text-sm" />
+                            </div>
+                        </div>
+
                     </div>
                  </div>
                  <InputError :message="form.errors.products" />

@@ -83,7 +83,6 @@ class ProductController extends Controller implements HasMiddleware
                   ->orderBy('categories.name', $sortOrder)
                   ->select('products.*');
         } elseif (in_array($sortField, ['current_stock', 'min_stock', 'max_stock', 'location'])) {
-            // Unimos la tabla pivot explícitamente para permitir ordenamiento de inventario
             $query->join('branch_product', function ($join) use ($branchId) {
                 $join->on('products.id', '=', 'branch_product.product_id')
                      ->where('branch_product.branch_id', '=', $branchId);
@@ -91,7 +90,6 @@ class ProductController extends Controller implements HasMiddleware
             ->orderBy('branch_product.' . $sortField, $sortOrder)
             ->select('products.*');
         } else {
-            // Prefijamos con 'products.' para evitar ambigüedades en la consulta
             $query->orderBy('products.' . $sortField, $sortOrder);
             $query->select('products.*');
         }
@@ -107,7 +105,6 @@ class ProductController extends Controller implements HasMiddleware
             $product->min_stock = $branchPivot ? $branchPivot->min_stock : null;
             $product->max_stock = $branchPivot ? $branchPivot->max_stock : null;
             $product->location = $branchPivot ? $branchPivot->location : null;
-            $product->price_modifier = $branchPivot ? $branchPivot->price_modifier : 0;
 
             if ($product->productAttributes) {
                 $product->productAttributes->transform(function ($variant) use ($branchId) {
@@ -115,9 +112,8 @@ class ProductController extends Controller implements HasMiddleware
                     
                     $variant->current_stock = $vPivot ? $vPivot->current_stock : 0;
                     $variant->reserved_stock = $vPivot ? $vPivot->reserved_stock : 0;
-                    $variant->price_modifier = $vPivot ? $vPivot->price_modifier : 0;
-                    
-                    // Asignamos el location y remapeamos el SKU
+                    $variant->min_stock = $vPivot ? $vPivot->min_stock : null;
+                    $variant->max_stock = $vPivot ? $vPivot->max_stock : null;
                     $variant->location = $vPivot ? $vPivot->location : null;
                     $variant->sku = $variant->sku_suffix;
                     return $variant;
@@ -126,7 +122,6 @@ class ProductController extends Controller implements HasMiddleware
             return $product;
         });
 
-        // --- Recolección de propiedades adicionales necesarias para Vue ---
         $availableTemplates = $user->branch->printTemplates()
             ->where('type', TemplateType::LABEL)
             ->whereIn('context_type', [TemplateContextType::PRODUCT, TemplateContextType::GENERAL])
@@ -136,7 +131,6 @@ class ProductController extends Controller implements HasMiddleware
             ->where('type', 'product')
             ->where('subscription_id', $subscription->id)
             ->select('categories.*')
-            // Subconsulta 1: Stock de productos simples
             ->selectRaw('(
                 SELECT COALESCE(SUM(bp.current_stock), 0)
                 FROM products p
@@ -144,7 +138,6 @@ class ProductController extends Controller implements HasMiddleware
                 WHERE p.category_id = categories.id
                 AND bp.branch_id = ?
             ) as simple_stock', [$branchId])
-            // Subconsulta 2: Stock de variantes de productos
             ->selectRaw('(
                 SELECT COALESCE(SUM(bpa.current_stock), 0)
                 FROM products p
@@ -152,10 +145,9 @@ class ProductController extends Controller implements HasMiddleware
                 JOIN branch_product_attribute bpa ON bpa.product_attribute_id = pa.id
                 WHERE p.category_id = categories.id
                 AND bpa.branch_id = ?
-            ) as variant_stock', [$branchId, $branchId])
+            ) as variant_stock', [$branchId]) // <--- ¡AQUÍ ESTABA EL ERROR! Se removió el segundo $branchId
             ->get()
             ->map(function($cat) {
-                // Sumamos ambos para el total de la categoría
                 $cat->products_sum_current_stock = (float)$cat->simple_stock + (float)$cat->variant_stock;
                 return $cat;
             })
@@ -233,14 +225,16 @@ class ProductController extends Controller implements HasMiddleware
 
             $branchesToSync = $request->input('branch_ids', [$user->branch_id]);
             $syncData = [];
+            
+            $isSimple = $validated['product_type'] === 'simple';
+
             foreach ($branchesToSync as $bId) {
                 $syncData[$bId] = [
-                    'current_stock' => ($bId == $user->branch_id && $validated['product_type'] === 'simple') ? ($validated['current_stock'] ?? 0) : 0,
+                    'current_stock' => ($bId == $user->branch_id && $isSimple) ? ($validated['current_stock'] ?? 0) : 0,
                     'reserved_stock' => 0,
-                    'min_stock' => $validated['min_stock'] ?? null,
-                    'max_stock' => $validated['max_stock'] ?? null,
-                    'location' => ($bId == $user->branch_id) ? ($validated['location'] ?? null) : null,
-                    'price_modifier' => 0,
+                    'min_stock' => ($bId == $user->branch_id && $isSimple) ? ($validated['min_stock'] ?? null) : null,
+                    'max_stock' => ($bId == $user->branch_id && $isSimple) ? ($validated['max_stock'] ?? null) : null,
+                    'location' => ($bId == $user->branch_id && $isSimple) ? ($validated['location'] ?? null) : null,
                 ];
             }
             $product->branches()->sync($syncData);
@@ -249,7 +243,7 @@ class ProductController extends Controller implements HasMiddleware
                 foreach ($validated['variants_matrix'] as $variantData) {
                     $variant = $product->productAttributes()->create([
                         'attributes' => $variantData['attributes'],
-                        'sku_suffix' => $variantData['sku'] ?? null, // CORREGIDO: usar sku_suffix
+                        'sku_suffix' => $variantData['sku'] ?? null,
                         'selling_price_modifier' => $variantData['selling_price_modifier'] ?? 0,
                     ]);
 
@@ -258,8 +252,9 @@ class ProductController extends Controller implements HasMiddleware
                         $variantSyncData[$bId] = [
                             'current_stock' => ($bId == $user->branch_id) ? ($variantData['current_stock'] ?? 0) : 0,
                             'reserved_stock' => 0,
-                            'price_modifier' => 0,
-                            'location' => ($bId == $user->branch_id) ? ($variantData['location'] ?? null) : null, // NUEVO: Location por variante
+                            'min_stock' => ($bId == $user->branch_id) ? ($variantData['min_stock'] ?? null) : null,
+                            'max_stock' => ($bId == $user->branch_id) ? ($variantData['max_stock'] ?? null) : null,
+                            'location' => ($bId == $user->branch_id) ? ($variantData['location'] ?? null) : null,
                         ];
                     }
                     $variant->branches()->sync($variantSyncData);
@@ -317,6 +312,8 @@ class ProductController extends Controller implements HasMiddleware
                 $variant->current_stock = $vPivot ? $vPivot->current_stock : 0;
                 $variant->reserved_stock = $vPivot ? $vPivot->reserved_stock : 0;
                 $variant->available_stock = max(0, $variant->current_stock - $variant->reserved_stock);
+                $variant->min_stock = $vPivot ? $vPivot->min_stock : null;
+                $variant->max_stock = $vPivot ? $vPivot->max_stock : null;
                 $variant->location = $vPivot ? $vPivot->location : null;
                 $variant->sku = $variant->sku_suffix;
                 return $variant;
@@ -395,6 +392,8 @@ class ProductController extends Controller implements HasMiddleware
             $product->productAttributes->transform(function ($variant) use ($user) {
                 $vPivot = $variant->branches->where('id', $user->branch_id)->first()?->pivot;
                 $variant->current_stock = $vPivot ? $vPivot->current_stock : 0;
+                $variant->min_stock = $vPivot ? $vPivot->min_stock : null;
+                $variant->max_stock = $vPivot ? $vPivot->max_stock : null;
                 $variant->location = $vPivot ? $vPivot->location : null;
                 $variant->sku = $variant->sku_suffix;
                 return $variant;
@@ -451,15 +450,15 @@ class ProductController extends Controller implements HasMiddleware
             $branchesToSync = $request->input('branch_ids', [$user->branch_id]);
             $existingBranches = $product->branches->keyBy('id');
             $syncData = [];
+            $isSimple = $validated['product_type'] === 'simple';
 
             foreach ($branchesToSync as $bId) {
                 if ($existingBranches->has($bId)) {
                     $syncData[$bId] = [
-                        'current_stock' => ($bId == $user->branch_id && $validated['product_type'] === 'simple' && isset($validated['current_stock'])) ? $validated['current_stock'] : $existingBranches[$bId]->pivot->current_stock,
-                        'min_stock' => ($bId == $user->branch_id) ? ($validated['min_stock'] ?? null) : $existingBranches[$bId]->pivot->min_stock,
-                        'max_stock' => ($bId == $user->branch_id) ? ($validated['max_stock'] ?? null) : $existingBranches[$bId]->pivot->max_stock,
-                        'location' => ($bId == $user->branch_id) ? ($validated['location'] ?? null) : $existingBranches[$bId]->pivot->location,
-                        'price_modifier' => $existingBranches[$bId]->pivot->price_modifier,
+                        'current_stock' => ($bId == $user->branch_id && $isSimple && isset($validated['current_stock'])) ? $validated['current_stock'] : ($isSimple ? $existingBranches[$bId]->pivot->current_stock : 0),
+                        'min_stock' => ($bId == $user->branch_id && $isSimple) ? ($validated['min_stock'] ?? null) : ($isSimple ? $existingBranches[$bId]->pivot->min_stock : null),
+                        'max_stock' => ($bId == $user->branch_id && $isSimple) ? ($validated['max_stock'] ?? null) : ($isSimple ? $existingBranches[$bId]->pivot->max_stock : null),
+                        'location' => ($bId == $user->branch_id && $isSimple) ? ($validated['location'] ?? null) : ($isSimple ? $existingBranches[$bId]->pivot->location : null),
                     ];
                 } else {
                     $syncData[$bId] = [
@@ -468,7 +467,6 @@ class ProductController extends Controller implements HasMiddleware
                         'min_stock' => null,
                         'max_stock' => null,
                         'location' => null,
-                        'price_modifier' => 0,
                     ];
                 }
             }
@@ -496,17 +494,23 @@ class ProductController extends Controller implements HasMiddleware
                                         'current_stock' => ($bId == $user->branch_id && isset($variantData['current_stock']))
                                             ? $variantData['current_stock']
                                             : $vExistingBranches[$bId]->pivot->current_stock,
-                                        'location' => ($bId == $user->branch_id && isset($variantData['location']))
+                                        'min_stock' => ($bId == $user->branch_id && array_key_exists('min_stock', $variantData))
+                                            ? $variantData['min_stock']
+                                            : $vExistingBranches[$bId]->pivot->min_stock,
+                                        'max_stock' => ($bId == $user->branch_id && array_key_exists('max_stock', $variantData))
+                                            ? $variantData['max_stock']
+                                            : $vExistingBranches[$bId]->pivot->max_stock,
+                                        'location' => ($bId == $user->branch_id && array_key_exists('location', $variantData))
                                             ? $variantData['location']
                                             : $vExistingBranches[$bId]->pivot->location,
-                                        'price_modifier' => $vExistingBranches[$bId]->pivot->price_modifier,
                                     ];
                                 } else {
                                     $vSyncData[$bId] = [
                                         'current_stock' => 0,
                                         'reserved_stock' => 0,
+                                        'min_stock' => null,
+                                        'max_stock' => null,
                                         'location' => null,
-                                        'price_modifier' => 0,
                                     ];
                                 }
                             }
@@ -525,8 +529,9 @@ class ProductController extends Controller implements HasMiddleware
                             $vSyncData[$bId] = [
                                 'current_stock' => ($bId == $user->branch_id) ? ($variantData['current_stock'] ?? 0) : 0,
                                 'reserved_stock' => 0,
+                                'min_stock' => ($bId == $user->branch_id) ? ($variantData['min_stock'] ?? null) : null,
+                                'max_stock' => ($bId == $user->branch_id) ? ($variantData['max_stock'] ?? null) : null,
                                 'location' => ($bId == $user->branch_id) ? ($variantData['location'] ?? null) : null,
-                                'price_modifier' => 0,
                             ];
                         }
                         $newVariant->branches()->sync($vSyncData);

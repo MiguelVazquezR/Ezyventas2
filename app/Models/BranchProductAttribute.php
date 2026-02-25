@@ -11,15 +11,17 @@ class BranchProductAttribute extends Pivot
     protected $fillable = [
         'branch_id',
         'product_attribute_id',
-        'price_modifier',
         'current_stock',
         'reserved_stock',
+        'min_stock',
+        'max_stock',
         'location',
     ];
 
     protected $casts = [
-        'price_modifier' => 'decimal:2',
         'current_stock' => 'decimal:2',
         'reserved_stock' => 'decimal:2',
+        'min_stock' => 'decimal:2',
+        'max_stock' => 'decimal:2',
     ];
 }

@@ -124,12 +124,23 @@ class Product extends Model implements HasMedia
 
     /* RELACIONES */
 
-    public function promotions(): MorphToMany
+    public function promotionRules(): MorphToMany
     {
-        return $this->morphToMany(Promotion::class, 'itemable', 'promotion_rules')
-            ->orWhere(function ($query) {
-                $query->morphToMany(Promotion::class, 'itemable', 'promotion_effects');
-            });
+        return $this->morphToMany(Promotion::class, 'itemable', 'promotion_rules');
+    }
+
+    public function promotionEffects(): MorphToMany
+    {
+        return $this->morphToMany(Promotion::class, 'itemable', 'promotion_effects');
+    }
+
+    /**
+     * Accesor para obtener ambas promociones (reglas y efectos) combinadas.
+     * Se accederá mágicamente como $product->promotions
+     */
+    public function getPromotionsAttribute()
+    {
+        return $this->promotionRules->merge($this->promotionEffects)->unique('id')->values();
     }
 
     public function globalProduct(): BelongsTo
@@ -177,7 +188,6 @@ class Product extends Model implements HasMedia
         return $this->belongsToMany(Branch::class, 'branch_product')
             ->using(BranchProduct::class)
             ->withPivot([
-                'price_modifier',
                 'current_stock',
                 'reserved_stock',
                 'min_stock',

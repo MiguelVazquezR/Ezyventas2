@@ -64,6 +64,8 @@ class StoreProductRequest extends FormRequest
             'variants_matrix.*.sku' => 'nullable|string|max:255',
             'variants_matrix.*.location' => 'nullable|string|max:255',
             'variants_matrix.*.current_stock' => 'nullable|numeric|min:0',
+            'variants_matrix.*.min_stock' => 'nullable|numeric|min:0', // NUEVO
+            'variants_matrix.*.max_stock' => 'nullable|numeric|min:0', // NUEVO
             'variants_matrix.*.selling_price_modifier' => 'nullable|numeric',
 
             'general_images' => 'nullable|array|max:5',

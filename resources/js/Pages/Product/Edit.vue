@@ -38,6 +38,8 @@ const initialVariantsMatrix = (props.product.product_attributes || []).map(pa =>
     selling_price_modifier: parseFloat(pa.selling_price_modifier || 0),
     final_price: parseFloat(props.product.selling_price || 0) + parseFloat(pa.selling_price_modifier || 0),
     current_stock: pa.current_stock || 0,
+    min_stock: pa.min_stock !== undefined ? pa.min_stock : null,
+    max_stock: pa.max_stock !== undefined ? pa.max_stock : null,
 }));
 
 // Inyección de la data de la Base de datos al formulario reactivo

@@ -17,14 +17,14 @@ let localIdCounter = 0;
 // --- LÓGICA DE INICIALIZACIÓN (MÚLTIPLE PROPÓSITO) ---
 onMounted(() => {
     if (props.form.variants_matrix && props.form.variants_matrix.length > 0) {
-        // 1. Inicializar precios finales
+        // 1. Inicializar precios finales y campos faltantes
         props.form.variants_matrix.forEach(v => {
             if (v.final_price === undefined) {
                 v.final_price = (props.form.selling_price || 0) + Number(v.selling_price_modifier || 0);
             }
-            if (v.location === undefined) {
-                v.location = '';
-            }
+            if (v.location === undefined) v.location = '';
+            if (v.min_stock === undefined) v.min_stock = null;
+            if (v.max_stock === undefined) v.max_stock = null;
         });
 
         // 2. MODO EDICIÓN: Autocompletar los selectores basados en las variantes existentes
@@ -105,6 +105,8 @@ const generateMatrix = () => {
             selling_price_modifier: 0,
             final_price: props.form.selling_price || 0,
             current_stock: 0,
+            min_stock: null, // Inicializado como null
+            max_stock: null, // Inicializado como null
         };
     });
 
@@ -124,6 +126,8 @@ const addManualVariant = () => {
         selling_price_modifier: 0,
         final_price: props.form.selling_price || 0,
         current_stock: 0,
+        min_stock: null,
+        max_stock: null,
     });
 };
 
@@ -264,7 +268,7 @@ watch(variantSearch, () => {
                         <div>
                             <h5 class="font-bold text-gray-800 dark:text-gray-200 m-0">Matriz de variantes ({{ filteredVariants.length }})</h5>
                             <p class="text-sm text-gray-500 dark:text-gray-400 m-0 mt-1">
-                                Asigna inventario inicial, código SKU, <strong>ubicación</strong> y el precio final de venta para cada opción.
+                                Asigna inventario inicial (y sus límites), código SKU, ubicación y precio final de venta para cada opción.
                             </p>
                         </div>
                         
@@ -303,9 +307,9 @@ watch(variantSearch, () => {
 
                         <!-- Encabezados de Tabla (Solo visibles en Escritorio) -->
                         <div v-if="filteredVariants.length > 0" class="hidden md:flex gap-3 px-4 pb-2 border-b border-gray-200 dark:border-gray-700 text-xs uppercase tracking-wider font-semibold text-gray-500 dark:text-gray-400 mt-2">
-                            <div class="w-3/12">Variante / Atributos</div>
+                            <div class="w-2/12">Variante / Atributos</div>
                             <div class="w-2/12">Precio Final</div>
-                            <div class="w-2/12">Stock</div>
+                            <div class="w-3/12">Inventario (Act / Mín / Máx)</div>
                             <div class="w-2/12">SKU</div>
                             <div class="w-2/12">Ubicación</div>
                             <div class="w-1/12 text-right">Acciones</div>
@@ -316,7 +320,7 @@ watch(variantSearch, () => {
                             class="flex flex-col md:flex-row gap-3 items-start md:items-center bg-white dark:bg-gray-800 p-4 md:p-3 rounded shadow-sm border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
                             
                             <!-- ATRIBUTOS -->
-                            <div class="w-full md:w-3/12 flex flex-wrap gap-1">
+                            <div class="w-full md:w-2/12 flex flex-wrap gap-1">
                                 <template v-if="Object.keys(variant.attributes).length === 1 && Object.keys(variant.attributes)[0] === 'Detalle'">
                                     <InputText v-model="variant.attributes['Detalle']" placeholder="Ej: 128GB - Rojo" class="w-full text-sm" required />
                                 </template>
@@ -331,9 +335,20 @@ watch(variantSearch, () => {
                                     placeholder="$0.00" class="w-full text-sm" inputClass="!w-full" />
                             </div>
 
-                            <div class="w-full md:w-2/12">
-                                <InputLabel :value="'Stock Actual'" class="text-xs !mb-1 md:hidden text-gray-500 font-semibold" />
-                                <InputNumber v-model="variant.current_stock" placeholder="0" class="w-full text-sm" inputClass="!w-full" />
+                            <!-- INVENTARIO AGRUPADO (Actual / Mín / Máx) -->
+                            <div class="w-full md:w-3/12 flex gap-2">
+                                <div class="w-1/3" v-tooltip.top="'Stock Actual'">
+                                    <InputLabel :value="'Actual'" class="text-xs !mb-1 md:hidden text-gray-500 font-semibold" />
+                                    <InputNumber v-model="variant.current_stock" placeholder="Act" class="w-full text-sm" inputClass="!w-full" />
+                                </div>
+                                <div class="w-1/3" v-tooltip.top="'Stock Mínimo'">
+                                    <InputLabel :value="'Mínimo'" class="text-xs !mb-1 md:hidden text-gray-500 font-semibold" />
+                                    <InputNumber v-model="variant.min_stock" placeholder="Mín" class="w-full text-sm" inputClass="!w-full" />
+                                </div>
+                                <div class="w-1/3" v-tooltip.top="'Stock Máximo'">
+                                    <InputLabel :value="'Máximo'" class="text-xs !mb-1 md:hidden text-gray-500 font-semibold" />
+                                    <InputNumber v-model="variant.max_stock" placeholder="Máx" class="w-full text-sm" inputClass="!w-full" />
+                                </div>
                             </div>
                             
                             <div class="w-full md:w-2/12">
@@ -341,7 +356,6 @@ watch(variantSearch, () => {
                                 <InputText v-model="variant.sku" placeholder="Ej: SKU-001" class="w-full text-sm" />
                             </div>
                             
-                            <!-- NUEVO: Campo de Ubicación -->
                             <div class="w-full md:w-2/12">
                                 <InputLabel :value="'Ubicación'" class="text-xs !mb-1 md:hidden text-gray-500 font-semibold" />
                                 <InputText v-model="variant.location" placeholder="Ej: A-3" class="w-full text-sm" />

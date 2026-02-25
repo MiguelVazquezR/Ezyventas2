@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 class ProductStockController extends Controller
 {
     /**
-     * Store a newly created resource in storage.
+     * Store a newly created resource in storage (Single Product Mode).
      */
     public function store(Request $request, Product $product)
     {
@@ -25,73 +25,70 @@ class ProductStockController extends Controller
 
         $operation = $validated['operation'];
         $reason = $validated['reason'];
+        $branchId = auth()->user()->branch_id; // Stock por sucursal
 
-        DB::transaction(function () use ($validated, $product, $operation, $reason) {
+        DB::transaction(function () use ($validated, $product, $operation, $reason, $branchId) {
+            
+            // 1. PRODUCTO SIMPLE
             if ($validated['type'] === 'simple') {
                 $quantity = $validated['quantity'];
                 
-                // 1. Capturar valor anterior
-                $oldStock = $product->current_stock;
+                // Actualizar la tabla pivot de la sucursal, no la tabla general
+                $pivot = $product->branches()->where('branches.id', $branchId)->first()?->pivot;
+                if (!$pivot) return; // Si no está asignado a la sucursal, ignorar
                 
-                // 2. Desactivar el log automático para esta operación y evitar duplicados
+                $oldStock = (float) $pivot->current_stock;
+                $newStock = ($operation === 'entry') ? $oldStock + $quantity : $oldStock - $quantity;
+                
+                $pivot->current_stock = $newStock;
+                $pivot->save();
+
                 $product->disableLogging();
 
-                if ($operation === 'entry') {
-                    $product->increment('current_stock', $quantity);
-                } else {
-                    $product->decrement('current_stock', $quantity);
-                }
-                
-                // 3. Calcular nuevo valor
-                $newStock = ($operation === 'entry') ? $oldStock + $quantity : $oldStock - $quantity;
-
-                // 4. Crear UN SOLO registro manual con toda la información
-                // Usamos el evento 'updated' para que el frontend detecte que es un cambio y muestre el DiffViewer
                 activity()
                     ->event('updated') 
                     ->performedOn($product)
                     ->causedBy(auth()->user())
                     ->withProperties([
-                        'old' => ['current_stock' => $oldStock],        // Para que se vea "14 ->"
-                        'attributes' => ['current_stock' => $newStock], // Para que se vea "-> 15"
+                        'old' => ['current_stock' => $oldStock],
+                        'attributes' => ['current_stock' => $newStock],
                         'quantity' => $quantity,
                         'operation' => $operation,
-                        'reason' => $reason // El motivo que queremos mostrar
+                        'reason' => $reason
                     ])
                     ->log($operation === 'entry' ? "Entrada de {$quantity} unidades" : "Salida de {$quantity} unidades");
 
-            } else {
-                // Lógica para Variantes
+            } 
+            // 2. PRODUCTO CON VARIANTES
+            else {
                 $totalChanged = 0;
                 $changes = [];
 
                 foreach ($validated['variants'] as $variantData) {
                     if ($variantData['quantity'] > 0) {
                         $attribute = $product->productAttributes()->find($variantData['id']);
+                        
                         if ($attribute) {
-                            $qty = $variantData['quantity'];
-                            $variantName = implode(' / ', $attribute->attributes);
+                            // Actualizar la tabla pivot de la variante y la sucursal
+                            $vPivot = $attribute->branches()->where('branches.id', $branchId)->first()?->pivot;
+                            
+                            if ($vPivot) {
+                                $qty = $variantData['quantity'];
+                                $variantName = implode(' / ', $attribute->attributes);
 
-                            if ($operation === 'entry') {
-                                $attribute->increment('current_stock', $qty);
-                                $changes[$variantName] = "+{$qty}";
-                            } else {
-                                $attribute->decrement('current_stock', $qty);
-                                $changes[$variantName] = "-{$qty}";
+                                $newStock = ($operation === 'entry') ? $vPivot->current_stock + $qty : $vPivot->current_stock - $qty;
+                                $vPivot->current_stock = $newStock;
+                                $vPivot->save();
+
+                                $changes[$variantName] = ($operation === 'entry' ? '+' : '-') . $qty;
+                                $totalChanged += $qty;
                             }
-                            $totalChanged += $qty;
                         }
                     }
                 }
 
                 if ($totalChanged > 0) {
-                    // Recalcular el stock total
-                    $newTotal = $product->productAttributes()->sum('current_stock');
-                    
-                    // Desactivar log automático al actualizar el total del padre
                     $product->disableLogging();
-                    $product->update(['current_stock' => $newTotal]);
-
                     $actionWord = $operation === 'entry' ? 'entrada' : 'salida';
                     
                     activity()
@@ -99,7 +96,7 @@ class ProductStockController extends Controller
                         ->performedOn($product)
                         ->causedBy(auth()->user())
                         ->withProperties([
-                            'attributes' => $changes, // Muestra el desglose de variantes modificadas
+                            'attributes' => $changes, 
                             'operation' => $operation,
                             'reason' => $reason
                         ])
@@ -112,57 +109,112 @@ class ProductStockController extends Controller
     }
 
     /**
-     * Da entrada o salida de stock a múltiples productos.
+     * Da entrada o salida de stock a múltiples productos (Batch Mode).
      */
     public function batchStore(Request $request)
     {
         $validated = $request->validate([
             'products' => 'required|array',
             'products.*.id' => 'required|exists:products,id',
-            'products.*.quantity' => 'required|integer|min:0',
+            'products.*.is_variant' => 'required|boolean',
+            'products.*.quantity' => 'nullable|integer|min:0',
+            'products.*.variants' => 'nullable|array',
+            'products.*.variants.*.id' => 'nullable|exists:product_attributes,id',
+            'products.*.variants.*.quantity' => 'nullable|integer|min:0',
             'operation' => 'required|in:entry,exit',
             'reason' => 'required|string',
         ]);
 
         $operation = $validated['operation'];
         $reason = $validated['reason'];
+        $branchId = auth()->user()->branch_id; // Stock por sucursal
 
-        DB::transaction(function () use ($validated, $operation, $reason) {
+        DB::transaction(function () use ($validated, $operation, $reason, $branchId) {
             foreach ($validated['products'] as $productData) {
-                if ($productData['quantity'] > 0) {
-                    $product = Product::find($productData['id']);
-                    $qty = $productData['quantity'];
-                    $oldStock = $product->current_stock;
+                
+                $product = Product::find($productData['id']);
+                if (!$product) continue;
+                
+                $product->disableLogging();
 
-                    // Desactivar log automático
-                    $product->disableLogging();
-
-                    if ($operation === 'entry') {
-                        $product->increment('current_stock', $qty);
-                        $msg = "Entrada masiva de {$qty} unidades.";
-                    } else {
-                        $product->decrement('current_stock', $qty);
-                        $msg = "Salida masiva de {$qty} unidades.";
-                    }
+                // 1. SI EL PRODUCTO DEL BATCH ES SIMPLE
+                if (!$productData['is_variant']) {
+                    $qty = $productData['quantity'] ?? 0;
                     
-                    $newStock = ($operation === 'entry') ? $oldStock + $qty : $oldStock - $qty;
+                    if ($qty > 0) {
+                        $pivot = $product->branches()->where('branches.id', $branchId)->first()?->pivot;
+                        
+                        if ($pivot) {
+                            $oldStock = (float) $pivot->current_stock;
+                            $newStock = ($operation === 'entry') ? $oldStock + $qty : $oldStock - $qty;
+                            
+                            $pivot->current_stock = $newStock;
+                            $pivot->save();
 
-                    activity()
-                        ->event('updated')
-                        ->performedOn($product)
-                        ->causedBy(auth()->user())
-                        ->withProperties([
-                            'old' => ['current_stock' => $oldStock],
-                            'attributes' => ['current_stock' => $newStock],
-                            'quantity' => $qty,
-                            'operation' => $operation,
-                            'reason' => $reason
-                        ])
-                        ->log($msg);
+                            $msg = ($operation === 'entry') ? "Entrada masiva de {$qty} unidades." : "Salida masiva de {$qty} unidades.";
+
+                            activity()
+                                ->event('updated')
+                                ->performedOn($product)
+                                ->causedBy(auth()->user())
+                                ->withProperties([
+                                    'old' => ['current_stock' => $oldStock],
+                                    'attributes' => ['current_stock' => $newStock],
+                                    'quantity' => $qty,
+                                    'operation' => $operation,
+                                    'reason' => $reason
+                                ])
+                                ->log($msg);
+                        }
+                    }
+                } 
+                // 2. SI EL PRODUCTO DEL BATCH TIENE VARIANTES
+                else {
+                    $totalChanged = 0;
+                    $changes = [];
+
+                    if (!empty($productData['variants'])) {
+                        foreach ($productData['variants'] as $vData) {
+                            $qty = $vData['quantity'] ?? 0;
+                            
+                            if ($qty > 0) {
+                                $attribute = $product->productAttributes()->find($vData['id']);
+                                
+                                if ($attribute) {
+                                    $vPivot = $attribute->branches()->where('branches.id', $branchId)->first()?->pivot;
+                                    
+                                    if ($vPivot) {
+                                        $variantName = implode(' / ', $attribute->attributes);
+                                        $newStock = ($operation === 'entry') ? $vPivot->current_stock + $qty : $vPivot->current_stock - $qty;
+                                        
+                                        $vPivot->current_stock = $newStock;
+                                        $vPivot->save();
+
+                                        $changes[$variantName] = ($operation === 'entry' ? '+' : '-') . $qty;
+                                        $totalChanged += $qty;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if ($totalChanged > 0) {
+                        $actionWord = $operation === 'entry' ? 'entrada' : 'salida';
+                        activity()
+                            ->event('updated')
+                            ->performedOn($product)
+                            ->causedBy(auth()->user())
+                            ->withProperties([
+                                'attributes' => $changes,
+                                'operation' => $operation,
+                                'reason' => $reason
+                            ])
+                            ->log("Se dio {$actionWord} masiva de {$totalChanged} unidades (variantes)");
+                    }
                 }
             }
         });
 
-        return redirect()->route('products.index')->with('success', 'Stock masivo actualizado con éxito.');
+        return redirect()->route('products.index')->with('success', 'Stock actualizado con éxito en la sucursal.');
     }
 }

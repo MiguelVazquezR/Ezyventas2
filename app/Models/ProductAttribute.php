@@ -36,9 +36,10 @@ class ProductAttribute extends Model
         return $this->belongsToMany(Branch::class, 'branch_product_attribute')
             ->using(BranchProductAttribute::class)
             ->withPivot([
-                'price_modifier',
                 'current_stock',
                 'reserved_stock',
+                'min_stock',
+                'max_stock',
                 'location'
             ])
             ->withTimestamps();
