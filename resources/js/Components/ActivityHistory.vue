@@ -9,11 +9,11 @@ const props = defineProps({
     },
     title: {
         type: String,
-        default: 'Historial de Actividad',
+        default: 'Historial de actividad',
     },
     maxHeight: {
         type: String,
-        default: '500px', // Aumenté un poco la altura por defecto para mejor visibilidad
+        default: '500px',
     }
 });
 
@@ -23,28 +23,28 @@ const fieldTranslations = {
     'name': 'Nombre',
     'description': 'Descripción',
     'slug': 'URL / Slug',
-    'is_active': 'Estado Activo',
+    'is_active': 'Estado activo',
     'status': 'Estatus',
     'notes': 'Notas',
     'image': 'Imagen',
     'folio': 'Folio',
-    'custom_fields': 'Campos Personalizados',
-    'created_at': 'Fecha Creación',
-    'updated_at': 'Fecha Actualización',
-    'deleted_at': 'Fecha Eliminación',
+    'custom_fields': 'Campos personalizados',
+    'created_at': 'Fecha creación',
+    'updated_at': 'Fecha actualización',
+    'deleted_at': 'Fecha eliminación',
     
     // --- Productos / Inventario ---
     'sku': 'SKU',
-    'selling_price': 'Precio Venta',
-    'cost_price': 'Precio Compra',
-    'current_stock': 'Stock Físico',
-    'min_stock': 'Stock Mínimo',
-    'max_stock': 'Stock Máximo',
-    'reserved_stock': 'Stock Apartado',
-    'available_stock': 'Stock Disponible',
-    'barcode': 'Código de Barras',
-    'price_tiers': 'Precios de Mayoreo',
-    'product_type': 'Tipo de Producto',
+    'selling_price': 'Precio de venta',
+    'cost_price': 'Precio de compra',
+    'current_stock': 'Stock físico',
+    'min_stock': 'Stock mínimo',
+    'max_stock': 'Stock máximo',
+    'reserved_stock': 'Stock apartado',
+    'available_stock': 'Stock disponible',
+    'barcode': 'Código de barras',
+    'price_tiers': 'Precios de mayoreo',
+    'product_type': 'Tipo de producto',
     'brand': 'Marca',
     'category': 'Categoría',
     'location': 'Ubicación',
@@ -57,27 +57,27 @@ const fieldTranslations = {
     'customer_id': 'Cliente',
     'transaction_id': 'Transacción',
     'quote_id': 'Cotización',
-    'service_order_id': 'Orden de Servicio',
+    'service_order_id': 'Orden de servicio',
     
     // --- Servicios / Cotizaciones / OS ---
     'duration': 'Duración',
-    'duration_estimate': 'Duración Estimada',
-    'base_price': 'Precio Base',
-    'show_online': 'Mostrar en Línea',
+    'duration_estimate': 'Duración estimada',
+    'base_price': 'Precio base',
+    'show_online': 'Mostrar en línea',
     'valid_until': 'Válido hasta',
-    'expiry_date': 'Fecha de Vencimiento',
-    'total_amount': 'Monto Total',
+    'expiry_date': 'Fecha de vencimiento',
+    'total_amount': 'Monto total',
     'subtotal': 'Subtotal',
-    'total_discount': 'Descuento Total',
-    'total_tax': 'Impuestos Totales',
-    'shipping_cost': 'Costo de Envío',
-    'recipient_name': 'Nombre Destinatario',
-    'shipping_address': 'Dirección de Envío',
-    'customer_name': 'Nombre del Cliente',
-    'technician_name': 'Técnico Asignado',
+    'total_discount': 'Descuento total',
+    'total_tax': 'Impuestos totales',
+    'shipping_cost': 'Costo de envío',
+    'recipient_name': 'Nombre destinatario',
+    'shipping_address': 'Dirección de envío',
+    'customer_name': 'Nombre del cliente',
+    'technician_name': 'Técnico asignado',
     'item_description': 'Equipo / Dispositivo',
-    'reported_problems': 'Fallas Reportadas',
-    'technician_diagnosis': 'Diagnóstico Técnico',
+    'reported_problems': 'Fallas reportadas',
+    'technician_diagnosis': 'Diagnóstico técnico',
 };
 
 // Función para formatear las claves (keys) de inglés a español
@@ -103,10 +103,8 @@ const formatKey = (key) => {
 const stripHtml = (text) => {
     if (!text || typeof text !== 'string') return text;
     
-    // Reemplaza etiquetas HTML por un espacio (para que las palabras no se peguen)
     let cleanText = text.replace(/<\/?[^>]+(>|$)/g, " ");
     
-    // Decodifica las entidades HTML más comunes
     cleanText = cleanText.replace(/&nbsp;/g, ' ')
                          .replace(/&amp;/g, '&')
                          .replace(/&lt;/g, '<')
@@ -114,7 +112,6 @@ const stripHtml = (text) => {
                          .replace(/&quot;/g, '"')
                          .replace(/&#39;/g, "'");
                          
-    // Elimina espacios múltiples generados por el reemplazo
     return cleanText.replace(/\s+/g, ' ').trim();
 };
 
@@ -125,55 +122,48 @@ const getSmartActivityDetails = (activity) => {
     let colorClass = 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400';
     let borderClass = 'border-gray-200 dark:border-gray-700';
 
-    // Detectar descripciones genéricas
     const isGenericUpdate = title.toLowerCase().includes('actualizado') || title.toLowerCase().includes('updated');
 
-    // Analizar cambios para mejorar el título
     if (activity.event === 'updated' && activity.changes?.after) {
         const keys = Object.keys(activity.changes.after);
         
-        // Prioridad 1: Cambios de Stock
         if (keys.includes('current_stock')) {
             const oldStock = activity.changes.before?.current_stock || 0;
             const newStock = activity.changes.after.current_stock;
             const diff = newStock - oldStock;
             
             if (diff > 0) {
-                title = isGenericUpdate ? 'Entrada de Inventario' : title;
+                title = isGenericUpdate ? 'Entrada de inventario' : title;
                 icon = 'pi pi-arrow-circle-up';
                 colorClass = 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300';
                 borderClass = 'border-green-200 dark:border-green-800';
             } else {
-                title = isGenericUpdate ? 'Salida de Inventario' : title;
+                title = isGenericUpdate ? 'Salida de inventario' : title;
                 icon = 'pi pi-arrow-circle-down';
                 colorClass = 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300';
                 borderClass = 'border-red-200 dark:border-red-800';
             }
         } 
-        // Prioridad 2: Precios
         else if (keys.includes('selling_price') || keys.includes('cost_price')) {
-            title = isGenericUpdate ? 'Actualización de Precios' : title;
+            title = isGenericUpdate ? 'Actualización de precios' : title;
             icon = 'pi pi-tag';
             colorClass = 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300';
             borderClass = 'border-purple-200 dark:border-purple-800';
         }
-        // Prioridad 3: Estatus
         else if (keys.includes('status') || keys.includes('is_active')) {
-            title = isGenericUpdate ? 'Cambio de Estatus' : title;
+            title = isGenericUpdate ? 'Cambio de estatus' : title;
             icon = 'pi pi-sync';
             colorClass = 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300';
             borderClass = 'border-blue-200 dark:border-blue-800';
         }
-        // Prioridad 4: Edición simple (1 solo campo)
         else if (keys.length === 1 && isGenericUpdate) {
-            title = `Edición de ${formatKey(keys[0])}`;
+            title = `Edición de ${formatKey(keys[0]).toLowerCase()}`;
             icon = 'pi pi-pencil';
             colorClass = 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300';
             borderClass = 'border-orange-200 dark:border-orange-800';
         }
     }
 
-    // Overrides por tipo de evento explícito
     if (activity.event === 'created') {
         icon = 'pi pi-plus';
         colorClass = 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400';
@@ -186,11 +176,11 @@ const getSmartActivityDetails = (activity) => {
         icon = 'pi pi-refresh';
         colorClass = 'bg-teal-100 text-teal-600 dark:bg-teal-900/40 dark:text-teal-400';
         borderClass = 'border-teal-200 dark:border-teal-800';
-    } else if (activity.event === 'stock_in') { // Eventos custom que creamos
+    } else if (activity.event === 'stock_in') { 
         icon = 'pi pi-plus-circle';
         colorClass = 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300';
         borderClass = 'border-green-200 dark:border-green-800';
-    } else if (activity.event === 'stock_out') { // Eventos custom que creamos
+    } else if (activity.event === 'stock_out') {
         icon = 'pi pi-minus-circle';
         colorClass = 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300';
         borderClass = 'border-red-200 dark:border-red-800';
@@ -199,18 +189,25 @@ const getSmartActivityDetails = (activity) => {
     return { title, icon, colorClass, borderClass };
 };
 
-// Helper para obtener propiedades extra (reason, notes, etc.)
 const getExtraProperties = (activity) => {
     if (!activity.properties) return {};
-    // Filtramos las propiedades estándar de Spatie para dejar solo las custom
     const { attributes, old, ...extras } = activity.properties;
     return extras;
 };
+
+// PREPARAMOS TODA LA DATA ANTES DEL RENDER
+const processedActivities = computed(() => {
+    return props.activities.map(activity => ({
+        ...activity,
+        details: getSmartActivityDetails(activity),
+        extras: getExtraProperties(activity)
+    }));
+});
 </script>
 
 <template>
     <div
-        class="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-100 dark:border-gray-700 min-h-40 max-h-96 flex flex-col">
+        class="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-100 dark:border-gray-700 min-h-40 flex flex-col">
         <!-- Header -->
         <div
             class="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center rounded-t-lg bg-gray-50/50 dark:bg-gray-800">
@@ -218,34 +215,28 @@ const getExtraProperties = (activity) => {
                 <i class="pi pi-history text-primary-500"></i>
                 {{ title }}
             </h2>
-            <span v-if="activities.length"
+            <span v-if="processedActivities.length"
                 class="text-xs px-2 py-1 rounded-full bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-medium">
-                {{ activities.length }} registros
+                {{ processedActivities.length }} registros
             </span>
         </div>
 
         <!-- Timeline Content -->
         <div class="p-5 overflow-y-auto custom-scrollbar flex-grow" :style="{ maxHeight: maxHeight }">
-            <div v-if="activities && activities.length > 0" class="relative pl-2">
+            <div v-if="processedActivities && processedActivities.length > 0" class="relative pl-2">
 
                 <!-- Línea de tiempo -->
                 <div class="absolute left-6 top-2 bottom-4 w-0.5 bg-gray-200 dark:bg-gray-700"></div>
 
                 <div class="space-y-6 relative">
-                    <div v-for="(activity, index) in activities" :key="activity.id || index" class="relative group">
-
-                        <!-- Preparar datos visuales -->
-                        <component :is="'script'" setup>
-                            const details = getSmartActivityDetails(activity);
-                            const extras = getExtraProperties(activity);
-                        </component>
+                    <div v-for="(activity, index) in processedActivities" :key="activity.id || index" class="relative group">
 
                         <div class="flex gap-4">
                             <!-- Icono -->
                             <div class="relative z-10 flex-shrink-0">
                                 <div class="flex w-10 h-10 items-center justify-center rounded-full border-2 ring-4 ring-white dark:ring-gray-800 transition-transform group-hover:scale-110 shadow-sm"
-                                    :class="[getSmartActivityDetails(activity).colorClass, getSmartActivityDetails(activity).borderClass]">
-                                    <i :class="[getSmartActivityDetails(activity).icon, 'text-sm font-bold']"></i>
+                                    :class="[activity.details.colorClass, activity.details.borderClass]">
+                                    <i :class="[activity.details.icon, 'text-sm font-bold']"></i>
                                 </div>
                             </div>
 
@@ -255,13 +246,13 @@ const getExtraProperties = (activity) => {
                                 <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start mb-1 gap-1">
                                     <div>
                                         <h3 class="m-0 text-sm font-bold text-gray-800 dark:text-gray-100 group-hover:text-primary-600 transition-colors">
-                                            {{ getSmartActivityDetails(activity).title }}
+                                            {{ activity.details.title }}
                                         </h3>
                                         
-                                        <!-- Mostrar Motivo si existe (para stock u otros) -->
-                                        <div v-if="getExtraProperties(activity).reason" class="mt-1">
+                                        <!-- Mostrar Motivo si existe -->
+                                        <div v-if="activity.extras.reason" class="mt-1">
                                             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
-                                                Motivo: {{ getExtraProperties(activity).reason }}
+                                                Motivo: {{ activity.extras.reason }}
                                             </span>
                                         </div>
                                     </div>
@@ -295,18 +286,15 @@ const getExtraProperties = (activity) => {
 
                                         <!-- Valores -->
                                         <div class="w-full">
-                                            <!-- Caso especial: Descripción larga o Objetos -> DiffViewer con stripHtml -->
                                             <div v-if="key.toLowerCase().includes('descripc') || (typeof value === 'string' && value.length > 50) || typeof value === 'object'">
                                                 <DiffViewer :oldValue="stripHtml(activity.changes.before[key])" :newValue="stripHtml(value)" />
                                             </div>
                                             
-                                            <!-- Caso especial: Cambio Numérico Simple (Stock / Precio) -->
                                             <div v-else-if="typeof value === 'number' && typeof activity.changes.before[key] === 'number'" class="flex items-center gap-2 text-xs">
                                                 <span class="line-through text-red-400 opacity-75">{{ activity.changes.before[key] }}</span>
                                                 <i class="pi pi-arrow-right text-gray-400 text-[10px]"></i>
                                                 <span class="font-bold text-gray-800 dark:text-gray-200">{{ value }}</span>
                                                 
-                                                <!-- Diferencia (ej: +5) -->
                                                 <span v-if="value - activity.changes.before[key] !== 0" 
                                                     class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
                                                     :class="(value - activity.changes.before[key] > 0) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">
@@ -314,7 +302,6 @@ const getExtraProperties = (activity) => {
                                                 </span>
                                             </div>
 
-                                            <!-- Caso General: Inline con stripHtml aplicado -->
                                             <div v-else class="flex flex-wrap items-center gap-2 text-xs">
                                                 <div class="bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400/80 px-2 py-0.5 rounded border border-red-100 dark:border-red-900/20 line-through opacity-75 truncate max-w-[150px]" :title="stripHtml(activity.changes.before[key])">
                                                     {{ stripHtml(activity.changes.before[key]) || 'Vacío' }}

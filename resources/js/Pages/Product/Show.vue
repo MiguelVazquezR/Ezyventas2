@@ -145,21 +145,25 @@ const deletePromotion = (promo) => {
 };
 
 const getPromotionSummary = (promo) => {
+    const effect = promo.effects?.[0];
+    const rule = promo.rules?.[0];
+
     switch (promo.type) {
         case 'ITEM_DISCOUNT': {
-            const effect = promo.effects[0];
+            if (!effect) return 'Descuento especial aplicado.';
             if (effect.type === 'PERCENTAGE_DISCOUNT') return `Aplica un ${effect.value}% de descuento.`;
             if (effect.type === 'FIXED_DISCOUNT') return `Aplica un descuento de ${formatCurrency(effect.value)}.`;
             return 'Descuento especial aplicado.';
         }
         case 'BOGO': {
-            const rule = promo.rules[0];
-            const effect = promo.effects[0];
-            return `Compra ${rule.value} de "${rule.itemable.name}" y llévate ${effect.value} de "${effect.itemable.name}" gratis.`;
+            if (!rule || !effect) return 'Promoción especial de regalo.';
+            const buyItem = rule.itemable?.name || 'producto';
+            const freeItem = effect.itemable?.name || 'producto';
+            return `Compra ${rule.value} de "${buyItem}" y llévate ${effect.value} de "${freeItem}" gratis.`;
         }
         case 'BUNDLE_PRICE': {
-            const effect = promo.effects[0];
-            const productDetails = promo.rules.map(rule => `${rule.value} x ${rule.itemable.name}`).join(' + ');
+            if (!effect || !promo.rules) return 'Paquete con precio especial.';
+            const productDetails = promo.rules.map(r => `${r.value} x ${r.itemable?.name || 'producto'}`).join(' + ');
             return `Paquete (${productDetails}) por ${formatCurrency(effect.value)}.`;
         }
         default:

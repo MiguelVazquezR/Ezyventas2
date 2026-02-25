@@ -312,15 +312,15 @@ class ProductController extends Controller implements HasMiddleware
                 $variant->current_stock = $vPivot ? $vPivot->current_stock : 0;
                 $variant->reserved_stock = $vPivot ? $vPivot->reserved_stock : 0;
                 $variant->available_stock = max(0, $variant->current_stock - $variant->reserved_stock);
-                $variant->min_stock = $vPivot ? $vPivot->min_stock : null;
-                $variant->max_stock = $vPivot ? $vPivot->max_stock : null;
                 $variant->location = $vPivot ? $vPivot->location : null;
                 $variant->sku = $variant->sku_suffix;
                 return $variant;
             });
         }
 
-        $promotions = $product->promotions;
+        // Cargar explícitamente las relaciones anidadas en la colección devuelta por el accesor
+        $promotions = $product->promotions->load(['rules.itemable', 'effects.itemable']);
+        
         $translations = config('log_translations.Product', []);
 
         $formattedActivities = $product->activities->map(function ($activity) use ($translations) {
