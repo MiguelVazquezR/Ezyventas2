@@ -145,7 +145,7 @@ class ProductController extends Controller implements HasMiddleware
                 JOIN branch_product_attribute bpa ON bpa.product_attribute_id = pa.id
                 WHERE p.category_id = categories.id
                 AND bpa.branch_id = ?
-            ) as variant_stock', [$branchId]) // <--- ¡AQUÍ ESTABA EL ERROR! Se removió el segundo $branchId
+            ) as variant_stock', [$branchId])
             ->get()
             ->map(function($cat) {
                 $cat->products_sum_current_stock = (float)$cat->simple_stock + (float)$cat->variant_stock;
@@ -345,13 +345,20 @@ class ProductController extends Controller implements HasMiddleware
             ];
         });
 
+        // -------------------------------------------------------------
+        // FIX: Solo filtramos estatus que realmente reservan stock
+        // (Apartados y Pedidos). Se excluye PENDING (Ventas a Crédito).
+        // -------------------------------------------------------------
         $formattedLayaways = $product->transactionItems()->whereHas('transaction', function ($q) {
-            $q->where('status', TransactionStatus::PENDING);
+            $q->whereIn('status', [TransactionStatus::ON_LAYAWAY, TransactionStatus::TO_DELIVER]);
         })->get()->map(function ($item) {
             return [
                 'id' => $item->transaction->id,
+                'transaction_id' => $item->transaction->id, 
+                'transaction' => $item->transaction->id,    
                 'folio' => $item->transaction->folio,
-                'customer_name' => $item->transaction->customer->name ?? 'Cliente Eliminado',
+                'status' => $item->transaction->status instanceof TransactionStatus ? $item->transaction->status->value : $item->transaction->status,
+                'customer_name' => $item->transaction->customer->name ?? 'Público en general',
                 'customer_id' => $item->transaction->customer_id,
                 'quantity' => $item->quantity,
                 'description' => $item->description,

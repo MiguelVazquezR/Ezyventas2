@@ -589,29 +589,35 @@ class TransactionController extends Controller implements HasMiddleware
         if (!$query) return response()->json([]);
 
         $user = Auth::user();
-        $products = Product::where('branch_id', $user->branch_id)
+        $branchId = $user->branch_id;
+        
+        $products = Product::whereHas('branches', function ($q) use ($branchId) {
+                $q->where('branches.id', $branchId);
+            })
             ->where(function ($q) use ($query) {
                 $q->where('name', 'like', "%{$query}%")
                     ->orWhere('sku', 'like', "%{$query}%");
             })
-            ->with('productAttributes')
+            ->with(['productAttributes.branches', 'branches'])
             ->limit(10)
-            ->get(['id', 'name', 'sku', 'selling_price', 'current_stock', 'description'])
-            ->map(function ($p) {
+            ->get(['id', 'name', 'sku', 'selling_price', 'description'])
+            ->map(function ($p) use ($branchId) {
+                $branchPivot = $p->branches->where('id', $branchId)->first()?->pivot;
                 return [
                     'id' => $p->id,
                     'name' => $p->name,
                     'sku' => $p->sku,
                     'selling_price' => (float) $p->selling_price,
-                    'current_stock' => $p->current_stock,
+                    'current_stock' => $branchPivot ? $branchPivot->current_stock : 0,
                     'description' => $p->description,
-                    'variants' => $p->productAttributes->map(function ($variant) {
+                    'variants' => $p->productAttributes->map(function ($variant) use ($branchId) {
+                        $vPivot = $variant->branches->where('id', $branchId)->first()?->pivot;
                         return [
                             'id' => $variant->id,
                             'attributes' => $variant->attributes,
                             'sku_suffix' => $variant->sku_suffix,
                             'selling_price_modifier' => (float) $variant->selling_price_modifier,
-                            'current_stock' => $variant->current_stock,
+                            'current_stock' => $vPivot ? $vPivot->current_stock : 0,
                         ];
                     }),
                 ];
@@ -658,19 +664,45 @@ class TransactionController extends Controller implements HasMiddleware
 
     private function returnStock(Transaction $transaction)
     {
+        $branchId = $transaction->branch_id;
+
         foreach ($transaction->items as $item) {
             $itemable = $item->itemable;
 
             if ($itemable instanceof Product || $itemable instanceof ProductAttribute) {
                 if ($transaction->status === TransactionStatus::ON_LAYAWAY || $transaction->status === TransactionStatus::TO_DELIVER) {
-                    $itemable->decrement('reserved_stock', $item->quantity);
-                    if ($itemable instanceof ProductAttribute) {
-                        $itemable->product->decrement('reserved_stock', $item->quantity);
+                    if ($itemable instanceof Product) {
+                        DB::table('branch_product')
+                            ->where('product_id', $itemable->id)
+                            ->where('branch_id', $branchId)
+                            ->decrement('reserved_stock', $item->quantity);
+                    } elseif ($itemable instanceof ProductAttribute) {
+                        DB::table('branch_product_attribute')
+                            ->where('product_attribute_id', $itemable->id)
+                            ->where('branch_id', $branchId)
+                            ->decrement('reserved_stock', $item->quantity);
+                            
+                        DB::table('branch_product')
+                            ->where('product_id', $itemable->product_id)
+                            ->where('branch_id', $branchId)
+                            ->decrement('reserved_stock', $item->quantity);
                     }
                 } else {
-                    $itemable->increment('current_stock', $item->quantity);
-                    if ($itemable instanceof ProductAttribute) {
-                        $itemable->product->increment('current_stock', $item->quantity);
+                    if ($itemable instanceof Product) {
+                        DB::table('branch_product')
+                            ->where('product_id', $itemable->id)
+                            ->where('branch_id', $branchId)
+                            ->increment('current_stock', $item->quantity);
+                    } elseif ($itemable instanceof ProductAttribute) {
+                        DB::table('branch_product_attribute')
+                            ->where('product_attribute_id', $itemable->id)
+                            ->where('branch_id', $branchId)
+                            ->increment('current_stock', $item->quantity);
+                            
+                        DB::table('branch_product')
+                            ->where('product_id', $itemable->product_id)
+                            ->where('branch_id', $branchId)
+                            ->increment('current_stock', $item->quantity);
                     }
                 }
             }

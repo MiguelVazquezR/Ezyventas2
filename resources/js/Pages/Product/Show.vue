@@ -218,7 +218,15 @@ const getVariantImage = (variant) => {
     }
     if (!attrs || typeof attrs !== 'object') return null;
 
-    for (const value of Object.values(attrs)) {
+    // Buscar coincidencias con el formato "Atributo_Valor" (ej: "Color_Rojo")
+    for (const [key, value] of Object.entries(attrs)) {
+        const formattedKey = `${key}_${value}`;
+        
+        if (variantImages.value[formattedKey]) {
+            return variantImages.value[formattedKey];
+        }
+        
+        // Fallback: por si se guardó solo el valor
         const valStr = String(value);
         if (variantImages.value[valStr]) {
             return variantImages.value[valStr];
@@ -234,9 +242,35 @@ const priceTiers = computed(() => {
     return [...props.product.price_tiers].sort((a, b) => a.min_quantity - b.min_quantity);
 });
 
-const totalStock = computed(() => props.product.current_stock);
-const totalReserved = computed(() => props.product.reserved_stock);
-const totalAvailable = computed(() => props.product.available_stock);
+// --- Totales dinámicos (agrupan variantes o muestran el producto simple) ---
+const totalStock = computed(() => {
+    if (isVariantProduct.value) {
+        return props.product.product_attributes.reduce((sum, v) => sum + (Number(v.current_stock) || 0), 0);
+    }
+    return Number(props.product.current_stock) || 0;
+});
+
+const totalReserved = computed(() => {
+    if (isVariantProduct.value) {
+        return props.product.product_attributes.reduce((sum, v) => sum + (Number(v.reserved_stock) || 0), 0);
+    }
+    return Number(props.product.reserved_stock) || 0;
+});
+
+const totalAvailable = computed(() => {
+    if (isVariantProduct.value) {
+        return props.product.product_attributes.reduce((sum, v) => sum + (Number(v.available_stock) || 0), 0);
+    }
+    return Number(props.product.available_stock) || 0;
+});
+
+const totalMinStock = computed(() => {
+    if (isVariantProduct.value) {
+        const min = props.product.product_attributes.reduce((sum, v) => sum + (Number(v.min_stock) || 0), 0);
+        return min > 0 ? min : '--';
+    }
+    return props.product.min_stock || '--';
+});
 </script>
 
 <template>
@@ -288,7 +322,7 @@ const totalAvailable = computed(() => props.product.available_stock);
                     </div>
                     
                     <div v-else class="text-center text-gray-400 dark:text-gray-500 py-12 flex flex-col items-center bg-gray-50 dark:bg-gray-900/30 rounded-xl">
-                        <i class="pi pi-image text-4xl mb-3 opacity-50"></i>
+                        <i class="pi pi-image !text-4xl mb-3 opacity-50"></i>
                         <span class="text-sm font-medium">Sin imagen general</span>
                     </div>
                 </div>
@@ -331,7 +365,7 @@ const totalAvailable = computed(() => props.product.available_stock);
                     </div>
 
                     <div v-if="hasPermission('products.see_cost_price')" class="flex justify-between items-center py-2 border-t border-gray-100 dark:border-gray-700/50 mt-1">
-                        <span class="text-sm text-gray-600 dark:text-gray-400">Precio de costo</span>
+                        <span class="text-sm text-gray-600 dark:text-gray-400">Precio de compra</span>
                         <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">{{ formatCurrency(product.cost_price) }}</span>
                     </div>
 
@@ -383,7 +417,7 @@ const totalAvailable = computed(() => props.product.available_stock);
                         </div>
                         <div class="bg-gray-50 dark:bg-gray-900/40 p-4 rounded-xl border border-gray-100 dark:border-gray-700/50 flex flex-col justify-center items-center text-center transition-colors hover:bg-gray-100 dark:hover:bg-gray-900/60">
                             <span class="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Stock mínimo</span>
-                            <span class="text-2xl font-black text-gray-400 dark:text-gray-500">{{ product.min_stock || '--' }}</span>
+                            <span class="text-2xl font-black text-gray-400 dark:text-gray-500">{{ totalMinStock }}</span>
                         </div>
                     </div>
 
@@ -392,9 +426,10 @@ const totalAvailable = computed(() => props.product.available_stock);
                         <DataTable :value="product.product_attributes" class="p-datatable-sm" stripedRows>
                             <Column headerStyle="width: 4rem" bodyStyle="padding: 0.5rem">
                                <template #body="{ data }">
-                                    <img v-if="getVariantImage(data)"
+                                    <Image v-if="getVariantImage(data)"
                                         :src="getVariantImage(data)"
-                                        class="w-10 h-10 object-cover rounded-md border border-gray-100 dark:border-gray-700" />
+                                        preview
+                                        imageClass="w-10 h-10 object-cover rounded-md border border-gray-100 dark:border-gray-700 cursor-pointer" />
                                     <div v-else
                                         class="w-10 h-10 rounded-md bg-gray-100 dark:bg-gray-800 flex items-center justify-center border border-gray-100 dark:border-gray-700">
                                         <i class="pi pi-image text-gray-400 text-sm"></i>
@@ -417,6 +452,13 @@ const totalAvailable = computed(() => props.product.available_stock);
                             <Column field="available_stock" header="Disp." sortable class="text-sm">
                                  <template #body="{ data }">
                                     <span :class="data.available_stock > 0 ? 'text-green-600 font-semibold' : 'text-red-500 font-bold'">{{ data.available_stock }}</span>
+                                </template>
+                            </Column>
+                            
+                            <!-- NUEVA COLUMNA DE UBICACIÓN -->
+                            <Column field="location" header="Ubicación" sortable class="text-sm">
+                                <template #body="{ data }">
+                                    <span class="text-gray-600 dark:text-gray-400">{{ data.location || '--' }}</span>
                                 </template>
                             </Column>
 
@@ -468,14 +510,14 @@ const totalAvailable = computed(() => props.product.available_stock);
                         <i class="pi pi-percentage text-yellow-500"></i> Promociones vinculadas
                     </h3>
                     
-                    <div v-if="localPromotions && localPromotions.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div v-if="localPromotions && localPromotions.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div v-for="promo in localPromotions" :key="promo.id" 
                             class="relative bg-white dark:bg-gray-900/30 rounded-xl border shadow-sm transition-all flex flex-col justify-between"
                             :class="promo.is_active ? 'border-l-4 border-l-yellow-400 border-gray-200 dark:border-gray-700' : 'border-l-4 border-l-gray-300 border-gray-200 dark:border-gray-700 opacity-70'">
                             
                             <div class="p-4">
                                 <div class="flex justify-between items-start mb-2">
-                                    <h4 class="font-bold text-gray-800 dark:text-gray-100 line-clamp-1 pr-2" :title="promo.name">{{ promo.name }}</h4>
+                                    <h5 class="font-bold text-gray-800 dark:text-gray-100 line-clamp-1 pr-2" :title="promo.name">{{ promo.name }}</h5>
                                     <!-- Menú de opciones (3 puntos) -->
                                     <Button v-if="hasPermission('products.manage_promos')" icon="pi pi-ellipsis-v" text rounded size="small" class="!w-6 !h-6 !text-gray-400" @click="promoMenus[promo.id].toggle($event)" />
                                     <Menu :ref="el => { if (el) promoMenus[promo.id] = el }" :model="[

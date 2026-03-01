@@ -54,6 +54,7 @@ class PermissionSeeder extends Seeder
                 'expenses.delete' => 'Eliminar gastos',
                 'expenses.import_export' => 'Importar y exportar gastos',
                 'expenses.change_status' => 'Cambiar status de gastos (pendiente, pagado)',
+                'expenses.manage_categories' => 'Administrar categorías de gastos',
             ],
             'Clientes' => [
                 'customers.access' => 'Ver listado de clientes',

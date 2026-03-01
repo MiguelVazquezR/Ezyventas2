@@ -217,12 +217,12 @@ const goToDetails = (id) => {
                             <InputText v-model="searchTerm" placeholder="Buscar en mis productos..." class="w-full" />
                         </IconField>
                         <div class="flex items-center gap-2">
-                            <div
-                                v-tooltip.bottom="limitReached ? `Límite de ${productLimit} productos alcanzado` : 'Crear nuevo producto'">
+                            <div>
                                 <ButtonGroup>
                                     <Button v-if="hasPermission('products.create')" label="Nuevo producto"
                                         icon="pi pi-plus" @click="router.get(route('products.create'))"
-                                        severity="warning" :disabled="limitReached" />
+                                        severity="warning" :disabled="limitReached" 
+                                        v-tooltip.bottom="limitReached ? `Límite de ${productLimit} productos alcanzado` : 'Crear nuevo producto'" />
                                     <!-- NUEVO BOTÓN PARA ABRIR RESUMEN -->
                                     <Button icon="pi pi-chart-pie" @click="showInventorySummary = true"
                                         severity="primary" v-tooltip.top="'Ver resumen de inventario'" />

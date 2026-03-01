@@ -52,7 +52,6 @@ watch(() => page.props.flash.print_data, (newPrintData) => {
 }, { immediate: true });
 
 // --- PERSISTENCIA (LOCALSTORAGE) ---
-// Claves únicas por usuario y sucursal para evitar conflictos
 const userBranchKey = computed(() => {
     const u = page.props.auth.user;
     return `pos_data_${u.id}_${u.branch_id}`;
@@ -76,7 +75,6 @@ onMounted(() => {
     }
 });
 
-// Guardado automático
 watch(cartItems, (newVal) => {
     localStorage.setItem(`${userBranchKey.value}_cart`, JSON.stringify(newVal));
 }, { deep: true });
@@ -90,9 +88,8 @@ const pendingCarts = ref([]);
 watch(pendingCarts, (newVal) => {
     localStorage.setItem(`${userBranchKey.value}_pending`, JSON.stringify(newVal));
 }, { deep: true });
-// -----------------------------------
 
-// --- Helper CORREGIDO para calcular precio por volumen ---
+// --- Helper para calcular precio por volumen ---
 const getPriceForQuantity = (productData, quantity) => {
     const absoluteOriginalPrice = parseFloat(productData.selling_price);
     const basePriceAfterDirectPromo = parseFloat(productData.price);
@@ -214,7 +211,6 @@ const updateCartQuantity = ({ itemId, quantity }) => {
                 item.price = updatedPrice + variantModifier;
                 item.isTierPrice = updatedIsTier;
             } else {
-                console.error("Faltan datos base en el item para recalcular precio:", item);
                 item.quantity = oldQuantity;
                 toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo recalcular el precio.', life: 3000 });
             }
@@ -239,7 +235,6 @@ const clearCart = () => {
     cartItems.value = [];
     selectedClient.value = null;
     isPaymentModalVisible.value = false;
-    // LocalStorage se limpia automáticamente gracias a los watchers
 };
 
 // --- Clientes y Carritos Pendientes ---
@@ -267,7 +262,6 @@ const saveCartToPending = (payload) => {
 const resumePendingCart = (cartId) => {
     const cartToResume = pendingCarts.value.find(c => c.id === cartId);
     if (!cartToResume) return;
-    // Si ya hay items, guardarlos en pendientes antes de reanudar el otro
     if (cartItems.value.length > 0) {
         pendingCarts.value.push({
             id: uuidv4(),
@@ -289,9 +283,10 @@ const deletePendingCart = (cartId) => {
 
 // --- Sesión de Caja ---
 const handleRefreshSessionData = () => {
-    router.reload({
+    router.get(route('pos.index'), props.filters, {
         preserveState: true,
         preserveScroll: true,
+        replace: true,
     });
 };
 
@@ -313,7 +308,7 @@ const handleProductCreatedAndAddToCart = (newProduct) => {
         promotions: [],
     };
     addToCart({ product: formattedProduct });
-    router.reload({ preserveState: true, only: ['products'] });
+    router.get(route('pos.index'), props.filters, { preserveState: true, only: ['products'] });
 };
 
 // --- Checkout ---
@@ -344,12 +339,8 @@ const mapCartItems = () => {
             if (item.isManualPrice) {
                 return item.price < originalPrice ? 'Descuento manual' : (item.price > originalPrice ? 'Aumento manual' : null);
             }
-            if (item.isTierPrice) {
-                return 'Precio de mayoreo';
-            }
-            if (item.price < originalPrice) {
-                return 'Promoción de producto';
-            }
+            if (item.isTierPrice) return 'Precio de mayoreo';
+            if (item.price < originalPrice) return 'Promoción de producto';
             return null;
         })()
     }));
@@ -390,7 +381,8 @@ const handleOrderSubmit = (orderData) => {
             clearCart();
             isOrderModalVisible.value = false;
             toast.add({ severity: 'success', summary: 'Pedido Creado', detail: 'El pedido ha sido registrado correctamente.', life: 3000 });
-            router.reload({ only: ['products'], preserveState: true });
+            // MODIFICACIÓN CLAVE: recarga manteniendo filtros pero forzando fresh data
+            router.get(route('pos.index'), props.filters, { only: ['products'], preserveState: true, preserveScroll: false });
         },
         onError: (errors) => {
             console.error(errors);
@@ -435,7 +427,8 @@ const handleCheckout = (checkoutData) => {
         onSuccess: () => {
             clearCart();
             page.props.flash.success = null;
-            router.reload({ only: ['products'], preserveState: true });
+            // MODIFICACIÓN CLAVE: recarga manteniendo filtros pero forzando fresh data
+            router.get(route('pos.index'), props.filters, { only: ['products'], preserveState: true, preserveScroll: false });
         },
         onError: (errors) => {
             const errorMessage = errors.default || errors.message || Object.values(errors).flat().join(' ');
@@ -453,7 +446,6 @@ const currentCartTotal = computed(() => {
 
     <Head title="Punto de venta" />
     <AppLayout>
-        <!-- Vista principal del POS (cuando la sesión está activa) -->
         <template v-if="activeSession">
             <div class="flex flex-col lg:flex-row gap-4 h-[calc(86vh)]">
                 <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden">
@@ -479,7 +471,6 @@ const currentCartTotal = computed(() => {
             </div>
         </template>
 
-        <!-- Pantalla de "Lobby" cuando no hay sesión activa -->
         <template v-else>
             <div class="flex items-center justify-center h-[calc(100vh-150px)] dark:bg-gray-900 rounded-lg">
                 <div class="text-center p-8">
@@ -488,7 +479,6 @@ const currentCartTotal = computed(() => {
                         <i class="pi pi-inbox !text-4xl text-primary-500"></i>
                     </div>
 
-                    <!-- CORRECCIÓN VISUAL: Mostrar título de bienvenida si hay opciones, o bloqueo si no -->
                     <h2 v-if="(joinableSessions && joinableSessions.length > 0) || (availableCashRegisters && availableCashRegisters.length > 0)"
                         class="text-2xl font-bold text-gray-800 dark:text-gray-200">
                         Bienvenido al punto de venta
@@ -507,7 +497,6 @@ const currentCartTotal = computed(() => {
                         </span>
                     </p>
 
-                    <!-- CONTENEDOR DE BOTONES CORREGIDO: Ambos botones pueden aparecer -->
                     <div class="flex flex-col sm:flex-row gap-4 justify-center mt-6">
                         <Button v-if="joinableSessions && joinableSessions.length > 0"
                             @click="isJoinSessionModalVisible = true" label="Unirse a una sesión" icon="pi pi-users"
@@ -527,7 +516,6 @@ const currentCartTotal = computed(() => {
             </div>
         </template>
 
-        <!-- Modales -->
         <StartSessionModal :visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
             :user-bank-accounts="userBankAccounts" @update:visible="isStartSessionModalVisible = $event" />
         <JoinSessionModal :visible="isJoinSessionModalVisible" :sessions="joinableSessions"
@@ -539,7 +527,6 @@ const currentCartTotal = computed(() => {
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
             :available-templates="availableTemplates" />
 
-        <!-- NUEVO MODAL DE PEDIDO -->
         <OrderFormModal v-model:visible="isOrderModalVisible" :cart-total="currentCartTotal" :client="selectedClient"
             :loading="form.processing" @submit="handleOrderSubmit" />
     </AppLayout>
