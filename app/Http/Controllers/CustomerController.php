@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class CustomerController extends Controller implements HasMiddleware
 {
@@ -56,6 +57,12 @@ class CustomerController extends Controller implements HasMiddleware
         $query->orderBy($sortField, $sortOrder);
 
         $customers = $query->paginate($request->input('rows', 20))->withQueryString();
+
+        // Agregamos el accessor 'available_credit' para que esté disponible en el Drawer del Index
+        $customers->getCollection()->transform(function ($customer) {
+            $customer->append('available_credit');
+            return $customer;
+        });
 
         return Inertia::render('Customer/Index', [
             'customers' => $customers,
@@ -100,10 +107,21 @@ class CustomerController extends Controller implements HasMiddleware
         return redirect()->route('customers.index')->with('success', 'Cliente creado con éxito.');
     }
 
-   public function show(Customer $customer): Response
+    public function show(Customer $customer): Response
     {
+        // Se añade transactionable para que cargue la relación de Orden de Servicio y sus conceptos
         $customer->load([
-            'transactions' => fn($query) => $query->orderBy('created_at', 'desc'),
+            'transactions' => function ($query) {
+                $query->with([
+                    'items', 
+                    'user', 
+                    'transactionable' => function (MorphTo $morphTo) {
+                        $morphTo->morphWith([
+                            \App\Models\ServiceOrder::class => ['items'],
+                        ]);
+                    }
+                ])->orderBy('created_at', 'desc');
+            },
             'layawayTransactions' => function ($query) {
                 $query->with(['payments', 'items'])
                       ->orderBy('created_at', 'desc');
@@ -142,6 +160,7 @@ class CustomerController extends Controller implements HasMiddleware
                 'pending_amount' => (float) $transaction->total - $totalPaid,
                 'total_items_quantity' => $transaction->items->sum('quantity'),
                 'layaway_expiration_date' => $transaction->layaway_expiration_date,
+                'items' => $transaction->items, // Se pasan los items también al Front-End
             ];
         });
 
