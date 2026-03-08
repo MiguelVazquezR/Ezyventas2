@@ -42,7 +42,7 @@ class PrintEncoderService
     /**
      * Codifica una plantilla de Etiqueta (TSPL)
      */
-    private static function encodeTspl(PrintTemplate $template, $dataSource, array $options = []): array
+     private static function encodeTspl(PrintTemplate $template, $dataSource, array $options = []): array
     {
         $config = $template->content['config'] ?? [];
         $elements = $template->content['elements'] ?? [];
@@ -73,9 +73,13 @@ class PrintEncoderService
 
             switch ($element['type']) {
                 case 'text':
-                    $fontSize = $element['data']['font_size'];
+                    $font = $element['data']['font_size'] ?? 3; // Índice de fuente interna
+                    $xScale = $element['data']['x_scale'] ?? 1; // Multiplicador de ancho
+                    $yScale = $element['data']['y_scale'] ?? 1; // Multiplicador de alto
                     $text = self::replacePlaceholders($element['data']['value'], $dataSource);
-                    $tspl .= "TEXT {$x},{$y},\"{$fontSize}\",{$rotation},1,1,\"{$text}\"\n";
+                    
+                    // Se envían las escalas X y Y en lugar de los 1,1 fijos
+                    $tspl .= "TEXT {$x},{$y},\"{$font}\",{$rotation},{$xScale},{$yScale},\"{$text}\"\n";
                     break;
                 case 'barcode':
                     $barcodeType = $element['data']['type'];
@@ -92,6 +96,7 @@ class PrintEncoderService
         }
 
         $tspl .= "PRINT 1,1\n";
+        Log::info("TSPL generado:\n" . $tspl);
         return [['nombre' => 'EscribirTexto', 'argumentos' => [$tspl]]];
     }
 
