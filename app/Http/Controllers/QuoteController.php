@@ -142,14 +142,13 @@ class QuoteController extends Controller implements HasMiddleware
         return redirect()->route('quotes.index')->with('success', 'Cotización actualizada con éxito.');
     }
 
-    public function show(Quote $quote): Response
+    public function show(Request $request, Quote $quote): Response
     {
         $quote->load([
             'customer', 
             'user', 
             'parent.versions', 
             'versions', 
-            'activities.causer',
             'items.itemable' => function (MorphTo $morphTo) {
                 $morphTo->morphWith([
                     Product::class => ['media'],
@@ -161,7 +160,28 @@ class QuoteController extends Controller implements HasMiddleware
 
         $translations = config('log_translations.Quote', []);
         
-        $formattedActivities = $quote->activities->map(function ($activity) use ($translations) {
+        // --- NUEVA LÓGICA: FILTRADO DE ACTIVIDADES DESDE EL SERVIDOR ---
+        $activitiesQuery = $quote->activities()->with('causer');
+
+        if ($request->has('all_activities')) {
+            $rawActivities = $activitiesQuery->latest()->get();
+        } else {
+            $startDate = $request->input('start_date');
+            $endDate = $request->input('end_date');
+
+            if ($startDate && $endDate) {
+                $start = \Carbon\Carbon::parse($startDate)->startOfDay();
+                $end = \Carbon\Carbon::parse($endDate)->endOfDay();
+            } else {
+                // Por defecto, carga solo los de la semana actual
+                $start = now()->startOfWeek();
+                $end = now()->endOfWeek();
+            }
+
+            $rawActivities = $activitiesQuery->whereBetween('created_at', [$start, $end])->latest()->get();
+        }
+
+        $formattedActivities = $rawActivities->map(function ($activity) use ($translations) {
             $changes = ['before' => [], 'after' => []];
             
             $oldProps = $activity->properties->get('old', []);
@@ -188,6 +208,8 @@ class QuoteController extends Controller implements HasMiddleware
                 'event' => $activity->event,
                 'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
                 'timestamp' => $activity->created_at->diffForHumans(),
+                'created_at' => $activity->created_at->toIso8601String(), // FECHA EXACTA
+                'properties' => $activity->properties, // PROPIEDADES PARA LEER EL CONCEPTO
                 'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
             ];
         })

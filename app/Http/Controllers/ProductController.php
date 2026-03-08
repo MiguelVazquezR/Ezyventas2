@@ -281,16 +281,16 @@ class ProductController extends Controller implements HasMiddleware
         return redirect()->route('products.index')->with('success', 'Producto creado con éxito.');
     }
 
-    public function show(Product $product): Response
+    public function show(Request $request, Product $product): Response
     {
         $user = Auth::user();
 
+        // OJO: Está correcto quitar 'activities.causer' de aquí para que no cargue todo
         $product->load([
             'category',
             'brand',
             'provider',
             'media',
-            'activities.causer',
             'branches',
             'productAttributes.branches' => function ($q) use ($user) {
                 $q->where('branches.id', $user->branch_id);
@@ -307,8 +307,9 @@ class ProductController extends Controller implements HasMiddleware
         $product->location = $branchPivot ? $branchPivot->location : null;
 
         if ($product->productAttributes) {
-            $product->productAttributes->transform(function ($variant) {
-                $vPivot = $variant->branches->first()?->pivot;
+            $product->productAttributes->transform(function ($variant) use ($user) {
+                // CORRECCIÓN: Para variantes también validamos que sea la sucursal actual
+                $vPivot = $variant->branches->where('id', $user->branch_id)->first()?->pivot;
                 $variant->current_stock = $vPivot ? $vPivot->current_stock : 0;
                 $variant->reserved_stock = $vPivot ? $vPivot->reserved_stock : 0;
                 $variant->available_stock = max(0, $variant->current_stock - $variant->reserved_stock);
@@ -323,7 +324,29 @@ class ProductController extends Controller implements HasMiddleware
         
         $translations = config('log_translations.Product', []);
 
-        $formattedActivities = $product->activities->map(function ($activity) use ($translations) {
+        // --- NUEVA LÓGICA: FILTRADO DE ACTIVIDADES DESDE EL SERVIDOR ---
+        $activitiesQuery = $product->activities()->with('causer');
+
+        if ($request->has('all_activities')) {
+            $rawActivities = $activitiesQuery->latest()->get();
+        } else {
+            $startDate = $request->input('start_date');
+            $endDate = $request->input('end_date');
+
+            if ($startDate && $endDate) {
+                $start = \Carbon\Carbon::parse($startDate)->startOfDay();
+                $end = \Carbon\Carbon::parse($endDate)->endOfDay();
+            } else {
+                // Por defecto, carga solo los de la semana actual
+                $start = now()->startOfWeek();
+                $end = now()->endOfWeek();
+            }
+
+            $rawActivities = $activitiesQuery->whereBetween('created_at', [$start, $end])->latest()->get();
+        }
+
+        // CORRECCIÓN CLAVE: Usamos $rawActivities en lugar de $product->activities
+        $formattedActivities = $rawActivities->map(function ($activity) use ($translations) {
             $changes = ['before' => [], 'after' => []];
             if (isset($activity->properties['old'])) {
                 foreach ($activity->properties['old'] as $key => $value) {
@@ -341,6 +364,8 @@ class ProductController extends Controller implements HasMiddleware
                 'event' => $activity->event,
                 'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
                 'timestamp' => $activity->created_at->diffForHumans(),
+                'created_at' => $activity->created_at->toIso8601String(), // FECHA EXACTA
+                'properties' => $activity->properties, // PROPIEDADES PARA LEER EL CONCEPTO
                 'changes' => $changes,
             ];
         });
@@ -350,14 +375,14 @@ class ProductController extends Controller implements HasMiddleware
         // (Apartados y Pedidos). Se excluye PENDING (Ventas a Crédito).
         // -------------------------------------------------------------
         $formattedLayaways = $product->transactionItems()->whereHas('transaction', function ($q) {
-            $q->whereIn('status', [TransactionStatus::ON_LAYAWAY, TransactionStatus::TO_DELIVER]);
+            $q->whereIn('status', [\App\Enums\TransactionStatus::ON_LAYAWAY, \App\Enums\TransactionStatus::TO_DELIVER]);
         })->get()->map(function ($item) {
             return [
                 'id' => $item->transaction->id,
                 'transaction_id' => $item->transaction->id, 
                 'transaction' => $item->transaction->id,    
                 'folio' => $item->transaction->folio,
-                'status' => $item->transaction->status instanceof TransactionStatus ? $item->transaction->status->value : $item->transaction->status,
+                'status' => $item->transaction->status instanceof \App\Enums\TransactionStatus ? $item->transaction->status->value : $item->transaction->status,
                 'customer_name' => $item->transaction->customer->name ?? 'Público en general',
                 'customer_id' => $item->transaction->customer_id,
                 'quantity' => $item->quantity,
@@ -367,9 +392,9 @@ class ProductController extends Controller implements HasMiddleware
             ];
         });
 
-        $availableTemplates = Auth::user()->branch->printTemplates()
-            ->where('type', TemplateType::LABEL)
-            ->whereIn('context_type', [TemplateContextType::PRODUCT, TemplateContextType::GENERAL])
+        $availableTemplates = $user->branch->printTemplates()
+            ->where('type', \App\Enums\TemplateType::LABEL)
+            ->whereIn('context_type', [\App\Enums\TemplateContextType::PRODUCT, \App\Enums\TemplateContextType::GENERAL])
             ->get();
 
         return Inertia::render('Product/Show', [

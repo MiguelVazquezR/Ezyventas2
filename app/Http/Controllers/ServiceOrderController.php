@@ -80,7 +80,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
         ]);
     }
 
-    public function show(ServiceOrder $serviceOrder): Response
+    public function show(Request $request, ServiceOrder $serviceOrder): Response
     {
         $serviceOrder->load(['branch', 'user', 'customer', 'items.itemable' => function (MorphTo $morphTo) {
             $morphTo->morphWith([
@@ -88,56 +88,70 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 \App\Models\Service::class => [],
                 \App\Models\ServiceVariant::class => [],
             ]);
-        }, 'activities.causer', 'media', 'transaction.payments.bankAccount']);
+        }, 'media', 'transaction.payments.bankAccount']);
+
+        $subscriptionId = Auth::user()->branch->subscription_id;
+        $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
+            ->where('module', 'service_orders')
+            ->get();
+
+        $availableTemplates = Auth::user()->branch->printTemplates()
+            ->whereIn('type', [\App\Enums\TemplateType::SALE_TICKET, \App\Enums\TemplateType::LABEL])
+            ->whereIn('context_type', [\App\Enums\TemplateContextType::SERVICE_ORDER, \App\Enums\TemplateContextType::GENERAL])
+            ->get();
 
         $translations = config('log_translations.ServiceOrder', []);
 
-        $formattedActivities = $serviceOrder->activities->map(function ($activity) use ($translations) {
+        // --- NUEVA LÓGICA: FILTRADO DE ACTIVIDADES DESDE EL SERVIDOR ---
+        $activitiesQuery = $serviceOrder->activities()->with('causer');
+
+        if ($request->has('all_activities')) {
+            $rawActivities = $activitiesQuery->latest()->get();
+        } else {
+            $startDate = $request->input('start_date');
+            $endDate = $request->input('end_date');
+
+            if ($startDate && $endDate) {
+                $start = \Carbon\Carbon::parse($startDate)->startOfDay();
+                $end = \Carbon\Carbon::parse($endDate)->endOfDay();
+            } else {
+                // Por defecto, carga solo los de la semana actual
+                $start = now()->startOfWeek();
+                $end = now()->endOfWeek();
+            }
+
+            $rawActivities = $activitiesQuery->whereBetween('created_at', [$start, $end])->latest()->get();
+        }
+
+        $formattedActivities = $rawActivities->map(function ($activity) use ($translations) {
             $changes = ['before' => [], 'after' => []];
-
-            $oldProps = $activity->properties->get('old', []);
-            $newProps = $activity->properties->get('attributes', []);
-
-            if (is_array($oldProps)) {
-                foreach ($oldProps as $key => $value) {
+            if (isset($activity->properties['old'])) {
+                foreach ($activity->properties['old'] as $key => $value) {
                     $changes['before'][($translations[$key] ?? $key)] = $value;
                 }
             }
-            if (is_array($newProps)) {
-                foreach ($newProps as $key => $value) {
-                    if (!array_key_exists($key, $oldProps) || $oldProps[$key] !== $value) {
-                        $changes['after'][($translations[$key] ?? $key)] = $value;
-                    }
+            if (isset($activity->properties['attributes'])) {
+                foreach ($activity->properties['attributes'] as $key => $value) {
+                    $changes['after'][($translations[$key] ?? $key)] = $value;
                 }
             }
-
-            $changes['before'] = array_intersect_key($changes['before'], $changes['after']);
-
             return [
                 'id' => $activity->id,
                 'description' => $activity->description,
                 'event' => $activity->event,
                 'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
                 'timestamp' => $activity->created_at->diffForHumans(),
-                'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
+                'created_at' => $activity->created_at->toIso8601String(), // FECHA EXACTA
+                'properties' => $activity->properties, // PROPIEDADES PARA LEER EL CONCEPTO
+                'changes' => $changes,
             ];
-        })
-            ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes']))
-            ->values();
-
-        $availableTemplates = Auth::user()->branch->printTemplates()
-            ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
-            ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER, TemplateContextType::GENERAL])
-            ->get();
-
-        $user = Auth::user();
-        $subscriptionId = $user->branch->subscription_id;
+        });
 
         return Inertia::render('ServiceOrder/Show', [
             'serviceOrder' => $serviceOrder,
             'activities' => $formattedActivities,
             'availableTemplates' => $availableTemplates,
-            'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'service_orders')->get(),
+            'customFieldDefinitions' => $customFieldDefinitions,
         ]);
     }
 

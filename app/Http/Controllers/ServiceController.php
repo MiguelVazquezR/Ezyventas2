@@ -282,12 +282,33 @@ class ServiceController extends Controller implements HasMiddleware
         return redirect()->route('services.index')->with('success', 'Servicio actualizado con éxito.');
     }
 
-    public function show(Service $service): Response
+    public function show(Request $request, Service $service): Response
     {
-        $service->load(['category', 'media', 'activities.causer', 'variants', 'branches']);
+        $service->load(['category', 'media', 'variants', 'branches']);
         $translations = config('log_translations.Service', []);
 
-        $formattedActivities = $service->activities->map(function ($activity) use ($translations) {
+        // --- NUEVA LÓGICA: FILTRADO DE ACTIVIDADES DESDE EL SERVIDOR ---
+        $activitiesQuery = $service->activities()->with('causer');
+
+        if ($request->has('all_activities')) {
+            $rawActivities = $activitiesQuery->latest()->get();
+        } else {
+            $startDate = $request->input('start_date');
+            $endDate = $request->input('end_date');
+
+            if ($startDate && $endDate) {
+                $start = \Carbon\Carbon::parse($startDate)->startOfDay();
+                $end = \Carbon\Carbon::parse($endDate)->endOfDay();
+            } else {
+                // Por defecto, carga solo los de la semana actual
+                $start = now()->startOfWeek();
+                $end = now()->endOfWeek();
+            }
+
+            $rawActivities = $activitiesQuery->whereBetween('created_at', [$start, $end])->latest()->get();
+        }
+
+        $formattedActivities = $rawActivities->map(function ($activity) use ($translations) {
             $changes = ['before' => [], 'after' => []];
             if (isset($activity->properties['old'])) {
                 foreach ($activity->properties['old'] as $key => $value) {
@@ -305,6 +326,8 @@ class ServiceController extends Controller implements HasMiddleware
                 'event' => $activity->event,
                 'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
                 'timestamp' => $activity->created_at->diffForHumans(),
+                'created_at' => $activity->created_at->toIso8601String(), // FECHA EXACTA
+                'properties' => $activity->properties, // PROPIEDADES PARA LEER EL CONCEPTO
                 'changes' => $changes,
             ];
         });

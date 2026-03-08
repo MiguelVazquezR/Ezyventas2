@@ -247,7 +247,7 @@ const hasDetails = computed(() => {
             <div class="mt-4 pt-4 border-t dark:border-gray-700 text-center">
                 <Link :href="route('print-templates.create', { type: 'cotizacion' })"
                     class="text-xs text-blue-600 hover:underline">
-                ¿Quieres un diseño diferente? Crea una nueva plantilla aquí.
+                    ¿Quieres un diseño diferente? Crea una nueva plantilla aquí.
                 </Link>
             </div>
         </Dialog>
@@ -359,6 +359,15 @@ const hasDetails = computed(() => {
                         </template>
                     </div>
                 </div>
+
+                <!-- Tarjeta: Historial de actividad -->
+                <div
+                    class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/60 mt-6">
+                    <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
+                        <i class="pi pi-history text-gray-400"></i> Historial de movimientos
+                    </h3>
+                    <ActivityHistory :activities="activities" />
+                </div>
             </div>
 
             <div class="lg:col-span-1 space-y-6">
@@ -405,17 +414,15 @@ const hasDetails = computed(() => {
                             <Link :href="route('quotes.show', version.id)"
                                 class="block p-2 rounded-md transition-colors"
                                 :class="version.id === quote.id ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300' : 'hover:bg-gray-100 dark:hover:bg-gray-700'">
-                            <div class="flex justify-between font-semibold"><span>Versión {{ version.version_number
-                            }}</span><span>{{ formatCurrency(version.total_amount) }}</span></div>
-                            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Creada: {{
-                                formatDate(version.created_at) }}
-                            </div>
+                                <div class="flex justify-between font-semibold"><span>Versión {{ version.version_number
+                                }}</span><span>{{ formatCurrency(version.total_amount) }}</span></div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Creada: {{
+                                    formatDate(version.created_at) }}
+                                </div>
                             </Link>
                         </li>
                     </ul>
                 </div>
-
-                <ActivityHistory :activities="activities" title="Historial de actividad" />
             </div>
         </div>
     </AppLayout>

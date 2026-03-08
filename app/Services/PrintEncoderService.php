@@ -96,7 +96,6 @@ class PrintEncoderService
         }
 
         $tspl .= "PRINT 1,1\n";
-        Log::info("TSPL generado:\n" . $tspl);
         return [['nombre' => 'EscribirTexto', 'argumentos' => [$tspl]]];
     }
 
