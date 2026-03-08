@@ -327,6 +327,10 @@ const addElement = (type) => {
     if (type === 'text') {
         newElement.data.value = 'Texto';
         newElement.data.font_size = 3; // TSPL font size index
+        
+        // CORRECCIÓN: Valores por defecto de escala multiplicadora para texto
+        newElement.data.x_scale = 1;
+        newElement.data.y_scale = 1;
     }
     if (type === 'barcode') {
         newElement.data.value = '{{p.sku}}';
@@ -372,7 +376,6 @@ const getElementStyle = (element) => {
         position: 'absolute',
         left: `${xPx}px`,
         top: `${yPx}px`,
-        transform: `rotate(${element.data.rotation}deg)`,
         transformOrigin: 'top left',
     };
 
@@ -384,7 +387,15 @@ const getElementStyle = (element) => {
         baseStyle.fontSize = `${mmHeight * pxPerMm.value * visualDpiScale}px`;
         baseStyle.lineHeight = '1';
         baseStyle.whiteSpace = 'nowrap';
+        
+        // CORRECCIÓN: Agregar la escala X y Y para la representación visual en el editor
+        const xScale = element.data.x_scale || 1;
+        const yScale = element.data.y_scale || 1;
+        baseStyle.transform = `rotate(${element.data.rotation}deg) scale(${xScale}, ${yScale})`;
+    } else {
+        baseStyle.transform = `rotate(${element.data.rotation}deg)`;
     }
+
     if (element.type === 'barcode') {
         const heightMm = element.data.height / 8; 
         baseStyle.height = `${heightMm * pxPerMm.value}px`;
@@ -542,9 +553,31 @@ const dpiOptions = [203, 300, 600];
                             @touchstart.stop.prevent="startDragElement($event, element)"
                             @click.stop="selectedElement = element"
                             :style="getElementStyle(element)"
-                            class="hover:outline hover:outline-1 hover:outline-blue-300 cursor-move select-none"
-                            :class="{ '!outline !outline-2 !outline-blue-600 z-50': selectedElement?.id === element.id }">
+                            class="group cursor-move select-none"
+                            :class="{ 'z-50': selectedElement?.id === element.id }">
                             
+                            <!-- Borde Hover (Neutraliza Escala) -->
+                            <div v-if="selectedElement?.id !== element.id"
+                                 class="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+                                 :style="{
+                                     borderTop: `${1 / (element.data.y_scale || 1)}px dashed #93c5fd`,
+                                     borderBottom: `${1 / (element.data.y_scale || 1)}px dashed #93c5fd`,
+                                     borderLeft: `${1 / (element.data.x_scale || 1)}px dashed #93c5fd`,
+                                     borderRight: `${1 / (element.data.x_scale || 1)}px dashed #93c5fd`,
+                                 }">
+                            </div>
+
+                            <!-- Borde Selección (Neutraliza Escala) -->
+                            <div v-if="selectedElement?.id === element.id"
+                                 class="absolute inset-0 pointer-events-none"
+                                 :style="{
+                                     borderTop: `${2 / (element.data.y_scale || 1)}px solid #2563eb`,
+                                     borderBottom: `${2 / (element.data.y_scale || 1)}px solid #2563eb`,
+                                     borderLeft: `${2 / (element.data.x_scale || 1)}px solid #2563eb`,
+                                     borderRight: `${2 / (element.data.x_scale || 1)}px solid #2563eb`,
+                                 }">
+                            </div>
+
                             <!-- Visualización de Elementos -->
                             <div v-if="element.type === 'text'" class="text-black">{{ element.data.value }}</div>
                             
@@ -556,11 +589,14 @@ const dpiOptions = [203, 300, 600];
                                 <i class="pi pi-qrcode text-black text-2xl"></i>
                             </div>
 
-                            <!-- Botón Eliminar Flotante -->
+                            <!-- Botón Eliminar Flotante INVERSAMENTE ESCALADO -->
                             <button v-if="selectedElement?.id === element.id" 
                                 @click.stop="removeElement(element.id)" 
                                 @touchstart.stop.prevent="removeElement(element.id)"
-                                class="absolute -top-3 -right-3 bg-red-500 text-white rounded-full size-4 flex items-center justify-center shadow hover:bg-red-600 z-[60]"
+                                class="absolute top-0 right-0 size-4 bg-red-500 text-white rounded-full flex items-center justify-center shadow hover:bg-red-600 z-[60]"
+                                :style="{
+                                    transform: `translate(50%, -50%) scale(${1 / (element.data.x_scale || 1)}, ${1 / (element.data.y_scale || 1)})`
+                                }"
                                 title="Eliminar">
                                 <i class="pi pi-times !text-[9px]"></i>
                             </button>
@@ -622,9 +658,23 @@ const dpiOptions = [203, 300, 600];
                         <InputLabel value="Contenido" />
                         <Textarea v-model="selectedElement.data.value" rows="3" class="w-full mt-1 text-sm font-mono" />
                         
-                        <InputLabel value="Tamaño fuente (TSPL)" class="mt-4" />
-                        <InputNumber v-model="selectedElement.data.font_size" class="w-full" showButtons :min="1" :max="8" />
-                        <small class="text-gray-500 text-xs">Índice de fuente interna de impresora.</small>
+                        <!-- CORRECCIÓN: Agregadas escalas X y Y a las propiedades -->
+                        <div class="mt-4 p-3 bg-blue-50/50 border border-blue-100 rounded-lg">
+                            <InputLabel value="Fuente base" />
+                            <InputNumber fluid v-model="selectedElement.data.font_size" class="w-full mb-1" showButtons :min="1" :max="8" />
+                            <small class="text-gray-500 text-xs block mb-3 leading-tight">La fuente base (1-8) define el estilo. Usa los multiplicadores de abajo para hacer la letra más grande.</small>
+                            
+                            <div class="grid grid-cols-2 gap-3 pt-2 border-t border-blue-200">
+                                <div>
+                                    <InputLabel value="Ancho (X)" class="text-xs" />
+                                    <InputNumber fluid v-model="selectedElement.data.x_scale" class="w-full h-8" inputClass="!py-1 text-sm" showButtons :min="1" :max="10" />
+                                </div>
+                                <div>
+                                    <InputLabel value="Alto (Y)" class="text-xs" />
+                                    <InputNumber fluid v-model="selectedElement.data.y_scale" class="w-full h-8" inputClass="!py-1 text-sm" showButtons :min="1" :max="10" />
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- MODIFICADO: Iteración de grupos de variables -->
                         <Accordion class="mt-4"><AccordionPanel value="0"><AccordionHeader>Variables</AccordionHeader><AccordionContent>
