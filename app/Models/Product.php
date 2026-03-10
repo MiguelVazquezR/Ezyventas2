@@ -34,6 +34,7 @@ class Product extends Model implements HasMedia
         'currency',
         'show_online',
         'online_price',
+        'show_in_pos',
         'slug',
         'delivery_days',
         'tags',
@@ -59,6 +60,7 @@ class Product extends Model implements HasMedia
             'cost_price' => 'decimal:2',
             'online_price' => 'decimal:2',
             'sale_price' => 'decimal:2',
+            'show_in_pos' => 'boolean',
             'show_online' => 'boolean',
             'is_featured' => 'boolean',
             'is_on_sale' => 'boolean',
@@ -98,6 +100,7 @@ class Product extends Model implements HasMedia
                 'category_id',
                 'brand_id',
                 'provider_id',
+                'show_in_pos',
                 'show_online',
                 'online_price'
             ])

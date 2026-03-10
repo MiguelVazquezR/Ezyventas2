@@ -36,8 +36,20 @@ const confirmRemovePriceTier = (event, index) => {
 <template>
     <div id="pricing" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md scroll-mt-24">
         <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
-            Precios
+            Precios y visibilidad
         </h2>
+        <div class="mb-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800 flex items-center justify-between">
+            <div>
+                <h3 class="font-bold text-blue-800 dark:text-blue-200 m-0 text-base">¿Mostrar en punto de venta?</h3>
+                <p class="text-sm text-blue-600 dark:text-blue-300 mt-1 mb-0">
+                    Si desactivas esta opción, este artículo será tratado como un <strong>insumo interno</strong>. 
+                    Podrás controlar su stock, pero no aparecerá en la pantalla de caja para venderse.
+                </p>
+            </div>
+            <div class="ml-4 flex-shrink-0 flex items-center">
+                <ToggleSwitch v-model="form.show_in_pos" />
+            </div>
+        </div>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <!-- Precios Base -->
             <div>

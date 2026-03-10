@@ -284,6 +284,9 @@ const totalMinStock = computed(() => {
                 <div class="flex items-center gap-3 mb-1">
                     <Tag v-if="product.is_on_sale" severity="danger" value="En Oferta" rounded></Tag>
                     <Tag v-if="product.is_featured" severity="info" value="Destacado" rounded></Tag>
+                    <!-- NUEVO: INDICADOR DE POS / INSUMO -->
+                    <Tag v-if="product.show_in_pos" severity="success" value="Venta POS" rounded icon="pi pi-shop"></Tag>
+                    <Tag v-else severity="secondary" value="Insumo" rounded icon="pi pi-eye-slash" v-tooltip.top="'Oculto en el Punto de Venta'"></Tag>
                     <span class="text-xs font-semibold text-gray-500 tracking-wider uppercase">
                         {{ product.category?.name || 'Sin categoría' }}
                     </span>

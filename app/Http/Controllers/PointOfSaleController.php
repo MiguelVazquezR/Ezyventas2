@@ -318,7 +318,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         // 1. Filtrar los productos asegurándonos que pertenecen a la sucursal en el Pivot
         $query = Product::whereHas('branches', function ($q) use ($branchId) {
             $q->where('branches.id', $branchId);
-        });
+        })->where('show_in_pos', true); // NUEVO: Oculta los insumos del POS
 
         if ($search) {
             $query->where(function ($q) use ($search) {

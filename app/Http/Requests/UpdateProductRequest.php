@@ -41,6 +41,7 @@ class UpdateProductRequest extends FormRequest
             'cost_price' => 'nullable|numeric|min:0',
             'provider_id' => 'nullable|exists:providers,id',
             'selling_price' => 'required|numeric|min:0',
+            'show_in_pos' => 'boolean',
             
             'price_tiers' => 'nullable|array',
             'price_tiers.*.min_quantity' => [

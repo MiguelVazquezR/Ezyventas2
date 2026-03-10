@@ -43,6 +43,7 @@ const form = useForm({
     provider_id: null,
     cost_price: null,
     selling_price: null,
+    show_in_pos: true,
     price_tiers: [],
     product_type: 'simple',
     current_stock: null,

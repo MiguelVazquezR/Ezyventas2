@@ -238,6 +238,7 @@ const fieldTranslations = {
     'category': 'Categoría',
     'location': 'Ubicación',
     'online_price': 'Precio en línea',
+    'show_in_pos': 'Mostrar en el punto de venta',
     
     // --- Relaciones (IDs) ---
     'category_id': 'Categoría',

@@ -458,23 +458,24 @@ const currentCartTotal = computed(() => {
             <div class="flex flex-col lg:flex-row gap-4 h-[calc(86vh)]">
                 <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden">
                     <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
-                        :filters="filters" :active-session="activeSession" :cart-items="cartItems"
+                        :filters="filters" :active-session="activeSession" :cart-items="cartItems" :pos-mode="posMode"
                         @add-to-cart="addToCart" @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
                         @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
                         @refresh-session-data="handleRefreshSessionData"
                         @open-history-modal="isHistoryModalVisible = true"
-                        @open-close-session-modal="isCloseSessionModalVisible = true" class="h-full" :pos-mode="posMode" />
+                        @open-close-session-modal="isCloseSessionModalVisible = true"
+                        @update:posMode="posMode = $event" class="h-full" />
                 </div>
                 <div class="lg:w-1/3 xl:w-1/4 h-full overflow-hidden">
                     <ShoppingCart :items="cartItems" :client="selectedClient" :customers="localCustomers"
                         :default-customer="defaultCustomer" :active-promotions="activePromotions"
-                        :loading="form.processing" :payment-modal-visible="isPaymentModalVisible"
+                        :loading="form.processing" :payment-modal-visible="isPaymentModalVisible" :pos-mode="posMode"
                         @update-quantity="updateCartQuantity" @update-price="updateCartPrice"
                         @remove-item="removeCartItem" @clear-cart="clearCart" @select-customer="handleSelectCustomer"
                         @customer-created="handleCustomerCreated" @save-cart="saveCartToPending"
                         @checkout="handleCheckout" @open-payment-modal="isPaymentModalVisible = true"
                         @close-payment-modal="isPaymentModalVisible = false"
-                        @open-order-modal="isOrderModalVisible = true" class="h-full" :pos-mode="posMode" />
+                        @open-order-modal="isOrderModalVisible = true" class="h-full" />
                 </div>
             </div>
         </template>

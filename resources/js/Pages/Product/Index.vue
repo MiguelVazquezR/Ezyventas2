@@ -5,7 +5,8 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import ManageStockModal from './Partials/ManageStockModal.vue';
 import ImportProductsModal from './Partials/ImportProductsModal.vue';
 import ProductNavigation from './Partials/ProductNavigation.vue';
-import InventorySummaryModal from './Partials/InventorySummaryModal.vue'; // <-- IMPORTAMOS EL NUEVO MODAL
+import InventorySummaryModal from './Partials/InventorySummaryModal.vue'; 
+import ProductDrawerDetails from './Partials/ProductDrawerDetails.vue'; // <-- IMPORTAMOS EL NUEVO COMPONENTE
 import PrintModal from '@/Components/PrintModal.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
@@ -49,10 +50,10 @@ const printDataSource = ref(null);
 // --- ESTADOS DEL DRAWER Y MODALES ADICIONALES ---
 const isDrawerVisible = ref(false);
 const selectedProductDetails = ref(null);
-const showInventorySummary = ref(false); // <-- NUEVA REFERENCIA
+const showInventorySummary = ref(false); 
 
 // --- HELPER FUNCTIONS PARA STOCK Y VARIANTES ---
-// Laravel envía la relación JSON como 'product_attributes' en snake_case
+// (Mantenemos estas aquí porque se usan en la Tabla Principal)
 const getVariants = (product) => {
     if (!product) return [];
     return product.product_attributes || product.productAttributes || [];
@@ -284,7 +285,18 @@ const goToDetails = (id) => {
                             </div>
                         </template>
                     </Column>
+
                     <Column field="name" header="Nombre" sortable></Column>
+
+                    <!-- NUEVA COLUMNA DE INDICADOR POS/INSUMO -->
+                    <Column field="show_in_pos" header="Tipo / POS" sortable alignFrozen="right">
+                        <template #body="{ data }">
+                            <div class="flex justify-center items-center">
+                                <i v-if="data.show_in_pos" class="pi pi-shop text-green-500 font-bold" v-tooltip.top="'Visible en Punto de Venta'"></i>
+                                <i v-else class="pi pi-eye-slash text-gray-400 font-bold" v-tooltip.top="'Solo Insumo (Oculto en POS)'"></i>
+                            </div>
+                        </template>
+                    </Column>
 
                     <Column header="Sucursales" style="min-width: 10rem">
                         <template #body="{ data }">
@@ -357,7 +369,7 @@ const goToDetails = (id) => {
             </div>
         </div>
 
-        <!-- DRAWER DE DETALLES DEL PRODUCTO -->
+        <!-- DRAWER DE DETALLES DEL PRODUCTO (REFACTORIZADO) -->
         <Drawer v-model:visible="isDrawerVisible" position="right"
             class="w-full md:!w-[32rem] !bg-gray-50 dark:!bg-gray-900">
             <template #header>
@@ -367,156 +379,13 @@ const goToDetails = (id) => {
                 </div>
             </template>
 
-            <div v-if="selectedProductDetails" class="flex flex-col h-full -mt-2">
-                <!-- Contenedor scrolleable -->
-                <div class="flex-1 overflow-y-auto pb-24 space-y-4 px-1">
-
-                    <!-- Tarjeta Principal (Imagen, nombre, precio) -->
-                    <div
-                        class="bg-white dark:bg-gray-800 rounded-lg p-5 shadow-sm border border-gray-200 dark:border-gray-700">
-                        <div class="flex gap-5 items-start">
-                            <div
-                                class="w-24 h-24 shrink-0 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
-                                <img v-if="selectedProductDetails.media && selectedProductDetails.media.length > 0"
-                                    :src="selectedProductDetails.media[0].original_url"
-                                    class="w-full h-full object-cover" />
-                                <div v-else class="w-full h-full flex items-center justify-center">
-                                    <i class="pi pi-image text-3xl text-gray-400"></i>
-                                </div>
-                            </div>
-                            <div class="flex-1">
-                                <h3 class="font-bold text-gray-900 dark:text-gray-100 leading-tight mb-2">{{
-                                    selectedProductDetails.name }}</h3>
-                                <div class="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                                    SKU: <span class="font-mono text-gray-800 dark:text-gray-200">{{
-                                        selectedProductDetails.sku
-                                        || 'N/A' }}</span>
-                                </div>
-                                <div class="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                                    Categoría: <span class="text-gray-800 dark:text-gray-200">{{
-                                        selectedProductDetails.category?.name || 'N/A' }}</span>
-                                </div>
-                                <div
-                                    class="text-sm text-gray-600 dark:text-gray-400 mb-3 flex flex-wrap items-center gap-1">
-                                    Sucursales:
-                                    <Tag v-for="branch in selectedProductDetails.branches" :key="branch.id"
-                                        :value="branch.name" severity="info" class="!text-[10px]" />
-                                </div>
-                                <div class="text-lg font-bold text-primary-600 dark:text-primary-400">
-                                    {{ new Intl.NumberFormat('es-MX', {
-                                        style: 'currency', currency: 'MXN'
-                                    }).format(selectedProductDetails.selling_price) }}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Resumen de Inventario General de la Sucursal -->
-                    <div
-                        class="bg-white dark:bg-gray-800 rounded-lg p-5 shadow-sm border border-gray-200 dark:border-gray-700">
-                        <h4 class="font-bold text-sm text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
-                            <i class="pi pi-warehouse"></i> Inventario local
-
-                            <span v-if="hasVariants(selectedProductDetails)"
-                                class="text-xs font-normal text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full"
-                                v-tooltip.top="'Cálculo sumando todas las variantes de este producto'">
-                                (Total de Variantes)
-                            </span>
-                        </h4>
-
-                        <div class="grid grid-cols-2 gap-y-5 gap-x-4 text-sm">
-                            <div
-                                class="bg-gray-50 dark:bg-gray-900/50 p-3 rounded border border-gray-100 dark:border-gray-700">
-                                <span
-                                    class="block text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider mb-1">Stock
-                                    Físico</span>
-                                <span class="font-semibold text-xl text-gray-800 dark:text-gray-200">{{
-                                    getCalculatedStock(selectedProductDetails) }}</span>
-                            </div>
-                            <div
-                                class="bg-gray-50 dark:bg-gray-900/50 p-3 rounded border border-gray-100 dark:border-gray-700">
-                                <span
-                                    class="block text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider mb-1">Disponible</span>
-                                <span class="font-bold text-xl text-green-600">{{
-                                    getAvailableStock(selectedProductDetails)
-                                    }}</span>
-                            </div>
-                            <div
-                                class="bg-gray-50 dark:bg-gray-900/50 p-3 rounded border border-gray-100 dark:border-gray-700">
-                                <span
-                                    class="block text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider mb-1">Apartados</span>
-                                <span class="font-semibold text-lg text-indigo-500">{{
-                                    getCalculatedReserved(selectedProductDetails) }}</span>
-                            </div>
-                            <div
-                                class="bg-gray-50 dark:bg-gray-900/50 p-3 rounded border border-gray-100 dark:border-gray-700">
-                                <span
-                                    class="block text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider mb-1">Ubicación</span>
-                                <span class="font-medium text-lg text-gray-800 dark:text-gray-200">
-                                    {{ hasVariants(selectedProductDetails) ? 'Múltiples' :
-                                        (selectedProductDetails.location ||
-                                    '--') }}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- SECCIÓN DINÁMICA DE VARIANTES EN EL DRAWER -->
-                    <div v-if="hasVariants(selectedProductDetails)"
-                        class="bg-white dark:bg-gray-800 rounded-lg p-5 shadow-sm border border-gray-200 dark:border-gray-700">
-                        <h4 class="font-bold text-sm text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
-                            <i class="pi pi-sitemap"></i> Variantes ({{ getVariants(selectedProductDetails).length }})
-                        </h4>
-                        <div class="space-y-3">
-                            <div v-for="variant in getVariants(selectedProductDetails)" :key="variant.id"
-                                class="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-between gap-3">
-                                <div>
-                                    <div class="flex flex-wrap gap-1.5 mb-2">
-                                        <Tag v-for="(val, key) in variant.attributes" :key="key"
-                                            :value="`${key}: ${val}`" severity="secondary" class="!text-xs" />
-                                    </div>
-                                    <!-- Precio calculado de la variante -->
-                                    <div class="font-bold text-primary-600 dark:text-primary-400 text-sm mb-1">
-                                        {{ new Intl.NumberFormat('es-MX', {
-                                            style: 'currency', currency: 'MXN'
-                                        }).format(Number(selectedProductDetails.selling_price) +
-                                        Number(variant.price_modifier
-                                        || variant.selling_price_modifier || 0)) }}
-                                    </div>
-                                    <div class="text-xs text-gray-500 dark:text-gray-400">
-                                        SKU: <span class="font-mono text-gray-800 dark:text-gray-200">{{ variant.sku ||
-                                            variant.sku_suffix || 'N/A' }}</span>
-                                    </div>
-                                    <div class="text-xs text-gray-500 dark:text-gray-400 mt-1" v-if="variant.location">
-                                        <i class="pi pi-map-marker text-[10px] mr-1"></i>{{ variant.location }}
-                                    </div>
-                                </div>
-                                <div
-                                    class="text-left sm:text-right border-t sm:border-t-0 border-gray-200 dark:border-gray-700 pt-2 sm:pt-0">
-                                    <div class="text-sm font-semibold text-gray-600 dark:text-gray-300">
-                                        Físico: {{ variant.current_stock || 0 }}
-                                    </div>
-                                    <div class="text-sm font-bold text-green-600 mt-1">
-                                        Disp: {{ (variant.current_stock || 0) - (variant.reserved_stock || 0) }}
-                                    </div>
-                                    <div v-if="variant.reserved_stock > 0"
-                                        class="text-xs text-indigo-500 font-medium mt-1">
-                                        ({{ variant.reserved_stock }} apartados)
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Footer (Botón flotante en el Drawer) -->
-                <div
-                    class="absolute bottom-0 left-0 w-full p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-                    <Button label="Ver todos los detalles" icon="pi pi-external-link" class="w-full" size="large"
-                        severity="primary" @click="goToDetails(selectedProductDetails.id)"
-                        :disabled="!hasPermission('products.see_details')" />
-                </div>
-            </div>
+            <!-- USAMOS EL NUEVO COMPONENTE EXTRAÍDO -->
+            <ProductDrawerDetails 
+                v-if="selectedProductDetails" 
+                :product="selectedProductDetails" 
+                :can-see-details="hasPermission('products.see_details')"
+                @go-to-details="goToDetails" 
+            />
         </Drawer>
 
         <!-- NUEVO MODAL DE RESUMEN DE INVENTARIO -->

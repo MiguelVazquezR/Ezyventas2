@@ -69,7 +69,8 @@ class TransactionController extends Controller implements HasMiddleware
             $searchTerm = $request->input('search');
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('transactions.folio', 'LIKE', "%{$searchTerm}%")
-                    ->orWhere('customers.name', 'LIKE', "%{$searchTerm}%");
+                    ->orWhere('customers.name', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('transactions.contact_info->name', 'LIKE', "%{$searchTerm}%");
             });
         }
 
