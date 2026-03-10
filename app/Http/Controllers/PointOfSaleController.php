@@ -230,6 +230,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'cartItems.*.discount' => 'required|numeric',
             'cartItems.*.discount_reason' => 'nullable|string|max:255',
             'customerId' => 'nullable|exists:customers,id',
+            'guest_name' => 'nullable|string|max:255', // NUEVO: Para modo comandas/comida
             'subtotal' => 'required|numeric',
             'total_discount' => 'nullable|numeric',
             'total' => 'required|numeric',
@@ -275,6 +276,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'cartItems.*.discount' => 'required|numeric',
             'cartItems.*.discount_reason' => 'nullable|string|max:255',
             'customerId' => 'nullable|exists:customers,id',
+            'guest_name' => 'nullable|string|max:255', // NUEVO: Por si acaso se usa en apartados sin cliente
             'subtotal' => 'required|numeric',
             'total_discount' => 'nullable|numeric',
             'total' => 'required|numeric',
@@ -288,7 +290,9 @@ class PointOfSaleController extends Controller implements HasMiddleware
         ]);
 
         $user = Auth::user();
-        $customer = Customer::find($validated['customerId']);
+        // Nota: Para un apartado lo ideal es tener un customer registrado, 
+        // pero lo dejamos igual por compatibilidad de código.
+        $customer = $validated['customerId'] ? Customer::find($validated['customerId']) : null;
 
         try {
             $transaction = $this->transactionPaymentService->handleNewSale(

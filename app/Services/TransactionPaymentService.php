@@ -60,6 +60,8 @@ class TransactionPaymentService
                 'cash_register_session_id' => $sessionId,
                 'folio' => self::generateFolio($user->branch_id),
                 'customer_id' => $customer?->id,
+                // NUEVO: Guardamos el nombre del invitado en contact_info si existe
+                'contact_info' => !empty($validatedData['guest_name']) ? ['name' => $validatedData['guest_name']] : null,
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
                 'status' => $initialStatus,

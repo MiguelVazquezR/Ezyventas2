@@ -13,7 +13,8 @@ const props = defineProps({
     defaultCustomer: Object,
     activePromotions: Array,
     loading: { type: Boolean, default: false },
-    paymentModalVisible: { type: Boolean, default: false }
+    paymentModalVisible: { type: Boolean, default: false },
+    posMode: { type: String, default: 'retail' }
 });
 
 const emit = defineEmits([
@@ -37,6 +38,14 @@ const requireConfirmation = (event) => {
 };
 
 const isCreateCustomerModalVisible = ref(false);
+
+// --- Lógica de Modo Comandas ---
+const guestName = ref('');
+watch(() => props.items, (newItems) => {
+    if (newItems.length === 0) {
+        guestName.value = ''; // Limpiar el nombre cuando se vacía el carrito exitosamente
+    }
+});
 
 // --- Lógica de AutoComplete ---
 const selectedCustomerModel = ref(props.client);
@@ -146,6 +155,7 @@ const handlePaymentSubmit = (paymentData) => {
         subtotal: subtotal.value,
         total: total.value,
         total_discount: totalDiscount.value,
+        guest_name: guestName.value // Enviamos el nombre de la comanda si existe
     });
 };
 
@@ -174,66 +184,87 @@ const formatCurrency = (value) => {
 
             <!-- Selector de Cliente con AutoComplete -->
             <div class="my-1">
-                <div class="flex items-center gap-2 mb-3">
-                    <IconField iconPosition="left" class="w-full">
-                        <InputIcon class="pi pi-search"></InputIcon>
-                        <AutoComplete v-model="selectedCustomerModel" :suggestions="filteredCustomers"
-                            @complete="searchCustomer" @item-select="onCustomerSelect" optionLabel="name" forceSelection
-                            placeholder="Buscar cliente (nombre o teléfono)..." class="w-full" :delay="400"
-                            emptyMessage="No se encontraron clientes" fluid>
-                            <template #option="slotProps">
-                                <div class="flex flex-col">
-                                    <span class="font-bold">{{ slotProps.option.name }}</span>
-                                    <span class="text-xs text-gray-500">{{ slotProps.option.phone }}</span>
+                <template v-if="posMode === 'retail'">
+                    <div class="flex items-center gap-2 mb-3">
+                        <IconField iconPosition="left" class="w-full">
+                            <InputIcon class="pi pi-search"></InputIcon>
+                            <AutoComplete v-model="selectedCustomerModel" :suggestions="filteredCustomers"
+                                @complete="searchCustomer" @item-select="onCustomerSelect" optionLabel="name" forceSelection
+                                placeholder="Buscar cliente (nombre o teléfono)..." class="w-full" :delay="400"
+                                emptyMessage="No se encontraron clientes" fluid>
+                                <template #option="slotProps">
+                                    <div class="flex flex-col">
+                                        <span class="font-bold">{{ slotProps.option.name }}</span>
+                                        <span class="text-xs text-gray-500">{{ slotProps.option.phone }}</span>
+                                    </div>
+                                </template>
+                            </AutoComplete>
+                        </IconField>
+
+                        <Button @click="isCreateCustomerModalVisible = true" rounded icon="pi pi-plus" size="small"
+                            severity="contrast" v-tooltip.bottom="'Crear nuevo cliente'" />
+                    </div>
+
+                    <!-- Detalles del Cliente Seleccionado -->
+                    <div class="bg-white dark:bg-gray-700 p-2 rounded-[10px]">
+                        <div v-if="displayedCustomer" class="flex items-center justify-between pb-2">
+                            <div class="flex items-center gap-3">
+                                <Avatar :label="displayedCustomer.name.substring(0, 1)" shape="circle"
+                                    class="!bg-[#F2E2FF] border border-[#D3A9FF] !text-[#5110A1]" />
+                                <div>
+                                    <p class="font-semibold text-sm text-gray-800 dark:text-gray-200 m-0">{{
+                                        displayedCustomer.name }}</p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 m-0">{{ displayedCustomer.phone }}
+                                    </p>
                                 </div>
-                            </template>
-                        </AutoComplete>
-                    </IconField>
-
-                    <Button @click="isCreateCustomerModalVisible = true" rounded icon="pi pi-plus" size="small"
-                        severity="contrast" v-tooltip.bottom="'Crear nuevo cliente'" />
-                </div>
-
-                <!-- Detalles del Cliente Seleccionado -->
-                <div class="bg-white dark:bg-gray-700 p-2 rounded-[10px]">
-                    <div v-if="displayedCustomer" class="flex items-center justify-between pb-2">
+                            </div>
+                            <Button v-if="client" @click="clearCustomer" icon="pi pi-times" rounded variant="outlined"
+                                severity="secondary" size="small" class="!size-6" />
+                        </div>
+                        <!-- Saldo y Crédito -->
+                        <div v-if="client" class="py-2 border-t dark:border-gray-600 space-y-2">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600 dark:text-gray-300">Saldo:</span>
+                                <span
+                                    :class="(client.balance || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+                                    class="font-bold">
+                                    {{ formatCurrency(client.balance || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' :
+                                        '' }}
+                                </span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600 dark:text-gray-300">Crédito disponible:</span>
+                                <span class="font-bold text-blue-600 dark:text-blue-400">
+                                    {{ formatCurrency(client.available_credit || 0) }}
+                                </span>
+                            </div>
+                            <a :href="route('customers.show', client.id)" target="_blank" rel="noopener noreferrer"
+                            class="text-xs text-blue-500">
+                                Ir a ver detalles
+                                <i class="pi pi-external-link !text-xs ml-1"></i>
+                            </a>
+                        </div>
+                    </div>
+                </template>
+                <template v-else>
+                    <!-- MODO COMANDAS -->
+                    <div class="mb-3">
+                        <IconField iconPosition="left" class="w-full">
+                            <InputIcon class="pi pi-user"></InputIcon>
+                            <InputText v-model="guestName" placeholder="Nombre para la comanda (Ej. Mesa 3, Juan)..." class="w-full" />
+                        </IconField>
+                    </div>
+                    <div v-if="guestName" class="bg-white dark:bg-gray-700 p-2 rounded-[10px] flex justify-between items-center">
                         <div class="flex items-center gap-3">
-                            <Avatar :label="displayedCustomer.name.substring(0, 1)" shape="circle"
-                                class="!bg-[#F2E2FF] border border-[#D3A9FF] !text-[#5110A1]" />
+                            <Avatar icon="pi pi-user" shape="circle" class="!bg-[#FFE2E2] border border-[#FFA9A9] !text-[#A11010]" />
                             <div>
-                                <p class="font-semibold text-sm text-gray-800 dark:text-gray-200 m-0">{{
-                                    displayedCustomer.name }}</p>
-                                <p class="text-xs text-gray-500 dark:text-gray-400 m-0">{{ displayedCustomer.phone }}
-                                </p>
+                                <p class="font-semibold text-sm text-gray-800 dark:text-gray-200 m-0">{{ guestName }}</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 m-0">Cliente de paso</p>
                             </div>
                         </div>
-                        <Button v-if="client" @click="clearCustomer" icon="pi pi-times" rounded variant="outlined"
-                            severity="secondary" size="small" class="!size-6" />
+                        <Button @click="guestName = ''" icon="pi pi-times" rounded variant="outlined" severity="secondary" size="small" class="!size-6" />
                     </div>
-                    <!-- Saldo y Crédito -->
-                    <div v-if="client" class="py-2 border-t dark:border-gray-600 space-y-2">
-                        <div class="flex justify-between text-sm">
-                            <span class="text-gray-600 dark:text-gray-300">Saldo:</span>
-                            <span
-                                :class="(client.balance || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
-                                class="font-bold">
-                                {{ formatCurrency(client.balance || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' :
-                                    '' }}
-                            </span>
-                        </div>
-                        <div class="flex justify-between text-sm">
-                            <span class="text-gray-600 dark:text-gray-300">Crédito disponible:</span>
-                            <span class="font-bold text-blue-600 dark:text-blue-400">
-                                {{ formatCurrency(client.available_credit || 0) }}
-                            </span>
-                        </div>
-                        <a :href="route('customers.show', client.id)" target="_blank" rel="noopener noreferrer"
-                        class="text-xs text-blue-500">
-                            Ir a ver detalles
-                            <i class="pi pi-external-link !text-xs ml-1"></i>
-                        </a>
-                    </div>
-                </div>
+                </template>
             </div>
 
             <!-- Lista de Items -->

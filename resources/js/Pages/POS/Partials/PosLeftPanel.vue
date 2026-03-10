@@ -17,10 +17,11 @@ const props = defineProps({
     pendingCarts: { type: Array, default: () => [] },
     filters: { type: Object, default: () => ({}) },
     activeSession: { type: Object, default: null },
-    cartItems: { type: Array, default: () => [] }
+    cartItems: { type: Array, default: () => [] },
+    posMode: { type: String, default: 'retail' }
 });
 
-const emit = defineEmits(['addToCart', 'resumeCart', 'deleteCart', 'productCreatedAndAddToCart', 'refreshSessionData', 'openCloseSessionModal', 'openHistoryModal']);
+const emit = defineEmits(['addToCart', 'resumeCart', 'deleteCart', 'productCreatedAndAddToCart', 'refreshSessionData', 'openCloseSessionModal', 'openHistoryModal', 'update:posMode']);
 const confirm = useConfirm();
 
 // --- Lógica de Scroll simplificada ---
@@ -109,8 +110,8 @@ const handleCategoryFilter = (categoryId) => {
 };
 
 // --- Lógica de Detección de Entidades (Ventas / Clientes) ---
-const isCheckingEntity = ref(false); 
-const isSmartSearchHelpVisible = ref(false); 
+const isCheckingEntity = ref(false);
+const isSmartSearchHelpVisible = ref(false);
 
 const sanitizeInput = (input) => {
     if (!input) return '';
@@ -119,7 +120,7 @@ const sanitizeInput = (input) => {
 
 const checkAndRedirect = async (rawValue) => {
     const query = sanitizeInput(rawValue);
-    if (!query || query.length < 3) return false; 
+    if (!query || query.length < 3) return false;
 
     isCheckingEntity.value = true;
 
@@ -138,7 +139,7 @@ const checkAndRedirect = async (rawValue) => {
                     let routeName = 'transactions.show';
                     if (result.type === 'customer') routeName = 'customers.show';
                     if (result.type === 'service_order') routeName = 'service-orders.show';
-                    
+
                     searchTerm.value = '';
                     window.open(route(routeName, result.id), '_blank');
                 },
@@ -174,7 +175,7 @@ const handleGlobalKeyDown = async (event) => {
 
     if (event.key === 'Enter') {
         if (barcodeBuffer.length > 2) {
-            event.preventDefault(); 
+            event.preventDefault();
             const cleanQuery = sanitizeInput(barcodeBuffer);
             const handled = await checkAndRedirect(cleanQuery);
             if (!handled) {
@@ -183,11 +184,11 @@ const handleGlobalKeyDown = async (event) => {
             barcodeBuffer = '';
             return;
         }
-        
+
         if (isSearchInput && searchTerm.value.length > 2) {
-             event.preventDefault();
-             await handleManualSearch();
-             return;
+            event.preventDefault();
+            await handleManualSearch();
+            return;
         }
     }
 
@@ -196,9 +197,9 @@ const handleGlobalKeyDown = async (event) => {
     barcodeBuffer += event.key;
 
     clearTimeout(barcodeTimer);
-    barcodeTimer = setTimeout(() => { 
-        barcodeBuffer = ''; 
-    }, 200); 
+    barcodeTimer = setTimeout(() => {
+        barcodeBuffer = '';
+    }, 200);
 };
 
 const handleManualSearch = async () => {
@@ -206,7 +207,7 @@ const handleManualSearch = async () => {
         const cleanQuery = sanitizeInput(searchTerm.value);
         const handled = await checkAndRedirect(cleanQuery);
         if (!handled && searchTerm.value !== cleanQuery) {
-             searchTerm.value = cleanQuery; 
+            searchTerm.value = cleanQuery;
         }
     }
 };
@@ -275,9 +276,14 @@ const handleProductCreated = (newProduct) => {
                 <h1 class="hidden lg:block text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Registrar ventas</h1>
                 <div v-if="activeSession"
                     class="p-1 text-center rounded-full px-2 lg:px-8 text-sm lg:text-base bg-gradient-to-r from-transparent via-[#CEEACB] dark:via-[#366531] to-transparent text-[#24880B] dark:text-[#69f446] font-semibold">
-                    Caja Activa: <span class="font-bold">{{ activeSession.cash_register.name }}</span>
+                    Caja activa: <span class="font-bold">{{ activeSession.cash_register.name }}</span>
                 </div>
                 <div class="flex items-center gap-3">
+                    <Button @click="$emit('update:posMode', posMode === 'retail' ? 'food' : 'retail')"
+                        :icon="posMode === 'retail' ? 'pi pi-shop' : 'pi pi-receipt'" rounded severity="help"
+                        v-tooltip.bottom="posMode === 'retail' ? 'Cambiar a modo comandas (Comida)' : 'Cambiar a modo tienda (Retail)'"
+                        variant="outlined" size="medium" class="!size-8 !bg-white" />
+
                     <Button @click="isCreateProductModalVisible = true" icon="pi pi-plus" rounded severity="secondary"
                         v-tooltip.bottom="'Agregar nuevo producto'" variant="outlined" size="medium"
                         class="!size-8 !bg-white" />
@@ -325,32 +331,26 @@ const handleProductCreated = (newProduct) => {
                     </Popover>
                 </div>
             </div>
-            
+
             <div class="mb-4 flex gap-2 items-center">
                 <div class="flex-grow relative">
                     <IconField iconPosition="left" class="w-full">
                         <InputIcon v-if="!isCheckingEntity" class="pi pi-search" />
                         <InputIcon v-else class="pi pi-spin pi-spinner text-blue-500 font-bold" />
-                        <InputText 
-                            v-model="searchTerm" 
-                            @keydown.enter="handleManualSearch" 
+                        <InputText v-model="searchTerm" @keydown.enter="handleManualSearch"
                             placeholder="Escanear o buscar producto por nombre o SKU"
-                            class="w-full pos-search-input pr-10" 
-                        />
+                            class="w-full pos-search-input pr-10" />
                     </IconField>
-                    
-                    <button 
-                        v-if="searchTerm"
-                        @click="clearSearch"
+
+                    <button v-if="searchTerm" @click="clearSearch"
                         class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors z-10 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-                        type="button"
-                        aria-label="Limpiar búsqueda"
-                    >
+                        type="button" aria-label="Limpiar búsqueda">
                         <i class="pi pi-times text-sm font-bold"></i>
                     </button>
                 </div>
 
-                <Button label="Búsqueda Inteligente" icon="pi pi-sparkles" text size="small" severity="info" @click="isSmartSearchHelpVisible = true" />
+                <Button label="Búsqueda Inteligente" icon="pi pi-sparkles" text size="small" severity="info"
+                    @click="isSmartSearchHelpVisible = true" />
             </div>
 
             <CategoryFilters :categories="categories" :active-category-id="selectedCategoryId"
@@ -361,7 +361,8 @@ const handleProductCreated = (newProduct) => {
             <template v-if="loadedProducts.length > 0">
                 <div class="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2">
                     <ProductCard v-for="product in loadedProducts" :key="`${product.id}-${product.sku}`"
-                        :product="product" :cart-items="cartItems" @showDetails="showProductDetails" @addToCart="$emit('addToCart', $event)" />
+                        :product="product" :cart-items="cartItems" @showDetails="showProductDetails"
+                        @addToCart="$emit('addToCart', $event)" />
                 </div>
             </template>
             <p v-else-if="!isLoadingMore" class="text-center text-gray-500 mt-8">
@@ -378,17 +379,23 @@ const handleProductCreated = (newProduct) => {
         <CashMovementModal v-if="activeSession" v-model:visible="isCashMovementModalVisible" :type="movementType"
             :session-id="activeSession.id" @submitted="handleMovementSubmitted" />
 
-        <Dialog v-model:visible="isSmartSearchHelpVisible" modal header="🧠 Búsqueda Inteligente" :style="{ width: '50rem' }" :breakpoints="{ '960px': '75vw', '640px': '90vw' }">
+        <Dialog v-model:visible="isSmartSearchHelpVisible" modal header="🧠 Búsqueda Inteligente"
+            :style="{ width: '50rem' }" :breakpoints="{ '960px': '75vw', '640px': '90vw' }">
             <div class="p-2 space-y-6">
                 <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg flex gap-4 items-start">
                     <i class="pi pi-info-circle text-2xl text-blue-600 mt-1"></i>
                     <div>
                         <h4 class="font-bold text-lg text-blue-800 dark:text-blue-200 m-0">¿Qué es esto?</h4>
                         <p class="text-base text-blue-700 dark:text-blue-300 m-0">
-                            La barra de búsqueda principal no solo encuentra productos. Está diseñada para detectar automáticamente 
+                            La barra de búsqueda principal no solo encuentra productos. Está diseñada para detectar
+                            automáticamente
                             códigos escaneados de tickets o información de clientes para agilizar tu flujo de trabajo.
-                            Si no cuentas con lector de códigos de barras, también puedes escribir manualmente los folios o números de teléfono y
-                            presionar <kbd class="bg-gray-300 text-gray-600 rounded-md px-1 py-px">Enter</kbd> para activar la búsqueda inteligente.
+                            Si no cuentas con lector de códigos de barras, también puedes escribir manualmente los
+                            folios o
+                            números de teléfono y
+                            presionar <kbd class="bg-gray-300 text-gray-600 rounded-md px-1 py-px">Enter</kbd> para
+                            activar la
+                            búsqueda inteligente.
                         </p>
                     </div>
                 </div>
@@ -400,13 +407,21 @@ const handleProductCreated = (newProduct) => {
                             <h3 class="font-bold text-lg m-0">Folios de venta</h3>
                         </div>
                         <p class="text-sm text-gray-600 dark:text-gray-400 mb-3 m-0">
-                            Escanea el código de barras/QR de un ticket o escribe el folio (ej: <span class="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">V-001</span>).
+                            Escanea el código de barras/QR de un ticket o escribe el folio (ej: <span
+                                class="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">V-001</span>).
                         </p>
                         <ul class="text-sm space-y-2 text-gray-700 dark:text-gray-300">
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Cancelaciones rápidas</li>
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Devoluciones y cambios</li>
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Agregar pagos a créditos</li>
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Reimpresión de tickets</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i>
+                                Cancelaciones rápidas</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i>
+                                Devoluciones
+                                y cambios</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i>
+                                Agregar
+                                pagos a créditos</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i>
+                                Reimpresión
+                                de tickets</li>
                         </ul>
                     </div>
 
@@ -416,13 +431,23 @@ const handleProductCreated = (newProduct) => {
                             <h3 class="font-bold text-lg m-0">Clientes</h3>
                         </div>
                         <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                            Escribe el <strong>número de teléfono</strong> (10 dígitos) o busca por <strong>nombre</strong> exacto.
+                            Escribe el <strong>número de teléfono</strong> (10 dígitos) o busca por
+                            <strong>nombre</strong>
+                            exacto.
                         </p>
                         <ul class="text-sm space-y-2 text-gray-700 dark:text-gray-300">
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Abonar a saldo pendiente</li>
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Revisar historial de apartados</li>
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Imprimir estado de cuenta</li>
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Ajustes de saldo</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i>
+                                Abonar a
+                                saldo pendiente</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i>
+                                Revisar
+                                historial de apartados</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i>
+                                Imprimir
+                                estado de cuenta</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i>
+                                Ajustes de
+                                saldo</li>
                         </ul>
                     </div>
                 </div>

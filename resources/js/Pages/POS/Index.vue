@@ -35,6 +35,12 @@ const selectedClient = ref(null);
 const isPaymentModalVisible = ref(false);
 const isOrderModalVisible = ref(false);
 
+// --- Lógica de Modo POS (Retail vs Comandas) ---
+const posMode = ref(localStorage.getItem('pos_mode') || 'retail');
+watch(posMode, (newVal) => {
+    localStorage.setItem('pos_mode', newVal);
+});
+
 // --- Lógica para Modales ---
 const isStartSessionModalVisible = ref(false);
 const isJoinSessionModalVisible = ref(false);
@@ -323,7 +329,8 @@ const form = useForm({
     delivery_date: null,
     shipping_address: null,
     shipping_cost: 0,
-    notes: null
+    notes: null,
+    guest_name: null
 });
 
 const mapCartItems = () => {
@@ -406,6 +413,7 @@ const handleCheckout = (checkoutData) => {
     form.payments = checkoutData.payments;
     form.use_balance = checkoutData.use_balance;
     form.layaway_expiration_date = checkoutData.layaway_expiration_date;
+    form.guest_name = checkoutData.guest_name || null;
 
     let routeName;
     const transactionType = checkoutData.transactionType;
@@ -455,7 +463,7 @@ const currentCartTotal = computed(() => {
                         @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
                         @refresh-session-data="handleRefreshSessionData"
                         @open-history-modal="isHistoryModalVisible = true"
-                        @open-close-session-modal="isCloseSessionModalVisible = true" class="h-full" />
+                        @open-close-session-modal="isCloseSessionModalVisible = true" class="h-full" :pos-mode="posMode" />
                 </div>
                 <div class="lg:w-1/3 xl:w-1/4 h-full overflow-hidden">
                     <ShoppingCart :items="cartItems" :client="selectedClient" :customers="localCustomers"
@@ -466,7 +474,7 @@ const currentCartTotal = computed(() => {
                         @customer-created="handleCustomerCreated" @save-cart="saveCartToPending"
                         @checkout="handleCheckout" @open-payment-modal="isPaymentModalVisible = true"
                         @close-payment-modal="isPaymentModalVisible = false"
-                        @open-order-modal="isOrderModalVisible = true" class="h-full" />
+                        @open-order-modal="isOrderModalVisible = true" class="h-full" :pos-mode="posMode" />
                 </div>
             </div>
         </template>
