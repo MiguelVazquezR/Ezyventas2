@@ -17,6 +17,7 @@ const props = defineProps({
     productUsage: Number,
     availableTemplates: Array,
     stockByCategory: Array,
+    userBankAccounts: Array,
 });
 
 const confirm = useConfirm();

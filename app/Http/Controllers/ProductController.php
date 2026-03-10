@@ -155,6 +155,16 @@ class ProductController extends Controller implements HasMiddleware
             ->sortByDesc('products_sum_current_stock')
             ->values();
 
+        // --- NUEVO: OBTENER CUENTAS BANCARIAS ---
+        $isOwner = !$user->roles()->exists();
+        $userBankAccounts = null;
+
+        if ($isOwner) {
+            $userBankAccounts = $user->branch->bankAccounts()->get();
+        } else {
+            $userBankAccounts = $user->bankAccounts()->get();
+        }
+
         return Inertia::render('Product/Index', [
             'products' => $products,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
@@ -163,6 +173,7 @@ class ProductController extends Controller implements HasMiddleware
             'productLimitReached' => $productLimitReached,
             'availableTemplates' => $availableTemplates,
             'stockByCategory' => $stockByCategory,
+            'userBankAccounts' => $userBankAccounts, // <-- Enviamos a la vista
         ]);
     }
 
@@ -397,12 +408,23 @@ class ProductController extends Controller implements HasMiddleware
             ->whereIn('context_type', [\App\Enums\TemplateContextType::PRODUCT, \App\Enums\TemplateContextType::GENERAL])
             ->get();
 
+        // --- NUEVO: OBTENER CUENTAS BANCARIAS ---
+        $isOwner = !$user->roles()->exists();
+        $userBankAccounts = null;
+
+        if ($isOwner) {
+            $userBankAccounts = $user->branch->bankAccounts()->get();
+        } else {
+            $userBankAccounts = $user->bankAccounts()->get();
+        }
+
         return Inertia::render('Product/Show', [
             'product' => $product,
             'promotions' => $promotions,
             'activities' => $formattedActivities,
             'availableTemplates' => $availableTemplates,
             'activeLayaways' => $formattedLayaways,
+            'userBankAccounts' => $userBankAccounts, // <-- Enviamos a la vista
         ]);
     }
 
