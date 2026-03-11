@@ -7,6 +7,7 @@ use App\Http\Requests\UpdateServiceRequest;
 use App\Models\Category;
 use App\Models\Service;
 use App\Models\Branch;
+use App\Services\ActivityLogService;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -282,55 +283,12 @@ class ServiceController extends Controller implements HasMiddleware
         return redirect()->route('services.index')->with('success', 'Servicio actualizado con éxito.');
     }
 
-    public function show(Request $request, Service $service): Response
+    public function show(Request $request, Service $service, ActivityLogService $activityLogService): Response
     {
         $service->load(['category', 'media', 'variants', 'branches']);
-        $translations = config('log_translations.Service', []);
 
-        // --- NUEVA LÓGICA: FILTRADO DE ACTIVIDADES DESDE EL SERVIDOR ---
-        $activitiesQuery = $service->activities()->with('causer');
-
-        if ($request->has('all_activities')) {
-            $rawActivities = $activitiesQuery->latest()->get();
-        } else {
-            $startDate = $request->input('start_date');
-            $endDate = $request->input('end_date');
-
-            if ($startDate && $endDate) {
-                $start = \Carbon\Carbon::parse($startDate)->startOfDay();
-                $end = \Carbon\Carbon::parse($endDate)->endOfDay();
-            } else {
-                // Por defecto, carga solo los de la semana actual
-                $start = now()->startOfWeek();
-                $end = now()->endOfWeek();
-            }
-
-            $rawActivities = $activitiesQuery->whereBetween('created_at', [$start, $end])->latest()->get();
-        }
-
-        $formattedActivities = $rawActivities->map(function ($activity) use ($translations) {
-            $changes = ['before' => [], 'after' => []];
-            if (isset($activity->properties['old'])) {
-                foreach ($activity->properties['old'] as $key => $value) {
-                    $changes['before'][($translations[$key] ?? $key)] = $value;
-                }
-            }
-            if (isset($activity->properties['attributes'])) {
-                foreach ($activity->properties['attributes'] as $key => $value) {
-                    $changes['after'][($translations[$key] ?? $key)] = $value;
-                }
-            }
-            return [
-                'id' => $activity->id,
-                'description' => $activity->description,
-                'event' => $activity->event,
-                'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
-                'timestamp' => $activity->created_at->diffForHumans(),
-                'created_at' => $activity->created_at->toIso8601String(), // FECHA EXACTA
-                'properties' => $activity->properties, // PROPIEDADES PARA LEER EL CONCEPTO
-                'changes' => $changes,
-            ];
-        });
+        // Usamos el servicio
+        $formattedActivities = $activityLogService->getFormattedActivities($service, $request, 'Service');
 
         return Inertia::render('Service/Show', [
             'service' => $service,

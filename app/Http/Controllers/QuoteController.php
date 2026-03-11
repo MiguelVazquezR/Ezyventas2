@@ -16,6 +16,7 @@ use App\Models\ProductAttribute;
 use App\Models\Quote;
 use App\Models\Service;
 use App\Models\Transaction;
+use App\Services\ActivityLogService;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -142,7 +143,7 @@ class QuoteController extends Controller implements HasMiddleware
         return redirect()->route('quotes.index')->with('success', 'Cotización actualizada con éxito.');
     }
 
-    public function show(Request $request, Quote $quote): Response
+    public function show(Request $request, Quote $quote, ActivityLogService $activityLogService): Response
     {
         $quote->load([
             'customer', 
@@ -158,63 +159,8 @@ class QuoteController extends Controller implements HasMiddleware
             }
         ]);
 
-        $translations = config('log_translations.Quote', []);
-        
-        // --- NUEVA LÓGICA: FILTRADO DE ACTIVIDADES DESDE EL SERVIDOR ---
-        $activitiesQuery = $quote->activities()->with('causer');
-
-        if ($request->has('all_activities')) {
-            $rawActivities = $activitiesQuery->latest()->get();
-        } else {
-            $startDate = $request->input('start_date');
-            $endDate = $request->input('end_date');
-
-            if ($startDate && $endDate) {
-                $start = \Carbon\Carbon::parse($startDate)->startOfDay();
-                $end = \Carbon\Carbon::parse($endDate)->endOfDay();
-            } else {
-                // Por defecto, carga solo los de la semana actual
-                $start = now()->startOfWeek();
-                $end = now()->endOfWeek();
-            }
-
-            $rawActivities = $activitiesQuery->whereBetween('created_at', [$start, $end])->latest()->get();
-        }
-
-        $formattedActivities = $rawActivities->map(function ($activity) use ($translations) {
-            $changes = ['before' => [], 'after' => []];
-            
-            $oldProps = $activity->properties->get('old', []);
-            $newProps = $activity->properties->get('attributes', []);
-
-            if (is_array($oldProps)) {
-                foreach ($oldProps as $key => $value) {
-                    $changes['before'][($translations[$key] ?? $key)] = $value;
-                }
-            }
-            if (is_array($newProps)) {
-                foreach ($newProps as $key => $value) {
-                    if (!array_key_exists($key, $oldProps) || $oldProps[$key] !== $value) {
-                        $changes['after'][($translations[$key] ?? $key)] = $value;
-                    }
-                }
-            }
-            
-            $changes['before'] = array_intersect_key($changes['before'], $changes['after']);
-
-            return [
-                'id' => $activity->id,
-                'description' => $activity->description,
-                'event' => $activity->event,
-                'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
-                'timestamp' => $activity->created_at->diffForHumans(),
-                'created_at' => $activity->created_at->toIso8601String(), // FECHA EXACTA
-                'properties' => $activity->properties, // PROPIEDADES PARA LEER EL CONCEPTO
-                'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
-            ];
-        })
-        ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes']))
-        ->values();
+        // Llamamos al servicio con el parámetro true para "strictChanges"
+        $formattedActivities = $activityLogService->getFormattedActivities($quote, $request, 'Quote', true);
 
         $subscriptionId = Auth::user()->branch->subscription_id;
         $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)

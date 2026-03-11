@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
-use App\Enums\TransactionStatus;
 use App\Http\Requests\StoreProductRequest;
 use App\Http\Requests\UpdateProductRequest;
 use App\Models\AttributeDefinition;
@@ -13,9 +12,8 @@ use App\Models\Branch;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductAttribute;
-use App\Models\Promotion;
 use App\Models\Provider;
-use App\Models\TransactionItem;
+use App\Services\ActivityLogService;
 use App\Traits\OptimizeMediaLocal;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -36,7 +34,7 @@ class ProductController extends Controller implements HasMiddleware
             new Middleware('can:products.access', only: ['index']),
             new Middleware('can:products.create', only: ['create', 'store']),
             new Middleware('can:products.see_details', only: ['show']),
-            new Middleware('can:products.edit', only: ['edit', 'update']),
+            new Middleware('can:products.edit', only: ['edit', 'update', 'updatePriceFromPOS']),
             new Middleware('can:products.delete', only: ['destroy', 'batchDestroy']),
         ];
     }
@@ -292,7 +290,7 @@ class ProductController extends Controller implements HasMiddleware
         return redirect()->route('products.index')->with('success', 'Producto creado con éxito.');
     }
 
-    public function show(Request $request, Product $product): Response
+    public function show(Request $request, Product $product, ActivityLogService $activityLogService): Response
     {
         $user = Auth::user();
 
@@ -332,54 +330,9 @@ class ProductController extends Controller implements HasMiddleware
 
         // Cargar explícitamente las relaciones anidadas en la colección devuelta por el accesor
         $promotions = $product->promotions->load(['rules.itemable', 'effects.itemable']);
-        
-        $translations = config('log_translations.Product', []);
 
-        // --- NUEVA LÓGICA: FILTRADO DE ACTIVIDADES DESDE EL SERVIDOR ---
-        $activitiesQuery = $product->activities()->with('causer');
-
-        if ($request->has('all_activities')) {
-            $rawActivities = $activitiesQuery->latest()->get();
-        } else {
-            $startDate = $request->input('start_date');
-            $endDate = $request->input('end_date');
-
-            if ($startDate && $endDate) {
-                $start = \Carbon\Carbon::parse($startDate)->startOfDay();
-                $end = \Carbon\Carbon::parse($endDate)->endOfDay();
-            } else {
-                // Por defecto, carga solo los de la semana actual
-                $start = now()->startOfWeek();
-                $end = now()->endOfWeek();
-            }
-
-            $rawActivities = $activitiesQuery->whereBetween('created_at', [$start, $end])->latest()->get();
-        }
-
-        // CORRECCIÓN CLAVE: Usamos $rawActivities en lugar de $product->activities
-        $formattedActivities = $rawActivities->map(function ($activity) use ($translations) {
-            $changes = ['before' => [], 'after' => []];
-            if (isset($activity->properties['old'])) {
-                foreach ($activity->properties['old'] as $key => $value) {
-                    $changes['before'][($translations[$key] ?? $key)] = $value;
-                }
-            }
-            if (isset($activity->properties['attributes'])) {
-                foreach ($activity->properties['attributes'] as $key => $value) {
-                    $changes['after'][($translations[$key] ?? $key)] = $value;
-                }
-            }
-            return [
-                'id' => $activity->id,
-                'description' => $activity->description,
-                'event' => $activity->event,
-                'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
-                'timestamp' => $activity->created_at->diffForHumans(),
-                'created_at' => $activity->created_at->toIso8601String(), // FECHA EXACTA
-                'properties' => $activity->properties, // PROPIEDADES PARA LEER EL CONCEPTO
-                'changes' => $changes,
-            ];
-        });
+        // Llamamos al servicio refactorizado para el historial
+        $formattedActivities = $activityLogService->getFormattedActivities($product, $request, 'Product');
 
         // -------------------------------------------------------------
         // FIX: Solo filtramos estatus que realmente reservan stock
@@ -641,5 +594,32 @@ class ProductController extends Controller implements HasMiddleware
         ]);
         Product::whereIn('id', $validated['ids'])->delete();
         return redirect()->route('products.index')->with('success', 'Productos seleccionados eliminados con éxito.');
+    }
+
+    // =========================================================================
+    // NUEVO MÉTODO PARA ACTUALIZAR PRECIO RAPIDO DESDE EL PUNTO DE VENTA
+    // =========================================================================
+    public function updatePriceFromPOS(Request $request)
+    {
+        $request->validate([
+            'product_id' => 'required|exists:products,id',
+            'product_attribute_id' => 'nullable|exists:product_attributes,id',
+            'new_price' => 'required|numeric|min:0'
+        ]);
+
+        $product = Product::findOrFail($request->product_id);
+        $newPrice = $request->new_price;
+
+        if ($request->product_attribute_id) {
+            // Si es variante, actualizamos la diferencia matemática (modifier)
+            $variant = ProductAttribute::findOrFail($request->product_attribute_id);
+            $newModifier = $newPrice - $product->selling_price;
+            $variant->update(['selling_price_modifier' => $newModifier]);
+        } else {
+            // Si es producto simple, se actualiza directo
+            $product->update(['selling_price' => $newPrice]);
+        }
+
+        return response()->json(['success' => true]);
     }
 }

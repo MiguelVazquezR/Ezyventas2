@@ -17,6 +17,7 @@ use App\Models\ProductAttribute;
 use App\Models\Service;
 use App\Models\ServiceOrder;
 use App\Models\Transaction;
+use App\Services\ActivityLogService;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -80,7 +81,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
         ]);
     }
 
-    public function show(Request $request, ServiceOrder $serviceOrder): Response
+    public function show(Request $request, ServiceOrder $serviceOrder, ActivityLogService $activityLogService): Response
     {
         $serviceOrder->load(['branch', 'user', 'customer', 'items.itemable' => function (MorphTo $morphTo) {
             $morphTo->morphWith([
@@ -100,52 +101,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
             ->whereIn('context_type', [\App\Enums\TemplateContextType::SERVICE_ORDER, \App\Enums\TemplateContextType::GENERAL])
             ->get();
 
-        $translations = config('log_translations.ServiceOrder', []);
-
-        // --- NUEVA LÓGICA: FILTRADO DE ACTIVIDADES DESDE EL SERVIDOR ---
-        $activitiesQuery = $serviceOrder->activities()->with('causer');
-
-        if ($request->has('all_activities')) {
-            $rawActivities = $activitiesQuery->latest()->get();
-        } else {
-            $startDate = $request->input('start_date');
-            $endDate = $request->input('end_date');
-
-            if ($startDate && $endDate) {
-                $start = \Carbon\Carbon::parse($startDate)->startOfDay();
-                $end = \Carbon\Carbon::parse($endDate)->endOfDay();
-            } else {
-                // Por defecto, carga solo los de la semana actual
-                $start = now()->startOfWeek();
-                $end = now()->endOfWeek();
-            }
-
-            $rawActivities = $activitiesQuery->whereBetween('created_at', [$start, $end])->latest()->get();
-        }
-
-        $formattedActivities = $rawActivities->map(function ($activity) use ($translations) {
-            $changes = ['before' => [], 'after' => []];
-            if (isset($activity->properties['old'])) {
-                foreach ($activity->properties['old'] as $key => $value) {
-                    $changes['before'][($translations[$key] ?? $key)] = $value;
-                }
-            }
-            if (isset($activity->properties['attributes'])) {
-                foreach ($activity->properties['attributes'] as $key => $value) {
-                    $changes['after'][($translations[$key] ?? $key)] = $value;
-                }
-            }
-            return [
-                'id' => $activity->id,
-                'description' => $activity->description,
-                'event' => $activity->event,
-                'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
-                'timestamp' => $activity->created_at->diffForHumans(),
-                'created_at' => $activity->created_at->toIso8601String(), // FECHA EXACTA
-                'properties' => $activity->properties, // PROPIEDADES PARA LEER EL CONCEPTO
-                'changes' => $changes,
-            ];
-        });
+        $formattedActivities = $activityLogService->getFormattedActivities($serviceOrder, $request, 'ServiceOrder');
 
         return Inertia::render('ServiceOrder/Show', [
             'serviceOrder' => $serviceOrder,
