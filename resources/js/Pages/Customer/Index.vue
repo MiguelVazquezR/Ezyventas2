@@ -21,6 +21,10 @@ const selectedCustomers = ref([]);
 const searchTerm = ref(props.filters.search || '');
 const showImportModal = ref(false);
 
+// Estado para el Drawer (Panel lateral)
+const isDrawerVisible = ref(false);
+const selectedCustomerForDrawer = ref(null);
+
 const headerMenu = ref();
 const toggleHeaderMenu = (event) => {
     headerMenu.value.toggle(event);
@@ -50,6 +54,9 @@ const deleteSingleCustomer = () => {
                 onSuccess: () => {
                     // Refrescar la selección si el cliente eliminado estaba seleccionado
                     selectedCustomers.value = selectedCustomers.value.filter(c => c.id !== selectedCustomerForMenu.value.id);
+                    if (selectedCustomerForDrawer.value?.id === selectedCustomerForMenu.value.id) {
+                        isDrawerVisible.value = false;
+                    }
                 }
             });
         }
@@ -67,7 +74,10 @@ const deleteSelectedCustomers = () => {
         accept: () => {
             const idsToDelete = selectedCustomers.value.map(c => c.id);
             router.post(route('customers.batchDestroy'), { ids: idsToDelete }, {
-                onSuccess: () => selectedCustomers.value = [], // Limpiar la selección
+                onSuccess: () => {
+                    selectedCustomers.value = []; // Limpiar la selección
+                    isDrawerVisible.value = false;
+                },
                 preserveScroll: true,
             });
         }
@@ -120,21 +130,34 @@ const getBalanceClass = (balance) => {
 };
 
 const formatCurrency = (value) => {
-    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value || 0);
+};
+
+const formatAddress = (address) => {
+    if (!address) return 'No registrada';
+    if (typeof address === 'string') return address;
+    
+    // Si es un objeto JSON (como se guarda usualmente)
+    const parts = [];
+    if (address.street) parts.push(address.street);
+    if (address.exterior_number) parts.push(address.exterior_number);
+    if (address.neighborhood) parts.push(address.neighborhood);
+    if (address.city) parts.push(address.city);
+    if (address.state) parts.push(address.state);
+    
+    return parts.length > 0 ? parts.join(', ') : 'No registrada';
 };
 
 const onRowClick = (event) => {
     // Evitamos navegar si se hizo clic en el botón del menú (acciones)
-    // El evento row-click de PrimeVue devuelve { originalEvent, data, index }
-    // Verificamos si el target fue un botón o icono
     const target = event.originalEvent.target;
-    if (target.closest('button') || target.closest('.p-button')) {
+    if (target.closest('button') || target.closest('.p-button') || target.closest('.p-checkbox')) {
         return;
     }
     
-    if (hasPermission('customers.see_details')) {
-        router.visit(route('customers.show', event.data.id));
-    }
+    // Abrir Drawer en lugar de navegar de inmediato
+    selectedCustomerForDrawer.value = event.data;
+    isDrawerVisible.value = true;
 };
 </script>
 
@@ -176,7 +199,8 @@ const onRowClick = (event) => {
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} clientes"
                     rowHover
-                    @row-click="onRowClick">
+                    @row-click="onRowClick"
+                    class="cursor-pointer">
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
                     <Column field="name" header="Nombre" sortable>
                         <template #body="{ data }">
@@ -189,10 +213,8 @@ const onRowClick = (event) => {
                     <Column field="phone" header="Contacto" sortable>
                         <template #body="{ data }">
                             <div>
-                                <p vif="data.phone" class="m-0"><i class="pi pi-phone !text-xs mr-2"></i>{{ data.phone
-                                    }}</p>
-                                <p v-if="data.email" class="m-0"><i class="pi pi-envelope !text-xs mr-2"></i>{{
-                                    data.email }}</p>
+                                <p v-if="data.phone" class="m-0 text-sm"><i class="pi pi-phone !text-xs mr-2 text-gray-400"></i>{{ data.phone }}</p>
+                                <p v-if="data.email" class="m-0 text-sm"><i class="pi pi-envelope !text-xs mr-2 text-gray-400"></i>{{ data.email }}</p>
                             </div>
                         </template>
                     </Column>
@@ -224,8 +246,9 @@ const onRowClick = (event) => {
                         </template>
                     </Column>
                     <Column headerStyle="width: 5rem; text-align: center">
-                        <template #body="{ data }"> <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
-                                text rounded severity="secondary" /> </template>
+                        <template #body="{ data }"> 
+                            <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded severity="secondary" /> 
+                        </template>
                     </Column>
                     <template #empty>
                         <div class="text-center text-gray-500 py-4">
@@ -237,6 +260,122 @@ const onRowClick = (event) => {
                 <Menu ref="menu" :model="menuItems" :popup="true" />
             </div>
         </div>
+
+        <!-- Drawer de Detalles del Cliente -->
+        <Drawer v-model:visible="isDrawerVisible" position="right" class="w-full md:!w-[30rem]">
+            <template #header>
+                <div class="flex items-center gap-2">
+                    <i class="pi pi-user text-xl text-gray-600 dark:text-gray-300"></i>
+                    <span class="font-bold text-xl text-gray-800 dark:text-gray-100">Detalles Rápidos</span>
+                </div>
+            </template>
+            
+            <div v-if="selectedCustomerForDrawer" class="flex flex-col h-full pt-4">
+                <div class="flex-grow space-y-6 overflow-y-auto pr-2 pb-6">
+                    
+                    <!-- Info Header -->
+                    <div class="flex items-center gap-4">
+                        <Avatar 
+                            :label="selectedCustomerForDrawer.name ? selectedCustomerForDrawer.name.substring(0, 1).toUpperCase() : 'C'" 
+                            size="xlarge" 
+                            shape="circle" 
+                            class="!bg-primary-100 !text-primary-700 font-bold text-2xl" 
+                        />
+                        <div>
+                            <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 m-0">{{ selectedCustomerForDrawer.name }}</h2>
+                            <p v-if="selectedCustomerForDrawer.company_name" class="text-sm text-gray-500 m-0 mt-1">
+                                <i class="pi pi-building !text-xs mr-1"></i> {{ selectedCustomerForDrawer.company_name }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Contact Info -->
+                    <div class="space-y-4 bg-gray-50 dark:bg-gray-800/60 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+                        <h3 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider m-0">Información de Contacto</h3>
+                        
+                        <div class="flex items-start gap-3">
+                            <div class="mt-1 bg-white dark:bg-gray-700 p-1.5 rounded-md shadow-sm border border-gray-100 dark:border-gray-600">
+                                <i class="pi pi-phone text-gray-500 dark:text-gray-400"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm font-semibold text-gray-800 dark:text-gray-200 m-0">
+                                    {{ selectedCustomerForDrawer.phone || 'No registrado' }}
+                                </p>
+                                <span class="text-xs text-gray-500">Teléfono principal</span>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start gap-3">
+                            <div class="mt-1 bg-white dark:bg-gray-700 p-1.5 rounded-md shadow-sm border border-gray-100 dark:border-gray-600">
+                                <i class="pi pi-envelope text-gray-500 dark:text-gray-400"></i>
+                            </div>
+                            <div class="break-all">
+                                <p class="text-sm font-semibold text-gray-800 dark:text-gray-200 m-0">
+                                    {{ selectedCustomerForDrawer.email || 'No registrado' }}
+                                </p>
+                                <span class="text-xs text-gray-500">Correo electrónico</span>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-start gap-3">
+                            <div class="mt-1 bg-white dark:bg-gray-700 p-1.5 rounded-md shadow-sm border border-gray-100 dark:border-gray-600">
+                                <i class="pi pi-map-marker text-gray-500 dark:text-gray-400"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-800 dark:text-gray-200 m-0 leading-tight">
+                                    {{ formatAddress(selectedCustomerForDrawer.address) }}
+                                </p>
+                                <span class="text-xs text-gray-500">Dirección</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Financial Info -->
+                    <div v-if="hasPermission('customers.see_financial_info')" class="space-y-3 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800/40">
+                        <h3 class="text-xs font-bold text-blue-800 dark:text-blue-300 uppercase tracking-wider mb-3 m-0">Estado Financiero</h3>
+                        
+                        <div class="flex justify-between items-center border-b border-blue-100 dark:border-blue-800/40 pb-2">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Saldo actual</span>
+                            <span class="font-mono font-bold text-lg" :class="getBalanceClass(selectedCustomerForDrawer.balance)">
+                                {{ formatCurrency(selectedCustomerForDrawer.balance) }}
+                            </span>
+                        </div>
+                        <div class="flex justify-between items-center pt-1">
+                            <span class="text-sm text-gray-600 dark:text-gray-400">Límite de crédito</span>
+                            <span class="font-mono font-medium text-gray-800 dark:text-gray-200">
+                                {{ formatCurrency(selectedCustomerForDrawer.credit_limit) }}
+                            </span>
+                        </div>
+                        <div class="flex justify-between items-center pt-1">
+                            <span class="text-sm text-gray-600 dark:text-gray-400">Crédito disponible</span>
+                            <span class="font-mono font-bold text-blue-600 dark:text-blue-400">
+                                {{ formatCurrency(selectedCustomerForDrawer.available_credit || 0) }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions Footer -->
+                <div class="mt-auto pt-4 border-t dark:border-gray-700 flex flex-col gap-2 bg-white dark:bg-gray-800">
+                    <Button 
+                        v-if="hasPermission('customers.see_details')" 
+                        label="Ver perfil completo" 
+                        icon="pi pi-id-card" 
+                        class="w-full" 
+                        @click="router.visit(route('customers.show', selectedCustomerForDrawer.id))" 
+                    />
+                    <Button 
+                        v-if="hasPermission('customers.edit')" 
+                        label="Editar información" 
+                        icon="pi pi-pencil" 
+                        severity="secondary" 
+                        outlined 
+                        class="w-full" 
+                        @click="router.visit(route('customers.edit', selectedCustomerForDrawer.id))" 
+                    />
+                </div>
+            </div>
+        </Drawer>
 
         <!-- Modal de Importación -->
         <ImportCustomersModal :visible="showImportModal" @update:visible="showImportModal = false" />

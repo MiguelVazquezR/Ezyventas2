@@ -13,14 +13,15 @@ const props = defineProps({
     defaultCustomer: Object,
     activePromotions: Array,
     loading: { type: Boolean, default: false },
-    paymentModalVisible: { type: Boolean, default: false }
+    paymentModalVisible: { type: Boolean, default: false },
+    posMode: { type: String, default: 'retail' }
 });
 
 const emit = defineEmits([
     'updateQuantity', 'updatePrice', 'removeItem', 'clearCart', 
     'selectCustomer', 'customerCreated', 'saveCart', 'checkout', 
     'open-payment-modal', 'close-payment-modal',
-    'open-order-modal' // <-- NUEVO EVENTO
+    'open-order-modal'
 ]);
 
 const confirm = useConfirm();
@@ -37,6 +38,15 @@ const requireConfirmation = (event) => {
 };
 
 const isCreateCustomerModalVisible = ref(false);
+const isModeHelpVisible = ref(false); // Ref para el modal de ayuda de modos
+
+// --- Lógica de Modo Comandas ---
+const guestName = ref('');
+watch(() => props.items, (newItems) => {
+    if (newItems.length === 0) {
+        guestName.value = ''; // Limpiar el nombre cuando se vacía el carrito exitosamente
+    }
+});
 
 // --- Lógica de AutoComplete ---
 const selectedCustomerModel = ref(props.client);
@@ -146,6 +156,7 @@ const handlePaymentSubmit = (paymentData) => {
         subtotal: subtotal.value,
         total: total.value,
         total_discount: totalDiscount.value,
+        guest_name: guestName.value // Enviamos el nombre de la comanda si existe
     });
 };
 
@@ -160,7 +171,22 @@ const formatCurrency = (value) => {
         <div class="bg-[#E6E6E6] p-3 rounded-xl shadow-md border border-[#D9D9D9] h-full flex flex-col dark:bg-gray-800 dark:border-gray-700">
             <!-- Header -->
             <div class="flex justify-between items-center pb-4 border-b border-gray-200 dark:border-gray-700">
-                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Carrito</h2>
+                
+                <!-- Título Dinámico con Botón de Ayuda -->
+                <div class="flex items-center gap-2">
+                    <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">
+                        {{ posMode === 'retail' ? 'Carrito' : 'Comanda' }}
+                    </h2>
+                    <Button 
+                        icon="pi pi-question-circle" 
+                        text 
+                        rounded 
+                        class="!w-6 !h-6 !p-0 text-gray-400 hover:text-blue-500" 
+                        @click="isModeHelpVisible = true"
+                        v-tooltip.bottom="'¿Qué es esto?'"
+                    />
+                </div>
+
                 <div class="flex items-center gap-2">
                     <Button @click="$emit('saveCart', { total: total })" :disabled="items.length === 0"
                         icon="pi pi-save" rounded variant="outlined" severity="secondary"
@@ -172,68 +198,89 @@ const formatCurrency = (value) => {
                 </div>
             </div>
 
-            <!-- Selector de Cliente con AutoComplete -->
+            <!-- Selector de Cliente o Campo Comanda -->
             <div class="my-1">
-                <div class="flex items-center gap-2 mb-3">
-                    <IconField iconPosition="left" class="w-full">
-                        <InputIcon class="pi pi-search"></InputIcon>
-                        <AutoComplete v-model="selectedCustomerModel" :suggestions="filteredCustomers"
-                            @complete="searchCustomer" @item-select="onCustomerSelect" optionLabel="name" forceSelection
-                            placeholder="Buscar cliente (nombre o teléfono)..." class="w-full" :delay="400"
-                            emptyMessage="No se encontraron clientes" fluid>
-                            <template #option="slotProps">
-                                <div class="flex flex-col">
-                                    <span class="font-bold">{{ slotProps.option.name }}</span>
-                                    <span class="text-xs text-gray-500">{{ slotProps.option.phone }}</span>
+                <template v-if="posMode === 'retail'">
+                    <div class="flex items-center gap-2 mb-3">
+                        <IconField iconPosition="left" class="w-full">
+                            <InputIcon class="pi pi-search"></InputIcon>
+                            <AutoComplete v-model="selectedCustomerModel" :suggestions="filteredCustomers"
+                                @complete="searchCustomer" @item-select="onCustomerSelect" optionLabel="name" forceSelection
+                                placeholder="Buscar cliente (nombre o teléfono)..." class="w-full" :delay="400"
+                                emptyMessage="No se encontraron clientes" fluid>
+                                <template #option="slotProps">
+                                    <div class="flex flex-col">
+                                        <span class="font-bold">{{ slotProps.option.name }}</span>
+                                        <span class="text-xs text-gray-500">{{ slotProps.option.phone }}</span>
+                                    </div>
+                                </template>
+                            </AutoComplete>
+                        </IconField>
+
+                        <Button @click="isCreateCustomerModalVisible = true" rounded icon="pi pi-plus" size="small"
+                            severity="contrast" v-tooltip.bottom="'Crear nuevo cliente'" />
+                    </div>
+
+                    <!-- Detalles del Cliente Seleccionado -->
+                    <div class="bg-white dark:bg-gray-700 p-2 rounded-[10px]">
+                        <div v-if="displayedCustomer" class="flex items-center justify-between pb-2">
+                            <div class="flex items-center gap-3">
+                                <Avatar :label="displayedCustomer.name.substring(0, 1)" shape="circle"
+                                    class="!bg-[#F2E2FF] border border-[#D3A9FF] !text-[#5110A1]" />
+                                <div>
+                                    <p class="font-semibold text-sm text-gray-800 dark:text-gray-200 m-0">{{
+                                        displayedCustomer.name }}</p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 m-0">{{ displayedCustomer.phone }}
+                                    </p>
                                 </div>
-                            </template>
-                        </AutoComplete>
-                    </IconField>
-
-                    <Button @click="isCreateCustomerModalVisible = true" rounded icon="pi pi-plus" size="small"
-                        severity="contrast" v-tooltip.bottom="'Crear nuevo cliente'" />
-                </div>
-
-                <!-- Detalles del Cliente Seleccionado -->
-                <div class="bg-white dark:bg-gray-700 p-2 rounded-[10px]">
-                    <div v-if="displayedCustomer" class="flex items-center justify-between pb-2">
+                            </div>
+                            <Button v-if="client" @click="clearCustomer" icon="pi pi-times" rounded variant="outlined"
+                                severity="secondary" size="small" class="!size-6" />
+                        </div>
+                        <!-- Saldo y Crédito -->
+                        <div v-if="client" class="py-2 border-t dark:border-gray-600 space-y-2">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600 dark:text-gray-300">Saldo:</span>
+                                <span
+                                    :class="(client.balance || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+                                    class="font-bold">
+                                    {{ formatCurrency(client.balance || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' :
+                                        '' }}
+                                </span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600 dark:text-gray-300">Crédito disponible:</span>
+                                <span class="font-bold text-blue-600 dark:text-blue-400">
+                                    {{ formatCurrency(client.available_credit || 0) }}
+                                </span>
+                            </div>
+                            <a :href="route('customers.show', client.id)" target="_blank" rel="noopener noreferrer"
+                            class="text-xs text-blue-500">
+                                Ir a ver detalles
+                                <i class="pi pi-external-link !text-xs ml-1"></i>
+                            </a>
+                        </div>
+                    </div>
+                </template>
+                <template v-else>
+                    <!-- MODO COMANDAS -->
+                    <div class="mb-3 mt-2">
+                        <IconField iconPosition="left" class="w-full">
+                            <InputIcon class="pi pi-user"></InputIcon>
+                            <InputText v-model="guestName" placeholder="Nombre para la comanda (Ej. Mesa 3, Juan)..." class="w-full" />
+                        </IconField>
+                    </div>
+                    <div v-if="guestName" class="bg-white dark:bg-gray-700 p-2 rounded-[10px] flex justify-between items-center">
                         <div class="flex items-center gap-3">
-                            <Avatar :label="displayedCustomer.name.substring(0, 1)" shape="circle"
-                                class="!bg-[#F2E2FF] border border-[#D3A9FF] !text-[#5110A1]" />
+                            <Avatar icon="pi pi-user" shape="circle" class="!bg-[#FFE2E2] border border-[#FFA9A9] !text-[#A11010]" />
                             <div>
-                                <p class="font-semibold text-sm text-gray-800 dark:text-gray-200 m-0">{{
-                                    displayedCustomer.name }}</p>
-                                <p class="text-xs text-gray-500 dark:text-gray-400 m-0">{{ displayedCustomer.phone }}
-                                </p>
+                                <p class="font-semibold text-sm text-gray-800 dark:text-gray-200 m-0">{{ guestName }}</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 m-0">Cliente de paso</p>
                             </div>
                         </div>
-                        <Button v-if="client" @click="clearCustomer" icon="pi pi-times" rounded variant="outlined"
-                            severity="secondary" size="small" class="!size-6" />
+                        <Button @click="guestName = ''" icon="pi pi-times" rounded variant="outlined" severity="secondary" size="small" class="!size-6" />
                     </div>
-                    <!-- Saldo y Crédito -->
-                    <div v-if="client" class="py-2 border-t dark:border-gray-600 space-y-2">
-                        <div class="flex justify-between text-sm">
-                            <span class="text-gray-600 dark:text-gray-300">Saldo:</span>
-                            <span
-                                :class="(client.balance || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
-                                class="font-bold">
-                                {{ formatCurrency(client.balance || 0) }} {{ (client.balance || 0) > 0 ? '(a favor)' :
-                                    '' }}
-                            </span>
-                        </div>
-                        <div class="flex justify-between text-sm">
-                            <span class="text-gray-600 dark:text-gray-300">Crédito disponible:</span>
-                            <span class="font-bold text-blue-600 dark:text-blue-400">
-                                {{ formatCurrency(client.available_credit || 0) }}
-                            </span>
-                        </div>
-                        <a :href="route('customers.show', client.id)" target="_blank" rel="noopener noreferrer"
-                        class="text-xs text-blue-500">
-                            Ir a ver detalles
-                            <i class="pi pi-external-link !text-xs ml-1"></i>
-                        </a>
-                    </div>
-                </div>
+                </template>
             </div>
 
             <!-- Lista de Items -->
@@ -278,9 +325,8 @@ const formatCurrency = (value) => {
                     <span>Total</span><span>{{ formatCurrency(total) }}</span>
                 </div>
                 
-                <!-- BOTONES DE ACCIÓN (MODIFICADO) -->
+                <!-- BOTONES DE ACCIÓN -->
                 <div class="flex gap-2 mt-2">
-                    <!-- Nuevo Botón para Pedidos -->
                     <Button 
                         label="Crear pedido" 
                         icon="pi pi-truck" 
@@ -291,7 +337,6 @@ const formatCurrency = (value) => {
                         @click="$emit('open-order-modal')"
                     />
                     
-                    <!-- Botón Original de Pagar -->
                     <Button 
                         @click="$emit('open-payment-modal')" 
                         :disabled="items.length === 0"
@@ -309,5 +354,46 @@ const formatCurrency = (value) => {
             :total-amount="total" :client="client" :customers="customers" :allow-credit="true" :allow-layaway="true"
             :loading="props.loading" payment-mode="strict" @update:client="$emit('selectCustomer', $event)"
             @customer-created="handleCustomerCreated" @submit="handlePaymentSubmit" />
+
+        <!-- MODAL DE AYUDA DE MODOS -->
+        <Dialog v-model:visible="isModeHelpVisible" modal header="Modos de Punto de Venta" :style="{ width: '40rem' }" :breakpoints="{ '960px': '75vw', '640px': '90vw' }">
+            <div class="space-y-4 text-gray-700 dark:text-gray-300 pt-2">
+                <!-- Tarjeta Retail -->
+                <div class="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800">
+                    <h3 class="font-bold text-lg flex items-center gap-2 text-blue-700 dark:text-blue-400 mt-0 mb-2">
+                        <i class="pi pi-shop"></i> Modo Tienda (Retail)
+                    </h3>
+                    <p class="text-sm m-0">Ideal para tiendas de ropa, electrónicos, abarrotes, accesorios, etc.</p>
+                    <ul class="list-disc pl-5 mt-3 text-sm space-y-2">
+                        <li>Búsqueda avanzada de clientes recurrentes en tu base de datos.</li>
+                        <li>Gestión de saldos a favor y créditos disponibles del cliente.</li>
+                        <li>Permite realizar apartados o ventas a crédito asociadas al historial de un cliente.</li>
+                    </ul>
+                </div>
+
+                <!-- Tarjeta Comandas -->
+                <div class="p-4 rounded-xl bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800">
+                    <h3 class="font-bold text-lg flex items-center gap-2 text-orange-700 dark:text-orange-400 mt-0 mb-2">
+                        <i class="pi pi-receipt"></i> Modo Comandas (Alimentos)
+                    </h3>
+                    <p class="text-sm m-0">Optimizado para cafeterías, taquerías, restaurantes y fast food.</p>
+                    <ul class="list-disc pl-5 mt-3 text-sm space-y-2">
+                        <li>Flujo súper rápido sin necesidad de registrar datos personales del cliente.</li>
+                        <li>Campo de texto simple para anotar identificadores ágiles (Ej. <em>"Mesa 3"</em>, <em>"Para llevar Pedro"</em>).</li>
+                        <li>El nombre ingresado aparecerá en el ticket para facilitar la entrega del pedido.</li>
+                    </ul>
+                </div>
+
+                <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg mt-4 border border-gray-200 dark:border-gray-700">
+                    <i class="pi pi-info-circle text-gray-400 text-xl"></i>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 m-0">
+                        Puedes cambiar entre estos modos en cualquier momento usando el <strong>botón situado arriba de tus productos</strong>.
+                    </p>
+                </div>
+            </div>
+            <template #footer>
+                <Button label="Entendido" icon="pi pi-check" @click="isModeHelpVisible = false" autofocus severity="secondary" />
+            </template>
+        </Dialog>
     </div>
 </template>

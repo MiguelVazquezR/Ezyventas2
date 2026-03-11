@@ -1,23 +1,21 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ImportServicesModal from './Partials/ImportServicesModal.vue';
 import { usePermissions } from '@/Composables';
-import Drawer from 'primevue/drawer'; // Importación del Drawer
+import Drawer from 'primevue/drawer'; 
 import Tag from 'primevue/tag';
 import Divider from 'primevue/divider';
 
 const props = defineProps({
     services: Object,
     filters: Object,
-    serviceLimitReached: Boolean, // Recibimos el candado desde el backend
+    serviceLimitReached: Boolean,
 });
 
 const confirm = useConfirm();
-
-// composables
 const { hasPermission } = usePermissions();
 
 const selectedServices = ref([]);
@@ -35,16 +33,48 @@ const splitButtonItems = ref([
 const menu = ref();
 const selectedServiceForMenu = ref(null);
 
-// --- DRAWER DE VISTA RÁPIDA ---
+// --- ESTADO Y LÓGICA DEL DRAWER (VISTA RÁPIDA) ---
 const isDrawerVisible = ref(false);
 const drawerService = ref(null);
+
+// Variables para la búsqueda y paginación virtual en el Drawer
+const variantSearch = ref('');
+const visibleVariantsCount = ref(50); // Mostramos solo 50 iniciales para no congelar el DOM
+
+// Filtra las variantes en base al buscador
+const filteredVariants = computed(() => {
+    if (!drawerService.value || !drawerService.value.variants) return [];
+    
+    let variants = drawerService.value.variants;
+    if (variantSearch.value.trim()) {
+        const term = variantSearch.value.toLowerCase().trim();
+        variants = variants.filter(v => v.name.toLowerCase().includes(term));
+    }
+    return variants;
+});
+
+// Extrae la porción visible para el DOM (Virtual Pagination)
+const displayedVariants = computed(() => {
+    return filteredVariants.value.slice(0, visibleVariantsCount.value);
+});
+
+// Reinicia la paginación y búsqueda cuando abres un nuevo Drawer
+watch(() => drawerService.value, () => {
+    variantSearch.value = '';
+    visibleVariantsCount.value = 50;
+});
+
+const loadMoreVariants = () => {
+    visibleVariantsCount.value += 50;
+};
+// --- FIN LÓGICA DEL DRAWER ---
 
 const deleteSingleService = () => {
     if (!selectedServiceForMenu.value) return;
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar "${selectedServiceForMenu.value.name}"?`,
         header: 'Confirmar Eliminación',
-        icon: 'pi pi-info-circle',
+        icon: 'pi pi-exclamation-triangle',
         acceptClass: 'p-button-danger',
         accept: () => {
             router.delete(route('services.destroy', selectedServiceForMenu.value.id), {
@@ -108,13 +138,11 @@ const formatCurrency = (value) => {
 };
 
 const onRowClick = (event) => {
-    // Evitamos navegar si se hizo clic en el botón del menú (acciones)
     const target = event.originalEvent.target;
     if (target.closest('button') || target.closest('.p-button') || target.closest('.p-checkbox')) {
         return;
     }
     
-    // Asignar el servicio y abrir el Drawer en lugar de navegar directo
     drawerService.value = event.data;
     isDrawerVisible.value = true;
 };
@@ -126,32 +154,31 @@ const onRowClick = (event) => {
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
                 <!-- Header -->
                 <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Catálogo de Servicios</h1>
+                    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Catálogo de servicios</h1>
                     <div class="flex items-center gap-2">
                         <IconField iconPosition="left" class="w-full md:w-auto">
                             <InputIcon class="pi pi-search"></InputIcon>
                             <InputText v-model="searchTerm" placeholder="Buscar servicio..." class="w-full" />
                         </IconField>
                         <ButtonGroup>
-                            <!-- El Tooltip le explicará al usuario por qué el botón se deshabilitó -->
-                            <span v-tooltip.bottom="serviceLimitReached ? 'Límite de servicios alcanzado en tu plan actual. Mejora tu suscripción para agregar más.' : ''">
+                            <span v-tooltip.bottom="serviceLimitReached ? 'Límite de servicios/variantes alcanzado en tu plan actual. Mejora tu suscripción para agregar más.' : ''">
                                 <Button 
                                     v-if="hasPermission('services.catalog.create')" 
                                     label="Nuevo servicio" 
                                     icon="pi pi-plus"
                                     @click="router.get(route('services.create'))" 
-                                    severity="warning" 
+                                    severity="warning"
+                                    class="!rounded-r-none"
                                     :disabled="serviceLimitReached"
                                 />
                             </span>
                             <Button v-if="hasPermission('services.catalog.import_export')" icon="pi pi-chevron-down"
-                                @click="toggleHeaderMenu" severity="warning" />
+                                @click="toggleHeaderMenu" class="!rounded-l-none" severity="warning" />
                         </ButtonGroup>
                         <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" />
                     </div>
                 </div>
 
-                <!-- Barra de Alerta si el límite fue alcanzado -->
                 <Message v-if="serviceLimitReached" severity="warn" :closable="false" class="mb-4">
                     <div class="flex items-center justify-between w-full">
                         <span>Has alcanzado el límite de servicios de tu plan.</span>
@@ -161,7 +188,6 @@ const onRowClick = (event) => {
                     </div>
                 </Message>
 
-                <!-- Barra de Acciones Masivas -->
                 <div v-if="selectedServices.length > 0"
                     class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-2 mb-4 flex justify-between items-center">
                     <span class="font-semibold text-sm text-blue-800 dark:text-blue-200">{{ selectedServices.length }}
@@ -196,6 +222,16 @@ const onRowClick = (event) => {
                     <Column field="duration_estimate" header="Duración Estimada" sortable>
                         <template #body="{ data }">
                             <span class="text-gray-500 italic text-sm">{{ data.duration_estimate || 'Variable' }}</span>
+                        </template>
+                    </Column>
+                    <Column header="Variantes" style="min-width: 6rem; text-align: center;">
+                        <template #body="{ data }">
+                            <Tag 
+                                :value="data.variants ? data.variants.length : 0" 
+                                :severity="data.variants && data.variants.length > 0 ? 'info' : 'secondary'" 
+                                rounded 
+                                v-tooltip.top="data.variants && data.variants.length > 0 ? 'Ver variantes en el detalle' : 'Servicio único sin variantes'"
+                            />
                         </template>
                     </Column>
                     <Column header="Sucursales" style="min-width: 12rem">
@@ -281,18 +317,34 @@ const onRowClick = (event) => {
                         </div>
 
                         <div v-else-if="parseFloat(drawerService.base_price) === 0" class="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 p-3 rounded border border-blue-200 dark:border-blue-800">
-                            <div class="flex items-center gap-2 mb-1">
-                                <i class="pi pi-sitemap"></i>
-                                <span class="font-semibold">Servicio con Variantes ({{ drawerService.variants ? drawerService.variants.length : 0 }} variantes)</span>
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="flex items-center gap-2">
+                                    <i class="pi pi-sitemap"></i>
+                                    <span class="font-semibold">Variantes ({{ drawerService.variants?.length || 0 }})</span>
+                                </div>
                             </div>
-                            <p class="text-xs opacity-80">Este servicio tiene precios y/o duraciones variables dependiendo del equipo o especificación. Ingresa a los detalles para ver el desglose completo.</p>
+
+                            <!-- BUSCADOR INTERNO DE VARIANTES (Se muestra si hay más de 10) -->
+                            <IconField iconPosition="left" class="w-full mb-3" v-if="drawerService.variants && drawerService.variants.length > 10">
+                                <InputIcon class="pi pi-search"></InputIcon>
+                                <InputText v-model="variantSearch" placeholder="Buscar modelo o variante..." class="w-full text-sm bg-white dark:bg-gray-800" />
+                            </IconField>
                             
-                            <ul v-if="drawerService.variants && drawerService.variants.length > 0" class="mt-3 flex flex-col gap-2 border-t border-blue-200 dark:border-blue-800 pt-3">
-                                <li v-for="variant in drawerService.variants" :key="variant.id" class="flex justify-between items-center text-sm">
+                            <ul v-if="displayedVariants.length > 0" class="flex flex-col gap-2 border-t border-blue-200 dark:border-blue-800 pt-3">
+                                <li v-for="variant in displayedVariants" :key="variant.id" class="flex justify-between items-center text-sm p-px">
                                     <span class="font-medium truncate pr-2" :title="variant.name">- {{ variant.name }}</span>
                                     <span class="font-bold">{{ formatCurrency(variant.price) }}</span>
                                 </li>
                             </ul>
+                            
+                            <div v-else-if="variantSearch" class="text-sm text-center text-gray-500 py-3 italic">
+                                No se encontraron variantes con ese nombre.
+                            </div>
+
+                            <!-- BOTÓN PARA CARGAR MÁS -->
+                            <div v-if="filteredVariants.length > visibleVariantsCount" class="mt-3 text-center">
+                                <Button label="Cargar más modelos" size="small" text @click="loadMoreVariants" icon="pi pi-refresh" />
+                            </div>
                         </div>
                     </div>
 

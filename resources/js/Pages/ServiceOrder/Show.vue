@@ -536,6 +536,13 @@ const getPaymentMethodIcon = (method) => {
                         </p>
                     </div>
                 </div>
+                <!-- Tarjeta: Historial de actividad -->
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/60 mt-6">
+                    <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
+                        <i class="pi pi-history text-gray-400"></i> Historial de movimientos
+                    </h3>
+                    <ActivityHistory :activities="activities" />
+                </div>
             </div>
 
             <div class="lg:col-span-1 space-y-6">
@@ -653,8 +660,6 @@ const getPaymentMethodIcon = (method) => {
                         adjuntaron imágenes
                         de cierre.</div>
                 </div>
-
-                <ActivityHistory :activities="activities" title="Historial de actividad" />
             </div>
         </div>
 

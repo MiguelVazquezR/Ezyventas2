@@ -349,7 +349,7 @@ class ExpenseController extends Controller implements HasMiddleware
         $message = 'Gasto eliminado con éxito.';
 
         DB::transaction(function () use ($expense, &$message) {
-            // Si el gasto estaba pagado desde una cuenta, restaurar el saldo.
+            // Revertir el saldo a la cuenta bancaria si el gasto estaba pagado y asociado a una cuenta
             if ($expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
                 $bankAccount = BankAccount::find($expense->bank_account_id);
                 if ($bankAccount) {
@@ -358,7 +358,19 @@ class ExpenseController extends Controller implements HasMiddleware
                     $message = "Gasto eliminado. Se regresaron $$formattedAmount a la cuenta '{$bankAccount->account_name}'.";
                 }
             }
+
+            // 1. Respaldamos el ID del movimiento de caja (si lo tiene)
+            $cashMovementId = $expense->session_cash_movement_id;
+
+            // 2. Eliminamos el gasto
             $expense->delete();
+
+            // 3. Si se tomó de caja, eliminamos el movimiento asociado
+            if ($cashMovementId) {
+                \App\Models\SessionCashMovement::where('id', $cashMovementId)->delete();
+                $formattedAmount = number_format($expense->amount, 2);
+                $message = "Gasto eliminado. Se restauraron $$formattedAmount a la caja en turno.";
+            }
         });
 
         return redirect()->route('expenses.index')->with('success', $message);
@@ -372,8 +384,9 @@ class ExpenseController extends Controller implements HasMiddleware
         ]);
 
         $restoredBalance = false;
+        $restoredCash = false;
 
-        DB::transaction(function () use ($validated, &$restoredBalance) {
+        DB::transaction(function () use ($validated, &$restoredBalance, &$restoredCash) {
             $expenses = Expense::whereIn('id', $validated['ids'])->get();
             foreach ($expenses as $expense) {
                 if ($expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
@@ -383,13 +396,24 @@ class ExpenseController extends Controller implements HasMiddleware
                         $restoredBalance = true;
                     }
                 }
+
+                // 1. Respaldamos el ID del movimiento de caja (si lo tiene)
+                $cashMovementId = $expense->session_cash_movement_id;
+
+                // 2. Eliminamos el gasto
                 $expense->delete();
+
+                // 3. Si se tomó de caja, eliminamos el movimiento asociado
+                if ($cashMovementId) {
+                    \App\Models\SessionCashMovement::where('id', $cashMovementId)->delete();
+                    $restoredCash = true;
+                }
             }
         });
 
         $message = 'Gastos seleccionados eliminados con éxito.';
-        if ($restoredBalance) {
-            $message .= ' Se restauró el saldo de las cuentas bancarias afectadas.';
+        if ($restoredBalance || $restoredCash) {
+            $message .= ' Se restauró el saldo en las cuentas bancarias y/o cajas afectadas.';
         }
 
         return redirect()->route('expenses.index')->with('success', $message);

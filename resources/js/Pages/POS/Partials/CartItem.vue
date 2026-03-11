@@ -1,8 +1,10 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
 import { usePermissions } from '@/Composables';
-import { FireIcon, StarIcon } from '@heroicons/vue/24/solid'; // <-- Importar StarIcon
+import { FireIcon, StarIcon } from '@heroicons/vue/24/solid';
 import { useConfirm } from 'primevue/useconfirm';
+import { useToast } from 'primevue/usetoast'; // NUEVO: Importar Toast
+import axios from 'axios'; // NUEVO: Importar axios
 
 const props = defineProps({
     item: Object,
@@ -13,96 +15,112 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
-
+const toast = useToast(); // NUEVO: Inicializar toast
 const emit = defineEmits(['updateQuantity', 'updatePrice', 'removeItem']);
-
 const { hasPermission } = usePermissions();
 
 const quantity = ref(props.item.quantity);
 const price = ref(props.item.price);
 const isEditingPrice = ref(false);
 
+// --- ESTADOS PARA MODAL DE PRECIO PERMANENTE ---
+const isUpdatePriceModalVisible = ref(false);
+const pendingPriceChange = ref(null);
+const isUpdatingPricePermanent = ref(false);
+
 // Observador para emitir cambios de cantidad
 watch(quantity, (newQuantity) => {
-    // Validar que la cantidad sea al menos 1
     const validQuantity = Math.max(1, newQuantity || 1);
     if (validQuantity !== props.item.quantity) {
         emit('updateQuantity', { itemId: props.item.cartItemId, quantity: validQuantity });
     }
-     // Si el usuario introduce 0 o menos, resetear a 1 internamente
      if (newQuantity < 1 && quantity.value !== 1) {
        quantity.value = 1;
     }
 });
 
-
-// Aplicar cambio de precio manual
+// INTERCEPTAR EL CAMBIO DE PRECIO
 const applyPriceChange = () => {
-    // Validar que el precio sea positivo
     const validPrice = Math.max(0, price.value || 0);
     if (validPrice !== props.item.price) {
-        emit('updatePrice', { itemId: props.item.cartItemId, price: validPrice });
+        // En lugar de emitir directo, abrimos el modal
+        pendingPriceChange.value = validPrice;
+        isUpdatePriceModalVisible.value = true;
     } else {
-         // Si el precio validado es el mismo que el actual, solo cierra la edición
-         price.value = props.item.price; // Asegura que el ref interno tenga el valor correcto
+         price.value = props.item.price;
+         isEditingPrice.value = false;
     }
-    isEditingPrice.value = false;
 }
 
-// Cancelar edición de precio
+// Cancelar edición de precio (Botón "X" o cancelar modal)
 const cancelPriceEdit = () => {
-    price.value = props.item.price; // Revertir al precio actual del item
+    price.value = props.item.price; 
     isEditingPrice.value = false;
+    isUpdatePriceModalVisible.value = false;
+    pendingPriceChange.value = null;
 }
 
-// Observador para actualizar cantidad si cambia externamente (ej. al resumir carrito)
+// Acción: Precio solo para esta venta
+const confirmPriceForThisSaleOnly = () => {
+    emit('updatePrice', { itemId: props.item.cartItemId, price: pendingPriceChange.value });
+    isUpdatePriceModalVisible.value = false;
+    isEditingPrice.value = false;
+    pendingPriceChange.value = null;
+};
+
+// Acción: Precio permanente en catálogo
+const confirmPricePermanent = async () => {
+    isUpdatingPricePermanent.value = true;
+    try {
+        await axios.post(route('products.update-price-pos'), {
+            product_id: props.item.id,
+            product_attribute_id: props.item.product_attribute_id || null,
+            new_price: pendingPriceChange.value
+        });
+        
+        // Emite el cambio local al carrito
+        emit('updatePrice', { itemId: props.item.cartItemId, price: pendingPriceChange.value });
+        
+        toast.add({ severity: 'success', summary: 'Catálogo actualizado', detail: 'El precio se ha modificado permanentemente en la base de datos.', life: 4000 });
+    } catch (error) {
+        console.error(error);
+        toast.add({ severity: 'error', summary: 'Error al actualizar', detail: 'No se pudo guardar en el catálogo. Se aplicará solo a esta venta.', life: 4000 });
+        // Fallback: Si falla, aplicarlo solo a la venta actual para no bloquear al cajero
+        emit('updatePrice', { itemId: props.item.cartItemId, price: pendingPriceChange.value });
+    } finally {
+        isUpdatingPricePermanent.value = false;
+        isUpdatePriceModalVisible.value = false;
+        isEditingPrice.value = false;
+        pendingPriceChange.value = null;
+    }
+};
+
 watch(() => props.item.quantity, (newVal) => {
     if (quantity.value !== newVal) {
         quantity.value = newVal;
     }
 });
 
-// Observador para actualizar precio si cambia externamente (ej. por cambio de cantidad)
 watch(() => props.item.price, (newVal) => {
-    // Solo actualizar si no estamos editando, para evitar sobrescribir
     if (!isEditingPrice.value && price.value !== newVal) {
         price.value = newVal;
     }
 });
 
-// Check si hay un descuento aplicado directamente al item (promo directa o manual)
 const isItemDiscountApplied = computed(() => props.item.original_price && props.item.price < props.item.original_price);
-
-// Check si una promo de carrito afecta a este item (visualmente)
 const isCartPromoAppliedToItem = computed(() => {
-    if (!props.item.promotions || props.item.promotions.length === 0) {
-        return false;
-    }
-    // Verifica si alguna promoción del item está en el set de promociones aplicadas del carrito
+    if (!props.item.promotions || props.item.promotions.length === 0) return false;
     return props.item.promotions.some(p => props.appliedCartPromoNames.has(p.name));
 });
 
-// Determina si mostrar el icono de promoción activo
 const isPromoActive = computed(() => isItemDiscountApplied.value || isCartPromoAppliedToItem.value);
-
-// Check si se está aplicando un precio de mayoreo
 const isTierPriceActive = computed(() => props.item.isTierPrice === true);
 
-// Determina si el usuario puede editar el precio
 const canEditPrice = computed(() => {
-     // Si tiene el permiso general, siempre puede editar
-     if (hasPermission('pos.edit_prices')) {
-        return true;
-     }
-     // Si no tiene permiso general:
-     // - No puede editar si es precio de mayoreo
-     // - Sí puede revertir un precio manual (isEditingPrice sería true)
-     // - No puede editar un precio normal si no tiene permiso
-    return isEditingPrice.value && props.item.isManualPrice; // Permitir cancelar/guardar si ya está editando un precio manual
-
+     if (hasPermission('pos.edit_prices')) return true;
+     return isEditingPrice.value && props.item.isManualPrice; 
 });
 
-// Formateador de moneda
 const formatCurrency = (value) => {
     return new Intl.NumberFormat('es-MX', {
         style: 'currency',
@@ -110,13 +128,11 @@ const formatCurrency = (value) => {
     }).format(value || 0);
 };
 
-// --- Lógica Popover Promociones ---
 const promoPopover = ref();
 const togglePromoPopover = (event) => {
     promoPopover.value.toggle(event);
 };
 
-// Función resumen promoción (sin cambios respecto a la versión anterior)
 const getPromotionSummary = (promo) => {
     switch (promo.type) {
         case 'ITEM_DISCOUNT': {
@@ -131,13 +147,11 @@ const getPromotionSummary = (promo) => {
             const rule = promo.rules.find(r => r.type === 'REQUIRES_PRODUCT_QUANTITY');
             const effect = promo.effects.find(e => e.type === 'FREE_ITEM');
             if (!rule || !effect || !rule.itemable || !effect.itemable) return promo.description || 'Promoción especial.';
-             // Simplificado para el popover
             return `Compra ${rule.value} y llévate ${effect.value} gratis.`;
         }
         case 'BUNDLE_PRICE': {
             const effect = promo.effects.find(e => e.type === 'SET_PRICE');
              if (!effect || promo.rules.length === 0) return promo.description || 'Promoción de paquete.';
-             // Simplificado para el popover
             const productCount = promo.rules.filter(r => r.type === 'REQUIRES_PRODUCT' && r.itemable).length;
             return `Paquete (${productCount} prod.) por ${formatCurrency(effect.value)}.`;
         }
@@ -179,29 +193,24 @@ const confirmRemoveItem = (event, itemId) => {
                     class="!w-24 !h-[2rem]" @keyup.enter="applyPriceChange" @keyup.esc="cancelPriceEdit" />
                 <Button icon="pi pi-check" variant="outlined" rounded size="small" @click="applyPriceChange" class="!size-6" />
                 <Button icon="pi pi-times" variant="outlined" rounded size="small" severity="secondary" @click="cancelPriceEdit" class="!size-6" />
-                 <!-- Indicador si el precio original era de mayoreo -->
                  <StarIcon v-if="isTierPriceActive" class="size-4 text-amber-500 ml-1" v-tooltip.bottom="'Precio original de mayoreo'"/>
             </div>
+            
             <!-- Visualización Normal de Precio -->
             <div v-else class="flex items-center gap-2 mt-1">
-                 <!-- Precio normal (sin descuento ni mayoreo) -->
                  <p v-if="!isItemDiscountApplied && !isTierPriceActive" class="text-sm font-light text-[#373737] dark:text-gray-400 m-0">
                     {{ formatCurrency(item.price) }}
                  </p>
-                 <!-- Precio con descuento o mayoreo -->
                  <div v-else class="flex items-center gap-2">
-                     <!-- Mostrar Original Tachado si hay descuento O es precio de mayoreo y es menor al original -->
                      <del v-if="item.original_price && item.price < item.original_price" class="text-xs text-gray-400">{{ formatCurrency(item.original_price) }}</del>
-                     <!-- Precio Actual -->
                      <p class="text-sm font-bold text-[#373737] dark:text-gray-100 m-0">{{ formatCurrency(item.price) }}</p>
-                     <!-- Icono de Mayoreo -->
                      <StarIcon v-if="isTierPriceActive" class="size-4 text-amber-500" v-tooltip.bottom="'Precio de mayoreo aplicado'"/>
                  </div>
-                 <!-- Botón Editar (ahora con lógica compleja de :disabled) -->
+                 
                  <Button v-if="hasPermission('pos.edit_prices')" @click="isEditingPrice = true" icon="pi pi-pencil"
                     rounded variant="outlined" severity="secondary" class="!size-6" size="small"
                      v-tooltip.bottom="isTierPriceActive ? 'Editar precio (anula mayoreo)' : 'Editar precio'"
-                     :disabled="isTierPriceActive && !props.item.isManualPrice" /> <!-- Deshabilitar si es tier y no manual -->
+                     :disabled="isTierPriceActive && !props.item.isManualPrice" />
                  <span v-else-if="!hasPermission('pos.edit_prices') && isTierPriceActive" v-tooltip.bottom="'Edición deshabilitada para precios de mayoreo'">
                       <Button icon="pi pi-pencil" rounded variant="outlined" severity="secondary" class="!size-6 opacity-50" size="small" disabled />
                  </span>
@@ -224,7 +233,6 @@ const confirmRemoveItem = (event, itemId) => {
 
                 <!-- Icono Promociones y Total de Línea -->
                 <div class="flex items-center gap-1">
-                    <!-- Popover de Promociones -->
                      <div v-if="item.promotions && item.promotions.length > 0">
                         <button @click="togglePromoPopover($event)" v-tooltip.bottom="'Ver promociones disponibles'">
                             <FireIcon class="size-5"
@@ -242,7 +250,6 @@ const confirmRemoveItem = (event, itemId) => {
                             </div>
                         </Popover>
                     </div>
-                     <!-- Total de Línea -->
                     <p class="font-bold text-gray-800 dark:text-gray-100 m-0">
                         {{ formatCurrency(item.price * quantity) }}
                     </p>
@@ -253,5 +260,31 @@ const confirmRemoveItem = (event, itemId) => {
         <Button @click="confirmRemoveItem($event, item.cartItemId)" icon="pi pi-trash" rounded variant="outlined" severity="danger"
             size="small" class="!size-7 !absolute top-1 right-1" />
     </div>
+
+    <!-- Modales Globales del Componente -->
     <ConfirmPopup group="cart-item-delete" />
+
+    <!-- NUEVO DIALOGO: ALCANCE DE EDICIÓN DE PRECIO -->
+    <Dialog v-model:visible="isUpdatePriceModalVisible" modal header="Confirmar cambio de precio" :style="{ width: '25rem' }" @hide="cancelPriceEdit">
+        <p class="text-gray-700 dark:text-gray-300 mb-5 text-sm">
+            Has ingresado un nuevo precio de <strong class="text-primary-600 dark:text-primary-400 text-lg">{{ formatCurrency(pendingPriceChange) }}</strong>. <br><br>
+            ¿Deseas aplicar este precio solo para esta venta o actualizar el catálogo de forma permanente?
+        </p>
+        <div class="flex flex-col gap-2">
+            <Button label="Solo para esta venta" icon="pi pi-receipt" severity="primary" @click="confirmPriceForThisSaleOnly" />
+            
+            <Button 
+                v-if="hasPermission('products.edit')" 
+                label="Actualizar catálogo permanente" 
+                icon="pi pi-database" 
+                severity="info" 
+                outlined 
+                @click="confirmPricePermanent" 
+                :loading="isUpdatingPricePermanent"
+            />
+            
+            <Button label="Cancelar edición" icon="pi pi-times" severity="secondary" text @click="cancelPriceEdit" />
+        </div>
+        <p v-if="!hasPermission('products.edit')" class="text-xs text-gray-500 text-center mt-3 mb-0">No tienes permisos de administrador para actualizar el catálogo.</p>
+    </Dialog>
 </template>

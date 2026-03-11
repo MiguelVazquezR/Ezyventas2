@@ -2,10 +2,10 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
@@ -22,23 +22,19 @@ class Product extends Model implements HasMedia
         'name',
         'description',
         'sku',
-        'location',
         'selling_price',
         'price_tiers',
         'cost_price',
-        'current_stock',
-        'reserved_stock',
-        'min_stock',
-        'max_stock',
         'category_id',
         'provider_id',
         'brand_id',
-        'branch_id',
+        'branch_id', // Sucursal "Propietaria/Creadora"
         'global_product_id',
         'measure_unit',
         'currency',
         'show_online',
         'online_price',
+        'show_in_pos',
         'slug',
         'delivery_days',
         'tags',
@@ -54,8 +50,6 @@ class Product extends Model implements HasMedia
         'requires_shipping',
         'view_count',
         'purchase_count',
-        'created_at',
-        'updated_at',
     ];
 
     protected function casts(): array
@@ -66,10 +60,7 @@ class Product extends Model implements HasMedia
             'cost_price' => 'decimal:2',
             'online_price' => 'decimal:2',
             'sale_price' => 'decimal:2',
-            'current_stock' => 'integer',
-            'reserved_stock' => 'integer',
-            'min_stock' => 'integer',
-            'max_stock' => 'integer',
+            'show_in_pos' => 'boolean',
             'show_online' => 'boolean',
             'is_featured' => 'boolean',
             'is_on_sale' => 'boolean',
@@ -84,19 +75,18 @@ class Product extends Model implements HasMedia
         ];
     }
 
-    protected $appends = ['available_stock'];
+    // protected $appends = ['available_stock'];
 
-    /**
-     * Obtiene el stock disponible para la venta (físico - reservado).
-     */
-    protected function availableStock(): Attribute
-    {
-        return Attribute::make(
-            get: fn() => $this->current_stock - $this->reserved_stock,
-        );
-    }
+    // /**
+    //  * Obtiene el stock disponible para la venta (físico - reservado).
+    //  */
+    // protected function availableStock(): Attribute
+    // {
+    //     return Attribute::make(
+    //         get: fn() => $this->current_stock - $this->reserved_stock,
+    //     );
+    // }
 
-    // Método de configuración para el historial de actividad
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
@@ -104,25 +94,21 @@ class Product extends Model implements HasMedia
                 'name',
                 'description',
                 'sku',
-                'location',
                 'selling_price',
                 'price_tiers',
                 'cost_price',
-                'current_stock',
-                'min_stock',
-                'max_stock',
                 'category_id',
                 'brand_id',
                 'provider_id',
+                'show_in_pos',
                 'show_online',
                 'online_price'
             ])
             ->setDescriptionForEvent(fn(string $eventName) => "El producto ha sido {$this->translateEventName($eventName)}")
-            ->logOnlyDirty() // Solo registrar si los atributos han cambiado
-            ->dontSubmitEmptyLogs(); // No guardar logs si no hay cambios
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs();
     }
 
-    // Helper para traducir el nombre del evento
     private function translateEventName(string $eventName): string
     {
         $translations = [
@@ -135,103 +121,82 @@ class Product extends Model implements HasMedia
 
     public function registerMediaCollections(): void
     {
-        $this->addMediaCollection('product-general-images')
-            // ->singleFile() // Descomentar si solo permites una imagen principal
-            ->withResponsiveImages(); // Opcional: genera conversiones para diferentes tamaños
-
-        $this->addMediaCollection('product-variant-images')
-            ->withResponsiveImages(); // Opcional
+        $this->addMediaCollection('product-general-images')->withResponsiveImages();
+        $this->addMediaCollection('product-variant-images')->withResponsiveImages();
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | RELACIONES
-    |--------------------------------------------------------------------------
-    */
-    /**
-     * Obtiene las promociones asociadas a este producto.
-     * Esto se logra a través de las reglas y efectos polimórficos.
-     */
-    public function promotions(): MorphToMany
+    /* RELACIONES */
+
+    public function promotionRules(): MorphToMany
     {
-        // Esta es una forma avanzada de obtener las promociones
-        // donde este producto está involucrado, ya sea como regla o como efecto.
-        return $this->morphToMany(Promotion::class, 'itemable', 'promotion_rules')
-            ->orWhere(function ($query) {
-                $query->morphToMany(Promotion::class, 'itemable', 'promotion_effects');
-            });
+        return $this->morphToMany(Promotion::class, 'itemable', 'promotion_rules');
+    }
+
+    public function promotionEffects(): MorphToMany
+    {
+        return $this->morphToMany(Promotion::class, 'itemable', 'promotion_effects');
     }
 
     /**
-     * Obtiene el producto global relacionado.
+     * Accesor para obtener ambas promociones (reglas y efectos) combinadas.
+     * Se accederá mágicamente como $product->promotions
      */
+    public function getPromotionsAttribute()
+    {
+        return $this->promotionRules->merge($this->promotionEffects)->unique('id')->values();
+    }
+
     public function globalProduct(): BelongsTo
     {
         return $this->belongsTo(GlobalProduct::class);
     }
 
-    /**
-     * Obtiene la categoría a la que pertenece el producto.
-     */
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
     }
 
-    /**
-     * Obtiene el proveedor del producto.
-     */
     public function provider(): BelongsTo
     {
         return $this->belongsTo(Provider::class);
     }
 
-    /**
-     * Obtiene la marca a la que pertenece el producto.
-     */
     public function brand(): BelongsTo
     {
         return $this->belongsTo(Brand::class);
     }
 
-    /**
-     * Obtiene la sucursal a la que pertenece el producto.
-     */
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
     }
 
-    /**
-     * Obtiene los atributos (variaciones) del producto.
-     */
-    public function attributes(): HasMany
-    {
-        return $this->hasMany(ProductAttribute::class);
-    }
-
-    /**
-     * Obtiene las reseñas del producto.
-     */
     public function reviews(): HasMany
     {
         return $this->hasMany(ProductReview::class);
     }
 
-    /**
-     * Obtiene todas las líneas de transacción para este producto.
-     */
     public function transactionItems(): MorphMany
     {
         return $this->morphMany(TransactionItem::class, 'itemable');
     }
 
-    /**
-     * Obtiene las combinaciones de atributos (variantes) del producto.
-     * ESTA ES LA RELACIÓN QUE FALTABA.
-     */
     public function productAttributes(): HasMany
     {
         return $this->hasMany(ProductAttribute::class);
+    }
+
+    public function branches(): BelongsToMany
+    {
+        return $this->belongsToMany(Branch::class, 'branch_product')
+            ->using(BranchProduct::class)
+            ->withPivot([
+                'current_stock',
+                'reserved_stock',
+                'min_stock',
+                'max_stock',
+                'location'
+            ])
+            ->withTimestamps();
     }
 }

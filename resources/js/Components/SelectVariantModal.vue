@@ -3,6 +3,9 @@ import { ref, computed, watch } from 'vue';
 import InputLabel from './InputLabel.vue';
 import Button from 'primevue/button';
 import Dialog from 'primevue/dialog';
+import InputText from 'primevue/inputtext';
+import IconField from 'primevue/iconfield';
+import InputIcon from 'primevue/inputicon';
 
 const props = defineProps({
     visible: Boolean,
@@ -46,88 +49,139 @@ const allOptionsSelected = computed(() => {
 
 const selectedProductVariant = computed(() => {
     if (!allOptionsSelected.value) return null;
+    
     return props.item.product_attributes.find(pa => {
-        return Object.entries(selectedOptions.value).every(
-            ([key, value]) => pa.attributes[key] === value
-        );
+        return Object.entries(selectedOptions.value).every(([key, value]) => pa.attributes[key] === value);
     });
 });
 
-const showUnavailableMessage = computed(() => {
-    return allOptionsSelected.value && !selectedProductVariant.value;
-});
-
-// --- LÓGICA PARA SERVICIOS ---
-const handleServiceVariantClick = (variant) => {
-    emit('variant-selected', variant);
-    emit('update:visible', false);
+const selectOption = (attributeName, option) => {
+    selectedOptions.value[attributeName] = option;
 };
 
-// --- ACCIONES GENERALES ---
-const confirmSelection = () => {
-    if (props.type === 'product' && selectedProductVariant.value) {
+const handleConfirmProduct = () => {
+    if (selectedProductVariant.value) {
         emit('variant-selected', selectedProductVariant.value);
         emit('update:visible', false);
     }
 };
 
+
+// --- LÓGICA PARA SERVICIOS (OPTIMIZADA) ---
+const variantSearch = ref('');
+const visibleVariantsCount = ref(50); // Límite inicial de renderizado para evitar Lag
+
+// Resetear búsqueda y límite al abrir el modal o cambiar el ítem
+watch(() => props.visible, (newVal) => {
+    if (newVal && props.type === 'service') {
+        variantSearch.value = '';
+        visibleVariantsCount.value = 50;
+    }
+});
+
+// Reiniciar límite al escribir algo en el buscador
+watch(variantSearch, () => {
+    visibleVariantsCount.value = 50;
+});
+
+// Filtra basándose en el input del buscador
+const filteredServiceVariants = computed(() => {
+    if (props.type !== 'service' || !props.item || !props.item.variants) return [];
+    
+    if (!variantSearch.value.trim()) return props.item.variants;
+    
+    const term = variantSearch.value.toLowerCase().trim();
+    return props.item.variants.filter(v => v.name.toLowerCase().includes(term));
+});
+
+// Segmenta la lista para no renderizar miles de botones al mismo tiempo
+const displayedServiceVariants = computed(() => {
+    return filteredServiceVariants.value.slice(0, visibleVariantsCount.value);
+});
+
+const loadMoreVariants = () => {
+    visibleVariantsCount.value += 50;
+};
+
+const handleServiceVariantClick = (variant) => {
+    emit('variant-selected', variant);
+    emit('update:visible', false);
+};
+
 const closeModal = () => {
     emit('update:visible', false);
-    if (props.type === 'product') {
-        selectedOptions.value = {};
-    }
 };
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" modal :header="type === 'product' ? 'Seleccionar opciones' : 'Seleccionar variante de servicio'" :style="{ width: '30rem', maxWidth: '95vw' }">
-        
-        <!-- SELECTOR DE VARIANTES DE PRODUCTO -->
-        <div v-if="type === 'product' && item">
-            <div v-if="availableAttributes.length > 0" class="flex flex-col gap-4">
-                <div v-for="attr in availableAttributes" :key="attr.name">
-                    <InputLabel :value="attr.name" class="mb-2" />
-                    <div class="flex flex-wrap gap-2">
-                        <Button v-for="option in attr.options" :key="option" :label="option" 
-                            :severity="selectedOptions[attr.name] === option ? 'primary' : 'secondary'" 
-                            :outlined="selectedOptions[attr.name] !== option" 
-                            @click="selectedOptions[attr.name] = option" 
-                            size="small" />
-                    </div>
-                </div>
-                
-                <div v-if="selectedProductVariant" class="mt-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg transition-all duration-300">
-                    <p class="font-semibold">Precio de la variante: {{ new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(parseFloat(item.selling_price) + parseFloat(selectedProductVariant.selling_price_modifier)) }}</p>
-                    <p class="text-sm text-gray-500">Stock disponible: {{ selectedProductVariant.current_stock }}</p>
-                </div>
-
-                <div v-if="showUnavailableMessage" class="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 rounded-lg text-sm flex items-start gap-3 transition-all duration-300">
-                    <i class="pi pi-exclamation-triangle mt-1"></i>
-                    <div>
-                        <p class="font-semibold">Combinación no disponible</p>
-                        <p class="mt-1">Para usar esta variante, primero edita el producto y actívala en la sección de "Gestión de variantes".</p>
-                    </div>
-                </div>
-            </div>
-            <div v-else class="text-gray-500 text-sm italic">
-                Este producto no tiene opciones configuradas.
-            </div>
-
-            <div class="flex justify-end gap-2 mt-6">
-                <Button type="button" label="Cancelar" severity="secondary" @click="closeModal"></Button>
-                <Button type="button" label="Confirmar" @click="confirmSelection" :disabled="!selectedProductVariant"></Button>
-            </div>
-        </div>
-
-        <!-- SELECTOR DE VARIANTES DE SERVICIO -->
-        <div v-else-if="type === 'service' && item">
-            <div class="flex flex-col gap-3">
-                <p class="text-gray-600 dark:text-gray-400 text-sm">
-                    El servicio <strong>{{ item.name }}</strong> tiene múltiples opciones. Por favor selecciona una:
+    <Dialog 
+        :visible="visible" 
+        @update:visible="$emit('update:visible', $event)" 
+        modal 
+        :header="type === 'product' ? 'Seleccionar variante de producto' : 'Seleccionar opción de servicio'" 
+        :style="{ width: '35rem' }"
+    >
+        <div class="p-2">
+            
+            <!-- VISTA PARA PRODUCTOS -->
+            <div v-if="type === 'product' && item" class="space-y-6">
+                <p class="text-gray-600 dark:text-gray-300">
+                    El producto <strong>{{ item.name }}</strong> tiene múltiples variantes. Por favor, selecciona las características deseadas:
                 </p>
+
+                <div v-for="attribute in availableAttributes" :key="attribute.name" class="space-y-2">
+                    <InputLabel :value="attribute.name" class="capitalize text-lg" />
+                    <div class="flex flex-wrap gap-2">
+                        <Button 
+                            v-for="option in attribute.options" 
+                            :key="option"
+                            :label="option"
+                            :outlined="selectedOptions[attribute.name] !== option"
+                            :severity="selectedOptions[attribute.name] === option ? 'primary' : 'secondary'"
+                            @click="selectOption(attribute.name, option)"
+                            class="capitalize"
+                        />
+                    </div>
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div v-if="selectedProductVariant" class="mb-4 bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-200 dark:border-green-800">
+                        <p class="font-semibold text-green-800 dark:text-green-200">Variante seleccionada:</p>
+                        <p class="text-sm text-green-700 dark:text-green-300">
+                            Precio modificador: 
+                            <span class="font-bold">
+                                {{ selectedProductVariant.selling_price_modifier > 0 ? '+' : '' }}{{ new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(selectedProductVariant.selling_price_modifier) }}
+                            </span>
+                        </p>
+                    </div>
+                    <div v-else class="mb-4 p-3 text-sm text-yellow-700 bg-yellow-50 rounded-lg">
+                        <i class="pi pi-info-circle mr-2"></i> Por favor selecciona todas las opciones para continuar.
+                    </div>
+                    
+                    <div class="flex justify-end gap-2">
+                        <Button label="Cancelar" severity="secondary" text @click="closeModal" />
+                        <Button label="Confirmar Variante" @click="handleConfirmProduct" :disabled="!allOptionsSelected" />
+                    </div>
+                </div>
+            </div>
+
+            <!-- VISTA PARA SERVICIOS (OPTIMIZADA) -->
+            <div v-if="type === 'service' && item" class="space-y-4 flex flex-col">
+                <p class="text-gray-600 dark:text-gray-300">
+                    El servicio <strong>{{ item.name }}</strong> tiene múltiples opciones ({{ item.variants.length }}). Por favor selecciona una:
+                </p>
+
+                <!-- BUSCADOR INTERNO -->
+                <IconField iconPosition="left" class="w-full" v-if="item.variants && item.variants.length > 5">
+                    <InputIcon class="pi pi-search"></InputIcon>
+                    <InputText v-model="variantSearch" placeholder="Buscar por modelo o característica..." class="w-full" autofocus />
+                </IconField>
+
                 <div class="grid grid-cols-1 gap-2 max-h-96 overflow-y-auto custom-scrollbar pr-1">
+                    
+                    <!-- RENDERIZADO OPTIMIZADO -->
                     <Button 
-                        v-for="variant in item.variants" 
+                        v-for="variant in displayedServiceVariants" 
                         :key="variant.id"
                         @click="handleServiceVariantClick(variant)"
                         severity="secondary" 
@@ -144,6 +198,15 @@ const closeModal = () => {
                             </span>
                         </div>
                     </Button>
+
+                    <!-- ESTADOS VACÍOS Y CARGAR MÁS -->
+                    <div v-if="filteredServiceVariants.length === 0" class="text-center py-6 text-gray-500 italic bg-gray-50 dark:bg-gray-800 rounded">
+                        No se encontró ninguna variante con "{{ variantSearch }}".
+                    </div>
+
+                    <div v-if="filteredServiceVariants.length > visibleVariantsCount" class="text-center mt-2">
+                        <Button label="Cargar más variantes" size="small" text @click="loadMoreVariants" icon="pi pi-refresh" />
+                    </div>
                 </div>
             </div>
         </div>

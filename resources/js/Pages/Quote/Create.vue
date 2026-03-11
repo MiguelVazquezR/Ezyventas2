@@ -77,26 +77,52 @@ watch(() => props.customFieldDefinitions, (newDefs) => {
 const showVariantModal = ref(false);
 const productForVariantSelection = ref(null);
 const itemIndexForVariantSelection = ref(null);
+const variantModalType = ref('product');
 
 const openVariantSelector = (index) => {
     const item = form.items[index];
     let product = null;
+    let type = 'product';
 
     // 1. Si es un Producto base, buscarlo directamente
     if (item.itemable_type === 'App\\Models\\Product') {
         product = props.products.find(p => p.id === item.itemable_id);
+        type = 'product';
     } 
     // 2. Si ya es una Variante (ProductAttribute), buscar el producto padre que contiene esta variante
     else if (item.itemable_type === 'App\\Models\\ProductAttribute') {
-        product = props.products.find(p => p.product_attributes?.some(attr => attr.id === item.itemable_id));
+        product = props.products.find(p => {
+            const variants = p.product_attributes || p.productAttributes || [];
+            return variants.some(attr => attr.id === item.itemable_id);
+        });
+        type = 'product';
+    }
+    // 3. Si es un Servicio base
+    else if (item.itemable_type === 'App\\Models\\Service') {
+        product = props.services.find(s => s.id === item.itemable_id);
+        type = 'service';
+    }
+    // 4. Si ya es una Variante de Servicio
+    else if (item.itemable_type === 'App\\Models\\ServiceVariant') {
+        product = props.services.find(s => {
+            const variants = s.variants || [];
+            return variants.some(v => v.id === item.itemable_id);
+        });
+        type = 'service';
     }
 
     if (product) {
+        // CORRECCIÓN: Garantizar que exista product_attributes (snake_case) para el Modal
+        if (type === 'product' && product.productAttributes && !product.product_attributes) {
+            product.product_attributes = product.productAttributes;
+        }
+
         productForVariantSelection.value = product;
         itemIndexForVariantSelection.value = index;
+        variantModalType.value = type;
         showVariantModal.value = true;
     } else {
-        console.warn("No se pudo encontrar el producto para seleccionar variantes.");
+        console.warn("No se pudo encontrar el producto/servicio para seleccionar variantes.");
     }
 };
 
@@ -104,15 +130,21 @@ const handleVariantSelected = (variant) => {
     if (itemIndexForVariantSelection.value === null || !form.items[itemIndexForVariantSelection.value]) return;
     
     const item = form.items[itemIndexForVariantSelection.value];
-    const product = productForVariantSelection.value;
+    const parentItem = productForVariantSelection.value;
     
-    // El itemable ahora es la VARIANTE
-    item.itemable_id = variant.id;
-    item.itemable_type = 'App\\Models\\ProductAttribute';
-
-    item.variant_details = variant.attributes;
-    item.description = `${product.name} (${Object.values(variant.attributes).join(', ')})`;
-    item.unit_price = (parseFloat(product.selling_price) || 0) + (parseFloat(variant.selling_price_modifier) || 0);
+    if (variantModalType.value === 'product') {
+        item.itemable_id = variant.id;
+        item.itemable_type = 'App\\Models\\ProductAttribute';
+        item.variant_details = variant.attributes;
+        item.description = `${parentItem.name} (${Object.values(variant.attributes).join(', ')})`;
+        item.unit_price = (parseFloat(parentItem.selling_price) || 0) + (parseFloat(variant.selling_price_modifier) || 0);
+    } else if (variantModalType.value === 'service') {
+        item.itemable_id = variant.id;
+        item.itemable_type = 'App\\Models\\ServiceVariant';
+        item.variant_details = { name: variant.name };
+        item.description = `${parentItem.name} - ${variant.name}`;
+        item.unit_price = variant.price !== undefined ? parseFloat(variant.price) : (parseFloat(parentItem.base_price) || 0);
+    }
 };
 
 
@@ -141,14 +173,21 @@ const searchItems = (event) => {
 const canSelectVariant = (item) => {
     if (!item.itemable_id) return false;
     
-    // Si ya es un atributo, por definición tiene variantes (es una de ellas)
     if (item.itemable_type === 'App\\Models\\ProductAttribute') return true;
+    if (item.itemable_type === 'App\\Models\\ServiceVariant') return true;
     
-    // Si es un producto, verificar si tiene atributos configurados
     if (item.itemable_type === 'App\\Models\\Product') {
          const p = props.products.find(p => p.id === item.itemable_id);
-         return p && p.product_attributes && p.product_attributes.length > 0;
+         const variants = p ? (p.product_attributes || p.productAttributes || []) : [];
+         return variants.length > 0;
     }
+
+    if (item.itemable_type === 'App\\Models\\Service') {
+         const s = props.services.find(s => s.id === item.itemable_id);
+         const variants = s ? (s.variants || []) : [];
+         return variants.length > 0;
+    }
+    
     return false;
 };
 
@@ -165,6 +204,8 @@ const addItem = () => {
 
     let triggerVariantModal = false;
     let productForModal = null;
+    let modalType = 'product';
+    
     if (typeof selectedItem.value === 'object' && selectedItem.value !== null) {
         const selected = selectedItem.value;
         itemToAdd = {
@@ -175,9 +216,23 @@ const addItem = () => {
             unit_price: selected.price
         };
 
-        if (selected.itemable_type === 'App\\Models\\Product' && selected.product_attributes && selected.product_attributes.length > 0) {
-            triggerVariantModal = true;
-            productForModal = selected;
+        if (selected.itemable_type === 'App\\Models\\Product') {
+            const variants = selected.product_attributes || selected.productAttributes || [];
+            if (variants.length > 0) {
+                triggerVariantModal = true;
+                if (selected.productAttributes && !selected.product_attributes) {
+                    selected.product_attributes = selected.productAttributes;
+                }
+                productForModal = selected;
+                modalType = 'product';
+            }
+        } else if (selected.itemable_type === 'App\\Models\\Service') {
+            const variants = selected.variants || [];
+            if (variants.length > 0) {
+                triggerVariantModal = true;
+                productForModal = selected;
+                modalType = 'service';
+            }
         }
 
     } else if (typeof selectedItem.value === 'string' && selectedItem.value.trim() !== '') {
@@ -195,6 +250,7 @@ const addItem = () => {
     if (triggerVariantModal) {
         productForVariantSelection.value = productForModal;
         itemIndexForVariantSelection.value = form.items.length - 1;
+        variantModalType.value = modalType;
         showVariantModal.value = true;
     }
 
@@ -364,7 +420,7 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         dropdown>
                         <template #option="slotProps">
                             <div>{{ slotProps.option.name }}
-                                <Tag :value="slotProps.option.type" />
+                                <Tag :value="slotProps.option.type" :severity="slotProps.option.type === 'Servicio' ? 'success' : 'info'" />
                             </div>
                         </template>
                     </AutoComplete>
@@ -372,28 +428,28 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                 </div>
 
                 <DataTable :value="form.items" class="p-datatable-sm">
-                    <template #empty>
-                        <div class="text-center p-4">No se han agregado conceptos.</div>
+                <template #empty>
+                    <div class="text-center p-4">No se han agregado conceptos.</div>
+                </template>
+                <Column header="Tipo" style="width: 15rem">
+                    <template #body="{ data, index }">
+                        <!-- Lógica corregida: Si es ProductAttribute o ServiceVariant, visualmente sigue siendo su padre -->
+                        <SelectButton 
+                            :model-value="['App\\Models\\Product', 'App\\Models\\ProductAttribute'].includes(form.items[index].itemable_type) ? 'App\\Models\\Product' : (['App\\Models\\Service', 'App\\Models\\ServiceVariant'].includes(form.items[index].itemable_type) ? 'App\\Models\\Service' : form.items[index].itemable_type)"
+                            @update:model-value="(val) => form.items[index].itemable_type = val"
+                            :options="itemTypeOptions"
+                            optionLabel="label" 
+                            optionValue="value" 
+                            :allowEmpty="false"
+                            :disabled="data.itemable_id !== 0 && data.itemable_id !== null" 
+                            class="w-full" 
+                        />
                     </template>
-                    <Column header="Tipo" style="width: 15rem">
-                        <template #body="{ data, index }">
-                            <!-- Lógica corregida: Si es ProductAttribute, visualmente sigue siendo 'Producto' -->
-                            <SelectButton 
-                                :model-value="['App\\Models\\Product', 'App\\Models\\ProductAttribute'].includes(form.items[index].itemable_type) ? 'App\\Models\\Product' : form.items[index].itemable_type"
-                                @update:model-value="(val) => form.items[index].itemable_type = val"
-                                :options="itemTypeOptions"
-                                optionLabel="label" 
-                                optionValue="value" 
-                                :allowEmpty="false"
-                                :disabled="data.itemable_id !== 0 && data.itemable_id !== null" 
-                                class="w-full" 
-                            />
-                        </template>
-                    </Column>
-                    <Column field="description" header="Descripción">
+                </Column>
+                <Column field="description" header="Descripción">
                         <template #body="{ data, index }">
                             <InputText v-model="form.items[index].description" fluid class="w-full" />
-                             <!-- Botón para cambiar variante (lógica corregida) -->
+                             <!-- Botón para cambiar variante -->
                             <div v-if="canSelectVariant(data)" class="text-xs text-gray-500 mt-1">
                                 <Button 
                                     @click="openVariantSelector(index)" 
@@ -533,8 +589,13 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
         </form>
 
         <CreateCustomerModal v-model:visible="showCustomerModal" @created="handleNewCustomer" />
-        <SelectVariantModal v-model:visible="showVariantModal" :product="productForVariantSelection"
-            @variant-selected="handleVariantSelected" />
+        
+        <SelectVariantModal 
+            v-model:visible="showVariantModal" 
+            :item="productForVariantSelection"
+            :type="variantModalType"
+            @variant-selected="handleVariantSelected" 
+        />
 
         <ManageCustomFields ref="manageFieldsComponent" module="quotes" :definitions="props.customFieldDefinitions" />
 

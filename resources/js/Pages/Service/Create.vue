@@ -1,20 +1,26 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { useForm, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import ManageCategoriesModal from '@/Components/ManageCategoriesModal.vue';
+import { useConfirm } from "primevue/useconfirm";
 
 const props = defineProps({
     categories: Array,
     current_branch_id: Number,
     branches: Array,
-    serviceLimitReached: Boolean, // AÑADIDO: Prop para saber si llegó al límite
+    serviceLimitReached: Boolean,
 });
+
+const confirm = useConfirm();
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([{ label: 'Catálogo de Servicios', url: route('services.index') }, { label: 'Crear Servicio' }]);
+
+// Generamos un ID local para que Vue no pierda el foco al escribir en los inputs paginados
+let localIdCounter = 0;
 
 const form = useForm({
     name: '',
@@ -29,6 +35,7 @@ const form = useForm({
     variants: [],
 });
 
+// --- LÓGICA DE CATEGORÍAS ---
 const localCategories = ref([...props.categories]);
 const showCategoryModal = ref(false);
 
@@ -51,6 +58,32 @@ const handleCategoryDelete = (deletedCategoryId) => {
     }
 };
 
+// --- OPTIMIZACIÓN DE RENDERIZADO (BÚSQUEDA Y PAGINACIÓN) ---
+const variantSearch = ref('');
+const first = ref(0);
+const rows = ref(10);
+
+const filteredVariants = computed(() => {
+    if (!variantSearch.value.trim()) return form.variants;
+    const term = variantSearch.value.toLowerCase().trim();
+    return form.variants.filter(v => v.name.toLowerCase().includes(term));
+});
+
+const paginatedVariants = computed(() => {
+    return filteredVariants.value.slice(first.value, first.value + rows.value);
+});
+
+const onPage = (event) => {
+    first.value = event.first;
+    rows.value = event.rows;
+};
+
+// Si busca algo, regresamos a la primera página
+watch(variantSearch, () => {
+    first.value = 0;
+});
+
+// Activar variantes por defecto si cambia el switch
 watch(() => form.has_variants, (newVal) => {
     if (newVal && form.variants.length === 0) {
         addVariant();
@@ -58,18 +91,36 @@ watch(() => form.has_variants, (newVal) => {
 });
 
 const addVariant = () => {
-    form.variants.push({
+    form.variants.unshift({ // Añadimos al inicio para que el usuario lo vea de inmediato
+        _localId: `new_${localIdCounter++}`,
         name: '',
         price: null,
         duration_estimate: ''
     });
+    // Limpiamos búsqueda y mandamos a la primera página
+    variantSearch.value = '';
+    first.value = 0;
 };
 
-const removeVariant = (index) => {
-    form.variants.splice(index, 1);
-    if (form.variants.length === 0) {
-        form.has_variants = false;
-    }
+const confirmRemoveVariant = (event, variant) => {
+    confirm.require({
+        group: 'confirm-remove-variant',
+        target: event.currentTarget,
+        message: '¿Estás seguro de eliminar esta variante?',
+        icon: 'pi pi-exclamation-triangle',
+        acceptClass: 'p-button-danger',
+        acceptLabel: 'Sí, eliminar',
+        rejectLabel: 'No',
+        accept: () => {
+            const idx = form.variants.indexOf(variant);
+            if (idx !== -1) {
+                form.variants.splice(idx, 1);
+                if (form.variants.length === 0) {
+                    form.has_variants = false;
+                }
+            }
+        }
+    });
 };
 
 const submit = () => {
@@ -80,7 +131,11 @@ const submit = () => {
         form.variants = [];
     }
 
-    form.post(route('services.store'));
+    // Transformamos para quitar el _localId antes de mandarlo al servidor
+    form.transform((data) => ({
+        ...data,
+        variants: data.variants.map(({ _localId, ...rest }) => rest)
+    })).post(route('services.store'));
 };
 </script>
 
@@ -95,7 +150,7 @@ const submit = () => {
         <div v-if="serviceLimitReached" class="mt-6 max-w-3xl mx-auto bg-white dark:bg-gray-800 p-8 rounded-lg shadow-md text-center">
             <div class="mb-6 flex justify-center">
                 <div class="bg-gray-100 dark:bg-gray-700 w-24 h-24 rounded-full flex items-center justify-center">
-                    <i class="pi pi-lock !text-5xl text-gray-400 dark:text-gray-500"></i>
+                    <i class="pi pi-lock text-5xl text-gray-400 dark:text-gray-500"></i>
                 </div>
             </div>
             <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-3">Límite de servicios alcanzado</h2>
@@ -123,7 +178,7 @@ const submit = () => {
                     <InputError :message="form.errors.name" class="mt-2" />
                 </div>
 
-                <div>
+                <div class="md:col-span-2">
                     <InputLabel for="branch_ids" value="Disponible en sucursales:" />
                     <MultiSelect id="branch_ids" v-model="form.branch_ids" :options="branches" optionLabel="name"
                         optionValue="id" placeholder="Selecciona las sucursales" class="w-full mt-1" display="chip" />
@@ -179,45 +234,77 @@ const submit = () => {
                     </div>
                 </template>
 
-                <!-- SECCIÓN: CON VARIANTES (Precios Dinámicos) -->
-                <div v-else
-                    class="md:col-span-2 bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border dark:border-gray-700">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="font-bold text-gray-700 dark:text-gray-200">Variantes del Servicio</h3>
-                        <Button @click="addVariant" label="Añadir variante" icon="pi pi-plus" size="small"
-                            severity="secondary" outlined />
+                <!-- SECCIÓN: CON VARIANTES (OPTIMIZADA CON PAGINACIÓN) -->
+                <div v-else class="md:col-span-2 bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border dark:border-gray-700">
+                    
+                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4">
+                        <h6 class="font-bold text-gray-700 dark:text-gray-200 m-0">Variantes del servicio ({{ filteredVariants.length }})</h6>
+                        
+                        <div class="flex items-center gap-2 w-full sm:w-auto">
+                            <IconField iconPosition="left" class="w-full sm:w-auto">
+                                <InputIcon class="pi pi-search"></InputIcon>
+                                <InputText v-model="variantSearch" placeholder="Buscar variante/modelo..." class="w-60 bg-white dark:bg-gray-800" />
+                            </IconField>
+                            <Button @click="addVariant" label="Añadir" icon="pi pi-plus" severity="secondary" outlined />
+                        </div>
                     </div>
 
+                    <!-- Paginador Superior (Solo si hay más de una página) -->
+                    <Paginator 
+                        v-if="filteredVariants.length > rows" 
+                        :rows="rows" 
+                        :totalRecords="filteredVariants.length" 
+                        :first="first" 
+                        @page="onPage" 
+                        :rowsPerPageOptions="[10, 25, 50, 100]" 
+                        class="mb-2 !bg-transparent" 
+                    />
+
                     <div class="flex flex-col gap-3">
-                        <div v-for="(variant, index) in form.variants" :key="index"
+                        <div v-if="filteredVariants.length === 0" class="text-center py-6 text-gray-500 italic">
+                            No se encontraron variantes que coincidan con la búsqueda.
+                        </div>
+
+                        <div v-for="variant in paginatedVariants" :key="variant._localId"
                             class="flex flex-col md:flex-row gap-2 items-start md:items-center bg-white dark:bg-gray-800 p-3 rounded shadow-sm border dark:border-gray-700">
                             <div class="w-full md:w-5/12">
                                 <InputLabel :value="'Nombre de la Variante *'" class="text-xs !mb-1 md:hidden" />
-                                <InputText v-model="variant.name" placeholder="Ej: iPhone 11 - OLED"
-                                    class="w-full text-sm" required />
-                                <InputError :message="form.errors[`variants.${index}.name`]" class="mt-1" />
+                                <InputText v-model="variant.name" placeholder="Ej: iPhone 11 - OLED" class="w-full text-sm" required />
+                                <!-- Obtenemos el index real en todo momento para asignar correctamente los errores backend -->
+                                <InputError :message="form.errors[`variants.${form.variants.indexOf(variant)}.name`]" class="mt-1" />
                             </div>
 
                             <div class="w-full md:w-3/12">
                                 <InputLabel :value="'Precio *'" class="text-xs !mb-1 md:hidden" />
                                 <InputNumber v-model="variant.price" mode="currency" currency="MXN" locale="es-MX"
                                     placeholder="$0.00" class="w-full text-sm" inputClass="!w-full" required />
-                                <InputError :message="form.errors[`variants.${index}.price`]" class="mt-1" />
+                                <InputError :message="form.errors[`variants.${form.variants.indexOf(variant)}.price`]" class="mt-1" />
                             </div>
 
                             <div class="w-full md:w-3/12">
                                 <InputLabel :value="'Duración (Opcional)'" class="text-xs !mb-1 md:hidden" />
-                                <InputText v-model="variant.duration_estimate" placeholder="Ej: 2 hrs"
-                                    class="w-full text-sm" />
+                                <InputText v-model="variant.duration_estimate" placeholder="Ej: 2 hrs" class="w-full text-sm" />
                             </div>
 
                             <div class="w-full md:w-1/12 flex justify-end">
-                                <Button icon="pi pi-trash" severity="danger" text rounded @click="removeVariant(index)"
-                                    v-tooltip.top="'Eliminar'" />
+                                <Button icon="pi pi-trash" severity="danger" text rounded @click="confirmRemoveVariant($event, variant)"
+                                    v-tooltip.top="'Eliminar variante'" />
                             </div>
                         </div>
                     </div>
+                    
                     <InputError :message="form.errors.variants" class="mt-2" />
+
+                    <!-- Paginador Inferior -->
+                    <Paginator 
+                        v-if="filteredVariants.length > rows && paginatedVariants.length > 5" 
+                        :rows="rows" 
+                        :totalRecords="filteredVariants.length" 
+                        :first="first" 
+                        @page="onPage" 
+                        :rowsPerPageOptions="[10, 25, 50, 100]" 
+                        class="mt-2 !bg-transparent" 
+                    />
                 </div>
 
                 <!-- Imagen -->
@@ -240,5 +327,8 @@ const submit = () => {
 
         <ManageCategoriesModal v-model:visible="showCategoryModal" categoryType="service" @created="handleNewCategory"
             @updated="handleCategoryUpdate" @deleted="handleCategoryDelete" />
+
+        <!-- ConfirmPopup para eliminar variantes de manera segura -->
+        <ConfirmPopup group="confirm-remove-variant"></ConfirmPopup>
     </AppLayout>
 </template>

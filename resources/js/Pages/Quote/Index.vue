@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { Head, router, Link } from '@inertiajs/vue3'; // <-- Importar Link
+import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
@@ -19,7 +19,11 @@ const searchTerm = ref(props.filters.search || '');
 const headerMenu = ref();
 const menu = ref();
 const selectedQuoteForMenu = ref(null);
-const expandedRows = ref({}); 
+const expandedRows = ref({});
+
+// --- Estado para el Drawer ---
+const isDrawerVisible = ref(false);
+const selectedQuoteForDrawer = ref(null);
 
 const toggleHeaderMenu = (event) => {
     headerMenu.value.toggle(event);
@@ -41,6 +45,9 @@ const deleteSingleQuote = () => {
                 preserveScroll: true,
                 onSuccess: () => {
                     selectedQuotes.value = selectedQuotes.value.filter(q => q.id !== selectedQuoteForMenu.value.id);
+                    if (selectedQuoteForDrawer.value?.id === selectedQuoteForMenu.value.id) {
+                        isDrawerVisible.value = false;
+                    }
                 }
             });
         }
@@ -56,7 +63,11 @@ const deleteSelectedQuotes = () => {
         accept: () => {
             const idsToDelete = selectedQuotes.value.map(q => q.id);
             router.post(route('quotes.batchDestroy'), { ids: idsToDelete }, {
-                onSuccess: () => selectedQuotes.value = [],
+                onSuccess: () => {
+                    selectedQuotes.value = [];
+                    isDrawerVisible.value = false;
+                },
+                preserveScroll: true,
             });
         }
     });
@@ -73,7 +84,10 @@ const convertToSale = () => {
         accept: () => {
             router.post(route('quotes.convertToSale', selectedQuoteForMenu.value.id), {}, {
                 preserveScroll: true,
-                onSuccess: () => selectedQuoteForMenu.value = null,
+                onSuccess: () => {
+                    selectedQuoteForMenu.value = null;
+                    isDrawerVisible.value = false;
+                },
             });
         }
     });
@@ -91,7 +105,10 @@ const cancelSale = () => {
                 status: 'cancelada'
             }, {
                 preserveScroll: true,
-                onSuccess: () => selectedQuoteForMenu.value = null,
+                onSuccess: () => {
+                    selectedQuoteForMenu.value = null;
+                    isDrawerVisible.value = false;
+                },
             });
         }
     });
@@ -107,32 +124,32 @@ const toggleMenu = (event, data) => {
     const items = [];
 
     // Acción: Ver
-    items.push({ 
-        label: 'Ver', 
-        icon: 'pi pi-eye', 
-        command: () => router.get(route('quotes.show', quote.id)), 
-        visible: hasPermission('quotes.see_details') 
+    items.push({
+        label: 'Ver detalles',
+        icon: 'pi pi-eye',
+        command: () => router.get(route('quotes.show', quote.id)),
+        visible: hasPermission('quotes.see_details')
     });
 
     // Acción: Editar
     const canEdit = ['borrador', 'enviado', 'autorizada'].includes(quote.status);
     if (canEdit) {
-        items.push({ 
-            label: 'Editar cotización', 
-            icon: 'pi pi-pencil', 
-            command: () => router.get(route('quotes.edit', quote.id)), 
-            visible: hasPermission('quotes.edit') 
+        items.push({
+            label: 'Editar cotización',
+            icon: 'pi pi-pencil',
+            command: () => router.get(route('quotes.edit', quote.id)),
+            visible: hasPermission('quotes.edit')
         });
     }
 
     // Acción: Convertir a Venta
     const canConvertToSale = (quote.status === 'autorizada' && !quote.transaction_id);
     if (canConvertToSale) {
-        items.push({ 
-            label: 'Convertir a venta', 
+        items.push({
+            label: 'Convertir a venta',
             icon: 'pi pi-dollar',
             command: convertToSale,
-            visible: hasPermission('quotes.create_sale') 
+            visible: hasPermission('quotes.create_sale')
         });
     }
 
@@ -142,9 +159,9 @@ const toggleMenu = (event, data) => {
         items.push({
             label: 'Cancelar venta',
             icon: 'pi pi-times-circle',
-            class: 'text-orange-500', 
+            class: 'text-orange-500',
             command: cancelSale,
-            visible: hasPermission('quotes.change_status') 
+            visible: hasPermission('quotes.change_status')
         });
     }
 
@@ -153,15 +170,15 @@ const toggleMenu = (event, data) => {
     // Acción: Eliminar
     const canDelete = (quote.status !== 'venta_generada');
     if (canDelete) {
-        items.push({ 
-            label: 'Eliminar', 
-            icon: 'pi pi-trash', 
-            class: 'text-red-500', 
-            command: deleteSingleQuote, 
-            visible: hasPermission('quotes.delete') 
+        items.push({
+            label: 'Eliminar',
+            icon: 'pi pi-trash',
+            class: 'text-red-500',
+            command: deleteSingleQuote,
+            visible: hasPermission('quotes.delete')
         });
     }
-    
+
     menuItems.value = items;
     menu.value.toggle(event);
 };
@@ -183,14 +200,14 @@ const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: eve
 watch(searchTerm, () => fetchData());
 
 const getStatusSeverity = (status) => {
-    const map = { 
-        borrador: 'secondary', 
-        enviado: 'info', 
-        autorizada: 'success', 
-        rechazada: 'danger', 
-        venta_generada: 'success', 
+    const map = {
+        borrador: 'secondary',
+        enviado: 'info',
+        autorizada: 'success',
+        rechazada: 'danger',
+        venta_generada: 'success',
         expirada: 'warning',
-        cancelada: 'danger' 
+        cancelada: 'danger'
     };
     return map[status] || 'secondary';
 };
@@ -199,10 +216,21 @@ const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
     const userTimezoneOffset = date.getTimezoneOffset() * 60000;
-    return new Date(date.getTime() + userTimezoneOffset).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+    return new Date(date.getTime() + userTimezoneOffset).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+
+const onRowClick = (event) => {
+    const target = event.originalEvent.target;
+    // Evitar abrir el drawer si se hace clic en botones, checkboxes o el icono para expandir filas
+    if (target.closest('button') || target.closest('.p-button') || target.closest('.p-checkbox') || target.closest('.p-row-toggler')) {
+        return;
+    }
+    
+    selectedQuoteForDrawer.value = event.data;
+    isDrawerVisible.value = true;
+};
 </script>
 
 <template>
@@ -235,8 +263,8 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     class="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700 rounded-lg p-2 mb-4 flex justify-between items-center">
                     <span class="font-semibold text-sm text-[#373737] dark:text-gray-200">{{ selectedQuotes.length }}
                         cotización(es) seleccionada(s)</span>
-                    <Button v-if="hasPermission('quotes.delete')" @click="deleteSelectedQuotes" label="Eliminar" icon="pi pi-trash" size="small"
-                        severity="danger" outlined />
+                    <Button v-if="hasPermission('quotes.delete')" @click="deleteSelectedQuotes" label="Eliminar"
+                        icon="pi pi-trash" size="small" severity="danger" outlined />
                 </div>
 
                 <!-- Tabla de Cotizaciones -->
@@ -245,33 +273,33 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                     dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 60rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} cotizaciones"
-                    v-model:expandedRows="expandedRows" 
-                    >
+                    v-model:expandedRows="expandedRows" rowHover @row-click="onRowClick" class="cursor-pointer">
+                    
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
-                    
+
                     <Column expander headerStyle="width: 3rem" />
-                    
+
                     <Column field="folio" header="Folio" sortable>
                         <template #body="{ data }">
-                            {{ data.folio }}
-                            <Tag v-if="data.versions && data.versions.length > 0" :value="`+${data.versions.length} ${data.versions.length > 1 ? 'versiones' : 'versión'}`" class="ml-2" size="small" severity="contrast" />
+                            <span class="font-semibold">{{ data.folio }}</span>
+                            <Tag v-if="data.versions && data.versions.length > 0"
+                                :value="`+${data.versions.length} ${data.versions.length > 1 ? 'versiones' : 'versión'}`"
+                                class="ml-2" size="small" severity="contrast" />
                         </template>
                     </Column>
-                    
+
                     <!-- COLUMNA CLIENTE ACTUALIZADA -->
                     <Column field="customer.name" header="Cliente" sortable>
                         <template #body="{ data }">
                             <div v-if="data.customer">
                                 <!-- Nombre del cliente relacionado (Clickable) -->
-                                <Link 
-                                    :href="route('customers.show', data.customer.id)" 
-                                    class="font-medium text-primary dark:text-orange-300 hover:underline"
-                                    @click.stop
-                                >
+                                <Link :href="route('customers.show', data.customer.id)"
+                                    class="font-medium text-primary dark:text-orange-300 hover:underline" @click.stop>
                                     {{ data.customer.name }}
                                 </Link>
                                 <!-- Nombre del destinatario si es diferente -->
-                                <div v-if="data.recipient_name && data.recipient_name !== data.customer.name" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                <div v-if="data.recipient_name && data.recipient_name !== data.customer.name"
+                                    class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                                     Dirigido a: {{ data.recipient_name }}
                                 </div>
                             </div>
@@ -282,7 +310,7 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         </template>
                     </Column>
 
-                    <Column field="expiry_date" header="Fecha de expiración" sortable>
+                    <Column field="expiry_date" header="Vencimiento" sortable>
                         <template #body="{ data }"> {{ formatDate(data.expiry_date) }} </template>
                     </Column>
                     <Column field="status" header="Estatus" sortable>
@@ -292,33 +320,43 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                         </template>
                     </Column>
                     <Column field="total_amount" header="Total" sortable>
-                        <template #body="{ data }"> {{ formatCurrency(data.total_amount) }} </template>
+                        <template #body="{ data }">
+                            <span class="font-mono font-medium">{{ formatCurrency(data.total_amount) }}</span>
+                        </template>
                     </Column>
                     <Column headerStyle="width: 5rem; text-align: center">
-                        <template #body="{ data }"> <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
-                                text rounded severity="secondary" /> </template>
+                        <template #body="{ data }"> 
+                            <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded severity="secondary" /> 
+                        </template>
                     </Column>
+                    <template #empty>
+                        <div class="text-center py-4">No hay cotizaciones registradas.</div>
+                    </template>
 
                     <!-- Template de expansión (la sub-tabla) -->
                     <template #expansion="{ data }">
-                        <div v-if="data.versions && data.versions.length > 0" class="p-3 sm:p-4 bg-gray-50 dark:bg-gray-900/50">
-                            <h4 class="font-bold text-sm mb-2 text-gray-700 dark:text-gray-300">Versiones de {{ data.folio }}</h4>
-                            <DataTable :value="data.versions" class="p-datatable-sm" size="small">
+                        <div v-if="data.versions && data.versions.length > 0"
+                            class="p-3 sm:p-4 bg-gray-50 dark:bg-gray-900/50">
+                            <h4 class="font-bold text-sm mb-2 text-gray-700 dark:text-gray-300">Versiones de {{
+                                data.folio }}</h4>
+                            <DataTable :value="data.versions" class="p-datatable-sm" size="small" @row-click.stop>
                                 <Column field="folio" header="Versión Folio" style="width: 10rem"></Column>
                                 <Column field="customer.name" header="Cliente"></Column>
                                 <Column field="status" header="Estatus" style="width: 10rem">
                                     <template #body="{ data: version }">
-                                        <Tag :value="version.status.replace('_', ' ')" :severity="getStatusSeverity(version.status)" class="capitalize" />
+                                        <Tag :value="version.status.replace('_', ' ')"
+                                            :severity="getStatusSeverity(version.status)" class="capitalize" />
                                     </template>
                                 </Column>
                                 <Column field="total_amount" header="Total" style="width: 10rem" class="text-right">
                                     <template #body="{ data: version }">
-                                        {{ formatCurrency(version.total_amount) }}
+                                        <span class="font-mono">{{ formatCurrency(version.total_amount) }}</span>
                                     </template>
                                 </Column>
                                 <Column header="Acción" style="width: 5rem" align="center">
                                     <template #body="{ data: version }">
-                                        <Button @click="router.get(route('quotes.show', version.id))" icon="pi pi-eye" text rounded severity="secondary" v-tooltip.top="'Ver detalles'" />
+                                        <Button @click.stop="router.get(route('quotes.show', version.id))" icon="pi pi-eye"
+                                            text rounded severity="secondary" v-tooltip.top="'Ver detalles'" />
                                     </template>
                                 </Column>
                             </DataTable>
@@ -331,9 +369,117 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 
                 </DataTable>
 
-                <!-- El menú ahora se alimenta de 'menuItems' que se genera dinámicamente -->
                 <Menu ref="menu" :model="menuItems" :popup="true" />
             </div>
         </div>
+
+        <!-- Drawer de Detalles de Cotización -->
+        <Drawer v-model:visible="isDrawerVisible" position="right" class="w-full md:!w-[30rem]">
+            <template #header>
+                <div class="flex items-center gap-2">
+                    <i class="pi pi-file text-xl text-gray-600 dark:text-gray-300"></i>
+                    <span class="font-bold text-xl text-gray-800 dark:text-gray-100">Detalles de Cotización</span>
+                </div>
+            </template>
+            
+            <div v-if="selectedQuoteForDrawer" class="flex flex-col h-full pt-4">
+                <div class="flex-grow space-y-6 overflow-y-auto pr-2 pb-6">
+                    
+                    <!-- Header Información Principal -->
+                    <div class="flex justify-between items-start border-b border-gray-200 dark:border-gray-700 pb-4">
+                        <div>
+                            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100 m-0">{{ selectedQuoteForDrawer.folio }}</h2>
+                            <p class="text-sm text-gray-500 mt-1 m-0">Creada: {{ formatDate(selectedQuoteForDrawer.created_at) }}</p>
+                        </div>
+                        <Tag 
+                            :value="selectedQuoteForDrawer.status.replace('_', ' ')" 
+                            :severity="getStatusSeverity(selectedQuoteForDrawer.status)" 
+                            class="capitalize !text-sm" 
+                        />
+                    </div>
+
+                    <!-- Datos del Cliente -->
+                    <div class="space-y-3 bg-gray-50 dark:bg-gray-800/60 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+                        <h3 class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider m-0">Información del Cliente</h3>
+                        
+                        <div class="flex items-start gap-3">
+                            <div class="mt-1 bg-white dark:bg-gray-700 p-1.5 rounded-md shadow-sm border border-gray-100 dark:border-gray-600">
+                                <i class="pi pi-user text-gray-500 dark:text-gray-400"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm font-semibold text-gray-800 dark:text-gray-200 m-0">
+                                    {{ selectedQuoteForDrawer.customer ? selectedQuoteForDrawer.customer.name : (selectedQuoteForDrawer.recipient_name || 'No especificado') }}
+                                </p>
+                                <span class="text-xs text-gray-500">Cliente / Destinatario</span>
+                            </div>
+                        </div>
+
+                        <div v-if="selectedQuoteForDrawer.expiry_date" class="flex items-start gap-3 mt-2">
+                            <div class="mt-1 bg-white dark:bg-gray-700 p-1.5 rounded-md shadow-sm border border-gray-100 dark:border-gray-600">
+                                <i class="pi pi-calendar text-gray-500 dark:text-gray-400"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-800 dark:text-gray-200 m-0">
+                                    {{ formatDate(selectedQuoteForDrawer.expiry_date) }}
+                                </p>
+                                <span class="text-xs text-gray-500">Fecha de vencimiento</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Desglose Financiero -->
+                    <div class="space-y-3 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800/40">
+                        <h3 class="text-xs font-bold text-blue-800 dark:text-blue-300 uppercase tracking-wider mb-3 m-0">Desglose Financiero</h3>
+                        
+                        <div class="flex justify-between items-center text-sm text-gray-600 dark:text-gray-300">
+                            <span>Subtotal</span>
+                            <span class="font-mono">{{ formatCurrency(selectedQuoteForDrawer.subtotal) }}</span>
+                        </div>
+                        
+                        <div v-if="selectedQuoteForDrawer.total_discount > 0" class="flex justify-between items-center text-sm text-red-500 dark:text-red-400">
+                            <span>Descuento</span>
+                            <span class="font-mono">- {{ formatCurrency(selectedQuoteForDrawer.total_discount) }}</span>
+                        </div>
+
+                        <div v-if="selectedQuoteForDrawer.total_tax > 0" class="flex justify-between items-center text-sm text-gray-600 dark:text-gray-300">
+                            <span>Impuestos</span>
+                            <span class="font-mono">+ {{ formatCurrency(selectedQuoteForDrawer.total_tax) }}</span>
+                        </div>
+
+                        <div v-if="selectedQuoteForDrawer.shipping_cost > 0" class="flex justify-between items-center text-sm text-gray-600 dark:text-gray-300">
+                            <span>Envío / Visita</span>
+                            <span class="font-mono">+ {{ formatCurrency(selectedQuoteForDrawer.shipping_cost) }}</span>
+                        </div>
+
+                        <div class="flex justify-between items-center border-t border-blue-200 dark:border-blue-800/60 pt-3 mt-2">
+                            <span class="font-bold text-gray-800 dark:text-gray-200">Total</span>
+                            <span class="font-mono font-bold text-xl text-blue-700 dark:text-blue-400">
+                                {{ formatCurrency(selectedQuoteForDrawer.total_amount) }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Acciones Rápidas (Footer) -->
+                <div class="mt-auto pt-4 border-t dark:border-gray-700 flex flex-col gap-2 bg-white dark:bg-gray-800">
+                    <Button 
+                        v-if="hasPermission('quotes.see_details')" 
+                        label="Ver documento completo" 
+                        icon="pi pi-file" 
+                        class="w-full" 
+                        @click="router.visit(route('quotes.show', selectedQuoteForDrawer.id))" 
+                    />
+                    <Button 
+                        v-if="hasPermission('quotes.edit') && ['borrador', 'enviado', 'autorizada'].includes(selectedQuoteForDrawer.status)" 
+                        label="Editar cotización" 
+                        icon="pi pi-pencil" 
+                        severity="secondary" 
+                        outlined 
+                        class="w-full" 
+                        @click="router.visit(route('quotes.edit', selectedQuoteForDrawer.id))" 
+                    />
+                </div>
+            </div>
+        </Drawer>
     </AppLayout>
 </template>

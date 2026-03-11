@@ -16,6 +16,7 @@ use App\Models\ProductAttribute;
 use App\Models\Quote;
 use App\Models\Service;
 use App\Models\Transaction;
+use App\Services\ActivityLogService;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -125,8 +126,6 @@ class QuoteController extends Controller implements HasMiddleware
             $quote->update($validatedData);
 
             // --- Registro manual de cambio en items ---
-            // Como borramos y recreamos items, Spatie no detecta cambios en el modelo padre Quote automáticamente.
-            // Agregamos un log manual para indicar que los conceptos cambiaron.
             if (count($validatedData['items']) > 0 || $quote->items()->count() > 0) {
                  activity()
                     ->performedOn($quote)
@@ -144,14 +143,13 @@ class QuoteController extends Controller implements HasMiddleware
         return redirect()->route('quotes.index')->with('success', 'Cotización actualizada con éxito.');
     }
 
-    public function show(Quote $quote): Response
+    public function show(Request $request, Quote $quote, ActivityLogService $activityLogService): Response
     {
         $quote->load([
             'customer', 
             'user', 
             'parent.versions', 
             'versions', 
-            'activities.causer',
             'items.itemable' => function (MorphTo $morphTo) {
                 $morphTo->morphWith([
                     Product::class => ['media'],
@@ -161,42 +159,8 @@ class QuoteController extends Controller implements HasMiddleware
             }
         ]);
 
-        $translations = config('log_translations.Quote', []);
-        
-        // --- CORRECCIÓN: Lógica robusta para formatear actividades ---
-        $formattedActivities = $quote->activities->map(function ($activity) use ($translations) {
-            $changes = ['before' => [], 'after' => []];
-            
-            $oldProps = $activity->properties->get('old', []);
-            $newProps = $activity->properties->get('attributes', []);
-
-            if (is_array($oldProps)) {
-                foreach ($oldProps as $key => $value) {
-                    $changes['before'][($translations[$key] ?? $key)] = $value;
-                }
-            }
-            if (is_array($newProps)) {
-                foreach ($newProps as $key => $value) {
-                    if (!array_key_exists($key, $oldProps) || $oldProps[$key] !== $value) {
-                        $changes['after'][($translations[$key] ?? $key)] = $value;
-                    }
-                }
-            }
-            
-            $changes['before'] = array_intersect_key($changes['before'], $changes['after']);
-
-            return [
-                'id' => $activity->id,
-                'description' => $activity->description,
-                'event' => $activity->event,
-                'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
-                'timestamp' => $activity->created_at->diffForHumans(),
-                // Asegurar estructura consistente para el frontend
-                'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
-            ];
-        })
-        ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes']))
-        ->values(); // Reindexar para garantizar Array en JSON
+        // Llamamos al servicio con el parámetro true para "strictChanges"
+        $formattedActivities = $activityLogService->getFormattedActivities($quote, $request, 'Quote', true);
 
         $subscriptionId = Auth::user()->branch->subscription_id;
         $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
@@ -247,14 +211,10 @@ class QuoteController extends Controller implements HasMiddleware
                 $transaction = $quote->transaction;
 
                 if ($transaction && $transaction->status !== TransactionStatus::CANCELLED && $transaction->status !== TransactionStatus::REFUNDED) {
+                    
+                    // ACTUALIZACIÓN MULTI-SUCURSAL: Devolvemos stock usando la tabla pivot correspondiente
                     foreach ($quote->items as $item) {
-                        if ($item->itemable_type == Product::class) {
-                            $product = Product::find($item->itemable_id);
-                            if ($product) $product->increment('current_stock', $item->quantity);
-                        } elseif ($item->itemable_type == ProductAttribute::class) {
-                            $variant = ProductAttribute::find($item->itemable_id);
-                            if ($variant) $variant->increment('current_stock', $item->quantity);
-                        }
+                        $this->returnStock($item->itemable_type, $item->itemable_id, $item->quantity, $quote->branch_id);
                     }
 
                     $totalPaid = $transaction->payments->sum('amount');
@@ -392,8 +352,32 @@ class QuoteController extends Controller implements HasMiddleware
 
         return [
             'customers' => Customer::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))->get(['id', 'name']),
-            'products' => Product::where('branch_id', $user->branch_id)->with('productAttributes')->get(),
-            'services' => Service::where('branch_id', $user->branch_id)->get(['id', 'name', 'base_price']),
+            
+            // ACTUALIZACIÓN MULTI-SUCURSAL: Traemos productos mapeando stock desde la pivot
+            'products' => Product::whereHas('branches', function ($q) use ($user) {
+                $q->where('branches.id', $user->branch_id);
+            })
+            ->with(['productAttributes.branches', 'branches'])
+            ->get()
+            ->map(function ($p) use ($user) {
+                $branchPivot = $p->branches->where('id', $user->branch_id)->first()?->pivot;
+                $p->current_stock = $branchPivot ? $branchPivot->current_stock : 0;
+                
+                if ($p->productAttributes) {
+                    $p->productAttributes->transform(function ($v) use ($user) {
+                        $vPivot = $v->branches->where('id', $user->branch_id)->first()?->pivot;
+                        $v->current_stock = $vPivot ? $vPivot->current_stock : 0;
+                        return $v;
+                    });
+                }
+                return $p;
+            }),
+
+            // ACTUALIZACIÓN MULTI-SUCURSAL: Traemos servicios compartidos con esta sucursal y sus variantes
+            'services' => Service::whereHas('branches', function ($q) use ($user) {
+                $q->where('branches.id', $user->branch_id);
+            })->with('variants')->get(),
+            
             'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'quotes')->get(),
         ];
     }
@@ -429,13 +413,8 @@ class QuoteController extends Controller implements HasMiddleware
                     'line_total' => $quoteItem->line_total,
                 ]);
 
-                if ($quoteItem->itemable_type == Product::class) {
-                    $product = Product::find($quoteItem->itemable_id);
-                    if ($product) $product->decrement('current_stock', $quoteItem->quantity);
-                } elseif ($quoteItem->itemable_type == ProductAttribute::class) {
-                    $variant = ProductAttribute::find($quoteItem->itemable_id);
-                    if ($variant) $variant->decrement('current_stock', $quoteItem->quantity);
-                }
+                // ACTUALIZACIÓN MULTI-SUCURSAL: Descontamos stock al convertir en venta
+                $this->deductStock($quoteItem->itemable_type, $quoteItem->itemable_id, $quoteItem->quantity, $user->branch_id);
             }
 
             $quote->update([
@@ -515,5 +494,57 @@ class QuoteController extends Controller implements HasMiddleware
             'custom_fields' => ['nullable', 'array'],
             ...$rules
         ], $messages);
+    }
+
+    /**
+     * Helper centralizado para descontar stock físico de la sucursal actual.
+     */
+    private function deductStock(string $itemableType, int $itemableId, float $quantity, int $branchId): void
+    {
+        if ($itemableType === Product::class) {
+            DB::table('branch_product')
+                ->where('product_id', $itemableId)
+                ->where('branch_id', $branchId)
+                ->decrement('current_stock', $quantity);
+        } elseif ($itemableType === ProductAttribute::class) {
+            DB::table('branch_product_attribute')
+                ->where('product_attribute_id', $itemableId)
+                ->where('branch_id', $branchId)
+                ->decrement('current_stock', $quantity);
+
+            $variant = ProductAttribute::find($itemableId);
+            if ($variant) {
+                DB::table('branch_product')
+                    ->where('product_id', $variant->product_id)
+                    ->where('branch_id', $branchId)
+                    ->decrement('current_stock', $quantity);
+            }
+        }
+    }
+
+    /**
+     * Helper centralizado para retornar stock físico a la sucursal actual.
+     */
+    private function returnStock(string $itemableType, int $itemableId, float $quantity, int $branchId): void
+    {
+        if ($itemableType === Product::class) {
+            DB::table('branch_product')
+                ->where('product_id', $itemableId)
+                ->where('branch_id', $branchId)
+                ->increment('current_stock', $quantity);
+        } elseif ($itemableType === ProductAttribute::class) {
+            DB::table('branch_product_attribute')
+                ->where('product_attribute_id', $itemableId)
+                ->where('branch_id', $branchId)
+                ->increment('current_stock', $quantity);
+
+            $variant = ProductAttribute::find($itemableId);
+            if ($variant) {
+                DB::table('branch_product')
+                    ->where('product_id', $variant->product_id)
+                    ->where('branch_id', $branchId)
+                    ->increment('current_stock', $quantity);
+            }
+        }
     }
 }

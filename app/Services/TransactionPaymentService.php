@@ -60,6 +60,8 @@ class TransactionPaymentService
                 'cash_register_session_id' => $sessionId,
                 'folio' => self::generateFolio($user->branch_id),
                 'customer_id' => $customer?->id,
+                // NUEVO: Guardamos el nombre del invitado en contact_info si existe
+                'contact_info' => !empty($validatedData['guest_name']) ? ['name' => $validatedData['guest_name']] : null,
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
                 'status' => $initialStatus,
@@ -217,12 +219,14 @@ class TransactionPaymentService
                 $refundValue = $originalItem->unit_price * $returnItem['quantity'];
                 $totalRefundValue += $refundValue;
 
-                // Restock
+                // Restock - Le pasamos el branch_id original para que regrese a esa sucursal
                 $itemModel = $originalItem->itemable;
                 if (!$itemModel && class_exists($originalItem->itemable_type)) {
                     $itemModel = $originalItem->itemable_type::find($originalItem->itemable_id);
                 }
-                if ($itemModel) $this->restockSingleItem($itemModel, $returnItem['quantity']);
+                if ($itemModel) {
+                    $this->restockSingleItem($itemModel, $returnItem['quantity'], $originalTransaction->branch_id);
+                }
             }
 
             // 2. Crear Nueva Transacción
@@ -470,12 +474,27 @@ class TransactionPaymentService
                     $itemModel = $originalItem->itemable_type::find($originalItem->itemable_id);
                 }
                 
-                // CRÍTICO: En un apartado, devolver significa liberar la reserva.
-                // No tocamos current_stock porque nunca salió físicamente.
+                // CRÍTICO: En un apartado, devolver significa liberar la reserva de la sucursal.
                 if ($itemModel) {
-                    $itemModel->decrement('reserved_stock', $returnItem['quantity']);
-                    if ($itemModel instanceof ProductAttribute) {
-                        $itemModel->product->decrement('reserved_stock', $returnItem['quantity']);
+                    $branchId = $originalTransaction->branch_id;
+                    
+                    if ($itemModel instanceof Product) {
+                        DB::table('branch_product')
+                            ->where('product_id', $itemModel->id)
+                            ->where('branch_id', $branchId)
+                            ->decrement('reserved_stock', $returnItem['quantity']);
+                            
+                    } elseif ($itemModel instanceof ProductAttribute) {
+                        DB::table('branch_product_attribute')
+                            ->where('product_attribute_id', $itemModel->id)
+                            ->where('branch_id', $branchId)
+                            ->decrement('reserved_stock', $returnItem['quantity']);
+                            
+                        // Liberar también al padre
+                        DB::table('branch_product')
+                            ->where('product_id', $itemModel->product_id)
+                            ->where('branch_id', $branchId)
+                            ->decrement('reserved_stock', $returnItem['quantity']);
                     }
                 }
             }
@@ -558,27 +577,6 @@ class TransactionPaymentService
             } 
             // B) Si aún debe dinero
             else {
-                // Se queda como ON_LAYAWAY (ya seteado al crear).
-                // Generar movimiento de deuda "virtual" o actualizar saldo
-                // En tu lógica actual de 'handleNewSale', si hay deuda en apartado, se registra el movimiento negativo en el cliente?
-                // Revisando handleNewSale: Sí, llama a applyDebtToCustomer.
-                
-                // Sin embargo, en un sistema de Apartados, a veces la deuda no se refleja en el saldo global hasta que se vence,
-                // O se refleja como "Saldo Apartado". Dependerá de tu Enum CustomerBalanceMovementType.
-                // Asumiremos que debemos registrar el ajuste de la deuda si cambió el monto total.
-                
-                // NOTA: Para simplificar y no duplicar deuda, lo ideal es recalcular la deuda total.
-                // Si en el original ya había una deuda registrada de (TotalOriginal - PagadoOriginal),
-                // Ahora debemos ajustar esa deuda.
-                
-                // La forma más limpia en historial:
-                // 1. "Cancelar" la deuda del apartado anterior (Paso implícito si consideramos que cerramos la transaccion).
-                //    Pero como handleNewSale registra deuda al inicio, aquí deberíamos registrar la nueva deuda.
-                
-                // Vamos a registrar la nueva deuda total remanente.
-                // Pero antes, debimos haber "cancelado" la deuda anterior si existía.
-                // En handleProductExchange hacemos: "Cancelamos la deuda antigua abonando al saldo".
-                
                 // 6.1 Cancelar deuda anterior (si la hubo)
                 $originalTotal = $originalTransaction->total;
                 $originalDebt = $originalTotal - $previousPaymentsTotal;
@@ -875,14 +873,15 @@ class TransactionPaymentService
     }
 
     /**
-     * MEJORA: Crea los items y asegura actualización de stock consistente para variantes y padres.
+     * MEJORA: Crea los items y asegura actualización de stock consistente para variantes y padres en la sucursal actual.
      */
     private function createTransactionItems(Transaction $transaction, array $cartItems, TransactionStatus $status): void
     {
+        $branchId = $transaction->branch_id;
+
         foreach ($cartItems as $item) {
             $itemableId = $item['id'];
             $itemableType = Product::class;
-            // Se buscará el modelo más adelante, dependiendo de si es variante o no.
 
             if (!empty($item['product_attribute_id'])) {
                 $itemableId = $item['product_attribute_id'];
@@ -903,21 +902,45 @@ class TransactionPaymentService
                 'line_total' => $item['quantity'] * $item['unit_price'],
             ]);
 
-            // Lógica de Stock
+            // Lógica de Stock en las tablas PIVOT de sucursales
             if ($itemModel) {
                 if ($status === TransactionStatus::ON_LAYAWAY || $status === TransactionStatus::TO_DELIVER) {
-                    // Apartado
-                    $itemModel->increment('reserved_stock', $item['quantity']);
-                    if ($itemModel instanceof ProductAttribute) {
-                        // USAR LA RELACIÓN REAL PARA ENCONTRAR AL PADRE
-                        Product::find($itemModel->product_id)->increment('reserved_stock', $item['quantity']);
+                    // Apartado o por entregar -> Incrementar stock reservado en la sucursal
+                    if ($itemModel instanceof Product) {
+                        DB::table('branch_product')
+                            ->where('product_id', $itemModel->id)
+                            ->where('branch_id', $branchId)
+                            ->increment('reserved_stock', $item['quantity']);
+                    } elseif ($itemModel instanceof ProductAttribute) {
+                        DB::table('branch_product_attribute')
+                            ->where('product_attribute_id', $itemModel->id)
+                            ->where('branch_id', $branchId)
+                            ->increment('reserved_stock', $item['quantity']);
+                        
+                        // Reflejar la reserva en el padre
+                        DB::table('branch_product')
+                            ->where('product_id', $itemModel->product_id)
+                            ->where('branch_id', $branchId)
+                            ->increment('reserved_stock', $item['quantity']);
                     }
                 } else {
-                    // Venta directa
-                    $itemModel->decrement('current_stock', $item['quantity']);
-                    if ($itemModel instanceof ProductAttribute) {
-                        // USAR LA RELACIÓN REAL PARA ENCONTRAR AL PADRE
-                        Product::find($itemModel->product_id)->decrement('current_stock', $item['quantity']);
+                    // Venta directa -> Decrementar stock actual en la sucursal
+                    if ($itemModel instanceof Product) {
+                        DB::table('branch_product')
+                            ->where('product_id', $itemModel->id)
+                            ->where('branch_id', $branchId)
+                            ->decrement('current_stock', $item['quantity']);
+                    } elseif ($itemModel instanceof ProductAttribute) {
+                        DB::table('branch_product_attribute')
+                            ->where('product_attribute_id', $itemModel->id)
+                            ->where('branch_id', $branchId)
+                            ->decrement('current_stock', $item['quantity']);
+
+                        // Reflejar la baja física en el padre
+                        DB::table('branch_product')
+                            ->where('product_id', $itemModel->product_id)
+                            ->where('branch_id', $branchId)
+                            ->decrement('current_stock', $item['quantity']);
                     }
                 }
             }
@@ -925,24 +948,37 @@ class TransactionPaymentService
     }
 
     /**
-     * Helper para reponer stock de un item específico (usado en cambios).
+     * Helper para reponer stock de un item específico a una sucursal (usado en devoluciones y cambios).
      */
-    private function restockSingleItem($itemModel, $quantity): void
+    private function restockSingleItem($itemModel, float $quantity, int $branchId): void
     {
-        if ($itemModel instanceof Product || $itemModel instanceof ProductAttribute) {
-            $itemModel->increment('current_stock', $quantity);
-            // Si es variante, incrementar también al padre si aplica lógica de stock compartido
-            if ($itemModel instanceof ProductAttribute) {
-                Product::find($itemModel->product_id)->increment('current_stock', $quantity);
-            }
+        if ($itemModel instanceof Product) {
+            DB::table('branch_product')
+                ->where('product_id', $itemModel->id)
+                ->where('branch_id', $branchId)
+                ->increment('current_stock', $quantity);
+
+        } elseif ($itemModel instanceof ProductAttribute) {
+            DB::table('branch_product_attribute')
+                ->where('product_attribute_id', $itemModel->id)
+                ->where('branch_id', $branchId)
+                ->increment('current_stock', $quantity);
+
+            // Incremento para la variante en el producto padre
+            DB::table('branch_product')
+                ->where('product_id', $itemModel->product_id)
+                ->where('branch_id', $branchId)
+                ->increment('current_stock', $quantity);
         }
     }
 
     /**
-     * Mueve el stock de 'reservado' a 'vendido' cuando un apartado se liquida.
+     * Mueve el stock de 'reservado' a 'vendido' en la sucursal cuando un apartado se liquida.
      */
     private function finalizeLayawayStock(Transaction $transaction): void
     {
+        $branchId = $transaction->branch_id;
+
         foreach ($transaction->items as $txnItem) {
             $itemModel = $txnItem->itemable; // Esto es Product o ProductAttribute
 
@@ -953,25 +989,40 @@ class TransactionPaymentService
                 continue;
             }
 
-            // 2. Decrementar el stock del itemable (sea Producto o Atributo)
-            //    Esto mueve de 'reservado' a 0 y de 'físico' a -1.
-            $itemModel->decrement('reserved_stock', $txnItem->quantity);
-            $itemModel->decrement('current_stock', $txnItem->quantity);
+            // 2. Decrementar el stock en la sucursal correspondiente
+            if ($itemModel instanceof \App\Models\Product) {
+                DB::table('branch_product')
+                    ->where('product_id', $itemModel->id)
+                    ->where('branch_id', $branchId)
+                    ->decrement('reserved_stock', $txnItem->quantity);
 
-            // 3. Si el itemable era una VARIANTE (ProductAttribute)...
-            if ($itemModel instanceof \App\Models\ProductAttribute) {
-                // ...también debemos actualizar las cantidades del PRODUCTO PADRE.
-                $product = $itemModel->product; // Asumiendo que tienes esta relación
+                DB::table('branch_product')
+                    ->where('product_id', $itemModel->id)
+                    ->where('branch_id', $branchId)
+                    ->decrement('current_stock', $txnItem->quantity);
 
-                if ($product) {
-                    $product->decrement('reserved_stock', $txnItem->quantity);
-                    $product->decrement('current_stock', $txnItem->quantity);
-                } else {
-                    Log::warning("La variante {$itemModel->id} no tiene un producto padre asociado.");
-                }
+            } elseif ($itemModel instanceof \App\Models\ProductAttribute) {
+                DB::table('branch_product_attribute')
+                    ->where('product_attribute_id', $itemModel->id)
+                    ->where('branch_id', $branchId)
+                    ->decrement('reserved_stock', $txnItem->quantity);
+
+                DB::table('branch_product_attribute')
+                    ->where('product_attribute_id', $itemModel->id)
+                    ->where('branch_id', $branchId)
+                    ->decrement('current_stock', $txnItem->quantity);
+
+                // 3. Actualizar también el padre de la variante
+                DB::table('branch_product')
+                    ->where('product_id', $itemModel->product_id)
+                    ->where('branch_id', $branchId)
+                    ->decrement('reserved_stock', $txnItem->quantity);
+
+                DB::table('branch_product')
+                    ->where('product_id', $itemModel->product_id)
+                    ->where('branch_id', $branchId)
+                    ->decrement('current_stock', $txnItem->quantity);
             }
-            // 4. Si era un Producto simple, no se necesita hacer nada más,
-            //    ya que el paso 2 descontó el stock del producto principal.
         }
     }
 
