@@ -280,6 +280,10 @@ const googleMapsUrl = computed(() => {
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(queryParts)}`;
 });
 
+// --- Estado para filas expandidas en las tablas ---
+const expandedLayawayRows = ref({});
+const expandedTransactionRows = ref({});
+
 </script>
 
 <template>
@@ -388,15 +392,17 @@ const googleMapsUrl = computed(() => {
 
             <!-- Columna Derecha: Historial -->
             <div class="lg:col-span-2 space-y-6">
+                <!-- Tabla de Apartados -->
                 <div v-if="activeLayaways && activeLayaways.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
                         Apartados activos
                     </h2>
-                    <DataTable :value="activeLayaways" class="p-datatable-sm" responsiveLayout="scroll"
+                    <DataTable v-model:expandedRows="expandedLayawayRows" :value="activeLayaways" dataKey="id" class="p-datatable-sm" responsiveLayout="scroll"
                         :paginator="activeLayaways.length > 3" :rows="3" sortField="created_at" :sortOrder="-1">
+                        <Column expander style="width: 3rem" />
                         <Column field="folio" header="Folio">
                             <template #body="{ data }">
-                                <Link :href="route('transactions.show', data.id)" class="text-blue-500 hover:underline">
+                                <Link :href="route('transactions.show', data.id)" class="text-blue-500 hover:underline font-medium">
                                 #{{ data.folio }}
                                 </Link>
                             </template>
@@ -426,6 +432,27 @@ const googleMapsUrl = computed(() => {
                                 </span>
                             </template>
                         </Column>
+                        <template #expansion="slotProps">
+                            <div class="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-md my-2 ml-10 border border-gray-100 dark:border-gray-600">
+                                <h4 class="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">Artículos apartados</h4>
+                                <table class="w-full text-sm text-left">
+                                    <thead class="text-xs text-gray-500 uppercase bg-gray-100 dark:bg-gray-700">
+                                        <tr>
+                                            <th scope="col" class="px-3 py-2">Cant.</th>
+                                            <th scope="col" class="px-3 py-2">Descripción</th>
+                                            <th scope="col" class="px-3 py-2 text-right">Subtotal</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="item in slotProps.data.items" :key="item.id" class="border-b dark:border-gray-600 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                            <td class="px-3 py-2 font-medium">{{ item.quantity }}</td>
+                                            <td class="px-3 py-2 text-gray-700 dark:text-gray-200">{{ item.description }}</td>
+                                            <td class="px-3 py-2 text-right">{{ formatCurrency(item.line_total) }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </template>
                         <template #empty>
                             <div class="text-center text-gray-500 py-4">
                                 No hay apartados activos.
@@ -433,17 +460,22 @@ const googleMapsUrl = computed(() => {
                         </template>
                     </DataTable>
                 </div>
+
+                <!-- Tabla de Ventas / Órdenes -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
-                        Ventas
+                        Historial de Ventas y Órdenes
                     </h2>
-                    <DataTable :value="customer.transactions" class="p-datatable-sm" responsiveLayout="scroll"
+                    <DataTable v-model:expandedRows="expandedTransactionRows" :value="customer.transactions" dataKey="id" class="p-datatable-sm" responsiveLayout="scroll"
                         :paginator="customer.transactions?.length > 5" :rows="5">
+                        <Column expander style="width: 3rem" />
                         <Column field="folio" header="Folio">
                             <template #body="{ data }">
-                                <Link :href="route('transactions.show', data.id)" class="text-blue-500 hover:underline">
+                                <Link :href="route('transactions.show', data.id)" class="text-blue-500 hover:underline font-medium">
                                 #{{ data.folio }}
                                 </Link>
+                                <span v-if="data.channel === 'pos'" class="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">POS</span>
+                                <span v-if="data.channel === 'orden_de_servicio'" class="ml-2 text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded">O.S.</span>
                             </template>
                         </Column>
                         <Column field="created_at" header="Fecha" sortable>
@@ -460,6 +492,62 @@ const googleMapsUrl = computed(() => {
                                     class="capitalize" />
                             </template>
                         </Column>
+                        <template #expansion="slotProps">
+                            <div class="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-md my-2 ml-10 border border-gray-100 dark:border-gray-600">
+                                <div class="flex justify-between items-center mb-3">
+                                    <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                                        {{ slotProps.data.channel === 'orden_de_servicio' ? 'Detalles de la orden de servicio' : 'Artículos de venta' }}
+                                    </h4>
+                                    <div class="text-xs text-gray-500">Atendido por: {{ slotProps.data.user?.name || 'N/A' }}</div>
+                                </div>
+                                
+                                <!-- Información Adicional de la Orden de Servicio -->
+                                <div v-if="slotProps.data.channel === 'orden_de_servicio' && slotProps.data.transactionable" class="mb-3 p-3 bg-white dark:bg-gray-800 rounded-md border border-gray-200 dark:border-gray-700 shadow-sm">
+                                    <p class="text-sm m-0 mb-1 text-gray-800 dark:text-gray-200">
+                                        <span class="font-semibold">Equipo / artículo:</span> 
+                                        {{ slotProps.data.transactionable.item_description || 'No especificado' }}
+                                    </p>
+                                    <p class="text-sm m-0">
+                                        <span class="font-semibold">Problema reportado:</span> 
+                                        {{ slotProps.data.transactionable.reported_problems || 'No especificado' }}
+                                    </p>
+                                </div>
+
+                                <table class="w-full text-sm text-left">
+                                    <thead class="text-xs text-gray-500 uppercase bg-gray-100 dark:bg-gray-700">
+                                        <tr>
+                                            <th scope="col" class="px-3 py-2">Cant.</th>
+                                            <th scope="col" class="px-3 py-2">Descripción</th>
+                                            <th scope="col" class="px-3 py-2 text-right">P. Unitario</th>
+                                            <th scope="col" class="px-3 py-2 text-right" v-if="slotProps.data.channel !== 'orden_de_servicio'">Descuento</th>
+                                            <th scope="col" class="px-3 py-2 text-right">Subtotal</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Iteramos sobre transactionable.items si es O.S, de lo contrario usamos los items de la transacción normal -->
+                                        <tr v-for="item in (slotProps.data.channel === 'orden_de_servicio' ? (slotProps.data.transactionable?.items || []) : slotProps.data.items)" :key="item.id" class="border-b dark:border-gray-600 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                            <td class="px-3 py-2 font-medium">{{ item.quantity }}</td>
+                                            <td class="px-3 py-2 text-gray-700 dark:text-gray-200">
+                                                {{ item.description }}
+                                                <div v-if="item.discount_reason && slotProps.data.channel !== 'orden_de_servicio'" class="text-xs text-orange-500 mt-0.5">
+                                                    <i class="pi pi-tag !text-[10px]"></i> {{ item.discount_reason }}
+                                                </div>
+                                            </td>
+                                            <td class="px-3 py-2 text-right">{{ formatCurrency(item.unit_price) }}</td>
+                                            <td class="px-3 py-2 text-right text-red-500" v-if="slotProps.data.channel !== 'orden_de_servicio'">
+                                                {{ item.discount_amount > 0 ? '-' + formatCurrency(item.discount_amount) : '' }}
+                                            </td>
+                                            <td class="px-3 py-2 text-right font-medium">{{ formatCurrency(item.line_total) }}</td>
+                                        </tr>
+                                        <tr v-if="(slotProps.data.channel === 'orden_de_servicio' ? (slotProps.data.transactionable?.items || []) : slotProps.data.items).length === 0">
+                                            <td :colspan="slotProps.data.channel === 'orden_de_servicio' ? 4 : 5" class="px-3 py-4 text-center text-gray-500">
+                                                No hay conceptos registrados para esta transacción.
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </template>
                         <template #empty>
                             <div class="text-center text-gray-500 py-4">
                                 No hay ventas registradas.
@@ -467,6 +555,8 @@ const googleMapsUrl = computed(() => {
                         </template>
                     </DataTable>
                 </div>
+
+                <!-- Historial de Movimientos -->
                 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
                     <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
                         Historial de movimientos

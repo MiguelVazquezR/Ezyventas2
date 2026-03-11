@@ -388,6 +388,10 @@ const getTransactionPending = (transaction) => {
                             <Link v-if="data.customer" :href="route('customers.show', data.customer.id)" class="text-primary-600 hover:underline">
                                 {{ data.customer.name }}
                             </Link>
+                            <span v-else-if="data.contact_info && data.contact_info.name" class="flex items-center gap-2">
+                                {{ data.contact_info.name }}
+                                <Tag severity="info" value="Comanda" class="!text-[10px] !px-1.5 !py-0.5" />
+                            </span>
                             <span v-else>Público en general</span>
                         </template>
                     </Column>
@@ -453,9 +457,17 @@ const getTransactionPending = (transaction) => {
                     </div>
                     <div class="flex justify-between items-center">
                         <span class="text-gray-500 text-sm">Cliente</span>
-                        <span class="font-medium text-sm text-right truncate max-w-[200px]" :title="drawerTransaction.customer?.name || 'Público en general'">
-                            {{ drawerTransaction.customer?.name || 'Público en general' }}
-                        </span>
+                        <div class="flex flex-col items-end">
+                            <span v-if="drawerTransaction.customer" class="font-medium text-sm text-right truncate max-w-[200px]" :title="drawerTransaction.customer.name">
+                                {{ drawerTransaction.customer.name }}
+                            </span>
+                            <span v-else-if="drawerTransaction.contact_info && drawerTransaction.contact_info.name" class="font-medium text-sm text-right truncate max-w-[200px]" :title="drawerTransaction.contact_info.name">
+                                {{ drawerTransaction.contact_info.name }} <Tag severity="info" value="Comanda" class="!text-[10px] !px-1 !py-0 ml-1"></Tag>
+                            </span>
+                            <span v-else class="font-medium text-sm text-right truncate max-w-[200px]" title="Público en general">
+                                Público en general
+                            </span>
+                        </div>
                     </div>
                 </div>
 
@@ -482,11 +494,11 @@ const getTransactionPending = (transaction) => {
 
                 <!-- Lista de Pagos -->
                 <div class="flex flex-col gap-2">
-                    <span class="text-gray-500 text-sm font-bold uppercase tracking-wider">Historial de Pagos</span>
+                    <span class="text-gray-500 text-sm font-bold uppercase tracking-wider">Historial de pagos</span>
                     <ul v-if="drawerTransaction.payments && drawerTransaction.payments.length" class="flex flex-col gap-3 relative border-l-2 border-gray-200 dark:border-gray-700 ml-2 pl-4 py-1">
                         <li v-for="payment in drawerTransaction.payments" :key="payment.id" class="flex flex-col text-sm relative">
                             <!-- Timeline dot -->
-                            <div class="absolute w-2 h-2 bg-primary-500 rounded-full -left-[21px] top-1.5"></div>
+                            <div class="absolute size-2 bg-primary-500 rounded-full -left-[18px] top-1.5"></div>
                             
                             <div class="flex justify-between items-start">
                                 <span class="font-medium capitalize">{{ (payment.payment_method || 'Desconocido').replace(/_/g, ' ') }}</span>

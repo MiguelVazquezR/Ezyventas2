@@ -8,6 +8,7 @@ import ManageExpenseCategoriesModal from '@/Components/ManageExpenseCategoriesMo
 import StartSessionModal from '@/Components/StartSessionModal.vue';
 import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import { format } from 'date-fns';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     categories: Array,
@@ -15,6 +16,8 @@ const props = defineProps({
 });
 
 const page = usePage();
+
+const { hasPermission } = usePermissions();
 
 // --- LÓGICA DE SESIÓN ---
 const activeSession = computed(() => page.props.activeSession);
@@ -150,8 +153,8 @@ watch(activeSession, (newSession) => {
                 <div>
                     <div class="flex justify-between items-center mb-1">
                         <InputLabel for="category" value="Categoría *" />
-                        <Button @click="showCategoryModal = true" label="Gestionar" icon="pi pi-cog" text
-                            size="small" />
+                        <Button v-if="hasPermission('expenses.manage_categories')" @click="showCategoryModal = true"
+                            label="Gestionar" icon="pi pi-cog" text size="small" />
                     </div>
                     <Select size="large" id="category" v-model="form.expense_category_id" :options="localCategories"
                         optionLabel="name" optionValue="id" placeholder="Selecciona una categoría" filter

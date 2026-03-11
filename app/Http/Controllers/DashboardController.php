@@ -29,7 +29,8 @@ class DashboardController extends Controller
         $isAdmin = !$user->roles()->exists();
         $stats = [];
 
-        $cacheKey = "dashboard_stats_branch_{$branchId}_v7"; // Subimos versión caché
+        // Subimos versión caché a v8 para invalidar los cálculos viejos de inventario automáticamente
+        $cacheKey = "dashboard_stats_branch_{$branchId}_v8"; 
 
         // --- 1. Ventas y Transacciones ---
         if ($isAdmin || $user->can('transactions.access')) {
@@ -57,14 +58,12 @@ class DashboardController extends Controller
                 return $this->getWeeklySalesTrend($branchId);
             });
 
-            // --- ACTUALIZADO: Apartados Y Créditos por vencer (3 días) ---
             $stats['expiring_debts_count'] = Transaction::where('branch_id', $branchId)
                 ->whereIn('status', [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING])
                 ->whereNotNull('layaway_expiration_date')
                 ->whereDate('layaway_expiration_date', '<=', now()->addDays(3))
                 ->count();
 
-            // Pedidos por entregar (Próximos 3 días o vencidos)
             $stats['upcoming_deliveries_count'] = Transaction::where('branch_id', $branchId)
                 ->where('status', TransactionStatus::TO_DELIVER)
                 ->whereNotNull('delivery_date')
@@ -150,15 +149,12 @@ class DashboardController extends Controller
         ]);
     }
 
-    /**
-     * ACTUALIZADO: Obtiene Apartados Y Créditos por vencer
-     */
     public function getExpiringLayaways(Request $request)
     {
         $user = Auth::user();
         
         $debts = Transaction::where('branch_id', $user->branch_id)
-            ->whereIn('status', [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING]) // <-- Incluye Créditos
+            ->whereIn('status', [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING])
             ->whereNotNull('layaway_expiration_date')
             ->whereDate('layaway_expiration_date', '<=', now()->addDays(5))
             ->with('customer:id,name,phone')
@@ -172,7 +168,7 @@ class DashboardController extends Controller
                 return [
                     'id' => $t->id,
                     'folio' => $t->folio,
-                    'type' => $t->status === TransactionStatus::ON_LAYAWAY ? 'apartado' : 'credito', // Distintivo para frontend
+                    'type' => $t->status === TransactionStatus::ON_LAYAWAY ? 'apartado' : 'credito',
                     'customer_id' => $t->customer_id,
                     'customer_name' => $t->customer ? $t->customer->name : 'Público en General',
                     'customer_phone' => $t->customer?->phone,
@@ -186,9 +182,6 @@ class DashboardController extends Controller
         return response()->json($debts);
     }
 
-    /**
-     * Obtiene pedidos por entregar (Próximos)
-     */
     public function getUpcomingDeliveries(Request $request)
     {
         $user = Auth::user();
@@ -196,15 +189,12 @@ class DashboardController extends Controller
         $deliveries = Transaction::where('branch_id', $user->branch_id)
             ->where('status', TransactionStatus::TO_DELIVER)
             ->whereNotNull('delivery_date')
-            // Mostramos vencidos y próximos 7 días
             ->whereDate('delivery_date', '<=', now()->addDays(7))
             ->with('customer:id,name,phone')
             ->orderBy('delivery_date', 'asc')
             ->get()
             ->map(function ($t) {
                 $deliveryDate = Carbon::parse($t->delivery_date);
-                
-                // Determinar nombre del cliente (registrado o invitado)
                 $clientName = $t->customer ? $t->customer->name : ($t->contact_info['name'] ?? 'Cliente Invitado');
                 $clientPhone = $t->customer ? $t->customer->phone : ($t->contact_info['phone'] ?? '-');
 
@@ -226,27 +216,51 @@ class DashboardController extends Controller
 
     private function getInventorySummaryOptimized($branchId)
     {
-        $summary = DB::table('products')
-            ->where('branch_id', $branchId)
-            ->selectRaw('COUNT(*) as total_products')
-            ->selectRaw('SUM(cost_price * current_stock) as total_cost')
-            ->selectRaw('SUM(selling_price * current_stock) as total_sale_value')
-            ->selectRaw('SUM(CASE WHEN current_stock > COALESCE(min_stock, 0) THEN 1 ELSE 0 END) as in_stock_count')
-            ->selectRaw('SUM(CASE WHEN current_stock > 0 AND current_stock <= COALESCE(min_stock, 0) THEN 1 ELSE 0 END) as low_stock_count')
-            ->selectRaw('SUM(CASE WHEN current_stock <= 0 THEN 1 ELSE 0 END) as out_of_stock_count')
+        // 1. Resumen de productos SIMPLES (consultando el pivot branch_product)
+        $simpleSummary = DB::table('branch_product as bp')
+            ->join('products as p', 'p.id', '=', 'bp.product_id')
+            ->where('bp.branch_id', $branchId)
+            // Excluir productos que tienen variantes para no contar inventarios padre con 0 unidades
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                      ->from('product_attributes as pa')
+                      ->whereColumn('pa.product_id', 'p.id');
+            })
+            ->selectRaw('COUNT(*) as total_items')
+            ->selectRaw('SUM(p.cost_price * bp.current_stock) as total_cost')
+            ->selectRaw('SUM(p.selling_price * bp.current_stock) as total_sale_value') // <--- REMOVIDO bp.price_modifier
+            ->selectRaw('SUM(CASE WHEN bp.current_stock > COALESCE(bp.min_stock, 0) THEN 1 ELSE 0 END) as in_stock_count')
+            ->selectRaw('SUM(CASE WHEN bp.current_stock > 0 AND bp.current_stock <= COALESCE(bp.min_stock, 0) THEN 1 ELSE 0 END) as low_stock_count')
+            ->selectRaw('SUM(CASE WHEN bp.current_stock <= 0 THEN 1 ELSE 0 END) as out_of_stock_count')
             ->first();
 
-        if (!$summary || $summary->total_products == 0) {
+        // 2. Resumen de VARIANTES (consultando el pivot branch_product_attribute)
+        $variantSummary = DB::table('branch_product_attribute as bpa')
+            ->join('product_attributes as pa', 'pa.id', '=', 'bpa.product_attribute_id')
+            ->join('products as p', 'p.id', '=', 'pa.product_id')
+            ->where('bpa.branch_id', $branchId)
+            ->selectRaw('COUNT(*) as total_items')
+            ->selectRaw('SUM(p.cost_price * bpa.current_stock) as total_cost')
+            ->selectRaw('SUM((p.selling_price + pa.selling_price_modifier) * bpa.current_stock) as total_sale_value') // <--- REMOVIDO bpa.price_modifier
+            ->selectRaw('SUM(CASE WHEN bpa.current_stock > COALESCE(bpa.min_stock, 0) THEN 1 ELSE 0 END) as in_stock_count') // <--- AÑADIDO CÁLCULO DE MIN STOCK PARA VARIANTES
+            ->selectRaw('SUM(CASE WHEN bpa.current_stock > 0 AND bpa.current_stock <= COALESCE(bpa.min_stock, 0) THEN 1 ELSE 0 END) as low_stock_count') // <--- AÑADIDO CÁLCULO DE MIN STOCK PARA VARIANTES
+            ->selectRaw('SUM(CASE WHEN bpa.current_stock <= 0 THEN 1 ELSE 0 END) as out_of_stock_count')
+            ->first();
+
+        $totalProducts = ($simpleSummary->total_items ?? 0) + ($variantSummary->total_items ?? 0);
+
+        if ($totalProducts == 0) {
             return null;
         }
 
+        // Consolida los totales
         return [
-            'total_cost' => (float) $summary->total_cost,
-            'total_sale_value' => (float) $summary->total_sale_value,
-            'total_products' => (int) $summary->total_products,
-            'in_stock_count' => (int) $summary->in_stock_count,
-            'low_stock_count' => (int) $summary->low_stock_count,
-            'out_of_stock_count' => (int) $summary->out_of_stock_count,
+            'total_cost' => (float) (($simpleSummary->total_cost ?? 0) + ($variantSummary->total_cost ?? 0)),
+            'total_sale_value' => (float) (($simpleSummary->total_sale_value ?? 0) + ($variantSummary->total_sale_value ?? 0)),
+            'total_products' => (int) $totalProducts,
+            'in_stock_count' => (int) (($simpleSummary->in_stock_count ?? 0) + ($variantSummary->in_stock_count ?? 0)),
+            'low_stock_count' => (int) (($simpleSummary->low_stock_count ?? 0) + ($variantSummary->low_stock_count ?? 0)),
+            'out_of_stock_count' => (int) (($simpleSummary->out_of_stock_count ?? 0) + ($variantSummary->out_of_stock_count ?? 0)),
         ];
     }
 
@@ -287,9 +301,16 @@ class DashboardController extends Controller
         
         $lowTurnoverCollection = collect();
 
-        $neverSoldProducts = Product::where('branch_id', $branchId)
+        // 1. Productos sin ventas, trayendo sus relaciones de inventario
+        $neverSoldProducts = Product::whereHas('branches', function($q) use ($branchId) {
+                $q->where('branches.id', $branchId);
+            })
             ->whereNotIn('id', $soldProductIds)
-            ->with('media')
+            ->with(['media', 'productAttributes.branches' => function($q) use ($branchId) {
+                $q->where('branches.id', $branchId);
+            }, 'branches' => function($q) use ($branchId) {
+                $q->where('branches.id', $branchId);
+            }])
             ->limit(5)
             ->get()
             ->map(function ($p) {
@@ -299,6 +320,7 @@ class DashboardController extends Controller
 
         $lowTurnoverCollection = $lowTurnoverCollection->merge($neverSoldProducts);
 
+        // 2. Rellenar con los de menor rotación histórica
         if ($lowTurnoverCollection->count() < 5) {
             $needed = 5 - $lowTurnoverCollection->count();
             asort($productLastSales);
@@ -306,7 +328,11 @@ class DashboardController extends Controller
             
             if (!empty($oldestIds)) {
                 $oldSoldProducts = Product::whereIn('id', $oldestIds)
-                    ->with('media')
+                    ->with(['media', 'productAttributes.branches' => function($q) use ($branchId) {
+                        $q->where('branches.id', $branchId);
+                    }, 'branches' => function($q) use ($branchId) {
+                        $q->where('branches.id', $branchId);
+                    }])
                     ->get()
                     ->each(function($p) use ($productLastSales) {
                         $p->virtual_last_sale_date = $productLastSales[$p->id];
@@ -320,12 +346,25 @@ class DashboardController extends Controller
             }
         }
 
+        // Mapear finalmente calculando el stock físico correcto
         return $lowTurnoverCollection->map(function ($product) {
+            $stock = 0;
+            
+            if ($product->productAttributes && $product->productAttributes->count() > 0) {
+                // Sumatoria del stock de cada variante en el pivot local
+                $stock = $product->productAttributes->sum(function($variant) {
+                    return $variant->branches->first()?->pivot->current_stock ?? 0;
+                });
+            } else {
+                // Stock del producto simple desde su pivot local
+                $stock = $product->branches->first()?->pivot->current_stock ?? 0;
+            }
+
             return [
                 'id' => $product->id,
                 'name' => $product->name,
                 'selling_price' => (float)$product->selling_price,
-                'current_stock' => $product->current_stock,
+                'current_stock' => $stock,
                 'days_since_last_sale' => $product->virtual_last_sale_date 
                     ? $product->virtual_last_sale_date->diffInDays(now()) 
                     : null, 

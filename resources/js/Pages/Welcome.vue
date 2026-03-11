@@ -138,7 +138,8 @@ const modules = ref([
 const features = ref([
     { id: 'users', name: 'Usuarios extra', price: 7.5, count: 0 },
     { id: 'cajas', name: 'Cajas extra', price: 7.5, count: 0 },
-    { id: 'products', name: '50 Productos extra', price: 1.5, count: 0 }, 
+    { id: 'products', name: '100 Productos extra', price: 0.015, count: 0 }, 
+    { id: 'services', name: '100 Servicios extra', price: 0.015, count: 0 }, 
     { id: 'branches', name: 'Sucursales extra', price: 30, count: 0 },
     { id: 'templates', name: 'Plantillas personalizadas', price: 3, count: 0 },
 ]);
@@ -161,11 +162,15 @@ const finalPrice = computed(() => {
 // Helpers para interactividad
 const incrementFeature = (id) => {
     const feature = features.value.find(f => f.id === id);
-    if (feature) feature.count++;
+    if (feature)
+     if (id == 'products' || id == 'services') feature.count += 100;
+     else feature.count++;
 };
 const decrementFeature = (id) => {
     const feature = features.value.find(f => f.id === id);
-    if (feature && feature.count > 0) feature.count--;
+    if (feature && feature.count > 0)
+     if (id == 'products' || id == 'services') feature.count -= 100;
+     else feature.count--;
 };
 const toggleModule = (id) => {
     const module = modules.value.find(m => m.id === id);

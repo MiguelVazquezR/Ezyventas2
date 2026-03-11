@@ -22,7 +22,7 @@ const getAllVariables = () => ({
         ]
     },
     cliente: {
-        group: 'Cliente (Datos Generales)',
+        group: 'Cliente (datos generales)',
         items: [
             { label: 'Nombre completo', value: '{{cliente.nombre}}' },
             { label: 'Teléfono', value: '{{cliente.telefono}}' },
@@ -34,17 +34,17 @@ const getAllVariables = () => ({
     },
     // --- GRUPO ACTUALIZADO: ESTADO DE CUENTA ---
     cliente_estado: {
-        group: 'Cliente (Financiero / Estado)',
+        group: 'Cliente (financiero / estado)',
         items: [
-            { label: 'Saldo Actual', value: '{{c.saldo_actual}}' },
-            { label: 'Crédito Disponible', value: '{{c.credito_disponible}}' },
-            { label: 'Límite de Crédito', value: '{{c.limite_credito}}' },
-            { label: 'Total Deuda Vencida', value: '{{c.total_deuda}}' },
-            { label: 'Conteo Ventas Pendientes', value: '{{c.conteo_ventas_pendientes}}' },
+            { label: 'Saldo actual', value: '{{c.saldo_actual}}' },
+            { label: 'Crédito disponible', value: '{{c.credito_disponible}}' },
+            { label: 'Límite de crédito', value: '{{c.limite_credito}}' },
+            { label: 'Total deuda vencida', value: '{{c.total_deuda}}' },
+            { label: 'Conteo ventas pendientes', value: '{{c.conteo_ventas_pendientes}}' },
             { label: 'Último abono a deuda general', value: '{{c.ultimo_abono}}' },
             // Variables de TABLAS
-            { label: 'Tabla: Último Pago Detallado', value: '{{c.tabla_ultimo_pago}}' },
-            { label: 'Tabla: Ventas Pendientes', value: '{{c.tabla_ventas_pendientes}}' },
+            { label: 'Tabla: último pago detallado', value: '{{c.tabla_ultimo_pago}}' },
+            { label: 'Tabla: ventas pendientes', value: '{{c.tabla_ventas_pendientes}}' },
         ]
     },
     // -------------------------------------
@@ -66,6 +66,7 @@ const getAllVariables = () => ({
         group: 'Venta / Ticket',
         items: [
             { label: 'Folio venta', value: '{{v.folio}}' },
+            { label: 'Nombre de comanda / pedido', value: '{{v.pedido_comanda}}' },
             { label: 'Fecha', value: '{{v.fecha}}' },
             { label: 'Hora', value: '{{v.hora}}' },
             { label: 'Subtotal', value: '{{v.subtotal}}' },
@@ -81,7 +82,7 @@ const getAllVariables = () => ({
         ]
     },
     orden_servicio: {
-        group: 'Orden de Servicio',
+        group: 'Orden de servicio',
         items: [
             { label: 'Folio OS', value: '{{os.folio}}' },
             { label: 'Fecha recepción', value: '{{os.fecha_recepcion}}' },

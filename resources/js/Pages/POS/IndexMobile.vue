@@ -45,6 +45,12 @@ const isHistoryModalVisible = ref(false);
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
 
+// --- Lógica de Modo POS (Retail vs Comandas) ---
+const posMode = ref(localStorage.getItem('pos_mode') || 'retail');
+watch(posMode, (newVal) => {
+    localStorage.setItem('pos_mode', newVal);
+});
+
 watch(() => page.props.flash.print_data, (newPrintData) => {
     if (newPrintData) {
         printDataSource.value = newPrintData;
@@ -333,7 +339,8 @@ const form = useForm({
     delivery_date: null,
     shipping_address: null,
     shipping_cost: 0,
-    notes: null
+    notes: null,
+    guest_name: null
 });
 
 const mapCartItems = () => {
@@ -421,6 +428,7 @@ const handleCheckout = (checkoutData) => {
     form.payments = checkoutData.payments;
     form.use_balance = checkoutData.use_balance;
     form.layaway_expiration_date = checkoutData.layaway_expiration_date;
+    form.guest_name = checkoutData.guest_name || null;
 
     let routeName;
     const transactionType = checkoutData.transactionType;
@@ -462,11 +470,13 @@ const currentCartTotal = computed(() => {
         <div class="relative h-[calc(100vh-100px)]">
             <template v-if="activeSession">
                 <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
-                    :filters="filters" :active-session="activeSession" :cart-items="cartItems" @add-to-cart="addToCart"
+                    :filters="filters" :active-session="activeSession" :cart-items="cartItems"
+                    :pos-mode="posMode" @add-to-cart="addToCart"
                     @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
                     @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
                     @refresh-session-data="handleRefreshSessionData" @open-history-modal="isHistoryModalVisible = true"
-                    @open-close-session-modal="isCloseSessionModalVisible = true" class="h-full" />
+                    @open-close-session-modal="isCloseSessionModalVisible = true" 
+                    @update:posMode="posMode = $event" class="h-full" />
 
                 <div class="fixed bottom-6 right-6 z-50">
                     <Button @click="isCartDrawerVisible = true" rounded
@@ -489,6 +499,7 @@ const currentCartTotal = computed(() => {
                         :active-promotions="activePromotions"
                         :loading="form.processing"
                         :payment-modal-visible="isPaymentModalVisible"
+                        :pos-mode="posMode"
                         @update-quantity="updateCartQuantity" 
                         @update-price="updateCartPrice"
                         @remove-item="removeCartItem" 

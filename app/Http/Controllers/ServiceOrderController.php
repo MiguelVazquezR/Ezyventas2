@@ -17,6 +17,7 @@ use App\Models\ProductAttribute;
 use App\Models\Service;
 use App\Models\ServiceOrder;
 use App\Models\Transaction;
+use App\Services\ActivityLogService;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -80,7 +81,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
         ]);
     }
 
-    public function show(ServiceOrder $serviceOrder): Response
+    public function show(Request $request, ServiceOrder $serviceOrder, ActivityLogService $activityLogService): Response
     {
         $serviceOrder->load(['branch', 'user', 'customer', 'items.itemable' => function (MorphTo $morphTo) {
             $morphTo->morphWith([
@@ -88,56 +89,25 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 \App\Models\Service::class => [],
                 \App\Models\ServiceVariant::class => [],
             ]);
-        }, 'activities.causer', 'media', 'transaction.payments.bankAccount']);
+        }, 'media', 'transaction.payments.bankAccount']);
 
-        $translations = config('log_translations.ServiceOrder', []);
-
-        $formattedActivities = $serviceOrder->activities->map(function ($activity) use ($translations) {
-            $changes = ['before' => [], 'after' => []];
-
-            $oldProps = $activity->properties->get('old', []);
-            $newProps = $activity->properties->get('attributes', []);
-
-            if (is_array($oldProps)) {
-                foreach ($oldProps as $key => $value) {
-                    $changes['before'][($translations[$key] ?? $key)] = $value;
-                }
-            }
-            if (is_array($newProps)) {
-                foreach ($newProps as $key => $value) {
-                    if (!array_key_exists($key, $oldProps) || $oldProps[$key] !== $value) {
-                        $changes['after'][($translations[$key] ?? $key)] = $value;
-                    }
-                }
-            }
-
-            $changes['before'] = array_intersect_key($changes['before'], $changes['after']);
-
-            return [
-                'id' => $activity->id,
-                'description' => $activity->description,
-                'event' => $activity->event,
-                'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
-                'timestamp' => $activity->created_at->diffForHumans(),
-                'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
-            ];
-        })
-            ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes']))
-            ->values();
-
-        $availableTemplates = Auth::user()->branch->printTemplates()
-            ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
-            ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER, TemplateContextType::GENERAL])
+        $subscriptionId = Auth::user()->branch->subscription_id;
+        $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
+            ->where('module', 'service_orders')
             ->get();
 
-        $user = Auth::user();
-        $subscriptionId = $user->branch->subscription_id;
+        $availableTemplates = Auth::user()->branch->printTemplates()
+            ->whereIn('type', [\App\Enums\TemplateType::SALE_TICKET, \App\Enums\TemplateType::LABEL])
+            ->whereIn('context_type', [\App\Enums\TemplateContextType::SERVICE_ORDER, \App\Enums\TemplateContextType::GENERAL])
+            ->get();
+
+        $formattedActivities = $activityLogService->getFormattedActivities($serviceOrder, $request, 'ServiceOrder');
 
         return Inertia::render('ServiceOrder/Show', [
             'serviceOrder' => $serviceOrder,
             'activities' => $formattedActivities,
             'availableTemplates' => $availableTemplates,
-            'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'service_orders')->get(),
+            'customFieldDefinitions' => $customFieldDefinitions,
         ]);
     }
 
@@ -221,12 +191,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
                     $serviceOrderItem = $serviceOrder->items()->create($item);
 
-                    if ($serviceOrderItem->itemable_type === Product::class && $serviceOrderItem->itemable_id) {
-                        $product = Product::find($serviceOrderItem->itemable_id);
-                        if ($product) $product->decrement('current_stock', $serviceOrderItem->quantity);
-                    } elseif ($serviceOrderItem->itemable_type === ProductAttribute::class && $serviceOrderItem->itemable_id) {
-                        $variant = ProductAttribute::find($serviceOrderItem->itemable_id);
-                        if ($variant) $variant->decrement('current_stock', $serviceOrderItem->quantity);
+                    if ($serviceOrderItem->itemable_id) {
+                        $this->deductStock($serviceOrderItem->itemable_type, $serviceOrderItem->itemable_id, $serviceOrderItem->quantity, $user->branch_id);
                     }
                 }
             }
@@ -294,12 +260,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
             $oldItems = $serviceOrder->items()->get();
             foreach ($oldItems as $oldItem) {
-                if ($oldItem->itemable_type === Product::class && $oldItem->itemable_id) {
-                    $product = Product::find($oldItem->itemable_id);
-                    if ($product) $product->increment('current_stock', $oldItem->quantity);
-                } elseif ($oldItem->itemable_type === ProductAttribute::class && $oldItem->itemable_id) {
-                    $variant = ProductAttribute::find($oldItem->itemable_id);
-                    if ($variant) $variant->increment('current_stock', $oldItem->quantity);
+                if ($oldItem->itemable_id) {
+                    $this->returnStock($oldItem->itemable_type, $oldItem->itemable_id, $oldItem->quantity, $serviceOrder->branch_id);
                 }
             }
 
@@ -317,12 +279,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
                     $newServiceOrderItem = $serviceOrder->items()->create($item);
 
-                    if ($newServiceOrderItem->itemable_type === Product::class && $newServiceOrderItem->itemable_id) {
-                        $product = Product::find($newServiceOrderItem->itemable_id);
-                        if ($product) $product->decrement('current_stock', $newServiceOrderItem->quantity);
-                    } elseif ($newServiceOrderItem->itemable_type === ProductAttribute::class && $newServiceOrderItem->itemable_id) {
-                        $variant = ProductAttribute::find($newServiceOrderItem->itemable_id);
-                        if ($variant) $variant->decrement('current_stock', $newServiceOrderItem->quantity);
+                    if ($newServiceOrderItem->itemable_id) {
+                        $this->deductStock($newServiceOrderItem->itemable_type, $newServiceOrderItem->itemable_id, $newServiceOrderItem->quantity, $serviceOrder->branch_id);
                     }
                 }
             }
@@ -410,12 +368,8 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 $serviceOrder->load('items', 'transaction.customer', 'transaction.payments');
 
                 foreach ($serviceOrder->items as $item) {
-                    if ($item->itemable_type === Product::class && $item->itemable_id) {
-                        $product = Product::find($item->itemable_id);
-                        if ($product) $product->increment('current_stock', $item->quantity);
-                    } elseif ($item->itemable_type === ProductAttribute::class && $item->itemable_id) {
-                        $variant = ProductAttribute::find($item->itemable_id);
-                        if ($variant) $variant->increment('current_stock', $item->quantity);
+                    if ($item->itemable_id) {
+                        $this->returnStock($item->itemable_type, $item->itemable_id, $item->quantity, $serviceOrder->branch_id);
                     }
                 }
 
@@ -482,7 +436,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
         return redirect()->route('service-orders.index')->with('success', 'Órdenes seleccionadas eliminadas.');
     }
 
-   private function getFormData(): array
+    private function getFormData(): array
     {
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
@@ -497,15 +451,84 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
         return [
             'customers' => Customer::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))->get(),
-            'products' => Product::where('branch_id', $user->branch_id)->with('productAttributes')->get(),
-            
+            'products' => Product::whereHas('branches', function ($q) use ($user) {
+                $q->where('branches.id', $user->branch_id);
+            })
+                ->with(['productAttributes.branches', 'branches'])
+                ->get()
+                ->map(function ($p) use ($user) {
+                    $branchPivot = $p->branches->where('id', $user->branch_id)->first()?->pivot;
+                    $p->current_stock = $branchPivot ? $branchPivot->current_stock : 0;
+
+                    if ($p->productAttributes) {
+                        $p->productAttributes->transform(function ($v) use ($user) {
+                            $vPivot = $v->branches->where('id', $user->branch_id)->first()?->pivot;
+                            $v->current_stock = $vPivot ? $vPivot->current_stock : 0;
+                            return $v;
+                        });
+                    }
+                    return $p;
+                }),
+
             // ACTUALIZADO: Filtramos consultando la tabla pivot de sucursales compartidas
             'services' => Service::whereHas('branches', function ($q) use ($user) {
                 $q->where('branches.id', $user->branch_id);
             })->with('variants')->get(),
-            
+
             'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'service_orders')->get(),
             'userBankAccounts' => $userBankAccounts,
         ];
+    }
+
+    /**
+     * Helper centralizado para descontar stock físico de la sucursal actual.
+     */
+    private function deductStock(string $itemableType, int $itemableId, float $quantity, int $branchId): void
+    {
+        if ($itemableType === Product::class) {
+            DB::table('branch_product')
+                ->where('product_id', $itemableId)
+                ->where('branch_id', $branchId)
+                ->decrement('current_stock', $quantity);
+        } elseif ($itemableType === ProductAttribute::class) {
+            DB::table('branch_product_attribute')
+                ->where('product_attribute_id', $itemableId)
+                ->where('branch_id', $branchId)
+                ->decrement('current_stock', $quantity);
+
+            $variant = ProductAttribute::find($itemableId);
+            if ($variant) {
+                DB::table('branch_product')
+                    ->where('product_id', $variant->product_id)
+                    ->where('branch_id', $branchId)
+                    ->decrement('current_stock', $quantity);
+            }
+        }
+    }
+
+    /**
+     * Helper centralizado para retornar stock físico a la sucursal actual.
+     */
+    private function returnStock(string $itemableType, int $itemableId, float $quantity, int $branchId): void
+    {
+        if ($itemableType === Product::class) {
+            DB::table('branch_product')
+                ->where('product_id', $itemableId)
+                ->where('branch_id', $branchId)
+                ->increment('current_stock', $quantity);
+        } elseif ($itemableType === ProductAttribute::class) {
+            DB::table('branch_product_attribute')
+                ->where('product_attribute_id', $itemableId)
+                ->where('branch_id', $branchId)
+                ->increment('current_stock', $quantity);
+
+            $variant = ProductAttribute::find($itemableId);
+            if ($variant) {
+                DB::table('branch_product')
+                    ->where('product_id', $variant->product_id)
+                    ->where('branch_id', $branchId)
+                    ->increment('current_stock', $quantity);
+            }
+        }
     }
 }

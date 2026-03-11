@@ -6,6 +6,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import ManageExpenseCategoriesModal from '@/Components/ManageExpenseCategoriesModal.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     expense: Object,
@@ -15,6 +16,7 @@ const props = defineProps({
 });
 
 const page = usePage();
+const { hasPermission } = usePermissions();
 const activeSession = computed(() => page.props.activeSession);
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
@@ -124,8 +126,8 @@ const submit = () => {
                 <div>
                     <div class="flex justify-between items-center mb-1">
                         <InputLabel for="category" value="Categoría *" />
-                        <Button @click="showCategoryModal = true" label="Gestionar" icon="pi pi-cog" text
-                            size="small" />
+                        <Button v-if="hasPermission('expenses.manage_categories')" @click="showCategoryModal = true"
+                            label="Gestionar" icon="pi pi-cog" text size="small" />
                     </div>
                     <Select size="large" id="category" v-model="form.expense_category_id" :options="localCategories"
                         optionLabel="name" optionValue="id" placeholder="Selecciona una categoría" filter

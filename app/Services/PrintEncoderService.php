@@ -42,7 +42,7 @@ class PrintEncoderService
     /**
      * Codifica una plantilla de Etiqueta (TSPL)
      */
-     private static function encodeTspl(PrintTemplate $template, $dataSource, array $options = []): array
+    private static function encodeTspl(PrintTemplate $template, $dataSource, array $options = []): array
     {
         $config = $template->content['config'] ?? [];
         $elements = $template->content['elements'] ?? [];
@@ -77,7 +77,7 @@ class PrintEncoderService
                     $xScale = $element['data']['x_scale'] ?? 1; // Multiplicador de ancho
                     $yScale = $element['data']['y_scale'] ?? 1; // Multiplicador de alto
                     $text = self::replacePlaceholders($element['data']['value'], $dataSource);
-                    
+
                     // Se envían las escalas X y Y en lugar de los 1,1 fijos
                     $tspl .= "TEXT {$x},{$y},\"{$font}\",{$rotation},{$xScale},{$yScale},\"{$text}\"\n";
                     break;
@@ -96,7 +96,6 @@ class PrintEncoderService
         }
 
         $tspl .= "PRINT 1,1\n";
-        Log::info("TSPL generado:\n" . $tspl);
         return [['nombre' => 'EscribirTexto', 'argumentos' => [$tspl]]];
     }
 
@@ -288,6 +287,7 @@ class PrintEncoderService
 
         return [
             '{{v.folio}}' => $transaction->folio,
+            '{{v.pedido_comanda}}' => is_array($transaction->contact_info) && isset($transaction->contact_info['name']) ? $transaction->contact_info['name'] : '', // <-- NUEVA VARIABLE
             '{{v.fecha}}' => Carbon::parse($transaction->created_at)->format('d/m/Y'),
             '{{v.hora}}' => Carbon::parse($transaction->created_at)->format('H:i A'),
             '{{v.fecha_hora}}' => Carbon::parse($transaction->created_at)->format('d/m/Y H:i A'),

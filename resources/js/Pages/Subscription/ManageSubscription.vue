@@ -66,7 +66,7 @@ const getMinLimit = (limitKey) => {
     const baseMins = {
         'limit_branches': 1,
         'limit_users': 1,
-        'limit_products': 50,
+        'limit_products': 100,
         'limit_services': 100 // NUEVO MÍNIMO
     };
     const baseMin = baseMins[limitKey] || 0;
@@ -336,10 +336,10 @@ const submit = () => {
                                             {{ formatCurrency(getPrice(limit)) }} por {{ (limit.meta && limit.meta.quantity > 1) ? `cada ${limit.meta.quantity}` : 'c/u' }} / {{ billingPeriod === 'anual' ? 'año' : 'mes' }}
                                         </p>
                                     </div>
-                                    <!-- APLICANDO EL STEP CORRESPONDIENTE A PRODUCTOS (50) Y SERVICIOS (100) -->
-                                    <InputNumber v-model="limitValues[limit.key]"
+                                    <!-- APLICANDO EL STEP CORRESPONDIENTE A PRODUCTOS (100) Y SERVICIOS (100) -->
+                                    <InputNumber v-if="limit.key !== 'limit_services' || (limit.key === 'limit_services' && selectedModules.includes('module_services'))" v-model="limitValues[limit.key]"
                                         :min="getMinLimit(limit.key)"
-                                        :step="limit.key === 'limit_products' ? 50 : (limit.key === 'limit_services' ? 100 : 1)" 
+                                        :step="limit.key === 'limit_products' ? 100 : (limit.key === 'limit_services' ? 100 : 1)" 
                                         showButtons
                                         buttonLayout="horizontal" decrementButtonClass="p-button-secondary"
                                         incrementButtonClass="p-button-secondary" incrementButtonIcon="pi pi-plus"
