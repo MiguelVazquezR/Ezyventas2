@@ -173,7 +173,8 @@ watch(() => props.visible, async (isVisible) => {
                     <MultiPaymentProcessor v-else :total-amount="totalAmount" :client="client"
                         :transaction-type="transactionType" :bank-accounts="bankAccounts"
                         :bank-account-options="bankAccountOptions" :loading="props.loading"
-                        @submit="handleSubmitFromProcessor" @add-account="showAddBankAccountModal = true" />
+                        @submit="handleSubmitFromProcessor" @add-account="showAddBankAccountModal = true"
+                        @cancel="closeModal" />
                 </div>
             </div>
         </div>
