@@ -12,7 +12,7 @@ const props = defineProps({
 });
 
 // --- Emits ---
-const emit = defineEmits(['submit', 'add-account']);
+const emit = defineEmits(['submit', 'add-account', 'cancel']);
 
 // --- Formateador ---
 const formatCurrency = (value) => {
@@ -373,8 +373,20 @@ const dateSectionStyle = computed(() => {
                 <small>Crédito disponible: {{ formatCurrency(availableCredit) }}</small>
             </Message>
 
+            <!-- NUEVO: Mensaje informativo para abonos opcionales -->
+            <Message v-if="transactionType === 'flexible' && totalPaid <= 0.01" severity="info" icon="pi pi-info-circle" :closable="false" class="mb-4">
+                <span class="text-sm">Si el cliente no dejará un anticipo o abono en este momento, puedes omitir este paso. El total quedará registrado como saldo pendiente (a crédito).</span>
+            </Message>
+
             <Button :label="finalizeButtonLabel" :disabled="isFinalizeButtonDisabled || props.loading" :loading="props.loading"
                 @click="handleSubmit" icon="pi pi-check" class="w-full !py-3" />
+
+            <!-- NUEVO: Botón explícito para omitir y cerrar -->
+            <Button v-if="transactionType === 'flexible' && totalPaid <= 0.01"
+                label="Omitir por ahora (dejar a crédito)"
+                severity="secondary"
+                @click="emit('cancel')"
+                class="w-full mt-2" />
         </div>
     </div>
 </template>
