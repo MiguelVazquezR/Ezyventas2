@@ -1,18 +1,11 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
-import { router, Link } from '@inertiajs/vue3';
+import { router, Link, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
 import PrintModal from '@/Components/PrintModal.vue';
-import { usePage } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
-
-// Importaciones para filtros y UI
-import DatePicker from 'primevue/datepicker';
-import Select from 'primevue/select';
-import RadioButton from 'primevue/radiobutton';
-import Drawer from 'primevue/drawer'; // NUEVO: Importación del Drawer
 
 const props = defineProps({
     transactions: Object,
@@ -125,7 +118,6 @@ const toggleMenu = (event, data) => {
     menu.value.toggle(event);
 };
 
-// --- NAVEGACIÓN POR FILA (MODIFICADO PARA DRAWER) ---
 const onRowClick = (event) => {
     const target = event.originalEvent.target;
     // Evitar abrir si se hizo clic en un botón, checkbox o enlace
@@ -133,8 +125,19 @@ const onRowClick = (event) => {
         return;
     }
     
-    drawerTransaction.value = event.data;
-    isDrawerVisible.value = true;
+    // 1. Obtenemos la preferencia del usuario desde los props globales
+    // Si no ha configurado nada, usamos el Drawer por defecto
+    const clickAction = page.props.auth.preferences?.sale_table_row_click_action || 'Vista lateral con algunos detalles';
+
+    // 2. Evaluamos la cadena de texto exacta configurada en las opciones
+    if (clickAction === 'Redirección a vista de detalles') {
+        router.get(route('transactions.show', event.data.id));
+    } else {
+        // Abrir Drawer (Comportamiento por defecto o seleccionado)
+        drawerTransaction.value = event.data;
+        isDrawerVisible.value = true;
+    }
+    
 };
 
 const confirmDeleteTransaction = () => {
