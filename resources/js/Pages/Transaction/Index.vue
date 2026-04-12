@@ -7,10 +7,15 @@ import { usePermissions } from '@/Composables';
 import PrintModal from '@/Components/PrintModal.vue';
 import { useToast } from 'primevue/usetoast';
 
+// Importamos los nuevos parciales
+import TransactionDrawer from './Partials/TransactionDrawer.vue';
+import TransactionCancellationModal from './Partials/TransactionCancellationModal.vue';
+
 const props = defineProps({
     transactions: Object,
     filters: Object,
     availableTemplates: Array,
+    userBankAccounts: Array, // MODIFICACIÓN: Agregamos la prop de cuentas de banco
 });
 
 const confirm = useConfirm();
@@ -46,26 +51,18 @@ const statuses = [
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
 
-// --- Lógica Unificada de Cancelación/Devolución ---
-const isCancellationModalVisible = ref(false);
-const cancellationAction = ref('refund'); // 'refund' | 'penalty'
-const cancellationRefundMethod = ref('cash'); // 'balance' | 'cash'
-const isCancelling = ref(false);
-
-// --- DRAWER DE VISTA RÁPIDA ---
-const isDrawerVisible = ref(false);
-const drawerTransaction = ref(null);
+const openPrintModal = (transaction) => {
+    printDataSource.value = { type: 'transaction', id: transaction.id };
+    isPrintModalVisible.value = true;
+};
 
 // --- Computado para sesión activa ---
 const activeSession = computed(() => page.props.activeSession);
 
-const openPrintModal = (transaction) => {
-    printDataSource.value = {
-        type: 'transaction',
-        id: transaction.id
-    };
-    isPrintModalVisible.value = true;
-};
+// --- Estado de Parciales ---
+const isDrawerVisible = ref(false);
+const drawerTransaction = ref(null);
+const isCancellationModalVisible = ref(false);
 
 // --- MENÚ DE ACCIONES ---
 const menuItems = computed(() => {
@@ -74,8 +71,7 @@ const menuItems = computed(() => {
 
     const canCancelOrRefund = (() => {
         if (!transaction || !transaction.status) return false;
-        const status = transaction.status;
-        return !['cancelado', 'reembolsado'].includes(status);
+        return !['cancelado', 'reembolsado'].includes(transaction.status);
     })();
 
     return [
@@ -91,10 +87,7 @@ const menuItems = computed(() => {
             command: () => openPrintModal(selectedTransactionForMenu.value),
             visible: hasPermission('pos.access')
         },
-        {
-            separator: true
-        },
-        // Opción Unificada
+        { separator: true },
         {
             label: 'Cancelar / Devolver',
             icon: 'pi pi-times-circle',
@@ -120,24 +113,19 @@ const toggleMenu = (event, data) => {
 
 const onRowClick = (event) => {
     const target = event.originalEvent.target;
-    // Evitar abrir si se hizo clic en un botón, checkbox o enlace
     if (target.closest('button') || target.closest('.p-button') || target.closest('.p-checkbox') || target.closest('a')) {
         return;
     }
     
-    // 1. Obtenemos la preferencia del usuario desde los props globales
-    // Si no ha configurado nada, usamos el Drawer por defecto
+    // Obtenemos la preferencia global dinámica configurada para ventas
     const clickAction = page.props.auth.preferences?.sale_table_row_click_action || 'Vista lateral con algunos detalles';
 
-    // 2. Evaluamos la cadena de texto exacta configurada en las opciones
     if (clickAction === 'Redirección a vista de detalles') {
         router.get(route('transactions.show', event.data.id));
     } else {
-        // Abrir Drawer (Comportamiento por defecto o seleccionado)
         drawerTransaction.value = event.data;
         isDrawerVisible.value = true;
     }
-    
 };
 
 const confirmDeleteTransaction = () => {
@@ -152,21 +140,19 @@ const confirmDeleteTransaction = () => {
         acceptLabel: 'Sí, eliminar para siempre',
         rejectLabel: 'Cancelar',
         accept: () => {
-            router.delete(route('transactions.destroy', transaction.id), {
-                preserveScroll: true,
-            });
+            router.delete(route('transactions.destroy', transaction.id), { preserveScroll: true });
         }
     });
 };
 
-// --- NUEVA LÓGICA DE CANCELACIÓN / DEVOLUCIÓN ---
+// --- LÓGICA UNIFICADA Y DELEGADA ---
 const initiateCancellation = (transaction) => {
-    selectedTransactionForMenu.value = transaction; // Aseguramos que sea la actual
+    selectedTransactionForMenu.value = transaction;
     
     const totalPaid = (Array.isArray(transaction.payments) ? transaction.payments : [])
         .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
 
-    // Caso 1: No hay dinero de por medio -> Cancelación directa con confirmación simple
+    // Caso 1: No hay pagos, cancelación directa
     if (totalPaid <= 0.01) {
         let message = `¿Seguro que quieres cancelar la venta #${transaction.folio}? Se liberará el inventario reservado.`;
         if (transaction.status === 'apartado') {
@@ -189,50 +175,11 @@ const initiateCancellation = (transaction) => {
         return;
     }
 
-    // Caso 2: Hay dinero -> Abrir Modal Completo
-    cancellationAction.value = 'refund'; // Reset default
-    
-    // Default Refund Method: Caja si hay sesión, sino Saldo si hay cliente
-    if (activeSession.value) {
-        cancellationRefundMethod.value = 'cash';
-    } else if (transaction.customer_id) {
-        cancellationRefundMethod.value = 'balance';
-    } else {
-        cancellationRefundMethod.value = null; // No hay opción válida por defecto
-    }
-    
+    // Caso 2: Hay pagos, el Modal se encarga del resto
     isCancellationModalVisible.value = true;
 };
 
-const submitCancellation = () => {
-    const transaction = selectedTransactionForMenu.value;
-    if (!transaction) return;
-
-    isCancelling.value = true;
-    
-    const payload = {
-        action: cancellationAction.value
-    };
-    
-    if (cancellationAction.value === 'refund') {
-        if (!cancellationRefundMethod.value) {
-            toast.add({ severity: 'error', summary: 'Error', detail: 'Selecciona un método de reembolso.', life: 3000 });
-            isCancelling.value = false;
-            return;
-        }
-        payload.refund_method = cancellationRefundMethod.value;
-    }
-
-    router.post(route('transactions.cancel', transaction.id), payload, {
-        preserveScroll: true,
-        onSuccess: () => {
-            isCancellationModalVisible.value = false;
-        },
-        onFinish: () => isCancelling.value = false
-    });
-};
-
-// --- FUNCIONES DE TABLA Y FORMATO ---
+// --- FUNCIONES DE TABLA ---
 const fetchData = (options = {}) => {
     let dStart = null;
     let dEnd = null;
@@ -260,29 +207,15 @@ const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: eve
 
 watch(searchTerm, () => fetchData({ page: 1 }));
 watch(statusFilter, () => fetchData({ page: 1 }));
-
 watch(dateRange, (newVal) => {
-    if (!newVal) {
-        fetchData({ page: 1 });
-        return;
-    }
-    if (Array.isArray(newVal)) {
-        if (newVal[0] && newVal[1]) {
-            fetchData({ page: 1 });
-        }
-    }
+    if (!newVal || (Array.isArray(newVal) && newVal[0] && newVal[1])) fetchData({ page: 1 });
 });
 
 const getStatusSeverity = (status) => {
     const map = { 
-        completado: 'success', 
-        pendiente: 'warn', 
-        cancelado: 'danger', 
-        reembolsado: 'info', 
-        apartado: 'warn',
-        por_entregar: 'info',
-        en_ruta: 'info',
-        entregado_por_pagar: 'warn'
+        completado: 'success', pendiente: 'warn', cancelado: 'danger', 
+        reembolsado: 'info', apartado: 'warn', por_entregar: 'info',
+        en_ruta: 'info', entregado_por_pagar: 'warn'
     };
     return map[status] || 'secondary';
 };
@@ -297,25 +230,7 @@ const formatDate = (dateString) => {
     if (!dateString) return '';
     try {
         return new Date(dateString).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
-    } catch (e) { console.error("Error formatting date:", dateString, e); return dateString; }
-};
-
-// NUEVO: Formateador específico para fechas estilo "21 de febrero, 9:34am"
-const formatFriendlyDate = (dateString) => {
-    if (!dateString) return '';
-    try {
-        const d = new Date(dateString);
-        const day = d.getDate();
-        const month = new Intl.DateTimeFormat('es-MX', { month: 'long' }).format(d);
-        let hour = d.getHours();
-        const minute = d.getMinutes().toString().padStart(2, '0');
-        const ampm = hour >= 12 ? 'pm' : 'am';
-        hour = hour % 12;
-        hour = hour ? hour : 12; // el '0' debe ser '12'
-        return `${day} de ${month}, ${hour}:${minute}${ampm}`;
-    } catch (e) {
-        return dateString;
-    }
+    } catch (e) { return dateString; }
 };
 
 const formatCurrency = (value) => {
@@ -323,20 +238,6 @@ const formatCurrency = (value) => {
      const numberValue = Number(value);
      if (isNaN(numberValue)) return '';
      return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(numberValue);
-};
-
-// Helper para obtener total pagado
-const getTransactionTotalPaid = (transaction) => {
-    return (Array.isArray(transaction?.payments) ? transaction.payments : [])
-        .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-};
-
-// Helper para obtener saldo pendiente
-const getTransactionPending = (transaction) => {
-    if (!transaction) return 0;
-    const total = parseFloat(transaction.total || 0);
-    const paid = getTransactionTotalPaid(transaction);
-    return Math.max(0, total - paid);
 };
 </script>
 
@@ -432,179 +333,17 @@ const getTransactionPending = (transaction) => {
             </div>
         </div>
 
-        <PrintModal
-            v-if="printDataSource"
-            v-model:visible="isPrintModalVisible"
-            :data-source="printDataSource"
-            :available-templates="availableTemplates"
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource" :available-templates="availableTemplates" />
+        
+        <TransactionDrawer v-model:visible="isDrawerVisible" :transaction="drawerTransaction" />
+        
+        <!-- MODIFICACIÓN: Pasamos userBankAccounts al modal -->
+        <TransactionCancellationModal 
+            v-model:visible="isCancellationModalVisible" 
+            :transaction="selectedTransactionForMenu" 
+            :active-session="activeSession" 
+            :bank-accounts="userBankAccounts"
         />
-
-        <!-- DRAWER DE VISTA RÁPIDA -->
-        <Drawer v-model:visible="isDrawerVisible" position="right" class="!w-full md:!w-[400px]">
-            <template #header>
-                <div class="flex items-center gap-2">
-                    <span class="font-bold text-lg">Resumen Venta #{{ drawerTransaction?.folio }}</span>
-                </div>
-            </template>
-            
-            <div v-if="drawerTransaction" class="flex flex-col gap-6">
-                <!-- Información General -->
-                <div class="flex flex-col gap-2">
-                    <div class="flex justify-between items-center">
-                        <span class="text-gray-500 text-sm">Estatus</span>
-                        <Tag :value="formatStatusLabel(drawerTransaction.status)" :severity="getStatusSeverity(drawerTransaction.status)" />
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-gray-500 text-sm">Fecha</span>
-                        <span class="font-medium text-sm">{{ formatFriendlyDate(drawerTransaction.created_at) }}</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-gray-500 text-sm">Cliente</span>
-                        <div class="flex flex-col items-end">
-                            <span v-if="drawerTransaction.customer" class="font-medium text-sm text-right truncate max-w-[200px]" :title="drawerTransaction.customer.name">
-                                {{ drawerTransaction.customer.name }}
-                            </span>
-                            <span v-else-if="drawerTransaction.contact_info && drawerTransaction.contact_info.name" class="font-medium text-sm text-right truncate max-w-[200px]" :title="drawerTransaction.contact_info.name">
-                                {{ drawerTransaction.contact_info.name }} <Tag severity="info" value="Comanda" class="!text-[10px] !px-1 !py-0 ml-1"></Tag>
-                            </span>
-                            <span v-else class="font-medium text-sm text-right truncate max-w-[200px]" title="Público en general">
-                                Público en general
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                <Divider class="!my-0" />
-
-                <!-- Lista de Artículos -->
-                <div class="flex flex-col gap-2">
-                    <span class="text-gray-500 text-sm font-bold uppercase tracking-wider">Artículos</span>
-                    <ul v-if="drawerTransaction.items && drawerTransaction.items.length" class="flex flex-col gap-3">
-                        <li v-for="item in drawerTransaction.items" :key="item.id" class="flex justify-between text-sm">
-                            <div class="flex flex-col flex-1">
-                                <span class="font-medium leading-tight">
-                                    <span class="text-gray-500 mr-1">{{ Math.round(item.quantity) }}x</span>
-                                    {{ item.description }}
-                                </span>
-                            </div>
-                            <span class="font-semibold ml-2">{{ formatCurrency(item.line_total) }}</span>
-                        </li>
-                    </ul>
-                    <div v-else class="text-sm text-gray-400 italic">No hay artículos registrados.</div>
-                </div>
-
-                <Divider class="!my-0" />
-
-                <!-- Lista de Pagos -->
-                <div class="flex flex-col gap-2">
-                    <span class="text-gray-500 text-sm font-bold uppercase tracking-wider">Historial de pagos</span>
-                    <ul v-if="drawerTransaction.payments && drawerTransaction.payments.length" class="flex flex-col gap-3 relative border-l-2 border-gray-200 dark:border-gray-700 ml-2 pl-4 py-1">
-                        <li v-for="payment in drawerTransaction.payments" :key="payment.id" class="flex flex-col text-sm relative">
-                            <!-- Timeline dot -->
-                            <div class="absolute size-2 bg-primary-500 rounded-full -left-[18px] top-1.5"></div>
-                            
-                            <div class="flex justify-between items-start">
-                                <span class="font-medium capitalize">{{ (payment.payment_method || 'Desconocido').replace(/_/g, ' ') }}</span>
-                                <span class="font-bold text-green-600 dark:text-green-400">{{ formatCurrency(payment.amount) }}</span>
-                            </div>
-                            <span class="text-xs text-gray-500">{{ formatFriendlyDate(payment.created_at) }}</span>
-                        </li>
-                    </ul>
-                    <div v-else class="text-sm text-gray-400 italic">No se han registrado pagos.</div>
-                </div>
-
-                <!-- Resumen Total -->
-                <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg flex flex-col gap-1 border dark:border-gray-700">
-                    <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                        <span>Total de la venta:</span>
-                        <span>{{ formatCurrency(drawerTransaction.total) }}</span>
-                    </div>
-                    <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                        <span>Abonado:</span>
-                        <span>{{ formatCurrency(getTransactionTotalPaid(drawerTransaction)) }}</span>
-                    </div>
-                    <div class="flex justify-between font-bold text-lg mt-2 pt-2 border-t dark:border-gray-600">
-                        <span>Resta:</span>
-                        <span :class="getTransactionPending(drawerTransaction) > 0 ? 'text-red-500' : 'text-green-500'">
-                            {{ formatCurrency(getTransactionPending(drawerTransaction)) }}
-                        </span>
-                    </div>
-                </div>
-
-                <!-- Acción Footer -->
-                <div class="mt-auto pt-4 flex gap-2">
-                    <Button 
-                        v-if="hasPermission('transactions.see_details')"
-                        label="Ver detalles completos" 
-                        icon="pi pi-external-link" 
-                        class="w-full" 
-                        @click="router.visit(route('transactions.show', drawerTransaction.id))" 
-                    />
-                </div>
-            </div>
-        </Drawer>
-
-        <!-- MODAL UNIFICADO DE CANCELACIÓN Y DEVOLUCIÓN -->
-        <Dialog v-model:visible="isCancellationModalVisible" modal header="Anular Transacción" :style="{ width: '32rem' }">
-            <div class="p-fluid" v-if="selectedTransactionForMenu">
-                <div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800 mb-4 text-sm text-blue-800 dark:text-blue-200">
-                    <i class="pi pi-info-circle mr-1"></i>
-                    Esta venta (Folio #{{ selectedTransactionForMenu.folio }}) tiene pagos registrados por <strong>{{ formatCurrency(getTransactionTotalPaid(selectedTransactionForMenu)) }}</strong>.
-                </div>
-
-                <div class="flex flex-col gap-4">
-                    <p class="font-bold text-gray-700 dark:text-gray-300">¿Qué deseas hacer con el dinero?</p>
-                    
-                    <!-- Opción 1: Reembolsar -->
-                    <div class="border rounded p-3" :class="cancellationAction === 'refund' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/10' : 'border-gray-200 dark:border-gray-700'">
-                        <div class="flex items-center mb-2">
-                            <RadioButton v-model="cancellationAction" inputId="actionRefund" value="refund" />
-                            <label for="actionRefund" class="ml-2 font-bold cursor-pointer">Devolver al cliente (Reembolso)</label>
-                        </div>
-                        
-                        <!-- Subopciones de Reembolso (Solo si está seleccionado) -->
-                        <div v-if="cancellationAction === 'refund'" class="ml-7 flex flex-col gap-2 mt-2 animate-fade-in">
-                            <div v-if="activeSession" class="flex items-center">
-                                <RadioButton v-model="cancellationRefundMethod" inputId="methodCash" value="cash" />
-                                <label for="methodCash" class="ml-2 text-sm cursor-pointer">Entregar efectivo de caja</label>
-                            </div>
-                            <div v-else class="text-xs text-orange-500 ml-1">
-                                * No hay caja abierta para devolver efectivo.
-                            </div>
-
-                            <div v-if="selectedTransactionForMenu.customer_id" class="flex items-center">
-                                <RadioButton v-model="cancellationRefundMethod" inputId="methodBalance" value="balance" />
-                                <label for="methodBalance" class="ml-2 text-sm cursor-pointer">Abonar a su saldo a favor</label>
-                            </div>
-                            <div v-else class="text-xs text-orange-500 ml-1">
-                                * No se puede abonar a saldo (Venta sin cliente registrado).
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Opción 2: Penalizar -->
-                    <div class="border rounded p-3" :class="cancellationAction === 'penalty' ? 'border-red-500 bg-red-50 dark:bg-red-900/10' : 'border-gray-200 dark:border-gray-700'">
-                        <div class="flex items-center">
-                            <RadioButton v-model="cancellationAction" inputId="actionPenalty" value="penalty" />
-                            <label for="actionPenalty" class="ml-2 font-bold cursor-pointer text-red-600">Cobrar como penalización</label>
-                        </div>
-                        <p class="text-xs text-gray-500 ml-7 mt-1">
-                            El dinero NO se devuelve. Se cancela la venta pero el negocio retiene el monto pagado.
-                        </p>
-                    </div>
-                </div>
-            </div>
-            <template #footer>
-                <Button label="Cancelar" severity="secondary" @click="isCancellationModalVisible = false" text />
-                <Button 
-                    :label="cancellationAction === 'refund' ? 'Confirmar Devolución' : 'Confirmar Penalización'" 
-                    :icon="cancellationAction === 'refund' ? 'pi pi-replay' : 'pi pi-ban'" 
-                    @click="submitCancellation" 
-                    :loading="isCancelling" 
-                    :severity="cancellationAction === 'refund' ? 'primary' : 'danger'"
-                    :disabled="cancellationAction === 'refund' && !cancellationRefundMethod"
-                />
-            </template>
-        </Dialog>
+        
     </AppLayout>
 </template>
