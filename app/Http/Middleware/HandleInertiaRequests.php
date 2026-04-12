@@ -78,6 +78,16 @@ class HandleInertiaRequests extends Middleware
                     }
                 }
 
+                // --- PREFERENCIAS DEL USUARIO (Settings) ---
+                // Obtenemos TODAS las configuraciones del usuario dinámicamente y las mapeamos por su "key"
+                $userSettings = $user->settings()
+                    ->with('definition:id,key')
+                    ->get()
+                    ->mapWithKeys(function ($setting) {
+                        return [$setting->definition->key => $setting->value];
+                    })
+                    ->toArray();
+
                 return [
                     'user' => $user,
                     'permissions' => $permissions,
@@ -85,6 +95,10 @@ class HandleInertiaRequests extends Middleware
                     'subscription' => ['commercial_name' => $subscription->commercial_name],
                     'subscriptionWarning' => $subscriptionWarning,
                     'current_branch' => $user->branch,
+                    'preferences' => array_merge([
+                        // Defaults base por si el usuario aún no configura nada
+                        'default_table_click_action' => 'drawer',
+                    ], $userSettings),
                     // --- MODIFICACIÓN SUPER ADMIN (ID 1) ---
                     'available_branches' => function () use ($user, $subscription) {
                         if ($user->id === 1) {
@@ -133,7 +147,7 @@ class HandleInertiaRequests extends Middleware
                     ->count();
 
                 return [
-                    'expiring_debts' => $expiringDebts, // Cambiado de expiring_layaways a expiring_debts
+                    'expiring_debts' => $expiringDebts, 
                     'upcoming_deliveries' => $upcomingDeliveries,
                     'total' => $expiringDebts + $upcomingDeliveries
                 ];
@@ -155,7 +169,6 @@ class HandleInertiaRequests extends Middleware
                 return $user->cashRegisterSessions()
                     ->where('status', CashRegisterSessionStatus::OPEN)
                     ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $user->branch_id))
-                    // carga ansiosa para usuarios, movimientos y los pagos con su transacción (para mostrar los folios)
                     ->with(['users', 'cashMovements', 'payments.transaction:id,folio'])
                     ->first();
             },
@@ -176,16 +189,12 @@ class HandleInertiaRequests extends Middleware
                 $user = $request->user();
                 if (!$user) return [];
 
-                // 1. Verificamos si EL USUARIO ACTUAL ya tiene sesión (para no dejarle abrir 2)
                 $userHasSession = $user->cashRegisterSessions()->where('status', CashRegisterSessionStatus::OPEN)->exists();
-
-                // 2. CORRECCIÓN: Eliminamos la verificación de si la sucursal tiene sesiones.
-                // Lo único que importa es que el usuario NO tenga sesión y la caja NO esté en uso.
 
                 if (!$userHasSession) {
                     return CashRegister::where('branch_id', $user->branch_id)
                         ->where('is_active', true)
-                        ->where('in_use', false) // Solo cajas disponibles
+                        ->where('in_use', false) 
                         ->get(['id', 'name']);
                 }
 
