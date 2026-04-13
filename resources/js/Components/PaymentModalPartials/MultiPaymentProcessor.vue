@@ -129,15 +129,21 @@ const usedPaymentMethods = computed(() => new Set(payments.value.map(p => p.meth
 const addPaymentMethod = (method) => {
     if (usedPaymentMethods.value.has(method.id)) return;
 
+    // MEJORA UX (Sustitución Inteligente): 
+    // Si hay exactamente un pago (el efectivo por defecto), cubre el total exacto, 
+    // y el cajero hace clic en "Tarjeta" o "Transferencia", asumimos que no quiere 
+    // dividir la cuenta, sino cambiar el método principal. Borramos el efectivo para ahorrar un clic de borrado.
+    if (remainingAmount.value <= 0.01 && payments.value.length === 1 && payments.value[0].amount === props.totalAmount) {
+        payments.value = []; // Limpiamos para sustituir
+    }
+
+    // Calculamos el amount a agregar basándonos en el estado ACTUAL síncrono.
+    const currentPaid = payments.value.reduce((sum, p) => sum + (p.amount || 0), 0) + effectiveBalanceUsed.value;
+    const currentRemaining = props.totalAmount - currentPaid;
+
     let amountToAdd = 0;
-    if (remainingAmount.value > 0.01) {
-        amountToAdd = remainingAmount.value;
-    }
-    else if (props.transactionType === 'balance' || props.transactionType === 'apartado' || props.transactionType === 'flexible') {
-        amountToAdd = 0;
-    }
-    else {
-        amountToAdd = 0;
+    if (currentRemaining > 0.01) {
+        amountToAdd = currentRemaining;
     }
 
     payments.value.push({
@@ -164,11 +170,33 @@ const creditDeficit = computed(() => {
     return deficit > 0.01 ? deficit : 0;
 });
 
-// --- Watchers para UX ---
-watch(() => props.totalAmount, () => {
+// --- INICIALIZACIÓN DE PAGOS (MEJORA UX) ---
+const initializeDefaultPayments = () => {
     payments.value = [];
-    useBalance.value = false;
-});
+    
+    if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
+        useBalance.value = true;
+    } else {
+        useBalance.value = false;
+    }
+
+    // Agregar Efectivo por defecto cubriendo el total de la venta para ahorrar clics
+    if (props.transactionType !== 'balance' && props.totalAmount > 0) {
+        payments.value.push({
+            id: crypto.randomUUID(),
+            method: 'efectivo',
+            amount: props.totalAmount,
+            bank_account_id: null,
+            notes: ''
+        });
+    }
+};
+
+// --- Watchers para Inicializar en Apertura/Cambio ---
+watch([() => props.totalAmount, () => props.transactionType], () => {
+    initializeDefaultPayments();
+}, { immediate: true });
+
 
 // --- Lógica del Botón Finalizar (Computada) ---
 const isFinalizeButtonDisabled = computed(() => {
@@ -220,14 +248,9 @@ const handleSubmit = () => {
     emit('submit', {
         payments: payments.value.filter(p => p.amount > 0),
         use_balance: useBalance.value,
-        layaway_expiration_date: expirationDate.value, // Enviamos la fecha seleccionada (usamos el mismo nombre de variable para backend)
+        layaway_expiration_date: expirationDate.value, 
     });
 };
-
-// --- Configuración Inicial ---
-if (props.totalAmount <= 0 && props.client && props.client.balance > 0) {
-    useBalance.value = true;
-}
 
 // --- Estilos dinámicos para la sección de fecha ---
 const dateSectionStyle = computed(() => {
@@ -373,7 +396,6 @@ const dateSectionStyle = computed(() => {
                 <small>Crédito disponible: {{ formatCurrency(availableCredit) }}</small>
             </Message>
 
-            <!-- NUEVO: Mensaje informativo para abonos opcionales -->
             <Message v-if="transactionType === 'flexible' && totalPaid <= 0.01" severity="info" icon="pi pi-info-circle" :closable="false" class="mb-4">
                 <span class="text-sm">Si el cliente no dejará un anticipo o abono en este momento, puedes omitir este paso. El total quedará registrado como saldo pendiente (a crédito).</span>
             </Message>
@@ -381,7 +403,6 @@ const dateSectionStyle = computed(() => {
             <Button :label="finalizeButtonLabel" :disabled="isFinalizeButtonDisabled || props.loading" :loading="props.loading"
                 @click="handleSubmit" icon="pi pi-check" class="w-full !py-3" />
 
-            <!-- NUEVO: Botón explícito para omitir y cerrar -->
             <Button v-if="transactionType === 'flexible' && totalPaid <= 0.01"
                 label="Omitir por ahora (dejar a crédito)"
                 severity="secondary"

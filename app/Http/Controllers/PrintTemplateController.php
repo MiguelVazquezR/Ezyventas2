@@ -23,7 +23,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
         return [
             new Middleware('can:settings.templates.access', only: ['index']),
             new Middleware('can:settings.templates.create', only: ['create', 'store']),
-            new Middleware('can:settings.templates.edit', only: ['edit', 'update']),
+            // NUEVO: Agregamos toggleDefault a los permisos de edición
+            new Middleware('can:settings.templates.edit', only: ['edit', 'update', 'toggleDefault']), 
             new Middleware('can:settings.templates.delete', only: ['destroy']),
         ];
     }
@@ -43,9 +44,6 @@ class PrintTemplateController extends Controller implements HasMiddleware
         return ['limit' => $limit, 'usage' => $usage];
     }
 
-    /**
-     * Obtiene las opciones de contexto formateadas para el selector del frontend.
-     */
     private function getContextOptions(): array
     {
         return collect(TemplateContextType::cases())->map(fn($case) => [
@@ -100,7 +98,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
             'templateLimit' => $limitData['limit'],
             'templateUsage' => $limitData['usage'],
             'customFieldDefinitions' => $customFieldDefinitions,
-            'contextTypes' => $this->getContextOptions(), // Pasamos las opciones al frontend
+            'contextTypes' => $this->getContextOptions(),
         ]);
     }
 
@@ -118,7 +116,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
-            'context_type' => ['required', Rule::enum(TemplateContextType::class)], // Validación del nuevo campo
+            'context_type' => ['required', Rule::enum(TemplateContextType::class)],
+            'is_default' => 'boolean', 
             'content' => 'required|array',
             'content.config' => 'required|array',
             'content.elements' => 'required|array',
@@ -130,7 +129,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
             $template = $subscription->printTemplates()->create([
                 'name' => $validated['name'],
                 'type' => $validated['type'],
-                'context_type' => $validated['context_type'], // Guardamos el contexto seleccionado manualmente
+                'context_type' => $validated['context_type'],
+                'is_default' => $validated['is_default'] ?? false, 
                 'content' => $validated['content'],
             ]);
             $template->branches()->attach($validated['branch_ids']);
@@ -148,7 +148,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'type' => ['required', Rule::in(array_column(TemplateType::cases(), 'value'))],
-            'context_type' => ['required', Rule::enum(TemplateContextType::class)], // Validación del nuevo campo
+            'context_type' => ['required', Rule::enum(TemplateContextType::class)],
+            'is_default' => 'boolean', 
             'content' => 'required|array',
             'content.config' => 'required|array',
             'content.elements' => 'required|array',
@@ -160,13 +161,28 @@ class PrintTemplateController extends Controller implements HasMiddleware
             $printTemplate->update([
                 'name' => $validated['name'],
                 'type' => $validated['type'],
-                'context_type' => $validated['context_type'], // Actualizamos el contexto
+                'context_type' => $validated['context_type'],
+                'is_default' => $validated['is_default'] ?? false, 
                 'content' => $validated['content'],
             ]);
             $printTemplate->branches()->sync($validated['branch_ids']);
         });
 
         return redirect()->route('print-templates.index')->with('success', 'Plantilla actualizada con éxito.');
+    }
+
+    // --- NUEVO: Método para cambiar rápidamente el estado default ---
+    public function toggleDefault(PrintTemplate $printTemplate)
+    {
+        if ($printTemplate->subscription_id !== Auth::user()->branch->subscription_id) {
+            abort(403);
+        }
+
+        $printTemplate->update([
+            'is_default' => !$printTemplate->is_default
+        ]);
+
+        return redirect()->back();
     }
 
     public function edit(PrintTemplate $printTemplate): Response
@@ -197,7 +213,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
             'branches' => $subscription->branches()->get(['id', 'name']),
             'templateImages' => $templateImages,
             'customFieldDefinitions' => $customFieldDefinitions,
-            'contextTypes' => $this->getContextOptions(), // Pasamos las opciones al frontend
+            'contextTypes' => $this->getContextOptions(), 
         ]);
     }
 

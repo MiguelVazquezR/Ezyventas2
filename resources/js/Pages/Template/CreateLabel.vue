@@ -56,6 +56,7 @@ const form = useForm({
     name: '',
     type: 'etiqueta',
     context_type: 'pos', // Valor por defecto
+    is_default: false, // NUEVO: Inicializamos el campo auto-selección
     branch_ids: [],
     content: {
         config: {
@@ -76,6 +77,7 @@ onMounted(() => {
         form.name = props.printTemplate.name;
         form.branch_ids = props.printTemplate.branches ? props.printTemplate.branches.map(b => b.id) : [];
         form.context_type = props.printTemplate.context_type || 'pos'; 
+        form.is_default = props.printTemplate.is_default ? true : false; // Cargar valor existente
         
         if (props.printTemplate.content) {
             form.content.config = { ...form.content.config, ...props.printTemplate.content.config };
@@ -504,6 +506,15 @@ const dpiOptions = [203, 300, 600];
                                 <InputLabel value="Espacio (GAP)" />
                                 <InputNumber fluid v-model="form.content.config.gap" class="w-full" suffix=" mm" :min="0" />
                             </div>
+                        </div>
+
+                        <!-- NUEVO TOGGLE DE SELECCION AUTOMATICA -->
+                        <div class="flex items-center justify-between pt-4 mt-2 border-t dark:border-gray-700">
+                            <div class="flex flex-col">
+                                <span class="font-bold text-sm text-gray-700 dark:text-gray-300">Selección automática</span>
+                                <span class="text-[10px] text-gray-500">Se seleccionará sola al imprimir.</span>
+                            </div>
+                            <InputSwitch v-model="form.is_default" />
                         </div>
                     </div>
 

@@ -138,13 +138,21 @@ const getContextLabel = (type) => {
                         </template>
                     </Column>
 
-                    <!-- Nueva Columna: Contexto -->
+                    <!-- Columna: Contexto -->
                     <Column header="Contexto (Módulo)">
                         <template #body="{ data }">
                             <div class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
                                 <i class="pi pi-box text-gray-400"></i>
                                 <span class="font-medium">{{ getContextLabel(data.context_type) }}</span>
                             </div>
+                        </template>
+                    </Column>
+
+                    <!-- NUEVA Columna: Selección Automática -->
+                    <Column header="Autoselección" alignFrozen="center" style="text-align: center;">
+                        <template #body="{ data }">
+                            <i v-if="data.is_default" class="pi pi-check-circle text-green-500 text-xl" v-tooltip.top="'Se selecciona automáticamente al imprimir'"></i>
+                            <i v-else class="pi pi-minus text-gray-300" v-tooltip.top="'No seleccionada por defecto'"></i>
                         </template>
                     </Column>
 
