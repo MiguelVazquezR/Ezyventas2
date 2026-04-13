@@ -7,6 +7,7 @@ import InputError from '@/Components/InputError.vue';
 
 const props = defineProps({
     settings: Object,
+    availableModules: Array,
 });
 
 // -- Formulario Principal para ACTUALIZAR valores --
@@ -53,7 +54,6 @@ const submit = () => {
 // --- Opciones para los Select fluids ---
 const levelOptions = ref([{ label: 'Suscripción', value: 'subscription' }, { label: 'Sucursal', value: 'branch' }, { label: 'Usuario', value: 'user' }]);
 const typeOptions = ref([{ label: 'Texto corto (255 caracteres)', value: 'text' }, { label: 'Texto largo (2,000 caracteres)', value: 'long_text' }, { label: 'Número', value: 'number' }, { label: 'Booleano (Sí/No)', value: 'boolean' }, { label: 'Lista', value: 'list' }, { label: 'Selección', value: 'select' }, { label: 'Archivo', value: 'file' }]);
-const moduleOptions = ref(['Control financiero', 'Cotizaciones', 'Gastos', 'Historial de ventas', 'Productos', 'Punto de venta', 'Servicios', 'Tienda en linea', 'Impresoras', 'Básculas'].sort((a, b) => a.localeCompare(b)));
 
 // -- Lógica para CREAR y EDITAR (sin cambios) --
 const isCreateModalVisible = ref(false);
@@ -121,7 +121,7 @@ const getLevelLabel = (level) => ({ subscription: 'Suscripción', branch: 'Sucur
                                             </div>
                                             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">{{
                                                 setting.description
-                                                }}</p>
+                                            }}</p>
                                         </div>
                                         <div class="flex-shrink-0 ml-4 w-64">
                                             <ToggleSwitch v-if="setting.type === 'boolean'" :inputId="setting.key"
@@ -197,9 +197,11 @@ const getLevelLabel = (level) => ({ subscription: 'Suscripción', branch: 'Sucur
                             v-model="(isEditModalVisible ? editForm : createForm).description" rows="3" />
                         <InputError :message="(isEditModalVisible ? editForm : createForm).errors.description" />
                     </div>
-                    <div class="field">
-                        <InputLabel value="Módulo" /><Select fluid
-                            v-model="(isEditModalVisible ? editForm : createForm).module" :options="moduleOptions" />
+                    <div>
+                        <InputLabel value="Módulo al que pertenece *" />
+                        <!-- CAMBIO: De InputText a Select usando los módulos dinámicos -->
+                        <Select id="module" v-model="(isEditModalVisible ? editForm : createForm).module"
+                            :options="availableModules" placeholder="Selecciona un módulo" class="w-full mt-1" />
                         <InputError :message="(isEditModalVisible ? editForm : createForm).errors.module" />
                     </div>
                     <div class="grid grid-cols-2 gap-4">

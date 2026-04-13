@@ -30,6 +30,14 @@ class SettingsController extends Controller implements HasMiddleware
 
         $definitions = SettingDefinition::orderBy('name')->get();
 
+        // --- NUEVO: Obtener los módulos disponibles de la suscripción ---
+        $availableModules = $subscription->getAvailableModuleNames();
+        // Agregamos módulos base que siempre deben existir para configuraciones generales
+        $availableModules[] = 'Sistema';
+        $availableModules[] = 'Configuraciones Generales';
+        $availableModules = array_unique($availableModules);
+        sort($availableModules); // Ordenarlos alfabéticamente
+
         $userValues = $user->settings()->pluck('value', 'setting_definition_id');
         $branchValues = $branch->settings()->pluck('value', 'setting_definition_id');
         $subscriptionValues = $subscription->settings()->pluck('value', 'setting_definition_id');
@@ -73,6 +81,7 @@ class SettingsController extends Controller implements HasMiddleware
 
         return Inertia::render('Setting/Index', [
             'settings' => $settings,
+            'availableModules' => array_values($availableModules),
         ]);
     }
 

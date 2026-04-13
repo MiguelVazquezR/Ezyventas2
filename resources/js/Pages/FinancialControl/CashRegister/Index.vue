@@ -64,6 +64,11 @@ const toggleMenu = (event, data) => {
     selectedRegisterForMenu.value = data;
     menu.value.toggle(event);
 };
+
+// --- AÑADIDO: Lógica para navegar al detalle al dar clic en la fila ---
+const onRowClick = (event) => {
+    router.get(route('cash-registers.show', event.data.id));
+};
 </script>
 
 <template>
@@ -83,7 +88,8 @@ const toggleMenu = (event, data) => {
                 </div>
 
                 <!-- Tabla de Cajas -->
-                <DataTable :value="cashRegisters" dataKey="id" tableStyle="min-width: 50rem">
+                <DataTable :value="cashRegisters" dataKey="id" tableStyle="min-width: 50rem"
+                    @row-click="onRowClick" rowHover class="[&_.p-datatable-tbody>tr]:cursor-pointer">
                     <template #empty>
                         <div class="text-center py-4">No hay cajas registradoras creadas.</div>
                     </template>
@@ -95,15 +101,18 @@ const toggleMenu = (event, data) => {
                                 :severity="data.is_active ? 'success' : 'danger'" />
                         </template>
                     </Column>
-                    <Column field="in_use" header="En Uso">
+                     <Column field="in_use" header="En Uso">
                         <template #body="{ data }">
                             <i class="pi"
                                 :class="{ 'pi-check-circle text-green-500': data.in_use, 'pi-times-circle text-gray-400': !data.in_use }"></i>
                         </template>
                     </Column>
                     <Column v-if="hasPermission('cash_registers.manage')" headerStyle="width: 5rem; text-align: center">
-                        <template #body="{ data }"> <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
-                                text rounded severity="secondary" /> </template>
+                        <template #body="{ data }"> 
+                            <!-- Agregamos .stop al click para que no se dispare el evento de la fila -->
+                            <Button @click.stop="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
+                                text rounded severity="secondary" /> 
+                        </template>
                     </Column>
                 </DataTable>
 

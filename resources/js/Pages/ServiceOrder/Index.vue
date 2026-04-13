@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ImportServiceOrdersModal from './Partials/ImportServiceOrdersModal.vue';
@@ -16,6 +16,8 @@ const props = defineProps({
     filters: Object,
     availableTemplates: Array,
 });
+
+const page = usePage();
 
 const confirm = useConfirm();
 
@@ -178,9 +180,20 @@ const onRowClick = (event) => {
     if (target.closest('button') || target.closest('.p-button') || target.closest('.p-checkbox') || target.closest('a')) {
         return;
     }
+
+    // 1. Obtenemos la preferencia del usuario desde los props globales
+    // Si no ha configurado nada, usamos el Drawer por defecto
+    const clickAction = page.props.auth.preferences?.service_order_table_row_click_action || 'Vista lateral con algunos detalles';
+
+    // 2. Evaluamos la cadena de texto exacta configurada en las opciones
+    if (clickAction === 'Redirección a vista de detalles') {
+        router.get(route('service-orders.show', event.data.id));
+    } else {
+        // Abrir Drawer (Comportamiento por defecto o seleccionado)
+        drawerOrder.value = event.data;
+        isDrawerVisible.value = true;
+    }
     
-    drawerOrder.value = event.data;
-    isDrawerVisible.value = true;
 };
 </script>
 

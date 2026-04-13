@@ -1,15 +1,17 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ImportCustomersModal from './Partials/ImportCustomersModal.vue';
 import { usePermissions } from '@/Composables';
+import { router, usePage } from '@inertiajs/vue3';
 
 const props = defineProps({
     customers: Object,
     filters: Object,
 });
+
+const page = usePage();
 
 const confirm = useConfirm();
 
@@ -155,9 +157,18 @@ const onRowClick = (event) => {
         return;
     }
     
-    // Abrir Drawer en lugar de navegar de inmediato
-    selectedCustomerForDrawer.value = event.data;
-    isDrawerVisible.value = true;
+    // 1. Obtenemos la preferencia del usuario desde los props globales
+    // Si no ha configurado nada, usamos el Drawer por defecto
+    const clickAction = page.props.auth.preferences?.customer_table_row_click_action || 'Vista lateral con algunos detalles';
+
+    // 2. Evaluamos la cadena de texto exacta configurada en las opciones
+    if (clickAction === 'Redirección a vista de detalles') {
+        router.get(route('customers.show', event.data.id));
+    } else {
+        // Abrir Drawer (Comportamiento por defecto o seleccionado)
+        selectedCustomerForDrawer.value = event.data;
+        isDrawerVisible.value = true;
+    }
 };
 </script>
 
