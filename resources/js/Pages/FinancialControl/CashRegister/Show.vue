@@ -32,6 +32,9 @@ const showCloseModal = ref(false);
 const showAddMovementModal = ref(false);
 const showHistoryModal = ref(false);
 
+// --- NUEVO: Estado para el movimiento seleccionado ---
+const selectedMovement = ref(null);
+
 const deleteRegister = () => {
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar la caja "${props.cashRegister.name}"?`,
@@ -49,6 +52,12 @@ const actionItems = ref([
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteRegister },
 ]);
+
+// --- NUEVO: Ref y función para el Menú de Acciones ---
+const menu = ref();
+const toggleMenu = (event) => {
+    menu.value.toggle(event);
+};
 
 const isCurrentUserInSession = computed(() => {
     if (!props.currentSession || !props.currentSession.users) return false;
@@ -77,6 +86,32 @@ const joinSession = () => {
     });
 };
 
+// --- NUEVO: Lógica de Movimientos ---
+const openAddMovement = () => {
+    selectedMovement.value = null; // Limpiar para agregar uno nuevo
+    showAddMovementModal.value = true;
+};
+
+const editMovement = (movement) => {
+    selectedMovement.value = movement; // Cargar datos para editar
+    showAddMovementModal.value = true;
+};
+
+const deleteMovement = (movement) => {
+    confirm.require({
+        message: `¿Estás seguro de que deseas eliminar este movimiento ("${movement.description}") por ${formatCurrency(movement.amount)}? El saldo de la caja se recalculará automáticamente.`,
+        header: 'Confirmar eliminación de movimiento',
+        icon: 'pi pi-exclamation-triangle',
+        acceptClass: 'p-button-danger',
+        accept: () => {
+            // Asegúrate de tener esta ruta configurada en tu archivo de rutas web
+            router.delete(route('session-cash-movements.destroy', movement.id), {
+                preserveScroll: true,
+            });
+        }
+    });
+};
+
 const formatCurrency = (value) => {
     if (value === null || value === undefined) return 'N/A';
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
@@ -94,7 +129,12 @@ const formatDate = (dateString) => {
         <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
             <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{{ cashRegister.name }}</h1>
-            <SplitButton v-if="hasPermission('cash_registers.manage')" label="Acciones" :model="actionItems" severity="secondary" outlined class="mt-4 sm:mt-0" />
+            
+            <!-- MODIFICADO: Se reemplaza SplitButton por Button + Menu -->
+            <div v-if="hasPermission('cash_registers.manage')" class="mt-4 sm:mt-0">
+                <Button @click="toggleMenu" label="Acciones" icon="pi pi-chevron-down" iconPos="right" severity="secondary" outlined />
+                <Menu ref="menu" :model="actionItems" :popup="true" />
+            </div>
         </div>
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div class="lg:col-span-1 space-y-6">
@@ -135,12 +175,32 @@ const formatDate = (dateString) => {
                             <div class="mt-4 border-t pt-4">
                                 <div class="flex justify-between items-center">
                                     <h5 class="font-semibold text-left m-0">Movimientos de efectivo</h5>
-                                    <Button v-if="hasPermission('cash_registers.sessions.create_movements')" @click="showAddMovementModal = true" label="Agregar" icon="pi pi-plus" size="small" text />
+                                    <!-- MODIFICADO: Se cambia showAddMovementModal a openAddMovement -->
+                                    <Button v-if="hasPermission('cash_registers.sessions.create_movements')" @click="openAddMovement" label="Agregar" icon="pi pi-plus" size="small" text />
                                 </div>
-                                <ul v-if="currentSession.cash_movements.length > 0" class="mt-2 text-left text-sm space-y-2 max-h-32 overflow-y-auto">
-                                    <li v-for="movement in currentSession.cash_movements" :key="movement.id" class="flex justify-between">
-                                        <span>{{ movement.description }}</span>
-                                        <span :class="movement.type === 'ingreso' ? 'text-green-500' : 'text-red-500'">{{ formatCurrency(movement.amount) }}</span>
+                                
+                                <!-- MODIFICADO: Lista de movimientos interactiva con hover -->
+                                <ul v-if="currentSession.cash_movements.length > 0" class="mt-2 text-left text-sm space-y-2 max-h-40 overflow-y-auto pr-2">
+                                    <li v-for="movement in currentSession.cash_movements" :key="movement.id" 
+                                        class="flex justify-between items-center bg-gray-50 dark:bg-gray-800 p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border dark:border-gray-700">
+                                        <span class="truncate pr-2 font-medium" :title="movement.description">{{ movement.description }}</span>
+                                        <div class="flex items-center gap-1 shrink-0">
+                                            <span :class="movement.type === 'ingreso' ? 'text-green-500' : 'text-red-500'" class="font-semibold mr-1">
+                                                {{ movement.type === 'ingreso' ? '+' : '-' }}{{ formatCurrency(movement.amount) }}
+                                            </span>
+                                            
+                                            <!-- Botones de Acción (Siempre visibles para pantallas touch) -->
+                                            <div class="flex">
+                                                <Button v-if="hasPermission('cash_registers.sessions.edit_movements')" 
+                                                    icon="pi pi-pencil" text rounded size="small" 
+                                                    @click="editMovement(movement)" 
+                                                    class="!p-1 !w-6 !h-6 text-gray-500 hover:text-primary" v-tooltip.top="'Editar'" />
+                                                <Button v-if="hasPermission('cash_registers.sessions.delete_movements')" 
+                                                    icon="pi pi-trash" severity="danger" text rounded size="small" 
+                                                    @click="deleteMovement(movement)" 
+                                                    class="!p-1 !w-6 !h-6" v-tooltip.top="'Eliminar'" />
+                                            </div>
+                                        </div>
                                     </li>
                                 </ul>
                                 <p v-else class="text-xs text-gray-400 mt-2 text-center">No hay movimientos.</p>
@@ -200,7 +260,10 @@ const formatDate = (dateString) => {
         <!-- Modales -->
         <OpenCashRegisterModal v-if="cashRegister" :visible="showOpenModal" :cash-register="cashRegister" :branch-users="branchUsers" :user-bank-accounts="userBankAccounts" @update:visible="showOpenModal = false" />
         <CloseSessionModal v-if="currentSession" :visible="showCloseModal" :session="currentSession" @update:visible="showCloseModal = false" />
-        <AddCashMovementModal v-if="currentSession" :visible="showAddMovementModal" :session="currentSession" @update:visible="showAddMovementModal = false" />
+        
+        <!-- MODIFICADO: Se agrega la prop :movement-to-edit al AddCashMovementModal -->
+        <AddCashMovementModal v-if="currentSession" :visible="showAddMovementModal" :session="currentSession" :movement-to-edit="selectedMovement" @update:visible="showAddMovementModal = false" />
+        
         <SessionHistoryModal v-if="currentSession" :visible="showHistoryModal" :session="currentSession" @update:visible="showHistoryModal = false" />
     </AppLayout>
 </template>

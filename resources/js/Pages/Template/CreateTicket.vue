@@ -56,7 +56,8 @@ const lastPinchDistance = ref(null); // Para zoom con dos dedos
 const form = useForm({
     name: '',
     type: 'ticket_venta',
-    context_type: 'pos', // Valor por defecto
+    context_type: 'pos',
+    is_default: false, // NUEVO: Inicializamos el campo auto-selección
     branch_ids: [],
     content: {
         config: { 
@@ -74,8 +75,8 @@ onMounted(() => {
         // Modo Edición: Cargar datos
         form.name = props.printTemplate.name;
         form.type = props.printTemplate.type;
-        // Asignar el contexto existente
         form.context_type = props.printTemplate.context_type || 'pos'; 
+        form.is_default = props.printTemplate.is_default ? true : false; // Cargar valor existente
         form.branch_ids = props.printTemplate.branches ? props.printTemplate.branches.map(b => b.id) : [];
         
         if (props.printTemplate.content) {
@@ -389,7 +390,6 @@ const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
                             <InputText v-model="form.name" class="w-full p-inputtext-sm" :invalid="!!form.errors.name" />
                             <InputError :message="form.errors.name" class="mt-1" />
                         </div>
-                        <!-- NUEVO SELECTOR DE CONTEXTO -->
                         <div>
                             <InputLabel value="Contexto de uso *" />
                             <Select v-model="form.context_type" :options="props.contextTypes" optionLabel="label" optionValue="value" class="w-full" :invalid="!!form.errors.context_type" placeholder="Seleccionar contexto" />
@@ -412,6 +412,14 @@ const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
                                     <label for="58mm" class="ml-2 text-sm">58mm</label>
                                 </div>
                             </div>
+                        </div>
+                        <!-- NUEVO TOGGLE DE SELECCION AUTOMATICA -->
+                        <div class="flex items-center justify-between pt-2">
+                            <div class="flex flex-col">
+                                <span class="font-bold text-sm text-gray-700 dark:text-gray-300">Selección automática</span>
+                                <span class="text-[10px] text-gray-500">Se seleccionará sola al imprimir.</span>
+                            </div>
+                            <InputSwitch v-model="form.is_default" />
                         </div>
                         <div>
                             <InputLabel value="Líneas finales (feed)" />

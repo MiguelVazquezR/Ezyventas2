@@ -131,14 +131,17 @@ class BankAccountController extends Controller
             abort(403);
         }
 
-        $inflows = $bankAccount->payments()->with('transaction:id,folio')->get()->map(function ($payment) {
+        // MODIFICACIÓN: Enriquecimos el map para detectar pagos negativos (Reembolsos)
+        $paymentsHistory = $bankAccount->payments()->with('transaction:id,folio')->get()->map(function ($payment) {
+            $isRefund = (float) $payment->amount < 0; // Si es negativo, es un reembolso
             return [
                 'date' => $payment->created_at,
-                'type' => 'Ingreso por Venta',
-                'description' => 'Pago de Venta',
+                'type' => $isRefund ? 'Reembolso de Venta' : 'Ingreso por Venta',
+                'description' => $isRefund ? 'Devolución de pago' : 'Pago de Venta',
                 'folio' => $payment->transaction->folio ?? 'N/A',
-                'method' => $payment->payment_method->value,
-                'amount' => (float) $payment->amount,
+                // Manejo seguro por si tienes un Enum cast o es un string
+                'method' => isset($payment->payment_method->value) ? $payment->payment_method->value : $payment->payment_method,
+                'amount' => (float) $payment->amount, // El negativo se queda negativo
                 'related_url' => route('transactions.show', $payment->transaction_id),
             ];
         });
@@ -149,7 +152,7 @@ class BankAccountController extends Controller
                 'type' => 'Egreso por Gasto',
                 'description' => $expense->description,
                 'folio' => $expense->folio ?? 'N/A',
-                'method' => $expense->payment_method->value,
+                'method' => isset($expense->payment_method->value) ? $expense->payment_method->value : $expense->payment_method,
                 'amount' => -(float) $expense->amount,
                 'related_url' => route('expenses.show', $expense->id),
             ];
@@ -160,7 +163,7 @@ class BankAccountController extends Controller
                 'date' => $transfer->created_at,
                 'type' => 'Transferencia Enviada',
                 'description' => 'A: ' . $transfer->toAccount->account_name,
-                'folio' => $transfer->folio, // Usar el folio real
+                'folio' => $transfer->folio,
                 'method' => 'transferencia',
                 'amount' => -(float) $transfer->amount,
                 'related_url' => null,
@@ -172,19 +175,20 @@ class BankAccountController extends Controller
                 'date' => $transfer->created_at,
                 'type' => 'Transferencia Recibida',
                 'description' => 'De: ' . $transfer->fromAccount->account_name,
-                'folio' => $transfer->folio, // Usar el folio real
+                'folio' => $transfer->folio,
                 'method' => 'transferencia',
                 'amount' => (float) $transfer->amount,
                 'related_url' => null,
             ];
         });
 
-        $allMovements = $inflows->concat($outflows)->concat($transfersIn)->concat($transfersOut)->sortByDesc('date');
+        // Concatenamos $paymentsHistory en lugar de solo $inflows
+        $allMovements = $paymentsHistory->concat($outflows)->concat($transfersIn)->concat($transfersOut)->sortByDesc('date');
 
         $runningBalance = (float) $bankAccount->balance;
         $history = $allMovements->map(function ($movement) use (&$runningBalance) {
             $movement['balance_after'] = $runningBalance;
-            $runningBalance -= $movement['amount'];
+            $runningBalance -= $movement['amount']; // Matemáticamente perfecto: Si restas un negativo, sumarás.
             return $movement;
         })->values();
 
