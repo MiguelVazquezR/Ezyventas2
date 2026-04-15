@@ -180,8 +180,8 @@ const initializeDefaultPayments = () => {
         useBalance.value = false;
     }
 
-    // Agregar Efectivo por defecto cubriendo el total de la venta para ahorrar clics
-    if (props.transactionType !== 'balance' && props.totalAmount > 0) {
+    // MODIFICACIÓN: Agregar Efectivo por defecto SOLO cuando es pago 'al contado'
+    if (props.transactionType === 'contado' && props.totalAmount > 0) {
         payments.value.push({
             id: crypto.randomUUID(),
             method: 'efectivo',
