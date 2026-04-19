@@ -501,7 +501,6 @@ class TransactionController extends Controller implements HasMiddleware
                             'type' => SessionCashMovementType::OUTFLOW,
                             'amount' => $totalPaid,
                             'description' => "Devolución venta #{$transaction->folio}",
-                            'notes' => 'Devolución de efectivo por cancelación.',
                         ]);
                     } elseif ($refundMethod === 'transfer') {
                         $bankAccount = \App\Models\BankAccount::find($bankAccountId);
@@ -608,6 +607,76 @@ class TransactionController extends Controller implements HasMiddleware
         });
 
         return back()->with('success', 'Pago actualizado correctamente.');
+    }
+
+    // NUEVO MÉTODO PARA ELIMINAR PAGO Y REVERTIR EFECTOS
+    public function destroyPayment(Request $request, Transaction $transaction, Payment $payment)
+    {
+        if ($payment->transaction_id !== $transaction->id) {
+            abort(403);
+        }
+
+        try {
+            DB::transaction(function () use ($transaction, $payment) {
+                // 1. Revertir saldo de banco
+                if ($payment->bank_account_id) {
+                    $bankAccount = \App\Models\BankAccount::find($payment->bank_account_id);
+                    if ($bankAccount) {
+                        // Si era un abono normal (positivo), lo restamos. Si era devolución (negativo), al restarlo matemáticamente se suma.
+                        $bankAccount->decrement('balance', $payment->amount);
+                    }
+                }
+
+                // 2. Revertir saldo a favor del cliente si se usó para pagar
+                if ($payment->payment_method->value === 'saldo' && $transaction->customer_id) {
+                    $customer = $transaction->customer;
+                    if ($customer) {
+                        $customer->increment('balance', $payment->amount);
+                        
+                        // Opcional: Registrar el movimiento de reversión
+                        $customer->balanceMovements()->create([
+                            'transaction_id' => $transaction->id,
+                            'type' => \App\Enums\CustomerBalanceMovementType::BALANCE_REFUND,
+                            'amount' => $payment->amount,
+                            'balance_after' => $customer->balance + $payment->amount,
+                            'notes' => "Reversión por eliminación de pago en venta #{$transaction->folio}",
+                        ]);
+                    }
+                }
+
+                // 3. Revertir movimiento de caja si es efectivo
+                if ($payment->payment_method->value === 'efectivo' && $payment->cash_register_session_id) {
+                    $session = \App\Models\CashRegisterSession::find($payment->cash_register_session_id);
+                    if ($session) {
+                        // Buscamos el movimiento original para eliminarlo y evitar descuadre
+                        $session->cashMovements()
+                            ->where('amount', $payment->amount)
+                            ->where('type', \App\Enums\SessionCashMovementType::INFLOW)
+                            ->where('description', 'like', "%{$transaction->folio}%")
+                            ->delete();
+                    }
+                }
+
+                // 4. Eliminar el pago
+                $payment->delete();
+
+                // 5. Actualizar estatus de la transacción si ya no está liquidada
+                $totalPaid = $transaction->payments()->sum('amount');
+                $total = $transaction->total ?? ($transaction->subtotal - $transaction->total_discount + $transaction->total_tax);
+                
+                if ($totalPaid < $total && $transaction->status === \App\Enums\TransactionStatus::COMPLETED) {
+                    $newStatus = $transaction->layaway_expiration_date 
+                        ? \App\Enums\TransactionStatus::ON_LAYAWAY 
+                        : \App\Enums\TransactionStatus::PENDING;
+                    $transaction->update(['status' => $newStatus]);
+                }
+            });
+
+            return redirect()->back()->with('success', 'Pago eliminado correctamente.');
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("Error al eliminar pago: " . $e->getMessage());
+            return redirect()->back()->with(['error' => 'Ocurrió un error al eliminar el pago.']);
+        }
     }
 
     public function searchProducts(Request $request)

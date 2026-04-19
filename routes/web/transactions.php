@@ -17,6 +17,10 @@ Route::middleware('auth')->group(function () {
     Route::put('/transactions/{transaction}/payments/{payment}', [TransactionController::class, 'updatePayment'])
         ->name('transactions.updatePayment');
 
+        // Ruta para eliminar un pago específico
+    Route::delete('/transactions/{transaction}/payments/{payment}', [TransactionController::class, 'destroyPayment'])
+        ->name('transactions.destroyPayment');
+
     // Intercambio normal (Ventas completadas)
     Route::post('/transactions/{transaction}/exchange', [TransactionController::class, 'exchange'])
         ->name('transactions.exchange');
