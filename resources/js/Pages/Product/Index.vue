@@ -6,7 +6,8 @@ import ManageStockModal from './Partials/ManageStockModal.vue';
 import ImportProductsModal from './Partials/ImportProductsModal.vue';
 import ProductNavigation from './Partials/ProductNavigation.vue';
 import InventorySummaryModal from './Partials/InventorySummaryModal.vue'; 
-import ProductDrawerDetails from './Partials/ProductDrawerDetails.vue'; // <-- IMPORTAMOS EL NUEVO COMPONENTE
+import ProductDrawerDetails from './Partials/ProductDrawerDetails.vue';
+import BulkEditProductsModal from './Partials/BulkEditProductsModal.vue'; // <-- IMPORTAMOS MODAL EDICION MASIVA
 import PrintModal from '@/Components/PrintModal.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
@@ -44,6 +45,7 @@ const selectedProducts = ref([]);
 const showManageStockModal = ref(false);
 const productsForStockModal = ref([]);
 const showImportModal = ref(false);
+const showBulkEditModal = ref(false); // <-- ESTADO PARA MODAL MASIVO
 const searchTerm = ref(props.filters.search || '');
 
 const isPrintModalVisible = ref(false);
@@ -55,7 +57,6 @@ const selectedProductDetails = ref(null);
 const showInventorySummary = ref(false); 
 
 // --- HELPER FUNCTIONS PARA STOCK Y VARIANTES ---
-// (Mantenemos estas aquí porque se usan en la Tabla Principal)
 const getVariants = (product) => {
     if (!product) return [];
     return product.product_attributes || product.productAttributes || [];
@@ -192,20 +193,15 @@ watch(searchTerm, () => fetchData());
 
 const onRowClick = (event) => {
     const target = event.originalEvent.target;
-    // Ignorar clic si se hizo sobre un botón, check, o la lupa de la imagen
     if (target.closest('button') || target.closest('.p-image-preview-indicator') || target.closest('.p-checkbox')) {
         return;
     }
 
-    // 1. Obtenemos la preferencia del usuario desde los props globales
-    // Si no ha configurado nada, usamos el Drawer por defecto
     const clickAction = page.props.auth.preferences?.product_table_row_click_action || 'Vista lateral con algunos detalles';
 
-    // 2. Evaluamos la cadena de texto exacta configurada en las opciones
     if (clickAction === 'Redirección a vista de detalles') {
         router.get(route('products.show', event.data.id));
     } else {
-        // Abrir Drawer (Comportamiento por defecto o seleccionado)
         selectedProductDetails.value = event.data;
         isDrawerVisible.value = true;
     }
@@ -250,18 +246,25 @@ const goToDetails = (id) => {
                     </div>
                 </div>
 
-                <!-- Barra de Acciones Masivas Contextual -->
-                <div v-if="selectedProducts.length > 0"
-                    class="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700 rounded-lg p-2 mb-4 flex justify-between items-center transition-all duration-300">
-                    <span class="font-semibold text-sm text-[#373737] dark:text-gray-200">{{ selectedProducts.length }}
-                        producto(s) seleccionado(s)</span>
+                <!-- Barra de Acciones Masivas Contextual (Siempre Visible) -->
+                <div class="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700 rounded-lg p-2 mb-4 flex justify-between items-center transition-all duration-300">
+                    <span class="font-semibold text-sm text-[#373737] dark:text-gray-200">
+                        {{ selectedProducts.length }} producto(s) seleccionado(s)
+                    </span>
                     <div class="flex items-center gap-2">
+                        <!-- BOTÓN EDICIÓN MASIVA -->
+                        <Button v-if="hasPermission('products.edit')" @click="showBulkEditModal = true"
+                            label="Edición rápida" icon="pi pi-pencil" size="small" severity="success" outlined 
+                            :disabled="selectedProducts.length === 0" />
+
                         <!-- ACCIONES MASIVAS STOCK -->
                         <Button v-if="hasPermission('products.manage_stock')" @click="openStockModal(selectedProducts)"
-                            label="Ajustar stock" icon="pi pi-box" size="small" severity="info" outlined />
+                            label="Ajustar stock" icon="pi pi-box" size="small" severity="info" outlined 
+                            :disabled="selectedProducts.length === 0" />
 
                         <Button v-if="hasPermission('products.delete')" @click="deleteSelectedProducts" label="Eliminar"
-                            icon="pi pi-trash" size="small" severity="danger" outlined />
+                            icon="pi pi-trash" size="small" severity="danger" outlined 
+                            :disabled="selectedProducts.length === 0" />
                     </div>
                 </div>
 
@@ -392,7 +395,6 @@ const goToDetails = (id) => {
                 </div>
             </template>
 
-            <!-- USAMOS EL NUEVO COMPONENTE EXTRAÍDO -->
             <ProductDrawerDetails 
                 v-if="selectedProductDetails" 
                 :product="selectedProductDetails" 
@@ -408,6 +410,8 @@ const goToDetails = (id) => {
         <!-- Modales Independientes -->
         <ManageStockModal :visible="showManageStockModal" :products="productsForStockModal"
             @update:visible="showManageStockModal = false" />
+
+        <BulkEditProductsModal v-model:visible="showBulkEditModal" :products="selectedProducts" @success="selectedProducts = []" />
 
         <ImportProductsModal :visible="showImportModal" @update:visible="showImportModal = false" />
 

@@ -596,6 +596,86 @@ class ProductController extends Controller implements HasMiddleware
         return redirect()->route('products.index')->with('success', 'Productos seleccionados eliminados con éxito.');
     }
 
+    public function bulkUpdate(Request $request)
+    {
+        $validated = $request->validate([
+            'items' => 'required|array',
+            'items.*.type' => 'required|in:product,variant',
+            'items.*.id' => 'required|integer',
+            'items.*.name' => 'nullable|string|max:255',
+            'items.*.sku' => 'nullable|string|max:100',
+            'items.*.selling_price' => 'nullable|numeric|min:0',
+            'items.*.cost_price' => 'nullable|numeric|min:0',
+            'items.*.min_stock' => 'nullable|numeric|min:0',
+            'items.*.max_stock' => 'nullable|numeric|min:0',
+            'items.*.show_in_pos' => 'nullable|boolean',
+        ]);
+
+        $branchId = Auth::user()->branch_id;
+
+        DB::transaction(function () use ($validated, $branchId) {
+            
+            // PASADA 1: Actualizar productos base primero
+            // (Asegura que el precio base esté actualizado antes de calcular los modificadores de las variantes)
+            foreach ($validated['items'] as $item) {
+                if ($item['type'] === 'product') {
+                    $product = Product::find($item['id']);
+                    if ($product) {
+                        $product->update([
+                            'name' => $item['name'] ?? $product->name,
+                            'sku' => $item['sku'] ?? $product->sku,
+                            'selling_price' => $item['selling_price'] ?? $product->selling_price,
+                            'cost_price' => $item['cost_price'] ?? $product->cost_price,
+                            'show_in_pos' => $item['show_in_pos'] ?? $product->show_in_pos,
+                        ]);
+
+                        if (array_key_exists('min_stock', $item) || array_key_exists('max_stock', $item)) {
+                            $product->branches()->syncWithoutDetaching([
+                                $branchId => [
+                                    'min_stock' => $item['min_stock'] ?? null,
+                                    'max_stock' => $item['max_stock'] ?? null,
+                                ]
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            // PASADA 2: Actualizar las variantes
+            foreach ($validated['items'] as $item) {
+                if ($item['type'] === 'variant') {
+                    $variant = ProductAttribute::with('product')->find($item['id']);
+                    
+                    if ($variant) {
+                        $updateData = [
+                            'sku_suffix' => $item['sku'] ?? $variant->sku_suffix,
+                        ];
+
+                        // Calcular el modificador matemático en base al precio total enviado
+                        if (array_key_exists('selling_price', $item)) {
+                            $basePrice = $variant->product->selling_price; // Toma el precio base (ya actualizado en Pasada 1)
+                            $newModifier = $item['selling_price'] - $basePrice;
+                            $updateData['selling_price_modifier'] = $newModifier;
+                        }
+
+                        $variant->update($updateData);
+
+                        if (array_key_exists('min_stock', $item) || array_key_exists('max_stock', $item)) {
+                            $variant->branches()->syncWithoutDetaching([
+                                $branchId => [
+                                    'min_stock' => $item['min_stock'] ?? null,
+                                    'max_stock' => $item['max_stock'] ?? null,
+                                ]
+                            ]);
+                        }
+                    }
+                }
+            }
+        });
+
+        return redirect()->back()->with('success', 'Productos actualizados masivamente con éxito.');
+    }
+
     // =========================================================================
     // NUEVO MÉTODO PARA ACTUALIZAR PRECIO RAPIDO DESDE EL PUNTO DE VENTA
     // =========================================================================
