@@ -20,6 +20,8 @@ const currentImage = ref('');
 const originalPrice = ref(0);
 const carouselIndex = ref(0);
 
+const isComposite = computed(() => props.product && props.product.components && props.product.components.length > 0);
+
 // Watch for a new product to reset the state
 watch(() => props.product, (newProduct) => {
     selectedVariants.value = {};
@@ -269,14 +271,31 @@ const formatCurrency = (value) => {
                     <div class="flex justify-between items-center text-sm mt-2"><span
                             class="text-gray-500">SKU:</span><span class="font-medium font-mono">{{ currentSku }}</span>
                     </div>
-                    <div class="flex justify-between items-center text-sm"><span
-                            class="text-gray-500">Stock disponible:</span><span class="font-bold"
-                            :class="currentStock > 0 ? 'text-green-600' : 'text-red-600'">{{ currentStock }}</span>
+                    <div class="flex justify-between items-center text-sm">
+                        <span class="text-gray-500">Stock disponible:</span>
+                        <span v-if="isComposite" class="font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded flex items-center gap-1">
+                            <i class="pi pi-link text-[10px]"></i> Dinámico
+                        </span>
+                        <span v-else class="font-bold" :class="currentStock > 0 ? 'text-green-600' : 'text-red-600'">
+                            {{ currentStock }}
+                        </span>
                     </div>
-                    <div v-if="currentReservedStock > 0" class="flex justify-between items-center text-sm">
+                    <div v-if="currentReservedStock > 0 && !isComposite" class="flex justify-between items-center text-sm">
                         <span class="text-gray-500">Apartados:</span>
                         <span class="font-medium text-blue-600">{{ currentReservedStock }}</span>
                     </div>
+                </div>
+
+                 <div v-if="isComposite" class="pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p class="text-gray-500 dark:text-gray-400 mb-2 font-semibold flex items-center gap-2">
+                        <i class="pi pi-list"></i> Componentes del Kit/Combo
+                    </p>
+                    <ul class="space-y-2">
+                        <li v-for="component in product.components" :key="component.id" class="flex justify-between items-center text-sm bg-gray-50 dark:bg-gray-800/50 p-2 rounded border border-gray-100 dark:border-gray-700">
+                            <span class="font-medium text-gray-700 dark:text-gray-300">{{ component.componentable?.name || 'Componente' }}</span>
+                            <span class="text-primary-600 font-bold">x{{ component.quantity }}</span>
+                        </li>
+                    </ul>
                 </div>
 
                 <div v-if="product.description" class="pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">

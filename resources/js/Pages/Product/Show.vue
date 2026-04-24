@@ -55,7 +55,7 @@ const actionMenu = ref(null);
 const actionItems = ref([
     { label: 'Crear nuevo', icon: 'pi pi-plus', command: () => router.get(route('products.create')), visible: hasPermission('products.create') },
     { label: 'Editar', icon: 'pi pi-pencil', command: () => router.get(route('products.edit', props.product.id)), visible: hasPermission('products.edit') },
-    { label: 'Agregar promoción', icon: 'pi pi-tag', command: () => router.get(route('products.promotions.create', props.product.id)), visible: hasPermission('products.manage_promos') },
+    { label: 'Agregar promoción', icon: 'pi pi-percentage', command: () => router.get(route('products.promotions.create', props.product.id)), visible: hasPermission('products.manage_promos') },
     { separator: true },
     { label: 'Entrada/salida stock', icon: 'pi pi-box', class: 'text-green-600', command: () => showManageStockModal.value = true, visible: hasPermission('products.manage_stock') && !isComposite.value },
     { separator: true },
