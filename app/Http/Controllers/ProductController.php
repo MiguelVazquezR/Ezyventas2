@@ -15,6 +15,7 @@ use App\Models\ProductAttribute;
 use App\Models\Provider;
 use App\Services\ActivityLogService;
 use App\Traits\OptimizeMediaLocal;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -48,18 +49,24 @@ class ProductController extends Controller implements HasMiddleware
         $productsCount = $subscription->products_count;
         $currentVersion = $subscription->currentVersion();
         $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_products')->first() : null;
-        $limitProducts = $limitItem ? $limitItem->quantity : -1; 
-        
+        $limitProducts = $limitItem ? $limitItem->quantity : -1;
+
         $productLimitReached = $limitProducts !== -1 && $productsCount >= $limitProducts;
 
         // Consultamos los productos vinculados a esta sucursal mediante la tabla pivot
         $query = Product::query()
             ->with([
-                'category', 
-                'brand', 
-                'media', 
+                'category',
+                'brand',
+                'media',
                 'branches',
-                'productAttributes.branches'
+                'productAttributes.branches',
+                // AÑADE ESTA RELACIÓN: Esto permite que Index.vue sepa qué productos son Combos y pueda mostrar sus componentes.
+                'components.componentable' => function (\Illuminate\Database\Eloquent\Relations\MorphTo $morphTo) {
+                    $morphTo->morphWith([
+                        \App\Models\ProductAttribute::class => ['product']
+                    ]);
+                }
             ])
             ->whereHas('branches', function ($q) use ($branchId) {
                 $q->where('branches.id', $branchId);
@@ -69,24 +76,24 @@ class ProductController extends Controller implements HasMiddleware
             $searchTerm = $request->input('search');
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('name', 'LIKE', "%{$searchTerm}%")
-                  ->orWhere('sku', 'LIKE', "%{$searchTerm}%");
+                    ->orWhere('sku', 'LIKE', "%{$searchTerm}%");
             });
         }
 
         $sortField = $request->input('sortField', 'created_at');
         $sortOrder = $request->input('sortOrder', 'desc');
-        
+
         if ($sortField === 'category.name') {
             $query->join('categories', 'products.category_id', '=', 'categories.id')
-                  ->orderBy('categories.name', $sortOrder)
-                  ->select('products.*');
+                ->orderBy('categories.name', $sortOrder)
+                ->select('products.*');
         } elseif (in_array($sortField, ['current_stock', 'min_stock', 'max_stock', 'location'])) {
             $query->join('branch_product', function ($join) use ($branchId) {
                 $join->on('products.id', '=', 'branch_product.product_id')
-                     ->where('branch_product.branch_id', '=', $branchId);
+                    ->where('branch_product.branch_id', '=', $branchId);
             })
-            ->orderBy('branch_product.' . $sortField, $sortOrder)
-            ->select('products.*');
+                ->orderBy('branch_product.' . $sortField, $sortOrder)
+                ->select('products.*');
         } else {
             $query->orderBy('products.' . $sortField, $sortOrder);
             $query->select('products.*');
@@ -97,7 +104,7 @@ class ProductController extends Controller implements HasMiddleware
         // Mapeo inteligente
         $products->getCollection()->transform(function ($product) use ($branchId) {
             $branchPivot = $product->branches->where('id', $branchId)->first()?->pivot;
-            
+
             $product->current_stock = $branchPivot ? $branchPivot->current_stock : 0;
             $product->reserved_stock = $branchPivot ? $branchPivot->reserved_stock : 0;
             $product->min_stock = $branchPivot ? $branchPivot->min_stock : null;
@@ -107,7 +114,7 @@ class ProductController extends Controller implements HasMiddleware
             if ($product->productAttributes) {
                 $product->productAttributes->transform(function ($variant) use ($branchId) {
                     $vPivot = $variant->branches->where('id', $branchId)->first()?->pivot;
-                    
+
                     $variant->current_stock = $vPivot ? $vPivot->current_stock : 0;
                     $variant->reserved_stock = $vPivot ? $vPivot->reserved_stock : 0;
                     $variant->min_stock = $vPivot ? $vPivot->min_stock : null;
@@ -145,7 +152,7 @@ class ProductController extends Controller implements HasMiddleware
                 AND bpa.branch_id = ?
             ) as variant_stock', [$branchId])
             ->get()
-            ->map(function($cat) {
+            ->map(function ($cat) {
                 $cat->products_sum_current_stock = (float)$cat->simple_stock + (float)$cat->variant_stock;
                 return $cat;
             })
@@ -153,7 +160,6 @@ class ProductController extends Controller implements HasMiddleware
             ->sortByDesc('products_sum_current_stock')
             ->values();
 
-        // --- NUEVO: OBTENER CUENTAS BANCARIAS ---
         $isOwner = !$user->roles()->exists();
         $userBankAccounts = null;
 
@@ -171,7 +177,7 @@ class ProductController extends Controller implements HasMiddleware
             'productLimitReached' => $productLimitReached,
             'availableTemplates' => $availableTemplates,
             'stockByCategory' => $stockByCategory,
-            'userBankAccounts' => $userBankAccounts, // <-- Enviamos a la vista
+            'userBankAccounts' => $userBankAccounts,
         ]);
     }
 
@@ -180,11 +186,11 @@ class ProductController extends Controller implements HasMiddleware
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
         $subscription = $user->branch->subscription;
-        
+
         $currentVersion = $subscription->currentVersion();
         $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_products')->first() : null;
         $limitProducts = $limitItem ? $limitItem->quantity : 50;
-        
+
         $productLimitReached = $limitProducts !== -1 && $subscription->products_count >= $limitProducts;
 
         return Inertia::render('Product/Create', [
@@ -204,6 +210,14 @@ class ProductController extends Controller implements HasMiddleware
         $user = Auth::user();
         $subscription = $user->branch->subscription;
 
+        // Validar los items compuestos (en caso de que el FormRequest no los incluya)
+        $compositeItems = $request->validate([
+            'composite_items' => 'nullable|array',
+            'composite_items.*.id' => 'required|integer',
+            'composite_items.*.type' => 'required|string',
+            'composite_items.*.quantity' => 'required|numeric|min:0.01',
+        ])['composite_items'] ?? [];
+
         $currentVersion = $subscription->currentVersion();
         $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_products')->first() : null;
         $limitProducts = $limitItem ? $limitItem->quantity : 50;
@@ -214,10 +228,11 @@ class ProductController extends Controller implements HasMiddleware
             return redirect()->back()->with('error', 'Excedes tu límite de productos. Mejora tu suscripción.');
         }
 
-        DB::transaction(function () use ($validated, $user, $request) {
+        DB::transaction(function () use ($validated, $user, $request, $compositeItems) {
             $productData = collect($validated)->except([
                 'product_type',
                 'variants_matrix',
+                'composite_items', // Excluimos esto también
                 'general_images',
                 'variant_images',
                 'branch_ids',
@@ -234,11 +249,12 @@ class ProductController extends Controller implements HasMiddleware
 
             $branchesToSync = $request->input('branch_ids', [$user->branch_id]);
             $syncData = [];
-            
+
             $isSimple = $validated['product_type'] === 'simple';
 
             foreach ($branchesToSync as $bId) {
                 $syncData[$bId] = [
+                    // Si es 'composite' el stock siempre debe iniciar en 0 para esa sucursal
                     'current_stock' => ($bId == $user->branch_id && $isSimple) ? ($validated['current_stock'] ?? 0) : 0,
                     'reserved_stock' => 0,
                     'min_stock' => ($bId == $user->branch_id && $isSimple) ? ($validated['min_stock'] ?? null) : null,
@@ -248,7 +264,18 @@ class ProductController extends Controller implements HasMiddleware
             }
             $product->branches()->sync($syncData);
 
-            if ($validated['product_type'] === 'variant' && !empty($validated['variants_matrix'])) {
+            // GESTIÓN DE PRODUCTO COMPUESTO (KIT)
+            if ($validated['product_type'] === 'composite' && !empty($compositeItems)) {
+                foreach ($compositeItems as $item) {
+                    $product->components()->create([
+                        'componentable_id' => $item['id'],
+                        'componentable_type' => $item['type'],
+                        'quantity' => $item['quantity'],
+                    ]);
+                }
+            }
+            // GESTIÓN DE PRODUCTO CON VARIANTES
+            elseif ($validated['product_type'] === 'variant' && !empty($validated['variants_matrix'])) {
                 foreach ($validated['variants_matrix'] as $variantData) {
                     $variant = $product->productAttributes()->create([
                         'attributes' => $variantData['attributes'],
@@ -290,17 +317,21 @@ class ProductController extends Controller implements HasMiddleware
         return redirect()->route('products.index')->with('success', 'Producto creado con éxito.');
     }
 
-    public function show(Request $request, Product $product, ActivityLogService $activityLogService): Response
+     public function show(Request $request, Product $product, ActivityLogService $activityLogService): Response
     {
         $user = Auth::user();
 
-        // OJO: Está correcto quitar 'activities.causer' de aquí para que no cargue todo
         $product->load([
             'category',
             'brand',
             'provider',
             'media',
             'branches',
+            'components.componentable' => function (\Illuminate\Database\Eloquent\Relations\MorphTo $morphTo) {
+                $morphTo->morphWith([
+                    \App\Models\ProductAttribute::class => ['product']
+                ]);
+            },
             'productAttributes.branches' => function ($q) use ($user) {
                 $q->where('branches.id', $user->branch_id);
             }
@@ -317,7 +348,6 @@ class ProductController extends Controller implements HasMiddleware
 
         if ($product->productAttributes) {
             $product->productAttributes->transform(function ($variant) use ($user) {
-                // CORRECCIÓN: Para variantes también validamos que sea la sucursal actual
                 $vPivot = $variant->branches->where('id', $user->branch_id)->first()?->pivot;
                 $variant->current_stock = $vPivot ? $vPivot->current_stock : 0;
                 $variant->reserved_stock = $vPivot ? $vPivot->reserved_stock : 0;
@@ -328,16 +358,9 @@ class ProductController extends Controller implements HasMiddleware
             });
         }
 
-        // Cargar explícitamente las relaciones anidadas en la colección devuelta por el accesor
         $promotions = $product->promotions->load(['rules.itemable', 'effects.itemable']);
-
-        // Llamamos al servicio refactorizado para el historial
         $formattedActivities = $activityLogService->getFormattedActivities($product, $request, 'Product');
 
-        // -------------------------------------------------------------
-        // FIX: Solo filtramos estatus que realmente reservan stock
-        // (Apartados y Pedidos). Se excluye PENDING (Ventas a Crédito).
-        // -------------------------------------------------------------
         $formattedLayaways = $product->transactionItems()->whereHas('transaction', function ($q) {
             $q->whereIn('status', [\App\Enums\TransactionStatus::ON_LAYAWAY, \App\Enums\TransactionStatus::TO_DELIVER]);
         })->get()->map(function ($item) {
@@ -361,7 +384,6 @@ class ProductController extends Controller implements HasMiddleware
             ->whereIn('context_type', [\App\Enums\TemplateContextType::PRODUCT, \App\Enums\TemplateContextType::GENERAL])
             ->get();
 
-        // --- NUEVO: OBTENER CUENTAS BANCARIAS ---
         $isOwner = !$user->roles()->exists();
         $userBankAccounts = null;
 
@@ -377,7 +399,7 @@ class ProductController extends Controller implements HasMiddleware
             'activities' => $formattedActivities,
             'availableTemplates' => $availableTemplates,
             'activeLayaways' => $formattedLayaways,
-            'userBankAccounts' => $userBankAccounts, // <-- Enviamos a la vista
+            'userBankAccounts' => $userBankAccounts, 
         ]);
     }
 
@@ -386,7 +408,17 @@ class ProductController extends Controller implements HasMiddleware
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
 
-        $product->load(['media', 'branches:id', 'productAttributes.branches']);
+        // Añadimos 'components.componentable' a la carga ansiosa
+        $product->load([
+            'media',
+            'branches:id',
+            'productAttributes.branches',
+            'components.componentable' => function (MorphTo $morphTo) {
+                $morphTo->morphWith([
+                    ProductAttribute::class => ['product']
+                ]);
+            }
+        ]);
 
         $branchPivot = $product->branches->where('id', $user->branch_id)->first()?->pivot;
 
@@ -394,6 +426,31 @@ class ProductController extends Controller implements HasMiddleware
         $product->min_stock = $branchPivot ? $branchPivot->min_stock : null;
         $product->max_stock = $branchPivot ? $branchPivot->max_stock : null;
         $product->location = $branchPivot ? $branchPivot->location : null;
+
+        // Transformar los componentes del kit para que Vue los interprete bien
+        $product->composite_items = $product->components->map(function ($component) {
+            $itemable = $component->componentable;
+
+            if ($component->componentable_type === ProductAttribute::class) {
+                $parent = $itemable->product;
+                $name = $parent->name . ' - ' . implode(' ', array_values($itemable->attributes));
+                $sku = $itemable->sku_suffix ?: $parent->sku;
+                $price = $parent->selling_price + $itemable->selling_price_modifier;
+            } else {
+                $name = $itemable->name;
+                $sku = $itemable->sku;
+                $price = $itemable->selling_price;
+            }
+
+            return [
+                'id' => $component->componentable_id,
+                'type' => $component->componentable_type,
+                'name' => $name,
+                'sku' => $sku,
+                'price' => (float) $price,
+                'quantity' => (float) $component->quantity,
+            ];
+        });
 
         if ($product->productAttributes) {
             $product->productAttributes->transform(function ($variant) use ($user) {
@@ -422,6 +479,14 @@ class ProductController extends Controller implements HasMiddleware
         $validated = $request->validated();
         $user = Auth::user();
 
+        // Validar los items compuestos (en caso de que el FormRequest no los incluya)
+        $compositeItems = $request->validate([
+            'composite_items' => 'nullable|array',
+            'composite_items.*.id' => 'required|integer',
+            'composite_items.*.type' => 'required|string',
+            'composite_items.*.quantity' => 'required|numeric|min:0.01',
+        ])['composite_items'] ?? [];
+
         $subscription = $user->branch->subscription;
         $currentVersion = $subscription->currentVersion();
         $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_products')->first() : null;
@@ -434,13 +499,14 @@ class ProductController extends Controller implements HasMiddleware
             }
         }
 
-        DB::transaction(function () use ($validated, $user, $product, $request) {
+        DB::transaction(function () use ($validated, $user, $product, $request, $compositeItems) {
             $productData = collect($validated)->except([
                 'product_type',
                 'variants_matrix',
+                'composite_items',
+                'deleted_media_ids',
                 'general_images',
                 'variant_images',
-                'deleted_media_ids',
                 'branch_ids',
                 'current_stock',
                 'min_stock',
@@ -479,6 +545,26 @@ class ProductController extends Controller implements HasMiddleware
             }
             $product->branches()->sync($syncData);
 
+            // GESTIÓN DE PRODUCTO COMPUESTO (KIT)
+            if ($validated['product_type'] === 'composite') {
+                $product->productAttributes()->delete(); // Limpiamos variantes si las tenía
+                $product->components()->delete();        // Limpiamos componentes antiguos
+
+                if (!empty($compositeItems)) {
+                    foreach ($compositeItems as $item) {
+                        $product->components()->create([
+                            'componentable_id' => $item['id'],
+                            'componentable_type' => $item['type'],
+                            'quantity' => $item['quantity'],
+                        ]);
+                    }
+                }
+            } else {
+                // Si ya no es composite, limpiamos los componentes
+                $product->components()->delete();
+            }
+
+            // GESTIÓN DE VARIANTES
             if ($validated['product_type'] === 'variant' && !empty($validated['variants_matrix'])) {
                 $existingVariantIds = [];
 
@@ -545,7 +631,7 @@ class ProductController extends Controller implements HasMiddleware
                     }
                 }
                 $product->productAttributes()->whereNotIn('id', $existingVariantIds)->delete();
-            } else {
+            } elseif ($validated['product_type'] !== 'variant') {
                 $product->productAttributes()->delete();
             }
 
@@ -614,7 +700,7 @@ class ProductController extends Controller implements HasMiddleware
         $branchId = Auth::user()->branch_id;
 
         DB::transaction(function () use ($validated, $branchId) {
-            
+
             // PASADA 1: Actualizar productos base primero
             // (Asegura que el precio base esté actualizado antes de calcular los modificadores de las variantes)
             foreach ($validated['items'] as $item) {
@@ -645,7 +731,7 @@ class ProductController extends Controller implements HasMiddleware
             foreach ($validated['items'] as $item) {
                 if ($item['type'] === 'variant') {
                     $variant = ProductAttribute::with('product')->find($item['id']);
-                    
+
                     if ($variant) {
                         $updateData = [
                             'sku_suffix' => $item['sku'] ?? $variant->sku_suffix,

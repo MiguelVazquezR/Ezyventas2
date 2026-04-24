@@ -7,7 +7,7 @@ import ImportProductsModal from './Partials/ImportProductsModal.vue';
 import ProductNavigation from './Partials/ProductNavigation.vue';
 import InventorySummaryModal from './Partials/InventorySummaryModal.vue'; 
 import ProductDrawerDetails from './Partials/ProductDrawerDetails.vue';
-import BulkEditProductsModal from './Partials/BulkEditProductsModal.vue'; // <-- IMPORTAMOS MODAL EDICION MASIVA
+import BulkEditProductsModal from './Partials/BulkEditProductsModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
@@ -45,7 +45,7 @@ const selectedProducts = ref([]);
 const showManageStockModal = ref(false);
 const productsForStockModal = ref([]);
 const showImportModal = ref(false);
-const showBulkEditModal = ref(false); // <-- ESTADO PARA MODAL MASIVO
+const showBulkEditModal = ref(false); 
 const searchTerm = ref(props.filters.search || '');
 
 const isPrintModalVisible = ref(false);
@@ -64,6 +64,11 @@ const getVariants = (product) => {
 
 const hasVariants = (product) => {
     return getVariants(product).length > 0;
+};
+
+// NUEVO: Identificar productos compuestos
+const isComposite = (product) => {
+    return product.components && product.components.length > 0;
 };
 
 const getCalculatedStock = (product) => {
@@ -97,7 +102,7 @@ const getStockSeverity = (product) => {
 };
 // ------------------------------------------------
 
-// --- GESTIÓN DE STOCK (NUEVO) ---
+// --- GESTIÓN DE STOCK ---
 const openStockModal = (products) => {
     productsForStockModal.value = Array.isArray(products) ? products : [products];
     showManageStockModal.value = true;
@@ -246,18 +251,16 @@ const goToDetails = (id) => {
                     </div>
                 </div>
 
-                <!-- Barra de Acciones Masivas Contextual (Siempre Visible) -->
+                <!-- Barra de Acciones Masivas Contextual -->
                 <div class="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700 rounded-lg p-2 mb-4 flex justify-between items-center transition-all duration-300">
                     <span class="font-semibold text-sm text-[#373737] dark:text-gray-200">
                         {{ selectedProducts.length }} producto(s) seleccionado(s)
                     </span>
                     <div class="flex items-center gap-2">
-                        <!-- BOTÓN EDICIÓN MASIVA -->
                         <Button v-if="hasPermission('products.edit')" @click="showBulkEditModal = true"
                             label="Edición rápida" icon="pi pi-pencil" size="small" severity="success" outlined 
                             :disabled="selectedProducts.length === 0" />
 
-                        <!-- ACCIONES MASIVAS STOCK -->
                         <Button v-if="hasPermission('products.manage_stock')" @click="openStockModal(selectedProducts)"
                             label="Ajustar stock" icon="pi pi-box" size="small" severity="info" outlined 
                             :disabled="selectedProducts.length === 0" />
@@ -302,9 +305,16 @@ const goToDetails = (id) => {
                         </template>
                     </Column>
 
-                    <Column field="name" header="Nombre" sortable></Column>
+                    <!-- COLUMNA NOMBRE: Muestra el tag de Kit/Combo si aplica -->
+                    <Column field="name" header="Nombre" sortable>
+                        <template #body="{ data }">
+                            <div class="flex flex-col gap-1 items-start justify-center">
+                                <span>{{ data.name }}</span>
+                                <Tag v-if="isComposite(data)" value="Kit/Combo" severity="contrast" class="!text-[10px] !px-2" />
+                            </div>
+                        </template>
+                    </Column>
 
-                    <!-- NUEVA COLUMNA DE INDICADOR POS/INSUMO -->
                     <Column field="show_in_pos" header="Tipo / POS" sortable alignFrozen="right">
                         <template #body="{ data }">
                             <div class="flex justify-center items-center">
@@ -329,15 +339,20 @@ const goToDetails = (id) => {
                     <Column field="location" header="Ubicación" sortable>
                         <template #body="{ data }">
                             <span class="text-sm text-gray-600 dark:text-gray-400">
-                                {{ hasVariants(data) ? 'Múltiples (Ver detalle)' : (data.location || '--') }}
+                                <template v-if="isComposite(data)">--</template>
+                                <template v-else-if="hasVariants(data)">Múltiples (Ver detalle)</template>
+                                <template v-else>{{ data.location || '--' }}</template>
                             </span>
                         </template>
                     </Column>
 
-                    <!-- SECCIÓN DINÁMICA DE EXISTENCIAS -->
+                    <!-- COLUMNA EXISTENCIAS: Muestra "Dinámico" si es Kit/Combo -->
                     <Column field="current_stock" header="Existencias" sortable>
                         <template #body="{ data }">
-                            <div class="flex items-center space-x-2">
+                            <div v-if="isComposite(data)" class="flex items-center space-x-2">
+                                <Tag value="Dinámico" severity="info" class="!bg-blue-100 !text-blue-600" icon="pi pi-link" v-tooltip.top="'Stock dependiente de sus componentes'" />
+                            </div>
+                            <div v-else class="flex items-center space-x-2">
                                 <Tag :value="getAvailableStock(data)" :severity="getStockSeverity(data)" />
 
                                 <Tag v-if="getCalculatedReserved(data) > 0"
@@ -385,7 +400,7 @@ const goToDetails = (id) => {
             </div>
         </div>
 
-        <!-- DRAWER DE DETALLES DEL PRODUCTO (REFACTORIZADO) -->
+        <!-- DRAWER DE DETALLES DEL PRODUCTO -->
         <Drawer v-model:visible="isDrawerVisible" position="right"
             class="w-full md:!w-[32rem] !bg-gray-50 dark:!bg-gray-900">
             <template #header>

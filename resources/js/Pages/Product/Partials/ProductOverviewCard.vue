@@ -1,0 +1,131 @@
+<script setup>
+import { ref, computed } from 'vue';
+import { useToast } from "primevue/usetoast";
+
+const props = defineProps({
+    product: Object,
+    isComposite: Boolean,
+    isVariantProduct: Boolean,
+    hasPosAccess: Boolean,
+    canSeeCostPrice: Boolean
+});
+
+const emit = defineEmits(['print']);
+const toast = useToast();
+
+const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+        toast.add({ severity: 'success', summary: 'Copiado', detail: 'SKU copiado al portapapeles', life: 3000 });
+    });
+};
+
+const formatCurrency = (value) => {
+    if (value === null || value === undefined) return 'N/A';
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+};
+
+const generalImages = computed(() =>
+    (props.product.media || []).filter(m => m.collection_name === 'product-general-images')
+);
+
+const selectedImageIndex = ref(0);
+
+const currentGeneralImage = computed(() => {
+    if (generalImages.value && generalImages.value.length > 0) {
+        if (selectedImageIndex.value >= generalImages.value.length) {
+            selectedImageIndex.value = 0;
+        }
+        return generalImages.value[selectedImageIndex.value];
+    }
+    return null;
+});
+
+const priceTiers = computed(() => {
+    if (!props.product.price_tiers || !Array.isArray(props.product.price_tiers)) return [];
+    return [...props.product.price_tiers].sort((a, b) => a.min_quantity - b.min_quantity);
+});
+</script>
+
+<template>
+    <div class="space-y-6">
+        <!-- Galería Limpia -->
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/60 p-4">
+            <div v-if="generalImages.length > 0">
+                <div class="flex justify-center mb-3 bg-gray-50 dark:bg-gray-900/50 rounded-xl overflow-hidden">
+                    <Image :src="currentGeneralImage?.original_url" :alt="product.name" preview 
+                        imageClass="w-full h-56 object-contain p-2 transition-transform duration-300 hover:scale-105" />
+                </div>
+                
+                <!-- Miniaturas -->
+                <div v-if="generalImages.length > 1" class="flex gap-2 overflow-x-auto py-1">
+                    <button v-for="(img, index) in generalImages" :key="img.id" 
+                        @click="selectedImageIndex = index"
+                        class="relative rounded-lg overflow-hidden border-2 transition-all flex-shrink-0 focus:outline-none h-14 w-14"
+                        :class="selectedImageIndex === index ? 'border-primary-500' : 'border-transparent opacity-60 hover:opacity-100'">
+                        <img :src="img.original_url" :alt="img.name" class="w-full h-full object-cover bg-gray-100 dark:bg-gray-700" />
+                    </button>
+                </div>
+            </div>
+            
+            <div v-else class="text-center text-gray-400 dark:text-gray-500 py-12 flex flex-col items-center bg-gray-50 dark:bg-gray-900/30 rounded-xl">
+                <i class="pi pi-image !text-4xl mb-3 opacity-50"></i>
+                <span class="text-sm font-medium">Sin imagen general</span>
+            </div>
+        </div>
+
+        <!-- Tarjetas de Información Rápida (Grid) -->
+        <div class="grid grid-cols-2 gap-3">
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                <div class="flex justify-between items-start mb-1">
+                    <span class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">SKU</span>
+                    <div class="flex gap-1">
+                        <i v-if="product.sku" @click="copyToClipboard(product.sku)" class="pi pi-copy text-gray-400 hover:text-primary-500 cursor-pointer text-xs transition-colors" v-tooltip.top="'Copiar'"></i>
+                        <i v-if="product.sku && hasPosAccess" @click="$emit('print')" class="pi pi-print text-gray-400 hover:text-primary-500 cursor-pointer text-xs transition-colors" v-tooltip.top="'Imprimir'"></i>
+                    </div>
+                </div>
+                <div class="font-mono font-medium text-gray-900 dark:text-gray-100 truncate text-sm" :title="product.sku">{{ product.sku || 'N/A' }}</div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                <span class="text-[10px] block text-gray-500 uppercase font-bold tracking-wider mb-1">Ubicación</span>
+                <div class="font-medium text-gray-900 dark:text-gray-100 text-sm truncate" :title="product.location">
+                    {{ isComposite ? '--' : (isVariantProduct ? 'Múltiples' : (product.location || '--')) }}
+                </div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                <span class="text-[10px] block text-gray-500 uppercase font-bold tracking-wider mb-1">Marca</span>
+                <div class="font-medium text-gray-900 dark:text-gray-100 text-sm truncate">{{ product.brand?.name || '--' }}</div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                <span class="text-[10px] block text-gray-500 uppercase font-bold tracking-wider mb-1">Proveedor</span>
+                <div class="font-medium text-gray-900 dark:text-gray-100 text-sm truncate">{{ product.provider?.name || '--' }}</div>
+            </div>
+        </div>
+
+        <!-- Detalles de Precios Avanzados -->
+        <div class="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+            <h3 class="text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider mb-4 flex items-center gap-2">
+                <i class="pi pi-tag text-primary-500"></i> Estructura de precios
+            </h3>
+            
+            <div class="flex justify-between items-center py-2">
+                <span class="text-sm text-gray-600 dark:text-gray-400">Precio de venta</span>
+                <span class="text-xl font-bold text-gray-900 dark:text-white">{{ formatCurrency(product.selling_price) }}</span>
+            </div>
+
+            <div v-if="canSeeCostPrice" class="flex justify-between items-center py-2 border-t border-gray-100 dark:border-gray-700/50 mt-1">
+                <span class="text-sm text-gray-600 dark:text-gray-400">Precio de compra</span>
+                <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">{{ formatCurrency(product.cost_price) }}</span>
+            </div>
+
+            <div v-if="priceTiers.length > 0" class="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700/50">
+                <span class="text-xs text-gray-500 dark:text-gray-400 block mb-3 font-semibold">Precios por volumen:</span>
+                <div class="space-y-2">
+                    <div v-for="(tier, index) in priceTiers" :key="index" class="flex justify-between items-center text-sm bg-gray-50 dark:bg-gray-900/40 px-3 py-2 rounded-lg">
+                        <span class="text-gray-600 dark:text-gray-400">Desde <span class="font-bold">{{ tier.min_quantity }}</span> uds</span>
+                        <span class="font-bold text-primary-600 dark:text-primary-400">{{ formatCurrency(tier.price) }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>

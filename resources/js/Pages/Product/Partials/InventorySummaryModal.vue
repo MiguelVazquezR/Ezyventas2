@@ -1,8 +1,5 @@
 <script setup>
 import { computed } from 'vue';
-import Dialog from 'primevue/dialog';
-import Button from 'primevue/button';
-import Divider from 'primevue/divider';
 
 const props = defineProps({
     visible: Boolean,
@@ -44,8 +41,8 @@ const formatNum = (val) => new Intl.NumberFormat().format(val || 0);
         :visible="visible" 
         @update:visible="$emit('update:visible', $event)" 
         modal 
-        header="Resumen de Inventario" 
-        :style="{ width: '95vw', maxWidth: '600px' }"
+        header="Resumen de inventario local" 
+        :style="{ width: '95vw', maxWidth: '650px' }"
         :breakpoints="{ '640px': '100vw' }"
         :draggable="false"
         class="p-fluid"
@@ -54,8 +51,11 @@ const formatNum = (val) => new Intl.NumberFormat().format(val || 0);
             
             <!-- Métricas Rápidas (Grid Minimalista) -->
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div class="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 flex flex-col justify-center">
-                    <span class="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Total Unidades</span>
+                <div class="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 flex flex-col justify-center relative overflow-hidden">
+                    <div class="absolute -right-4 -bottom-4 opacity-10">
+                        <i class="pi pi-box text-6xl"></i>
+                    </div>
+                    <span class="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Total Unidades Físicas</span>
                     <span class="text-3xl font-bold text-gray-900 dark:text-gray-100">{{ formatNum(totalStock) }}</span>
                 </div>
                 <div class="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/40 flex flex-col justify-center">
@@ -78,10 +78,10 @@ const formatNum = (val) => new Intl.NumberFormat().format(val || 0);
             <div>
                 <div class="flex justify-between items-end mb-3 px-1">
                     <h4 class="text-sm font-bold text-gray-800 dark:text-gray-200">Desglose por categoría</h4>
-                    <span class="text-[11px] text-gray-500">Ordenado por volumen</span>
+                    <span class="text-[11px] text-gray-500">Ordenado por volumen físico</span>
                 </div>
 
-                <div v-if="stockByCategory && stockByCategory.length > 0" class="space-y-3">
+                <div v-if="stockByCategory && stockByCategory.length > 0" class="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                     <div v-for="cat in stockByCategory" :key="cat.id" 
                          class="group flex flex-col p-4 rounded-xl border border-gray-100 dark:border-gray-700/60 bg-white dark:bg-gray-900/20 hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
                         
@@ -123,13 +123,41 @@ const formatNum = (val) => new Intl.NumberFormat().format(val || 0);
                 </div>
             </div>
 
-            <!-- Nota Explicativa Minimalista -->
-            <div class="bg-gray-50 dark:bg-gray-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700/60 flex items-start gap-3 mt-2">
-                <i class="pi pi-info-circle text-gray-400 mt-0.5"></i>
-                <p class="text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed m-0">
-                    El <strong>Stock Total</strong> representa las existencias físicas en esta sucursal específica. Para productos con múltiples opciones (tallas, colores), se suma el inventario de todas sus variantes locales.
+            <!-- Panel de Inteligencia de Negocio / Explicación -->
+            <div class="mt-2 bg-blue-50 dark:bg-blue-900/10 p-4 sm:p-5 rounded-xl border border-blue-100 dark:border-blue-800/50">
+                <h4 class="text-sm font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-2">
+                    <i class="pi pi-lightbulb text-amber-500"></i> ¿Cómo interpretar esta información?
+                </h4>
+                <p class="text-[12px] text-blue-700/80 dark:text-blue-400/80 leading-relaxed mb-4">
+                    Este panel contabiliza <strong>exclusivamente las unidades físicas reales</strong> que ocupan espacio en el almacén de esta sucursal. Es la herramienta ideal para preparar auditorías físicas y conocer el volumen exacto de tu mercancía inmovilizada.
                 </p>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div class="bg-white/80 dark:bg-gray-800/80 p-3 rounded-lg border border-blue-100 dark:border-blue-700/30">
+                        <div class="flex items-center gap-1.5 mb-1.5 text-sky-600 dark:text-sky-400 font-bold text-[10px] uppercase tracking-wider">
+                            <i class="pi pi-circle-fill text-[8px]"></i> Simples
+                        </div>
+                        <p class="text-[11px] text-gray-600 dark:text-gray-400 m-0 leading-tight">Artículos individuales con seguimiento de inventario directo.</p>
+                    </div>
+                    
+                    <div class="bg-white/80 dark:bg-gray-800/80 p-3 rounded-lg border border-blue-100 dark:border-blue-700/30">
+                        <div class="flex items-center gap-1.5 mb-1.5 text-violet-600 dark:text-violet-400 font-bold text-[10px] uppercase tracking-wider">
+                            <i class="pi pi-circle-fill text-[8px]"></i> Variantes
+                        </div>
+                        <p class="text-[11px] text-gray-600 dark:text-gray-400 m-0 leading-tight">Suma total de todas las opciones físicas (ej. tallas, colores) de un mismo modelo.</p>
+                    </div>
+                    
+                    <div class="bg-white/80 dark:bg-gray-800/80 p-3 rounded-lg border border-amber-200 dark:border-amber-700/30 relative">
+                        <div class="flex items-center gap-1.5 mb-1.5 text-amber-600 dark:text-amber-400 font-bold text-[10px] uppercase tracking-wider">
+                            <i class="pi pi-link text-[10px]"></i> Kits / Combos
+                        </div>
+                        <p class="text-[11px] text-gray-600 dark:text-gray-400 m-0 leading-tight">
+                            <strong class="text-gray-800 dark:text-gray-200">Excluidos del conteo.</strong> Su disponibilidad es dinámica y depende de las piezas que lo forman. No ocupan un espacio físico extra como "Combo".
+                        </p>
+                    </div>
+                </div>
             </div>
+            
         </div>
 
         <template #footer>
@@ -143,5 +171,18 @@ const formatNum = (val) => new Intl.NumberFormat().format(val || 0);
 <style scoped>
 :deep(.p-dialog-content) {
     scrollbar-width: thin;
+}
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1; /* gray-300 */
+    border-radius: 10px;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: #475569; /* gray-600 */
 }
 </style>

@@ -133,7 +133,7 @@ const submitBulkUpdate = () => {
                         <!-- Costo -->
                         <td class="px-4 py-2">
                             <InputNumber v-if="item.type === 'product'" v-model="item.cost_price" mode="currency" currency="MXN" locale="es-MX" class="w-full" inputClass="!p-1 !text-sm w-full" />
-                            <InputText v-else disabled placeholder="Heredado" class="w-full opacity-60 italic !p-1 !text-sm text-center" v-tooltip.top="'Heredado del producto'" />
+                            <InputText v-else disabled placeholder="Heredado" class="w-full opacity-60 italic !p-1 !text-sm text-center" v-tooltip.top="'Heredado del producto base'" />
                         </td>
 
                         <!-- Stock Mínimo -->
@@ -149,7 +149,9 @@ const submitBulkUpdate = () => {
                         <!-- Mostrar en POS -->
                         <td class="px-4 py-2 text-center">
                             <InputSwitch v-if="item.type === 'product'" v-model="item.show_in_pos" />
-                            <InputSwitch v-else disabled :modelValue="true" class="opacity-40" v-tooltip.top="'Heredado del producto base'" />
+                            <div v-else v-tooltip.top="'Heredado del producto base'">
+                                <InputSwitch disabled :modelValue="true" class="opacity-40" />
+                            </div>
                         </td>
                     </tr>
                 </tbody>
