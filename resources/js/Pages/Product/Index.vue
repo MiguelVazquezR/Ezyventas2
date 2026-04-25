@@ -172,7 +172,7 @@ const menuItems = ref([
     { separator: true },
     { label: 'Entrada/salida de stock', icon: 'pi pi-box', class: 'text-green-600', command: () => openStockModal(selectedProductForMenu.value), visible: hasPermission('products.manage_stock') },
     { separator: true },
-    { label: 'Agregar promoción', icon: 'pi pi-tag', command: () => { if (selectedProductForMenu.value) router.get(route('products.promotions.create', selectedProductForMenu.value.id)); }, visible: hasPermission('products.manage_promos') },
+    { label: 'Agregar promoción', icon: 'pi pi-percentage', command: () => { if (selectedProductForMenu.value) router.get(route('products.promotions.create', selectedProductForMenu.value.id)); }, visible: hasPermission('products.manage_promos') },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleProduct, visible: hasPermission('products.delete') },
 ]);
