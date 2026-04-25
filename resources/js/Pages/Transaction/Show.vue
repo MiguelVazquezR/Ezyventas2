@@ -5,6 +5,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from 'primevue/usetoast';
 import { usePermissions } from '@/Composables';
+import Menu from 'primevue/menu'; 
 
 // Importaciones de Modales / Componentes
 import PrintModal from '@/Components/PrintModal.vue';
@@ -74,6 +75,23 @@ const safeBankAccounts = computed(() => Array.isArray(props.userBankAccounts) ? 
 const openEditPaymentModal = (payment) => {
     paymentToEdit.value = payment;
     isEditPaymentModalVisible.value = true;
+};
+
+// NUEVO: Función para confirmar la eliminación directa desde la lista
+const confirmDeletePayment = (payment) => {
+    confirm.require({
+        message: `¿Estás seguro de que quieres eliminar permanentemente este pago por ${formatCurrency(payment.amount)}?`,
+        header: 'Eliminar Pago',
+        icon: 'pi pi-exclamation-triangle',
+        acceptClass: 'p-button-danger',
+        accept: () => {
+            router.delete(route('transactions.destroyPayment', { transaction: localTransaction.value.id, payment: payment.id }), {
+                preserveScroll: true,
+                onSuccess: () => {
+                }
+            });
+        }
+    });
 };
 
 const openExchangeModal = () => {
@@ -455,13 +473,23 @@ const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transac
                                         <span class="font-mono font-semibold" :class="{'text-red-600': payment.amount < 0}">
                                             {{ formatCurrency(payment.amount) }}
                                         </span>
-                                        <Button 
-                                            v-if="hasPermission('transactions.edit_payment') && localTransaction.status !== 'cancelado' && localTransaction.status !== 'reembolsado'"
-                                            icon="pi pi-pencil" 
-                                            class="p-button-text p-button-sm p-button-rounded" 
-                                            v-tooltip.top="'Editar pago'"
-                                            @click="openEditPaymentModal(payment)" 
-                                        />
+                                        <div class="flex items-center">
+                                            <Button 
+                                                v-if="hasPermission('transactions.edit_payment') && localTransaction.status !== 'cancelado' && localTransaction.status !== 'reembolsado'"
+                                                icon="pi pi-pencil" 
+                                                class="p-button-text p-button-sm p-button-rounded" 
+                                                v-tooltip.top="'Editar pago'"
+                                                @click="openEditPaymentModal(payment)" 
+                                            />
+                                            <Button 
+                                                v-if="hasPermission('transactions.edit_payment') && localTransaction.status !== 'cancelado' && localTransaction.status !== 'reembolsado'"
+                                                icon="pi pi-trash" 
+                                                severity="danger"
+                                                class="p-button-text p-button-sm p-button-rounded" 
+                                                v-tooltip.top="'Eliminar pago'"
+                                                @click="confirmDeletePayment(payment)" 
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                                 <p class="text-xs text-gray-500 ml-6 mt-1">{{ formatDate(payment.payment_date || payment.created_at) }}</p>

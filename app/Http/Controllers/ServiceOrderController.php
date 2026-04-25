@@ -362,6 +362,13 @@ class ServiceOrderController extends Controller implements HasMiddleware
         $oldStatus = $serviceOrder->status;
         $newStatus = ServiceOrderStatus::from($validated['status']);
 
+        if ($oldStatus->value === $newStatus->value) {
+            return redirect()->back();
+        }
+
+        $message = 'Estatus de la orden actualizado correctamente.';
+        $isReversion = false;
+
         if ($newStatus === ServiceOrderStatus::CANCELLED && $oldStatus !== ServiceOrderStatus::CANCELLED) {
 
             DB::transaction(function () use ($serviceOrder) {
@@ -400,18 +407,43 @@ class ServiceOrderController extends Controller implements HasMiddleware
                     $transaction->update(['status' => TransactionStatus::CANCELLED]);
                 }
             });
+            
+            $message = 'Estatus de la orden actualizado a cancelado y stock devuelto.';
+        } else {
+            // Flujo lógico para saber si es un avance o un retroceso usando el Enum
+            $statusFlow = [
+                ServiceOrderStatus::PENDING->value => 1,
+                ServiceOrderStatus::IN_PROGRESS->value => 2,
+                ServiceOrderStatus::WAITING_FOR_PARTS->value => 3,
+                ServiceOrderStatus::FINISHED->value => 4,
+                ServiceOrderStatus::DELIVERED->value => 5,
+            ];
+
+            if (isset($statusFlow[$oldStatus->value]) && isset($statusFlow[$newStatus->value])) {
+                $isReversion = $statusFlow[$newStatus->value] < $statusFlow[$oldStatus->value];
+            }
+
+            if ($isReversion) {
+                $message = 'Estatus de la orden revertido correctamente.';
+            }
         }
 
         $serviceOrder->update(['status' => $newStatus->value]);
+
+        $actionWord = $isReversion ? 'revirtió' : 'cambió';
 
         activity()
             ->performedOn($serviceOrder)
             ->causedBy(auth()->user())
             ->event('status_changed')
-            ->withProperties(['old_status' => $oldStatus->value, 'new_status' => $newStatus->value])
-            ->log("El estatus cambió de '{$oldStatus->value}' a '{$newStatus->value}'.");
+            ->withProperties([
+                'old_status' => $oldStatus->value, 
+                'new_status' => $newStatus->value,
+                'is_reversion' => $isReversion
+            ])
+            ->log("El estatus se {$actionWord} de '{$oldStatus->value}' a '{$newStatus->value}'.");
 
-        return redirect()->back()->with('success', 'Estatus de la orden actualizado y stock devuelto.');
+        return redirect()->back()->with('success', $message);
     }
 
     public function destroy(ServiceOrder $serviceOrder)

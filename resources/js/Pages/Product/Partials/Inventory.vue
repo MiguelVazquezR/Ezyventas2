@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import { useConfirm } from 'primevue/useconfirm';
+import axios from 'axios';
 
 const props = defineProps({
     form: Object,
@@ -174,6 +175,92 @@ const onPage = (event) => {
 watch(variantSearch, () => {
     first.value = 0;
 });
+
+
+// --- NUEVA LÓGICA PARA PRODUCTOS COMPUESTOS (KITS) ---
+const searchResults = ref([]);
+const selectedItemSearch = ref(null);
+const isSearching = ref(false); // Estado de carga para dar feedback visual
+
+const searchProductsForKit = async (event) => {
+    const query = event.query;
+    
+    // Mejoramos la UX permitiendo buscar desde el primer carácter
+    if (!query || query.trim().length === 0) {
+        searchResults.value = [];
+        return;
+    }
+    
+    isSearching.value = true;
+    try {
+        // Utilizamos la ruta existente que busca productos para el POS
+        const response = await axios.get(route('transactions.search-products'), { params: { query } });
+        
+        const flatResults = [];
+        
+        response.data.forEach(p => {
+            // Si tiene variantes, agregamos cada variante como opción individual
+            if (p.variants && p.variants.length > 0) {
+                p.variants.forEach(v => {
+                    flatResults.push({
+                        id: v.id,
+                        product_id: p.id,
+                        type: 'App\\Models\\ProductAttribute', // Tipo polimórfico exacto para BD
+                        name: `${p.name} - ${Object.values(v.attributes).join(' ')}`,
+                        sku: v.sku_suffix || p.sku,
+                        price: (p.selling_price || 0) + (v.selling_price_modifier || 0),
+                        stock: v.current_stock
+                    });
+                });
+            } else {
+                // Producto simple
+                flatResults.push({
+                    id: p.id,
+                    type: 'App\\Models\\Product', // Tipo polimórfico exacto para BD
+                    name: p.name,
+                    sku: p.sku,
+                    price: p.selling_price,
+                    stock: p.current_stock
+                });
+            }
+        });
+        
+        searchResults.value = flatResults;
+    } catch (error) {
+        console.error("Error buscando productos:", error);
+    } finally {
+        isSearching.value = false;
+    }
+};
+
+const onComponentSelect = (event) => {
+    const item = event.value;
+    
+    // Verificar si ya existe en la lista para solo sumar cantidad
+    const exists = props.form.composite_items.find(i => i.id === item.id && i.type === item.type);
+    
+    if (exists) {
+        exists.quantity += 1;
+    } else {
+        props.form.composite_items.push({
+            id: item.id,
+            type: item.type,
+            name: item.name,
+            sku: item.sku,
+            price: item.price,
+            quantity: 1
+        });
+    }
+    
+    // Limpiamos la barra de búsqueda tras seleccionar
+    setTimeout(() => {
+        selectedItemSearch.value = null;
+    }, 10);
+};
+
+const removeCompositeItem = (index) => {
+    props.form.composite_items.splice(index, 1);
+};
 </script>
 
 <template>
@@ -185,7 +272,7 @@ watch(variantSearch, () => {
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="col-span-full">
                 <InputLabel value="Tipo de producto *" />
-                <div class="flex gap-4 mt-2">
+                <div class="flex flex-wrap gap-4 mt-2">
                     <div class="flex items-center">
                         <RadioButton v-model="form.product_type" inputId="type_simple" value="simple" />
                         <label for="type_simple" class="ml-2 cursor-pointer font-medium text-gray-700 dark:text-gray-300">Producto simple</label>
@@ -194,11 +281,91 @@ watch(variantSearch, () => {
                         <RadioButton v-model="form.product_type" inputId="type_variant" value="variant" />
                         <label for="type_variant" class="ml-2 cursor-pointer font-medium text-gray-700 dark:text-gray-300">Producto con variantes</label>
                     </div>
+                    <div class="flex items-center">
+                        <RadioButton v-model="form.product_type" inputId="type_composite" value="composite" />
+                        <label for="type_composite" class="ml-2 cursor-pointer font-medium text-gray-700 dark:text-gray-300">Producto compuesto (Kit/Combo)</label>
+                    </div>
                 </div>
             </div>
 
+            <!-- PRODUCTO COMPUESTO (KIT) -->
+            <template v-if="form.product_type === 'composite'">
+                <div class="col-span-full bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800 mb-2">
+                    <h3 class="font-bold text-blue-800 dark:text-blue-200 m-0 text-base">Configuración de Kit / Combo</h3>
+                    <p class="text-sm text-blue-600 dark:text-blue-300 mt-1 mb-0">
+                        Los productos compuestos no tienen un inventario físico directo. Su disponibilidad se calculará basada en el stock de los productos que lo conforman. Al venderse, se descontará automáticamente el inventario de sus componentes.
+                    </p>
+                </div>
+
+                <div class="col-span-full">
+                    <InputLabel value="Buscar productos para agregar al kit" />
+                    <!-- Mejorada experiencia con spinner (loading) y minLength=1 -->
+                    <AutoComplete 
+                        v-model="selectedItemSearch" 
+                        :suggestions="searchResults" 
+                        @complete="searchProductsForKit" 
+                        @item-select="onComponentSelect"
+                        optionLabel="name" 
+                        placeholder="Escribe el nombre o SKU de un producto..." 
+                        class="w-full mt-1" 
+                        inputClass="w-full"
+                        forceSelection
+                        :delay="300"
+                        :minLength="1"
+                        :loading="isSearching"
+                    >
+                        <template #option="slotProps">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <div class="font-medium">{{ slotProps.option.name }}</div>
+                                    <div class="text-xs text-gray-500">SKU: {{ slotProps.option.sku || 'N/A' }}</div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="font-bold text-green-600">${{ slotProps.option.price }}</div>
+                                    <div class="text-xs text-gray-500">Stock físico: {{ slotProps.option.stock }}</div>
+                                </div>
+                            </div>
+                        </template>
+                    </AutoComplete>
+                </div>
+
+                <div class="col-span-full mt-2">
+                    <div v-if="form.composite_items.length === 0" class="text-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-gray-500">
+                        <i class="pi pi-box text-3xl mb-2 text-gray-400"></i>
+                        <p>Busca y selecciona productos arriba para armar tu kit.</p>
+                    </div>
+                    <div v-else class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                                <tr>
+                                    <th class="px-4 py-2">Producto / Variante componente</th>
+                                    <th class="px-4 py-2 w-36 text-center">Cantidad a descontar por venta</th>
+                                    <th class="px-4 py-2 w-16"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="(item, index) in form.composite_items" :key="index" class="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                                    <td class="px-4 py-3">
+                                        <div class="font-medium text-gray-800 dark:text-gray-200">{{ item.name }}</div>
+                                        <div class="text-xs text-gray-500">SKU: {{ item.sku || 'N/A' }}</div>
+                                    </td>
+                                    <td class="px-4 py-3 text-center">
+                                        <InputNumber v-model="item.quantity" :min="0.01" :maxFractionDigits="2" class="w-full" inputClass="!p-2 text-center" showButtons />
+                                    </td>
+                                    <td class="px-4 py-3 text-center">
+                                        <Button icon="pi pi-trash" severity="danger" text rounded @click="removeCompositeItem(index)" v-tooltip.top="'Quitar del kit'" />
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <InputError :message="form.errors.composite_items" class="mt-2" />
+                </div>
+            </template>
+
+
             <!-- PRODUCTO SIMPLE -->
-            <template v-if="form.product_type === 'simple'">
+            <template v-else-if="form.product_type === 'simple'">
                 <div>
                     <InputLabel for="current_stock" value="Stock actual" />
                     <InputNumber v-model="form.current_stock" id="current_stock" class="w-full mt-1" />
@@ -220,7 +387,7 @@ watch(variantSearch, () => {
             </template>
 
             <!-- PRODUCTO CON VARIANTES -->
-            <template v-else>
+            <template v-else-if="form.product_type === 'variant'">
                 
                 <!-- SECCIÓN: GENERADOR DE ATRIBUTOS -->
                 <div class="col-span-full bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-5 mb-2">

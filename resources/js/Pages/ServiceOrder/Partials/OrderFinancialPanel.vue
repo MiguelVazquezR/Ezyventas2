@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { Link } from '@inertiajs/vue3';
 
 const props = defineProps({
     serviceOrder: Object,
@@ -136,6 +137,15 @@ const getPaymentMethodIcon = (method) => {
         <!-- Pagos registrados -->
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
             <h2 class="text-lg font-semibold border-b pb-3 mb-4">Pagos registrados</h2>
+            
+            <p v-if="serviceOrder.transaction && serviceOrder.transaction.payments?.length > 0" class="text-sm text-gray-600 dark:text-gray-400 mb-4 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md border border-blue-100 dark:border-blue-800">
+                <i class="pi pi-info-circle mr-2 text-blue-500"></i>
+                Si quieres editar o eliminar un pago dirígete a la transacción
+                <Link :href="route('transactions.show', serviceOrder.transaction.id)" class="text-blue-600 dark:text-blue-400 hover:underline font-semibold ml-1">
+                    {{ serviceOrder.transaction.folio }}
+                </Link>
+            </p>
+
             <DataTable :value="serviceOrder.transaction?.payments" class="p-datatable-sm" responsiveLayout="scroll">
                 <Column field="payment_date" header="Fecha">
                     <template #body="{ data }">{{ formatDate(data.payment_date) }}</template>

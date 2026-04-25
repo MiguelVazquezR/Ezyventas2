@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, provide } from 'vue';
-import { router, usePage, useForm, Link } from '@inertiajs/vue3';
+import { router, usePage, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from "primevue/usetoast";
@@ -14,6 +14,8 @@ import { usePermissions } from '@/Composables';
 import OrderItemsPanel from './Partials/OrderItemsPanel.vue';
 import OrderFinancialPanel from './Partials/OrderFinancialPanel.vue';
 import OrderEvidencePanel from './Partials/OrderEvidencePanel.vue';
+import OrderStatusStepper from './Partials/OrderStatusStepper.vue';
+import OrderSummaryPanel from './Partials/OrderSummaryPanel.vue';
 
 const props = defineProps({
     serviceOrder: Object,
@@ -129,19 +131,6 @@ const breadcrumbItems = ref([
     { label: `Orden #${props.serviceOrder.folio || props.serviceOrder.id}` }
 ]);
 
-const steps = ref([
-    { label: 'Pendiente', value: 'pendiente', icon: 'pi pi-inbox' },
-    { label: 'En Progreso', value: 'en_progreso', icon: 'pi pi-cog' },
-    { label: 'Esperando refacción', value: 'esperando_refaccion', icon: 'pi pi-wrench' },
-    { label: 'Terminado/Listo para entregar', value: 'terminado', icon: 'pi pi-check-circle' },
-    { label: 'Entregado', value: 'entregado', icon: 'pi pi-send' }
-]);
-
-const activeIndex = computed(() => {
-    const index = steps.value.findIndex(step => step.value === props.serviceOrder.status);
-    return index >= 0 ? index + 1 : 0;
-});
-
 const isCancelled = computed(() => props.serviceOrder.status === 'cancelado');
 
 const totalPaid = computed(() => {
@@ -150,16 +139,6 @@ const totalPaid = computed(() => {
 
 const amountDue = computed(() => {
     return parseFloat(props.serviceOrder.final_total) - totalPaid.value;
-});
-
-const deliveryDate = computed(() => {
-    if (props.serviceOrder.status === 'entregado' && props.serviceOrder.transaction?.payments?.length > 0) {
-        const latestPayment = props.serviceOrder.transaction.payments.reduce((latest, current) => {
-            return new Date(current.payment_date) > new Date(latest.payment_date) ? current : latest;
-        });
-        return latestPayment.payment_date;
-    }
-    return null;
 });
 
 const technicianCommissionCostNumeric = computed(() => {
@@ -176,39 +155,6 @@ const technicianCommissionCostNumeric = computed(() => {
     }
     return 0;
 });
-
-const technicianCommission = computed(() => {
-    if (technicianCommissionCostNumeric.value === 0 && (!props.serviceOrder.technician_name || !props.serviceOrder.technician_commission_value)) {
-        return 'N/A';
-    }
-    const value = parseFloat(props.serviceOrder.technician_commission_value);
-    const formattedAmount = formatCurrency(technicianCommissionCostNumeric.value);
-
-    if (props.serviceOrder.technician_commission_type === 'percentage') {
-        return `${formattedAmount} (${value}%)`;
-    }
-    return formattedAmount;
-});
-
-const changeStatus = (newStatusValue, newIndex) => {
-    if (!hasPermission('services.orders.change_status') || newIndex < activeIndex.value || isCancelled.value) return;
-    const newStatusLabel = steps.value.find(s => s.value === newStatusValue)?.label || newStatusValue;
-    confirm.require({
-        message: `¿Estás seguro de que quieres cambiar el estatus a "${newStatusLabel}"?`,
-        header: 'Confirmar Cambio de Estatus',
-        icon: 'pi pi-sync',
-        accept: () => {
-            router.patch(route('service-orders.updateStatus', props.serviceOrder.id), { status: newStatusValue }, {
-                preserveScroll: true,
-                onSuccess: () => {
-                    if (newStatusValue === 'entregado' && amountDue.value > 0.01) {
-                        openPaymentModal();
-                    }
-                }
-            });
-        }
-    });
-};
 
 const cancelOrder = () => {
     confirm.require({
@@ -250,27 +196,6 @@ const actionItems = computed(() => [
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteOrder, visible: hasPermission('services.orders.delete') },
 ]);
 
-const whatsappLink = computed(() => {
-    if (!props.serviceOrder.customer_phone) return '#';
-    const sanitizedPhone = props.serviceOrder.customer_phone.replace(/\D/g, '');
-    return `https://wa.me/${sanitizedPhone.length === 10 ? `52${sanitizedPhone}` : sanitizedPhone}`;
-});
-
-const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short' });
-};
-
-const getStatusSeverity = (status) => {
-    const map = { pendiente: 'warn', en_progreso: 'info', esperando_refaccion: 'secondary', terminado: 'success', entregado: 'success', cancelado: 'danger' };
-    return map[status] || 'secondary';
-};
-
-const formatCurrency = (value) => {
-    if (value === null || value === undefined) return 'N/A';
-    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
-};
-
 const getCustomFieldDefinition = (key) => {
     return props.customFieldDefinitions?.find(def => def.key === key);
 };
@@ -290,104 +215,26 @@ const getCustomFieldDefinition = (key) => {
                 <Button v-if="!isCancelled && hasPermission('services.orders.change_status')" @click="cancelOrder"
                     label="Cancelar orden" severity="danger" outlined />
                     
-                <!-- BOTÓN DE MENÚ ACTUALIZADO -->
                 <Button @click="toggleMenu" label="Acciones" icon="pi pi-chevron-down" iconPos="right" severity="secondary" outlined />
                 <Menu ref="menu" :model="actionItems" :popup="true" />
             </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Stepper -->
-            <div class="col-span-full bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                <h2 class="text-lg font-semibold border-b pb-3 mb-6">Flujo de estatus</h2>
-                <div v-if="isCancelled" class="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-md">
-                    <i class="pi pi-times-circle text-red-500 !text-3xl"></i>
-                    <p class="mt-1 font-semibold text-red-700 dark:text-red-300">Esta orden ha sido cancelada.</p>
-                </div>
-                <Stepper v-else v-model:value="activeIndex" class="basis-full">
-                    <StepList>
-                        <Step v-for="(step, index) in steps" :key="step.label" :value="index + 1" v-slot="{ value }" asChild>
-                            <div class="flex flex-row flex-auto">
-                                <button class="bg-transparent border-0 inline-flex flex-col gap-2 items-center"
-                                    :class="index == 4 ? 'w-32' : 'w-60'" @click="changeStatus(step.value, value)">
-                                    <span
-                                        :class="['size-12 rounded-full border-2 flex items-center justify-center transition-colors duration-200', { 'bg-primary border-primary text-primary-contrast': value <= activeIndex, 'border-surface-200 dark:border-surface-700': value > activeIndex, 'cursor-pointer hover:border-primary': value > activeIndex && hasPermission('services.orders.change_status') }]">
-                                        <i :class="step.icon" />
-                                    </span>
-                                    <span :class="['font-medium text-xs', { 'text-primary': value <= activeIndex }]">{{ step.label }}</span>
-                                </button>
-                                <Divider v-if="index != 4" />
-                            </div>
-                        </Step>
-                    </StepList>
-                </Stepper>
-            </div>
+            <!-- COMPONENTE: Stepper Dinámico -->
+            <OrderStatusStepper 
+                :service-order="serviceOrder"
+                :amount-due="amountDue"
+                @require-payment="openPaymentModal"
+            />
 
             <!-- Columna Principal (Izquierda) -->
             <div class="lg:col-span-2 space-y-6">
-                <!-- Información Cliente y Orden -->
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div v-if="hasPermission('services.orders.see_customer_info')">
-                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información del cliente</h2>
-                            <ul class="space-y-2 text-sm">
-                                <li class="flex items-center">
-                                    <i class="pi pi-user w-6 text-gray-500"></i>
-                                    <template v-if="serviceOrder.customer_id">
-                                        <Link :href="route('customers.show', serviceOrder.customer_id)"
-                                            class="text-blue-600 hover:underline flex items-center gap-2">
-                                        {{ serviceOrder.customer_name }}
-                                        <i class="pi pi-external-link text-xs"></i>
-                                        </Link>
-                                    </template>
-                                    <template v-else>
-                                        <span class="font-medium">{{ serviceOrder.customer_name }}</span>
-                                    </template>
-                                </li>
-                                <li v-if="serviceOrder.customer_phone" class="flex items-center">
-                                    <i class="pi pi-phone w-6 text-gray-500"></i>
-                                    <span class="font-medium">{{ serviceOrder.customer_phone }}</span>
-                                    <a :href="whatsappLink" target="_blank" class="ml-auto">
-                                        <Button icon="pi pi-whatsapp" severity="success" text rounded v-tooltip.bottom="'Enviar WhatsApp'" />
-                                    </a>
-                                </li>
-                                <li class="flex items-center">
-                                    <i class="pi pi-envelope w-6 text-gray-500"></i>
-                                    <span class="font-medium">{{ serviceOrder.customer_email || 'N/A' }}</span>
-                                </li>
-                            </ul>
-                        </div>
-                        <div>
-                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información de la orden</h2>
-                            <ul class="space-y-3 text-sm">
-                                <li class="flex justify-between">
-                                    <span>Estatus actual</span>
-                                    <Tag :value="serviceOrder.status.replace('_', ' ')" :severity="getStatusSeverity(serviceOrder.status)" class="capitalize" />
-                                </li>
-                                <li class="flex justify-between">
-                                    <span>Fecha de recepción</span>
-                                    <span>{{ formatDate(serviceOrder.received_at) }}</span>
-                                </li>
-                                <li class="flex justify-between">
-                                    <span>Fecha promesa</span>
-                                    <span>{{ formatDate(serviceOrder.promised_at) }}</span>
-                                </li>
-                                <li v-if="deliveryDate" class="flex justify-between">
-                                    <span>Fecha de entrega</span>
-                                    <span class="font-semibold">{{ formatDate(deliveryDate) }}</span>
-                                </li>
-                                <li class="flex justify-between">
-                                    <span>Técnico asignado</span>
-                                    <span>{{ serviceOrder.technician_name || 'Sin asignar' }}</span>
-                                </li>
-                                <li v-if="serviceOrder.technician_name" class="flex justify-between">
-                                    <span>Comisión del técnico:</span>
-                                    <span class="font-semibold">{{ technicianCommission }}</span>
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
+                <!-- COMPONENTE: Resumen de Cliente y Orden -->
+                <OrderSummaryPanel 
+                    :service-order="serviceOrder"
+                    :technician-commission-cost-numeric="technicianCommissionCostNumeric"
+                />
 
                 <!-- Campos Personalizados -->
                 <div v-if="serviceOrder.custom_fields && Object.keys(serviceOrder.custom_fields).length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">

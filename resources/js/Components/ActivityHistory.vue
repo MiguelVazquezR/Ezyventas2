@@ -273,7 +273,6 @@ const fieldTranslations = {
     'customer_email': 'Correo del cliente',
     'received_at': 'Fecha de recepción',
     'promised_at': 'Fecha de entrega prometida',
-    'promised_at': 'Fecha de entrega prometida',
     'technician_commission_type': 'Tipo de comisión del técnico',
     'technician_commission_value': 'Valor de comisión del técnico',
     'discount_amount': 'Monto de descuento',
@@ -363,13 +362,24 @@ const getActivityColor = (activity) => {
                             Por <span class="font-medium text-gray-700 dark:text-gray-300">{{ activity.causer }}</span>
                         </div>
 
-                        <!-- Concepto de Movimiento de Stock -->
-                        <div v-if="getReason(activity.properties)" class="mb-3">
-                            <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border"
+                        <!-- Concepto de Movimiento de Stock y Cantidades -->
+                        <div v-if="getReason(activity.properties) || activity.properties?.quantity_changed !== undefined" class="mb-3 flex flex-wrap items-center gap-2">
+                            
+                            <!-- Razón/Concepto -->
+                            <div v-if="getReason(activity.properties)" class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border"
                                 :class="getMovementClass(activity.properties)">
                                 <i :class="getMovementIcon(activity.properties)"></i>
                                 <span>{{ getMovementLabel(activity.properties) }}</span>
                             </div>
+
+                            <!-- Cantidad Modificada -->
+                            <div v-if="activity.properties?.quantity_changed !== undefined" 
+                                class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold border"
+                                :class="activity.properties.quantity_changed > 0 ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800'">
+                                <i :class="activity.properties.quantity_changed > 0 ? 'pi pi-arrow-up' : 'pi pi-arrow-down'" class="!text-[10px]"></i>
+                                {{ activity.properties.quantity_changed > 0 ? '+' : '' }}{{ activity.properties.quantity_changed }} <span class="text-[10px] uppercase font-semibold ml-0.5 opacity-80">Uds</span>
+                            </div>
+                            
                         </div>
 
                         <!-- Diff Viewer -->
@@ -391,7 +401,7 @@ const getActivityColor = (activity) => {
                                         </div>
                                     </div>
                                 </div>
-                            </div>
+                             </div>
                         </div>
                         
                     </div>

@@ -21,6 +21,8 @@ const displayStock = ref(props.product.stock);
 const displayReservedStock = ref(props.product.reserved_stock);
 const hasVariants = computed(() => props.product.variants && Object.keys(props.product.variants).length > 0);
 
+const isComposite = computed(() => props.product.components && props.product.components.length > 0);
+
 const selectCardOption = (variantName, value) => {
     if (cardSelectedVariants.value[variantName] === value) {
         delete cardSelectedVariants.value[variantName];
@@ -187,7 +189,8 @@ const formatCurrency = (value) => {
 
 <template>
     <div
-        class="relative border border-gray-200 dark:border-gray-700 rounded-[15px] overflow-hidden flex flex-col bg-white dark:bg-gray-800 transition-shadow hover:shadow-lg">
+        class="relative border border-gray-200 dark:border-gray-700 rounded-[15px] overflow-hidden flex flex-col bg-white dark:bg-gray-800 transition-shadow hover:shadow-lg h-full">
+                
         <div class="m-3 relative">
             <img :src="displayImage" :alt="product.name" class="w-full h-40 object-contain bg-[#F2F2F2] rounded-xl">
             
@@ -197,7 +200,18 @@ const formatCurrency = (value) => {
                 <i class="pi pi-shopping-cart !text-xs"></i>
                 <span>{{ quantityInCart }} en carrito</span>
             </div>
-            <span
+
+              <!-- ETIQUETA VISUAL PARA KITS/COMBOS -->
+        <div v-if="isComposite" class="absolute bottom-2 right-2 z-10">
+            <Tag value="Combo" severity="contrast" icon="pi pi-link" class="!text-[10px] !px-1.5 shadow-sm" />
+        </div>
+
+            <!-- INDICADOR DE STOCK DINÁMICO (COMBO) VS FÍSICO -->
+            <span v-if="isComposite"
+                class="absolute top-0 left-0 rounded-none rounded-tl-[15px] rounded-br-[15px] text-sm text-white dark:text-gray-900 px-2 py-1 bg-[#122C3C] dark:bg-gray-400 flex items-center gap-1">
+                <i class="pi pi-link text-[10px]"></i> Dinámico
+            </span>
+            <span v-else
                 class="absolute top-0 left-0 rounded-none rounded-tl-[15px] rounded-br-[15px] text-sm text-white dark:text-gray-900 px-2 py-1"
                 :class="displayStock > 0 ? 'bg-[#122C3C] dark:bg-gray-400' : 'bg-red-600 dark:bg-red-400'">
                 {{ displayStock }} disponibles
@@ -205,29 +219,31 @@ const formatCurrency = (value) => {
                     | {{ displayReservedStock }} apartados
                 </span>
             </span>
+
             <button class="absolute top-1 right-1 bg-[#5c5c5c]/70 dark:bg-black/50 text-white rounded-[6px] size-7 border border-white flex items-center justify-center"
                 @click="emit('showDetails', product)" v-tooltip.bottom="'Ver detalles'">
                 <i class="pi pi-arrow-up-right-and-arrow-down-left-from-center !text-xs"></i>
             </button>
         </div>
+        
         <div class="px-4 py-2 flex flex-col flex-grow">
             <h3 class="font-bold text-gray-800 dark:text-gray-200 text-lg overflow-hidden m-0">{{ product.name }}</h3>
             <p v-if="product.sku" class="text-gray-600 dark:text-gray-100 text-xs m-0 flex items-center gap-2">
                 <i class="pi pi-barcode"></i> 
                 <span>{{ product.sku }}</span>
             </p>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">{{ product.category }}</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">{{ product.category?.name || product.category || 'General' }}</p>
             <div class="space-y-2 my-2 min-h-[1rem]">
                 <div v-if="hasVariants" class="space-y-3">
                     <div v-for="(options, variantName) in product.variants" :key="variantName">
                         <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 capitalize">{{
                             variantName }}</p>
                         <div class="flex flex-wrap gap-2">
-                            <Button v-for="option in options" :key="option.value" :label="option.value"
-                                :outlined="!isCardOptionSelected(variantName, option.value)" severity="contrast"
+                            <Button v-for="option in options" :key="option.value || option" :label="option.value || option"
+                                :outlined="!isCardOptionSelected(variantName, option.value || option)" severity="contrast"
                                 class="p-button-sm !text-xs !py-1 !px-2"
-                                @click="selectCardOption(variantName, option.value)"
-                                :disabled="isCardOptionDisabled(variantName, option.value)" />
+                                @click="selectCardOption(variantName, option.value || option)"
+                                :disabled="isCardOptionDisabled(variantName, option.value || option)" />
                         </div>
                     </div>
                 </div>
@@ -242,7 +258,7 @@ const formatCurrency = (value) => {
                     {{ formatCurrency(displayPrice) }}
                 </p>
                 <button v-if="product.promotions && product.promotions.length > 0" @click="togglePromoPopover"
-                    class="cursor-pointer" v-tooltip.bottom="'Ver detalles de la promoción'">
+                    class="cursor-pointer focus:outline-none" v-tooltip.bottom="'Ver detalles de la promoción'">
                     <FireIcon class="size-5 text-[#AE080B] dark:text-red-400 animate-pulse" />
                 </button>
                 <Popover ref="promoPopover">
@@ -259,7 +275,7 @@ const formatCurrency = (value) => {
             </div>
 
             <Button :label="hasVariants && !cardSelectedCombination ? 'Elegir opciones' : 'Agregar al carrito'"
-                icon="pi pi-plus" severity="warning" class="w-full" rounded size="small" @click="handlePrimaryAction" />
+                icon="pi pi-plus" severity="warning" class="w-full font-bold" rounded size="small" @click="handlePrimaryAction" />
         </div>
     </div>
 </template>

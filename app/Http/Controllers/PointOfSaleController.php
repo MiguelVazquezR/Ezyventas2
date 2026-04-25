@@ -318,7 +318,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         // 1. Filtrar los productos asegurándonos que pertenecen a la sucursal en el Pivot
         $query = Product::whereHas('branches', function ($q) use ($branchId) {
             $q->where('branches.id', $branchId);
-        })->where('show_in_pos', true); // NUEVO: Oculta los insumos del POS
+        })->where('show_in_pos', true); // Oculta los insumos del POS
 
         if ($search) {
             $query->where(function ($q) use ($search) {
@@ -334,7 +334,8 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'media', 
                 'category:id,name', 
                 'branches', // Necesario para pivot local
-                'productAttributes.branches' // Necesario para pivot de variantes local
+                'productAttributes.branches', // Necesario para pivot de variantes local
+                'components.componentable' // <--- AÑADIDO: Cargar la relación del combo
             ])
             ->orderBy('name', 'asc')
             ->cursorPaginate(20)
@@ -382,6 +383,9 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'variants' => $this->mapVariants($product->productAttributes, $branchId),
                 'variant_combinations' => $this->mapVariantCombinations($product, $variantImages, $branchId),
                 'promotions' => $promotionData['promotions'],
+                
+                // <--- AÑADIDO: Enviar los componentes al Frontend --->
+                'components' => $product->components,
             ];
         });
 

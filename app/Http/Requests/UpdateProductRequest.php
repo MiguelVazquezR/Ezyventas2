@@ -58,7 +58,7 @@ class UpdateProductRequest extends FormRequest
             'tax_rate' => 'nullable|numeric',
             
             // Inventario y Variantes
-            'product_type' => 'required|in:simple,variant',
+            'product_type' => 'required',
             'current_stock' => 'required_if:product_type,simple|nullable|numeric|min:0',
             'min_stock' => 'nullable|numeric|min:0',
             'max_stock' => 'nullable|numeric|min:0',

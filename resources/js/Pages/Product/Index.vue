@@ -6,7 +6,8 @@ import ManageStockModal from './Partials/ManageStockModal.vue';
 import ImportProductsModal from './Partials/ImportProductsModal.vue';
 import ProductNavigation from './Partials/ProductNavigation.vue';
 import InventorySummaryModal from './Partials/InventorySummaryModal.vue'; 
-import ProductDrawerDetails from './Partials/ProductDrawerDetails.vue'; // <-- IMPORTAMOS EL NUEVO COMPONENTE
+import ProductDrawerDetails from './Partials/ProductDrawerDetails.vue';
+import BulkEditProductsModal from './Partials/BulkEditProductsModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
@@ -44,6 +45,7 @@ const selectedProducts = ref([]);
 const showManageStockModal = ref(false);
 const productsForStockModal = ref([]);
 const showImportModal = ref(false);
+const showBulkEditModal = ref(false); 
 const searchTerm = ref(props.filters.search || '');
 
 const isPrintModalVisible = ref(false);
@@ -55,7 +57,6 @@ const selectedProductDetails = ref(null);
 const showInventorySummary = ref(false); 
 
 // --- HELPER FUNCTIONS PARA STOCK Y VARIANTES ---
-// (Mantenemos estas aquí porque se usan en la Tabla Principal)
 const getVariants = (product) => {
     if (!product) return [];
     return product.product_attributes || product.productAttributes || [];
@@ -63,6 +64,11 @@ const getVariants = (product) => {
 
 const hasVariants = (product) => {
     return getVariants(product).length > 0;
+};
+
+// NUEVO: Identificar productos compuestos
+const isComposite = (product) => {
+    return product.components && product.components.length > 0;
 };
 
 const getCalculatedStock = (product) => {
@@ -96,7 +102,7 @@ const getStockSeverity = (product) => {
 };
 // ------------------------------------------------
 
-// --- GESTIÓN DE STOCK (NUEVO) ---
+// --- GESTIÓN DE STOCK ---
 const openStockModal = (products) => {
     productsForStockModal.value = Array.isArray(products) ? products : [products];
     showManageStockModal.value = true;
@@ -166,7 +172,7 @@ const menuItems = ref([
     { separator: true },
     { label: 'Entrada/salida de stock', icon: 'pi pi-box', class: 'text-green-600', command: () => openStockModal(selectedProductForMenu.value), visible: hasPermission('products.manage_stock') },
     { separator: true },
-    { label: 'Agregar promoción', icon: 'pi pi-tag', command: () => { if (selectedProductForMenu.value) router.get(route('products.promotions.create', selectedProductForMenu.value.id)); }, visible: hasPermission('products.manage_promos') },
+    { label: 'Agregar promoción', icon: 'pi pi-percentage', command: () => { if (selectedProductForMenu.value) router.get(route('products.promotions.create', selectedProductForMenu.value.id)); }, visible: hasPermission('products.manage_promos') },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleProduct, visible: hasPermission('products.delete') },
 ]);
@@ -192,20 +198,15 @@ watch(searchTerm, () => fetchData());
 
 const onRowClick = (event) => {
     const target = event.originalEvent.target;
-    // Ignorar clic si se hizo sobre un botón, check, o la lupa de la imagen
     if (target.closest('button') || target.closest('.p-image-preview-indicator') || target.closest('.p-checkbox')) {
         return;
     }
 
-    // 1. Obtenemos la preferencia del usuario desde los props globales
-    // Si no ha configurado nada, usamos el Drawer por defecto
     const clickAction = page.props.auth.preferences?.product_table_row_click_action || 'Vista lateral con algunos detalles';
 
-    // 2. Evaluamos la cadena de texto exacta configurada en las opciones
     if (clickAction === 'Redirección a vista de detalles') {
         router.get(route('products.show', event.data.id));
     } else {
-        // Abrir Drawer (Comportamiento por defecto o seleccionado)
         selectedProductDetails.value = event.data;
         isDrawerVisible.value = true;
     }
@@ -251,17 +252,22 @@ const goToDetails = (id) => {
                 </div>
 
                 <!-- Barra de Acciones Masivas Contextual -->
-                <div v-if="selectedProducts.length > 0"
-                    class="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700 rounded-lg p-2 mb-4 flex justify-between items-center transition-all duration-300">
-                    <span class="font-semibold text-sm text-[#373737] dark:text-gray-200">{{ selectedProducts.length }}
-                        producto(s) seleccionado(s)</span>
+                <div class="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700 rounded-lg p-2 mb-4 flex justify-between items-center transition-all duration-300">
+                    <span class="font-semibold text-sm text-[#373737] dark:text-gray-200">
+                        {{ selectedProducts.length }} producto(s) seleccionado(s)
+                    </span>
                     <div class="flex items-center gap-2">
-                        <!-- ACCIONES MASIVAS STOCK -->
+                        <Button v-if="hasPermission('products.edit')" @click="showBulkEditModal = true"
+                            label="Edición rápida" icon="pi pi-pencil" size="small" severity="success" outlined 
+                            :disabled="selectedProducts.length === 0" />
+
                         <Button v-if="hasPermission('products.manage_stock')" @click="openStockModal(selectedProducts)"
-                            label="Ajustar stock" icon="pi pi-box" size="small" severity="info" outlined />
+                            label="Ajustar stock" icon="pi pi-box" size="small" severity="info" outlined 
+                            :disabled="selectedProducts.length === 0" />
 
                         <Button v-if="hasPermission('products.delete')" @click="deleteSelectedProducts" label="Eliminar"
-                            icon="pi pi-trash" size="small" severity="danger" outlined />
+                            icon="pi pi-trash" size="small" severity="danger" outlined 
+                            :disabled="selectedProducts.length === 0" />
                     </div>
                 </div>
 
@@ -299,9 +305,16 @@ const goToDetails = (id) => {
                         </template>
                     </Column>
 
-                    <Column field="name" header="Nombre" sortable></Column>
+                    <!-- COLUMNA NOMBRE: Muestra el tag de Kit/Combo si aplica -->
+                    <Column field="name" header="Nombre" sortable>
+                        <template #body="{ data }">
+                            <div class="flex flex-col gap-1 items-start justify-center">
+                                <span>{{ data.name }}</span>
+                                <Tag v-if="isComposite(data)" value="Kit/Combo" severity="contrast" class="!text-[10px] !px-2" />
+                            </div>
+                        </template>
+                    </Column>
 
-                    <!-- NUEVA COLUMNA DE INDICADOR POS/INSUMO -->
                     <Column field="show_in_pos" header="Tipo / POS" sortable alignFrozen="right">
                         <template #body="{ data }">
                             <div class="flex justify-center items-center">
@@ -326,15 +339,20 @@ const goToDetails = (id) => {
                     <Column field="location" header="Ubicación" sortable>
                         <template #body="{ data }">
                             <span class="text-sm text-gray-600 dark:text-gray-400">
-                                {{ hasVariants(data) ? 'Múltiples (Ver detalle)' : (data.location || '--') }}
+                                <template v-if="isComposite(data)">--</template>
+                                <template v-else-if="hasVariants(data)">Múltiples (Ver detalle)</template>
+                                <template v-else>{{ data.location || '--' }}</template>
                             </span>
                         </template>
                     </Column>
 
-                    <!-- SECCIÓN DINÁMICA DE EXISTENCIAS -->
+                    <!-- COLUMNA EXISTENCIAS: Muestra "Dinámico" si es Kit/Combo -->
                     <Column field="current_stock" header="Existencias" sortable>
                         <template #body="{ data }">
-                            <div class="flex items-center space-x-2">
+                            <div v-if="isComposite(data)" class="flex items-center space-x-2">
+                                <Tag value="Dinámico" severity="info" class="!bg-blue-100 !text-blue-600" icon="pi pi-link" v-tooltip.top="'Stock dependiente de sus componentes'" />
+                            </div>
+                            <div v-else class="flex items-center space-x-2">
                                 <Tag :value="getAvailableStock(data)" :severity="getStockSeverity(data)" />
 
                                 <Tag v-if="getCalculatedReserved(data) > 0"
@@ -382,7 +400,7 @@ const goToDetails = (id) => {
             </div>
         </div>
 
-        <!-- DRAWER DE DETALLES DEL PRODUCTO (REFACTORIZADO) -->
+        <!-- DRAWER DE DETALLES DEL PRODUCTO -->
         <Drawer v-model:visible="isDrawerVisible" position="right"
             class="w-full md:!w-[32rem] !bg-gray-50 dark:!bg-gray-900">
             <template #header>
@@ -392,7 +410,6 @@ const goToDetails = (id) => {
                 </div>
             </template>
 
-            <!-- USAMOS EL NUEVO COMPONENTE EXTRAÍDO -->
             <ProductDrawerDetails 
                 v-if="selectedProductDetails" 
                 :product="selectedProductDetails" 
@@ -408,6 +425,8 @@ const goToDetails = (id) => {
         <!-- Modales Independientes -->
         <ManageStockModal :visible="showManageStockModal" :products="productsForStockModal"
             @update:visible="showManageStockModal = false" />
+
+        <BulkEditProductsModal v-model:visible="showBulkEditModal" :products="selectedProducts" @success="selectedProducts = []" />
 
         <ImportProductsModal :visible="showImportModal" @update:visible="showImportModal = false" />
 

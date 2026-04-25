@@ -29,10 +29,18 @@ class FinancialReportController extends Controller
         $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : Carbon::today()->startOfDay();
         $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : Carbon::today()->endOfDay();
 
-        // Calcular periodos para comparación
-        $diffInDays = $startDate->diffInDays($endDate);
-        $previousStartDate = $startDate->copy()->subDays($diffInDays + 1);
-        $previousEndDate = $startDate->copy()->subDay()->endOfDay();
+        // -------------------------------------------------------------
+        // CORRECCIÓN: Calcular periodos para comparación de forma exacta
+        // floatDiffInDays asegura que no haya saltos raros por TimeZones.
+        // -------------------------------------------------------------
+        $diffInDays = (int) round($startDate->floatDiffInDays($endDate->copy()->addSeconds(1)));
+        if ($diffInDays < 1) {
+            $diffInDays = 1;
+        }
+
+        $previousStartDate = $startDate->copy()->subDays($diffInDays);
+        $previousEndDate = $startDate->copy()->subSeconds(1); // 1 segundo antes del startDate
+        // -------------------------------------------------------------
 
         // 1. KPIs (Servicio de Reporte)
         // NOTA: Si los totales generales (Ventas Totales, Ganancia Neta) siguen incorrectos,
@@ -54,7 +62,6 @@ class FinancialReportController extends Controller
         ];
 
         // --- NUEVO CÁLCULO: Margen de Utilidad (%) ---
-        // Fórmula: (Ganancia Neta / Ventas Totales) * 100
         $salesCurrent = $reportData['kpis']['sales']['current'];
         $salesPrevious = $reportData['kpis']['sales']['previous'];
 
@@ -71,11 +78,8 @@ class FinancialReportController extends Controller
             'previous' => $utilityMarginPrevious,
             'change' => round($utilityMarginCurrent - $utilityMarginPrevious, 2) // Cambio en puntos porcentuales
         ];
-        // ----------------------------------------------
-
 
         // 3. Ticket Promedio (Optimizado con índices)
-        // CORRECCIÓN: Ahora excluimos tanto CANCELLED como CHANGED para que el conteo sea real.
         $salesCountCurrent = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$startDate, $endDate])
             ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
@@ -101,7 +105,6 @@ class FinancialReportController extends Controller
 
 
         // --- OPTIMIZACIÓN CRÍTICA: DATOS DETALLADOS ---
-        // Limitamos a 500-1000 registros para la vista web y seleccionamos solo columnas necesarias.
         $limitWeb = 1000;
 
         // Gastos Detallados
@@ -115,12 +118,10 @@ class FinancialReportController extends Controller
             ->get();
 
         // Ventas Detalladas
-        // CORRECCIÓN: Filtramos las ventas cambiadas para que no aparezcan en la lista detallada
         $reportData['detailedTransactions'] = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$startDate, $endDate])
             ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
             ->select('id', 'branch_id', 'customer_id', 'created_at', 'folio', 'channel', 'status', 'subtotal', 'total_discount', 'total_tax')
-            // Calculamos el total al vuelo para la vista si no existe columna 'total'
             ->selectRaw('(subtotal - total_discount + total_tax) as total') 
             ->with(['customer:id,name'])
             ->orderBy('created_at', 'desc')
@@ -134,8 +135,6 @@ class FinancialReportController extends Controller
             ->whereBetween('payments.payment_date', [$startDate, $endDate])
             ->where('payments.payment_method', '!=', PaymentMethod::BALANCE->value)
             ->where('payments.status', PaymentStatus::COMPLETED->value)
-            // Opcional: Si también quieres ocultar pagos de ventas que luego fueron cambiadas, descomenta la siguiente línea:
-            // ->whereNotIn('transactions.status', [TransactionStatus::CANCELLED->value, TransactionStatus::CHANGED->value])
             ->select(
                 'payments.id', 
                 'payments.payment_date', 
