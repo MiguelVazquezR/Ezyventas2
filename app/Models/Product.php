@@ -199,4 +199,12 @@ class Product extends Model implements HasMedia
             ])
             ->withTimestamps();
     }
+
+    /**
+     * Componentes si este producto es un Kit/Combo (Producto Compuesto)
+     */
+    public function components(): HasMany
+    {
+        return $this->hasMany(ProductComponent::class, 'composite_product_id');
+    }
 }

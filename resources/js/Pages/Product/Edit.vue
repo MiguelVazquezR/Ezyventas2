@@ -57,12 +57,21 @@ const form = useForm({
     show_in_pos: props.product.show_in_pos ?? true,
     selling_price: props.product.selling_price ? parseFloat(props.product.selling_price) : null,
     price_tiers: props.product.price_tiers || [],
-    product_type: props.product.product_attributes && props.product.product_attributes.length > 0 ? 'variant' : 'simple',
+    
+    // NUEVO: Evaluación dinámica del tipo de producto incluyendo 'composite'
+    product_type: props.product.composite_items && props.product.composite_items.length > 0 
+        ? 'composite' 
+        : (props.product.product_attributes?.length > 0 ? 'variant' : 'simple'),
+    
     current_stock: props.product.current_stock,
     min_stock: props.product.min_stock,
     max_stock: props.product.max_stock,
     measure_unit: props.product.measure_unit || 'Pza',
     variants_matrix: initialVariantsMatrix,
+    
+    // NUEVO: Inyección de componentes del kit
+    composite_items: props.product.composite_items || [],
+    
     general_images: [],
     variant_images: {},
     deleted_media_ids: [], // Arreglo vital para borrar fotos existentes
@@ -140,6 +149,7 @@ const submit = () => {
             ...data,
             variants_matrix: transformedMatrix,
             price_tiers: cleanedPriceTiers
+            // composite_items se enviará automáticamente sin necesidad de limpieza extra
         };
     }).post(route('products.update', props.product.id), {
         preserveScroll: true

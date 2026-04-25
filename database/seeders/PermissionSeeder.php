@@ -110,7 +110,8 @@ class PermissionSeeder extends Seeder
             ],
             'Configuraciones' => [
                 'settings.generals.access' => 'Acceder a las configuraciones generales',
-                'settings.generals.update' => 'Modificar la configuración',
+                'settings.generals.update_branch' => 'Modificar las configuraciones a nivel de sucursal',
+                'settings.generals.update_subscription' => 'Modificar las configuraciones a nivel de suscripción',
                 'settings.roles_permissions.access' => 'Acceder a las configuraciones de roles y permisos',
                 'settings.roles_permissions.manage' => 'Crear roles, asignar y remover permisos',
                 'settings.roles_permissions.delete' => 'Eliminar roles',

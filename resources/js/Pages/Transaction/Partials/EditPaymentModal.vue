@@ -1,6 +1,7 @@
 <script setup>
 import { computed, watch } from 'vue';
-import { useForm } from '@inertiajs/vue3';
+import { useForm, router } from '@inertiajs/vue3';
+import { useConfirm } from 'primevue/useconfirm'; // <-- Añadido
 
 const props = defineProps({
     visible: Boolean,
@@ -19,6 +20,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:visible', 'success']);
+const confirm = useConfirm(); // <-- Añadido
 
 const isVisible = computed({
     get: () => props.visible,
@@ -65,6 +67,25 @@ const submit = () => {
         }
     });
 };
+
+// NUEVO: Función de eliminación desde adentro del modal
+const confirmDelete = () => {
+    confirm.require({
+        message: '¿Estás seguro de que quieres eliminar este pago permanentemente?',
+        header: 'Eliminar Pago',
+        icon: 'pi pi-exclamation-triangle',
+        acceptClass: 'p-button-danger',
+        accept: () => {
+            router.delete(route('transactions.destroyPayment', { transaction: props.transactionId, payment: props.payment.id }), {
+                preserveScroll: true,
+                onSuccess: () => {
+                    isVisible.value = false;
+                    emit('success');
+                }
+            });
+        }
+    });
+};
 </script>
 
 <template>
@@ -106,9 +127,14 @@ const submit = () => {
             </div>
         </div>
         <template #footer>
-            <div class="flex justify-end items-center gap-3">
-                <Button label="Cancelar" severity="secondary" @click="isVisible = false" text />
-                <Button label="Guardar Cambios" icon="pi pi-save" @click="submit" :loading="editForm.processing" severity="primary" />
+            <div class="flex justify-between items-center w-full">
+                <!-- Botón de eliminar en el extremo izquierdo -->
+                <Button v-if="payment" label="Eliminar Pago" icon="pi pi-trash" severity="danger" text @click="confirmDelete" />
+                
+                <div class="flex justify-end items-center gap-3">
+                    <Button label="Cancelar" severity="secondary" @click="isVisible = false" text />
+                    <Button label="Guardar Cambios" icon="pi pi-save" @click="submit" :loading="editForm.processing" severity="primary" />
+                </div>
             </div>
         </template>
     </Dialog>

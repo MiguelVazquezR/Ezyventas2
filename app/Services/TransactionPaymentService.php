@@ -161,7 +161,7 @@ class TransactionPaymentService
                 'user_id' => $user->id,
                 'status' => TransactionStatus::TO_DELIVER, // <-- ESTATUS CLAVE
                 'delivery_status' => 'pending',
-                'channel' => TransactionChannel::POS, 
+                'channel' => TransactionChannel::POS,
                 'subtotal' => $data['subtotal'],
                 'shipping_cost' => $data['shipping_cost'] ?? 0,
                 'total_discount' => $data['total_discount'] ?? 0,
@@ -296,7 +296,7 @@ class TransactionPaymentService
             // --- NUEVO BLOQUE: APLICAR SALDO A FAVOR SI ES NECESARIO ---
             if ($remainingToPay > 0.01 && !empty($data['use_balance']) && $customer && $customer->balance > 0) {
                 $balanceToUse = min($remainingToPay, (float) $customer->balance);
-                
+
                 if ($balanceToUse > 0) {
                     $this->applyBalanceAsPayment(
                         $newTransaction,
@@ -358,10 +358,10 @@ class TransactionPaymentService
                         if ($excessPayment <= 0.01) break;
 
                         $targetTxn = Transaction::find($debtToPay['id']);
-                        
+
                         // Validaciones de seguridad para no pagar deudas ajenas
                         if (!$targetTxn || $targetTxn->customer_id !== $customer->id) continue;
-                        
+
                         $realPending = $targetTxn->total - $targetTxn->payments()->sum('amount');
                         // Pagamos lo que diga el frontend, o lo pendiente real, o lo que nos quede de excedente
                         $amountToPay = min((float)$debtToPay['amount'], $realPending, $excessPayment);
@@ -442,29 +442,29 @@ class TransactionPaymentService
      * Mantiene la lógica de stock reservado y transferencia de abonos.
      */
     public function handleLayawayExchange(
-        User $user,
-        Transaction $originalTransaction,
+        \App\Models\User $user,
+        \App\Models\Transaction $originalTransaction,
         array $data
-    ): Transaction {
+    ): \App\Models\Transaction {
         return DB::transaction(function () use ($user, $originalTransaction, $data) {
             $now = now();
             $sessionId = $data['cash_register_session_id'];
             $returnedItems = $data['returned_items'];
             $newCartItems = $data['new_items'];
             $payments = $data['payments'] ?? [];
-            
-            if ($originalTransaction->status !== TransactionStatus::ON_LAYAWAY) {
-                throw new Exception("Esta función es exclusiva para transacciones en estatus de Apartado.");
+
+            if ($originalTransaction->status !== \App\Enums\TransactionStatus::ON_LAYAWAY) {
+                throw new \Exception("Esta función es exclusiva para transacciones en estatus de Apartado.");
             }
 
             // Cliente (siempre debe existir en un apartado)
             $customerId = $data['new_customer_id'] ?? $originalTransaction->customer_id;
-            $customer = Customer::find($customerId);
-            if (!$customer) throw new Exception("Se requiere un cliente válido para operaciones de apartado.");
+            $customer = \App\Models\Customer::find($customerId);
+            if (!$customer) throw new \Exception("Se requiere un cliente válido para operaciones de apartado.");
 
             // 1. Procesar Devoluciones (Liberar Reserva)
             foreach ($returnedItems as $returnItem) {
-                $originalItem = TransactionItem::where('transaction_id', $originalTransaction->id)
+                $originalItem = \App\Models\TransactionItem::where('transaction_id', $originalTransaction->id)
                     ->where('id', $returnItem['item_id'])
                     ->firstOrFail();
 
@@ -473,41 +473,74 @@ class TransactionPaymentService
                 if (!$itemModel && class_exists($originalItem->itemable_type)) {
                     $itemModel = $originalItem->itemable_type::find($originalItem->itemable_id);
                 }
-                
+
                 // CRÍTICO: En un apartado, devolver significa liberar la reserva de la sucursal.
                 if ($itemModel) {
                     $branchId = $originalTransaction->branch_id;
-                    
-                    if ($itemModel instanceof Product) {
-                        DB::table('branch_product')
-                            ->where('product_id', $itemModel->id)
-                            ->where('branch_id', $branchId)
-                            ->decrement('reserved_stock', $returnItem['quantity']);
-                            
-                    } elseif ($itemModel instanceof ProductAttribute) {
+
+                    if ($itemModel instanceof \App\Models\Product) {
+                        $itemModel->loadMissing('components');
+                        $isComposite = $itemModel->components && $itemModel->components->isNotEmpty();
+
+                        if ($isComposite) {
+                            foreach ($itemModel->components as $component) {
+                                $qtyToRelease = $returnItem['quantity'] * $component->quantity;
+
+                                if ($component->componentable_type === \App\Models\ProductAttribute::class) {
+                                    DB::table('branch_product_attribute')
+                                        ->where('product_attribute_id', $component->componentable_id)
+                                        ->where('branch_id', $branchId)
+                                        ->decrement('reserved_stock', $qtyToRelease);
+
+                                    $variant = \App\Models\ProductAttribute::find($component->componentable_id);
+                                    if ($variant) {
+                                        DB::table('branch_product')
+                                            ->where('product_id', $variant->product_id)
+                                            ->where('branch_id', $branchId)
+                                            ->decrement('reserved_stock', $qtyToRelease);
+                                    }
+                                } else {
+                                    DB::table('branch_product')
+                                        ->where('product_id', $component->componentable_id)
+                                        ->where('branch_id', $branchId)
+                                        ->decrement('reserved_stock', $qtyToRelease);
+                                }
+                                $this->logStockActivity($component->componentable, $user, -$qtyToRelease, "Liberación de reserva por modificación de apartado {$originalTransaction->folio}");
+                            }
+                        } else {
+                            DB::table('branch_product')
+                                ->where('product_id', $itemModel->id)
+                                ->where('branch_id', $branchId)
+                                ->decrement('reserved_stock', $returnItem['quantity']);
+
+                            $this->logStockActivity($itemModel, $user, -$returnItem['quantity'], "Liberación de reserva por modificación de apartado {$originalTransaction->folio}");
+                        }
+                    } elseif ($itemModel instanceof \App\Models\ProductAttribute) {
                         DB::table('branch_product_attribute')
                             ->where('product_attribute_id', $itemModel->id)
                             ->where('branch_id', $branchId)
                             ->decrement('reserved_stock', $returnItem['quantity']);
-                            
+
                         // Liberar también al padre
                         DB::table('branch_product')
                             ->where('product_id', $itemModel->product_id)
                             ->where('branch_id', $branchId)
                             ->decrement('reserved_stock', $returnItem['quantity']);
+
+                        $this->logStockActivity($itemModel, $user, -$returnItem['quantity'], "Liberación de reserva por modificación de apartado {$originalTransaction->folio}");
                     }
                 }
             }
 
             // 2. Crear Nueva Transacción (Inicialmente como Apartado)
-            $newTransaction = Transaction::create([
+            $newTransaction = \App\Models\Transaction::create([
                 'cash_register_session_id' => $sessionId,
                 'folio' => self::generateFolio($user->branch_id),
                 'customer_id' => $customerId,
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
-                'status' => TransactionStatus::ON_LAYAWAY, // Nace como apartado
-                'channel' => TransactionChannel::POS,
+                'status' => \App\Enums\TransactionStatus::ON_LAYAWAY, // Nace como apartado
+                'channel' => \App\Enums\TransactionChannel::POS,
                 'subtotal' => $data['subtotal'],
                 'total_discount' => $data['total_discount'] ?? 0,
                 'total_tax' => 0,
@@ -519,84 +552,84 @@ class TransactionPaymentService
 
             // 3. Crear Nuevos Items (Reservar Stock)
             // Usamos TransactionStatus::ON_LAYAWAY para que el helper sepa que debe incrementar 'reserved_stock'
-            $this->createTransactionItems($newTransaction, $newCartItems, TransactionStatus::ON_LAYAWAY);
+            $this->createTransactionItems($newTransaction, $newCartItems, \App\Enums\TransactionStatus::ON_LAYAWAY);
 
             // 4. Transferir Abonos Previos
             // El dinero que el cliente ya dio, se mueve a la nueva nota.
             $previousPaymentsTotal = $originalTransaction->payments()->sum('amount');
-            
+
             if ($previousPaymentsTotal > 0) {
-                 $this->paymentService->processPayments($newTransaction, [[
+                $this->paymentService->processPayments($newTransaction, [[
                     'amount' => $previousPaymentsTotal,
-                    'method' => PaymentMethod::EXCHANGE->value, // O un método "TRANSFERENCIA_APARTADO"
+                    'method' => \App\Enums\PaymentMethod::EXCHANGE->value, // O un método "TRANSFERENCIA_APARTADO"
                     'notes' => "Transferencia de abonos del apartado #{$originalTransaction->folio}",
                     'bank_account_id' => null,
                 ]], $sessionId);
             }
 
             // 5. Marcar Original como Cambiada (Cerrarla)
-            $originalTransaction->update(['status' => TransactionStatus::CHANGED]);
+            $originalTransaction->update(['status' => \App\Enums\TransactionStatus::CHANGED]);
 
             // 6. Calcular Estado Financiero
             $newTotal = $newTransaction->total;
             $currentPaid = $previousPaymentsTotal; // Hasta ahora solo tiene lo transferido
-            
+
             // ¿Se agregaron nuevos pagos en esta operación?
             $additionalPaymentsTotal = 0;
             if (!empty($payments)) {
                 $this->applyDirectPayments($newTransaction, $payments, $sessionId);
                 $additionalPaymentsTotal = collect($payments)->sum('amount');
             }
-            
+
             $totalPaidFinal = $currentPaid + $additionalPaymentsTotal;
             $remainingBalance = $newTotal - $totalPaidFinal;
 
             // A) Si ya se pagó todo (o más)
             if ($remainingBalance <= 0.01) {
                 // Cambiar a COMPLETADO
-                $newTransaction->update(['status' => TransactionStatus::COMPLETED]);
-                
+                $newTransaction->update(['status' => \App\Enums\TransactionStatus::COMPLETED]);
+
                 // CRÍTICO: Al completarse un apartado, el stock pasa de "Reservado" a "Vendido" (baja físico).
                 $this->finalizeLayawayStock($newTransaction);
 
                 // Manejar Excedente (Saldo a Favor)
                 if ($remainingBalance < -0.01) {
                     $excess = abs($remainingBalance);
-                    
+
                     // Abonar a saldo del cliente
                     $customer->increment('balance', $excess);
                     $customer->balanceMovements()->create([
                         'transaction_id' => $newTransaction->id,
-                        'type' => CustomerBalanceMovementType::REFUND_CREDIT,
+                        'type' => \App\Enums\CustomerBalanceMovementType::REFUND_CREDIT,
                         'amount' => $excess,
                         'balance_after' => $customer->balance,
                         'notes' => "Saldo a favor por modificación de apartado #{$newTransaction->folio} (Excedente)",
                         'created_at' => $now->copy()->addSecond(),
                     ]);
                 }
-            } 
+            }
             // B) Si aún debe dinero
             else {
                 // 6.1 Cancelar deuda anterior (si la hubo)
                 $originalTotal = $originalTransaction->total;
                 $originalDebt = $originalTotal - $previousPaymentsTotal;
-                
+
                 if ($originalDebt > 0.01) {
                     $customer->increment('balance', $originalDebt);
                     $customer->balanceMovements()->create([
                         'transaction_id' => $originalTransaction->id,
-                        'type' => CustomerBalanceMovementType::CANCELLATION_CREDIT,
+                        'type' => \App\Enums\CustomerBalanceMovementType::CANCELLATION_CREDIT,
                         'amount' => $originalDebt,
                         'balance_after' => $customer->balance,
                         'notes' => "Cancelación deuda apartado anterior #{$originalTransaction->folio} por modificación",
                         'created_at' => $now,
                     ]);
                 }
-                
+
                 // 6.2 Registrar nueva deuda
-                $debtType = defined('App\Enums\CustomerBalanceMovementType::LAYAWAY_DEBT') 
-                    ? CustomerBalanceMovementType::LAYAWAY_DEBT 
-                    : CustomerBalanceMovementType::CREDIT_SALE;
+                $debtType = defined('App\Enums\CustomerBalanceMovementType::LAYAWAY_DEBT')
+                    ? \App\Enums\CustomerBalanceMovementType::LAYAWAY_DEBT
+                    : \App\Enums\CustomerBalanceMovementType::CREDIT_SALE;
 
                 $this->applyDebtToCustomer(
                     $newTransaction,
@@ -873,22 +906,24 @@ class TransactionPaymentService
     }
 
     /**
-     * MEJORA: Crea los items y asegura actualización de stock consistente para variantes y padres en la sucursal actual.
+     * MEJORA: Crea los items y asegura actualización de stock consistente para variantes,
+     * productos simples y AHORA PRODUCTOS COMPUESTOS (KITS) en la sucursal actual.
      */
-    private function createTransactionItems(Transaction $transaction, array $cartItems, TransactionStatus $status): void
+    private function createTransactionItems(\App\Models\Transaction $transaction, array $cartItems, \App\Enums\TransactionStatus $status): void
     {
         $branchId = $transaction->branch_id;
+        $user = \Illuminate\Support\Facades\Auth::user() ?? $transaction->user;
 
         foreach ($cartItems as $item) {
             $itemableId = $item['id'];
-            $itemableType = Product::class;
+            $itemableType = \App\Models\Product::class;
 
             if (!empty($item['product_attribute_id'])) {
                 $itemableId = $item['product_attribute_id'];
-                $itemableType = ProductAttribute::class;
-                $itemModel = ProductAttribute::find($item['product_attribute_id']);
+                $itemableType = \App\Models\ProductAttribute::class;
+                $itemModel = \App\Models\ProductAttribute::find($item['product_attribute_id']);
             } else {
-                $itemModel = Product::find($item['id']);
+                $itemModel = \App\Models\Product::with('components')->find($item['id']);
             }
 
             $transaction->items()->create([
@@ -904,33 +939,99 @@ class TransactionPaymentService
 
             // Lógica de Stock en las tablas PIVOT de sucursales
             if ($itemModel) {
-                if ($status === TransactionStatus::ON_LAYAWAY || $status === TransactionStatus::TO_DELIVER) {
+                // BANDERA: Verificar si es un producto compuesto (Kit/Combo)
+                $isComposite = $itemModel instanceof \App\Models\Product && $itemModel->components && $itemModel->components->isNotEmpty();
+
+                $isReservation = $status === \App\Enums\TransactionStatus::ON_LAYAWAY || $status === \App\Enums\TransactionStatus::TO_DELIVER;
+                $actionType = $isReservation ? 'Reserva' : 'Descuento';
+                $reasonType = $status === \App\Enums\TransactionStatus::ON_LAYAWAY ? 'apartado' : 'venta';
+
+                $description = "{$actionType} de stock por {$reasonType} {$transaction->folio}";
+                $componentDescription = "{$actionType} de stock (Componente de Kit) por {$reasonType} {$transaction->folio}";
+
+                if ($isReservation) {
                     // Apartado o por entregar -> Incrementar stock reservado en la sucursal
-                    if ($itemModel instanceof Product) {
+                    if ($isComposite) {
+                        foreach ($itemModel->components as $component) {
+                            $qtyToReserve = $item['quantity'] * $component->quantity;
+
+                            if ($component->componentable_type === \App\Models\ProductAttribute::class) {
+                                DB::table('branch_product_attribute')
+                                    ->where('product_attribute_id', $component->componentable_id)
+                                    ->where('branch_id', $branchId)
+                                    ->increment('reserved_stock', $qtyToReserve);
+
+                                $variant = \App\Models\ProductAttribute::find($component->componentable_id);
+                                if ($variant) {
+                                    DB::table('branch_product')
+                                        ->where('product_id', $variant->product_id)
+                                        ->where('branch_id', $branchId)
+                                        ->increment('reserved_stock', $qtyToReserve);
+                                }
+                            } else {
+                                DB::table('branch_product')
+                                    ->where('product_id', $component->componentable_id)
+                                    ->where('branch_id', $branchId)
+                                    ->increment('reserved_stock', $qtyToReserve);
+                            }
+                            $this->logStockActivity($component->componentable, $user, $qtyToReserve, $componentDescription);
+                        }
+                    } elseif ($itemModel instanceof \App\Models\Product) {
                         DB::table('branch_product')
                             ->where('product_id', $itemModel->id)
                             ->where('branch_id', $branchId)
                             ->increment('reserved_stock', $item['quantity']);
-                    } elseif ($itemModel instanceof ProductAttribute) {
+
+                        $this->logStockActivity($itemModel, $user, $item['quantity'], $description);
+                    } elseif ($itemModel instanceof \App\Models\ProductAttribute) {
                         DB::table('branch_product_attribute')
                             ->where('product_attribute_id', $itemModel->id)
                             ->where('branch_id', $branchId)
                             ->increment('reserved_stock', $item['quantity']);
-                        
+
                         // Reflejar la reserva en el padre
                         DB::table('branch_product')
                             ->where('product_id', $itemModel->product_id)
                             ->where('branch_id', $branchId)
                             ->increment('reserved_stock', $item['quantity']);
+
+                        $this->logStockActivity($itemModel, $user, $item['quantity'], $description);
                     }
                 } else {
                     // Venta directa -> Decrementar stock actual en la sucursal
-                    if ($itemModel instanceof Product) {
+                    if ($isComposite) {
+                        foreach ($itemModel->components as $component) {
+                            $qtyToDeduct = $item['quantity'] * $component->quantity;
+
+                            if ($component->componentable_type === \App\Models\ProductAttribute::class) {
+                                DB::table('branch_product_attribute')
+                                    ->where('product_attribute_id', $component->componentable_id)
+                                    ->where('branch_id', $branchId)
+                                    ->decrement('current_stock', $qtyToDeduct);
+
+                                $variant = \App\Models\ProductAttribute::find($component->componentable_id);
+                                if ($variant) {
+                                    DB::table('branch_product')
+                                        ->where('product_id', $variant->product_id)
+                                        ->where('branch_id', $branchId)
+                                        ->decrement('current_stock', $qtyToDeduct);
+                                }
+                            } else {
+                                DB::table('branch_product')
+                                    ->where('product_id', $component->componentable_id)
+                                    ->where('branch_id', $branchId)
+                                    ->decrement('current_stock', $qtyToDeduct);
+                            }
+                            $this->logStockActivity($component->componentable, $user, -$qtyToDeduct, $componentDescription);
+                        }
+                    } elseif ($itemModel instanceof \App\Models\Product) {
                         DB::table('branch_product')
                             ->where('product_id', $itemModel->id)
                             ->where('branch_id', $branchId)
                             ->decrement('current_stock', $item['quantity']);
-                    } elseif ($itemModel instanceof ProductAttribute) {
+
+                        $this->logStockActivity($itemModel, $user, -$item['quantity'], $description);
+                    } elseif ($itemModel instanceof \App\Models\ProductAttribute) {
                         DB::table('branch_product_attribute')
                             ->where('product_attribute_id', $itemModel->id)
                             ->where('branch_id', $branchId)
@@ -941,6 +1042,8 @@ class TransactionPaymentService
                             ->where('product_id', $itemModel->product_id)
                             ->where('branch_id', $branchId)
                             ->decrement('current_stock', $item['quantity']);
+
+                        $this->logStockActivity($itemModel, $user, -$item['quantity'], $description);
                     }
                 }
             }
@@ -948,15 +1051,68 @@ class TransactionPaymentService
     }
 
     /**
+     * Registra explícitamente el movimiento en el historial de Activitylog (Spatie).
+     */
+    private function logStockActivity($model, ?User $user, float $quantity, string $description): void
+    {
+        if (!$model) return;
+        
+        // Si es variante, el log se asocia al producto padre para que sea visible en Show.vue
+        $target = $model instanceof ProductAttribute ? $model->product : $model;
+        if (!$target) return;
+
+        activity()
+            ->performedOn($target)
+            ->causedBy($user)
+            ->event('stock_update')
+            ->withProperties(['quantity_changed' => $quantity]) // Guardamos la cantidad con su signo (+/-)
+            ->log($description);
+    }
+
+    /**
      * Helper para reponer stock de un item específico a una sucursal (usado en devoluciones y cambios).
      */
-    private function restockSingleItem($itemModel, float $quantity, int $branchId): void
+    private function restockSingleItem($itemModel, float $quantity, int $branchId, ?User $user = null, string $folio = ''): void
     {
         if ($itemModel instanceof Product) {
-            DB::table('branch_product')
-                ->where('product_id', $itemModel->id)
-                ->where('branch_id', $branchId)
-                ->increment('current_stock', $quantity);
+            $itemModel->loadMissing('components');
+            $isComposite = $itemModel->components && $itemModel->components->isNotEmpty();
+
+            if ($isComposite) {
+                foreach ($itemModel->components as $component) {
+                    $qtyToRestock = $quantity * $component->quantity;
+                    
+                    if ($component->componentable_type === ProductAttribute::class) {
+                        DB::table('branch_product_attribute')
+                            ->where('product_attribute_id', $component->componentable_id)
+                            ->where('branch_id', $branchId)
+                            ->increment('current_stock', $qtyToRestock);
+
+                        $variant = ProductAttribute::find($component->componentable_id);
+                        if ($variant) {
+                            DB::table('branch_product')
+                                ->where('product_id', $variant->product_id)
+                                ->where('branch_id', $branchId)
+                                ->increment('current_stock', $qtyToRestock);
+                        }
+                    } else {
+                        DB::table('branch_product')
+                            ->where('product_id', $component->componentable_id)
+                            ->where('branch_id', $branchId)
+                            ->increment('current_stock', $qtyToRestock);
+                    }
+                    
+                    // Cantidad positiva para reponer
+                    $this->logStockActivity($component->componentable, $user, $qtyToRestock, "Retorno de stock (Componente de Kit) por devolución/cambio {$folio}");
+                }
+            } else {
+                DB::table('branch_product')
+                    ->where('product_id', $itemModel->id)
+                    ->where('branch_id', $branchId)
+                    ->increment('current_stock', $quantity);
+                    
+                $this->logStockActivity($itemModel, $user, $quantity, "Retorno de stock por devolución/cambio {$folio}");
+            }
 
         } elseif ($itemModel instanceof ProductAttribute) {
             DB::table('branch_product_attribute')
@@ -964,11 +1120,12 @@ class TransactionPaymentService
                 ->where('branch_id', $branchId)
                 ->increment('current_stock', $quantity);
 
-            // Incremento para la variante en el producto padre
             DB::table('branch_product')
                 ->where('product_id', $itemModel->product_id)
                 ->where('branch_id', $branchId)
                 ->increment('current_stock', $quantity);
+                
+            $this->logStockActivity($itemModel, $user, $quantity, "Retorno de stock por devolución/cambio {$folio}");
         }
     }
 
@@ -978,30 +1135,76 @@ class TransactionPaymentService
     private function finalizeLayawayStock(Transaction $transaction): void
     {
         $branchId = $transaction->branch_id;
+        $user = Auth::user() ?? $transaction->user;
 
         foreach ($transaction->items as $txnItem) {
-            $itemModel = $txnItem->itemable; // Esto es Product o ProductAttribute
+            $itemModel = $txnItem->itemable;
 
-            // 1. Si el itemable (producto o variante) ya no existe,
-            //    no podemos hacer nada. Simplemente saltamos.
             if (!$itemModel) {
                 Log::warning("No se pudo finalizar el stock para el item {$txnItem->id} de la transacción {$transaction->id}: El producto/variante ya no existe.");
                 continue;
             }
 
-            // 2. Decrementar el stock en la sucursal correspondiente
-            if ($itemModel instanceof \App\Models\Product) {
-                DB::table('branch_product')
-                    ->where('product_id', $itemModel->id)
-                    ->where('branch_id', $branchId)
-                    ->decrement('reserved_stock', $txnItem->quantity);
+            if ($itemModel instanceof Product) {
+                $itemModel->loadMissing('components');
+                $isComposite = $itemModel->components && $itemModel->components->isNotEmpty();
 
-                DB::table('branch_product')
-                    ->where('product_id', $itemModel->id)
-                    ->where('branch_id', $branchId)
-                    ->decrement('current_stock', $txnItem->quantity);
+                if ($isComposite) {
+                    foreach ($itemModel->components as $component) {
+                        $qtyToFinalize = $txnItem->quantity * $component->quantity;
 
-            } elseif ($itemModel instanceof \App\Models\ProductAttribute) {
+                        if ($component->componentable_type === ProductAttribute::class) {
+                            DB::table('branch_product_attribute')
+                                ->where('product_attribute_id', $component->componentable_id)
+                                ->where('branch_id', $branchId)
+                                ->decrement('reserved_stock', $qtyToFinalize);
+
+                            DB::table('branch_product_attribute')
+                                ->where('product_attribute_id', $component->componentable_id)
+                                ->where('branch_id', $branchId)
+                                ->decrement('current_stock', $qtyToFinalize);
+
+                            $variant = ProductAttribute::find($component->componentable_id);
+                            if ($variant) {
+                                DB::table('branch_product')
+                                    ->where('product_id', $variant->product_id)
+                                    ->where('branch_id', $branchId)
+                                    ->decrement('reserved_stock', $qtyToFinalize);
+
+                                DB::table('branch_product')
+                                    ->where('product_id', $variant->product_id)
+                                    ->where('branch_id', $branchId)
+                                    ->decrement('current_stock', $qtyToFinalize);
+                            }
+                        } else {
+                            DB::table('branch_product')
+                                ->where('product_id', $component->componentable_id)
+                                ->where('branch_id', $branchId)
+                                ->decrement('reserved_stock', $qtyToFinalize);
+
+                            DB::table('branch_product')
+                                ->where('product_id', $component->componentable_id)
+                                ->where('branch_id', $branchId)
+                                ->decrement('current_stock', $qtyToFinalize);
+                        }
+                        // Cantidad negativa porque sale físicamente del stock tras liquidar reserva
+                        $this->logStockActivity($component->componentable, $user, -$qtyToFinalize, "Baja de reserva por liquidación de apartado {$transaction->folio}");
+                    }
+                } else {
+                    DB::table('branch_product')
+                        ->where('product_id', $itemModel->id)
+                        ->where('branch_id', $branchId)
+                        ->decrement('reserved_stock', $txnItem->quantity);
+
+                    DB::table('branch_product')
+                        ->where('product_id', $itemModel->id)
+                        ->where('branch_id', $branchId)
+                        ->decrement('current_stock', $txnItem->quantity);
+                        
+                    $this->logStockActivity($itemModel, $user, -$txnItem->quantity, "Baja de reserva por liquidación de apartado {$transaction->folio}");
+                }
+
+            } elseif ($itemModel instanceof ProductAttribute) {
                 DB::table('branch_product_attribute')
                     ->where('product_attribute_id', $itemModel->id)
                     ->where('branch_id', $branchId)
@@ -1012,7 +1215,6 @@ class TransactionPaymentService
                     ->where('branch_id', $branchId)
                     ->decrement('current_stock', $txnItem->quantity);
 
-                // 3. Actualizar también el padre de la variante
                 DB::table('branch_product')
                     ->where('product_id', $itemModel->product_id)
                     ->where('branch_id', $branchId)
@@ -1022,6 +1224,8 @@ class TransactionPaymentService
                     ->where('product_id', $itemModel->product_id)
                     ->where('branch_id', $branchId)
                     ->decrement('current_stock', $txnItem->quantity);
+                    
+                $this->logStockActivity($itemModel, $user, -$txnItem->quantity, "Baja de reserva por liquidación de apartado {$transaction->folio}");
             }
         }
     }

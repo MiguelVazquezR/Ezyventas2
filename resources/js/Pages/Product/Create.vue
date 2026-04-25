@@ -51,6 +51,7 @@ const form = useForm({
     max_stock: null,
     measure_unit: 'Pza',
     variants_matrix: [],
+    composite_items: [],
     general_images: [],
     variant_images: [],
 });
