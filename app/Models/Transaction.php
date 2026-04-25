@@ -19,30 +19,12 @@ class Transaction extends Model
     use HasFactory, LogsActivity;
 
     protected $fillable = [
-        'folio',
-        'customer_id',
-        'contact_info', // Nuevo: Datos temporales (Guest)
-        'branch_id',
-        'user_id',
-        'cash_register_session_id',
-        'transactionable_id',
-        'transactionable_type',
-        'status',
-        'delivery_status', // Nuevo: Estatus logístico
-        'channel',
-        'subtotal',
-        'shipping_cost', // Nuevo: Costo de envío
-        'total_discount',
-        'total_tax',
-        'currency',
-        'notes',
-        'shipping_address', // Nuevo: Dirección
-        'status_changed_at',
-        'invoiced',
-        'layaway_expiration_date',
-        'delivery_date', // Nuevo: Fecha pactada
-        'created_at',
-        'updated_at',
+        'folio', 'customer_id', 'contact_info', 'branch_id', 'user_id',
+        'cash_register_session_id', 'transactionable_id', 'transactionable_type',
+        'status', 'delivery_status', 'channel', 'subtotal', 'shipping_cost', 
+        'total_discount', 'total_tax', 'currency', 'notes', 'shipping_address', 
+        'status_changed_at', 'invoiced', 'layaway_expiration_date', 'delivery_date', 
+        'created_at', 'updated_at',
     ];
 
     protected function casts(): array
@@ -51,14 +33,14 @@ class Transaction extends Model
             'status' => TransactionStatus::class,
             'channel' => TransactionChannel::class,
             'subtotal' => 'decimal:2',
-            'shipping_cost' => 'decimal:2', // Nuevo
+            'shipping_cost' => 'decimal:2',
             'total_discount' => 'decimal:2',
             'total_tax' => 'decimal:2',
             'status_changed_at' => 'datetime',
             'invoiced' => 'boolean',
             'layaway_expiration_date' => 'date',
-            'delivery_date' => 'datetime', // Nuevo
-            'contact_info' => 'array', // Nuevo: Para acceder como $txn->contact_info['name']
+            'delivery_date' => 'datetime',
+            'contact_info' => 'array',
         ];
     }
 
@@ -77,15 +59,11 @@ class Transaction extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | ACCESORES Y MUTADORES
+    | ACCESORES Y MUTADORES (REFACTOR)
     |--------------------------------------------------------------------------
     */
-    protected $appends = ['total'];
+    protected $appends = ['total', 'total_paid', 'remaining_due'];
 
-    /**
-     * Calcula el total de la transacción dinámicamente.
-     * AHORA INCLUYE EL COSTO DE ENVÍO.
-     */
     protected function total(): Attribute
     {
         return Attribute::make(
@@ -93,80 +71,70 @@ class Transaction extends Model
         );
     }
 
+    // NUEVO: Calcula cuánto se ha pagado en total
+    protected function totalPaid(): Attribute
+    {
+        return Attribute::make(
+            get: fn() => (float) $this->payments()->sum('amount'),
+        );
+    }
+
+    // NUEVO: Calcula cuánto falta por pagar
+    protected function remainingDue(): Attribute
+    {
+        return Attribute::make(
+            get: fn() => max(0, $this->total - $this->total_paid),
+        );
+    }
+
+    // NUEVO: Método helper de estado
+    public function isFullyPaid(): bool
+    {
+        return $this->remaining_due <= 0.01;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GENERADORES DE FOLIO (Movidos desde el Service)
+    |--------------------------------------------------------------------------
+    */
+    public static function generateFolio(int $branchId): string
+    {
+        $lastTransaction = self::where('branch_id', $branchId)
+            ->where('folio', 'LIKE', 'V-%')
+            ->orderBy('id', 'desc')
+            ->first();
+
+        $sequence = $lastTransaction ? ((int) substr($lastTransaction->folio, 2)) + 1 : 1;
+        return 'V-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
+    }
+
+    public static function generateBalancePaymentFolio(int $branchId): string
+    {
+        $lastTransaction = self::where('branch_id', $branchId)
+            ->where('folio', 'like', 'ABONO-%')
+            ->orderByRaw('CAST(SUBSTRING(folio, 7) AS UNSIGNED) DESC')
+            ->first();
+
+        $sequence = $lastTransaction ? ((int) substr($lastTransaction->folio, 6)) + 1 : 1;
+        return 'ABONO-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | RELACIONES
     |--------------------------------------------------------------------------
     */
-
-    public function transactionable(): MorphTo
-    {
-        return $this->morphTo();
-    }
-
-    /**
-     * Obtiene el cliente asociado con la transacción.
-     */
-    public function customer(): BelongsTo
-    {
-        return $this->belongsTo(Customer::class);
-    }
-
-    /**
-     * Obtiene la sucursal donde se realizó la transacción.
-     */
-    public function branch(): BelongsTo
-    {
-        return $this->belongsTo(Branch::class);
-    }
-
-    /**
-     * Obtiene el usuario (empleado) que registró la transacción.
-     */
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
-
-    /**
-     * Obtiene la sesión de caja asociada (si aplica).
-     */
-    public function cashRegisterSession(): BelongsTo
-    {
-        return $this->belongsTo(CashRegisterSession::class);
-    }
-
-    /**
-     * Obtiene los items (productos/servicios) de la transacción.
-     */
-    public function items(): HasMany
-    {
-        return $this->hasMany(TransactionItem::class);
-    }
-
-    /**
-     * Obtiene los pagos realizados para esta transacción.
-     */
-    public function payments(): HasMany
-    {
-        return $this->hasMany(Payment::class);
-    }
-
-    /**
-     * Las promociones aplicadas a la transacción.
-     */
-    public function promotions(): BelongsToMany
-    {
+    public function transactionable(): MorphTo { return $this->morphTo(); }
+    public function customer(): BelongsTo { return $this->belongsTo(Customer::class); }
+    public function branch(): BelongsTo { return $this->belongsTo(Branch::class); }
+    public function user(): BelongsTo { return $this->belongsTo(User::class); }
+    public function cashRegisterSession(): BelongsTo { return $this->belongsTo(CashRegisterSession::class); }
+    public function items(): HasMany { return $this->hasMany(TransactionItem::class); }
+    public function payments(): HasMany { return $this->hasMany(Payment::class); }
+    public function promotions(): BelongsToMany {
         return $this->belongsToMany(Promotion::class, 'promotion_transaction')
-            ->withPivot('discount_applied')
-            ->withTimestamps();
+            ->withPivot('discount_applied')->withTimestamps();
     }
-
-    /**
-     * Obtiene los movimientos de saldo del cliente asociados a esta transacción.
-     */
-    public function customerBalanceMovements(): HasMany
-    {
-        return $this->hasMany(CustomerBalanceMovement::class);
-    }
+    public function customerBalanceMovements(): HasMany { return $this->hasMany(CustomerBalanceMovement::class); }
 }

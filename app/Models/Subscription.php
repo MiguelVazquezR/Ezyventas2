@@ -199,10 +199,26 @@ class Subscription extends Model implements HasMedia
     }
 
     /**
-     * AÑADIDO: Obtiene todas las configuraciones personalizadas de la suscripción.
+     * Obtiene todas las configuraciones personalizadas de la suscripción.
      */
     public function settings(): MorphMany
     {
         return $this->morphMany(SettingValue::class, 'configurable');
+    }
+
+    /**
+     * REFACTOR: Determina si la suscripción ha alcanzado el límite de productos.
+     */
+    public function hasReachedProductLimit(int $additionalItems = 0): bool
+    {
+        $currentVersion = $this->currentVersion();
+        $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_products')->first() : null;
+        $limitProducts = $limitItem ? $limitItem->quantity : 50;
+
+        if ($limitProducts === -1) {
+            return false; // -1 significa ilimitado
+        }
+
+        return ($this->products_count + $additionalItems) > $limitProducts;
     }
 }

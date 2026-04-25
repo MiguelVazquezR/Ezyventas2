@@ -140,7 +140,7 @@ const getPaymentMethodIcon = (method) => {
             
             <p v-if="serviceOrder.transaction && serviceOrder.transaction.payments?.length > 0" class="text-sm text-gray-600 dark:text-gray-400 mb-4 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md border border-blue-100 dark:border-blue-800">
                 <i class="pi pi-info-circle mr-2 text-blue-500"></i>
-                Si quieres editar o eliminar un pago dirígete a la transacción
+                Si quieres editar o eliminar un pago dirígete a la venta relacionada:
                 <Link :href="route('transactions.show', serviceOrder.transaction.id)" class="text-blue-600 dark:text-blue-400 hover:underline font-semibold ml-1">
                     {{ serviceOrder.transaction.folio }}
                 </Link>
