@@ -132,7 +132,11 @@ class TransactionPaymentService
         });
     }
 
-    public function handleProductExchange(User $user, Transaction $originalTransaction, array $data): Transaction
+    /**
+     * Procesa un CAMBIO de producto (Exchange).
+     * Devuelve items al inventario, conserva los no devueltos y agrega los nuevos.
+     */
+    public function handleProductExchange(User $user, Transaction $originalTransaction, array $data): Transaction 
     {
         return DB::transaction(function () use ($user, $originalTransaction, $data) {
             $now = now();
@@ -143,17 +147,58 @@ class TransactionPaymentService
                 $originalTransaction->update(['customer_id' => $data['new_customer_id']]);
             }
 
-            // 1. Procesar Devoluciones (Stock) - REFACTOR: Modelo Product asume la carga
-            foreach ($data['returned_items'] as $returnItem) {
-                $originalItem = TransactionItem::where('transaction_id', $originalTransaction->id)->where('id', $returnItem['item_id'])->firstOrFail();
-                $itemModel = $originalItem->itemable ?? (class_exists($originalItem->itemable_type) ? $originalItem->itemable_type::find($originalItem->itemable_id) : null);
+            // 1. Mapear devoluciones y calcular Artículos Conservados
+            $returnedItemsMap = [];
+            foreach ($data['returned_items'] as $ret) {
+                $returnedItemsMap[$ret['item_id']] = ($returnedItemsMap[$ret['item_id']] ?? 0) + $ret['quantity'];
+            }
 
-                if ($itemModel) {
-                    $itemModel->restock($originalTransaction->branch_id, $returnItem['quantity'], $user, "Retorno de stock por devolución/cambio {$originalTransaction->folio}");
+            $keptItemsData = [];
+            $keptSubtotal = 0;
+            $keptDiscount = 0;
+
+            foreach ($originalTransaction->items as $originalItem) {
+                $retQty = $returnedItemsMap[$originalItem->id] ?? 0;
+                $keptQty = $originalItem->quantity - $retQty;
+
+                // Si el cliente se quedó con una parte (o todo) de esta partida, lo preparamos para clonar
+                if ($keptQty > 0) {
+                    $proportionalDiscount = ($originalItem->quantity > 0) 
+                        ? ($originalItem->discount_amount / $originalItem->quantity) * $keptQty 
+                        : 0;
+
+                    $keptItemsData[] = [
+                        'itemable_id' => $originalItem->itemable_id,
+                        'itemable_type' => $originalItem->itemable_type,
+                        'description' => $originalItem->description,
+                        'quantity' => $keptQty,
+                        'unit_price' => $originalItem->unit_price,
+                        'discount_amount' => $proportionalDiscount,
+                        'discount_reason' => $originalItem->discount_reason,
+                        'line_total' => ($originalItem->unit_price * $keptQty) - $proportionalDiscount,
+                    ];
+                    $keptSubtotal += ($originalItem->unit_price * $keptQty);
+                    $keptDiscount += $proportionalDiscount;
+                }
+
+                // Procesar stock solo de lo que SÍ se devolvió
+                if ($retQty > 0) {
+                    $itemModel = $originalItem->itemable ?? (class_exists($originalItem->itemable_type) ? $originalItem->itemable_type::find($originalItem->itemable_id) : null);
+                    if ($itemModel) {
+                        $itemModel->restock($originalTransaction->branch_id, $retQty, $user, "Retorno de stock por cambio {$originalTransaction->folio}");
+                    }
                 }
             }
 
-            // 2. Crear Nueva Transacción
+            // 2. Calcular los totales de los artículos NUEVOS
+            $newSubtotal = 0;
+            $newDiscount = 0;
+            foreach ($data['new_items'] as $newItem) {
+                $newSubtotal += ($newItem['quantity'] * $newItem['unit_price']);
+                $newDiscount += ($newItem['discount'] ?? 0);
+            }
+
+            // 3. Crear Nueva Transacción con los Totales REALES (Conservados + Nuevos)
             $newTransaction = Transaction::create([
                 'cash_register_session_id' => $sessionId,
                 'folio' => Transaction::generateFolio($user->branch_id),
@@ -162,16 +207,22 @@ class TransactionPaymentService
                 'user_id' => $user->id,
                 'status' => TransactionStatus::COMPLETED,
                 'channel' => TransactionChannel::POS,
-                'subtotal' => $data['subtotal'],
-                'total_discount' => $data['total_discount'] ?? 0,
+                'subtotal' => $keptSubtotal + $newSubtotal,
+                'total_discount' => $keptDiscount + $newDiscount,
                 'currency' => 'MXN',
                 'notes' => "Cambio de producto ref. Venta Original #{$originalTransaction->folio}. " . ($data['notes'] ?? ''),
                 'status_changed_at' => $now,
             ]);
 
+            // 4. Inyectar los artículos conservados (SIN mover stock, porque ya salieron de la tienda antes)
+            foreach ($keptItemsData as $keptItem) {
+                $newTransaction->items()->create($keptItem);
+            }
+
+            // 5. Inyectar los artículos nuevos (ESTOS SÍ descuentan stock)
             $this->createTransactionItems($newTransaction, $data['new_items'], TransactionStatus::COMPLETED);
 
-            // 4. Transferencia de Fondos (Pago Virtual)
+            // 6. Transferencia de Fondos (Pago Virtual)
             $newTotalSale = (float) $newTransaction->total;
             $totalPaidOnOriginal = $originalTransaction->total_paid;
             $exchangePaymentAmount = min($newTotalSale, $totalPaidOnOriginal);
@@ -185,7 +236,7 @@ class TransactionPaymentService
                 ]], $sessionId);
             }
 
-            // 5. Manejar Estatus Original y Cancelación de Deuda Antigua - REFACTOR: Método directo del cliente
+            // 7. Manejar Estatus Original
             if (!in_array($originalTransaction->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED])) {
                 if ($customer && in_array($originalTransaction->status, [TransactionStatus::PENDING, TransactionStatus::ON_LAYAWAY])) {
                     $pendingAmount = $originalTransaction->remaining_due;
@@ -197,7 +248,7 @@ class TransactionPaymentService
                 $originalTransaction->update(['status' => TransactionStatus::CHANGED]);
             }
 
-            // 6. Manejar Diferencia Financiera
+            // 8. Manejar Diferencia Financiera
             $remainingToPay = $newTotalSale - $exchangePaymentAmount;
 
             if ($remainingToPay > 0.01 && !empty($data['use_balance']) && $customer && $customer->balance > 0) {
@@ -216,7 +267,7 @@ class TransactionPaymentService
 
                 if ($remainingToPay > 0.01) {
                     $useCredit = $data['use_credit_for_shortage'] ?? in_array($originalTransactionStatus, [TransactionStatus::PENDING, TransactionStatus::ON_LAYAWAY]);
-
+                    
                     if ($useCredit && $customer && $remainingToPay <= $customer->available_credit) {
                         $customer->addDebt($remainingToPay, CustomerBalanceMovementType::CREDIT_SALE, $newTransaction->id, "Saldo pendiente por cambio. Venta #{$newTransaction->folio}", $now->copy()->addSecond());
                         $newTransaction->update(['status' => TransactionStatus::PENDING]);
@@ -227,7 +278,6 @@ class TransactionPaymentService
             } elseif ($newTotalSale < $totalPaidOnOriginal - 0.01) {
                 $excessPayment = $totalPaidOnOriginal - $newTotalSale;
 
-                // A) PAGAR OTRAS DEUDAS - REFACTOR: Cliente se hace cargo de pagarse
                 if (isset($data['debts_to_pay']) && is_array($data['debts_to_pay']) && $customer) {
                     foreach ($data['debts_to_pay'] as $debtToPay) {
                         if ($excessPayment <= 0.01) break;
@@ -255,7 +305,6 @@ class TransactionPaymentService
                     }
                 }
 
-                // B) SI AÚN SOBRA DINERO -> SALDO A FAVOR O EFECTIVO - REFACTOR
                 if ($excessPayment > 0.01) {
                     if (($data['exchange_refund_type'] ?? 'balance') === 'balance') {
                         $customer->addRefund($excessPayment, $newTransaction->id, "Saldo a favor restante por cambio (Excedente). Venta #{$newTransaction->folio}", $now->copy()->addSecond());
@@ -275,7 +324,10 @@ class TransactionPaymentService
         });
     }
 
-    public function handleLayawayExchange(User $user, Transaction $originalTransaction, array $data): Transaction
+    /**
+     * Procesa específicamente cambios en un APARTADO. Conserva artículos en el nuevo apartado.
+     */
+    public function handleLayawayExchange(User $user, Transaction $originalTransaction, array $data): Transaction 
     {
         return DB::transaction(function () use ($user, $originalTransaction, $data) {
             $now = now();
@@ -284,17 +336,52 @@ class TransactionPaymentService
 
             if ($originalTransaction->status !== TransactionStatus::ON_LAYAWAY) throw new Exception("Solo para Apartados.");
 
-            // 1. Procesar Devoluciones (Liberar Reserva) - REFACTOR: Modelo hace el trabajo pesado
-            foreach ($data['returned_items'] as $returnItem) {
-                $originalItem = TransactionItem::where('transaction_id', $originalTransaction->id)->where('id', $returnItem['item_id'])->firstOrFail();
-                $itemModel = $originalItem->itemable ?? (class_exists($originalItem->itemable_type) ? $originalItem->itemable_type::find($originalItem->itemable_id) : null);
+            $returnedItemsMap = [];
+            foreach ($data['returned_items'] as $ret) {
+                $returnedItemsMap[$ret['item_id']] = ($returnedItemsMap[$ret['item_id']] ?? 0) + $ret['quantity'];
+            }
 
-                if ($itemModel) {
-                    $itemModel->releaseLayawayStock($originalTransaction->branch_id, $returnItem['quantity'], $user, "Liberación de reserva por modificación apartado {$originalTransaction->folio}");
+            $keptItemsData = [];
+            $keptSubtotal = 0;
+            $keptDiscount = 0;
+
+            // 1. Procesar Devoluciones (Liberar Reserva) y separar Conservados
+            foreach ($originalTransaction->items as $originalItem) {
+                $retQty = $returnedItemsMap[$originalItem->id] ?? 0;
+                $keptQty = $originalItem->quantity - $retQty;
+
+                if ($keptQty > 0) {
+                    $proportionalDiscount = ($originalItem->quantity > 0) ? ($originalItem->discount_amount / $originalItem->quantity) * $keptQty : 0;
+                    $keptItemsData[] = [
+                        'itemable_id' => $originalItem->itemable_id,
+                        'itemable_type' => $originalItem->itemable_type,
+                        'description' => $originalItem->description,
+                        'quantity' => $keptQty,
+                        'unit_price' => $originalItem->unit_price,
+                        'discount_amount' => $proportionalDiscount,
+                        'discount_reason' => $originalItem->discount_reason,
+                        'line_total' => ($originalItem->unit_price * $keptQty) - $proportionalDiscount,
+                    ];
+                    $keptSubtotal += ($originalItem->unit_price * $keptQty);
+                    $keptDiscount += $proportionalDiscount;
+                }
+
+                if ($retQty > 0) {
+                    $itemModel = $originalItem->itemable ?? (class_exists($originalItem->itemable_type) ? $originalItem->itemable_type::find($originalItem->itemable_id) : null);
+                    if ($itemModel) {
+                        $itemModel->releaseLayawayStock($originalTransaction->branch_id, $retQty, $user, "Liberación de reserva por modificación apartado {$originalTransaction->folio}");
+                    }
                 }
             }
 
-            // 2. Crear Nueva Transacción
+            $newSubtotal = 0;
+            $newDiscount = 0;
+            foreach ($data['new_items'] as $newItem) {
+                $newSubtotal += ($newItem['quantity'] * $newItem['unit_price']);
+                $newDiscount += ($newItem['discount'] ?? 0);
+            }
+
+            // 2. Crear Nueva Transacción (Inicialmente como Apartado)
             $newTransaction = Transaction::create([
                 'cash_register_session_id' => $sessionId,
                 'folio' => Transaction::generateFolio($user->branch_id),
@@ -303,17 +390,23 @@ class TransactionPaymentService
                 'user_id' => $user->id,
                 'status' => TransactionStatus::ON_LAYAWAY,
                 'channel' => TransactionChannel::POS,
-                'subtotal' => $data['subtotal'],
-                'total_discount' => $data['total_discount'] ?? 0,
+                'subtotal' => $keptSubtotal + $newSubtotal,
+                'total_discount' => $keptDiscount + $newDiscount,
                 'currency' => 'MXN',
                 'notes' => "Modificación de apartado. Ref. Original #{$originalTransaction->folio}. " . ($data['notes'] ?? ''),
                 'status_changed_at' => $now,
                 'layaway_expiration_date' => $originalTransaction->layaway_expiration_date,
             ]);
 
+            // 3. Inyectar conservados (SIN reservar stock, porque ya estaban reservados)
+            foreach ($keptItemsData as $keptItem) {
+                $newTransaction->items()->create($keptItem);
+            }
+
+            // 4. Crear Nuevos Items (ESTOS SÍ reservan stock)
             $this->createTransactionItems($newTransaction, $data['new_items'], TransactionStatus::ON_LAYAWAY);
 
-            // 4. Transferir Abonos Previos
+            // 5. Transferir Abonos Previos
             $previousPaymentsTotal = $originalTransaction->total_paid;
             if ($previousPaymentsTotal > 0) {
                 $this->paymentService->processPayments($newTransaction, [[
@@ -342,7 +435,6 @@ class TransactionPaymentService
                     $customer->addRefund(abs($remainingBalance), $newTransaction->id, "Saldo a favor modificación apartado #{$newTransaction->folio}", $now->copy()->addSecond());
                 }
             } else {
-                // Cancelar deuda vieja y asignar nueva - REFACTOR: Usando métodos limpios del modelo
                 if ($originalTransaction->remaining_due > 0.01) {
                     $customer->cancelDebt($originalTransaction->remaining_due, $originalTransaction->id, "Cancelación deuda apartado #{$originalTransaction->folio} por modificación", clone $now);
                 }

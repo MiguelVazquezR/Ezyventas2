@@ -3,22 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CashRegisterSessionStatus;
-use App\Enums\CustomerBalanceMovementType;
 use App\Enums\PaymentMethod;
-use App\Enums\PaymentStatus;
-use App\Enums\QuoteStatus;
-use App\Enums\SessionCashMovementType; // Aseguramos importar el Enum
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
+use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
 use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\Product;
 use App\Models\ProductAttribute;
-use App\Models\Quote;
 use App\Models\Transaction;
 use App\Services\TransactionPaymentService;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -30,8 +26,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
-use Illuminate\Validation\ValidationException;
-use LogicException;
 
 class TransactionController extends Controller implements HasMiddleware
 {
@@ -61,8 +55,7 @@ class TransactionController extends Controller implements HasMiddleware
             ->leftJoin('users', 'transactions.user_id', '=', 'users.id')
             ->where('transactions.branch_id', $branchId)
             ->where('transactions.channel', '!=', TransactionChannel::BALANCE_PAYMENT)
-            // MODIFICADO: Agregamos 'payments.bankAccount' a la carga ansiosa para que el Drawer reciba los bancos
-            ->with(['customer:id,name', 'user:id,name', 'payments.bankAccount', 'items']) 
+            ->with(['customer:id,name', 'user:id,name', 'payments.bankAccount', 'items'])
             ->select('transactions.*');
 
         if ($request->has('search')) {
@@ -109,7 +102,6 @@ class TransactionController extends Controller implements HasMiddleware
             ? $user->branch->bankAccounts()->get()
             : $user->bankAccounts()->get();
 
-        // Mapeamos la colección para agregar el atributo 'name' que espera el componente Select
         $userBankAccounts->transform(function ($account) {
             $identifier = $account->account_number ?? $account->card_number;
             $lastDigits = $identifier ? ' (...' . substr($identifier, -4) . ')' : '';
@@ -170,7 +162,6 @@ class TransactionController extends Controller implements HasMiddleware
             ? $user->branch->bankAccounts()->get()
             : $user->bankAccounts()->get();
 
-        // Mapeamos la colección para agregar el atributo 'name' que espera el componente Select
         $userBankAccounts->transform(function ($account) {
             $identifier = $account->account_number ?? $account->card_number;
             $lastDigits = $identifier ? ' (...' . substr($identifier, -4) . ')' : '';
@@ -239,14 +230,8 @@ class TransactionController extends Controller implements HasMiddleware
         }
 
         try {
-            $newTransaction = $this->transactionPaymentService->handleProductExchange(
-                Auth::user(),
-                $transaction,
-                $validated
-            );
-
-            return redirect()->route('transactions.show', $newTransaction->id)
-                ->with('success', 'Cambio realizado con éxito. Nueva venta #' . $newTransaction->folio);
+            $newTransaction = $this->transactionPaymentService->handleProductExchange(Auth::user(), $transaction, $validated);
+            return redirect()->route('transactions.show', $newTransaction->id)->with('success', 'Cambio realizado con éxito. Nueva venta #' . $newTransaction->folio);
         } catch (\Exception $e) {
             Log::error("Error al procesar cambio en transacción {$transaction->id}: " . $e->getMessage());
             return redirect()->back()->with(['error' => 'Error: ' . $e->getMessage()]);
@@ -255,33 +240,20 @@ class TransactionController extends Controller implements HasMiddleware
 
     public function extendLayaway(Request $request, Transaction $transaction)
     {
-        $validated = $request->validate([
-            'new_expiration_date' => 'required|date|after:today',
-        ]);
+        $validated = $request->validate(['new_expiration_date' => 'required|date|after:today']);
 
         if (!in_array($transaction->status, [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING])) {
             return back()->with(['error' => 'Solo se puede extender la fecha de apartados o créditos activos.']);
         }
 
-        $transaction->update([
-            'layaway_expiration_date' => $validated['new_expiration_date']
-        ]);
-
+        $transaction->update(['layaway_expiration_date' => $validated['new_expiration_date']]);
         return back()->with('success', 'Fecha de vencimiento actualizada correctamente.');
     }
 
     public function updateDate(Request $request, Transaction $transaction)
     {
-        // Validamos que sea una fecha válida
-        $validated = $request->validate([
-            'created_at' => 'required|date',
-        ]);
-
-        // Actualizamos la fecha de creación
-        $transaction->update([
-            'created_at' => $validated['created_at']
-        ]);
-
+        $validated = $request->validate(['created_at' => 'required|date']);
+        $transaction->update(['created_at' => $validated['created_at']]);
         return back()->with('success', 'Fecha de transacción actualizada correctamente.');
     }
 
@@ -315,14 +287,8 @@ class TransactionController extends Controller implements HasMiddleware
         }
 
         try {
-            $newTransaction = $this->transactionPaymentService->handleLayawayExchange(
-                Auth::user(),
-                $transaction,
-                $validated
-            );
-
-            return redirect()->route('transactions.show', $newTransaction->id)
-                ->with('success', 'Apartado modificado con éxito. Nuevo folio: #' . $newTransaction->folio);
+            $newTransaction = $this->transactionPaymentService->handleLayawayExchange(Auth::user(), $transaction, $validated);
+            return redirect()->route('transactions.show', $newTransaction->id)->with('success', 'Apartado modificado con éxito. Nuevo folio: #' . $newTransaction->folio);
         } catch (\Exception $e) {
             Log::error("Error al modificar apartado {$transaction->id}: " . $e->getMessage());
             return redirect()->back()->with(['error' => 'Error: ' . $e->getMessage()]);
@@ -331,14 +297,8 @@ class TransactionController extends Controller implements HasMiddleware
 
     public function rescheduleOrder(Request $request, Transaction $transaction)
     {
-        $validated = $request->validate([
-            'new_delivery_date' => 'required|date',
-        ]);
-
-        $transaction->update([
-            'delivery_date' => $validated['new_delivery_date']
-        ]);
-
+        $validated = $request->validate(['new_delivery_date' => 'required|date']);
+        $transaction->update(['delivery_date' => $validated['new_delivery_date']]);
         return back()->with('success', 'Fecha de entrega reprogramada correctamente.');
     }
 
@@ -382,12 +342,7 @@ class TransactionController extends Controller implements HasMiddleware
         }
 
         try {
-            $this->transactionPaymentService->applyPaymentToTransaction(
-                $transaction,
-                $validated,
-                $validated['cash_register_session_id']
-            );
-
+            $this->transactionPaymentService->applyPaymentToTransaction($transaction, $validated, $validated['cash_register_session_id']);
             return redirect()->back()->with('success', 'Abono registrado con éxito.');
         } catch (\Exception $e) {
             Log::error("Error al registrar abono en transacción {$transaction->id}: " . $e->getMessage());
@@ -396,8 +351,7 @@ class TransactionController extends Controller implements HasMiddleware
     }
 
     /**
-     * UNIFICADO: Cancela o Reembolsa una transacción (Venta, Apartado, Pedido).
-     * Maneja penalizaciones, devoluciones a saldo y devoluciones en efectivo.
+     * Cancela o Reembolsa una transacción delegando movimientos a los Modelos.
      */
     public function cancel(Request $request, Transaction $transaction)
     {
@@ -409,110 +363,97 @@ class TransactionController extends Controller implements HasMiddleware
 
         $transaction->loadMissing(['payments', 'customer', 'items.itemable']);
         $totalPaid = $transaction->payments->sum('amount');
-        $isLayaway = in_array($transaction->status, [\App\Enums\TransactionStatus::ON_LAYAWAY]);
+        $isLayaway = in_array($transaction->status, [TransactionStatus::ON_LAYAWAY]);
 
-        if (in_array($transaction->status, [\App\Enums\TransactionStatus::CANCELLED, \App\Enums\TransactionStatus::REFUNDED])) {
+        if (in_array($transaction->status, [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED])) {
             return redirect()->back()->with(['error' => 'La transacción ya se encuentra cancelada o reembolsada.']);
         }
 
-        $action = 'penalty';
-        $refundMethod = null;
-        $bankAccountId = null;
+        $action = $request->input('action', 'penalty');
+        $refundMethod = $request->input('refund_method');
+        $bankAccountId = $request->input('bank_account_id');
 
-        if ($totalPaid > 0) {
-            $request->validate([
-                'action' => 'required|in:refund,penalty',
-                'refund_method' => 'required_if:action,refund|in:balance,cash,transfer',
-            ]);
-            $action = $request->input('action');
-            $refundMethod = $request->input('refund_method');
-            $bankAccountId = $request->input('bank_account_id');
-
-            if ($action === 'refund') {
-                if ($refundMethod === 'balance' && !$transaction->customer_id) {
-                    throw \Illuminate\Validation\ValidationException::withMessages(['refund_method' => 'Se requiere un cliente asignado para abonar a saldo.']);
-                }
-                if ($refundMethod === 'cash') {
-                    $activeSession = \Illuminate\Support\Facades\Auth::user()->cashRegisterSessions()->where('status', \App\Enums\CashRegisterSessionStatus::OPEN)->first();
-                    if (!$activeSession) {
-                        throw \Illuminate\Validation\ValidationException::withMessages(['refund_method' => 'Se requiere una sesión de caja activa para devolver efectivo.']);
-                    }
+        if ($totalPaid > 0 && $action === 'refund') {
+            if ($refundMethod === 'balance' && !$transaction->customer_id) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['refund_method' => 'Se requiere un cliente asignado para abonar a saldo.']);
+            }
+            if ($refundMethod === 'cash') {
+                $activeSession = \Illuminate\Support\Facades\Auth::user()->cashRegisterSessions()
+                    ->where('status', \App\Enums\CashRegisterSessionStatus::OPEN)
+                    ->whereHas('cashRegister', function ($query) {
+                        $query->where('branch_id', \Illuminate\Support\Facades\Auth::user()->branch_id);
+                    })
+                    ->first();
+                if (!$activeSession) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['refund_method' => 'Se requiere una sesión de caja activa para devolver efectivo.']);
                 }
             }
         }
 
         try {
-            \Illuminate\Support\Facades\DB::transaction(function () use ($request, $transaction, $totalPaid, $action, $refundMethod, $bankAccountId, $isLayaway) {
-                // A. Devolver Stock
+            DB::transaction(function () use ($request, $transaction, $totalPaid, $action, $refundMethod, $bankAccountId, $isLayaway) {
+                // A. REFACTOR: Devolver Stock delegando a los modelos
                 $this->returnStock($transaction);
 
-                // B. Manejar Deuda y Saldos
+                // B. REFACTOR: Manejar Deuda y Saldos mediante métodos semánticos
                 if ($transaction->customer_id) {
                     $customer = $transaction->customer;
-                    $amountToCredit = 0;
-                    $notes = '';
-                    $movementType = \App\Enums\CustomerBalanceMovementType::CANCELLATION_CREDIT;
+                    $pendingDebt = $transaction->total - $totalPaid;
 
                     if ($totalPaid > 0) {
                         if ($action === 'penalty') {
-                            $pendingDebt = $transaction->total - $totalPaid;
-                            $amountToCredit = max(0, $pendingDebt);
-                            $notes = 'Cancelación de ' . ($isLayaway ? 'apartado' : 'venta') . ' #' . $transaction->folio . ' (Penalización). Se retienen $' . number_format($totalPaid, 2);
+                            if ($pendingDebt > 0.01) {
+                                $customer->cancelDebt($pendingDebt, $transaction->id, 'Cancelación de ' . ($isLayaway ? 'apartado' : 'venta') . ' #' . $transaction->folio . ' (Penalización). Se retienen $' . number_format($totalPaid, 2));
+                            }
                         } else {
                             if ($refundMethod === 'balance') {
-                                $amountToCredit = $transaction->total;
-                                $notes = 'Reembolso a saldo por cancelación de ' . ($isLayaway ? 'apartado' : 'venta') . ' #' . $transaction->folio;
-                                $movementType = \App\Enums\CustomerBalanceMovementType::REFUND_CREDIT;
-                            } elseif ($refundMethod === 'transfer') {
-                                $pendingDebt = $transaction->total - $totalPaid;
-                                $amountToCredit = max(0, $pendingDebt);
-                                $bankName = \App\Models\BankAccount::find($bankAccountId)?->name ?? 'Cuenta Bancaria';
-                                $notes = 'Cancelación de ' . ($isLayaway ? 'apartado' : 'venta') . ' #' . $transaction->folio . '. Reembolso enviado por transferencia desde ' . $bankName . '.';
+                                // Reembolsamos la totalidad (pago devuelto + deuda perdonada)
+                                $customer->addRefund($transaction->total, $transaction->id, 'Reembolso a saldo por cancelación de ' . ($isLayaway ? 'apartado' : 'venta') . ' #' . $transaction->folio);
                             } else {
-                                $pendingDebt = $transaction->total - $totalPaid;
-                                $amountToCredit = max(0, $pendingDebt);
-                                $notes = 'Cancelación de ' . ($isLayaway ? 'apartado' : 'venta') . ' #' . $transaction->folio . '. Reembolso entregado en efectivo.';
+                                // Cash o Transfer: Se devuelve el dinero fuera del sistema, pero sí perdonamos la deuda remanente.
+                                if ($pendingDebt > 0.01) {
+                                    $customer->cancelDebt($pendingDebt, $transaction->id, "Cancelación de " . ($isLayaway ? 'apartado' : 'venta') . " #{$transaction->folio}. Reembolso entregado por fuera.");
+                                }
                             }
                         }
                     } else {
-                        $amountToCredit = $transaction->total;
-                        $notes = 'Cancelación de ' . ($isLayaway ? 'apartado' : 'venta') . ' #' . $transaction->folio;
-                    }
-
-                    if ($amountToCredit > 0) {
-                        $customer->balanceMovements()->create([
-                            'transaction_id' => $transaction->id,
-                            'type' => $movementType,
-                            'amount' => $amountToCredit,
-                            'balance_after' => $customer->balance + $amountToCredit,
-                            'notes' => $notes,
-                        ]);
-                        $customer->increment('balance', $amountToCredit);
+                        // No pagó nada. Solo perdonamos la deuda total.
+                        if ($transaction->total > 0.01) {
+                            $customer->cancelDebt($transaction->total, $transaction->id, 'Cancelación de ' . ($isLayaway ? 'apartado' : 'venta') . ' #' . $transaction->folio);
+                        }
                     }
                 }
 
                 // C. Manejar Salida de Efectivo o Banco
                 if ($action === 'refund' && $totalPaid > 0) {
                     if ($refundMethod === 'cash') {
-                        $activeSession = \Illuminate\Support\Facades\Auth::user()->cashRegisterSessions()->where('status', \App\Enums\CashRegisterSessionStatus::OPEN)->first();
+                        // Filtramos para obtener estrictamente la sesión abierta en la sucursal actual
+                        $activeSession = \Illuminate\Support\Facades\Auth::user()->cashRegisterSessions()
+                            ->where('status', \App\Enums\CashRegisterSessionStatus::OPEN)
+                            ->whereHas('cashRegister', function ($query) {
+                                $query->where('branch_id', \Illuminate\Support\Facades\Auth::user()->branch_id);
+                            })
+                            ->first();
 
-                        $activeSession->cashMovements()->create([
-                            'user_id' => \Illuminate\Support\Facades\Auth::id(),
-                            'type' => \App\Enums\SessionCashMovementType::OUTFLOW,
-                            'amount' => $totalPaid,
-                            'description' => "Devolución venta #{$transaction->folio}. Devolución de efectivo por cancelación.",
-                        ]);
+                        if ($activeSession) {
+                            $activeSession->cashMovements()->create([
+                                'user_id' => \Illuminate\Support\Facades\Auth::id(),
+                                'type' => \App\Enums\SessionCashMovementType::OUTFLOW,
+                                'amount' => $totalPaid,
+                                'description' => "Devolución venta #{$transaction->folio}. Devolución de efectivo por cancelación.",
+                            ]);
+                        }
                     } elseif ($refundMethod === 'transfer') {
                         $bankAccount = \App\Models\BankAccount::find($bankAccountId);
                         if ($bankAccount) {
                             // Descontar saldo real de la cuenta
                             $bankAccount->decrement('balance', $totalPaid);
 
-                            // MODIFICACIÓN CRÍTICA: Crear el Pago Negativo usando el Enum y especificando el status
+                            // Crear el Pago Negativo
                             $transaction->payments()->create([
                                 'amount' => -$totalPaid,
                                 'payment_method' => \App\Enums\PaymentMethod::TRANSFER->value,
-                                'status' => \App\Enums\PaymentStatus::COMPLETED->value, // <- Status Obligatorio
+                                'status' => \App\Enums\PaymentStatus::COMPLETED->value,
                                 'bank_account_id' => $bankAccount->id,
                                 'notes' => 'Reembolso por cancelación de venta.',
                             ]);
@@ -521,7 +462,7 @@ class TransactionController extends Controller implements HasMiddleware
                 }
 
                 // D. Actualizar Estatus Transacción
-                $newStatus = ($action === 'refund') ? \App\Enums\TransactionStatus::REFUNDED : \App\Enums\TransactionStatus::CANCELLED;
+                $newStatus = ($action === 'refund') ? TransactionStatus::REFUNDED : TransactionStatus::CANCELLED;
                 $transaction->update(['status' => $newStatus]);
 
                 // E. Cancelar Cotización (si aplica)
@@ -530,7 +471,7 @@ class TransactionController extends Controller implements HasMiddleware
                 }
             });
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error("Error al cancelar transacción {$transaction->id}: " . $e->getMessage());
+            Log::error("Error al cancelar transacción {$transaction->id}: " . $e->getMessage());
             return redirect()->back()->with(['error' => 'Ocurrió un error inesperado al cancelar.']);
         }
 
@@ -565,7 +506,6 @@ class TransactionController extends Controller implements HasMiddleware
 
     public function refund(Request $request, Transaction $transaction)
     {
-        // Redirigimos a cancel() forzando la acción de reembolso.
         $request->merge(['action' => 'refund']);
         return $this->cancel($request, $transaction);
     }
@@ -591,9 +531,7 @@ class TransactionController extends Controller implements HasMiddleware
                 'notes' => $validated['notes'],
             ]);
 
-            $totalPaid = $transaction->payments()
-                ->where('status', \App\Enums\PaymentStatus::COMPLETED)
-                ->sum('amount');
+            $totalPaid = $transaction->payments()->where('status', \App\Enums\PaymentStatus::COMPLETED)->sum('amount');
 
             if ($totalPaid >= $transaction->total) {
                 if ($transaction->status !== TransactionStatus::COMPLETED) {
@@ -609,46 +547,35 @@ class TransactionController extends Controller implements HasMiddleware
         return back()->with('success', 'Pago actualizado correctamente.');
     }
 
-    // NUEVO MÉTODO PARA ELIMINAR PAGO Y REVERTIR EFECTOS
+    /**
+     * Elimina un pago y revierte sus efectos delegando a los Modelos.
+     */
     public function destroyPayment(Request $request, Transaction $transaction, Payment $payment)
     {
-        if ($payment->transaction_id !== $transaction->id) {
-            abort(403);
-        }
+        if ($payment->transaction_id !== $transaction->id) abort(403);
 
         try {
             DB::transaction(function () use ($transaction, $payment) {
                 // 1. Revertir saldo de banco
                 if ($payment->bank_account_id) {
-                    $bankAccount = \App\Models\BankAccount::find($payment->bank_account_id);
+                    $bankAccount = BankAccount::find($payment->bank_account_id);
                     if ($bankAccount) {
-                        // Si era un abono normal (positivo), lo restamos. Si era devolución (negativo), al restarlo matemáticamente se suma.
                         $bankAccount->decrement('balance', $payment->amount);
                     }
                 }
 
-                // 2. Revertir saldo a favor del cliente si se usó para pagar
+                // 2. REFACTOR: Revertir saldo a favor usando Modelos
                 if ($payment->payment_method->value === 'saldo' && $transaction->customer_id) {
                     $customer = $transaction->customer;
                     if ($customer) {
-                        $customer->increment('balance', $payment->amount);
-                        
-                        // Opcional: Registrar el movimiento de reversión
-                        $customer->balanceMovements()->create([
-                            'transaction_id' => $transaction->id,
-                            'type' => \App\Enums\CustomerBalanceMovementType::BALANCE_REFUND,
-                            'amount' => $payment->amount,
-                            'balance_after' => $customer->balance + $payment->amount,
-                            'notes' => "Reversión por eliminación de pago en venta #{$transaction->folio}",
-                        ]);
+                        $customer->addRefund($payment->amount, $transaction->id, "Reversión por eliminación de pago en venta #{$transaction->folio}");
                     }
                 }
 
                 // 3. Revertir movimiento de caja si es efectivo
                 if ($payment->payment_method->value === 'efectivo' && $payment->cash_register_session_id) {
-                    $session = \App\Models\CashRegisterSession::find($payment->cash_register_session_id);
+                    $session = CashRegisterSession::find($payment->cash_register_session_id);
                     if ($session) {
-                        // Buscamos el movimiento original para eliminarlo y evitar descuadre
                         $session->cashMovements()
                             ->where('amount', $payment->amount)
                             ->where('type', \App\Enums\SessionCashMovementType::INFLOW)
@@ -663,18 +590,16 @@ class TransactionController extends Controller implements HasMiddleware
                 // 5. Actualizar estatus de la transacción si ya no está liquidada
                 $totalPaid = $transaction->payments()->sum('amount');
                 $total = $transaction->total ?? ($transaction->subtotal - $transaction->total_discount + $transaction->total_tax);
-                
-                if ($totalPaid < $total && $transaction->status === \App\Enums\TransactionStatus::COMPLETED) {
-                    $newStatus = $transaction->layaway_expiration_date 
-                        ? \App\Enums\TransactionStatus::ON_LAYAWAY 
-                        : \App\Enums\TransactionStatus::PENDING;
+
+                if ($totalPaid < $total && $transaction->status === TransactionStatus::COMPLETED) {
+                    $newStatus = $transaction->layaway_expiration_date ? TransactionStatus::ON_LAYAWAY : TransactionStatus::PENDING;
                     $transaction->update(['status' => $newStatus]);
                 }
             });
 
             return redirect()->back()->with('success', 'Pago eliminado correctamente.');
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error("Error al eliminar pago: " . $e->getMessage());
+            Log::error("Error al eliminar pago: " . $e->getMessage());
             return redirect()->back()->with(['error' => 'Ocurrió un error al eliminar el pago.']);
         }
     }
@@ -748,7 +673,6 @@ class TransactionController extends Controller implements HasMiddleware
         try {
             $data = $validated;
             $data['customer_id'] = $validated['customerId'];
-
             $transaction = $this->transactionPaymentService->handleNewOrder(Auth::user(), $data);
 
             return redirect()->back()->with('success', "Pedido #{$transaction->folio} creado correctamente.");
@@ -759,147 +683,21 @@ class TransactionController extends Controller implements HasMiddleware
     }
 
     /**
-     * Registra explícitamente el movimiento en el historial de Activitylog (Spatie).
+     * Restaura el inventario iterando delegando al polimorfismo del Modelo.
      */
-    private function logStockActivity($model, ?\App\Models\User $user, float $quantity, string $description): void
-    {
-        if (!$model) return;
-        
-        // Si es variante, el log se asocia al producto padre para que sea visible en Show.vue
-        $target = $model instanceof \App\Models\ProductAttribute ? $model->product : $model;
-        if (!$target) return;
-
-        activity()
-            ->performedOn($target)
-            ->causedBy($user)
-            ->event('stock_update')
-            ->withProperties(['quantity_changed' => $quantity])
-            ->log($description);
-    }
-
     private function returnStock(Transaction $transaction)
     {
         $branchId = $transaction->branch_id;
-        $user = \Illuminate\Support\Facades\Auth::user() ?? $transaction->user;
+        $user = Auth::user() ?? $transaction->user;
 
         foreach ($transaction->items as $item) {
-            $itemable = $item->itemable;
+            if ($itemable = $item->itemable) {
+                $isReservation = in_array($transaction->status, [TransactionStatus::ON_LAYAWAY, TransactionStatus::TO_DELIVER]);
 
-            if ($itemable instanceof \App\Models\Product || $itemable instanceof \App\Models\ProductAttribute) {
-                
-                $isReservation = $transaction->status === \App\Enums\TransactionStatus::ON_LAYAWAY || $transaction->status === \App\Enums\TransactionStatus::TO_DELIVER;
-                
                 if ($isReservation) {
-                    $description = "Liberación de reserva por cancelación de apartado/pedido {$transaction->folio}";
-                    $componentDescription = "Liberación de reserva (Componente de Kit) por cancelación {$transaction->folio}";
-                    
-                    if ($itemable instanceof \App\Models\Product) {
-                        $itemable->loadMissing('components');
-                        $isComposite = $itemable->components && $itemable->components->isNotEmpty();
-
-                        if ($isComposite) {
-                            foreach ($itemable->components as $component) {
-                                $qtyToRelease = $item->quantity * $component->quantity;
-
-                                if ($component->componentable_type === \App\Models\ProductAttribute::class) {
-                                    \Illuminate\Support\Facades\DB::table('branch_product_attribute')
-                                        ->where('product_attribute_id', $component->componentable_id)
-                                        ->where('branch_id', $branchId)
-                                        ->decrement('reserved_stock', $qtyToRelease);
-
-                                    $variant = \App\Models\ProductAttribute::find($component->componentable_id);
-                                    if ($variant) {
-                                        \Illuminate\Support\Facades\DB::table('branch_product')
-                                            ->where('product_id', $variant->product_id)
-                                            ->where('branch_id', $branchId)
-                                            ->decrement('reserved_stock', $qtyToRelease);
-                                    }
-                                } else {
-                                    \Illuminate\Support\Facades\DB::table('branch_product')
-                                        ->where('product_id', $component->componentable_id)
-                                        ->where('branch_id', $branchId)
-                                        ->decrement('reserved_stock', $qtyToRelease);
-                                }
-                                // Cantidad negativa porque sale de las reservas
-                                $this->logStockActivity($component->componentable, $user, -$qtyToRelease, $componentDescription);
-                            }
-                        } else {
-                            \Illuminate\Support\Facades\DB::table('branch_product')
-                                ->where('product_id', $itemable->id)
-                                ->where('branch_id', $branchId)
-                                ->decrement('reserved_stock', $item->quantity);
-                                
-                            $this->logStockActivity($itemable, $user, -$item->quantity, $description);
-                        }
-                    } elseif ($itemable instanceof \App\Models\ProductAttribute) {
-                        \Illuminate\Support\Facades\DB::table('branch_product_attribute')
-                            ->where('product_attribute_id', $itemable->id)
-                            ->where('branch_id', $branchId)
-                            ->decrement('reserved_stock', $item->quantity);
-
-                        \Illuminate\Support\Facades\DB::table('branch_product')
-                            ->where('product_id', $itemable->product_id)
-                            ->where('branch_id', $branchId)
-                            ->decrement('reserved_stock', $item->quantity);
-                            
-                        $this->logStockActivity($itemable, $user, -$item->quantity, $description);
-                    }
+                    $itemable->releaseLayawayStock($branchId, $item->quantity, $user, "Liberación de reserva por cancelación {$transaction->folio}");
                 } else {
-                    // Venta completada que se cancela/reembolsa -> Retorna stock físico (Entrada)
-                    $description = "Retorno de stock por cancelación/reembolso de venta {$transaction->folio}";
-                    $componentDescription = "Retorno de stock (Componente de Kit) por cancelación {$transaction->folio}";
-
-                    if ($itemable instanceof \App\Models\Product) {
-                        $itemable->loadMissing('components');
-                        $isComposite = $itemable->components && $itemable->components->isNotEmpty();
-
-                        if ($isComposite) {
-                            foreach ($itemable->components as $component) {
-                                $qtyToRestock = $item->quantity * $component->quantity;
-
-                                if ($component->componentable_type === \App\Models\ProductAttribute::class) {
-                                    \Illuminate\Support\Facades\DB::table('branch_product_attribute')
-                                        ->where('product_attribute_id', $component->componentable_id)
-                                        ->where('branch_id', $branchId)
-                                        ->increment('current_stock', $qtyToRestock);
-
-                                    $variant = \App\Models\ProductAttribute::find($component->componentable_id);
-                                    if ($variant) {
-                                        \Illuminate\Support\Facades\DB::table('branch_product')
-                                            ->where('product_id', $variant->product_id)
-                                            ->where('branch_id', $branchId)
-                                            ->increment('current_stock', $qtyToRestock);
-                                    }
-                                } else {
-                                    \Illuminate\Support\Facades\DB::table('branch_product')
-                                        ->where('product_id', $component->componentable_id)
-                                        ->where('branch_id', $branchId)
-                                        ->increment('current_stock', $qtyToRestock);
-                                }
-                                // Cantidad positiva porque entra al almacén
-                                $this->logStockActivity($component->componentable, $user, $qtyToRestock, $componentDescription);
-                            }
-                        } else {
-                            \Illuminate\Support\Facades\DB::table('branch_product')
-                                ->where('product_id', $itemable->id)
-                                ->where('branch_id', $branchId)
-                                ->increment('current_stock', $item->quantity);
-                                
-                            $this->logStockActivity($itemable, $user, $item->quantity, $description);
-                        }
-                    } elseif ($itemable instanceof \App\Models\ProductAttribute) {
-                        \Illuminate\Support\Facades\DB::table('branch_product_attribute')
-                            ->where('product_attribute_id', $itemable->id)
-                            ->where('branch_id', $branchId)
-                            ->increment('current_stock', $item->quantity);
-
-                        \Illuminate\Support\Facades\DB::table('branch_product')
-                            ->where('product_id', $itemable->product_id)
-                            ->where('branch_id', $branchId)
-                            ->increment('current_stock', $item->quantity);
-                            
-                        $this->logStockActivity($itemable, $user, $item->quantity, $description);
-                    }
+                    $itemable->restock($branchId, $item->quantity, $user, "Retorno de stock por cancelación/reembolso {$transaction->folio}");
                 }
             }
         }
