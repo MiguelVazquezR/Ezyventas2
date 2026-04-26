@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Transactions\ProcessLayawayExchange;
+use App\Actions\Transactions\ProcessProductExchange;
 use App\Enums\CashRegisterSessionStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\TemplateContextType;
@@ -191,7 +193,7 @@ class TransactionController extends Controller implements HasMiddleware
         ]);
     }
 
-    public function exchange(Request $request, Transaction $transaction)
+    public function exchange(Request $request, Transaction $transaction, ProcessProductExchange $exchangeAction)
     {
         $validated = $request->validate([
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
@@ -230,7 +232,8 @@ class TransactionController extends Controller implements HasMiddleware
         }
 
         try {
-            $newTransaction = $this->transactionPaymentService->handleProductExchange(Auth::user(), $transaction, $validated);
+            // AQUI USAMOS LA NUEVA ACCIÓN DE DELEGACIÓN
+            $newTransaction = $exchangeAction->execute(Auth::user(), $transaction, $validated);
             return redirect()->route('transactions.show', $newTransaction->id)->with('success', 'Cambio realizado con éxito. Nueva venta #' . $newTransaction->folio);
         } catch (\Exception $e) {
             Log::error("Error al procesar cambio en transacción {$transaction->id}: " . $e->getMessage());
@@ -238,26 +241,7 @@ class TransactionController extends Controller implements HasMiddleware
         }
     }
 
-    public function extendLayaway(Request $request, Transaction $transaction)
-    {
-        $validated = $request->validate(['new_expiration_date' => 'required|date|after:today']);
-
-        if (!in_array($transaction->status, [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING])) {
-            return back()->with(['error' => 'Solo se puede extender la fecha de apartados o créditos activos.']);
-        }
-
-        $transaction->update(['layaway_expiration_date' => $validated['new_expiration_date']]);
-        return back()->with('success', 'Fecha de vencimiento actualizada correctamente.');
-    }
-
-    public function updateDate(Request $request, Transaction $transaction)
-    {
-        $validated = $request->validate(['created_at' => 'required|date']);
-        $transaction->update(['created_at' => $validated['created_at']]);
-        return back()->with('success', 'Fecha de transacción actualizada correctamente.');
-    }
-
-    public function exchangeLayaway(Request $request, Transaction $transaction)
+    public function exchangeLayaway(Request $request, Transaction $transaction, ProcessLayawayExchange $exchangeLayawayAction)
     {
         $validated = $request->validate([
             'cash_register_session_id' => 'required|exists:cash_register_sessions,id',
@@ -287,12 +271,32 @@ class TransactionController extends Controller implements HasMiddleware
         }
 
         try {
-            $newTransaction = $this->transactionPaymentService->handleLayawayExchange(Auth::user(), $transaction, $validated);
+            // AQUI USAMOS LA NUEVA ACCIÓN DE DELEGACIÓN
+            $newTransaction = $exchangeLayawayAction->execute(Auth::user(), $transaction, $validated);
             return redirect()->route('transactions.show', $newTransaction->id)->with('success', 'Apartado modificado con éxito. Nuevo folio: #' . $newTransaction->folio);
         } catch (\Exception $e) {
             Log::error("Error al modificar apartado {$transaction->id}: " . $e->getMessage());
             return redirect()->back()->with(['error' => 'Error: ' . $e->getMessage()]);
         }
+    }
+
+    public function extendLayaway(Request $request, Transaction $transaction)
+    {
+        $validated = $request->validate(['new_expiration_date' => 'required|date|after:today']);
+
+        if (!in_array($transaction->status, [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING])) {
+            return back()->with(['error' => 'Solo se puede extender la fecha de apartados o créditos activos.']);
+        }
+
+        $transaction->update(['layaway_expiration_date' => $validated['new_expiration_date']]);
+        return back()->with('success', 'Fecha de vencimiento actualizada correctamente.');
+    }
+
+    public function updateDate(Request $request, Transaction $transaction)
+    {
+        $validated = $request->validate(['created_at' => 'required|date']);
+        $transaction->update(['created_at' => $validated['created_at']]);
+        return back()->with('success', 'Fecha de transacción actualizada correctamente.');
     }
 
     public function rescheduleOrder(Request $request, Transaction $transaction)

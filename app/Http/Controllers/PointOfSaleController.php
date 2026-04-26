@@ -164,57 +164,40 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
     public function checkEntity(Request $request)
     {
-        $query = trim($request->input('query'));
-        if (!$query) return response()->json(null);
-
+        $barcode = $request->input('barcode');
         $branchId = Auth::user()->branch_id;
 
-        $transaction = Transaction::where('branch_id', $branchId)
-            ->where('folio', $query)
-            ->first(['id', 'folio']);
+        // 1. Búsqueda de Producto Simple
+        $product = \App\Models\Product::with(['productAttributes' => function($q) use ($branchId) {
+            $q->whereHas('branches', fn($b) => $b->where('branches.id', $branchId));
+        }])
+        ->whereHas('branches', fn($b) => $b->where('branches.id', $branchId))
+        ->where(fn($q) => $q->where('sku', $barcode)->orWhere('id', $barcode))
+        ->first();
 
-        if ($transaction) {
-            return response()->json([
-                'found' => true,
-                'type' => 'transaction',
-                'id' => $transaction->id,
-                'label' => "Venta Folio: {$transaction->folio}",
-                'message' => "¿Deseas ver los detalles de la venta {$transaction->folio}?"
-            ]);
+        if ($product) {
+            $product->loadStockForBranch($branchId);
+            return response()->json(['type' => 'product', 'data' => $product]);
         }
 
-        $serviceOrder = ServiceOrder::where('branch_id', $branchId)
-            ->where('folio', $query)
-            ->first(['id', 'folio']);
+        // 2. Búsqueda de Variante
+        $variant = \App\Models\ProductAttribute::with('product')
+            ->whereHas('branches', fn($b) => $b->where('branches.id', $branchId))
+            ->where(fn($q) => $q->where('sku_suffix', $barcode)->orWhere('id', $barcode))
+            ->first();
 
-        if ($serviceOrder) {
-            return response()->json([
-                'found' => true,
-                'type' => 'service_order',
-                'id' => $serviceOrder->id,
-                'label' => "Orden de Servicio: {$serviceOrder->folio}",
-                'message' => "¿Ir a detalles de la Orden de Servicio {$serviceOrder->folio}?"
-            ]);
+        if ($variant) {
+            $variant->loadStockForBranch($branchId);
+            return response()->json(['type' => 'variant', 'data' => $variant]);
         }
 
-        $customer = Customer::where('branch_id', $branchId)
-            ->where(function($q) use ($query) {
-                $q->where('phone', $query)
-                  ->orWhere('name', 'like', $query); 
-            })
-            ->first(['id', 'name', 'phone']);
-
-        if ($customer) {
-            return response()->json([
-                'found' => true,
-                'type' => 'customer',
-                'id' => $customer->id,
-                'label' => "Cliente: {$customer->name}",
-                'message' => "Se encontró al cliente {$customer->name}. ¿Ir a detalles?"
-            ]);
+        // 3. Búsqueda de Orden de Servicio (Si aplica para cobro desde POS)
+        $serviceOrder = \App\Models\ServiceOrder::where('folio', $barcode)->first();
+        if ($serviceOrder && in_array($serviceOrder->status->value, ['completed', 'delivered'])) {
+            return response()->json(['type' => 'service_order', 'data' => $serviceOrder]);
         }
 
-        return response()->json(['found' => false]);
+        return response()->json(['success' => false, 'message' => 'Código no encontrado o sin stock en esta sucursal.'], 404);
     }
 
     public function checkout(Request $request)
