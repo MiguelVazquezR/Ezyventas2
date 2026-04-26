@@ -132,6 +132,25 @@ class Customer extends Model
         return $this->applyBalanceMovement($amount, CustomerBalanceMovementType::CANCELLATION_CREDIT, $transactionId, $notes, $timestamp);
     }
 
+     /**
+     * Ajusta el saldo manualmente sin requerir una transacción (Para Store y AdjustBalance)
+     */
+    public function manualBalanceAdjustment(string $adjustmentType, float $amount, string $notes): void
+    {
+        $adjustmentAmount = $adjustmentType === 'add' ? $amount : ($amount - $this->balance);
+
+        if ($adjustmentAmount != 0) {
+            $this->increment('balance', $adjustmentAmount);
+
+            $this->balanceMovements()->create([
+                'type' => CustomerBalanceMovementType::MANUAL_ADJUSTMENT,
+                'amount' => $adjustmentAmount, 
+                'balance_after' => $this->balance,
+                'notes' => $notes,
+            ]);
+        }
+    }
+
     /* RELACIONES */
     public function branch(): BelongsTo { return $this->belongsTo(Branch::class); }
     public function transactions(): HasMany { return $this->hasMany(Transaction::class); }

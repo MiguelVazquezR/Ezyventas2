@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\CashRegisterSessionStatus;
+use App\Enums\SessionCashMovementType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -17,7 +18,7 @@ class CashRegisterSession extends Model
 
     protected $fillable = [
         'cash_register_id',
-        'user_id', // usuario que ABRIÓ la sesión
+        'user_id',
         'opened_at',
         'closed_at',
         'status',
@@ -43,22 +44,41 @@ class CashRegisterSession extends Model
         ];
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | LÓGICA DE NEGOCIO (REFACTOR)
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Registra una salida de efectivo de esta sesión de caja.
+     */
+    public function registerOutflow(float $amount, string $description, int $userId): SessionCashMovement
+    {
+        return $this->cashMovements()->create([
+            'type' => SessionCashMovementType::OUTFLOW,
+            'amount' => $amount,
+            'description' => $description,
+            'user_id' => $userId,
+        ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | RELACIONES
+    |--------------------------------------------------------------------------
+    */
+
     public function cashRegister(): BelongsTo
     {
         return $this->belongsTo(CashRegister::class);
     }
 
-    /**
-     * El usuario que originalmente abrió la sesión.
-     */
     public function opener(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    /**
-     * Todos los usuarios (cajeros) asociados a esta sesión.
-     */
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'cash_register_session_user');
@@ -74,9 +94,6 @@ class CashRegisterSession extends Model
         return $this->hasMany(SessionCashMovement::class);
     }
 
-    /**
-     * Obtiene todos los pagos registrados durante esta sesión de caja.
-     */
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);

@@ -4,14 +4,12 @@ namespace App\Services;
 
 use App\Enums\CustomerBalanceMovementType;
 use App\Enums\PaymentMethod;
-use App\Enums\SessionCashMovementType;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductAttribute;
 use App\Models\Transaction;
-use App\Models\TransactionItem;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -63,8 +61,8 @@ class TransactionPaymentService
 
             $balanceToUse = 0;
 
-            // 3. Aplicar Saldo a Favor (si se usa)
-            if ($validatedData['use_balance'] && $customer && $customer->balance > 0) {
+            // 3. Aplicar Saldo a Favor (si el usuario explícitamente marcó usar saldo)
+            if (!empty($validatedData['use_balance']) && $customer && $customer->balance > 0) {
                 $balanceToUse = min($totalSale, (float) $customer->balance);
                 if ($balanceToUse > 0) {
                     $this->applyBalanceAsPayment($transaction, $customer, $balanceToUse, $sessionId, "Uso de saldo en venta POS #{$transaction->folio}", clone $now);
@@ -83,12 +81,33 @@ class TransactionPaymentService
             $remainingDue = $transaction->remaining_due;
 
             if ($remainingDue > 0.01) {
-                if (!$customer || ($debtType === CustomerBalanceMovementType::CREDIT_SALE && $remainingDue > $customer->available_credit)) {
+                if (!$customer) {
                     throw new Exception("Pago insuficiente y el cliente no tiene crédito disponible.");
                 }
-                // REFACTOR: Uso del método del modelo Customer
-                $customer->addDebt($remainingDue, $debtType, $transaction->id, "Cargo a saldo por venta #{$transaction->folio}", $now->copy()->addSecond());
-            } else {
+
+                // --- FIX: COBRO AUTOMÁTICO DE SALDO ---
+                // Si aún hay deuda y el cliente tiene saldo a favor, el sistema fuerza
+                // el uso de ese saldo como PAGO antes de generar una deuda real.
+                // Esto genera el registro de "Payment" tipo BALANCE y cuadra la transacción.
+                if ($customer->balance > 0) {
+                    $forcedBalanceToUse = min($remainingDue, (float) $customer->balance);
+                    $this->applyBalanceAsPayment($transaction, $customer, $forcedBalanceToUse, $sessionId, "Cobro automático de saldo a favor por venta #{$transaction->folio}", clone $now);
+                    
+                    $transaction->refresh();
+                    $remainingDue = $transaction->remaining_due;
+                }
+
+                // Si aún queda deuda después de agotar el saldo a favor, aplicamos la deuda.
+                if ($remainingDue > 0.01) {
+                    if ($debtType === CustomerBalanceMovementType::CREDIT_SALE && $remainingDue > $customer->available_credit) {
+                        throw new Exception("Pago insuficiente y el cliente no tiene crédito disponible.");
+                    }
+                    $customer->addDebt($remainingDue, $debtType, $transaction->id, "Cargo a saldo por venta #{$transaction->folio}", $now->copy()->addSecond());
+                }
+            } 
+            
+            // 6. Evaluación final: ¿Se pagó completa? (Con pagos, saldo automático, etc.)
+            if ($transaction->fresh()->isFullyPaid()) {
                 $transaction->update(['status' => TransactionStatus::COMPLETED]);
                 if ($initialStatus === TransactionStatus::ON_LAYAWAY) {
                     $this->finalizeTransactionStock($transaction, clone $now);
@@ -139,7 +158,6 @@ class TransactionPaymentService
             $now = now();
             $remainingDue = $transaction->remaining_due;
 
-            // NUEVO: Capturar el estatus original antes de que cambie
             $originalStatus = $transaction->status;
 
             if ($remainingDue <= 0.01) throw new Exception('Esta transacción ya está completamente pagada.');
@@ -165,7 +183,6 @@ class TransactionPaymentService
             if ($transaction->fresh()->isFullyPaid()) {
                 $transaction->update(['status' => TransactionStatus::COMPLETED]);
 
-                // NUEVO: Ejecutar el descuento final del stock reservado y físico
                 if ($originalStatus === TransactionStatus::ON_LAYAWAY) {
                     $this->finalizeTransactionStock($transaction, clone $now);
                 }
@@ -180,7 +197,7 @@ class TransactionPaymentService
             $pendingTransactions = $customer->transactions()->whereIn('status', [TransactionStatus::PENDING, TransactionStatus::ON_LAYAWAY])->orderBy('created_at', 'asc')->get();
 
             $baseTimestamp = $now->copy();
-            $delayCounter = 0; // Para asegurar orden en el historial
+            $delayCounter = 0;
 
             foreach ($validatedData['payments'] as $paymentData) {
                 $amountToApply = (float) $paymentData['amount'];
@@ -206,7 +223,6 @@ class TransactionPaymentService
                         if ($originalStatus === TransactionStatus::ON_LAYAWAY) $this->finalizeTransactionStock($transaction, clone $now);
                     }
 
-                    // REFACTOR: Usando payDebt del cliente con un timestamp consecutivo
                     $customer->payDebt($amountForThisTransaction, $transaction->id, "Abono a la venta #{$transaction->folio} (" . $paymentData['method'] . "). " . ($validatedData['notes'] ?? ''), $baseTimestamp->copy()->addSeconds($delayCounter++));
                     $amountToApply -= $amountForThisTransaction;
                 }
@@ -255,9 +271,6 @@ class TransactionPaymentService
         if (!empty($payments)) $this->paymentService->processPayments($transaction, $payments, $sessionId);
     }
 
-    /**
-     * Este bloque de 150 líneas ahora solo tiene 20. Delega la responsabilidad de stock al Modelo.
-     */
     public function createTransactionItems(Transaction $transaction, array $cartItems, TransactionStatus $status): void {
         $branchId = $transaction->branch_id;
         $user = Auth::user() ?? $transaction->user;
@@ -267,7 +280,6 @@ class TransactionPaymentService
             $itemableType = !empty($item['product_attribute_id']) ? ProductAttribute::class : Product::class;
             $itemModel = $itemableType::find($itemableId);
 
-            // NUEVO: Validar y asignar el nombre limpio en lugar de la descripción HTML del frontend
             $itemDescription = $item['description'] ?? 'Artículo'; 
             if ($itemModel) {
                 if ($itemModel instanceof ProductAttribute) {
@@ -302,9 +314,6 @@ class TransactionPaymentService
         }
     }
 
-    /**
-     * Delega la finalización de los apartados al Modelo que sepa cómo manejarse.
-     */
     private function finalizeTransactionStock(Transaction $transaction, Carbon $timestamp): void
     {
         $branchId = $transaction->branch_id;
