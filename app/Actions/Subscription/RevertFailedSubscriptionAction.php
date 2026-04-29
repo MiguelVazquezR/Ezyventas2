@@ -1,13 +1,13 @@
 <?php
 
-namespace App\Actions\Subscription;
+namespace App\Actions\Subscriptions;
 
 use App\Enums\ExpenseStatus;
 use App\Enums\SubscriptionPaymentStatus;
 use App\Models\Expense;
 use App\Models\Subscription;
 use Illuminate\Support\Facades\DB;
-use Exception;
+use Illuminate\Support\Carbon;
 
 class RevertFailedSubscriptionAction
 {
@@ -26,7 +26,20 @@ class RevertFailedSubscriptionAction
 
         if ($lastPayment && $lastPayment->status === SubscriptionPaymentStatus::REJECTED) {
             DB::transaction(function () use ($latestVersion, $lastPayment, $subscription) {
-                // Borrar Gasto Pendiente asociado
+                
+                // 1. Restaurar la fecha original si el pago fallido fue por un Upgrade
+                $details = $lastPayment->payment_details ?? [];
+                if (!empty($details['is_upgrade']) && !empty($details['original_end_date'])) {
+                    $previousVersion = $subscription->versions()->where('id', '!=', $latestVersion->id)->latest('id')->first();
+                    
+                    if ($previousVersion) {
+                        $previousVersion->update([
+                            'end_date' => Carbon::parse($details['original_end_date'])
+                        ]);
+                    }
+                }
+
+                // 2. Borrar Gasto Pendiente asociado
                 Expense::where('status', ExpenseStatus::PENDING)
                     ->where('amount', $lastPayment->amount)
                     ->where('description', 'like', 'Pago de suscripción%')

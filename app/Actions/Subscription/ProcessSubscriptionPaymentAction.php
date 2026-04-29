@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Actions\Subscription;
+namespace App\Actions\Subscriptions;
 
 use App\Enums\BillingPeriod;
 use App\Enums\ExpenseStatus;
@@ -10,8 +10,10 @@ use App\Enums\SubscriptionPaymentStatus;
 use App\Mail\AdminNewPaymentNotification;
 use App\Models\Expense;
 use App\Models\Subscription;
+use App\Models\SubscriptionVersion;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -26,7 +28,8 @@ class ProcessSubscriptionPaymentAction
         if ($validated['payment_method'] === 'transferencia') {
             $this->handleTransferPayment($request, $subscription, $validated, $allPlanItems);
         } else {
-            // Lógica futura para Stripe, etc.
+            // Lógica futura para Stripe, tarjeta de crédito, etc.
+            // Aquí podrás reutilizar $this->calculateSubscriptionDates()
         }
     }
 
@@ -48,16 +51,10 @@ class ProcessSubscriptionPaymentAction
                 }
             }
 
-            // 2. Calcular Fechas Estimadas
-            $startDate = ($mode === 'upgrade' || !$baseVersion || $baseVersion->end_date->isPast()) 
-                ? now() 
-                : $baseVersion->end_date;
-            
-            $endDate = $mode === 'upgrade' && clone $baseVersion 
-                ? clone $baseVersion->end_date 
-                : ($billingPeriod === BillingPeriod::ANNUALLY ? $startDate->copy()->addYear() : $startDate->copy()->addMonth());
+            // 2. Calcular Fechas Estimadas (Aplicando la regla estricta de días y prorrateos)
+            [$startDate, $endDate] = $this->calculateSubscriptionDates($baseVersion, $mode, $billingPeriod);
 
-            // 3. Crear o Reutilizar Versión
+            // 3. Crear o Reutilizar Versión Nueva
             $newVersion = $subscription->versions()
                 ->whereHas('payments', fn($q) => $q->where('status', SubscriptionPaymentStatus::REJECTED))
                 ->whereDoesntHave('payments', fn($q) => $q->whereIn('status', [SubscriptionPaymentStatus::APPROVED, SubscriptionPaymentStatus::PENDING]))
@@ -69,6 +66,14 @@ class ProcessSubscriptionPaymentAction
             } else {
                 $newVersion->update(['start_date' => $startDate, 'end_date' => $endDate]);
                 $newVersion->items()->delete();
+            }
+
+            // NUEVO: 3.5. Finalizar anticipadamente la versión anterior si es una mejora (Upgrade)
+            // Cortamos su fecha de finalización al día de hoy para que la nueva versión tome el control.
+            if ($mode === 'upgrade' && $baseVersion && $baseVersion->id !== $newVersion->id) {
+                if (Carbon::parse($baseVersion->end_date)->isFuture()) {
+                    $baseVersion->update(['end_date' => clone $startDate]);
+                }
             }
 
             // 4. Insertar Items
@@ -92,11 +97,18 @@ class ProcessSubscriptionPaymentAction
             DB::table('subscription_items')->insert($subscriptionItems);
 
             // 5. Crear el Pago y adjuntar comprobante
+            $paymentDetails = [];
+            if ($mode === 'upgrade') {
+                $paymentDetails['is_upgrade'] = true;
+                $paymentDetails['original_end_date'] = $endDate->toIso8601String();
+            }
+
             $payment = $newVersion->payments()->create([
                 'amount' => $validated['total_amount'],
                 'payment_method' => $validated['payment_method'],
                 'status' => SubscriptionPaymentStatus::PENDING,
                 'invoice_status' => InvoiceStatus::NOT_REQUESTED,
+                'payment_details' => $paymentDetails,
             ]);
 
             if ($request->hasFile('proof_of_payment')) {
@@ -133,5 +145,40 @@ class ProcessSubscriptionPaymentAction
                 Log::error("Fallo al enviar correo de notificación de pago: " . $e->getMessage());
             }
         });
+    }
+
+    /**
+     * Calcula las fechas de la suscripción basado en las reglas de negocio estrictas.
+     */
+    private function calculateSubscriptionDates(?SubscriptionVersion $baseVersion, string $mode, BillingPeriod $billingPeriod): array
+    {
+        $now = now();
+        $baseEndDate = $baseVersion ? Carbon::parse($baseVersion->end_date) : clone $now;
+        $isExpired = $baseEndDate->isPast();
+
+        // Regla: 30 días mensuales exactos o 365 anuales
+        $daysToAdd = $billingPeriod === BillingPeriod::ANNUALLY ? 365 : 30;
+
+        if ($isExpired) {
+            // CASO 1: Expirada. 
+            // Inicia hoy. Se suman los días desde HOY (no pierde días por haber estado inactiva)
+            $startDate = clone $now;
+            $endDate = $startDate->copy()->addDays($daysToAdd);
+        } else {
+            // CASO 2: Aún Activa. 
+            if ($mode === 'upgrade') {
+                // Mejora (Upgrade): Inicia HOY y TERMINA exactamente cuando iba a terminar la versión original.
+                // Ya que el cliente solo está pagando el prorrateo por los días restantes.
+                $startDate = clone $now;
+                $endDate = clone $baseEndDate;
+            } else {
+                // Renovación (Renew) Temprana: Inicia justo cuando termine la versión actual.
+                $startDate = clone $baseEndDate;
+                // La fecha final se empuja desde su vencimiento original + 30/365.
+                $endDate = $baseEndDate->copy()->addDays($daysToAdd);
+            }
+        }
+
+        return [$startDate, $endDate];
     }
 }
