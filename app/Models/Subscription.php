@@ -74,6 +74,47 @@ class Subscription extends Model implements HasMedia
     }
 
     /**
+     * Calcula y devuelve las advertencias de expiración del plan para la interfaz.
+     */
+    public function getWarningData(): ?array
+    {
+        $currentVersionAll = $this->versions()->latest('id')->first();
+
+        if (!$currentVersionAll) {
+            return null;
+        }
+
+        $endDate = \Carbon\Carbon::parse($currentVersionAll->end_date)->startOfDay();
+        $today = now()->startOfDay();
+        $daysRemaining = $today->diffInDays($endDate, false);
+        $warningThreshold = 5;
+
+        if ($daysRemaining < 0) {
+            return [
+                'daysRemaining' => $daysRemaining,
+                'endDate' => $endDate->translatedFormat('d \d\e F \d\e\l Y'),
+                'message' => "La suscripción expiró el " . $endDate->translatedFormat('d \d\e F'),
+                'isExpired' => true
+            ];
+        } 
+        
+        if ($daysRemaining <= $warningThreshold) {
+            $message = $daysRemaining == 0
+                ? "La suscripción vence hoy"
+                : "La suscripción vence en {$daysRemaining} " . ($daysRemaining === 1 ? 'día' : 'días');
+
+            return [
+                'daysRemaining' => $daysRemaining,
+                'endDate' => $endDate->translatedFormat('d \d\e F \d\e\l Y'),
+                'message' => $message,
+                'isExpired' => false
+            ];
+        }
+
+        return null;
+    }
+
+    /**
      * Devuelve el estado actual de la suscripción (usado en el controlador Show)
      */
     public function getStatusData(): array

@@ -317,7 +317,7 @@ const getCustomFieldDefinition = (key) => {
             :data-source="{ type: 'service_order', id: serviceOrder.id }" :available-templates="availableTemplates"
             @hide="handlePrintModalClosed" />
 
-        <Dialog v-model:visible="isDiagnosisModalVisible" modal header="Registrar Diagnóstico y Evidencia" :style="{ width: '40rem' }">
+        <Dialog v-model:visible="isDiagnosisModalVisible" modal header="Registrar diagnóstico y evidencia" :style="{ width: '40rem' }">
             <div class="p-fluid formgrid grid">
                 <div class="field col-12 mb-4">
                     <label for="technician_diagnosis" class="font-semibold">Diagnóstico del técnico</label>

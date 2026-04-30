@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Actions\Subscriptions;
+namespace App\Actions\Subscription;
 
 use App\Enums\BillingPeriod;
 use App\Enums\ExpenseStatus;

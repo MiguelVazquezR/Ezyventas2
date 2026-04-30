@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\CashRegisterSessionStatus;
+use App\Enums\TransactionStatus;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -166,5 +168,95 @@ class User extends Authenticatable implements MustVerifyEmail
     public function bankAccounts(): BelongsToMany
     {
         return $this->belongsToMany(BankAccount::class);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | LÓGICA DE NEGOCIO DE INTERFAZ (REFACTOR MIDDLEWARE)
+    |--------------------------------------------------------------------------
+    */
+
+    public function getPreferences(): array
+    {
+        $userSettings = $this->settings()
+            ->with('definition:id,key')
+            ->get()
+            ->mapWithKeys(fn ($setting) => [$setting->definition->key => $setting->value])
+            ->toArray();
+
+        return array_merge([
+            'default_table_click_action' => 'drawer',
+        ], $userSettings);
+    }
+
+    public function getGlobalNotifications(): array
+    {
+        if ($this->roles()->exists() && !$this->can('transactions.access')) {
+            return ['expiring_debts' => 0, 'upcoming_deliveries' => 0, 'total' => 0];
+        }
+
+        $branchId = $this->branch_id;
+        
+        $expiringDebts = Transaction::where('branch_id', $branchId)
+            ->whereIn('status', [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING])
+            ->whereNotNull('layaway_expiration_date')
+            ->whereDate('layaway_expiration_date', '<=', now()->addDays(3))
+            ->count();
+
+        $upcomingDeliveries = Transaction::where('branch_id', $branchId)
+            ->where('status', TransactionStatus::TO_DELIVER)
+            ->whereNotNull('delivery_date')
+            ->whereDate('delivery_date', '<=', now()->addDays(3))
+            ->count();
+
+        return [
+            'expiring_debts' => $expiringDebts, 
+            'upcoming_deliveries' => $upcomingDeliveries,
+            'total' => $expiringDebts + $upcomingDeliveries
+        ];
+    }
+
+   /**
+     * Verifica si el usuario tiene una sesión de caja abierta en la sucursal actual.
+     */
+    public function hasActiveCashRegisterSession(): bool
+    {
+        return $this->cashRegisterSessions()
+            ->where('status', CashRegisterSessionStatus::OPEN)
+            ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $this->branch_id))
+            ->exists();
+    }
+
+    public function getActiveCashRegisterSession()
+    {
+        return $this->cashRegisterSessions()
+            ->where('status', CashRegisterSessionStatus::OPEN)
+            ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $this->branch_id))
+            ->with(['users', 'cashMovements', 'payments.transaction:id,folio'])
+            ->first();
+    }
+
+    public function getJoinableCashRegisterSessions()
+    {
+        if ($this->hasActiveCashRegisterSession()) {
+            return collect();
+        }
+
+        return CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
+            ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $this->branch_id))
+            ->with('cashRegister:id,name', 'opener:id,name')
+            ->get();
+    }
+
+    public function getAvailableCashRegisters()
+    {
+        if ($this->hasActiveCashRegisterSession()) {
+            return collect();
+        }
+
+        return CashRegister::where('branch_id', $this->branch_id)
+            ->where('is_active', true)
+            ->where('in_use', false) 
+            ->get(['id', 'name']);
     }
 }

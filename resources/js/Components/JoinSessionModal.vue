@@ -32,7 +32,7 @@ const closeModal = () => {
             <div class="bg-green-100 dark:bg-green-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
                 <i class="pi pi-users !text-4xl text-green-500"></i>
             </div>
-            <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200">Sesiones Activas</h2>
+            <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200">Sesiones activas</h2>
             <p class="text-gray-600 dark:text-gray-400 mt-2">
                 Selecciona una de las siguientes sesiones de caja para unirte y comenzar a vender.
             </p>
