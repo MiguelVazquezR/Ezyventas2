@@ -28,15 +28,16 @@ class TransactionPaymentController extends Controller
                 $customer = $transaction->customer;
                 $payments = $validated['payments'] ?? [];
 
-                // Gracias al accesor en el modelo Transaction, ahora `$transaction->total` funciona.
-                $remainingDue = $transaction->total - $transaction->payments()->sum('amount');
+                // REFACTOR: Usamos el Accesor de nuestro modelo Transaction
+                $remainingDue = $transaction->remaining_due;
                 
-                if ($remainingDue <= 0) {
+                if ($remainingDue <= 0.01) {
                     return;
                 }
 
                 $amountPaidInThisRequest = 0;
 
+                // 1. Procesar los pagos recibidos
                 foreach ($payments as $paymentData) {
                     if ($amountPaidInThisRequest >= $remainingDue) {
                         break;
@@ -45,7 +46,7 @@ class TransactionPaymentController extends Controller
                     $amountOffered = (float) $paymentData['amount'];
                     $amountToRecord = min($amountOffered, $remainingDue - $amountPaidInThisRequest);
 
-                    if ($amountToRecord <= 0) {
+                    if ($amountToRecord <= 0.01) {
                         continue;
                     }
 
@@ -58,37 +59,36 @@ class TransactionPaymentController extends Controller
                     
                     $amountPaidInThisRequest += $amountToRecord;
 
+                    // REFACTOR: Delegamos al modelo Customer el registro del abono y su bitácora
                     if ($customer) {
-                        $customer->increment('balance', $amountToRecord);
-                        
-                        $customer->balanceMovements()->create([
-                            'transaction_id' => $transaction->id,
-                            'type' => CustomerBalanceMovementType::PAYMENT,
-                            'amount' => $amountToRecord,
-                            'balance_after' => $customer->balance,
-                            'notes' => "Abono a transacción {$transaction->folio}",
-                        ]);
+                        $customer->payDebt(
+                            amount: $amountToRecord, 
+                            transactionId: $transaction->id, 
+                            notes: "Abono a transacción {$transaction->folio}"
+                        );
                     }
                 }
                 
-                // Si se usó crédito, se registra el cargo al balance
-                $totalPaid = $transaction->fresh()->payments()->sum('amount');
-                $finalAmountDue = $transaction->total - $totalPaid;
+                // 2. Refrescar la transacción para ver cuánto falta realmente
+                $transaction->refresh();
+                $finalAmountDue = $transaction->remaining_due;
                 
-                if($customer && $finalAmountDue > 0.01 && $finalAmountDue <= $customer->available_credit) {
-                     $customer->decrement('balance', $finalAmountDue);
-                     $customer->balanceMovements()->create([
-                        'transaction_id' => $transaction->id,
-                        'type' => CustomerBalanceMovementType::CREDIT_SALE,
-                        'amount' => -$finalAmountDue,
-                        'balance_after' => $customer->balance,
-                        'notes' => "Cargo a crédito para transacción {$transaction->folio}",
-                    ]);
-                    // Se considera pagada si el resto se fue a crédito
+                // 3. Si aún queda deuda, pero el cliente tiene crédito disponible, se envía a su línea de crédito
+                if ($customer && $finalAmountDue > 0.01 && $finalAmountDue <= $customer->available_credit) {
+                     
+                     // REFACTOR: Delegamos al modelo Customer el registro del cargo y su bitácora
+                     $customer->addDebt(
+                         amount: $finalAmountDue,
+                         debtType: CustomerBalanceMovementType::CREDIT_SALE,
+                         transactionId: $transaction->id,
+                         notes: "Cargo a crédito para transacción {$transaction->folio}"
+                     );
+
+                    // Al usar el crédito del cliente, para fines de esta caja, la transacción queda "cubierta"
                     $finalAmountDue = 0;
                 }
 
-                // Se actualiza el estado final de la transacción.
+                // 4. Se actualiza el estado final de la transacción.
                 $newStatus = ($finalAmountDue <= 0.01) ? TransactionStatus::COMPLETED : TransactionStatus::PENDING;
                 $transaction->update(['status' => $newStatus]);
             });

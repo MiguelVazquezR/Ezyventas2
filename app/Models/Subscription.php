@@ -74,6 +74,56 @@ class Subscription extends Model implements HasMedia
     }
 
     /**
+     * Determina si la suscripción ha alcanzado el límite de servicios.
+     */
+    public function hasReachedServiceLimit(int $additionalItems = 0): bool
+    {
+        $currentVersion = $this->currentVersion();
+        $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_services')->first() : null;
+        $limitServices = $limitItem ? $limitItem->quantity : 100;
+
+        if ($limitServices === -1) {
+            return false; // -1 significa ilimitado
+        }
+
+        return ($this->services_count + $additionalItems) > $limitServices;
+    }
+
+    /**
+     * Obtiene los datos de límite y uso de usuarios para la suscripción actual.
+     */
+    public function getUserLimitData(): array
+    {
+        $currentVersion = $this->versions()->latest('start_date')->first();
+        $limit = -1; // -1 significa ilimitado
+        
+        if ($currentVersion) {
+            $limitItem = $currentVersion->items()->where('item_key', 'limit_users')->first();
+            if ($limitItem) {
+                $limit = $limitItem->quantity;
+            }
+        }
+        
+        $usage = $this->users()->count();
+        
+        return ['limit' => $limit, 'usage' => $usage];
+    }
+
+    /**
+     * Determina si la suscripción ha alcanzado el límite de usuarios.
+     */
+    public function hasReachedUserLimit(): bool
+    {
+        $data = $this->getUserLimitData();
+        
+        if ($data['limit'] === -1) {
+            return false;
+        }
+
+        return $data['usage'] >= $data['limit'];
+    }
+
+    /**
      * Calcula y devuelve las advertencias de expiración del plan para la interfaz.
      */
     public function getWarningData(): ?array

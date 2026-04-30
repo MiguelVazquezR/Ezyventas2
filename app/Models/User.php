@@ -136,6 +136,15 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * REFACTOR: Helper semántico para saber si el usuario es el propietario/admin principal.
+     */
+    public function isOwner(): bool
+    {
+        // En este sistema, el dueño no tiene roles asignados.
+        return !$this->roles()->exists();
+    }
+
+    /**
      * Obtiene los prefijos de los módulos a los que el propietario de la suscripción tiene acceso.
      * Utiliza caché para optimizar el rendimiento.
      */
