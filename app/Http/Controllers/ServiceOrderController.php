@@ -124,9 +124,10 @@ class ServiceOrderController extends Controller implements HasMiddleware
             ->with('show_payment_modal', true);
     }
 
-    public function edit(ServiceOrder $serviceOrder): Response
+     public function edit(ServiceOrder $serviceOrder): Response
     {
-        $serviceOrder->load('items.itemable');
+        $serviceOrder->load(['items.itemable', 'media']);
+        
         return Inertia::render('ServiceOrder/Edit', array_merge($this->getFormData(), ['serviceOrder' => $serviceOrder]));
     }
 

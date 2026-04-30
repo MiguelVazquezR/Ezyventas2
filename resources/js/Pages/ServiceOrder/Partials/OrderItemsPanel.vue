@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { Link } from '@inertiajs/vue3';
 
 const props = defineProps({
     serviceOrder: Object,
@@ -20,6 +21,26 @@ const getItemType = (itemableType) => {
     }
     return { text: 'Otro', severity: 'secondary' };
 };
+
+const getItemUrl = (item) => {
+    // Si no está registrado en el catálogo o no cargó la relación, devolvemos null
+    if (!item.itemable_id || !item.itemable) return null;
+
+    if (item.itemable_type === 'App\\Models\\Product') {
+        return route('products.show', item.itemable_id);
+    }
+    if (item.itemable_type === 'App\\Models\\ProductAttribute') {
+        return route('products.show', item.itemable.product_id); // Redirige al producto padre
+    }
+    if (item.itemable_type === 'App\\Models\\Service') {
+        return route('services.show', item.itemable_id);
+    }
+    if (item.itemable_type === 'App\\Models\\ServiceVariant') {
+        return route('services.show', item.itemable.service_id); // Redirige al servicio padre
+    }
+    
+    return null;
+};
 </script>
 
 <template>
@@ -33,7 +54,17 @@ const getItemType = (itemableType) => {
             </Column>
             <Column field="description" header="Descripción">
                 <template #body="{ data }">
-                    <span>{{ data.description }}</span>
+                    <!-- Si tiene URL (está en el catálogo) -->
+                    <Link v-if="getItemUrl(data)" :href="getItemUrl(data)" class="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-2">
+                        {{ data.description }}
+                        <i class="pi pi-external-link text-xs opacity-70"></i>
+                    </Link>
+                    
+                    <!-- Si no está en el catálogo (escrito manualmente o eliminado) -->
+                    <span v-else class="text-gray-800 dark:text-gray-200">
+                        {{ data.description }}
+                    </span>
+
                     <!-- Añadimos la nota si es un Producto (Refacción) con ID -->
                     <div v-if="['App\\Models\\Product', 'App\\Models\\ProductAttribute'].includes(data.itemable_type) && data.itemable_id"
                         class="text-xs text-gray-500 dark:text-gray-400 italic mt-1">

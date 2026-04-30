@@ -10,7 +10,7 @@ const props = defineProps({
     },
     technicianCommissionCostNumeric: {
         type: Number,
-        required: true
+        required: false
     }
 });
 
@@ -49,15 +49,41 @@ const deliveryDate = computed(() => {
     return null;
 });
 
+// Traemos la lógica del costo de refacciones para poder calcular la utilidad
+const partsCost = computed(() => {
+    if (!props.serviceOrder.items || props.serviceOrder.items.length === 0) return 0;
+    
+    return props.serviceOrder.items.reduce((total, item) => {
+        if (item.itemable_type === 'App\\Models\\Product' || item.itemable_type === 'App\\Models\\ProductAttribute') {
+            const cost = parseFloat(item.unit_price) || 0;
+            const quantity = parseFloat(item.quantity) || 0;
+            return total + (cost * quantity);
+        }
+        return total;
+    }, 0);
+});
+
+const calculatedCommission = computed(() => {
+    if (!props.serviceOrder.technician_name || !props.serviceOrder.technician_commission_value) return 0;
+
+    if (props.serviceOrder.technician_commission_type === 'percentage') {
+        const percentage = parseFloat(props.serviceOrder.technician_commission_value) || 0;
+        const netRevenue = parseFloat(props.serviceOrder.final_total) || 0;
+        const baseUtility = Math.max(0, netRevenue - partsCost.value);
+        return baseUtility * (percentage / 100);
+    }
+    return parseFloat(props.serviceOrder.technician_commission_value) || 0;
+});
+
 const technicianCommission = computed(() => {
-    if (props.technicianCommissionCostNumeric === 0 && (!props.serviceOrder.technician_name || !props.serviceOrder.technician_commission_value)) {
+    if (!props.serviceOrder.technician_name || !props.serviceOrder.technician_commission_value) {
         return 'N/A';
     }
     const value = parseFloat(props.serviceOrder.technician_commission_value);
-    const formattedAmount = formatCurrency(props.technicianCommissionCostNumeric);
+    const formattedAmount = formatCurrency(calculatedCommission.value);
 
     if (props.serviceOrder.technician_commission_type === 'percentage') {
-        return `${formattedAmount} (${value}%)`;
+        return `${formattedAmount} (${value}% sobre utilidad)`;
     }
     return formattedAmount;
 });

@@ -6,6 +6,8 @@ const props = defineProps({
     serviceOrder: Object,
     totalPaid: Number,
     amountDue: Number,
+    // Se mantiene la prop para no romper el componente padre, pero 
+    // ahora calculamos la comisión localmente sobre la utilidad
     technicianCommissionCostNumeric: Number,
 });
 
@@ -23,7 +25,8 @@ const partsCost = computed(() => {
     if (!props.serviceOrder.items || props.serviceOrder.items.length === 0) return 0;
     
     return props.serviceOrder.items.reduce((total, item) => {
-        if (item.itemable_type === 'App\\Models\\Product') {
+        // Aseguramos incluir tanto productos simples como variantes
+        if (item.itemable_type === 'App\\Models\\Product' || item.itemable_type === 'App\\Models\\ProductAttribute') {
             const cost = parseFloat(item.unit_price) || 0;
             const quantity = parseFloat(item.quantity) || 0;
             return total + (cost * quantity);
@@ -32,11 +35,27 @@ const partsCost = computed(() => {
     }, 0);
 });
 
+// Nuevo cálculo de comisión basado en utilidad
+const calculatedCommission = computed(() => {
+    if (!props.serviceOrder.technician_name || !props.serviceOrder.technician_commission_value) return 0;
+
+    if (props.serviceOrder.technician_commission_type === 'percentage') {
+        const percentage = parseFloat(props.serviceOrder.technician_commission_value) || 0;
+        const netRevenue = parseFloat(props.serviceOrder.final_total) || 0;
+        // La utilidad base es el total menos el costo de las refacciones
+        const baseUtility = Math.max(0, netRevenue - partsCost.value); 
+        return baseUtility * (percentage / 100);
+    }
+
+    return parseFloat(props.serviceOrder.technician_commission_value) || 0;
+});
+
 const profitAnalysis = computed(() => {
     const subtotal = parseFloat(props.serviceOrder.subtotal) || 0;
     const discount = parseFloat(props.serviceOrder.discount_amount) || 0;
     const netRevenue = parseFloat(props.serviceOrder.final_total) || 0;
-    const commission = props.technicianCommissionCostNumeric;
+    
+    const commission = calculatedCommission.value; // Utilizamos el nuevo cálculo
     const parts = partsCost.value;
 
     const totalCosts = commission + parts;

@@ -1,11 +1,15 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref } from 'vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import ManageCategoriesModal from '@/Components/ManageCategoriesModal.vue';
 import ManageBrandsModal from '@/Components/ManageBrandsModal.vue';
 import ManageProvidersModal from '@/Components/ManageProvidersModal.vue';
 import ManageAttributesModal from './Partials/ManageAttributesModal.vue';
+
+// Lógica de navegación
+import FormNavigationSidebar from '@/Components/FormNavigationSidebar.vue';
+import { useScrollspy } from '@/Composables/useScrollspy';
 
 // Importación de Parciales Modulares Compartidos
 import GeneralInfo from './Partials/GeneralInfo.vue';
@@ -58,7 +62,7 @@ const form = useForm({
     selling_price: props.product.selling_price ? parseFloat(props.product.selling_price) : null,
     price_tiers: props.product.price_tiers || [],
     
-    // NUEVO: Evaluación dinámica del tipo de producto incluyendo 'composite'
+    // Evaluación dinámica del tipo de producto incluyendo 'composite'
     product_type: props.product.composite_items && props.product.composite_items.length > 0 
         ? 'composite' 
         : (props.product.product_attributes?.length > 0 ? 'variant' : 'simple'),
@@ -69,7 +73,7 @@ const form = useForm({
     measure_unit: props.product.measure_unit || 'Pza',
     variants_matrix: initialVariantsMatrix,
     
-    // NUEVO: Inyección de componentes del kit
+    // Inyección de componentes del kit
     composite_items: props.product.composite_items || [],
     
     general_images: [],
@@ -100,41 +104,14 @@ const handleNewProvider = (p) => { localProviders.value.push(p); form.provider_i
 const handleProviderUpdate = (p) => { const idx = localProviders.value.findIndex(x => x.id === p.id); if (idx !== -1) localProviders.value[idx] = p; };
 const handleProviderDelete = (id) => { localProviders.value = localProviders.value.filter(p => p.id !== id); if (form.provider_id === id) form.provider_id = null; };
 
-// --- LÓGICA DE SCROLLSPY ---
-const activeSection = ref('general');
-let observer = null;
-let isManualScrolling = false;
-
-const scrollTo = (id) => {
-    isManualScrolling = true;
-    activeSection.value = id;
-    const element = document.getElementById(id);
-    if (element) {
-        element.scrollIntoView({ behavior: 'smooth' });
-        setTimeout(() => { isManualScrolling = false; }, 800);
-    }
-};
-
-onMounted(() => {
-    const options = { root: null, rootMargin: '-20% 0px -50% 0px', threshold: 0 };
-    observer = new IntersectionObserver((entries) => {
-        if (isManualScrolling) return; 
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                activeSection.value = entry.target.id;
-            }
-        });
-    }, options);
-
-    setTimeout(() => {
-        ['general', 'pricing', 'inventory', 'images'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) observer.observe(el);
-        });
-    }, 300);
-});
-
-onUnmounted(() => { if (observer) observer.disconnect(); });
+// --- LÓGICA DE NAVEGACIÓN ---
+const formSections = [
+    { id: 'general', label: 'Información general' },
+    { id: 'pricing', label: 'Precios' },
+    { id: 'inventory', label: 'Inventario y variantes' },
+    { id: 'images', label: 'Imágenes' }
+];
+const { activeSection, scrollTo } = useScrollspy(formSections.map(s => s.id));
 
 // --- ENVÍO DEL FORMULARIO ---
 const submit = () => {
@@ -166,58 +143,41 @@ const submit = () => {
         </div>
 
         <div class="mt-6 flex flex-col md:flex-row gap-6 items-start relative">
-            <!-- Sidebar de Navegación -->
-            <div class="w-full md:w-1/4 sticky top-24 z-10 hidden md:block">
-                <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm">
-                    <h3 class="font-bold mb-4 text-gray-700 dark:text-gray-300">Secciones</h3>
-                    <ul class="space-y-2">
-                        <li>
-                            <button type="button" @click="scrollTo('general')" class="text-left w-full px-3 py-2 rounded-md transition-colors" :class="activeSection === 'general' ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400 font-medium' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700'">
-                                Información General
-                            </button>
-                        </li>
-                        <li>
-                            <button type="button" @click="scrollTo('pricing')" class="text-left w-full px-3 py-2 rounded-md transition-colors" :class="activeSection === 'pricing' ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400 font-medium' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700'">
-                                Precios
-                            </button>
-                        </li>
-                        <li>
-                            <button type="button" @click="scrollTo('inventory')" class="text-left w-full px-3 py-2 rounded-md transition-colors" :class="activeSection === 'inventory' ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400 font-medium' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700'">
-                                Inventario y Variantes
-                            </button>
-                        </li>
-                        <li>
-                            <button type="button" @click="scrollTo('images')" class="text-left w-full px-3 py-2 rounded-md transition-colors" :class="activeSection === 'images' ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400 font-medium' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700'">
-                                Imágenes
-                            </button>
-                        </li>
-                    </ul>
-                </div>
-            </div>
+            
+            <!-- Sidebar de Navegación Refactorizado -->
+            <FormNavigationSidebar :sections="formSections" :activeSection="activeSection" @scrollTo="scrollTo" />
 
             <!-- Contenedor Principal -->
             <div class="w-full md:w-3/4">
                 <form @submit.prevent="submit" class="space-y-6">
                     
-                    <GeneralInfo 
-                        :form="form" :categories="localCategories" :brands="localBrands" 
-                        :providers="localProviders" :branches="branches"
-                        @open-category="showCategoryModal = true" @open-brand="showBrandModal = true" @open-provider="showProviderModal = true"
-                    />
+                    <div id="general">
+                        <GeneralInfo 
+                            :form="form" :categories="localCategories" :brands="localBrands" 
+                            :providers="localProviders" :branches="branches"
+                            @open-category="showCategoryModal = true" @open-brand="showBrandModal = true" @open-provider="showProviderModal = true"
+                        />
+                    </div>
 
-                    <Pricing :form="form" />
+                    <div id="pricing">
+                        <Pricing :form="form" />
+                    </div>
 
-                    <Inventory 
-                        :form="form" :attributeDefinitions="attributeDefinitions"
-                        @open-attributes="showAttributesModal = true"
-                    />
+                    <div id="inventory">
+                        <Inventory 
+                            :form="form" :attributeDefinitions="attributeDefinitions"
+                            @open-attributes="showAttributesModal = true"
+                        />
+                    </div>
 
-                    <!-- IMPORTANTE: Aquí mandamos el 'product' completo para que el parcial extraiga las imágenes -->
-                    <Images 
-                        :form="form" 
-                        :attributeDefinitions="attributeDefinitions" 
-                        :product="product" 
-                    />
+                    <div id="images">
+                        <!-- IMPORTANTE: Aquí mandamos el 'product' completo para que el parcial extraiga las imágenes -->
+                        <Images 
+                            :form="form" 
+                            :attributeDefinitions="attributeDefinitions" 
+                            :product="product" 
+                        />
+                    </div>
 
                     <div class="flex justify-end sticky bottom-4 z-20">
                         <Button type="submit" label="Guardar cambios" icon="pi pi-save" severity="warning" size="large" :loading="form.processing" class="shadow-xl" />

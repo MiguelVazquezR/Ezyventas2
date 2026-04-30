@@ -42,6 +42,7 @@ const statuses = [
     { label: 'Cancelado', value: 'cancelado' },
     { label: 'Reembolsado', value: 'reembolsado' },
     { label: 'Apartado', value: 'apartado' },
+    { label: 'Cambiado', value: 'cambiado' },
     { label: 'Por entregar', value: 'por_entregar' },
     { label: 'En ruta', value: 'en_ruta' },
     { label: 'Entregado por pagar', value: 'entregado_por_pagar' },
@@ -71,7 +72,8 @@ const menuItems = computed(() => {
 
     const canCancelOrRefund = (() => {
         if (!transaction || !transaction.status) return false;
-        return !['cancelado', 'reembolsado'].includes(transaction.status);
+        // Evitamos cancelar ventas canceladas, reembolsadas o cambiadas
+        return !['cancelado', 'reembolsado', 'cambiado'].includes(transaction.status);
     })();
 
     return [
@@ -211,11 +213,31 @@ watch(dateRange, (newVal) => {
     if (!newVal || (Array.isArray(newVal) && newVal[0] && newVal[1])) fetchData({ page: 1 });
 });
 
+// Helper para colores e íconos de canales de venta
+const getChannelConfig = (channel) => {
+    const map = {
+        'punto_de_venta': { icon: 'pi pi-desktop', severity: 'info', label: 'Punto de Venta' },
+        'tienda_en_linea': { icon: 'pi pi-shopping-cart', severity: 'success', label: 'Tienda en Línea' },
+        'orden_de_servicio': { icon: 'pi pi-wrench', severity: 'warn', label: 'Orden de Servicio' },
+        'cotizacion': { icon: 'pi pi-file', severity: 'secondary', label: 'Cotización' },
+        'manual': { icon: 'pi pi-pen-to-square', severity: 'secondary', label: 'Manual' },
+        'abono_a_saldo': { icon: 'pi pi-wallet', severity: 'success', label: 'Abono a Saldo' },
+        'whatsapp': { icon: 'pi pi-whatsapp', severity: 'success', label: 'WhatsApp' }
+    };
+    
+    if (!channel) return { icon: 'pi pi-tag', severity: 'secondary', label: 'Desconocido' };
+    return map[channel] || { 
+        icon: 'pi pi-tag', 
+        severity: 'secondary', 
+        label: channel.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) 
+    };
+};
+
 const getStatusSeverity = (status) => {
     const map = { 
         completado: 'success', pendiente: 'warn', cancelado: 'danger', 
         reembolsado: 'info', apartado: 'warn', por_entregar: 'info',
-        en_ruta: 'info', entregado_por_pagar: 'warn'
+        en_ruta: 'info', entregado_por_pagar: 'warn', cambiado: 'secondary'
     };
     return map[status] || 'secondary';
 };
@@ -224,6 +246,11 @@ const formatStatusLabel = (status) => {
     if (!status) return '';
     const text = status.replace(/_/g, ' ');
     return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+};
+
+const getOrderTagLabel = (status) => {
+    const pedidoStatuses = ['por_entregar', 'en_ruta', 'entregado_por_pagar'];
+    return pedidoStatuses.includes(status) ? 'Pedido' : 'Comanda';
 };
 
 const formatDate = (dateString) => {
@@ -261,7 +288,14 @@ const formatCurrency = (value) => {
 
                         <!-- Filtro de Fechas -->
                         <div class="w-full md:w-1/4">
-                            <DatePicker v-model="dateRange" selectionMode="range" :manualInput="false" placeholder="Rango de fechas" class="w-full" showButtonBar />
+                            <div class="flex items-center gap-2 w-full">
+                                <DatePicker v-model="dateRange" selectionMode="range" :manualInput="false" placeholder="Rango de fechas" class="w-full flex-1" showButtonBar />
+                                <Button v-if="dateRange && (Array.isArray(dateRange) ? dateRange[0] : dateRange)" 
+                                    icon="pi pi-times" severity="secondary" text rounded 
+                                    @click="dateRange = null" 
+                                    title="Limpiar fechas"
+                                    class="!w-10 !h-10 !p-0 shrink-0" />
+                            </div>
                         </div>
 
                         <!-- Filtro de Estatus -->
@@ -294,14 +328,16 @@ const formatCurrency = (value) => {
                             </Link>
                             <span v-else-if="data.contact_info && data.contact_info.name" class="flex items-center gap-2">
                                 {{ data.contact_info.name }}
-                                <Tag severity="info" value="Comanda" class="!text-[10px] !px-1.5 !py-0.5" />
+                                <Tag severity="info" :value="getOrderTagLabel(data.status)" class="!text-[10px] !px-1.5 !py-0.5" />
                             </span>
                             <span v-else>Público en general</span>
                         </template>
                     </Column>
                     <Column field="channel" header="Canal" sortable>
                          <template #body="{ data }">
-                            <span class="capitalize">{{ (data.channel || '').replace(/_/g, ' ') }}</span>
+                            <Tag :value="getChannelConfig(data.channel).label" 
+                                 :icon="getChannelConfig(data.channel).icon" 
+                                 :severity="getChannelConfig(data.channel).severity" />
                         </template>
                     </Column>
                      <Column field="total" header="Total Venta" sortable class="text-right">
