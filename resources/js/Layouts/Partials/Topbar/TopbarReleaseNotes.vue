@@ -63,7 +63,7 @@ const formatNoteDate = (dateString) => {
         <Badge v-if="notifications.unread_updates > 0" :value="notifications.unread_updates" class="absolute top-0 right-0 !bg-blue-500 !text-white transform translate-x-1/4 -translate-y-1/4 z-20" />
     </button>
 
-    <Drawer v-model:visible="isReleaseNotesDrawerVisible" position="right" class="w-full sm:!w-[30rem] !bg-surface-50 dark:!bg-surface-900">
+    <Drawer v-model:visible="isReleaseNotesDrawerVisible" position="right" class="w-full sm:!w-[30rem] !bg-gray-100 dark:!bg-gray-900">
         <template #header>
             <div class="flex items-center gap-2">
                 <i class="pi pi-sparkles text-blue-500 text-xl"></i>

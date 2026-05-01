@@ -43,7 +43,7 @@ class StoreProductRequest extends FormRequest
             'price_tiers' => 'nullable|array',
             'price_tiers.*.min_quantity' => [
                 'required',
-                'integer',
+                'numeric',
                 'min:2', 
                 'distinct' 
             ],

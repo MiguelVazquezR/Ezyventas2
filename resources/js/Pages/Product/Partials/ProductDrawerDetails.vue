@@ -26,6 +26,10 @@ const isComposite = (product) => {
     return product.components && product.components.length > 0;
 };
 
+const isBulk = (product) => {
+    return product.is_bulk;
+};
+
 const getCalculatedStock = (product) => {
     if (!product) return 0;
     if (hasVariants(product)) {
@@ -91,7 +95,9 @@ const getComponentSku = (component) => {
                                 <!-- INDICADORES -->
                                 <Tag v-if="product.show_in_pos" severity="success" value="Venta POS" class="!text-[10px]" icon="pi pi-shop" />
                                 <Tag v-else severity="secondary" value="Insumo" class="!text-[10px]" icon="pi pi-eye-slash" v-tooltip.top="'No visible en punto de venta'" />
+                                
                                 <Tag v-if="isComposite(product)" severity="contrast" value="Kit/Combo" class="!text-[10px]" icon="pi pi-link" />
+                                <Tag v-else-if="isBulk(product)" severity="warning" value="Venta a granel" class="!text-[10px]" />
                             </div>
                         </div>
 

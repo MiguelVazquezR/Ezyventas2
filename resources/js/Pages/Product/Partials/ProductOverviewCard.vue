@@ -24,6 +24,36 @@ const formatCurrency = (value) => {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 };
 
+// --- LÓGICA DE UTILIDAD (PROFIT MARGIN) ---
+const baseProfit = computed(() => {
+    const cost = Number(props.product.cost_price);
+    const sell = Number(props.product.selling_price);
+
+    if (cost > 0 && sell > 0) {
+        const profitAmount = sell - cost;
+        const marginPercentage = (profitAmount / cost) * 100;
+        const isLoss = profitAmount < 0;
+
+        return {
+            percentage: marginPercentage.toFixed(1),
+            isLoss
+        };
+    }
+    return null;
+});
+
+const getTierProfit = (tierPrice) => {
+    const cost = Number(props.product.cost_price);
+    const price = Number(tierPrice);
+    
+    if (cost > 0 && price > 0) {
+        const profit = price - cost;
+        const percentage = (profit / cost) * 100;
+        return { percentage: percentage.toFixed(1), isLoss: profit < 0 };
+    }
+    return null;
+};
+
 const generalImages = computed(() =>
     (props.product.media || []).filter(m => m.collection_name === 'product-general-images')
 );
@@ -109,7 +139,15 @@ const priceTiers = computed(() => {
             
             <div class="flex justify-between items-center py-2">
                 <span class="text-sm text-gray-600 dark:text-gray-400">Precio de venta</span>
-                <span class="text-xl font-bold text-gray-900 dark:text-white">{{ formatCurrency(product.selling_price) }}</span>
+                <div class="flex flex-col items-end">
+                    <span class="text-xl font-bold text-gray-900 dark:text-white">{{ formatCurrency(product.selling_price) }}</span>
+                    <!-- Indicador de Utilidad Base -->
+                    <div v-if="canSeeCostPrice && baseProfit" 
+                         :class="['text-[11px] mt-0.5 font-medium flex items-center gap-1', baseProfit.isLoss ? 'text-red-500' : 'text-green-600 dark:text-green-400']">
+                        <i :class="baseProfit.isLoss ? 'pi pi-arrow-down !text-[9px]' : 'pi pi-arrow-up !text-[9px]'"></i>
+                        Margen: {{ baseProfit.percentage }}%
+                    </div>
+                </div>
             </div>
 
             <div v-if="canSeeCostPrice" class="flex justify-between items-center py-2 border-t border-gray-100 dark:border-gray-700/50 mt-1">
@@ -122,7 +160,16 @@ const priceTiers = computed(() => {
                 <div class="space-y-2">
                     <div v-for="(tier, index) in priceTiers" :key="index" class="flex justify-between items-center text-sm bg-gray-50 dark:bg-gray-900/40 px-3 py-2 rounded-lg">
                         <span class="text-gray-600 dark:text-gray-400">Desde <span class="font-bold">{{ tier.min_quantity }}</span> uds</span>
-                        <span class="font-bold text-primary-600 dark:text-primary-400">{{ formatCurrency(tier.price) }}</span>
+                        
+                        <div class="flex flex-col items-end">
+                            <span class="font-bold text-primary-600 dark:text-primary-400">{{ formatCurrency(tier.price) }}</span>
+                            <!-- Indicador de Utilidad Nivel (Tier) -->
+                            <div v-if="canSeeCostPrice && getTierProfit(tier.price)" 
+                                 :class="['text-[10px] mt-0.5 font-medium flex items-center gap-1', getTierProfit(tier.price).isLoss ? 'text-red-500' : 'text-green-600 dark:text-green-400']">
+                                <i :class="getTierProfit(tier.price).isLoss ? 'pi pi-arrow-down !text-[8px]' : 'pi pi-arrow-up !text-[8px]'"></i>
+                                {{ getTierProfit(tier.price).percentage }}%
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

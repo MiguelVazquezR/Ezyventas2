@@ -46,8 +46,8 @@ class AdjustProductStockAction
                 $product = Product::find($productData['id']);
                 if (!$product) continue;
 
-                // 1. PRODUCTO SIMPLE
-                if ($productData['type'] === 'simple') {
+                // 1. PRODUCTO SIMPLE O A GRANEL
+                if (in_array($productData['type'], ['simple', 'bulk'])) {
                     $qty = (float) ($productData['quantity'] ?? 0);
                     if ($qty > 0) {
                         $this->applyStockChangeToModel($product, $qty, $operation, $branchId, $user, $reason);

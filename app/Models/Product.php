@@ -25,7 +25,7 @@ class Product extends Model implements HasMedia
         'measure_unit', 'currency', 'show_online', 'online_price', 'show_in_pos',
         'slug', 'delivery_days', 'tags', 'is_featured', 'is_on_sale', 'sale_price',
         'sale_start_date', 'sale_end_date', 'weight', 'length', 'width', 'height',
-        'requires_shipping', 'view_count', 'purchase_count',
+        'requires_shipping', 'view_count', 'purchase_count', 'is_bulk'
     ];
 
    protected function casts(): array

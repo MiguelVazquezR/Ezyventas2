@@ -23,6 +23,9 @@ class UpdateProduct
                 $productData['slug'] = Str::slug($productData['name'] . '-' . uniqid());
             }
 
+            // Actualizamos la bandera
+            $productData['is_bulk'] = ($productData['product_type'] ?? '') === 'bulk';
+
             $product->update(collect($productData)->except([
                 'product_type', 'current_stock', 'min_stock', 'max_stock', 'location', 'variants_matrix'
             ])->toArray());
@@ -44,15 +47,15 @@ class UpdateProduct
     {
         $existingBranches = $product->branches->keyBy('id');
         $syncData = [];
-        $isSimple = $productData['product_type'] === 'simple';
+        $isSimpleOrBulk = in_array($productData['product_type'] ?? '', ['simple', 'bulk']);
 
         foreach ($branchesToSync as $bId) {
             if ($existingBranches->has($bId)) {
                 $syncData[$bId] = [
-                    'current_stock' => ($bId == $user->branch_id && $isSimple && isset($productData['current_stock'])) ? $productData['current_stock'] : ($isSimple ? $existingBranches[$bId]->pivot->current_stock : 0),
-                    'min_stock' => ($bId == $user->branch_id && $isSimple) ? ($productData['min_stock'] ?? null) : ($isSimple ? $existingBranches[$bId]->pivot->min_stock : null),
-                    'max_stock' => ($bId == $user->branch_id && $isSimple) ? ($productData['max_stock'] ?? null) : ($isSimple ? $existingBranches[$bId]->pivot->max_stock : null),
-                    'location' => ($bId == $user->branch_id && $isSimple) ? ($productData['location'] ?? null) : ($isSimple ? $existingBranches[$bId]->pivot->location : null),
+                    'current_stock' => ($bId == $user->branch_id && $isSimpleOrBulk && isset($productData['current_stock'])) ? $productData['current_stock'] : ($isSimpleOrBulk ? $existingBranches[$bId]->pivot->current_stock : 0),
+                    'min_stock' => ($bId == $user->branch_id && $isSimpleOrBulk) ? ($productData['min_stock'] ?? null) : ($isSimpleOrBulk ? $existingBranches[$bId]->pivot->min_stock : null),
+                    'max_stock' => ($bId == $user->branch_id && $isSimpleOrBulk) ? ($productData['max_stock'] ?? null) : ($isSimpleOrBulk ? $existingBranches[$bId]->pivot->max_stock : null),
+                    'location' => ($bId == $user->branch_id && $isSimpleOrBulk) ? ($productData['location'] ?? null) : ($isSimpleOrBulk ? $existingBranches[$bId]->pivot->location : null),
                 ];
             } else {
                 $syncData[$bId] = [

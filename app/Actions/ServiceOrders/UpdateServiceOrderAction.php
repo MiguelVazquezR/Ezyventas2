@@ -61,9 +61,14 @@ class UpdateServiceOrderAction
                 }
             }
 
-            // 4. Gestión de medios e imágenes
+            // 4. Gestión de medios e imágenes (CORRECCIÓN APLICADA AQUÍ)
             if (!empty($deletedMediaIds)) {
-                $serviceOrder->media()->whereIn('id', $deletedMediaIds)->delete();
+                // Instanciamos los modelos Media primero para que el evento 'deleting' de Spatie
+                // se dispare y elimine físicamente los archivos del disco (evitando huérfanos).
+                $mediaToDelete = $serviceOrder->media()->whereIn('id', $deletedMediaIds)->get();
+                foreach ($mediaToDelete as $media) {
+                    $media->delete(); 
+                }
             }
 
             if (!empty($evidenceImages)) {

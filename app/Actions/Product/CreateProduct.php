@@ -21,6 +21,9 @@ class CreateProduct
             // Preparar y crear el producto base
             $productData['branch_id'] = $user->branch_id;
             $productData['slug'] = Str::slug($productData['name'] . '-' . uniqid());
+            
+            // Asignamos la bandera de venta a granel
+            $productData['is_bulk'] = ($productData['product_type'] ?? '') === 'bulk';
 
             $product = Product::create(collect($productData)->except([
                 'product_type', 'current_stock', 'min_stock', 'max_stock', 'location', 'variants_matrix'
@@ -41,16 +44,17 @@ class CreateProduct
 
     private function syncBranches(Product $product, array $productData, array $branchesToSync, $user): void
     {
-        $isSimple = $productData['product_type'] === 'simple';
+        // Un producto simple o a granel (bulk) se guarda en la pivot con su inventario principal
+        $isSimpleOrBulk = in_array($productData['product_type'] ?? '', ['simple', 'bulk']);
         $syncData = [];
 
         foreach ($branchesToSync as $bId) {
             $syncData[$bId] = [
-                'current_stock' => ($bId == $user->branch_id && $isSimple) ? ($productData['current_stock'] ?? 0) : 0,
+                'current_stock' => ($bId == $user->branch_id && $isSimpleOrBulk) ? ($productData['current_stock'] ?? 0) : 0,
                 'reserved_stock' => 0,
-                'min_stock' => ($bId == $user->branch_id && $isSimple) ? ($productData['min_stock'] ?? null) : null,
-                'max_stock' => ($bId == $user->branch_id && $isSimple) ? ($productData['max_stock'] ?? null) : null,
-                'location' => ($bId == $user->branch_id && $isSimple) ? ($productData['location'] ?? null) : null,
+                'min_stock' => ($bId == $user->branch_id && $isSimpleOrBulk) ? ($productData['min_stock'] ?? null) : null,
+                'max_stock' => ($bId == $user->branch_id && $isSimpleOrBulk) ? ($productData['max_stock'] ?? null) : null,
+                'location' => ($bId == $user->branch_id && $isSimpleOrBulk) ? ($productData['location'] ?? null) : null,
             ];
         }
         $product->branches()->sync($syncData);

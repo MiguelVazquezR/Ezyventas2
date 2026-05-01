@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import { useConfirm } from 'primevue/useconfirm';
@@ -8,6 +9,38 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+
+// --- LÓGICA DE UTILIDAD (PROFIT MARGIN) ---
+const profitData = computed(() => {
+    const cost = Number(props.form.cost_price);
+    const sell = Number(props.form.selling_price);
+
+    if (cost > 0 && sell > 0) {
+        const profitAmount = sell - cost;
+        // Calculamos el margen de rendimiento sobre el costo (Markup)
+        const marginPercentage = (profitAmount / cost) * 100;
+        const isLoss = profitAmount < 0;
+
+        return {
+            amount: profitAmount,
+            percentage: marginPercentage,
+            isLoss
+        };
+    }
+    return null;
+});
+
+// Función para calcular la utilidad de los precios de mayoreo
+const getTierProfit = (tierPrice) => {
+    const cost = Number(props.form.cost_price);
+    const price = Number(tierPrice);
+    if (cost > 0 && price > 0) {
+        const profit = price - cost;
+        const percentage = (profit / cost) * 100;
+        return { percentage: percentage.toFixed(1), isLoss: profit < 0 };
+    }
+    return null;
+};
 
 // --- LÓGICA DE PRECIOS DE MAYOREO ---
 const addPriceTier = () => {
@@ -35,14 +68,17 @@ const confirmRemovePriceTier = (event, index) => {
 
 <template>
     <div id="pricing" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md scroll-mt-24">
-        <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
+        <h2
+            class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
             Precios y visibilidad
         </h2>
-        <div class="mb-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800 flex items-center justify-between">
+
+        <div
+            class="mb-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800 flex items-center justify-between">
             <div>
                 <h3 class="font-bold text-blue-800 dark:text-blue-200 m-0 text-base">¿Mostrar en punto de venta?</h3>
                 <p class="text-sm text-blue-600 dark:text-blue-300 mt-1 mb-0">
-                    Si desactivas esta opción, este artículo será tratado como un <strong>insumo interno</strong>. 
+                    Si desactivas esta opción, este artículo será tratado como un <strong>insumo interno</strong>.
                     Podrás controlar su stock, pero no aparecerá en la pantalla de caja para venderse.
                 </p>
             </div>
@@ -50,50 +86,107 @@ const confirmRemovePriceTier = (event, index) => {
                 <ToggleSwitch v-model="form.show_in_pos" />
             </div>
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <!-- GUÍA CONTEXTUAL PARA VENTA A GRANEL -->
+        <div v-if="form.product_type === 'bulk'"
+            class="mb-6 bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg border border-orange-100 dark:border-orange-800">
+            <h3 class="font-bold text-orange-800 dark:text-orange-200 m-0 text-sm flex items-center gap-2">
+                <i class="pi pi-info-circle"></i> Guía para precio a granel
+            </h3>
+            <p class="text-sm text-orange-700 dark:text-orange-300 mt-2 mb-0 leading-relaxed">
+                Ingresa el costo y el precio de venta que equivalga a <strong>1 {{ form.measure_unit || 'unidad entera'
+                }} completa</strong>. <br>
+                El sistema calculará automáticamente el cobro correcto cuando vendas fracciones (Ej. Si vendes 0.250 {{
+                    form.measure_unit || '' }}, cobrará una cuarta parte del precio que ingreses aquí).
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
             <!-- Precios Base -->
             <div>
                 <InputLabel for="cost_price" value="Precio de costo (Opcional)" />
-                <InputNumber v-model="form.cost_price" id="cost_price" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" placeholder="$0.00" />
+                <InputNumber v-model="form.cost_price" id="cost_price" mode="currency" currency="MXN" locale="es-MX"
+                    class="w-full mt-1" placeholder="$0.00" />
                 <InputError :message="form.errors.cost_price" class="mt-2" />
             </div>
 
             <div>
                 <InputLabel for="selling_price" value="Precio de venta *" />
-                <InputNumber v-model="form.selling_price" id="selling_price" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" placeholder="$0.00" />
+                <InputNumber v-model="form.selling_price" id="selling_price" mode="currency" currency="MXN"
+                    locale="es-MX" class="w-full mt-1" placeholder="$0.00" />
                 <InputError :message="form.errors.selling_price" class="mt-2" />
             </div>
 
+            <!-- INDICADOR DE UTILIDAD DINÁMICO -->
+            <div v-if="profitData" class="col-span-full">
+                <div :class="[
+                    'p-3 rounded-xl border flex items-center gap-3 transition-colors',
+                    profitData.isLoss
+                        ? 'bg-red-50 border-red-200 text-red-700 dark:bg-red-900/20 dark:border-red-800/50 dark:text-red-300'
+                        : 'bg-green-50 border-green-200 text-green-700 dark:bg-green-900/20 dark:border-green-800/50 dark:text-green-300'
+                ]">
+                    <div
+                        :class="['flex items-center justify-center w-8 h-8 rounded-full shrink-0', profitData.isLoss ? 'bg-red-100 dark:bg-red-900/50' : 'bg-green-100 dark:bg-green-900/50']">
+                        <i
+                            :class="[profitData.isLoss ? 'pi pi-arrow-down' : 'pi pi-arrow-up', 'text-sm font-bold']"></i>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-sm font-semibold">{{ profitData.isLoss ? 'Pérdida' : 'Utilidad' }} estimada
+                            por unidad: {{ new Intl.NumberFormat('es-MX', {
+                                style: 'currency', currency: 'MXN'
+                            }).format(profitData.amount) }}</span>
+                        <span class="text-xs opacity-85 mt-0.5">Rendimiento del <strong>{{
+                            profitData.percentage.toFixed(2) }}%</strong> sobre tu costo de inversión.</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Precios de Mayoreo (Price Tiers) -->
-            <div class="col-span-full mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+            <div class="col-span-full mt-2 pt-6 border-t border-gray-100 dark:border-gray-700">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
                     <div>
-                        <InputLabel value="Precios de mayoreo (Opcional)" class="!font-bold text-gray-800 dark:text-gray-200" />
+                        <InputLabel value="Precios de mayoreo (Opcional)"
+                            class="!font-bold text-gray-800 dark:text-gray-200" />
                         <p class="text-sm text-gray-500 mt-1">
                             Ejemplo: Si compran 5 o más, el precio baja a $90. Si compran 10 o más, baja a $80.
                         </p>
                     </div>
                     <Button @click="addPriceTier" label="Añadir nivel" icon="pi pi-plus" size="small" outlined />
                 </div>
-                
-                <div v-if="!form.price_tiers || form.price_tiers.length === 0" class="text-sm text-gray-500 italic bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg text-center border border-dashed border-gray-300 dark:border-gray-600">
+
+                <div v-if="!form.price_tiers || form.price_tiers.length === 0"
+                    class="text-sm text-gray-500 italic bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg text-center border border-dashed border-gray-300 dark:border-gray-600">
                     No has configurado precios especiales por volumen para este producto.
                 </div>
-                
+
                 <div v-else class="space-y-3">
-                    <div v-for="(tier, index) in form.price_tiers" :key="index" class="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-200 dark:border-gray-600">
+                    <div v-for="(tier, index) in form.price_tiers" :key="index"
+                        class="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-200 dark:border-gray-600 transition-all hover:border-gray-300 dark:hover:border-gray-500">
                         <div class="flex-1 w-full">
-                            <InputLabel :value="`A partir de (cantidad)`" class="text-xs mb-1" />
-                            <InputNumber v-model="tier.min_quantity" :min="2" class="w-full" showButtons />
+                            <!-- Dinámico si es a granel -->
+                            <InputLabel
+                                :value="form.product_type === 'bulk' ? 'A partir de (' + (form.measure_unit || 'cantidad') + ')' : 'A partir de (cantidad)'"
+                                class="text-xs mb-1 font-semibold" />
+                            <InputNumber v-model="tier.min_quantity" :min="form.product_type === 'bulk' ? 0.01 : 2"
+                                :maxFractionDigits="form.product_type === 'bulk' ? 3 : 0" class="w-full" showButtons />
                             <InputError :message="form.errors[`price_tiers.${index}.min_quantity`]" class="mt-1" />
                         </div>
-                        <div class="flex-1 w-full">
-                            <InputLabel :value="`Precio unitario`" class="text-xs mb-1" />
-                            <InputNumber v-model="tier.price" mode="currency" currency="MXN" locale="es-MX" class="w-full" />
+                        <div class="flex-1 w-full relative">
+                            <InputLabel :value="`Precio unitario`" class="text-xs mb-1 font-semibold" />
+                            <InputNumber v-model="tier.price" mode="currency" currency="MXN" locale="es-MX"
+                                class="w-full" />
                             <InputError :message="form.errors[`price_tiers.${index}.price`]" class="mt-1" />
                         </div>
+                        <!-- Indicador de utilidad individual por nivel -->
+                        <div v-if="getTierProfit(tier.price)"
+                            :class="['text-[11px] mt-1.5 font-medium flex justify-end items-center gap-1', getTierProfit(tier.price).isLoss ? 'text-red-500' : 'text-green-600 dark:text-green-400']">
+                            <i
+                                :class="getTierProfit(tier.price).isLoss ? 'pi pi-arrow-down !text-[9px]' : 'pi pi-arrow-up !text-[9px]'"></i>
+                            Margen: {{ getTierProfit(tier.price).percentage }}%
+                        </div>
                         <div class="pt-5 flex justify-end w-full sm:w-auto">
-                            <Button icon="pi pi-trash" severity="danger" text rounded @click="confirmRemovePriceTier($event, index)" v-tooltip.top="'Eliminar nivel'" />
+                            <Button icon="pi pi-trash" severity="danger" text rounded
+                                @click="confirmRemovePriceTier($event, index)" v-tooltip.top="'Eliminar nivel'" />
                         </div>
                     </div>
                 </div>

@@ -41,7 +41,7 @@ const form = useForm({
     description: '',
     sku: '',
     location: '', 
-    branch_ids: [props.current_branch_id], // Inicia seleccionando la sucursal actual
+    branch_ids: [props.current_branch_id],
     category_id: null,
     brand_id: null,
     provider_id: null,
@@ -49,7 +49,7 @@ const form = useForm({
     selling_price: null,
     show_in_pos: true,
     price_tiers: [],
-    product_type: 'simple',
+    product_type: 'simple', // Arranca como simple
     current_stock: null,
     min_stock: null,
     max_stock: null,
@@ -86,8 +86,8 @@ const handleProviderDelete = (id) => { localProviders.value = localProviders.val
 // --- LÓGICA DE NAVEGACIÓN ---
 const formSections = [
     { id: 'general', label: 'Información general' },
+    { id: 'inventory', label: 'Inventario y variantes' }, // Movido antes de Precios
     { id: 'pricing', label: 'Precios' },
-    { id: 'inventory', label: 'Inventario y variantes' },
     { id: 'images', label: 'Imágenes' }
 ];
 const { activeSection, scrollTo } = useScrollspy(formSections.map(s => s.id));
@@ -153,16 +153,17 @@ const submit = () => {
                         />
                     </div>
 
-                    <div id="pricing">
-                        <Pricing :form="form" />
-                    </div>
-
+                    <!-- INVENTARIO AHORA VA ANTES DE PRECIOS -->
                     <div id="inventory">
                         <Inventory 
                             :form="form" 
                             :attributeDefinitions="attributeDefinitions"
                             @open-attributes="showAttributesModal = true"
                         />
+                    </div>
+
+                    <div id="pricing">
+                        <Pricing :form="form" />
                     </div>
 
                     <div id="images">

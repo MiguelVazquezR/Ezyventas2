@@ -98,6 +98,7 @@ const deleteProduct = () => {
                     <Tag v-if="product.show_in_pos" severity="success" value="Venta POS" rounded icon="pi pi-shop"></Tag>
                     <Tag v-else severity="secondary" value="Insumo" rounded icon="pi pi-eye-slash" v-tooltip.top="'Oculto en el Punto de Venta'"></Tag>
                     <Tag v-if="isComposite" severity="contrast" value="Kit/Combo" rounded icon="pi pi-link"></Tag>
+                    <Tag v-if="product.is_bulk" severity="primary" value="Venta a granel" rounded></Tag>
                     <span class="text-xs font-semibold text-gray-500 tracking-wider uppercase">
                         {{ product.category?.name || 'Sin categoría' }}
                     </span>

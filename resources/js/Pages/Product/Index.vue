@@ -66,9 +66,14 @@ const hasVariants = (product) => {
     return getVariants(product).length > 0;
 };
 
-// NUEVO: Identificar productos compuestos
+// Identificar productos compuestos
 const isComposite = (product) => {
     return product.components && product.components.length > 0;
+};
+
+// Identificar productos a granel
+const isBulk = (product) => {
+    return product.is_bulk;
 };
 
 const getCalculatedStock = (product) => {
@@ -305,12 +310,13 @@ const goToDetails = (id) => {
                         </template>
                     </Column>
 
-                    <!-- COLUMNA NOMBRE: Muestra el tag de Kit/Combo si aplica -->
+                    <!-- COLUMNA NOMBRE: Muestra el tag de Kit/Combo o Venta a granel -->
                     <Column field="name" header="Nombre" sortable>
                         <template #body="{ data }">
                             <div class="flex flex-col gap-1 items-start justify-center">
                                 <span>{{ data.name }}</span>
                                 <Tag v-if="isComposite(data)" value="Kit/Combo" severity="contrast" class="!text-[10px] !px-2" />
+                                <Tag v-else-if="isBulk(data)" value="Venta a granel" severity="warning" class="!text-[10px] !px-2" />
                             </div>
                         </template>
                     </Column>

@@ -62,10 +62,12 @@ const form = useForm({
     selling_price: props.product.selling_price ? parseFloat(props.product.selling_price) : null,
     price_tiers: props.product.price_tiers || [],
     
-    // Evaluación dinámica del tipo de producto incluyendo 'composite'
-    product_type: props.product.composite_items && props.product.composite_items.length > 0 
-        ? 'composite' 
-        : (props.product.product_attributes?.length > 0 ? 'variant' : 'simple'),
+    // Evaluación dinámica del tipo de producto incluyendo 'bulk' (Granel)
+    product_type: props.product.is_bulk 
+        ? 'bulk' 
+        : (props.product.composite_items && props.product.composite_items.length > 0 
+            ? 'composite' 
+            : (props.product.product_attributes?.length > 0 ? 'variant' : 'simple')),
     
     current_stock: props.product.current_stock,
     min_stock: props.product.min_stock,
@@ -107,8 +109,8 @@ const handleProviderDelete = (id) => { localProviders.value = localProviders.val
 // --- LÓGICA DE NAVEGACIÓN ---
 const formSections = [
     { id: 'general', label: 'Información general' },
+    { id: 'inventory', label: 'Inventario y variantes' }, // Movido antes de Precios
     { id: 'pricing', label: 'Precios' },
-    { id: 'inventory', label: 'Inventario y variantes' },
     { id: 'images', label: 'Imágenes' }
 ];
 const { activeSection, scrollTo } = useScrollspy(formSections.map(s => s.id));
@@ -159,15 +161,16 @@ const submit = () => {
                         />
                     </div>
 
-                    <div id="pricing">
-                        <Pricing :form="form" />
-                    </div>
-
+                    <!-- INVENTARIO AHORA VA ANTES DE PRECIOS -->
                     <div id="inventory">
                         <Inventory 
                             :form="form" :attributeDefinitions="attributeDefinitions"
                             @open-attributes="showAttributesModal = true"
                         />
+                    </div>
+
+                    <div id="pricing">
+                        <Pricing :form="form" />
                     </div>
 
                     <div id="images">
