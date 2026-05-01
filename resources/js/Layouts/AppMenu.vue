@@ -135,7 +135,7 @@ const adminModel = ref([
                 routeName: 'admin.payments.*'
             },
             {
-                label: 'Novedades (Changelog)',
+                label: 'Novedades',
                 icon: 'pi pi-sparkles',
                 to: route('admin.release-notes.index'),
                 routeName: 'admin.release-notes.*'

@@ -52,10 +52,21 @@ export default {
                     '16%': { transform: 'rotate(-20deg)' },
                     '20%': { transform: 'rotate(0deg)' },
                     '100%': { transform: 'rotate(0deg)' },
-                }
+                },
+                'ping-with-pause': {
+                    '0%': { transform: 'scale(1)', opacity: '0.8' },
+                    '20%': { transform: 'scale(2.2)', opacity: '0' },
+                    '100%': { transform: 'scale(2.2)', opacity: '0' },
+                },
+                'sparkle': {
+                    '0%, 100%': { transform: 'scale(1) rotate(0deg)' },
+                    '50%': { transform: 'scale(1.20) rotate(15deg)' },
+                },
             },
             animation: {
                 'swing': 'swing-with-pause 4s infinite ease-in-out',
+                'ping-pause': 'ping-with-pause 3s cubic-bezier(0, 0, 0.2, 1) infinite',
+                'sparkle': 'sparkle 1.5s ease-in-out infinite',
             }
         },
     },

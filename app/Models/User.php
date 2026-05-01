@@ -222,7 +222,7 @@ class User extends Authenticatable implements MustVerifyEmail
     public function getGlobalNotifications(): array
     {
         if ($this->roles()->exists() && !$this->can('transactions.access')) {
-            return ['expiring_debts' => 0, 'upcoming_deliveries' => 0, 'total' => 0];
+            return ['expiring_debts' => 0, 'upcoming_deliveries' => 0, 'unread_updates' => 0, 'total' => 0];
         }
 
         $branchId = $this->branch_id;
@@ -239,10 +239,14 @@ class User extends Authenticatable implements MustVerifyEmail
             ->whereDate('delivery_date', '<=', now()->addDays(3))
             ->count();
 
+        // Obtenemos la cantidad de novedades sin leer
+        $unreadUpdates = $this->unreadReleaseNotesCount();
+
         return [
             'expiring_debts' => $expiringDebts, 
             'upcoming_deliveries' => $upcomingDeliveries,
-            'total' => $expiringDebts + $upcomingDeliveries
+            'unread_updates' => $unreadUpdates,
+            'total' => $expiringDebts + $upcomingDeliveries + $unreadUpdates // Opcional, sumarlo todo
         ];
     }
 
