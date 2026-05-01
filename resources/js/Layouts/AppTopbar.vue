@@ -6,6 +6,9 @@ import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import { usePermissions } from '@/Composables';
 import Popover from 'primevue/popover'; 
 import Badge from 'primevue/badge';     
+import Skeleton from 'primevue/skeleton';
+import Tag from 'primevue/tag';
+import axios from 'axios';
 
 const { toggleMenu: toggleSidebar, toggleDarkMode, isDarkTheme } = useLayout();
 const page = usePage();
@@ -21,12 +24,50 @@ const currentBranch = computed(() => page.props.auth.current_branch);
 const availableBranches = computed(() => page.props.auth.available_branches);
 
 // Notificaciones
-// Actualizado para leer 'expiring_debts' en lugar de 'expiring_layaways'
-const notifications = computed(() => page.props.notifications || { total: 0, expiring_debts: 0, upcoming_deliveries: 0 });
+// Actualizado para incluir 'unread_updates'
+const notifications = computed(() => page.props.notifications || { total: 0, expiring_debts: 0, upcoming_deliveries: 0, unread_updates: 0 });
+
+// Separamos la cuenta de Alertas Operativas vs Novedades
+const activeAlertsCount = computed(() => (notifications.value.expiring_debts || 0) + (notifications.value.upcoming_deliveries || 0));
 
 const userMenu = ref();
 const branchMenu = ref();
 const notificationPopover = ref(); 
+
+// --- LÓGICA DE NOVEDADES (CHANGELOG) ---
+const isReleaseNotesDrawerVisible = ref(false);
+const releaseNotes = ref([]);
+const isLoadingNotes = ref(false);
+
+const openReleaseNotes = async () => {
+    isReleaseNotesDrawerVisible.value = true;
+    
+    // Si no las hemos cargado en esta sesión de Vue, las traemos
+    if (releaseNotes.value.length === 0) {
+        isLoadingNotes.value = true;
+        try {
+            const response = await axios.get(route('release-notes.index'));
+            releaseNotes.value = response.data.data; // Extraemos del paginador de Laravel
+        } catch (error) {
+            console.error("Error al cargar novedades", error);
+        } finally {
+            isLoadingNotes.value = false;
+        }
+    }
+
+    // Si hay novedades sin leer, mandamos a marcarlas como leídas en segundo plano
+    if (notifications.value.unread_updates > 0) {
+        axios.post(route('release-notes.mark-all-read')).then(() => {
+            // Recargamos silenciosamente los props de Inertia solo para actualizar la campana/badges globales
+            router.reload({ only: ['notifications'] });
+        });
+    }
+};
+
+const formatNoteDate = (dateString) => {
+    if (!dateString) return '';
+    return new Date(dateString).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+};
 
 const userMenuItems = computed(() => {
     const items = [
@@ -122,13 +163,19 @@ const mobileUserMenuVisible = ref(false);
                 </div>
             </div>
 
-            <!-- --- BOTÓN DE NOTIFICACIONES (Solo si hay alertas) --- -->
-            <button v-if="notifications.total > 0" 
+            <!-- --- BOTÓN DE NOVEDADES --- -->
+            <button type="button" class="layout-topbar-action relative mr-2" @click="openReleaseNotes" v-tooltip.bottom="'Novedades'">
+                <i class="pi pi-sparkles text-xl text-blue-500" :class="{'animate-pulse': notifications.unread_updates > 0}"></i>
+                <Badge v-if="notifications.unread_updates > 0" :value="notifications.unread_updates" class="absolute top-0 right-0 !bg-blue-500 !text-white transform translate-x-1/4 -translate-y-1/4" />
+            </button>
+
+            <!-- --- BOTÓN DE ALERTAS OPERATIVAS --- -->
+            <button v-if="activeAlertsCount > 0" 
                 type="button" 
                 class="layout-topbar-action relative mr-2" 
                 @click="toggleNotificationPopover"
             >
-                <i class="pi pi-bell text-xl text-amber-500" :class="{'animate-swing': notifications.total > 0}"></i>
+                <i class="pi pi-bell text-xl text-amber-500" :class="{'animate-swing': activeAlertsCount > 0}"></i>
             </button>
             
             <Popover ref="notificationPopover">
@@ -252,6 +299,49 @@ const mobileUserMenuVisible = ref(false);
                     </button>
                 </li>
             </ul>
+        </div>
+    </Drawer>
+
+    <!-- DRAWER DE NOVEDADES -->
+    <Drawer v-model:visible="isReleaseNotesDrawerVisible" position="right" class="w-full sm:w-[28rem]">
+        <template #header>
+            <div class="flex items-center gap-2">
+                <i class="pi pi-sparkles text-blue-500 text-xl"></i>
+                <span class="font-bold text-lg text-surface-800 dark:text-surface-100">Novedades del Sistema</span>
+            </div>
+        </template>
+
+        <div class="p-4 flex flex-col gap-4" v-if="isLoadingNotes">
+            <Skeleton width="100%" height="8rem" v-for="i in 3" :key="i" borderRadius="12px"></Skeleton>
+        </div>
+        
+        <div class="p-4 flex flex-col gap-4" v-else-if="releaseNotes.length > 0">
+            <div v-for="note in releaseNotes" :key="note.id" 
+                 class="bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded-xl p-4 shadow-sm relative overflow-hidden transition-all hover:shadow-md">
+                
+                <!-- Puntito rojo si no estaba leída antes de abrir el drawer -->
+                <div v-if="!note.is_read" class="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full m-3 shadow-sm"></div>
+                
+                <div class="flex items-center justify-between mb-2">
+                    <Tag v-if="note.version" :value="note.version" severity="info" class="!text-[10px] !px-2 !py-0.5" />
+                    <span v-else></span>
+                    <span class="text-xs text-surface-500 font-medium">{{ formatNoteDate(note.published_at) }}</span>
+                </div>
+                
+                <h3 class="font-bold text-lg text-surface-900 dark:text-surface-0 mb-1.5 leading-tight">{{ note.title }}</h3>
+                <p class="text-sm text-surface-600 dark:text-surface-400 mb-4 line-clamp-2 leading-relaxed">{{ note.excerpt }}</p>
+                
+                <!-- CORRECCIÓN: Enlazar a la ruta release-notes.show pasando el id de la nota -->
+                <Link :href="route('release-notes.show', note.id)" class="text-sm font-bold text-primary-600 dark:text-primary-400 hover:text-primary-800 hover:underline flex items-center gap-1 w-max" @click="isReleaseNotesDrawerVisible = false">
+                    Saber más detalles <i class="pi pi-arrow-right text-xs mt-0.5"></i>
+                </Link>
+            </div>
+        </div>
+        
+        <div class="p-6 flex flex-col items-center justify-center text-center h-full opacity-60" v-else>
+            <i class="pi pi-inbox text-5xl text-surface-400 mb-4"></i>
+            <p class="text-surface-600 dark:text-surface-400 font-medium">Aún no hay novedades publicadas.</p>
+            <p class="text-sm text-surface-500">Te avisaremos por aquí cuando tengamos nuevas funciones.</p>
         </div>
     </Drawer>
 </template>

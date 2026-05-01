@@ -237,5 +237,6 @@ return [
         'subscription.business_name' => 'razón social',
         'customer_id' => 'cliente',
         'items' => 'conceptos',
+        'content' => 'contenido',
     ],
 ];

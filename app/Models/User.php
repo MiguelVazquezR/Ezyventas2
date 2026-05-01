@@ -179,6 +179,27 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->belongsToMany(BankAccount::class);
     }
 
+    /**
+     * Novedades que el usuario ya ha leído.
+     */
+    public function readReleaseNotes(): BelongsToMany
+    {
+        return $this->belongsToMany(ReleaseNote::class, 'release_note_user')
+                    ->withPivot('read_at');
+    }
+
+    /**
+     * Obtiene la cantidad de novedades publicadas que el usuario AÚN NO ha leído.
+     */
+    public function unreadReleaseNotesCount(): int
+    {
+        $readIds = $this->readReleaseNotes()->pluck('release_notes.id');
+        
+        return ReleaseNote::published()
+            ->whereNotIn('id', $readIds)
+            ->count();
+    }
+
     /*
     |--------------------------------------------------------------------------
     | LÓGICA DE NEGOCIO DE INTERFAZ (REFACTOR MIDDLEWARE)

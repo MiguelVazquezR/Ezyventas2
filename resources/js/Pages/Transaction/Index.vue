@@ -216,10 +216,10 @@ watch(dateRange, (newVal) => {
 // Helper para colores e íconos de canales de venta
 const getChannelConfig = (channel) => {
     const map = {
-        'punto_de_venta': { icon: 'pi pi-desktop', severity: 'info', label: 'Punto de Venta' },
+        'punto_de_venta': { icon: 'pi pi-shop', severity: 'info', label: 'Punto de Venta' },
         'tienda_en_linea': { icon: 'pi pi-shopping-cart', severity: 'success', label: 'Tienda en Línea' },
         'orden_de_servicio': { icon: 'pi pi-wrench', severity: 'warn', label: 'Orden de Servicio' },
-        'cotizacion': { icon: 'pi pi-file', severity: 'secondary', label: 'Cotización' },
+        'cotizacion': { icon: 'pi pi-file-check', severity: 'secondary', label: 'Cotización' },
         'manual': { icon: 'pi pi-pen-to-square', severity: 'secondary', label: 'Manual' },
         'abono_a_saldo': { icon: 'pi pi-wallet', severity: 'success', label: 'Abono a Saldo' },
         'whatsapp': { icon: 'pi pi-whatsapp', severity: 'success', label: 'WhatsApp' }
