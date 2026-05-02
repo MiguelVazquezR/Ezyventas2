@@ -163,7 +163,7 @@ const getExpirationSeverity = (days) => {
                                     {{ formatCurrency(stats.today_sales).split('.')[0] }}<span class="text-2xl text-gray-400">.{{ formatCurrency(stats.today_sales).split('.')[1] }}</span>
                                 </p>
                             </div>
-                            <i class="pi pi-dollar text-green-500 text-xl"></i>
+                            <i class="pi pi-dollar text-green-500 !text-xl"></i>
                         </div>
                         <div v-if="salesChange" class="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100 dark:border-[#3a3a3a] relative z-10">
                             <span class="w-1.5 h-1.5 rounded-full" :class="salesChange.sign === '+' ? 'bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.8)]' : 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]'"></span>
@@ -186,11 +186,11 @@ const getExpirationSeverity = (days) => {
                                     {{ stats.expiring_debts_count }}
                                 </p>
                             </div>
-                            <i class="pi pi-clock text-purple-500 text-xl" :class="{ 'animate-pulse': stats.expiring_debts_count > 0 }"></i>
+                            <i class="pi pi-clock text-purple-500 !text-xl" :class="{ 'animate-pulse': stats.expiring_debts_count > 0 }"></i>
                         </div>
                         <div class="mt-4 pt-4 border-t border-gray-100 dark:border-[#3a3a3a] relative z-10">
                             <span class="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                                <i class="pi pi-info-circle text-[10px]"></i> Apartados y créditos próximos
+                                <i class="pi pi-info-circle !text-[10px]"></i> Apartados y créditos próximos
                             </span>
                         </div>
                     </div>
@@ -207,11 +207,11 @@ const getExpirationSeverity = (days) => {
                                     {{ stats.upcoming_deliveries_count }}
                                 </p>
                             </div>
-                            <i class="pi pi-truck text-blue-500 text-xl" :class="{ 'animate-pulse': stats.upcoming_deliveries_count > 0 }"></i>
+                            <i class="pi pi-truck text-blue-500 !text-xl" :class="{ 'animate-pulse': stats.upcoming_deliveries_count > 0 }"></i>
                         </div>
                         <div class="mt-4 pt-4 border-t border-gray-100 dark:border-[#3a3a3a] relative z-10">
                             <span class="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                                <i class="pi pi-box text-[10px]"></i> Pendientes de envío
+                                <i class="pi pi-box !text-[10px]"></i> Pendientes de envío
                             </span>
                         </div>
                     </div>
@@ -227,11 +227,11 @@ const getExpirationSeverity = (days) => {
                                     {{ formatCurrency(stats.total_customer_debt).split('.')[0] }}<span class="text-xl text-gray-400">.{{ formatCurrency(stats.total_customer_debt).split('.')[1] }}</span>
                                 </p>
                             </div>
-                            <i class="pi pi-credit-card text-cyan-500 text-xl"></i>
+                            <i class="pi pi-credit-card text-cyan-500 !text-xl"></i>
                         </div>
                         <div class="mt-4 pt-4 border-t border-gray-100 dark:border-[#3a3a3a] relative z-10">
                             <span class="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                                <i class="pi pi-users text-[10px]"></i> Deuda total de clientes
+                                <i class="pi pi-users !text-[10px]"></i> Deuda total de clientes
                             </span>
                         </div>
                     </Link>
@@ -334,7 +334,7 @@ const getExpirationSeverity = (days) => {
                                 class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl flex justify-between items-center group hover:bg-gray-100 dark:hover:bg-[#2a2a2a] transition-colors border border-transparent hover:border-gray-200 dark:hover:border-gray-700">
                                 <div class="flex items-center gap-4">
                                     <div class="w-10 h-10 rounded-full bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center text-primary-500">
-                                        <i class="pi pi-building text-lg"></i>
+                                        <i class="pi pi-building !text-lg"></i>
                                     </div>
                                     <div>
                                         <p class="font-medium text-gray-900 dark:text-gray-100">{{ account.account_name }}</p>
@@ -349,7 +349,7 @@ const getExpirationSeverity = (days) => {
                             <Menu ref="menu" :model="menuItems" :popup="true" class="!rounded-xl !border-gray-200 dark:!border-[#3a3a3a] dark:!bg-[#232323]" />
                         </div>
                         <div v-else class="text-center py-10 bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl">
-                            <i class="pi pi-wallet text-3xl text-gray-400 mb-3"></i>
+                            <i class="pi pi-wallet !text-3xl text-gray-400 mb-3"></i>
                             <p class="text-gray-500 text-sm">No hay cuentas bancarias vinculadas.</p>
                         </div>
                     </div>
@@ -362,7 +362,7 @@ const getExpirationSeverity = (days) => {
                         class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
                         <div class="flex justify-between items-center mb-6">
                             <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase">Top 5 Productos (Mes)</h2>
-                            <i class="pi pi-star-fill text-yellow-500 text-sm"></i>
+                            <i class="pi pi-star-fill text-yellow-500 !text-sm"></i>
                         </div>
                         <ul class="space-y-2">
                             <li v-for="(product, index) in stats.top_selling_products" :key="`${product.id}-${index}`">
@@ -397,7 +397,7 @@ const getExpirationSeverity = (days) => {
                         class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col">
                         <div class="flex justify-between items-center mb-2">
                             <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase">Baja Rotación</h2>
-                            <i class="pi pi-exclamation-triangle text-orange-500 text-sm"></i>
+                            <i class="pi pi-exclamation-triangle text-orange-500 !text-sm"></i>
                         </div>
                         <p class="text-[11px] text-gray-400 mb-4">+15 días sin movimiento</p>
                         <ul class="space-y-2 flex-grow">
@@ -414,7 +414,7 @@ const getExpirationSeverity = (days) => {
                                                 Stock: {{ product.current_stock }}
                                             </span>
                                             <span class="text-[10px] text-red-500/80 font-medium">
-                                                <i class="pi pi-clock text-[9px] mr-1"></i>
+                                                <i class="pi pi-clock !text-[9px] mr-1"></i>
                                                 {{ product.days_since_last_sale !== null ? `${product.days_since_last_sale} d` : 'Nunca' }}
                                             </span>
                                         </div>
@@ -467,7 +467,7 @@ const getExpirationSeverity = (days) => {
                     <div v-if="stats.inventory_summary && hasPermission('dashboard.see_inventory_details')" 
                         class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col justify-between relative overflow-hidden">
                         <!-- Icono de fondo marca de agua -->
-                        <i class="pi pi-box absolute -right-10 -bottom-10 text-[150px] text-gray-50 dark:text-[#2a2a2a] z-0 pointer-events-none"></i>
+                        <i class="pi pi-box absolute -right-10 -bottom-10 !text-[150px] text-gray-50 dark:text-[#2a2a2a] z-0 pointer-events-none"></i>
                         
                         <div class="relative z-10">
                             <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase mb-6">Estado de Almacén</h2>
@@ -527,7 +527,7 @@ const getExpirationSeverity = (days) => {
             <!-- Empty State minimalista -->
             <div v-else class="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
                 <div class="w-24 h-24 bg-gray-50 dark:bg-[#1a1a1a] rounded-full flex items-center justify-center mb-6 border border-gray-100 dark:border-[#3a3a3a]">
-                    <i class="pi pi-sparkles text-3xl text-primary-500"></i>
+                    <i class="pi pi-sparkles !text-3xl text-primary-500"></i>
                 </div>
                 <h2 class="text-3xl font-light text-gray-900 dark:text-white tracking-tight">Bienvenido, {{ $page.props.auth.user.name }}</h2>
                 <p class="text-gray-500 mt-3 text-sm max-w-md">Sistema inicializado. Aún no hay datos estadísticos para mostrar en este momento.</p>
@@ -552,13 +552,13 @@ const getExpirationSeverity = (days) => {
             }">
             
             <div v-if="isLoadingModal" class="flex flex-col items-center justify-center py-12">
-                <i class="pi pi-spin pi-spinner-dotted text-4xl text-primary-500 mb-4"></i>
+                <i class="pi pi-spin pi-spinner-dotted !text-4xl text-primary-500 mb-4"></i>
                 <span class="text-sm text-gray-500 uppercase tracking-widest animate-pulse">Sincronizando...</span>
             </div>
 
             <div v-else-if="modalItems.length > 0">
                 <div class="bg-gray-50 dark:bg-[#1a1a1a] text-gray-700 dark:text-gray-300 p-4 rounded-2xl mb-6 text-sm flex gap-4 items-start border border-gray-100 dark:border-[#3a3a3a]">
-                    <i class="pi pi-info-circle mt-0.5 text-xl text-primary-500"></i>
+                    <i class="pi pi-info-circle mt-0.5 !text-xl text-primary-500"></i>
                     <div>
                         <p class="font-medium mb-1 text-gray-900 dark:text-white">Guía de Acción</p>
                         <p class="text-xs text-gray-500" v-if="activeModalType === 'layaways'">
@@ -598,7 +598,7 @@ const getExpirationSeverity = (days) => {
                             </Link>
                             <span v-else class="font-medium text-gray-900 dark:text-white">{{ data.customer_name }}</span>
                             <div v-if="data.customer_phone" class="text-[11px] text-gray-500 mt-1 flex items-center gap-1">
-                                <i class="pi pi-phone text-[9px]"></i> {{ data.customer_phone }}
+                                <i class="pi pi-phone !text-[9px]"></i> {{ data.customer_phone }}
                             </div>
                         </template>
                     </Column>
@@ -635,8 +635,8 @@ const getExpirationSeverity = (days) => {
                     <Column v-else header="Destino">
                         <template #body="{ data }">
                             <div class="text-[11px] max-w-[180px] text-gray-600 dark:text-gray-400 leading-tight">
-                                <span v-if="data.shipping_address" class="line-clamp-2" :title="data.shipping_address"><i class="pi pi-map-marker text-[9px] mr-1"></i>{{ data.shipping_address }}</span>
-                                <span v-else-if="data.notes" class="line-clamp-2" :title="data.notes"><i class="pi pi-comment text-[9px] mr-1"></i>{{ data.notes }}</span>
+                                <span v-if="data.shipping_address" class="line-clamp-2" :title="data.shipping_address"><i class="pi pi-map-marker !text-[9px] mr-1"></i>{{ data.shipping_address }}</span>
+                                <span v-else-if="data.notes" class="line-clamp-2" :title="data.notes"><i class="pi pi-comment !text-[9px] mr-1"></i>{{ data.notes }}</span>
                                 <span v-else class="italic opacity-50">Sin ruta asignada</span>
                             </div>
                         </template>
@@ -646,7 +646,7 @@ const getExpirationSeverity = (days) => {
 
             <div v-else class="flex flex-col items-center justify-center py-16 text-center">
                 <div class="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
-                    <i class="pi pi-check text-2xl text-green-500"></i>
+                    <i class="pi pi-check !text-2xl text-green-500"></i>
                 </div>
                 <h3 class="text-xl font-light text-gray-900 dark:text-white mb-2">Sistema en orden</h3>
                 <p class="text-sm text-gray-500 max-w-xs" v-if="activeModalType === 'layaways'">No se detectaron vencimientos en el rango de alerta.</p>

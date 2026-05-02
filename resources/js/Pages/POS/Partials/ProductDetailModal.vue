@@ -1,8 +1,5 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import Button from 'primevue/button';
-import Dialog from 'primevue/dialog';
-import Message from 'primevue/message';
 
 const props = defineProps({
     product: Object,

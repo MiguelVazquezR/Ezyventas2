@@ -456,7 +456,7 @@ const currentCartTotal = computed(() => {
         
         <!-- Sesión Activa -->
         <template v-if="activeSession">
-            <div class="flex flex-col lg:flex-row gap-4 h-[calc(100vh-110px)] max-w-[1920px] mx-auto pb-4">
+            <div class="flex flex-col lg:flex-row gap-4 h-[calc(100vh-98px)] max-w-[1920px] mx-auto">
                 <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden rounded-3xl">
                     <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
                         :filters="filters" :active-session="activeSession" :cart-items="cartItems" :pos-mode="posMode"
@@ -510,8 +510,8 @@ const currentCartTotal = computed(() => {
                         <div class="flex flex-col sm:flex-row gap-4 justify-center">
                             <Button v-if="joinableSessions?.length"
                                 @click="isJoinSessionModalVisible = true" 
-                                label="Vincular a sesión activa" 
-                                icon="pi pi-link"
+                                label="Unirse a sesión activa" 
+                                icon="pi pi-users"
                                 class="!rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold px-6 py-3" />
 
                             <Button v-if="availableCashRegisters?.length"

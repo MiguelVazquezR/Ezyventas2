@@ -26,7 +26,7 @@ const closeModal = () => {
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" :modal="true" header="Vincular terminal" 
+    <Dialog :visible="visible" @update:visible="closeModal" :modal="true" header="Unirse a una sesión activa" 
         class="w-full max-w-xl"
         :breakpoints="{ '1199px': '75vw', '575px': '95vw' }"
         :closable="true"
@@ -42,7 +42,7 @@ const closeModal = () => {
             <!-- Encabezado de la acción -->
             <div class="flex items-center gap-4 mb-8 bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
                 <div class="w-12 h-12 rounded-full bg-green-50 dark:bg-green-900/30 flex items-center justify-center text-green-500 shadow-sm border border-green-100 dark:border-green-900/50">
-                    <i class="pi pi-link text-xl"></i>
+                    <i class="pi pi-users !text-xl"></i>
                 </div>
                 <div>
                     <h2 class="font-medium text-lg text-gray-900 dark:text-gray-100 tracking-tight m-0">Sesiones activas</h2>
@@ -77,7 +77,7 @@ const closeModal = () => {
         <!-- Estado Vacío -->
         <div v-else class="py-12 flex flex-col items-center justify-center text-center">
             <div class="w-16 h-16 bg-gray-50 dark:bg-[#1a1a1a] rounded-full flex items-center justify-center mb-6 border border-gray-100 dark:border-[#3a3a3a]">
-                <i class="pi pi-info-circle text-2xl text-blue-500"></i>
+                <i class="pi pi-info-circle !text-2xl text-blue-500"></i>
             </div>
             <h2 class="text-xl font-light text-gray-900 dark:text-white tracking-tight m-0 mb-2">No hay sesiones activas</h2>
             <p class="text-sm text-gray-500 dark:text-gray-400 max-w-xs leading-relaxed">
