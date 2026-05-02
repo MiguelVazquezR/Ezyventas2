@@ -63,7 +63,7 @@ const closeModal = () => {
                         </div>
                     </div>
                     <Button 
-                        label="Conectar" 
+                        label="Unirme" 
                         icon="pi pi-sign-in" 
                         @click="joinSession(session.id)"
                         :loading="loadingSessionId === session.id"

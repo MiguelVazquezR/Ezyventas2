@@ -495,15 +495,15 @@ const currentCartTotal = computed(() => {
                         </div>
 
                         <h2 class="text-3xl font-light text-gray-900 dark:text-white tracking-tight mb-3">
-                            {{ (joinableSessions?.length || availableCashRegisters?.length) ? 'Terminal en espera' : 'Terminal bloqueada' }}
+                            {{ (joinableSessions?.length || availableCashRegisters?.length) ? 'Abrir sesión de caja' : 'Terminal bloqueada' }}
                         </h2>
 
                         <p class="text-sm text-gray-500 dark:text-gray-400 mb-10 max-w-sm mx-auto leading-relaxed">
                             <span v-if="joinableSessions?.length || availableCashRegisters?.length">
-                                El sistema requiere inicializar una sesión de caja para comenzar a procesar transacciones.
+                                El sistema requiere inicializar una sesión de caja para comenzar a procesar ventas.
                             </span>
                             <span v-else>
-                                No hay cajas disponibles para operar en esta sucursal. Contacta al administrador de la red.
+                                No hay cajas disponibles para operar en esta sucursal. Contacta al administrador para que registre una nueva caja.
                             </span>
                         </p>
 
