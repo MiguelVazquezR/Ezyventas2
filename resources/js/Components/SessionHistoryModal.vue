@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 const props = defineProps({
     visible: Boolean,
@@ -31,7 +31,12 @@ const formatTime = (dateTimeString) => {
     return new Date(dateTimeString).toLocaleTimeString('es-MX', options);
 }
 
-// --- COMPUTED PARA RESUMEN DE PAGOS (Sin cambios) ---
+// --- ESTADOS PARA PANELES OCULTOS ---
+const showCashSummary = ref(false);
+const showCardSummary = ref(false);
+const showTransferSummary = ref(false);
+
+// --- COMPUTED PARA RESUMEN DE PAGOS ---
 const paymentSummary = computed(() => {
     if (!props.session || !props.session.payments) {
         return { cash: 0, card: 0, transfer: 0 };
@@ -52,7 +57,7 @@ const paymentSummary = computed(() => {
         }, { cash: 0, card: 0, transfer: 0 });
 });
 
-// --- INICIO: NUEVO COMPUTED PARA DESGLOSE DE EFECTIVO ---
+// --- NUEVO COMPUTED PARA DESGLOSE DE EFECTIVO ---
 const cashBreakdown = computed(() => {
     if (!props.session || !props.session.cash_movements) {
         return { inflows: 0, outflows: 0 };
@@ -75,8 +80,6 @@ const cashBreakdown = computed(() => {
 const totalCash = computed(() => {
     return (paymentSummary.value.cash || 0) + (cashBreakdown.value.inflows || 0) - (cashBreakdown.value.outflows || 0);
 });
-// --- FIN: NUEVO COMPUTED PARA DESGLOSE DE EFECTIVO ---
-
 
 const timelineEvents = computed(() => {
     if (!props.session) return [];
@@ -102,7 +105,7 @@ const timelineEvents = computed(() => {
                     iconColor = '#3d5f9b';
                     break;
                 case 'pendiente':
-                    statusText = 'Venta (credito / pagos)';
+                    statusText = 'Venta (crédito / pagos)';
                     statusColor = '#ffcd87'; // naranja
                     iconColor = '#603814';
                     break;
@@ -129,10 +132,10 @@ const timelineEvents = computed(() => {
             return {
                 type: 'sale',
                 date: tx.created_at,
-                status: statusText, // Texto corregido
-                bgColor: statusColor, // Color corregido
-                icon: statusIcon,   // Icono corregido/añadido
-                iconColor: iconColor,   // Icono corregido/añadido
+                status: statusText, 
+                bgColor: statusColor, 
+                icon: statusIcon,   
+                iconColor: iconColor,   
                 data: tx,
                 totalSale: parseFloat(tx.total),
                 totalPaid: totalPaid,
@@ -140,18 +143,18 @@ const timelineEvents = computed(() => {
             };
         });
 
-    // --- LÓGICA DE MOVIMIENTOS (Sin cambios) ---
+    // --- LÓGICA DE MOVIMIENTOS ---
     const movementEvents = (props.session.cash_movements || []).map(mv => ({
         type: 'movement',
         date: mv.created_at,
-        status: mv.type === 'ingreso' ? 'Ingreso de efectivo' : 'Retiro de efectivo',
+        status: mv.type === 'ingreso' ? 'Ingreso Efectivo' : 'Retiro Efectivo',
         bgColor: mv.type === 'ingreso' ? '#3b82f6' : '#ef4444',
         icon: mv.type === 'ingreso' ? 'pi pi-arrow-down-left' : 'pi pi-arrow-up-right',
         data: mv,
         userName: mv.user?.name || 'N/A'
     }));
 
-    // --- LÓGICA DE PAGOS EXTERNOS (Sin cambios) ---
+    // --- LÓGICA DE PAGOS EXTERNOS ---
     const sessionTransactionIds = new Set((props.session.transactions || []).map(tx => tx.id));
     const paymentEvents = (props.session.payments || [])
         .filter(p => p.status === 'completado' && !sessionTransactionIds.has(p.transaction_id))
@@ -170,7 +173,7 @@ const timelineEvents = computed(() => {
             };
         });
 
-    // --- LÓGICA PARA ABONOS (Sin cambios) ---
+    // --- LÓGICA PARA ABONOS ---
     const abonoEvents = (props.session.transactions || [])
         .filter(tx => tx.folio.startsWith('ABONO-'))
         .map(tx => {
@@ -188,212 +191,214 @@ const timelineEvents = computed(() => {
             };
         });
 
-    // Combinar todos los eventos y ordenar
-    return [...salesEvents, ...movementEvents, ...paymentEvents, ...abonoEvents].sort((a, b) => new Date(b.date) - new Date(a.date));
+    // Combinar todos los eventos y ordenar: DE MÁS ANTIGUO A MÁS RECIENTE
+    return [...salesEvents, ...movementEvents, ...paymentEvents, ...abonoEvents].sort((a, b) => new Date(a.date) - new Date(b.date));
 });
-
 </script>
 
 <template>
     <Dialog :visible="visible" @update:visible="closeModal" modal header="Historial de la sesión actual"
-        :style="{ width: '50rem' }">
-        <div v-if="session" class="p-1">
-            <!-- Sección de Info y Apertura (Sin cambios) -->
-            <div class="bg-gray-100 dark:bg-gray-800 p-3 rounded-lg mb-1">
-                <div class="flex justify-between items-center">
-                    <div>
-                        <p class="m-0 text-sm text-gray-500">Caja</p>
-                        <p class="m-0 font-bold text-base">{{ session.cash_register?.name }}</p>
+        class="w-full max-w-4xl"
+        :breakpoints="{ '1199px': '75vw', '575px': '95vw' }"
+        :pt="{
+            root: { class: 'dark:bg-[#232323] border-none shadow-2xl rounded-3xl overflow-hidden' },
+            header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 md:px-8 py-5 md:py-6' },
+            title: { class: 'text-xl md:text-2xl font-light tracking-tight text-gray-900 dark:text-white m-0' },
+            content: { class: 'dark:bg-[#232323] px-6 md:px-8 py-6' },
+            footer: { class: 'dark:bg-[#232323] border-t border-gray-100 dark:border-[#3a3a3a] px-6 md:px-8 py-4 md:py-5' }
+        }">
+        
+        <div v-if="session" class="space-y-6">
+            
+            <!-- Sección de Info y Apertura -->
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center bg-gray-50 dark:bg-[#1a1a1a] p-4 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] gap-4">
+                <div class="flex items-center gap-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-500 shadow-sm border border-blue-100 dark:border-blue-900/50">
+                        <i class="pi pi-desktop !text-sm"></i>
                     </div>
                     <div>
-                        <p class="m-0 text-sm text-gray-500">Abierta por</p>
-                        <p class="m-0 font-bold text-base">{{ session.opener?.name }}</p>
+                        <p class="text-[11px] text-gray-500 uppercase tracking-widest m-0 mb-0.5">Caja Activa</p>
+                        <p class="m-0 font-bold text-sm text-gray-900 dark:text-white">{{ session.cash_register?.name }}</p>
                     </div>
-                    <div class="text-right">
-                        <p class="m-0 text-sm text-gray-500">Fecha de Apertura</p>
-                        <p class="m-0 font-bold text-base">{{ formatDateTime(session.opened_at) }}</p>
+                </div>
+                
+                <div class="flex flex-col md:flex-row gap-6 w-full md:w-auto border-t md:border-t-0 border-gray-200 dark:border-[#2a2a2a] pt-3 md:pt-0">
+                    <div>
+                        <p class="text-[11px] text-gray-500 uppercase tracking-widest m-0 mb-0.5">Operador</p>
+                        <p class="m-0 font-medium text-xs text-gray-900 dark:text-white">{{ session.opener?.name }}</p>
+                    </div>
+                    <div class="md:text-right">
+                        <p class="text-[11px] text-gray-500 uppercase tracking-widest m-0 mb-0.5">Fecha y hora inicio</p>
+                        <p class="m-0 font-mono text-xs font-bold text-gray-900 dark:text-white">{{ formatDateTime(session.opened_at) }}</p>
                     </div>
                 </div>
             </div>
 
-            <!-- --- INICIO: RESUMEN DE PAGOS (Convertido a Fieldset colapsable) --- -->
-            <Fieldset legend="Resumen de ingresos" :toggleable="true" class="text-sm">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <!-- Columna de Efectivo -->
-                    <div>
-                        <h6 class="font-medium text-gray-800 dark:text-gray-200 m-0">Efectivo</h6>
-                        <dl class="text-gray-600 dark:text-gray-400">
-                            <div class="flex justify-between">
-                                <dt>Ventas:</dt>
-                                <dd class="font-mono text-green-500">{{ formatCurrency(paymentSummary.cash) }}</dd>
+            <!-- --- RESUMEN DE INGRESOS (Paneles Colapsables Compactos) --- -->
+            <div>
+                <h4 class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0 mb-3 flex items-center gap-2">
+                    <i class="pi pi-chart-pie !text-[10px]"></i> Resumen de ingresos
+                </h4>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <!-- Botón Efectivo -->
+                    <div class="bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] overflow-hidden transition-all duration-300 shadow-sm">
+                        <button @click="showCashSummary = !showCashSummary" class="w-full p-3 flex justify-between items-center hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                            <span class="font-bold text-xs text-gray-900 dark:text-white flex items-center gap-2">
+                                <i class="pi pi-money-bill text-green-500 !text-sm"></i> Efectivo
+                            </span>
+                            <div class="flex items-center gap-2">
+                                <span class="font-mono text-lg font-bold text-gray-900 dark:text-white">{{ formatCurrency(totalCash) }}</span>
+                                <i :class="showCashSummary ? 'pi pi-angle-up' : 'pi pi-angle-down'" class="!text-[10px] text-gray-400"></i>
                             </div>
-                            <div class="flex justify-between">
-                                <dt>Ingresos:</dt>
-                                <dd class="font-mono text-green-500">{{ formatCurrency(cashBreakdown.inflows) }}</dd>
+                        </button>
+                        <div v-show="showCashSummary" class="px-3 py-3 bg-white dark:bg-[#232323] border-t border-gray-100 dark:border-[#2a2a2a] space-y-2 text-xs text-gray-600 dark:text-gray-400">
+                            <div class="flex justify-between items-center">
+                                <span>Ventas:</span>
+                                <span class="font-mono text-green-600 dark:text-green-500 font-medium text-lg">{{ formatCurrency(paymentSummary.cash) }}</span>
                             </div>
-                            <div class="flex justify-between">
-                                <dt>Retiros:</dt>
-                                <dd class="font-mono text-red-500">-{{ formatCurrency(cashBreakdown.outflows) }}</dd>
+                            <div class="flex justify-between items-center">
+                                <span>Ingresos manuales:</span>
+                                <span class="font-mono text-green-600 dark:text-green-500 font-medium text-lg">{{ formatCurrency(cashBreakdown.inflows) }}</span>
                             </div>
-                            <div
-                                class="flex justify-between font-bold text-gray-900 dark:text-white border-t mt-1 pt-1">
-                                <dt>Total efectivo:</dt>
-                                <dd class="font-mono">{{ formatCurrency(totalCash) }}</dd>
+                            <div class="flex justify-between items-center">
+                                <span>Retiros:</span>
+                                <span class="font-mono text-red-500 font-medium text-lg">-{{ formatCurrency(cashBreakdown.outflows) }}</span>
                             </div>
-                        </dl>
+                        </div>
                     </div>
 
-                    <!-- Columna de Tarjeta -->
-                    <div>
-                        <h6 class="font-medium text-gray-800 dark:text-gray-200 m-0">Tarjeta</h6>
-                        <dl class="text-gray-600 dark:text-gray-400">
-                            <div class="flex justify-between font-bold text-gray-900 dark:text-white">
-                                <dd class="font-mono">{{ formatCurrency(paymentSummary.card) }}</dd>
+                    <!-- Botón Tarjeta -->
+                    <div class="bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] overflow-hidden transition-all duration-300 shadow-sm">
+                        <button @click="showCardSummary = !showCardSummary" class="w-full p-3 flex justify-between items-center hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                            <span class="font-bold text-xs text-gray-900 dark:text-white flex items-center gap-2">
+                                <i class="pi pi-credit-card text-blue-500 !text-lg"></i> Tarjeta
+                            </span>
+                            <div class="flex items-center gap-2">
+                                <span class="font-mono text-lg font-bold text-gray-900 dark:text-white">{{ formatCurrency(paymentSummary.card) }}</span>
+                                <i :class="showCardSummary ? 'pi pi-angle-up' : 'pi pi-angle-down'" class="!text-[10px] text-gray-400"></i>
                             </div>
-                        </dl>
+                        </button>
+                        <div v-show="showCardSummary" class="px-3 py-3 bg-white dark:bg-[#232323] border-t border-gray-100 dark:border-[#2a2a2a] text-xs text-gray-600 dark:text-gray-400">
+                            <div class="flex justify-between items-center">
+                                <span>Total Digital:</span>
+                                <span class="font-mono text-blue-600 dark:text-blue-500 font-medium text-lg">{{ formatCurrency(paymentSummary.card) }}</span>
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- Columna de Transferencia -->
-                    <div>
-                        <h6 class="font-medium text-gray-800 dark:text-gray-200 m-0">Transferencia</h6>
-                        <dl class="text-gray-600 dark:text-gray-400">
-                            <div class="flex justify-between font-bold text-gray-900 dark:text-white">
-                                <dd class="font-mono">{{ formatCurrency(paymentSummary.transfer) }}</dd>
+                    <!-- Botón Transferencia -->
+                    <div class="bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] overflow-hidden transition-all duration-300 shadow-sm">
+                        <button @click="showTransferSummary = !showTransferSummary" class="w-full p-3 flex justify-between items-center hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                            <span class="font-bold text-xs text-gray-900 dark:text-white flex items-center gap-2">
+                                <i class="pi pi-arrows-h text-orange-500 !text-sm"></i> Transf. / SPEI
+                            </span>
+                            <div class="flex items-center gap-2">
+                                <span class="font-mono text-lg font-bold text-gray-900 dark:text-white">{{ formatCurrency(paymentSummary.transfer) }}</span>
+                                <i :class="showTransferSummary ? 'pi pi-angle-up' : 'pi pi-angle-down'" class="!text-[10px] text-gray-400"></i>
                             </div>
-                        </dl>
+                        </button>
+                        <div v-show="showTransferSummary" class="px-3 py-3 bg-white dark:bg-[#232323] border-t border-gray-100 dark:border-[#2a2a2a] text-xs text-gray-600 dark:text-gray-400">
+                            <div class="flex justify-between items-center">
+                                <span>Total Digital:</span>
+                                <span class="font-mono text-orange-600 dark:text-orange-500 font-medium text-lg">{{ formatCurrency(paymentSummary.transfer) }}</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </Fieldset>
-            <!-- --- FIN: RESUMEN DE PAGOS --- -->
+            </div>
 
-            <!-- Historial de Timeline -->
-            <div class="max-h-[51vh] overflow-y-auto pr-2 mt-3">
-                <Timeline v-if="timelineEvents.length > 0" :value="timelineEvents" align="alternate"
-                    class="customized-timeline">
-                    <template #marker="slotProps">
-                        <span class="flex w-8 h-8 items-center justify-center text-white rounded-full z-10 shadow-md"
-                            :style="{ backgroundColor: slotProps.item.bgColor, color: slotProps.item.iconColor || '#ffffff' }">
-                            <i :class="slotProps.item.icon"></i>
-                        </span>
-                    </template>
-                    <template #content="slotProps">
-                        <Card class="mt-0 mb-4">
-                            <template #title>
-                                <div class="flex justify-between items-center text-base">
-                                    <span>{{ slotProps.item.status }}</span>
-                                    <span class="font-normal text-sm">{{ formatTime(slotProps.item.date) }}</span>
-                                </div>
-                            </template>
-                            <template #content>
-                                <!-- Contenido para Ventas (type === 'sale') -->
-                                <div v-if="slotProps.item.type === 'sale'" class="text-sm space-y-1">
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-500">Folio:</span>
-                                        <span class="font-mono">{{ slotProps.item.data.folio }}</span>
+            <!-- Historial Mosaico de 2 Columnas (Logs Ultracompactos y Cronológicos) -->
+            <div>
+                <div class="flex justify-between items-center mb-3">
+                    <h4 class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0 flex items-center gap-2">
+                        <i class="pi pi-list !text-[10px]"></i> Registro de actividad (Cronológico)
+                    </h4>
+                    <span class="text-[11px] text-gray-500 bg-gray-100 dark:bg-[#1a1a1a] px-2 py-1 rounded-md border border-gray-200 dark:border-[#3a3a3a] flex items-center gap-1">
+                        Más antiguo <i class="pi pi-arrow-right !text-[10px]"></i> Más reciente
+                    </span>
+                </div>
+                
+                <div class="max-h-[50vh] overflow-y-auto custom-scrollbar pr-3 pb-4">
+                    <div v-if="timelineEvents.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 relative">
+                        
+                        <div v-for="(item, index) in timelineEvents" :key="index" class="relative group flex flex-col">
+                            
+                            <!-- Flecha conectora Horizontal (Solo Desktop, de Par a Impar: 0->1, 2->3) -->
+                            <div v-if="index % 2 === 0 && index < timelineEvents.length - 1" class="hidden md:flex absolute top-1/2 -right-6 w-6 items-center justify-center text-gray-400 dark:text-[#4a4a4a] z-0">
+                                <i class="pi pi-arrow-right !text-xs"></i>
+                            </div>
+
+                            <!-- Tarjeta de Log -->
+                            <div class="bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] h-full flex flex-col gap-2 transition-colors hover:border-gray-300 dark:hover:border-gray-500 relative z-10 shadow-sm">
+                                
+                                <!-- Cabecera del log -->
+                                <div class="flex justify-between items-start pb-2 border-b border-gray-200 dark:border-[#2a2a2a]">
+                                    <div class="flex items-center gap-2">
+                                        <div class="flex w-6 h-6 items-center justify-center rounded-full shadow-sm border border-black/5 dark:border-white/10"
+                                            :style="{ backgroundColor: item.bgColor, color: item.iconColor || '#ffffff' }">
+                                            <i :class="item.icon" class="!text-[11px]"></i>
+                                        </div>
+                                        <span class="font-bold text-[12px] text-gray-900 dark:text-white leading-none">{{ item.status }}</span>
                                     </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-500">Cliente:</span>
-                                        <span class="font-semibold">
-                                            {{
-                                                slotProps.item.data.customer?.name || 'Público en general'
-                                            }}
+                                    <span class="text-[10px] uppercase tracking-widest text-gray-500 bg-white dark:bg-[#232323] px-1.5 py-0.5 rounded border border-gray-200 dark:border-[#3a3a3a] flex items-center gap-1">
+                                        <i class="pi pi-clock !text-[7px]"></i> {{ formatTime(item.date) }}
+                                    </span>
+                                </div>
+                                
+                                <!-- Cuerpo del log -->
+                                <div class="flex flex-col gap-1.5 flex-grow">
+                                    <!-- Metadatos unificados -->
+                                    <div class="text-[11px] text-gray-500 flex flex-wrap items-center gap-1.5">
+                                        <span v-if="item.data.folio || item.folio" class="font-mono text-gray-900 dark:text-gray-200 font-bold bg-gray-200/50 dark:bg-[#2a2a2a] px-1.5 py-0.5 rounded">
+                                            {{ item.data.folio || item.folio }}
+                                        </span>
+                                        
+                                        <span v-if="item.customerName || item.data.customer" class="flex items-center gap-1 truncate max-w-[120px]" :title="item.customerName || item.data.customer?.name || 'Público general'">
+                                            <i class="pi pi-user !text-[10px]"></i> {{ item.customerName || item.data.customer?.name || 'Público general' }}
+                                        </span>
+                                        
+                                        <span class="flex items-center gap-1 truncate max-w-[90px] ml-auto bg-white dark:bg-[#232323] px-1.5 py-0.5 rounded-md border border-gray-100 dark:border-[#2a2a2a]" :title="item.userName">
+                                            <i class="pi pi-user-edit !text-[10px]"></i> {{ item.userName }}
                                         </span>
                                     </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-500">Cajero:</span>
-                                        <span class="font-semibold">{{ slotProps.item.userName }}</span>
-                                    </div>
-                                    <div class="pt-2 border-t mt-2 space-y-1">
-                                        <div class="flex justify-between">
-                                            <span class="text-gray-500">Total Venta:</span>
-                                            <span class="font-semibold">{{ formatCurrency(slotProps.item.totalSale)
-                                            }}</span>
-                                        </div>
-                                        <div class="flex justify-between font-bold">
-                                            <span>Total Pagado:</span>
-                                            <span>{{ formatCurrency(slotProps.item.totalPaid) }}</span>
-                                        </div>
-                                    </div>
-                                </div>
 
-                                <!-- Contenido para Movimientos (type === 'movement') -->
-                                <div v-if="slotProps.item.type === 'movement'" class="text-sm space-y-1">
-                                    <div class="flex justify-between mb-2">
-                                        <span class="text-gray-500">Realizado por:</span>
-                                        <span class="font-semibold">{{ slotProps.item.userName }}</span>
-                                    </div>
-                                    <p class="text-gray-600 italic">"{{ slotProps.item.data.description }}"</p>
-                                    <div class="flex justify-between font-bold text-base pt-2 border-t mt-2">
-                                        <span>Monto:</span>
-                                        <span
-                                            :class="slotProps.item.data.type === 'ingreso' ? 'text-blue-500' : 'text-red-500'">
-                                            {{ formatCurrency(slotProps.item.data.amount) }}
-                                        </span>
-                                    </div>
+                                    <p v-if="item.type === 'movement'" class="text-[11px] text-gray-600 dark:text-gray-400 italic m-0 line-clamp-1">"{{ item.data.description }}"</p>
                                 </div>
-
-                                <!-- Contenido para Pagos Externos (type === 'payment') -->
-                                <div v-if="slotProps.item.type === 'payment'" class="text-sm space-y-1">
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-500">Folio O.S.:</span>
-                                        <span class="font-mono">{{ slotProps.item.folio }}</span>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-500">Cliente:</span>
-                                        <span class="font-semibold">{{ slotProps.item.customerName }}</span>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-500">Registró O.S.:</span>
-                                        <span class="font-semibold">{{ slotProps.item.userName }}</span>
-                                    </div>
-                                    <div class="pt-2 border-t mt-2 space-y-1">
-                                        <div class="flex justify-between font-bold text-base">
-                                            <span>Monto Pagado:</span>
-                                            <span
-                                                :class="slotProps.item.data.amount >= 0 ? 'text-green-500' : 'text-red-500'">
-                                                {{ formatCurrency(slotProps.item.data.amount) }}
-                                            </span>
-                                        </div>
-                                    </div>
+                                
+                                <!-- Montos (Pie de tarjeta alineado a la derecha) -->
+                                <div class="flex justify-end items-end pt-1">
+                                    <span v-if="item.type === 'sale'" class="font-mono font-bold text-lg text-gray-900 dark:text-white">{{ formatCurrency(item.totalPaid) }}</span>
+                                    <span v-else-if="item.type === 'abono'" class="font-mono font-bold text-lg text-blue-600 dark:text-blue-500">+ {{ formatCurrency(item.totalAbono) }}</span>
+                                    <span v-else-if="item.type === 'movement'" class="font-mono font-bold text-lg" :class="item.data.type === 'ingreso' ? 'text-blue-600 dark:text-blue-500' : 'text-red-600 dark:text-red-500'">
+                                        {{ item.data.type === 'ingreso' ? '+' : '-' }}{{ formatCurrency(item.data.amount) }}
+                                    </span>
+                                    <span v-else-if="item.type === 'payment'" class="font-mono font-bold text-lg" :class="item.data.amount >= 0 ? 'text-green-600 dark:text-green-500' : 'text-red-600 dark:text-red-500'">
+                                        {{ formatCurrency(item.data.amount) }}
+                                    </span>
                                 </div>
+                            </div>
+                            
+                            <!-- Flecha conectora Vertical (Solo Mobile, hacia la siguiente tarjeta inferior) -->
+                            <div v-if="index < timelineEvents.length - 1" class="md:hidden flex justify-center -mb-2 mt-1 z-0 text-gray-300 dark:text-[#4a4a4a]">
+                                <i class="pi pi-arrow-down !text-[10px]"></i>
+                            </div>
+                        </div>
 
-                                <!-- --- INICIO: PLANTILLA PARA ABONOS (Simplificada) --- -->
-                                <div v-if="slotProps.item.type === 'abono'" class="text-sm space-y-1">
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-500">Folio:</span>
-                                        <span class="font-mono">{{ slotProps.item.data.folio }}</span>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-500">Cliente:</span>
-                                        <span class="font-semibold">{{ slotProps.item.customerName }}</span>
-                                    </div>
-                                    <div class="flex justify-between">
-                                        <span class="text-gray-500">Cajero:</span>
-                                        <span class="font-semibold">{{ slotProps.item.userName }}</span>
-                                    </div>
-                                    <div class="pt-2 border-t mt-2 space-y-1">
-                                        <div class="flex justify-between font-bold text-base">
-                                            <span>Monto Abonado:</span>
-                                            <span class="text-green-500">
-                                                {{ formatCurrency(slotProps.item.totalAbono) }}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <!-- --- FIN: PLANTILLA PARA ABONOS --- -->
-
-                            </template>
-                        </Card>
-                    </template>
-                </Timeline>
-                <div v-else class="text-center py-12 text-gray-500">
-                    <i class="pi pi-history !text-4xl mb-3"></i>
-                    <p>No hay transacciones ni movimientos en esta sesión.</p>
+                    </div>
+                    
+                    <div v-else class="flex flex-col items-center justify-center text-center py-12 opacity-60">
+                        <i class="pi pi-history text-3xl text-gray-400 mb-3"></i>
+                        <p class="text-sm text-gray-500 m-0">No hay transacciones ni movimientos en esta sesión.</p>
+                    </div>
                 </div>
             </div>
         </div>
+        
         <template #footer>
-            <Button label="Cerrar" icon="pi pi-times" @click="closeModal" text severity="secondary" />
+            <div class="flex justify-end w-full">
+                <Button label="Cerrar" icon="pi pi-times" @click="closeModal" severity="secondary" class="!rounded-xl !uppercase !tracking-widest !text-[12px] !font-bold" />
+            </div>
         </template>
     </Dialog>
 </template>

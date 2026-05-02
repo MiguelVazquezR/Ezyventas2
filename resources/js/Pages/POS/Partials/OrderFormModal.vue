@@ -72,96 +72,133 @@ const formatCurrency = (value) => {
         @update:visible="val => emit('update:visible', val)"
         modal 
         header="Crear nuevo pedido" 
-        :style="{ width: '90vw', maxWidth: '600px' }"
+        class="w-full max-w-2xl"
+        :breakpoints="{ '1199px': '75vw', '575px': '95vw' }"
+        :pt="{
+            root: { class: 'dark:bg-[#232323] border-none shadow-2xl rounded-3xl overflow-hidden' },
+            header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 md:px-8 py-5 md:py-6' },
+            title: { class: 'text-xl md:text-2xl font-light tracking-tight text-gray-900 dark:text-white m-0' },
+            content: { class: 'dark:bg-[#232323] px-6 md:px-8 py-6' },
+            footer: { class: 'dark:bg-[#232323] border-t border-gray-100 dark:border-[#3a3a3a] px-6 md:px-8 py-4 md:py-5' }
+        }"
     >
-        <div class="flex flex-col gap-6">
+        <div class="flex flex-col gap-8">
             
-            <!-- NUEVA DESCRIPCIÓN INFORMATIVA -->
-            <div class="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg border border-yellow-200 dark:border-yellow-800 text-sm text-yellow-800 dark:text-yellow-200 flex items-start gap-3">
-                <i class="pi pi-info-circle mt-0.5 text-lg"></i>
+            <!-- DESCRIPCIÓN INFORMATIVA -->
+            <div class="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-2xl border border-blue-100 dark:border-blue-900/30 text-sm flex items-start gap-4">
+                <div class="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0">
+                    <i class="pi pi-info-circle !text-xl"></i>
+                </div>
                 <div>
-                    <p class="font-bold">¿Para qué sirve un pedido?</p>
-                    <p class="mt-1 leading-relaxed">
-                        Utiliza esta opción para ventas que requieren <strong>entrega a domicilio</strong> o recolección programada. 
-                        El inventario se reservará de inmediato, pero el cobro se puede gestionar posteriormente (ej. pago contra entrega).
+                    <p class="font-medium text-lg text-blue-900 dark:text-blue-300 m-0 mb-1 tracking-tight">¿Para qué sirve un pedido?</p>
+                    <p class="m-0 leading-relaxed text-blue-800 dark:text-blue-200/70 text-sm">
+                        Reserva el inventario inmediatamente para ventas que requieren <strong class="dark:text-blue-200">entrega a domicilio o recolección programada</strong>. 
+                        El cobro se puede gestionar posteriormente.
                     </p>
                 </div>
             </div>
 
             <!-- SECCIÓN 1: Datos de Contacto -->
-            <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800">
-                <div class="flex items-center gap-2 mb-3">
-                    <i class="pi pi-user text-blue-600 dark:text-blue-400"></i>
-                    <h3 class="font-bold text-gray-800 dark:text-gray-200 m-0">Información de contacto</h3>
+            <div>
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-8 h-8 rounded-full bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#3a3a3a] flex items-center justify-center text-gray-500">
+                        <i class="pi pi-user !text-sm"></i>
+                    </div>
+                    <h3 class="font-medium text-lg text-gray-900 dark:text-white m-0 tracking-tight">Información de contacto</h3>
                 </div>
                 
-                <div v-if="client" class="mb-3 flex items-center gap-2 text-sm text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 p-2 rounded">
-                    <i class="pi pi-check-circle"></i>
-                    <span>Cliente registrado seleccionado: <strong>{{ client.name }}</strong></span>
+                <div v-if="client" class="mb-5 flex items-center gap-3 text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-900/30 p-3 rounded-2xl">
+                    <i class="pi pi-check-circle !text-lg"></i>
+                    <span class="m-0">Cliente enlazado: <strong class="font-medium">{{ client.name }}</strong></span>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div class="flex flex-col gap-2">
-                        <label class="text-sm font-semibold">Nombre de quien recibe *</label>
-                        <InputText v-model="form.contact_name" placeholder="Ej. Juan Pérez" class="w-full" :disabled="!!client" />
+                        <label class="text-[10px] font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Nombre de quien recibe *</label>
+                        <InputText v-model="form.contact_name" placeholder="Ej. Juan Pérez" 
+                            class="w-full !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-3" 
+                            :disabled="!!client" />
                     </div>
                     <div class="flex flex-col gap-2">
-                        <label class="text-sm font-semibold">Teléfono / WhatsApp *</label>
-                        <InputText v-model="form.contact_phone" placeholder="Ej. 55 1234 5678" class="w-full" />
+                        <label class="text-[10px] font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Teléfono / WhatsApp *</label>
+                        <InputText v-model="form.contact_phone" placeholder="Ej. 55 1234 5678" 
+                            class="w-full !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-3" />
                     </div>
                 </div>
             </div>
 
+            <hr class="border-gray-100 dark:border-[#3a3a3a] m-0">
+
             <!-- SECCIÓN 2: Logística de Entrega -->
-            <div class="border-t pt-4">
-                <h3 class="font-bold text-gray-800 dark:text-gray-200 mb-4">Detalles de entrega</h3>
+            <div>
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-8 h-8 rounded-full bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#3a3a3a] flex items-center justify-center text-gray-500">
+                        <i class="pi pi-map-marker !text-sm"></i>
+                    </div>
+                    <h3 class="font-medium text-lg text-gray-900 dark:text-white m-0 tracking-tight">Detalles de entrega</h3>
+                </div>
                 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
                     <div class="flex flex-col gap-2">
-                        <label class="text-sm font-semibold">Fecha y hora de entrega *</label>
-                        <DatePicker v-model="form.delivery_date" showTime hourFormat="12" dateFormat="dd/mm/yy" placeholder="Selecciona fecha" class="w-full" />
+                        <label class="text-[10px] font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Fecha y hora programada *</label>
+                        <DatePicker v-model="form.delivery_date" showTime hourFormat="12" dateFormat="dd/mm/yy" placeholder="Selecciona fecha y hora" 
+                            :pt="{ 
+                                input: { root: { class: 'w-full !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-3' } },
+                                panel: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl shadow-xl' }
+                            }" />
                     </div>
                     <div class="flex flex-col gap-2">
-                        <label class="text-sm font-semibold">Costo de envío</label>
-                        <InputNumber v-model="form.shipping_cost" mode="currency" currency="MXN" locale="es-MX" class="w-full" placeholder="$0.00" />
+                        <label class="text-[10px] font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Cargo por envío</label>
+                        <InputNumber v-model="form.shipping_cost" mode="currency" currency="MXN" locale="es-MX" placeholder="$0.00" 
+                            class="w-full"
+                            :pt="{ input: { root: { class: 'w-full !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-3' } } }" />
                     </div>
                 </div>
 
-                <div class="flex flex-col gap-2 mb-4">
-                    <label class="text-sm font-semibold">Dirección de entrega</label>
-                    <Textarea v-model="form.shipping_address" rows="2" placeholder="Calle, número, colonia y referencias..." class="w-full" />
+                <div class="flex flex-col gap-2 mb-5">
+                    <label class="text-[10px] font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Dirección de entrega (Opcional)</label>
+                    <Textarea v-model="form.shipping_address" rows="2" placeholder="Calle, número, colonia y referencias..." 
+                        class="w-full !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors resize-none !py-3" />
                 </div>
 
                 <div class="flex flex-col gap-2">
-                    <label class="text-sm font-semibold">Notas del pedido (Internas)</label>
-                    <Textarea v-model="form.notes" rows="2" placeholder="Ej. Empacar en caja de regalo..." class="w-full" />
+                    <label class="text-[10px] font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Notas internas (Opcional)</label>
+                    <Textarea v-model="form.notes" rows="2" placeholder="Ej. Empacar en caja de regalo..." 
+                        class="w-full !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors resize-none !py-3" />
                 </div>
             </div>
 
             <!-- SECCIÓN 3: Resumen Financiero -->
-            <div class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg flex justify-between items-center">
-                <div class="text-sm text-gray-600 dark:text-gray-400">
-                    <p>Subtotal Productos: {{ formatCurrency(cartTotal) }}</p>
-                    <p>Envío: {{ formatCurrency(form.shipping_cost) }}</p>
+            <div class="bg-gray-50 dark:bg-[#1a1a1a] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mt-2">
+                <div class="space-y-2 w-full sm:w-auto">
+                    <div class="flex justify-between sm:justify-start gap-6 items-center">
+                        <span class="text-[10px] uppercase tracking-widest text-gray-500 m-0">Productos</span>
+                        <span class="font-mono text-sm text-gray-700 dark:text-gray-300 m-0">{{ formatCurrency(cartTotal) }}</span>
+                    </div>
+                    <div class="flex justify-between sm:justify-start gap-6 items-center">
+                        <span class="text-[10px] uppercase tracking-widest text-gray-500 m-0">Envío</span>
+                        <span class="font-mono text-sm text-gray-700 dark:text-gray-300 m-0">{{ formatCurrency(form.shipping_cost) }}</span>
+                    </div>
                 </div>
-                <div class="text-right">
-                    <p class="text-xs uppercase font-bold text-gray-500">Total del Pedido</p>
-                    <p class="text-2xl font-black text-gray-900 dark:text-white">{{ formatCurrency(grandTotal) }}</p>
+                
+                <div class="text-left sm:text-right w-full sm:w-auto border-t sm:border-t-0 sm:border-l border-gray-200 dark:border-[#3a3a3a] pt-4 sm:pt-0 sm:pl-8">
+                    <p class="text-[10px] uppercase tracking-widest text-gray-500 m-0 mb-1">Total del pedido</p>
+                    <p class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0 leading-none">{{ formatCurrency(grandTotal) }}</p>
                 </div>
             </div>
 
         </div>
 
         <template #footer>
-            <div class="flex justify-end gap-2">
-                <Button label="Cancelar" severity="secondary" text @click="emit('update:visible', false)" :disabled="loading" />
-                <!-- BOTÓN CON ESTADO DE CARGA -->
+            <div class="flex items-center justify-end gap-3 w-full">
+                <Button label="Cancelar" severity="secondary" text @click="emit('update:visible', false)" :disabled="loading" class="!rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold" />
                 <Button 
-                    label="Confirmar Pedido" 
+                    label="Confirmar pedido" 
                     icon="pi pi-check" 
                     @click="handleSubmit" 
                     :disabled="!isFormValid" 
                     :loading="loading" 
+                    class="!rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold !py-3 px-8"
                 />
             </div>
         </template>

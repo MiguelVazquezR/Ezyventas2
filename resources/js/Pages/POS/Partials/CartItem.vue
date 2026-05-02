@@ -244,7 +244,7 @@ const confirmRemoveItem = (event, itemId) => {
                         incrementButtonIcon="pi pi-plus !text-[10px]" 
                         decrementButtonIcon="pi pi-minus !text-[10px]"
                         :pt="{
-                            root: { class: 'h-7 max-w-[9.5rem] flex-shrink-0' },
+                            root: { class: 'h-7 max-w-[8.5rem] flex-shrink-0' },
                             input: { root: { class: 'min-w-0 !w-8 md:!w-10 !h-7 !text-center !text-[10px] !font-bold dark:!bg-[#232323] dark:!border-[#3a3a3a] dark:!text-white !p-0 shadow-inner' } },
                             incrementButton: { root: { class: '!w-7 !h-7 !px-0 !rounded-r-md dark:!bg-[#2a2a2a] dark:!border-[#3a3a3a] dark:!text-gray-300 hover:dark:!bg-primary-500 hover:dark:!border-primary-500 hover:!text-white transition-colors' } },
                             decrementButton: { root: { class: '!w-7 !h-7 !px-0 !rounded-l-md dark:!bg-[#2a2a2a] dark:!border-[#3a3a3a] dark:!text-gray-300 hover:dark:!bg-primary-500 hover:dark:!border-primary-500 hover:!text-white transition-colors' } }

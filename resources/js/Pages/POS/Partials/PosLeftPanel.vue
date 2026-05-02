@@ -341,7 +341,7 @@ const handleProductCreated = (newProduct) => {
                         v-tooltip.bottom="'Cerrar caja'"
                         class="!w-10 !h-10 !bg-red-50 dark:!bg-red-900/20 !border-red-200 dark:!border-red-900/50 !text-red-500 hover:!bg-red-500 hover:!text-white transition-all ml-2" />
                     
-                    <Popover ref="op" :pt="{ root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-3xl' } }">
+                    <Popover ref="op" :pt="{ root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-3xl !rounded-tl-none' } }">
                         <PendingCartsPopover :carts="pendingCarts" @resume-cart="$emit('resumeCart', $event)"
                             @delete-cart="$emit('deleteCart', $event)" />
                     </Popover>
