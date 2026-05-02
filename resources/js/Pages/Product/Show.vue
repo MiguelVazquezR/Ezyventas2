@@ -108,7 +108,7 @@ const deleteProduct = () => {
             
             <!-- Menú de Acciones Principal -->
             <div>
-                <Button label="Acciones" icon="pi pi-cog" @click="toggleActionMenu" severity="secondary" outlined class="w-full sm:w-auto" />
+                <Button label="Acciones" icon="pi pi-chevron-down" iconPos="right" @click="toggleActionMenu" severity="secondary" outlined class="w-full sm:w-auto" />
                 <Menu ref="actionMenu" :model="actionItems" :popup="true" />
             </div>
         </div>

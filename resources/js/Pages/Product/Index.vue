@@ -321,7 +321,7 @@ const goToDetails = (id) => {
                         </template>
                     </Column>
 
-                    <Column field="show_in_pos" header="Tipo / POS" sortable alignFrozen="right">
+                    <Column field="show_in_pos" header="Visibilidad" sortable alignFrozen="right">
                         <template #body="{ data }">
                             <div class="flex justify-center items-center">
                                 <i v-if="data.show_in_pos" class="pi pi-shop text-green-500 font-bold" v-tooltip.top="'Visible en Punto de Venta'"></i>

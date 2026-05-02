@@ -16,8 +16,6 @@ use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Promotion;
-use App\Models\Transaction;
-use App\Models\ServiceOrder; 
 use App\Services\TransactionPaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -294,7 +292,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         }
     }
 
-    private function getProductsData($search = null, $categoryId = null)
+   private function getProductsData($search = null, $categoryId = null)
     {
         $branchId = Auth::user()->branch_id;
         
@@ -318,7 +316,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'category:id,name', 
                 'branches', // Necesario para pivot local
                 'productAttributes.branches', // Necesario para pivot de variantes local
-                'components.componentable' // <--- AÑADIDO: Cargar la relación del combo
+                'components.componentable' 
             ])
             ->orderBy('name', 'asc')
             ->cursorPaginate(20)
@@ -366,9 +364,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'variants' => $this->mapVariants($product->productAttributes, $branchId),
                 'variant_combinations' => $this->mapVariantCombinations($product, $variantImages, $branchId),
                 'promotions' => $promotionData['promotions'],
-                
-                // <--- AÑADIDO: Enviar los componentes al Frontend --->
                 'components' => $product->components,
+                // <--- NUEVO: Incorporamos is_bulk y measure_unit para que las lea el CartItem.vue --->
+                'is_bulk' => (bool) $product->is_bulk,
+                'measure_unit' => $product->measure_unit,
             ];
         });
 

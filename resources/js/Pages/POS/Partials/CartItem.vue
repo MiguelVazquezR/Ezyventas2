@@ -3,8 +3,8 @@ import { ref, watch, computed } from 'vue';
 import { usePermissions } from '@/Composables';
 import { FireIcon, StarIcon } from '@heroicons/vue/24/solid';
 import { useConfirm } from 'primevue/useconfirm';
-import { useToast } from 'primevue/usetoast'; // NUEVO: Importar Toast
-import axios from 'axios'; // NUEVO: Importar axios
+import { useToast } from 'primevue/usetoast'; 
+import axios from 'axios'; 
 
 const props = defineProps({
     item: Object,
@@ -15,7 +15,7 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
-const toast = useToast(); // NUEVO: Inicializar toast
+const toast = useToast(); 
 const emit = defineEmits(['updateQuantity', 'updatePrice', 'removeItem']);
 const { hasPermission } = usePermissions();
 
@@ -28,14 +28,18 @@ const isUpdatePriceModalVisible = ref(false);
 const pendingPriceChange = ref(null);
 const isUpdatingPricePermanent = ref(false);
 
-// Observador para emitir cambios de cantidad
+// Observador para emitir cambios de cantidad (Soporte para Venta a Granel)
 watch(quantity, (newQuantity) => {
-    const validQuantity = Math.max(1, newQuantity || 1);
+    // Si es a granel, el mínimo permitido es 0.001, si no, es 1.
+    const minQty = props.item.is_bulk ? 0.001 : 1;
+    const validQuantity = Math.max(minQty, Number(newQuantity) || minQty);
+    
     if (validQuantity !== props.item.quantity) {
         emit('updateQuantity', { itemId: props.item.cartItemId, quantity: validQuantity });
     }
-     if (newQuantity < 1 && quantity.value !== 1) {
-       quantity.value = 1;
+    
+    if (newQuantity < minQty && quantity.value !== minQty) {
+        quantity.value = minQty;
     }
 });
 
@@ -43,7 +47,6 @@ watch(quantity, (newQuantity) => {
 const applyPriceChange = () => {
     const validPrice = Math.max(0, price.value || 0);
     if (validPrice !== props.item.price) {
-        // En lugar de emitir directo, abrimos el modal
         pendingPriceChange.value = validPrice;
         isUpdatePriceModalVisible.value = true;
     } else {
@@ -52,7 +55,6 @@ const applyPriceChange = () => {
     }
 }
 
-// Cancelar edición de precio (Botón "X" o cancelar modal)
 const cancelPriceEdit = () => {
     price.value = props.item.price; 
     isEditingPrice.value = false;
@@ -60,7 +62,6 @@ const cancelPriceEdit = () => {
     pendingPriceChange.value = null;
 }
 
-// Acción: Precio solo para esta venta
 const confirmPriceForThisSaleOnly = () => {
     emit('updatePrice', { itemId: props.item.cartItemId, price: pendingPriceChange.value });
     isUpdatePriceModalVisible.value = false;
@@ -68,7 +69,6 @@ const confirmPriceForThisSaleOnly = () => {
     pendingPriceChange.value = null;
 };
 
-// Acción: Precio permanente en catálogo
 const confirmPricePermanent = async () => {
     isUpdatingPricePermanent.value = true;
     try {
@@ -78,14 +78,12 @@ const confirmPricePermanent = async () => {
             new_price: pendingPriceChange.value
         });
         
-        // Emite el cambio local al carrito
         emit('updatePrice', { itemId: props.item.cartItemId, price: pendingPriceChange.value });
         
         toast.add({ severity: 'success', summary: 'Catálogo actualizado', detail: 'El precio se ha modificado permanentemente en la base de datos.', life: 4000 });
     } catch (error) {
         console.error(error);
         toast.add({ severity: 'error', summary: 'Error al actualizar', detail: 'No se pudo guardar en el catálogo. Se aplicará solo a esta venta.', life: 4000 });
-        // Fallback: Si falla, aplicarlo solo a la venta actual para no bloquear al cajero
         emit('updatePrice', { itemId: props.item.cartItemId, price: pendingPriceChange.value });
     } finally {
         isUpdatingPricePermanent.value = false;
@@ -176,15 +174,16 @@ const confirmRemoveItem = (event, itemId) => {
 </script>
 
 <template>
-    <div
-        class="flex gap-4 relative bg-white dark:bg-gray-900 p-3 rounded-xl border border-[#D9D9D9] dark:border-gray-700">
+    <div class="flex gap-4 relative bg-white dark:bg-gray-900 p-3 rounded-xl border border-[#D9D9D9] dark:border-gray-700">
         <!-- Imagen del Producto -->
         <img :src="item.image" :alt="item.name" class="size-16 rounded-[10px] object-contain bg-[#f2f2f2]">
 
         <!-- Detalles del Producto y Controles -->
         <div class="flex-grow">
             <!-- Nombre -->
-            <p class="font-bold text-sm leading-tight text-[#373737] dark:text-gray-200 w-[87%]">{{ item.name }}</p>
+            <p class="font-bold text-sm leading-tight text-[#373737] dark:text-gray-200 w-[87%]">
+                {{ item.name }}
+            </p>
 
             <!-- Input de Edición de Precio -->
             <div v-if="isEditingPrice" class="flex items-center gap-1 mt-1">
@@ -200,10 +199,16 @@ const confirmRemoveItem = (event, itemId) => {
             <div v-else class="flex items-center gap-2 mt-1">
                  <p v-if="!isItemDiscountApplied && !isTierPriceActive" class="text-sm font-light text-[#373737] dark:text-gray-400 m-0">
                     {{ formatCurrency(item.price) }}
+                    <!-- Texto de unidad si es a granel -->
+                    <span v-if="item.is_bulk" class="text-[10px] text-gray-400 ml-1">/ {{ item.measure_unit || 'Unidad' }}</span>
                  </p>
                  <div v-else class="flex items-center gap-2">
                      <del v-if="item.original_price && item.price < item.original_price" class="text-xs text-gray-400">{{ formatCurrency(item.original_price) }}</del>
-                     <p class="text-sm font-bold text-[#373737] dark:text-gray-100 m-0">{{ formatCurrency(item.price) }}</p>
+                     <p class="text-sm font-bold text-[#373737] dark:text-gray-100 m-0">
+                        {{ formatCurrency(item.price) }}
+                        <!-- Texto de unidad si es a granel -->
+                        <span v-if="item.is_bulk" class="text-[10px] font-normal text-gray-400 ml-1">/ {{ item.measure_unit || 'Unidad' }}</span>
+                     </p>
                      <StarIcon v-if="isTierPriceActive" class="size-4 text-amber-500" v-tooltip.bottom="'Precio de mayoreo aplicado'"/>
                  </div>
                  
@@ -226,10 +231,22 @@ const confirmRemoveItem = (event, itemId) => {
 
             <!-- Controles de Cantidad y Total -->
             <div class="flex justify-between items-end mt-2">
-                <!-- Input de Cantidad -->
-                <InputNumber v-model="quantity" showButtons buttonLayout="horizontal" :min="1"
-                    decrementButtonClass="p-button-secondary !py-1 !px-2" incrementButtonClass="p-button-secondary !py-1 !px-2" incrementButtonIcon="pi pi-plus" decrementButtonIcon="pi pi-minus"
-                    :inputStyle="{ width: '3rem', height: '2rem', textAlign: 'center' }" size="small" />
+                <!-- Input de Cantidad (Con soporte Granel) -->
+                <div class="flex items-center gap-1.5">
+                    <InputNumber v-model="quantity" showButtons buttonLayout="horizontal" 
+                        :min="item.is_bulk ? 0.001 : 1"
+                        :maxFractionDigits="item.is_bulk ? 3 : 0"
+                        :step="item.is_bulk ? 0.25 : 1"
+                        incrementButtonIcon="pi pi-plus" 
+                        decrementButtonIcon="pi pi-minus"
+                        :inputStyle="{ width: item.is_bulk ? '3.4rem' : '3rem', height: '2rem', textAlign: 'center' }" 
+                        size="small" 
+                    />
+                    <!-- Etiqueta de la unidad para el Input (Ej. Kg) -->
+                    <span v-if="item.is_bulk" class="text-[10px] font-bold text-gray-500 uppercase tracking-wide">
+                        {{ item.measure_unit || 'Ud' }}
+                    </span>
+                </div>
 
                 <!-- Icono Promociones y Total de Línea -->
                 <div class="flex items-center gap-1">
@@ -264,7 +281,7 @@ const confirmRemoveItem = (event, itemId) => {
     <!-- Modales Globales del Componente -->
     <ConfirmPopup group="cart-item-delete" />
 
-    <!-- NUEVO DIALOGO: ALCANCE DE EDICIÓN DE PRECIO -->
+    <!-- DIALOGO: ALCANCE DE EDICIÓN DE PRECIO -->
     <Dialog v-model:visible="isUpdatePriceModalVisible" modal header="Confirmar cambio de precio" :style="{ width: '25rem' }" @hide="cancelPriceEdit">
         <p class="text-gray-700 dark:text-gray-300 mb-5 text-sm">
             Has ingresado un nuevo precio de <strong class="text-primary-600 dark:text-primary-400 text-lg">{{ formatCurrency(pendingPriceChange) }}</strong>. <br><br>
