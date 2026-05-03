@@ -34,13 +34,13 @@ const formatFriendlyDate = (dateString) => {
     try {
         const d = new Date(dateString);
         const day = d.getDate();
-        const month = new Intl.DateTimeFormat('es-MX', { month: 'long' }).format(d);
+        const month = new Intl.DateTimeFormat('es-MX', { month: 'short' }).format(d);
         let hour = d.getHours();
         const minute = d.getMinutes().toString().padStart(2, '0');
         const ampm = hour >= 12 ? 'pm' : 'am';
         hour = hour % 12;
         hour = hour ? hour : 12;
-        return `${day} de ${month}, ${hour}:${minute}${ampm}`;
+        return `${day} ${month}, ${hour}:${minute} ${ampm}`;
     } catch (e) {
         return dateString;
     }
@@ -80,128 +80,162 @@ const getTransactionPending = (txn) => {
     const paid = getTransactionTotalPaid(txn);
     return Math.max(0, total - paid);
 };
+
+// --- TESLA UI PASS-THROUGH (PT) ---
+const tagPt = {
+    root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' }
+};
+
+const drawerPt = {
+    root: { class: 'dark:!bg-[#232323] !border-l-gray-100 dark:!border-l-[#3a3a3a]' },
+    header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 py-5' },
+    title: { class: 'text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0' },
+    content: { class: 'dark:bg-[#232323] p-0 custom-scrollbar flex flex-col' },
+    footer: { class: 'dark:bg-[#232323] p-0' },
+    closeButton: { class: 'hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors rounded-full w-8 h-8 flex items-center justify-center' },
+    closeButtonIcon: { class: 'dark:text-gray-400 !text-sm' },
+    mask: { class: 'backdrop-blur-sm bg-gray-900/40 dark:bg-black/60' }
+};
 </script>
 
 <template>
-    <Drawer v-model:visible="isVisible" position="right" class="!w-full md:!w-[400px]">
+    <Drawer v-model:visible="isVisible" position="right" class="w-full md:!w-[30rem]" :pt="drawerPt">
+        
         <template #header>
-            <div class="flex items-center gap-2">
-                <span class="font-bold text-lg">Resumen Venta #{{ transaction?.folio }}</span>
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-800/50">
+                    <i class="pi pi-receipt !text-sm"></i>
+                </div>
+                <div>
+                    <h2 class="text-xl font-light tracking-tight text-gray-900 dark:text-white m-0 leading-tight">Venta {{ transaction?.folio }}</h2>
+                </div>
             </div>
         </template>
         
-        <div v-if="transaction" class="flex flex-col gap-6 overflow-y-auto h-full pr-2 pb-4">
+        <div v-if="transaction" class="flex-grow space-y-6 overflow-y-auto pb-6 px-6 pt-6 custom-scrollbar">
+            
             <!-- Información General -->
-            <div class="flex flex-col gap-2">
-                <div class="flex justify-between items-center">
-                    <span class="text-gray-500 text-sm">Estatus</span>
-                    <Tag :value="formatStatusLabel(transaction.status)" :severity="getStatusSeverity(transaction.status)" />
+            <div class="space-y-4 bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest m-0">Estatus</h3>
+                    <Tag :value="formatStatusLabel(transaction.status)" :severity="getStatusSeverity(transaction.status)" :pt="tagPt" />
                 </div>
-                <div class="flex justify-between items-center">
-                    <span class="text-gray-500 text-sm">Fecha</span>
-                    <span class="font-medium text-sm">{{ formatFriendlyDate(transaction.created_at) }}</span>
+                
+                <div class="flex justify-between items-center border-b border-gray-200 dark:border-[#2a2a2a] pb-3 pt-2">
+                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Fecha y Hora</span>
+                    <span class="font-medium text-sm text-gray-900 dark:text-white flex items-center gap-1">
+                        <i class="pi pi-calendar !text-xs text-gray-400"></i>
+                        {{ formatFriendlyDate(transaction.created_at) }}
+                    </span>
                 </div>
-                <div class="flex justify-between items-center">
-                    <span class="text-gray-500 text-sm">Cliente</span>
+
+                <div class="flex justify-between items-center pt-1 border-b border-gray-200 dark:border-[#2a2a2a] pb-3">
+                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Cliente</span>
                     <div class="flex flex-col items-end">
-                        <span v-if="transaction.customer" class="font-medium text-sm text-right truncate max-w-[200px]" :title="transaction.customer.name">
+                        <span v-if="transaction.customer" class="font-medium text-sm text-gray-900 dark:text-white truncate max-w-[180px]" :title="transaction.customer.name">
                             {{ transaction.customer.name }}
                         </span>
-                        <span v-else-if="transaction.contact_info && transaction.contact_info.name" class="font-medium text-sm text-right truncate max-w-[200px]" :title="transaction.contact_info.name">
-                            {{ transaction.contact_info.name }} <Tag severity="info" value="Comanda" class="!text-[10px] !px-1 !py-0 ml-1"></Tag>
+                        <span v-else-if="transaction.contact_info && transaction.contact_info.name" class="font-medium text-sm text-gray-900 dark:text-white truncate max-w-[180px]" :title="transaction.contact_info.name">
+                            {{ transaction.contact_info.name }} <Tag severity="info" value="Comanda" class="!text-[9px] !px-1.5 !py-0.5 ml-1" />
                         </span>
-                        <span v-else class="font-medium text-sm text-right truncate max-w-[200px]" title="Público en general">
-                            Público en general
+                        <span v-else class="text-gray-500 italic text-sm truncate max-w-[180px]" title="Público en general">
+                            Público general
                         </span>
                     </div>
                 </div>
+
+                <div class="flex justify-between items-center pt-1">
+                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Cajero</span>
+                    <span class="font-medium text-sm text-gray-900 dark:text-white truncate max-w-[180px]">
+                        {{ transaction.user?.name || 'N/A' }}
+                    </span>
+                </div>
             </div>
 
-            <Divider class="!my-0" />
-
             <!-- Lista de Artículos -->
-            <div class="flex flex-col gap-2">
-                <span class="text-gray-500 text-sm font-bold uppercase tracking-wider">Artículos</span>
-                <ul v-if="transaction.items && transaction.items.length" class="flex flex-col gap-3">
-                    <li v-for="item in transaction.items" :key="item.id" class="flex justify-between text-sm">
-                        <div class="flex flex-col flex-1">
-                            <span class="font-medium leading-tight">
-                                <span class="text-gray-500 mr-1">{{ Math.round(item.quantity) }}x</span>
+            <div class="space-y-3 bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
+                <h3 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest m-0 mb-3">Artículos registrados</h3>
+                
+                <ul v-if="transaction.items && transaction.items.length" class="flex flex-col gap-3 m-0 p-0 list-none">
+                    <li v-for="item in transaction.items" :key="item.id" class="flex justify-between items-center text-sm border-b border-gray-200 dark:border-[#2a2a2a] pb-2 last:border-0 last:pb-0">
+                        <div class="flex flex-col flex-1 pr-2">
+                            <span class="font-medium text-gray-800 dark:text-gray-200 leading-tight">
+                                <span class="text-gray-400 mr-1">{{ Math.round(item.quantity) }}x</span>
                                 {{ item.description }}
                             </span>
                         </div>
-                        <span class="font-semibold ml-2">{{ formatCurrency(item.line_total) }}</span>
+                        <span class="font-mono text-gray-900 dark:text-white">{{ formatCurrency(item.line_total) }}</span>
                     </li>
                 </ul>
-                <div v-else class="text-sm text-gray-400 italic">No hay artículos registrados.</div>
+                <div v-else class="text-xs text-gray-400 italic text-center py-2">
+                    No hay artículos registrados en esta venta.
+                </div>
             </div>
 
-            <Divider class="!my-0" />
-
-            <!-- Lista de Pagos -->
-            <div class="flex flex-col gap-2">
-                <span class="text-gray-500 text-sm font-bold uppercase tracking-wider">Historial de pagos</span>
-                <ul v-if="transaction.payments && transaction.payments.length" class="flex flex-col gap-3 relative border-l-2 border-gray-200 dark:border-gray-700 ml-2 pl-4 py-1">
+            <!-- Historial de Pagos -->
+            <div class="space-y-3 bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
+                <h3 class="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest m-0 mb-3">Historial de pagos</h3>
+                
+                <ul v-if="transaction.payments && transaction.payments.length" class="flex flex-col gap-4 m-0 p-0 list-none relative border-l border-gray-200 dark:border-[#3a3a3a] ml-2 pl-4 py-1">
                     <li v-for="payment in transaction.payments" :key="payment.id" class="flex flex-col text-sm relative">
-                        <!-- Viñeta visual -->
-                        <div class="absolute size-2 rounded-full -left-[18px] top-1.5" :class="payment.amount < 0 ? 'bg-red-500' : 'bg-primary-500'"></div>
+                        <!-- Viñeta LED visual -->
+                        <div class="absolute w-2 h-2 rounded-full -left-[18px] top-1.5" :class="payment.amount < 0 ? 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]' : 'bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.5)]'"></div>
                         
                         <div class="flex justify-between items-start">
-                            <div class="flex items-center gap-1">
-                                <span class="font-medium capitalize">{{ (getMethodKey(payment.payment_method) || 'Desconocido').replace(/_/g, ' ') }}</span>
-                                <!-- Etiqueta de Devolución -->
-                                <Tag v-if="payment.amount < 0" severity="danger" value="Devolución" class="!text-[9px] !px-1 !py-0" />
+                            <div class="flex items-center gap-2">
+                                <span class="font-medium capitalize text-gray-800 dark:text-gray-200">{{ (getMethodKey(payment.payment_method) || 'Desconocido').replace(/_/g, ' ') }}</span>
+                                <Tag v-if="payment.amount < 0" severity="danger" value="Devolución" :pt="tagPt" />
                             </div>
                             
-                            <!-- Monto en verde (pago) o rojo (devolución) -->
-                            <span class="font-bold" :class="payment.amount < 0 ? 'text-red-500' : 'text-green-600 dark:text-green-400'">
+                            <span class="font-mono font-bold" :class="payment.amount < 0 ? 'text-red-500' : 'text-green-600 dark:text-green-400'">
                                 {{ formatCurrency(payment.amount) }}
                             </span>
                         </div>
                         
                         <!-- Información bancaria (si aplica) -->
-                        <div v-if="payment.bank_account" class="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
-                            <i class="pi pi-building text-[10px]"></i>
-                            <span class="truncate max-w-[150px]">{{ payment.bank_account.bank_name }} - {{ payment.bank_account.account_name }}</span>
-                            <span v-if="payment.bank_account.account_number || payment.bank_account.card_number" class="text-[10px] italic flex-shrink-0">
+                        <div v-if="payment.bank_account" class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 flex items-center gap-1">
+                            <i class="pi pi-building !text-[9px]"></i>
+                            <span class="truncate max-w-[180px]">{{ payment.bank_account.bank_name }} - {{ payment.bank_account.account_name }}</span>
+                            <span v-if="payment.bank_account.account_number || payment.bank_account.card_number" class="italic flex-shrink-0">
                                 (***{{ (payment.bank_account.account_number || payment.bank_account.card_number).slice(-4) }})
                             </span>
                         </div>
 
-                        <span class="text-xs text-gray-500 mt-0.5">{{ formatFriendlyDate(payment.created_at) }}</span>
+                        <span class="text-[10px] uppercase tracking-widest text-gray-500 mt-1">{{ formatFriendlyDate(payment.created_at) }}</span>
                     </li>
                 </ul>
-                <div v-else class="text-sm text-gray-400 italic">No se han registrado pagos.</div>
+                <div v-else class="text-xs text-gray-400 italic text-center py-2">No se han registrado pagos en esta venta.</div>
             </div>
+            
         </div>
 
-        <!-- Footer Fijo -->
+        <!-- Footer Fijo (Resumen Financiero y Acciones) -->
         <template #footer>
-            <div v-if="transaction" class="flex flex-col gap-4 w-full pt-4 border-t dark:border-gray-700 bg-surface-0 dark:bg-surface-900">
-                <!-- Resumen Total Fijo -->
-                <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg flex flex-col gap-1 border dark:border-gray-700">
-                    <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                        <span>Total de la venta:</span>
-                        <span>{{ formatCurrency(transaction.total) }}</span>
+            <div v-if="transaction" class="p-6 border-t border-gray-100 dark:border-[#3a3a3a] bg-white dark:bg-[#232323] flex flex-col gap-4">
+                
+                <!-- Resumen Financiero Tesla UI -->
+                <div class="flex flex-col gap-2 bg-gray-50 dark:bg-[#1a1a1a] p-4 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
+                    <div class="flex justify-between items-center text-sm text-gray-600 dark:text-gray-400">
+                        <span class="text-[10px] uppercase tracking-widest font-bold m-0">Total de venta</span>
+                        <span class="font-mono">{{ formatCurrency(transaction.total) }}</span>
                     </div>
-                    <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                        <span>Abonado:</span>
-                        <span>{{ formatCurrency(getTransactionTotalPaid(transaction)) }}</span>
+                    <div class="flex justify-between items-center text-sm text-gray-600 dark:text-gray-400 border-b border-gray-200 dark:border-[#2a2a2a] pb-3">
+                        <span class="text-[10px] uppercase tracking-widest font-bold m-0">Abonado</span>
+                        <span class="font-mono text-green-600 dark:text-green-500">{{ formatCurrency(getTransactionTotalPaid(transaction)) }}</span>
                     </div>
-                    <div class="flex justify-between font-bold text-base mt-2 pt-2 border-t dark:border-gray-600">
-                        <span>Resta:</span>
-                        <span :class="getTransactionPending(transaction) > 0 ? 'text-red-500' : 'text-green-500'">
+                    <div class="flex justify-between items-center pt-2">
+                        <span class="text-[10px] uppercase tracking-widest font-bold m-0">Resta por cobrar</span>
+                        <span class="font-light tracking-tight text-3xl leading-none m-0" :class="getTransactionPending(transaction) > 0 ? 'text-red-500' : 'text-green-500'">
                             {{ formatCurrency(getTransactionPending(transaction)) }}
                         </span>
                     </div>
                 </div>
 
-                <!-- Acción Footer -->
                 <Button 
                     v-if="hasPermission('transactions.see_details')"
                     label="Ver detalles completos" 
-                    icon="pi pi-external-link" 
-                    class="w-full" 
+                    icon="pi pi-eye" 
+                    class="w-full !rounded-xl !uppercase !tracking-widest !text-xs !font-bold" 
                     @click="router.visit(route('transactions.show', transaction.id))" 
                 />
             </div>

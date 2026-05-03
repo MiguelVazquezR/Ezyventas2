@@ -9,10 +9,10 @@ const props = defineProps({
 });
 
 const paymentMethodDetails = {
-    efectivo: { name: 'Efectivo', icon: 'pi pi-money-bill', color: 'text-green-600' },
-    tarjeta: { name: 'Tarjeta', icon: 'pi pi-credit-card', color: 'text-blue-600' },
-    transferencia: { name: 'Transferencia', icon: 'pi pi-arrows-h', color: 'text-orange-500' },
-    saldo: { name: 'Saldo de cliente', icon: 'pi pi-wallet', color: 'text-purple-500' },
+    efectivo: { name: 'Efectivo', icon: 'pi pi-money-bill', color: 'text-green-600 dark:text-green-400' },
+    tarjeta: { name: 'Tarjeta', icon: 'pi pi-credit-card', color: 'text-blue-600 dark:text-blue-400' },
+    transferencia: { name: 'Transferencia', icon: 'pi pi-arrows-h', color: 'text-orange-500 dark:text-orange-400' },
+    saldo: { name: 'Saldo de cliente', icon: 'pi pi-wallet', color: 'text-purple-500 dark:text-purple-400' },
 };
 
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value || 0);
@@ -30,20 +30,48 @@ const totalAllIncome = computed(() => {
 </script>
 
 <template>
-    <Card>
-        <template #title>Desglose de Ingresos Reales</template>
-        <template #content>
-            <ul v-if="Object.keys(filteredIncomeTotals).length > 0" class="space-y-3 text-sm">
-                 <li v-for="(total, method) in filteredIncomeTotals" :key="method" class="flex justify-between items-center">
-                     <span><i class="pi mr-2" :class="paymentMethodDetails[method]?.icon + ' ' + paymentMethodDetails[method]?.color"></i>{{ paymentMethodDetails[method]?.name || method }}</span>
-                     <span class="font-mono font-semibold">{{ formatCurrency(total) }}</span>
-                </li>
-                <li class="flex justify-between items-center border-t border-gray-200 dark:border-gray-700 pt-3 mt-3 font-bold">
-                     <span><i class="pi pi-chart-bar mr-2"></i>Total de Ingresos</span>
-                     <span class="font-mono text-primary-600 dark:text-primary-400">{{ formatCurrency(totalAllIncome) }}</span>
+    <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col">
+        
+        <!-- Header -->
+        <div class="mb-6 flex items-start justify-between gap-4">
+            <div>
+                <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Desglose de ingresos reales</h2>
+                <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Agrupados por método de pago</p>
+            </div>
+            <div class="w-10 h-10 rounded-full bg-green-50 dark:bg-green-900/20 flex items-center justify-center flex-shrink-0 border border-green-100 dark:border-green-900/30">
+                <i class="pi pi-chart-pie !text-sm text-green-500"></i>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="flex-grow flex flex-col">
+            <ul v-if="Object.keys(filteredIncomeTotals).length > 0" class="m-0 p-0 list-none space-y-4">
+                <li v-for="(total, method) in filteredIncomeTotals" :key="method" class="flex justify-between items-center border-b border-gray-100 dark:border-[#2a2a2a] pb-4 last:border-0 last:pb-0">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-gray-50 dark:bg-[#1a1a1a] flex items-center justify-center border border-gray-200 dark:border-[#3a3a3a]">
+                            <i class="pi !text-[10px]" :class="paymentMethodDetails[method]?.icon + ' ' + paymentMethodDetails[method]?.color"></i>
+                        </div>
+                        <span class="text-sm font-medium text-gray-900 dark:text-white m-0 capitalize">{{ paymentMethodDetails[method]?.name || method }}</span>
+                    </div>
+                    <span class="font-mono text-base text-gray-900 dark:text-white m-0">{{ formatCurrency(total) }}</span>
                 </li>
             </ul>
-             <p v-else class="text-sm text-gray-500 text-center">No se registraron ingresos en esta sesión.</p>
-        </template>
-    </Card>
+            
+            <div v-else class="flex flex-col items-center justify-center text-center py-8 opacity-60 flex-grow">
+                <i class="pi pi-chart-pie !text-3xl text-gray-400 mb-3"></i>
+                <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin ingresos</p>
+                <p class="text-xs text-gray-400 mt-1">No se registraron ingresos en esta sesión.</p>
+            </div>
+            
+            <!-- Resumen Total (Footer interno) -->
+            <div v-if="Object.keys(filteredIncomeTotals).length > 0" class="mt-6 pt-6 border-t border-gray-200 dark:border-[#3a3a3a] flex items-end justify-between">
+                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 flex items-center gap-1">
+                    <i class="pi pi-plus-circle !text-[10px]"></i> Total global
+                </span>
+                <span class="font-light tracking-tight text-3xl leading-none text-green-600 dark:text-green-500 m-0">
+                    {{ formatCurrency(totalAllIncome) }}
+                </span>
+            </div>
+        </div>
+    </div>
 </template>
