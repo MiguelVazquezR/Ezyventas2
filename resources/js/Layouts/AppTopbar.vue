@@ -40,7 +40,7 @@ const branchMenuItems = computed(() => {
             label: group.subscription_name,
             items: group.branches.map(branch => ({
                 label: branch.name,
-                icon: branch.id === currentBranch.value.id ? 'pi pi-check-circle text-green-500' : 'pi pi-building',
+                icon: branch.id === currentBranch.value.id ? 'pi pi-check-circle !text-green-500' : 'pi pi-building',
                 command: () => {
                     if (branch.id !== currentBranch.value.id) router.put(route('branch.switch', branch.id));
                 }
@@ -61,137 +61,174 @@ const branchMenuItems = computed(() => {
 
 const toggleUserMenu = (event) => userMenu.value.toggle(event);
 const toggleBranchMenu = (event) => branchMenu.value.toggle(event);
+
+// --- TESLA UI PASS-THROUGH (PT) ---
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-3xl !p-2 !shadow-2xl mt-2' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-2xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' },
+    submenuHeader: { class: 'text-[10px] uppercase tracking-widest font-bold text-gray-500 bg-transparent m-0 px-3 py-2' }
+};
+
+const drawerPt = {
+    root: { class: 'dark:!bg-[#232323] !border-l-gray-100 dark:!border-l-[#3a3a3a]' },
+    header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 py-5' },
+    title: { class: 'text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0' },
+    content: { class: 'dark:bg-[#232323] p-0 custom-scrollbar' },
+    closeButton: { class: 'hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors rounded-full w-8 h-8 flex items-center justify-center' },
+    closeButtonIcon: { class: 'dark:text-gray-400 !text-sm' },
+    mask: { class: 'backdrop-blur-sm bg-gray-900/40 dark:bg-black/60' }
+};
 </script>
 
 <template>
     <div class="layout-topbar">
         <div class="layout-topbar-logo-container">
-            <button class="layout-menu-button layout-topbar-action" @click="toggleSidebar">
-                <i class="pi pi-bars"></i>
+            <button class="layout-menu-button layout-topbar-action !w-10 !h-10 !rounded-full hover:!bg-gray-100 dark:hover:!bg-[#1a1a1a] !transition-colors" @click="toggleSidebar">
+                <i class="pi pi-bars !text-lg dark:!text-gray-300"></i>
             </button>
             <Link href="/" class="layout-topbar-logo">
                 <ApplicationLogo class="h-14" />
             </Link>
         </div>
 
-        <div class="layout-topbar-actions flex items-center">
+        <div class="layout-topbar-actions flex items-center gap-2">
             <!-- Selector de Sucursales (Escritorio) -->
             <div v-if="availableBranches && (availableBranches.length > 1 || user.id === 1) && hasPermission('system.branches.switch')"
-                class="layout-topbar-menu hidden lg:block">
-                <div class="layout-topbar-menu-content">
-                    <button @click="toggleBranchMenu"
-                        class="flex items-center gap-2 p-2 rounded-md hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors">
-                        <i v-if="user.id === 1" class="pi pi-shield text-blue-500 !text-xl" v-tooltip.bottom="'Modo Soporte'"></i>
-                        <i v-else class="pi pi-building !text-xl"></i>
-                        
-                        <div class="text-left">
-                            <p class="text-sm font-bold m-0">{{ subscription.commercial_name }}</p>
-                            <p class="text-xs text-surface-500 m-0">{{ currentBranch.name }}</p>
-                        </div>
-                        <i class="pi pi-chevron-down text-xs ml-2"></i>
-                    </button>
-                    <Menu ref="branchMenu" :model="branchMenuItems" :popup="true" class="max-h-96 overflow-y-auto" />
-                </div>
+                class="hidden lg:block">
+                <button @click="toggleBranchMenu"
+                    class="flex items-center gap-3 p-1.5 pr-4 rounded-full bg-white dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] hover:border-gray-300 dark:hover:border-gray-600 transition-all group">
+                    <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/40 transition-colors">
+                        <i v-if="user.id === 1" class="pi pi-shield text-blue-500 !text-xs" v-tooltip.bottom="'Modo soporte'"></i>
+                        <i v-else class="pi pi-building text-blue-500 !text-xs"></i>
+                    </div>
+                    <div class="text-left hidden xl:block">
+                        <p class="text-xs font-medium text-gray-900 dark:text-white m-0 tracking-tight leading-tight">{{ subscription.commercial_name }}</p>
+                        <p class="text-[9px] uppercase tracking-widest font-bold text-gray-500 m-0">{{ currentBranch.name }}</p>
+                    </div>
+                    <i class="pi pi-chevron-down !text-[10px] text-gray-400 ml-2 hidden xl:block"></i>
+                </button>
+                <Menu ref="branchMenu" :model="branchMenuItems" :popup="true" class="max-h-96 overflow-y-auto custom-scrollbar" :pt="menuPt" />
             </div>
             
-            <div v-else class="flex items-center gap-2 p-2 rounded-md">
-                <i class="pi pi-building !text-xl"></i>
-                <div class="text-left">
-                    <p class="text-sm font-bold m-0">{{ subscription.commercial_name }}</p>
-                    <p class="text-xs text-surface-500 m-0">{{ currentBranch.name }}</p>
+            <div v-else class="hidden lg:flex items-center gap-3 p-1.5 pr-4 rounded-full bg-white dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a]">
+                <div class="w-8 h-8 rounded-full bg-gray-50 dark:bg-[#232323] flex items-center justify-center flex-shrink-0 border border-gray-100 dark:border-[#3a3a3a]">
+                    <i class="pi pi-building text-gray-500 !text-xs"></i>
+                </div>
+                <div class="text-left hidden xl:block">
+                    <p class="text-xs font-medium text-gray-900 dark:text-white m-0 tracking-tight leading-tight">{{ subscription.commercial_name }}</p>
+                    <p class="text-[9px] uppercase tracking-widest font-bold text-gray-500 m-0">{{ currentBranch.name }}</p>
                 </div>
             </div>
+
+            <!-- Divisor vertical sutil -->
+            <div class="hidden lg:block w-px h-6 bg-gray-200 dark:bg-[#3a3a3a] mx-1"></div>
 
             <!-- COMPONENTES MODULARES AISLADOS -->
             <TopbarReleaseNotes />
             <TopbarNotifications />
 
             <!-- Menú Usuario (Mobile) -->
-            <button type="button" class="layout-topbar-action lg:!hidden" @click="mobileUserMenuVisible = true">
-                <i class="pi pi-user text-xl"></i>
+            <button type="button" class="relative flex items-center justify-center w-10 h-10 rounded-full hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors lg:hidden" @click="mobileUserMenuVisible = true">
+                <i class="pi pi-user !text-lg text-gray-400"></i>
             </button>
 
             <!-- Menú Usuario (Desktop) -->
-            <div class="layout-topbar-menu hidden lg:block">
-                <div class="layout-topbar-menu-content">
-                    <button @click="toggleUserMenu"
-                        class="flex text-sm border-2 border-transparent rounded-full focus:outline-none focus:border-surface-300 transition">
-                        <img class="size-9 rounded-full object-cover" :src="user.profile_photo_url" :alt="user.name">
-                    </button>
-                    <Menu ref="userMenu" :model="userMenuItems" :popup="true" />
-                </div>
+            <div class="hidden lg:block ml-1">
+                <button @click="toggleUserMenu"
+                    class="flex items-center justify-center p-1 border border-gray-100 dark:border-[#3a3a3a] rounded-full hover:border-gray-300 dark:hover:border-gray-600 transition-all bg-white dark:bg-[#1a1a1a] focus:outline-none focus:ring-2 focus:ring-primary-500/50">
+                    <img class="w-8 h-8 rounded-full object-cover" :src="user.profile_photo_url" :alt="user.name">
+                </button>
+                <Menu ref="userMenu" :model="userMenuItems" :popup="true" :pt="menuPt" />
             </div>
         </div>
     </div>
 
-    <!-- Menú Lateral Móvil (Sin cambios) -->
-    <Drawer v-model:visible="mobileUserMenuVisible" position="right" class="w-full sm:w-80">
-        <div class="p-4">
-            <div class="flex flex-col items-center">
-                <img class="size-24 rounded-full object-cover mb-4" :src="user.profile_photo_url" :alt="user.name">
-                <h2 class="text-xl font-bold text-surface-800 dark:text-surface-100 m-0">{{ user.name }}</h2>
-                <p class="text-sm text-surface-500 dark:text-surface-400 m-0">{{ user.email }}</p>
-                <p v-if="user.id === 1" class="text-xs font-bold text-blue-500 mt-1 uppercase tracking-wide">Super Admin</p>
-                <p v-else class="text-sm font-bold m-0">{{ subscription.commercial_name }}</p>
-            </div>
-            <Divider />
+    <!-- Menú Lateral Móvil (Drawer) Estilo Tesla UI -->
+    <Drawer v-model:visible="mobileUserMenuVisible" position="right" class="w-full sm:w-80" :pt="drawerPt">
+        
+        <template #header>
+            <h2 class="text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0">Navegación</h2>
+        </template>
 
-            <div v-if="availableBranches && (availableBranches.length > 1 || user.id === 1) && hasPermission('system.branches.switch')" class="mb-2">
-                <div class="flex items-center gap-2 p-2 rounded-md">
-                    <i class="pi pi-building !text-xl"></i>
-                    <div class="text-left">
-                        <p class="text-sm text-surface-700 m-0">{{ currentBranch.name }}</p>
-                    </div>
+        <!-- Perfil Usuario -->
+        <div class="p-6 flex flex-col items-center border-b border-gray-100 dark:border-[#3a3a3a] bg-gray-50/50 dark:bg-[#1a1a1a]/50">
+            <img class="w-20 h-20 rounded-full object-cover mb-4 border-2 border-white dark:border-[#232323] shadow-md" :src="user.profile_photo_url" :alt="user.name">
+            <h2 class="text-lg font-medium text-gray-900 dark:text-white m-0 tracking-tight">{{ user.name }}</h2>
+            <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1">{{ user.email }}</p>
+            <div v-if="user.id === 1" class="mt-3 bg-blue-50 dark:bg-blue-900/20 px-3 py-1 rounded-full border border-blue-100 dark:border-blue-900/30">
+                <p class="text-[9px] font-bold text-blue-500 uppercase tracking-widest m-0">Super admin</p>
+            </div>
+        </div>
+
+        <!-- Sucursales Mobile -->
+        <div v-if="availableBranches && (availableBranches.length > 1 || user.id === 1) && hasPermission('system.branches.switch')" class="p-6 border-b border-gray-100 dark:border-[#3a3a3a]">
+            <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-4">Sucursal activa</h3>
+            
+            <div class="flex items-center gap-3 p-4 bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] mb-6">
+                <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
+                    <i class="pi pi-building !text-sm text-blue-500"></i>
                 </div>
-                
-                <div class="flex flex-col gap-2 max-h-[400px] overflow-y-auto">
-                    <h2 class="text-base pt-5 mb-0 text-center">Cambiar de sucursal</h2>
-                    
-                    <template v-for="(item, index) in branchMenuItems" :key="index">
-                        <div v-if="item.items" class="mb-2">
-                            <h3 class="text-xs font-bold text-surface-400 uppercase px-3 py-1 bg-surface-50 dark:bg-surface-800 rounded mb-1 sticky top-0">
-                                {{ item.label }}
-                            </h3>
-                            <ul>
-                                <li v-for="subItem in item.items" :key="subItem.label">
-                                    <button @click="subItem.command(); mobileUserMenuVisible = false;"
-                                        class="w-full flex items-center p-3 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-left"
-                                        :class="{'bg-blue-50 dark:bg-blue-900/20': subItem.label === currentBranch.name}">
-                                        <i :class="subItem.icon" class="!text-lg mr-3 text-surface-700 dark:text-surface-400"></i>
-                                        <span class="text-sm text-surface-700 dark:text-surface-200">{{ subItem.label }}</span>
-                                    </button>
-                                </li>
-                            </ul>
-                        </div>
-                        <div v-else>
-                            <button @click="item.command(); mobileUserMenuVisible = false;"
-                                class="w-full flex items-center p-3 rounded-lg bg-surface-100 hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors text-left">
-                                <i :class="item.icon" class="!text-lg mr-3 text-surface-700 dark:text-surface-400"></i>
-                                <span class="text-sm text-surface-700 dark:text-surface-200">{{ item.label }}</span>
+                <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white m-0 tracking-tight">{{ currentBranch.name }}</p>
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-0.5">{{ subscription.commercial_name }}</p>
+                </div>
+            </div>
+
+            <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-3">Cambiar sucursal</h3>
+            <div class="flex flex-col gap-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                <template v-for="(item, index) in branchMenuItems" :key="index">
+                    <div v-if="item.items" class="mb-3">
+                        <h4 class="text-[9px] font-bold text-gray-400 dark:text-gray-600 uppercase tracking-widest mb-2 px-2">{{ item.label }}</h4>
+                        <div class="flex flex-col gap-1">
+                            <button v-for="subItem in item.items" :key="subItem.label"
+                                @click="subItem.command(); mobileUserMenuVisible = false;"
+                                class="w-full flex items-center p-3 rounded-2xl hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors text-left group"
+                                :class="{'bg-blue-50/50 dark:bg-blue-900/10': subItem.label === currentBranch.name}">
+                                <i class="!text-sm mr-3" :class="[item.icon, subItem.label === currentBranch.name ? 'text-green-500' : 'text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300']"></i>
+                                <span class="text-sm font-medium" :class="subItem.label === currentBranch.name ? 'text-blue-700 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'">{{ subItem.label }}</span>
                             </button>
                         </div>
-                    </template>
-                </div>
+                    </div>
+                    <div v-else>
+                        <button @click="item.command(); mobileUserMenuVisible = false;"
+                            class="w-full flex items-center p-3 rounded-2xl hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors text-left group">
+                            <i :class="item.icon" class="!text-sm mr-3 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300"></i>
+                            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ item.label }}</span>
+                        </button>
+                    </div>
+                </template>
             </div>
-
-            <div v-else class="flex items-center gap-2 p-2 rounded-md">
-                <i class="pi pi-building !text-xl"></i>
-                <div class="text-left">
-                    <p class="text-sm text-surface-700 m-0">{{ currentBranch.name }}</p>
-                </div>
-            </div>
-            
-            <Divider v-if="availableBranches && availableBranches.length > 1" />
-
-            <ul class="flex flex-col gap-1">
-                <li v-for="item in userMenuItems" :key="item.label">
-                    <button @click="item.command(); mobileUserMenuVisible = false;"
-                        class="w-full flex items-center p-3 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors text-left">
-                        <i :class="item.icon" class="text-xl mr-3 text-surface-500 dark:text-surface-400"></i>
-                        <span class="font-medium text-surface-800 dark:text-surface-200">{{ item.label }}</span>
-                    </button>
-                </li>
-            </ul>
         </div>
+
+        <div v-else class="p-6 border-b border-gray-100 dark:border-[#3a3a3a]">
+            <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-4">Sucursal activa</h3>
+            <div class="flex items-center gap-3 p-4 bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
+                <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
+                    <i class="pi pi-building !text-sm text-blue-500"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-medium text-gray-900 dark:text-white m-0 tracking-tight">{{ currentBranch.name }}</p>
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-0.5">{{ subscription.commercial_name }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Acciones Usuario Mobile -->
+        <div class="p-6">
+            <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-3">Mi cuenta</h3>
+            <div class="flex flex-col gap-1">
+                <button v-for="item in userMenuItems" :key="item.label"
+                    @click="item.command(); mobileUserMenuVisible = false;"
+                    class="w-full flex items-center p-4 rounded-2xl hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors text-left group border border-transparent hover:border-gray-100 dark:hover:border-[#3a3a3a]">
+                    <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-[#232323] flex items-center justify-center mr-3 group-hover:bg-white dark:group-hover:bg-[#1a1a1a] transition-colors border border-transparent group-hover:border-gray-200 dark:group-hover:border-[#3a3a3a]">
+                        <i :class="item.icon" class="!text-sm text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200"></i>
+                    </div>
+                    <span class="font-medium text-sm text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-white">{{ item.label }}</span>
+                </button>
+            </div>
+        </div>
+
     </Drawer>
 </template>

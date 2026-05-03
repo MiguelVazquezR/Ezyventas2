@@ -337,8 +337,8 @@ const getExpirationSeverity = (days) => {
                                         <i class="pi pi-building !text-lg"></i>
                                     </div>
                                     <div>
-                                        <p class="font-medium text-gray-900 dark:text-gray-100">{{ account.account_name }}</p>
-                                        <p class="text-xs text-gray-500">{{ account.bank_name }}</p>
+                                        <p class="font-medium text-gray-900 dark:text-gray-100 m-0">{{ account.account_name }}</p>
+                                        <p class="text-xs text-gray-500 m-0">{{ account.bank_name }}</p>
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-3">
@@ -393,14 +393,14 @@ const getExpirationSeverity = (days) => {
                     </div>
 
                     <!-- Baja Rotación -->
-                    <div v-if="stats.low_turnover_products && stats.low_turnover_products.length > 0"
+                    <div v-if="stats.low_turnover_products"
                         class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col">
                         <div class="flex justify-between items-center mb-2">
                             <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase">Baja Rotación</h2>
                             <i class="pi pi-exclamation-triangle text-orange-500 !text-sm"></i>
                         </div>
                         <p class="text-[11px] text-gray-400 mb-4">+15 días sin movimiento</p>
-                        <ul class="space-y-2 flex-grow">
+                        <ul v-if="stats.low_turnover_products.length > 0" class="space-y-2 flex-grow">
                             <li v-for="product in stats.low_turnover_products" :key="product.id">
                                 <Link :href="route('products.show', product.id)"
                                     class="flex items-center gap-4 hover:bg-gray-50 dark:hover:bg-[#1a1a1a] p-3 rounded-2xl transition-colors">
@@ -422,6 +422,14 @@ const getExpirationSeverity = (days) => {
                                 </Link>
                             </li>
                         </ul>
+
+                        <div v-else class="flex flex-col items-center justify-center flex-grow text-center py-6">
+                            <div class="w-12 h-12 bg-green-50 dark:bg-green-900/20 rounded-full flex items-center justify-center mb-3">
+                                <i class="pi pi-check text-green-500 !text-xl"></i>
+                            </div>
+                            <p class="text-sm font-medium text-gray-700 dark:text-gray-300">¡Inventario Sano!</p>
+                            <p class="text-[11px] text-gray-500 mt-1 max-w-[200px]">Todos tus productos en stock han tenido movimiento en los últimos 15 días.</p>
+                        </div>
                     </div>
                 </div>
 

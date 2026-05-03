@@ -29,8 +29,8 @@ class DashboardController extends Controller
         $isAdmin = !$user->roles()->exists();
         $stats = [];
 
-        // Subimos versión caché a v8 para invalidar los cálculos viejos de inventario automáticamente
-        $cacheKey = "dashboard_stats_branch_{$branchId}_v8"; 
+        // Subimos versión caché a v9 para invalidar los cálculos viejos y aplicar la corrección de 15 días
+        $cacheKey = "dashboard_stats_branch_{$branchId}_v9";
 
         // --- 1. Ventas y Transacciones ---
         if ($isAdmin || $user->can('transactions.access')) {
@@ -49,7 +49,7 @@ class DashboardController extends Controller
 
             $stats['today_sales'] = (float) $totalSales;
             $stats['average_ticket_today'] = $transactionCount > 0 ? $totalSales / $transactionCount : 0;
-            
+
             $stats['yesterday_sales'] = Cache::remember("{$cacheKey}_yesterday", 600, function () use ($branchId) {
                 return $this->getSalesTotalForPeriod($branchId, today()->subDay(), today()->subDay());
             });
@@ -81,7 +81,7 @@ class DashboardController extends Controller
                     ->sum('amount');
             });
         }
-        
+
         if ($isAdmin || $user->can('financials.manage_cash_registers')) {
             $stats['cash_registers_status'] = CashRegister::where('branch_id', $branchId)
                 ->where('is_active', true)
@@ -136,10 +136,10 @@ class DashboardController extends Controller
             });
         }
 
-        $userBankAccounts = $isAdmin 
-            ? BankAccount::whereHas('branches', fn($q) => $q->where('branch_id', $branchId))->get() 
+        $userBankAccounts = $isAdmin
+            ? BankAccount::whereHas('branches', fn($q) => $q->where('branch_id', $branchId))->get()
             : $user->bankAccounts()->get();
-            
+
         $allSubscriptionBankAccounts = BankAccount::where('subscription_id', $user->branch->subscription_id)->get();
 
         return Inertia::render('Dashboard', [
@@ -152,7 +152,7 @@ class DashboardController extends Controller
     public function getExpiringLayaways(Request $request)
     {
         $user = Auth::user();
-        
+
         $debts = Transaction::where('branch_id', $user->branch_id)
             ->whereIn('status', [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING])
             ->whereNotNull('layaway_expiration_date')
@@ -164,7 +164,7 @@ class DashboardController extends Controller
             ->map(function ($t) {
                 $totalPaid = $t->payments_sum_amount ?? 0;
                 $total = (float) $t->total;
-                
+
                 return [
                     'id' => $t->id,
                     'folio' => $t->folio,
@@ -185,7 +185,7 @@ class DashboardController extends Controller
     public function getUpcomingDeliveries(Request $request)
     {
         $user = Auth::user();
-        
+
         $deliveries = Transaction::where('branch_id', $user->branch_id)
             ->where('status', TransactionStatus::TO_DELIVER)
             ->whereNotNull('delivery_date')
@@ -223,8 +223,8 @@ class DashboardController extends Controller
             // Excluir productos que tienen variantes para no contar inventarios padre con 0 unidades
             ->whereNotExists(function ($query) {
                 $query->select(DB::raw(1))
-                      ->from('product_attributes as pa')
-                      ->whereColumn('pa.product_id', 'p.id');
+                    ->from('product_attributes as pa')
+                    ->whereColumn('pa.product_id', 'p.id');
             })
             ->selectRaw('COUNT(*) as total_items')
             ->selectRaw('SUM(p.cost_price * bp.current_stock) as total_cost')
@@ -274,8 +274,8 @@ class DashboardController extends Controller
             ->groupBy('itemable_id', 'itemable_type')
             ->get();
 
-        $productLastSales = []; 
-        
+        $productLastSales = [];
+
         $variantIds = $soldItemsRaw->where('itemable_type', ProductAttribute::class)->pluck('itemable_id');
         $variantMap = DB::table('product_attributes')
             ->whereIn('id', $variantIds)
@@ -297,48 +297,54 @@ class DashboardController extends Controller
             }
         }
 
-        $soldProductIds = array_keys($productLastSales);
-        
+        $allSoldProductIds = array_keys($productLastSales);
+
+        // FILTRO APLICADO: Solo considerar productos cuya última venta fue hace 15 días o más
+        $thresholdDate = now()->subDays(15)->endOfDay();
+        $validProductLastSales = array_filter($productLastSales, function ($date) use ($thresholdDate) {
+            return $date->lte($thresholdDate);
+        });
+
         $lowTurnoverCollection = collect();
 
-        // 1. Productos sin ventas, trayendo sus relaciones de inventario
-        $neverSoldProducts = Product::whereHas('branches', function($q) use ($branchId) {
+        // 1. Productos sin ventas (Nunca se han vendido)
+        $neverSoldProducts = Product::whereHas('branches', function ($q) use ($branchId) {
+            $q->where('branches.id', $branchId);
+        })
+            ->whereNotIn('id', $allSoldProductIds) // Solo los que NUNCA aparecen en ventas
+            ->with(['media', 'productAttributes.branches' => function ($q) use ($branchId) {
                 $q->where('branches.id', $branchId);
-            })
-            ->whereNotIn('id', $soldProductIds)
-            ->with(['media', 'productAttributes.branches' => function($q) use ($branchId) {
-                $q->where('branches.id', $branchId);
-            }, 'branches' => function($q) use ($branchId) {
+            }, 'branches' => function ($q) use ($branchId) {
                 $q->where('branches.id', $branchId);
             }])
             ->limit(5)
             ->get()
             ->map(function ($p) {
-                $p->virtual_last_sale_date = null; 
+                $p->virtual_last_sale_date = null;
                 return $p;
             });
 
         $lowTurnoverCollection = $lowTurnoverCollection->merge($neverSoldProducts);
 
-        // 2. Rellenar con los de menor rotación histórica
+        // 2. Rellenar con los de menor rotación histórica que cumplan con los >15 días
         if ($lowTurnoverCollection->count() < 5) {
             $needed = 5 - $lowTurnoverCollection->count();
-            asort($productLastSales);
-            $oldestIds = array_slice(array_keys($productLastSales), 0, $needed);
-            
+            asort($validProductLastSales);
+            $oldestIds = array_slice(array_keys($validProductLastSales), 0, $needed);
+
             if (!empty($oldestIds)) {
                 $oldSoldProducts = Product::whereIn('id', $oldestIds)
-                    ->with(['media', 'productAttributes.branches' => function($q) use ($branchId) {
+                    ->with(['media', 'productAttributes.branches' => function ($q) use ($branchId) {
                         $q->where('branches.id', $branchId);
-                    }, 'branches' => function($q) use ($branchId) {
+                    }, 'branches' => function ($q) use ($branchId) {
                         $q->where('branches.id', $branchId);
                     }])
                     ->get()
-                    ->each(function($p) use ($productLastSales) {
-                        $p->virtual_last_sale_date = $productLastSales[$p->id];
+                    ->each(function ($p) use ($validProductLastSales) {
+                        $p->virtual_last_sale_date = $validProductLastSales[$p->id];
                     });
-                
-                $oldSoldProducts = $oldSoldProducts->sortBy(function($p) {
+
+                $oldSoldProducts = $oldSoldProducts->sortBy(function ($p) {
                     return $p->virtual_last_sale_date->timestamp;
                 });
 
@@ -349,10 +355,10 @@ class DashboardController extends Controller
         // Mapear finalmente calculando el stock físico correcto
         return $lowTurnoverCollection->map(function ($product) {
             $stock = 0;
-            
+
             if ($product->productAttributes && $product->productAttributes->count() > 0) {
                 // Sumatoria del stock de cada variante en el pivot local
-                $stock = $product->productAttributes->sum(function($variant) {
+                $stock = $product->productAttributes->sum(function ($variant) {
                     return $variant->branches->first()?->pivot->current_stock ?? 0;
                 });
             } else {
@@ -365,12 +371,13 @@ class DashboardController extends Controller
                 'name' => $product->name,
                 'selling_price' => (float)$product->selling_price,
                 'current_stock' => $stock,
-                'days_since_last_sale' => $product->virtual_last_sale_date 
-                    ? $product->virtual_last_sale_date->diffInDays(now()) 
-                    : null, 
+                // FORZADO A ENTERO: Usamos startOfDay() para contar solo días calendario enteros
+                'days_since_last_sale' => $product->virtual_last_sale_date
+                    ? (int) now()->startOfDay()->diffInDays($product->virtual_last_sale_date->copy()->startOfDay())
+                    : null,
                 'image' => $product->getFirstMediaUrl('product-general-images') ?: null,
             ];
-        })->values(); 
+        })->values();
     }
 
     private function getTopSellingProducts($branchId)
@@ -379,7 +386,7 @@ class DashboardController extends Controller
             ->join('transactions', 'transactions_items.transaction_id', '=', 'transactions.id')
             ->where('transactions.branch_id', $branchId)
             ->where('transactions.created_at', '>=', now()->startOfMonth())
-            ->whereNotIn('transactions.status', [TransactionStatus::CANCELLED]) 
+            ->whereNotIn('transactions.status', [TransactionStatus::CANCELLED])
             ->select('itemable_id', 'itemable_type', DB::raw('SUM(quantity) as total_sold'))
             ->groupBy('itemable_id', 'itemable_type')
             ->orderByDesc('total_sold')
@@ -440,7 +447,7 @@ class DashboardController extends Controller
             ->keyBy('date');
 
         $weekSales = [];
-        
+
         for ($i = 0; $i < 7; $i++) {
             $date = $startOfWeek->copy()->addDays($i);
             $dateString = $date->format('Y-m-d');
@@ -452,7 +459,7 @@ class DashboardController extends Controller
                 $subtotal = $dayData->total_subtotal ?? 0;
                 $discount = $dayData->total_discount ?? 0;
                 $tax = $dayData->total_tax ?? 0;
-                
+
                 $total = ($subtotal - $discount) + $tax;
             }
 
@@ -461,7 +468,7 @@ class DashboardController extends Controller
                 'total' => (float) $total
             ];
         }
-        
+
         return $weekSales;
     }
 }

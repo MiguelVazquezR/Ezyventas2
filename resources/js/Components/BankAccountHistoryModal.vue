@@ -68,8 +68,8 @@ const formatDateTime = (dateString) => {
                         <i class="pi pi-building text-xl"></i>
                     </div>
                     <div>
-                        <h3 class="font-medium text-lg text-gray-900 dark:text-gray-100 tracking-tight">{{ account.account_name }}</h3>
-                        <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1">{{ account.bank_name }}</p>
+                        <h3 class="font-medium text-lg text-gray-900 dark:text-gray-100 tracking-tight m-0">{{ account.account_name }}</h3>
+                        <p class="text-[10px] text-gray-500 uppercase tracking-widest m-0">{{ account.bank_name }}</p>
                     </div>
                 </div>
                 <div class="mt-2 md:mt-0 text-left md:text-right w-full md:w-auto border-t md:border-t-0 border-gray-200 dark:border-[#3a3a3a] pt-4 md:pt-0">

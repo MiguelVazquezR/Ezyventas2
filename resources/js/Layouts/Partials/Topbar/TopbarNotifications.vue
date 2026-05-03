@@ -8,45 +8,61 @@ const activeAlertsCount = computed(() => (notifications.value.expiring_debts || 
 
 const notificationPopover = ref(); 
 const toggleNotificationPopover = (event) => notificationPopover.value.toggle(event);
+
+// --- TESLA UI PASS-THROUGH (PT) ---
+const popoverPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-100 dark:!border-[#3a3a3a] !rounded-3xl shadow-2xl overflow-hidden mt-2' },
+    content: { class: 'p-5' }
+};
 </script>
 
 <template>
     <!-- Botón de Alertas Operativas -->
     <button v-if="activeAlertsCount > 0" 
         type="button" 
-        class="layout-topbar-action relative mr-2" 
+        class="relative mr-2 flex items-center justify-center w-10 h-10 rounded-full hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors" 
         @click="toggleNotificationPopover"
         v-tooltip.bottom="'Alertas operativas'"
     >
-        <i class="pi pi-bell text-xl text-amber-500" :class="{'animate-swing': activeAlertsCount > 0}"></i>
+        <i class="pi pi-bell !text-xl text-amber-500" :class="{'animate-swing': activeAlertsCount > 0}"></i>
+        <!-- Indicador LED sutil en lugar del Badge enorme -->
+        <span class="absolute top-2 right-2 w-2 h-2 bg-amber-500 rounded-full border border-white dark:border-[#232323]"></span>
     </button>
     
-    <Popover ref="notificationPopover">
-        <div class="w-64">
-            <h4 class="font-bold text-surface-700 dark:text-surface-200 mb-2 px-2 text-sm">Pendientes de atención</h4>
-            <div class="flex flex-col gap-1">
+    <Popover ref="notificationPopover" :pt="popoverPt">
+        <div class="w-72">
+            <div class="mb-4 flex items-center gap-2">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)] animate-pulse"></span>
+                <h4 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Pendientes de atención</h4>
+            </div>
+            
+            <div class="flex flex-col gap-3">
                 <!-- Item: Vencimientos próximos -->
                 <Link v-if="notifications.expiring_debts > 0" 
                     :href="route('dashboard')" 
-                    class="flex items-center justify-between p-2 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/20 text-purple-700 dark:text-purple-300 transition-colors"
+                    class="flex items-center justify-between p-4 bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-transparent hover:border-gray-200 dark:hover:border-[#3a3a3a] transition-all group"
                 >
-                    <div class="flex items-center gap-2">
-                        <i class="pi pi-clock"></i>
-                        <span class="text-sm font-medium">Vencimientos próximos</span>
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0 border border-purple-100 dark:border-purple-900/30">
+                            <i class="pi pi-clock !text-xs text-purple-500"></i>
+                        </div>
+                        <span class="text-sm font-medium text-gray-900 dark:text-gray-100 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">Vencimientos</span>
                     </div>
-                    <Badge :value="notifications.expiring_debts" class="!bg-purple-500" />
+                    <span class="text-lg font-light tracking-tight text-gray-900 dark:text-white">{{ notifications.expiring_debts }}</span>
                 </Link>
 
                 <!-- Item: Entregas -->
                 <Link v-if="notifications.upcoming_deliveries > 0" 
                     :href="route('dashboard')" 
-                    class="flex items-center justify-between p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-700 dark:text-blue-300 transition-colors"
+                    class="flex items-center justify-between p-4 bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-transparent hover:border-gray-200 dark:hover:border-[#3a3a3a] transition-all group"
                 >
-                    <div class="flex items-center gap-2">
-                        <i class="pi pi-truck"></i>
-                        <span class="text-sm font-medium">Próximas entregas</span>
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
+                            <i class="pi pi-truck !text-xs text-blue-500"></i>
+                        </div>
+                        <span class="text-sm font-medium text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">Entregas</span>
                     </div>
-                    <Badge :value="notifications.upcoming_deliveries" severity="info" />
+                    <span class="text-lg font-light tracking-tight text-gray-900 dark:text-white">{{ notifications.upcoming_deliveries }}</span>
                 </Link>
             </div>
         </div>
