@@ -47,9 +47,12 @@ const toggleCustomerInfo = (event) => {
 
 // --- Lógica de Modo Comandas ---
 const guestName = ref('');
+const isEditingGuestName = ref(false);
+
 watch(() => props.items, (newItems) => {
     if (newItems.length === 0) {
         guestName.value = ''; 
+        isEditingGuestName.value = false;
     }
 });
 
@@ -293,22 +296,26 @@ const formatCurrency = (value) => {
 
                 <template v-else>
                     <!-- MODO COMANDAS -->
-                    <div v-if="!guestName" class="mb-1 mt-1">
+                    <div v-if="!guestName || isEditingGuestName" class="mb-1 mt-1">
                         <IconField iconPosition="left" class="w-full">
                             <InputIcon class="pi pi-tag text-gray-400"></InputIcon>
-                            <InputText v-model="guestName" placeholder="Identificador (Ej. Mesa 3)..." 
+                            <InputText v-model="guestName" 
+                             @focus="isEditingGuestName = true"
+                                @blur="isEditingGuestName = false"
+                                @keyup.enter="isEditingGuestName = false"
+                                placeholder="Identificador (Ej. Mesa 3)..." 
                                 class="w-full !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2 !pl-10 !text-sm" />
                         </IconField>
                     </div>
                     <!-- Comanda Seleccionada: Tarjeta Ultra Compacta -->
-                    <div v-if="guestName" class="bg-orange-50 dark:bg-orange-900/10 p-2 rounded-2xl border border-orange-100 dark:border-orange-900/30 flex justify-between items-center group">
+                    <div v-else @click="isEditingGuestName = true" class="bg-orange-50 dark:bg-orange-900/10 p-2 rounded-2xl border border-orange-100 dark:border-orange-900/30 flex justify-between items-center group cursor-pointer hover:border-orange-300 dark:hover:border-orange-700 transition-colors" v-tooltip.top="'Clic para editar'">
                         <div class="flex items-center gap-2 overflow-hidden">
                             <div class="w-7 h-7 rounded-full bg-orange-200 dark:bg-orange-800 text-orange-700 dark:text-orange-300 flex items-center justify-center flex-shrink-0">
                                 <i class="pi pi-receipt !text-xs"></i>
                             </div>
                             <span class="font-medium text-sm text-gray-900 dark:text-gray-100 truncate m-0">{{ guestName }}</span>
                         </div>
-                        <button @click="guestName = ''" class="w-7 h-7 flex-shrink-0 rounded-full bg-white dark:bg-[#232323] text-gray-400 hover:text-red-500 border border-transparent group-hover:border-gray-200 dark:group-hover:border-[#3a3a3a] flex items-center justify-center transition-colors">
+                        <button @click.stop="guestName = ''; isEditingGuestName = false" class="w-7 h-7 flex-shrink-0 rounded-full bg-white dark:bg-[#232323] text-gray-400 hover:text-red-500 border border-transparent group-hover:border-gray-200 dark:group-hover:border-[#3a3a3a] flex items-center justify-center transition-colors">
                             <i class="pi pi-times !text-[10px]"></i>
                         </button>
                     </div>
