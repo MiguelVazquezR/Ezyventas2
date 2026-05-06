@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { router, usePage } from '@inertiajs/vue3';
+import { Head, router, usePage, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from 'primevue/usetoast';
@@ -239,78 +239,105 @@ const actionItems = computed(() => [
 const formatDate = (date) => date ? new Date(date).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : '';
 const formatCurrency = (val) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(val) || 0);
 
-const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
-const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transactions.index') }, { label: `Venta #${props.transaction.folio}` }]);
+// --- TESLA UI PASS-THROUGH (PT) ---
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl !p-2 !shadow-2xl mt-1' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' }
+};
 </script>
 
 <template>
-    <AppLayout :title="`Venta #${transaction.folio}`">
-        <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
+    <Head :title="`Venta #${transaction.folio}`" />
+    <AppLayout>
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+            
+            <!-- Breadcrumb / Botón de regreso -->
+            <div class="flex items-center">
+                <Link :href="route('transactions.index')" class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
+                    <i class="pi pi-arrow-left !text-[10px]"></i> Volver al historial
+                </Link>
+            </div>
 
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
-            <div>
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">
-                    {{ transaction.status === 'por_entregar' ? `Pedido #${transaction.folio}` : `Venta #${transaction.folio}` }}
-                </h1>
-                <div class="flex items-center gap-2 mt-1">
-                    <p class="text-gray-500 dark:text-gray-400 m-0">
-                        Realizada el {{ formatDate(transaction.created_at) }}
-                    </p>
-                    <Button 
-                        icon="pi pi-pencil" 
-                        text
-                        rounded 
-                        size="small" 
-                        severity="secondary"
-                        v-tooltip.bottom="'Editar fecha'"
-                        @click="openEditDateModal"
-                    />
+            <!-- Header de la página al estilo Tesla UI -->
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+                <div>
+                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0 flex items-center gap-4">
+                        {{ transaction.status === 'por_entregar' ? `Pedido #${transaction.folio}` : `Venta #${transaction.folio}` }}
+                    </h1>
+                    <div class="flex items-center gap-4 mt-3 flex-wrap">
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 flex items-center gap-2">
+                            <span class="w-1.5 h-1.5 rounded-full" :class="['cancelado', 'reembolsado'].includes(transaction.status) ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse' : 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse'"></span>
+                            <span class="capitalize">{{ (transaction.status || '').replace('_', ' ') }}</span>
+                        </p>
+                        
+                        <span class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
+                        
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0">Fecha:</span>
+                            <span class="text-xs font-medium text-gray-900 dark:text-gray-100 flex items-center gap-1.5">
+                                <i class="pi pi-calendar !text-[10px] text-gray-400"></i>
+                                {{ formatDate(transaction.created_at) }}
+                            </span>
+                            <Button 
+                                icon="pi pi-pencil" 
+                                text
+                                rounded 
+                                class="!w-6 !h-6 !p-0 text-gray-400 hover:text-primary-500"
+                                v-tooltip.bottom="'Editar fecha'"
+                                @click="openEditDateModal"
+                            />
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="w-full sm:w-auto shrink-0 flex gap-2">
+                    <Button type="button" label="Opciones" icon="pi pi-chevron-down" iconPos="right" @click="toggleActionsMenu" severity="secondary" outlined class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto" />
+                    <Menu ref="actionsMenu" :model="actionItems" :popup="true" :pt="menuPt" />
                 </div>
             </div>
-            <div class="flex items-center gap-2 mt-4 sm:mt-0">
-                <Button type="button" label="Acciones" icon="pi pi-chevron-down" iconPos="right" @click="toggleActionsMenu" severity="secondary" outlined />
-                <Menu ref="actionsMenu" :model="actionItems" :popup="true" />
-            </div>
-        </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Columna Principal -->
-            <div class="lg:col-span-2 space-y-6">
-                <TransactionItemsPanel :transaction="transaction" />
-            </div>
-            
-            <!-- Columna Derecha -->
-            <div class="lg:col-span-1 space-y-6">
-                <TransactionFinancialPanel 
-                    :transaction="transaction" 
-                    :total-amount="totalAmount"
-                    :total-paid="totalPaid"
-                    :pending-amount="pendingAmount"
-                    :can-add-payment="canAddPayment"
-                    @open-payment-modal="openPaymentModal"
-                />
+            <!-- Contenedor Principal (Grid Layout) -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+                <!-- Columna Principal -->
+                <div class="lg:col-span-2 space-y-6 lg:space-y-8 flex flex-col">
+                    <TransactionItemsPanel :transaction="transaction" />
+                </div>
+                
+                <!-- Columna Derecha -->
+                <div class="lg:col-span-1 space-y-6 lg:space-y-8 flex flex-col">
+                    <TransactionFinancialPanel 
+                        :transaction="transaction" 
+                        :total-amount="totalAmount"
+                        :total-paid="totalPaid"
+                        :pending-amount="pendingAmount"
+                        :can-add-payment="canAddPayment"
+                        @open-payment-modal="openPaymentModal"
+                    />
 
-                <TransactionInfoPanel 
-                    :transaction="transaction"
-                    :local-transaction="localTransaction"
-                    :can-extend-expiration="canExtendExpiration"
-                    :pending-amount="pendingAmount"
-                    @open-reschedule-order-modal="openRescheduleOrderModal"
-                    @toggle-phone-menu="togglePhoneMenu"
-                    @open-extend-layaway-modal="openExtendLayawayModal"
-                />
+                    <TransactionInfoPanel 
+                        :transaction="transaction"
+                        :local-transaction="localTransaction"
+                        :can-extend-expiration="canExtendExpiration"
+                        :pending-amount="pendingAmount"
+                        @open-reschedule-order-modal="openRescheduleOrderModal"
+                        @toggle-phone-menu="togglePhoneMenu"
+                        @open-extend-layaway-modal="openExtendLayawayModal"
+                    />
 
-                <TransactionPaymentsPanel 
-                    :local-transaction="localTransaction"
-                    @open-edit-payment-modal="openEditPaymentModal"
-                    @confirm-delete-payment="confirmDeletePayment"
-                />
+                    <TransactionPaymentsPanel 
+                        :local-transaction="localTransaction"
+                        @open-edit-payment-modal="openEditPaymentModal"
+                        @confirm-delete-payment="confirmDeletePayment"
+                    />
+                </div>
             </div>
         </div>
 
         <!-- Componentes Globales y Modales Externos -->
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource" :available-templates="availableTemplates" />
-        <Menu ref="phoneMenu" :model="phoneMenuItems" :popup="true" />
+        <Menu ref="phoneMenu" :model="phoneMenuItems" :popup="true" :pt="menuPt" />
         
         <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="pendingAmount" :client="transaction.customer" :loading="isPaymentProcessing" payment-mode="flexible" @submit="handlePaymentSubmit" />
         <StartSessionModal v-model:visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters" :user-bank-accounts="safeBankAccounts" />
