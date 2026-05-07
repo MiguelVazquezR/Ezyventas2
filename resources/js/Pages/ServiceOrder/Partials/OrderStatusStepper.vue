@@ -57,8 +57,8 @@ const changeStatus = (targetStatusValue, targetIndexValue) => {
     if (targetIndexValue > currentIndexValue && hasPermission('services.orders.change_status')) {
         const newStatusLabel = steps.find(s => s.value === targetStatusValue)?.label || targetStatusValue;
         confirm.require({
-            message: `¿Estás seguro de que quieres cambiar el estatus a "${newStatusLabel}"?`,
-            header: 'Confirmar Cambio de Estatus',
+            message: `¿Estás seguro de que quieres avanzar el estatus a "${newStatusLabel}"?`,
+            header: 'Confirmar avance',
             icon: 'pi pi-sync',
             accept: () => executeStatusChange(targetStatusValue, true)
         });
@@ -72,48 +72,88 @@ const executeStatusChange = (newStatus, isForward) => {
         onSuccess: () => {
             if (isForward && newStatus === 'entregado' && props.amountDue > 0.01) {
                 emit('requirePayment');
-            } else if (!isForward) {
             }
         }
     });
 };
+
+// Passthrough de PrimeVue Stepper para quitar el padding base
+const stepperPt = {
+    root: { class: 'w-full' }
+};
+const stepListPt = {
+    root: { class: 'flex justify-between items-center w-full !bg-transparent !p-0 !border-none' }
+};
+const stepPt = {
+    root: { class: 'flex-1 first:flex-initial last:flex-initial !bg-transparent !border-none !p-0' }
+};
 </script>
 
 <template>
-    <div class="col-span-full bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-        <h2 class="text-lg font-semibold border-b pb-3 mb-6">Flujo de estatus</h2>
+    <div class="col-span-full bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col w-full overflow-hidden">
         
-        <div v-if="isCancelled" class="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-md">
-            <i class="pi pi-times-circle text-red-500 !text-3xl"></i>
-            <p class="mt-1 font-semibold text-red-700 dark:text-red-300">Esta orden ha sido cancelada.</p>
+        <!-- Header -->
+        <div class="mb-8 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
+                <i class="pi pi-sitemap !text-sm text-blue-500"></i>
+            </div>
+            <div>
+                <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Flujo de estatus</h2>
+                <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Seguimiento de la reparación</p>
+            </div>
         </div>
         
-        <Stepper v-else v-model:value="activeIndex" class="basis-full">
-            <StepList>
-                <Step v-for="(step, index) in steps" :key="step.label" :value="index + 1" v-slot="{ value }" asChild>
-                    <div class="flex flex-row flex-auto">
-                        <button class="bg-transparent border-0 inline-flex flex-col gap-2 items-center focus:outline-none"
-                            :class="index == 4 ? 'w-32' : 'w-60'" 
-                            @click="changeStatus(step.value, value)">
+        <!-- Estado Cancelado -->
+        <div v-if="isCancelled" class="bg-red-50 dark:bg-red-900/10 p-6 rounded-2xl border border-red-100 dark:border-red-900/30 flex flex-col items-center justify-center text-center">
+            <i class="pi pi-times-circle text-red-500 !text-4xl mb-3 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]"></i>
+            <p class="font-bold text-red-700 dark:text-red-400 text-sm m-0 tracking-tight">Esta orden ha sido cancelada.</p>
+            <p class="text-xs text-red-600 dark:text-red-500/80 mt-1 m-0">El proceso se ha detenido y el inventario ha sido liberado.</p>
+        </div>
+        
+        <!-- Stepper Activo -->
+        <div v-else class="w-full overflow-x-auto custom-scrollbar pb-2">
+            <Stepper v-model:value="activeIndex" class="min-w-[600px]" :pt="stepperPt">
+                <StepList :pt="stepListPt">
+                    <Step v-for="(step, index) in steps" :key="step.label" :value="index + 1" v-slot="{ value }" asChild :pt="stepPt">
+                        <div class="flex flex-row items-center" :class="index !== 4 ? 'w-full' : 'w-auto'">
                             
-                            <span :class="[
-                                'size-12 rounded-full border-2 flex items-center justify-center transition-colors duration-200', 
-                                { 
-                                    'bg-primary border-primary text-primary-contrast': value <= activeIndex, 
-                                    'border-surface-200 dark:border-surface-700': value > activeIndex, 
-                                    'cursor-pointer hover:border-primary': (value > activeIndex && hasPermission('services.orders.change_status')) || (value < activeIndex && hasPermission('services.orders.edit'))
-                                }
-                            ]">
-                                <i :class="step.icon" />
-                            </span>
-                            <span :class="['font-medium text-xs', { 'text-primary': value <= activeIndex }]">
-                                {{ step.label }}
-                            </span>
-                        </button>
-                        <Divider v-if="index != 4" />
-                    </div>
-                </Step>
-            </StepList>
-        </Stepper>
+                            <!-- Botón del Paso -->
+                            <button class="bg-transparent border-0 inline-flex flex-col gap-3 items-center justify-center focus:outline-none shrink-0"
+                                @click="changeStatus(step.value, value)" :class="index === 4 ? 'w-24' : 'w-24'">
+                                
+                                <span :class="[
+                                    'w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all duration-300 relative z-10', 
+                                    { 
+                                        'bg-blue-500 border-blue-500 text-white shadow-[0_0_6px_rgba(59,130,246,0.6)] scale-110': value === activeIndex,
+                                        'bg-blue-500 border-blue-500 text-white': value < activeIndex,
+                                        'bg-gray-50 dark:bg-[#1a1a1a] border-gray-200 dark:border-[#3a3a3a] text-gray-400': value > activeIndex, 
+                                        'cursor-pointer hover:border-blue-400 hover:text-blue-500 dark:hover:border-blue-500': (value > activeIndex && hasPermission('services.orders.change_status')) || (value < activeIndex && hasPermission('services.orders.edit')),
+                                        'cursor-not-allowed': (!hasPermission('services.orders.change_status') && value > activeIndex) || (!hasPermission('services.orders.edit') && value < activeIndex)
+                                    }
+                                ]">
+                                    <i :class="step.icon" class="!text-lg" />
+                                </span>
+                                
+                                <span :class="[
+                                    'text-[10px] uppercase tracking-widest text-center leading-tight m-0', 
+                                    { 
+                                        'text-blue-600 dark:text-blue-400 font-bold': value <= activeIndex, 
+                                        'text-gray-500 font-medium': value > activeIndex 
+                                    }
+                                ]">
+                                    {{ step.label }}
+                                </span>
+                            </button>
+
+                            <!-- Línea Conectora (Barra de progreso) -->
+                            <div v-if="index !== 4" 
+                                 class="h-1 flex-grow rounded-full mx-2 transition-all duration-500 relative -top-3"
+                                 :class="value < activeIndex ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 'bg-gray-100 dark:bg-[#3a3a3a]'">
+                            </div>
+                        </div>
+                    </Step>
+                </StepList>
+            </Stepper>
+        </div>
     </div>
 </template>
