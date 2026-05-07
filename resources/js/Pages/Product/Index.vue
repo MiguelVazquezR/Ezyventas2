@@ -289,10 +289,10 @@ const drawerPt = {
                             class="!rounded-xl !text-xs !uppercase !tracking-wider flex-grow md:flex-none" />
                         
                         <Button icon="pi pi-chart-pie" @click="showInventorySummary = true"
-                            severity="primary" v-tooltip.top="'Ver resumen de inventario'" class="!rounded-xl !w-10 !h-10 !p-0 shrink-0" />
+                            severity="primary" v-tooltip.top="'Ver resumen de inventario'" class="!rounded-xl !size-9 !p-0 shrink-0" />
                         
                         <Button v-if="hasPermission('products.import_export')" icon="pi pi-chevron-down"
-                            @click="toggleHeaderMenu" severity="warning" class="!rounded-xl !w-10 !h-10 !p-0 shrink-0" />
+                            @click="toggleHeaderMenu" severity="warning" class="!rounded-xl !size-9 !p-0 shrink-0" />
                         
                         <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" :pt="menuPt" />
                     </div>
