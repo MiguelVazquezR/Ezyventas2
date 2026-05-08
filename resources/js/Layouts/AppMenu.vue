@@ -135,6 +135,12 @@ const adminModel = ref([
                 routeName: 'admin.payments.*'
             },
             {
+                label: 'Ítems de planes', // <--- NUEVO MÓDULO AGREGADO AQUÍ (Sentence case)
+                icon: 'pi pi-box', 
+                to: route('admin.plan-items.index'),
+                routeName: 'admin.plan-items.*'
+            },
+            {
                 label: 'Novedades',
                 icon: 'pi pi-sparkles',
                 to: route('admin.release-notes.index'),

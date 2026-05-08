@@ -1,8 +1,16 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
+import Button from 'primevue/button';
+import Tag from 'primevue/tag';
+import Menu from 'primevue/menu';
+import DataTable from 'primevue/datatable';
+import Column from 'primevue/column';
+import IconField from 'primevue/iconfield';
+import InputIcon from 'primevue/inputicon';
+import InputText from 'primevue/inputtext';
 
 const props = defineProps({
     notes: Object, // Las novedades paginadas que vendrán del backend
@@ -15,7 +23,7 @@ const searchTerm = ref(props.filters?.search || '');
 const menu = ref();
 const selectedNoteForMenu = ref(null);
 
-// Lógica para Data Table
+// --- Lógica para Data Table ---
 const fetchData = (options = {}) => {
     const queryParams = {
         page: options.page || 1,
@@ -36,7 +44,7 @@ const toggleMenu = (event, data) => {
     menu.value.toggle(event);
 };
 
-// Acciones
+// --- Acciones ---
 const deleteSingleNote = () => {
     if (!selectedNoteForMenu.value) return;
     confirm.require({
@@ -56,7 +64,6 @@ const deleteSingleNote = () => {
 
 const togglePublishStatus = () => {
     if (!selectedNoteForMenu.value) return;
-    // Se enviaría un POST/PUT para alternar is_published
     router.post(route('admin.release-notes.toggle-publish', selectedNoteForMenu.value.id), {}, {
         preserveScroll: true,
     });
@@ -69,7 +76,7 @@ const menuItems = ref([
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleNote },
 ]);
 
-// Helpers Visuales
+// --- Helpers Visuales ---
 const formatDate = (dateString) => {
     if (!dateString) return '--';
     return new Date(dateString).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -78,29 +85,61 @@ const formatDate = (dateString) => {
 const getStatusSeverity = (isPublished) => {
     return isPublished ? 'success' : 'secondary';
 };
+
+// --- TESLA UI PASS-THROUGH (PT) CONFIGURATIONS ---
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl !p-2 !shadow-2xl' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' }
+};
+
+const dataTablePt = {
+    root: { class: 'border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden' },
+    headerRow: { class: 'bg-gray-50 dark:bg-[#1a1a1a]' },
+    headerCell: { class: 'bg-transparent text-[10px] uppercase tracking-widest text-gray-500 font-bold py-4 px-4 border-b border-gray-100 dark:border-[#3a3a3a]' },
+    bodyRow: { class: 'dark:bg-[#232323] hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors text-sm text-gray-700 dark:text-gray-300 group' },
+    bodyCell: { class: 'py-4 px-4 border-b border-gray-50 dark:border-[#2a2a2a]' },
+    paginator: { root: { class: 'dark:bg-[#1a1a1a] border-t border-gray-100 dark:border-[#3a3a3a] p-3' } }
+};
+
+const inputPt = {
+    root: { class: '!rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2 !text-sm w-full' }
+};
+
+const tagPt = {
+    root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' }
+};
 </script>
 
 <template>
-    <AppLayout title="Administrar Novedades">
-        <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
+    <Head title="Novedades (Changelog)" />
+    <AppLayout>
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+            
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
                 
-                <!-- Header y Acciones -->
-                <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <div>
-                        <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 m-0">Novedades (Changelog)</h1>
-                        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Administra las actualizaciones visibles para todos los usuarios.</p>
-                    </div>
+                <!-- Header con Título -->
+                <div class="mb-8">
+                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">Novedades (Changelog)</h1>
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)] animate-pulse"></span>
+                        Gestión de actualizaciones y comunicados
+                    </p>
+                </div>
 
-                    <div class="flex items-center gap-4 w-full md:w-auto">
-                        <IconField iconPosition="left" class="w-full md:w-64">
-                            <InputIcon class="pi pi-search"></InputIcon>
-                            <InputText v-model="searchTerm" placeholder="Buscar por título..." class="w-full" />
-                        </IconField>
-                        
+                <!-- Barra de Herramientas de Filtros -->
+                <div class="flex flex-col md:flex-row gap-4 items-center justify-between bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] mb-6">
+                    <IconField iconPosition="left" class="w-full md:w-1/2 lg:w-1/3">
+                        <InputIcon class="pi pi-search !text-sm text-gray-400 dark:text-gray-500"></InputIcon>
+                        <InputText v-model="searchTerm" placeholder="Buscar por título o contenido..." :pt="inputPt" class="!pl-10" />
+                    </IconField>
+                    
+                    <div class="flex items-center gap-2 w-full md:w-auto">
                         <Button label="Nueva novedad" icon="pi pi-plus" 
                                 @click="router.get(route('admin.release-notes.create'))" 
-                                severity="warning" />
+                                severity="primary"
+                                class="!rounded-xl !text-xs !uppercase !tracking-wider flex-grow md:flex-none shadow-sm" />
                     </div>
                 </div>
 
@@ -110,34 +149,37 @@ const getStatusSeverity = (isPublished) => {
                     dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 60rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} novedades"
-                    class="p-datatable-sm cursor-pointer" rowHover>
+                    class="cursor-pointer" rowHover :pt="dataTablePt">
 
                     <Column field="version" header="Versión" style="width: 8rem" sortable>
                         <template #body="{ data }">
-                            <Tag v-if="data.version" :value="data.version" severity="info" />
-                            <span v-else class="text-gray-400 text-sm">--</span>
+                            <span v-if="data.version" class="font-mono text-xs font-bold text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-[#3a3a3a] px-2 py-1 rounded-md border border-gray-200 dark:border-[#4a4a4a]">
+                                {{ data.version }}
+                            </span>
+                            <span v-else class="text-gray-400 text-xs italic">--</span>
                         </template>
                     </Column>
 
-                    <Column field="title" header="Título" sortable>
+                    <Column field="title" header="Título y extracto" sortable>
                         <template #body="{ data }">
-                            <div class="flex flex-col">
-                                <span class="font-bold text-gray-800 dark:text-gray-200">{{ data.title }}</span>
-                                <span class="text-sm text-gray-500 line-clamp-1 mt-1">{{ data.excerpt }}</span>
+                            <div class="flex flex-col gap-1">
+                                <span class="font-medium text-gray-900 dark:text-white m-0 tracking-tight">{{ data.title }}</span>
+                                <span class="text-xs text-gray-500 dark:text-gray-400 line-clamp-1 m-0">{{ data.excerpt }}</span>
                             </div>
                         </template>
                     </Column>
 
-                    <Column field="is_published" header="Estado" style="width: 10rem" sortable alignFrozen="right">
+                    <Column field="is_published" header="Estado" style="width: 10rem" sortable>
                         <template #body="{ data }">
                             <Tag :value="data.is_published ? 'Publicado' : 'Borrador'" 
-                                 :severity="getStatusSeverity(data.is_published)" />
+                                 :severity="getStatusSeverity(data.is_published)" :pt="tagPt" />
                         </template>
                     </Column>
 
-                    <Column field="published_at" header="Fecha de Publicación" style="width: 12rem" sortable>
+                    <Column field="published_at" header="Fecha de Pub." style="width: 12rem" sortable>
                         <template #body="{ data }">
-                            <span class="text-sm text-gray-600 dark:text-gray-400">
+                            <span class="text-xs text-gray-600 dark:text-gray-400">
+                                <i v-if="data.is_published" class="pi pi-calendar !text-[10px] mr-1"></i>
                                 {{ data.is_published ? formatDate(data.published_at) : 'Pendiente' }}
                             </span>
                         </template>
@@ -147,19 +189,20 @@ const getStatusSeverity = (isPublished) => {
                     <Column headerStyle="width: 5rem; text-align: center">
                         <template #body="{ data }">
                             <Button @click.stop="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded
-                                severity="secondary" aria-haspopup="true" aria-controls="overlay_menu" />
+                                class="!w-8 !h-8 !text-gray-400 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors" aria-haspopup="true" aria-controls="overlay_menu" />
                         </template>
                     </Column>
 
                     <template #empty>
-                        <div class="text-center text-gray-500 py-8">
-                            <i class="pi pi-inbox !text-4xl mb-4 text-gray-400"></i>
-                            <p>No hay novedades registradas.</p>
+                        <div class="flex flex-col items-center justify-center text-center py-10 opacity-60">
+                            <i class="pi pi-sparkles !text-3xl text-gray-400 mb-3"></i>
+                            <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin novedades</p>
+                            <p class="text-xs text-gray-400 mt-1">No hay actualizaciones registradas en el sistema.</p>
                         </div>
                     </template>
                 </DataTable>
 
-                <Menu ref="menu" id="overlay_menu" :model="menuItems" :popup="true" />
+                <Menu ref="menu" id="overlay_menu" :model="menuItems" :popup="true" :pt="menuPt" />
             </div>
         </div>
     </AppLayout>
