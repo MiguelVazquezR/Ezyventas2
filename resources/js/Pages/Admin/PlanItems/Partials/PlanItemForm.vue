@@ -83,7 +83,7 @@ const cancel = () => {
                     <!-- Tipo -->
                     <div class="flex flex-col gap-1.5">
                         <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Tipo de ítem *</label>
-                        <Select v-model="form.type" :options="itemTypes" optionLabel="label" optionValue="value" placeholder="Seleccionar tipo" :pt="selectPt" />
+                        <Select v-model="form.type" :options="itemTypes" optionLabel="label" optionValue="value" size="large" placeholder="Seleccionar tipo" :pt="selectPt" />
                         <Message v-if="form.errors.type" severity="error" variant="simple" size="small">{{ form.errors.type }}</Message>
                     </div>
 
