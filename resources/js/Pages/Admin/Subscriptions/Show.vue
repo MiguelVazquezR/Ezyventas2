@@ -18,19 +18,48 @@ const props = defineProps({
 const showEditVersionModal = ref(false);
 const showPaymentApprovalModal = ref(false);
 
-// --- HELPER FUNCTIONS ---
-const getStatusLabel = (status) => {
-    const statuses = { 'active': 'Activa', 'past_due': 'Atrasada', 'canceled': 'Cancelada', 'trialing': 'De prueba', 'unpaid': 'Sin pago' };
+// --- HELPER FUNCTIONS (ESTADOS REALES) ---
+const getComputedStatus = (subscription) => {
+    // Usamos la propiedad dinámica enviada por el modelo
+    return subscription.computed_status || subscription.status;
+};
+
+const getStatusLabel = (data) => {
+    const status = getComputedStatus(data);
+    const statuses = {
+        'activo': 'Activa',
+        'expirado': 'Vencida',
+        'suspendido': 'Suspendida',
+        // Fallbacks por compatibilidad
+        'active': 'Activa',
+        'past_due': 'Atrasada',
+        'canceled': 'Cancelada',
+        'trialing': 'De prueba',
+        'unpaid': 'Sin pago',
+        'expired': 'Vencida'
+    };
     return statuses[status] || status || 'Desconocido';
 };
 
-const getStatusColor = (status) => {
+const getStatusColor = (data) => {
+    const status = getComputedStatus(data);
     switch(status) {
-        case 'active': return 'bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.8)]';
-        case 'trialing': return 'bg-blue-500 animate-pulse';
-        case 'past_due': case 'unpaid': return 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)]';
-        case 'canceled': return 'bg-red-500';
-        default: return 'bg-gray-500';
+        case 'activo':
+        case 'active': 
+            return 'bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.8)]';
+        case 'trialing': 
+            return 'bg-blue-500 animate-pulse';
+        case 'past_due': 
+        case 'unpaid': 
+            return 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)]';
+        case 'expirado':
+        case 'expired': 
+            return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]';
+        case 'suspendido':
+        case 'canceled': 
+            return 'bg-gray-500';
+        default: 
+            return 'bg-gray-500';
     }
 };
 
@@ -88,7 +117,8 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
                         <div>
                             <h1 class="text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0 flex items-center gap-3">
                                 {{ subscription.commercial_name }}
-                                <span :class="['w-2 h-2 rounded-full', getStatusColor(subscription.status)]" v-tooltip.top="getStatusLabel(subscription.status)"></span>
+                                <!-- Carga dinámica de estado -->
+                                <span :class="['w-2 h-2 rounded-full', getStatusColor(subscription)]" v-tooltip.top="getStatusLabel(subscription)"></span>
                             </h1>
                             <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1">
                                 {{ subscription.business_name || 'Sin razón social' }} • ID: {{ subscription.id }} • Registro: {{ formatDate(subscription.created_at) }}
@@ -133,7 +163,6 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
                                 <i class="pi pi-chart-pie text-gray-400"></i>
                             </h2>
                             <div class="space-y-4">
-                                <!-- El loop ahora usa dynamicLimits inyectados desde el backend -->
                                 <div v-for="lim in dynamicLimits" :key="lim.key">
                                     <div class="flex justify-between text-xs mb-1">
                                         <span class="text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
@@ -166,7 +195,9 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
                                     <p class="text-gray-900 dark:text-white text-sm m-0">
                                         Vigencia: <span class="font-bold text-primary-400">{{ formatDate(currentVersion.start_date) }}</span> al <span class="font-bold text-primary-400">{{ formatDate(currentVersion.end_date) }}</span>
                                     </p>
-                                    <div v-if="subscriptionStatus.isExpired" class="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded bg-red-500/30 border border-red-600 text-red-500 text-xs font-bold uppercase tracking-widest">
+                                    
+                                    <!-- Validación dinámica usando el estado computado -->
+                                    <div v-if="getComputedStatus(subscription) === 'expirado' || getComputedStatus(subscription) === 'expired'" class="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded bg-red-500/30 border border-red-600 text-red-500 text-xs font-bold uppercase tracking-widest">
                                         <i class="pi pi-exclamation-triangle !text-[10px]"></i> Suscripción vencida
                                     </div>
                                     <div v-else-if="subscriptionStatus.daysUntilExpiry <= 5" class="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded bg-orange-900/30 border border-orange-800 text-orange-400 text-xs font-bold uppercase tracking-widest">

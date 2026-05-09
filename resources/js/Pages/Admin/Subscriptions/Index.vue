@@ -11,22 +11,49 @@ const props = defineProps({
 const searchTerm = ref(props.filters?.search || '');
 const statusFilter = ref(props.filters?.status || null);
 
-// --- HELPER FUNCTIONS ---
-const getStatusLabel = (status) => {
+// --- HELPER FUNCTIONS (ESTADOS REALES) ---
+const getComputedStatus = (subscription) => {
+    // Usamos la propiedad dinámica que nos enviará el modelo desde el backend
+    // Si no está (mientras lo configuras), hacemos un fallback al status viejo de la BD
+    return subscription.computed_status || subscription.status;
+};
+
+const getStatusLabel = (data) => {
+    const status = getComputedStatus(data);
     const statuses = {
         'activo': 'Activa',
-        'expirado': 'Expirado',
-        'suspendido': 'Suspendido',
+        'expirado': 'Vencida',
+        'suspendido': 'Suspendida',
+        // Fallbacks por compatibilidad temporal
+        'active': 'Activa',
+        'past_due': 'Atrasada',
+        'canceled': 'Cancelada',
+        'trialing': 'De prueba',
+        'unpaid': 'Sin pago',
+        'expired': 'Vencida' 
     };
     return statuses[status] || status || 'Desconocido';
 };
 
-const getStatusColor = (status) => {
+const getStatusColor = (data) => {
+    const status = getComputedStatus(data);
     switch(status) {
-        case 'activo': return 'bg-green-500 animate-pulse';
-        case 'expirado': return 'bg-yellow-500 animate-pulse';
-        case 'suspendido': return 'bg-orange-500';
-        default: return 'bg-gray-500';
+        case 'activo':
+        case 'active': 
+            return 'bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.8)]';
+        case 'trialing': 
+            return 'bg-blue-500 animate-pulse';
+        case 'past_due': 
+        case 'unpaid': 
+            return 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.8)]';
+        case 'expirado':
+        case 'expired': 
+            return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]'; // LED Rojo con brillo
+        case 'suspendido':
+        case 'canceled': 
+            return 'bg-gray-500';
+        default: 
+            return 'bg-gray-500';
     }
 };
 
@@ -54,7 +81,6 @@ const fetchData = (options = {}) => {
 const onPage = (event) => fetchData({ page: event.page + 1, rows: event.rows });
 const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: event.sortOrder });
 
-// Observamos los filtros para recargar automáticamente (Debounce implícito por inercia pero se recomienda usar lodash si hay mucha data)
 watch([searchTerm, statusFilter], () => fetchData({ page: 1 }));
 
 // --- TESLA UI PASS-THROUGH (PT) CONFIGURATIONS ---
@@ -69,11 +95,6 @@ const dataTablePt = {
 
 const inputPt = {
     root: { class: '!rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2 !text-sm w-full' }
-};
-
-const tagPt = {
-    root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' },
-    icon: { class: '!text-[10px] !mr-1.5' }
 };
 
 const clearFilters = () => {
@@ -106,7 +127,7 @@ const clearFilters = () => {
                         </IconField>
 
                         <div class="w-full md:w-64 shrink-0">
-                            <!-- Ejemplo de filtro por estado. Podrías convertirlo en un dropdown -->
+                            <!-- Ejemplo de filtro por estado -->
                             <Button v-if="searchTerm || statusFilter" label="Limpiar filtros" icon="pi pi-filter-slash" @click="clearFilters"
                                 severity="secondary" text class="!rounded-xl !text-xs !uppercase !tracking-wider w-full md:w-auto" />
                         </div>
@@ -158,12 +179,13 @@ const clearFilters = () => {
                         </template>
                     </Column>
 
+                    <!-- COLUMNA ESTADO COMPUTADO -->
                     <Column field="status" header="Estado" sortable>
                         <template #body="{ data }">
                             <div class="flex items-center gap-2">
-                                <span :class="['w-2 h-2 rounded-full', getStatusColor(data.status)]"></span>
+                                <span :class="['w-2 h-2 rounded-full', getStatusColor(data)]"></span>
                                 <span class="text-xs font-medium text-gray-700 dark:text-gray-300">
-                                    {{ getStatusLabel(data.status) }}
+                                    {{ getStatusLabel(data) }}
                                 </span>
                             </div>
                         </template>

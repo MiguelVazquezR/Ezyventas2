@@ -25,13 +25,20 @@ class SubscriptionController extends Controller
             ->when($filters['search'] ?? null, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('commercial_name', 'like', "%{$search}%")
-                      ->orWhere('business_name', 'like', "%{$search}%")
-                      ->orWhere('contact_email', 'like', "%{$search}%")
-                      ->orWhere('contact_phone', 'like', "%{$search}%");
+                        ->orWhere('business_name', 'like', "%{$search}%")
+                        ->orWhere('contact_email', 'like', "%{$search}%")
+                        ->orWhere('contact_phone', 'like', "%{$search}%");
                 });
             })
             ->when($filters['status'] ?? null, function ($query, $status) {
-                $query->where('status', $status);
+                if ($status === 'expirado') {
+                    $query->having('latest_version_end_date', '<', now()->startOfDay());
+                } elseif ($status === 'activo') {
+                    $query->having('latest_version_end_date', '>=', now()->startOfDay());
+                } else {
+                    // suspendido o sin versiones
+                    $query->havingNull('latest_version_end_date');
+                }
             })
             ->when($filters['sortField'] ?? null, function ($query, $sortField) use ($filters) {
                 $query->orderBy($sortField, $filters['sortOrder'] === 'asc' ? 'asc' : 'desc');
@@ -61,7 +68,13 @@ class SubscriptionController extends Controller
             'versions' => fn($query) => $query->with(['items', 'payments'])->latest('id'),
             'media'
         ])->loadCount([
-            'branches', 'users', 'bankAccounts', 'products', 'cashRegisters', 'printTemplates', 'services',
+            'branches',
+            'users',
+            'bankAccounts',
+            'products',
+            'cashRegisters',
+            'printTemplates',
+            'services',
         ]);
 
         // 2. Procesar versiones usando el helper existente en el modelo
@@ -100,7 +113,7 @@ class SubscriptionController extends Controller
         // 6. Construir los límites dinámicos
         $dynamicLimits = $planItems->where('type', 'limit')->map(function ($item) use ($currentVersion, $usages, $defaultIcons) {
             $versionItem = $currentVersion ? $currentVersion->items->where('item_key', $item->key)->first() : null;
-            
+
             // Verificamos si existe un icono en el JSON meta del plan, de lo contrario usamos el predeterminado
             $meta = is_string($item->meta) ? json_decode($item->meta, true) : $item->meta;
             $icon = $meta['icon'] ?? ($defaultIcons[$item->key] ?? 'pi pi-chart-pie');
@@ -117,7 +130,7 @@ class SubscriptionController extends Controller
         // 7. Construir los módulos dinámicos
         $dynamicModules = $planItems->where('type', 'module')->map(function ($item) use ($currentVersion) {
             $meta = is_string($item->meta) ? json_decode($item->meta, true) : $item->meta;
-            
+
             return [
                 'key' => $item->key,
                 'label' => $item->name,

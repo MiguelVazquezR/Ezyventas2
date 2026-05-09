@@ -3,13 +3,18 @@
 use App\Http\Controllers\Admin\AdminSubscriptionPaymentController;
 use App\Http\Controllers\Admin\PlanItemController;
 use App\Http\Controllers\Admin\SubscriptionController;
+use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\ReleaseNoteController;
 use App\Http\Middleware\CheckSuperAdmin;
 use Illuminate\Support\Facades\Route;
 
 // Asegúrate de que este grupo esté protegido por tu middleware de superadmin
-// (el que da acceso a tu Usuario ID 1 o rol SuperAdmin)
+// (el que da acceso a tu Usuario ID 1)
 Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admin.')->group(function () {
     
+    // --- Reportes / Dashboard Super Admin ---
+    Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
+
     // --- Pagos Pendientes ---
     Route::get('payments', [AdminSubscriptionPaymentController::class, 'index'])->name('payments.index');
     Route::get('payments/{payment}', [AdminSubscriptionPaymentController::class, 'show'])->name('payments.show');
@@ -31,8 +36,17 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
     Route::resource('subscriptions', SubscriptionController::class)->only([
         'index', 'show'
     ]);
-    
-    // --- Actualización manual de vigencia y límites ---
     Route::put('subscriptions/versions/{version}', [SubscriptionController::class, 'updateVersion'])->name('subscriptions.update-version');
+
+    // --- Novedades (Release Notes) ---
+    Route::prefix('release-notes')->name('release-notes.')->group(function () {
+        Route::get('/', [ReleaseNoteController::class, 'adminIndex'])->name('index');
+        Route::get('/create', [ReleaseNoteController::class, 'create'])->name('create');
+        Route::post('/', [ReleaseNoteController::class, 'store'])->name('store');
+        Route::get('/{releaseNote}/edit', [ReleaseNoteController::class, 'edit'])->name('edit');
+        Route::put('/{releaseNote}', [ReleaseNoteController::class, 'update'])->name('update');
+        Route::delete('/{releaseNote}', [ReleaseNoteController::class, 'destroy'])->name('destroy');
+        Route::post('/{releaseNote}/toggle-publish', [ReleaseNoteController::class, 'togglePublish'])->name('toggle-publish');
+    });
 
 });

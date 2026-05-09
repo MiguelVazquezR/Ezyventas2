@@ -37,7 +37,37 @@ class Subscription extends Model implements HasMedia
         'onboarding_completed_at' => 'datetime',
         'status' => SubscriptionStatus::class,
     ];
+    
+    protected $appends = [
+        'computed_status',
+    ];
 
+    /**
+     * Evalúa el estado real al vuelo basado en la vigencia de la suscripción.
+     */
+    public function getComputedStatusAttribute(): string
+    {
+        // A) Evitar N+1: Verificamos si existe la propiedad inyectada por subconsulta en los listados (Index)
+        if (array_key_exists('latest_version_end_date', $this->attributes)) {
+            if (!$this->latest_version_end_date) {
+                return SubscriptionStatus::SUSPENDED->value;
+            }
+            $endDate = Carbon::parse($this->latest_version_end_date)->startOfDay();
+            return $endDate->isPast() ? SubscriptionStatus::EXPIRED->value : SubscriptionStatus::ACTIVE->value;
+        }
+
+        // B) Fallback: Si se consulta un modelo individual (Ej: Detalles / Show)
+        $latestVersion = $this->relationLoaded('versions') 
+            ? $this->versions->sortByDesc('id')->first() 
+            : $this->versions()->latest('id')->first();
+
+        if (!$latestVersion) {
+            return SubscriptionStatus::SUSPENDED->value;
+        }
+
+        $endDate = Carbon::parse($latestVersion->end_date)->startOfDay();
+        return $endDate->isPast() ? SubscriptionStatus::EXPIRED->value : SubscriptionStatus::ACTIVE->value;
+    }
     /*
     |--------------------------------------------------------------------------
     | LÓGICA DE NEGOCIO Y HELPERS (REFACTOR)

@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Controller;
 use App\Models\ReleaseNote;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -35,7 +36,7 @@ class ReleaseNoteController extends Controller
 
         $notes = $query->paginate($request->input('rows', 20))->withQueryString();
 
-        return Inertia::render('ReleaseNote/Index', [
+        return Inertia::render('Admin/ReleaseNotes/Index', [
             'notes' => $notes,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
         ]);
@@ -43,7 +44,7 @@ class ReleaseNoteController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('ReleaseNote/Create');
+        return Inertia::render('Admin/ReleaseNotes/Create');
     }
 
     public function store(Request $request)
@@ -79,7 +80,7 @@ class ReleaseNoteController extends Controller
         // CARGA CLAVE: Le decimos a Laravel que incluya los archivos adjuntos
         $releaseNote->load('media');
 
-        return Inertia::render('ReleaseNote/Edit', [
+        return Inertia::render('Admin/ReleaseNotes/Edit', [
             'note' => $releaseNote,
         ]);
     }
@@ -238,7 +239,7 @@ class ReleaseNoteController extends Controller
             $releaseNote->id => ['read_at' => now()]
         ]);
 
-        return Inertia::render('ReleaseNote/Show', [
+        return Inertia::render('Admin/ReleaseNotes/Show', [
             'note' => [
                 'id' => $releaseNote->id,
                 'version' => $releaseNote->version,

@@ -129,6 +129,12 @@ const adminModel = ref([
         label: 'Administración',
         items: [
             {
+                label: 'Reportes',
+                icon: 'pi pi-chart-line',
+                to: route('admin.reports.index'),
+                routeName: 'admin.reports.*'
+            },
+            {
                 label: 'Pagos pendientes',
                 icon: 'pi pi-clock',
                 to: route('admin.payments.index'),
