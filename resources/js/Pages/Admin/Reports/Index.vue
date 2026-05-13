@@ -227,7 +227,7 @@ const datePickerPt = {
                         <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 flex items-center gap-2">
                             Nuevas suscripciones
                         </h2>
-                        <span class="text-4xl font-light tracking-tight text-gray-900 dark:text-white mt-4 mb-1 text-orange-600 dark:text-orange-400">
+                        <span class="text-4xl font-light tracking-tight mt-4 mb-1 text-orange-600 dark:text-orange-400">
                             +{{ metrics.newSubscriptions }}
                         </span>
                         <p class="text-[9px] text-gray-400 uppercase tracking-widest m-0 truncate">Creadas en: {{ displayPeriod }}</p>
@@ -241,7 +241,7 @@ const datePickerPt = {
                         <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 flex items-center gap-2">
                             ARPU (Promedio por Usuario)
                         </h2>
-                        <span class="text-4xl font-light tracking-tight text-gray-900 dark:text-white mt-4 mb-1 text-teal-600 dark:text-teal-400">
+                        <span class="text-4xl font-light tracking-tight mt-4 mb-1 text-teal-600 dark:text-teal-400">
                             {{ formatCurrency(arpu) }}
                         </span>
                         <p class="text-[9px] text-gray-400 uppercase tracking-widest m-0 truncate">Ingreso promedio aportado por cliente</p>
@@ -255,7 +255,7 @@ const datePickerPt = {
                         <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 flex items-center gap-2">
                             Ticket Promedio (Altas)
                         </h2>
-                        <span class="text-4xl font-light tracking-tight text-gray-900 dark:text-white mt-4 mb-1 text-purple-600 dark:text-purple-400">
+                        <span class="text-4xl font-light tracking-tight mt-4 mb-1 text-purple-600 dark:text-purple-400">
                             {{ formatCurrency(averageTicket) }}
                         </span>
                         <p class="text-[9px] text-gray-400 uppercase tracking-widest m-0 truncate">Valor medio de las nuevas suscripciones</p>
