@@ -16,8 +16,8 @@ use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Promotion;
+use App\Models\ServiceOrder;
 use App\Models\Transaction;
-use App\Models\ServiceOrder; 
 use App\Services\TransactionPaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -68,8 +68,8 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ])
             ->first();
 
-        $joinableSessions = []; 
-        $availableCashRegisters = []; 
+        $joinableSessions = [];
+        $availableCashRegisters = [];
         $userBankAccounts = null;
 
         if (!$activeSession) {
@@ -80,7 +80,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
             $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
                 ->where('is_active', true)
-                ->where('in_use', false) 
+                ->where('in_use', false)
                 ->select('id', 'name')
                 ->get();
 
@@ -144,7 +144,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         $customers = Customer::where('branch_id', $branchId)
             ->where(function ($q) use ($query) {
                 $q->where('name', 'like', "%{$query}%")
-                  ->orWhere('phone', 'like', "%{$query}%");
+                    ->orWhere('phone', 'like', "%{$query}%");
             })
             ->limit(20)
             ->select('id', 'name', 'phone', 'balance', 'credit_limit')
@@ -198,9 +198,9 @@ class PointOfSaleController extends Controller implements HasMiddleware
         }
 
         $customer = Customer::where('branch_id', $branchId)
-            ->where(function($q) use ($query) {
+            ->where(function ($q) use ($query) {
                 $q->where('phone', $query)
-                  ->orWhere('name', 'like', $query); 
+                    ->orWhere('name', 'like', $query);
             })
             ->first(['id', 'name', 'phone']);
 
@@ -314,7 +314,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
     private function getProductsData($search = null, $categoryId = null)
     {
         $branchId = Auth::user()->branch_id;
-        
+
         // 1. Filtrar los productos asegurándonos que pertenecen a la sucursal en el Pivot
         $query = Product::whereHas('branches', function ($q) use ($branchId) {
             $q->where('branches.id', $branchId);
@@ -331,12 +331,12 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
         // 2. Traemos las relaciones, en particular los pivots de inventario
         $paginatedProducts = $query->with([
-                'media', 
-                'category:id,name', 
-                'branches', // Necesario para pivot local
-                'productAttributes.branches', // Necesario para pivot de variantes local
-                'components.componentable' // <--- AÑADIDO: Cargar la relación del combo
-            ])
+            'media',
+            'category:id,name',
+            'branches', // Necesario para pivot local
+            'productAttributes.branches', // Necesario para pivot de variantes local
+            'components.componentable'
+        ])
             ->orderBy('name', 'asc')
             ->cursorPaginate(20)
             ->withQueryString();
@@ -351,10 +351,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
             if ($isVariantProduct) {
                 // Stock total calculado de todas las variantes locales
-                $currentStock = $product->productAttributes->sum(function($variant) use ($branchId) {
+                $currentStock = $product->productAttributes->sum(function ($variant) use ($branchId) {
                     return $variant->branches->where('id', $branchId)->first()?->pivot->current_stock ?? 0;
                 });
-                $reservedStock = $product->productAttributes->sum(function($variant) use ($branchId) {
+                $reservedStock = $product->productAttributes->sum(function ($variant) use ($branchId) {
                     return $variant->branches->where('id', $branchId)->first()?->pivot->reserved_stock ?? 0;
                 });
             } else {
@@ -383,9 +383,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'variants' => $this->mapVariants($product->productAttributes, $branchId),
                 'variant_combinations' => $this->mapVariantCombinations($product, $variantImages, $branchId),
                 'promotions' => $promotionData['promotions'],
-                
-                // <--- AÑADIDO: Enviar los componentes al Frontend --->
                 'components' => $product->components,
+                // <--- NUEVO: Incorporamos is_bulk y measure_unit para que las lea el CartItem.vue --->
+                'is_bulk' => (bool) $product->is_bulk,
+                'measure_unit' => $product->measure_unit,
             ];
         });
 
@@ -474,12 +475,12 @@ class PointOfSaleController extends Controller implements HasMiddleware
     {
         if ($productAttributes->isEmpty()) return new \stdClass();
         $variantsGrouped = [];
-        
+
         foreach ($productAttributes as $attributeCombination) {
             $vPivot = $attributeCombination->branches->where('id', $branchId)->first()?->pivot;
             // Sumamos a las visualizaciones solo el stock disponible de la variante
             $stock = $vPivot ? max(0, $vPivot->current_stock - $vPivot->reserved_stock) : 0;
-            
+
             foreach ($attributeCombination->attributes as $key => $value) {
                 if (!isset($variantsGrouped[$key])) $variantsGrouped[$key] = [];
                 if (!isset($variantsGrouped[$key][$value])) $variantsGrouped[$key][$value] = ['value' => $value, 'stock' => 0];
@@ -497,9 +498,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 foreach ($attr->attributes as $key => $optionValue) {
                     // Match inteligente de imagen
                     $formattedKey = "{$key}_{$optionValue}";
-                    $foundImage = $variantImages->first(fn($media) => 
-                        $media->getCustomProperty('variant_key') === $formattedKey || 
-                        $media->getCustomProperty('variant_option') === $optionValue
+                    $foundImage = $variantImages->first(
+                        fn($media) =>
+                        $media->getCustomProperty('variant_key') === $formattedKey ||
+                            $media->getCustomProperty('variant_option') === $optionValue
                     );
                     if ($foundImage) {
                         $imageUrl = $foundImage->getUrl();
@@ -530,18 +532,18 @@ class PointOfSaleController extends Controller implements HasMiddleware
     {
         $branchId = Auth::user()->branch_id;
         $subscriptionId = Auth::user()->branch->subscription_id;
-        
+
         $categories = Category::where('subscription_id', $subscriptionId)
             ->where('type', 'product')
-            ->withCount(['products' => fn($q) => $q->whereHas('branches', function($b) use ($branchId) {
+            ->withCount(['products' => fn($q) => $q->whereHas('branches', function ($b) use ($branchId) {
                 $b->where('branches.id', $branchId);
             })])
             ->get();
-            
-        $totalProducts = Product::whereHas('branches', function($q) use ($branchId) {
+
+        $totalProducts = Product::whereHas('branches', function ($q) use ($branchId) {
             $q->where('branches.id', $branchId);
         })->count();
-        
+
         $formattedCategories = $categories->map(fn($cat) => ['id' => $cat->id, 'name' => $cat->name, 'products_count' => $cat->products_count]);
         return collect([['id' => null, 'name' => 'Todos', 'products_count' => $totalProducts]])->merge($formattedCategories);
     }

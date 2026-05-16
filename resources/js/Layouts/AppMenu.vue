@@ -129,13 +129,35 @@ const adminModel = ref([
         label: 'Administración',
         items: [
             {
-                label: 'Pagos Pendientes',
+                label: 'Reportes',
+                icon: 'pi pi-chart-line',
+                to: route('admin.reports.index'),
+                routeName: 'admin.reports.*'
+            },
+            {
+                label: 'Pagos pendientes',
                 icon: 'pi pi-clock',
                 to: route('admin.payments.index'),
                 routeName: 'admin.payments.*'
             },
-            // Aquí puedes añadir más submodulos de admin en el futuro
-            // { label: 'Planes', icon: 'pi pi-tags', to: route('admin.plans.index'), routeName: 'admin.plans.*' },
+            {
+                label: 'Suscriptores',
+                icon: 'pi pi-crown', 
+                to: route('admin.subscriptions.index'),
+                routeName: 'admin.subscriptions.*'
+            },
+            {
+                label: 'Ítems de planes',
+                icon: 'pi pi-box', 
+                to: route('admin.plan-items.index'),
+                routeName: 'admin.plan-items.*'
+            },
+            {
+                label: 'Novedades',
+                icon: 'pi pi-sparkles',
+                to: route('admin.release-notes.index'),
+                routeName: 'admin.release-notes.*'
+            },
         ]
     },
 ]);

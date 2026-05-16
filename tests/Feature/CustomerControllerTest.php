@@ -1,6 +1,6 @@
 <?php
 
-namespace Tests\Feature;
+namespace Tests\Feature\Controllers;
 
 use App\Enums\CustomerBalanceMovementType;
 use App\Models\Branch;
@@ -256,5 +256,60 @@ class CustomerControllerTest extends TestCase
 
         $response->assertRedirect(route('customers.index'));
         $this->assertDatabaseMissing('customers', ['id' => $customer->id]);
+    }
+
+    // --- NUEVAS PRUEBAS AÑADIDAS PARA COMPLETAR LA COBERTURA ---
+
+    #[Test]
+    public function it_renders_create_customer_page(): void
+    {
+        $response = $this->get(route('customers.create'));
+
+        $response->assertOk()
+            ->assertInertia(fn ($page) => $page->component('Customer/Create'));
+    }
+
+    #[Test]
+    public function it_renders_edit_customer_page(): void
+    {
+        $customer = Customer::factory()->create(['branch_id' => $this->branch->id]);
+
+        $response = $this->get(route('customers.edit', $customer));
+
+        $response->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('Customer/Edit')
+                ->has('customer')
+            );
+    }
+
+    #[Test]
+    public function it_batch_deletes_customers(): void
+    {
+        $customer1 = Customer::factory()->create(['branch_id' => $this->branch->id]);
+        $customer2 = Customer::factory()->create(['branch_id' => $this->branch->id]);
+        $customer3 = Customer::factory()->create(['branch_id' => $this->branch->id]); // Este se quedará
+
+        $response = $this->post(route('customers.batchDestroy'), [
+            'ids' => [$customer1->id, $customer2->id]
+        ]);
+
+        $response->assertRedirect(route('customers.index'));
+        
+        $this->assertDatabaseMissing('customers', ['id' => $customer1->id]);
+        $this->assertDatabaseMissing('customers', ['id' => $customer2->id]);
+        $this->assertDatabaseHas('customers', ['id' => $customer3->id]);
+    }
+
+    #[Test]
+    public function it_denies_access_without_permissions(): void
+    {
+        // Removemos los roles del usuario para dejarlo sin permisos
+        $this->user->roles()->detach();
+
+        // El middleware (HasMiddleware implementado en Controller) debería interceptarlo
+        $response = $this->get(route('customers.index'));
+        
+        $response->assertForbidden(); // Debe devolver código de estado 403
     }
 }

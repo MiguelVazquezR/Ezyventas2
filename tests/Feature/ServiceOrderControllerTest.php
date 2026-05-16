@@ -19,12 +19,14 @@ use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
 use Spatie\Permission\Models\Permission;
 use App\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
+use Inertia\Testing\AssertableInertia as Assert;
 
 class ServiceOrderControllerTest extends TestCase
 {
@@ -82,12 +84,14 @@ class ServiceOrderControllerTest extends TestCase
             'balance' => 0.00
         ]);
 
+        // Crear producto simple y vincularlo a pivote
         $this->product = Product::factory()->create([
             'branch_id' => $this->branch->id,
             'selling_price' => 100.00,
-            'current_stock' => 20,
         ]);
+        $this->product->branches()->attach($this->branch->id, ['current_stock' => 20, 'reserved_stock' => 0]);
 
+        // Crear variante y vincularla a pivote
         $variantProduct = Product::factory()->create([
             'branch_id' => $this->branch->id,
             'selling_price' => 200.00,
@@ -96,9 +100,9 @@ class ServiceOrderControllerTest extends TestCase
         $this->variant = $variantProduct->productAttributes()->create([
             'attributes' => ['Size' => 'L'],
             'sku_suffix' => '-L',
-            'current_stock' => 10,
             'selling_price_modifier' => 0
         ]);
+        $this->variant->branches()->attach($this->branch->id, ['current_stock' => 10, 'reserved_stock' => 0]);
 
         $this->service = Service::factory()->create([
             'branch_id' => $this->branch->id,
@@ -124,7 +128,7 @@ class ServiceOrderControllerTest extends TestCase
         $response = $this->get(route('service-orders.index'));
 
         $response->assertOk();
-        $response->assertInertia(fn ($page) => $page
+        $response->assertInertia(fn (Assert $page) => $page
             ->component('ServiceOrder/Index')
             ->has('serviceOrders.data', 3)
         );
@@ -134,8 +138,8 @@ class ServiceOrderControllerTest extends TestCase
     public function it_stores_service_order_creates_transaction_and_deducts_stock(): void
     {
         // Arrange
-        $initialProductStock = $this->product->current_stock; // 20
-        $initialVariantStock = $this->variant->current_stock; // 10
+        $initialProductStock = 20;
+        $initialVariantStock = 10;
 
         $payload = [
             'customer_id' => $this->customer->id,
@@ -210,9 +214,12 @@ class ServiceOrderControllerTest extends TestCase
         // Verificar Deuda
         $this->assertEquals(-1000.00, $this->customer->fresh()->balance);
 
-        // Verificar Stock
-        $this->assertEquals($initialProductStock - 1, $this->product->fresh()->current_stock, 'Stock de producto no descontado');
-        $this->assertEquals($initialVariantStock - 2, $this->variant->fresh()->current_stock, 'Stock de variante no descontado');
+        // Verificar Stock en Pivot Tables
+        $productPivot = DB::table('branch_product')->where('product_id', $this->product->id)->where('branch_id', $this->branch->id)->first();
+        $this->assertEquals($initialProductStock - 1, $productPivot->current_stock, 'Stock de producto no descontado');
+        
+        $variantPivot = DB::table('branch_product_attribute')->where('product_attribute_id', $this->variant->id)->where('branch_id', $this->branch->id)->first();
+        $this->assertEquals($initialVariantStock - 2, $variantPivot->current_stock, 'Stock de variante no descontado');
     }
 
     #[Test]
@@ -247,7 +254,8 @@ class ServiceOrderControllerTest extends TestCase
             'channel' => TransactionChannel::SERVICE_ORDER->value,
         ]);
 
-        $this->product->decrement('current_stock', 1); 
+        // Simular que el stock ya se había descontado en la creación original de la OS
+        DB::table('branch_product')->where('product_id', $this->product->id)->where('branch_id', $this->branch->id)->decrement('current_stock', 1);
         $this->customer->decrement('balance', 100.00); 
 
         // Payload
@@ -287,11 +295,13 @@ class ServiceOrderControllerTest extends TestCase
         $response->assertSessionHasNoErrors();
         $response->assertRedirect();
 
-        // 1. Stock Repuesto (19 -> 20)
-        $this->assertEquals(20, $this->product->fresh()->current_stock);
+        // 1. Stock Repuesto del item viejo (19 -> 20)
+        $productPivot = DB::table('branch_product')->where('product_id', $this->product->id)->where('branch_id', $this->branch->id)->first();
+        $this->assertEquals(20, $productPivot->current_stock);
 
-        // 2. Stock Descontado (10 -> 5)
-        $this->assertEquals(5, $this->variant->fresh()->current_stock);
+        // 2. Stock Descontado del item nuevo (10 -> 5)
+        $variantPivot = DB::table('branch_product_attribute')->where('product_attribute_id', $this->variant->id)->where('branch_id', $this->branch->id)->first();
+        $this->assertEquals(5, $variantPivot->current_stock);
 
         // 3. Saldos (-1000)
         $this->assertEquals(-1000.00, $this->customer->fresh()->balance);
@@ -325,7 +335,7 @@ class ServiceOrderControllerTest extends TestCase
         // Arrange
         $order = ServiceOrder::factory()->create([
             'branch_id' => $this->branch->id,
-            'customer_id' => $this->customer->id, // <-- CORRECCIÓN: Vincular explícitamente al cliente del test
+            'customer_id' => $this->customer->id,
             'status' => ServiceOrderStatus::PENDING,
             'final_total' => 200.00
         ]);
@@ -339,7 +349,8 @@ class ServiceOrderControllerTest extends TestCase
             'description' => 'Prod'
         ]);
 
-        $this->product->update(['current_stock' => 18]);
+        // Simular que el stock y la deuda ya ocurrieron (20 iniciales - 2 = 18)
+        DB::table('branch_product')->where('product_id', $this->product->id)->where('branch_id', $this->branch->id)->update(['current_stock' => 18]);
         $this->customer->update(['balance' => -200.00]); 
         
         $transaction = $order->transaction()->create([
@@ -361,13 +372,110 @@ class ServiceOrderControllerTest extends TestCase
         // Assert
         $response->assertSessionHasNoErrors();
         
-        // 1. Stock Devuelto (18 -> 20)
-        $this->assertEquals(20, $this->product->fresh()->current_stock);
+        // 1. Stock Devuelto a través del pivot (18 -> 20)
+        $productPivot = DB::table('branch_product')->where('product_id', $this->product->id)->where('branch_id', $this->branch->id)->first();
+        $this->assertEquals(20, $productPivot->current_stock);
 
         // 2. Deuda Anulada (-200 + 200 = 0)
         $this->assertEquals(0.00, $this->customer->fresh()->balance);
 
         // 3. Estatus
         $this->assertEquals(TransactionStatus::CANCELLED, $transaction->fresh()->status);
+    }
+
+    // --- NUEVAS PRUEBAS AÑADIDAS PARA COBERTURA AL 100% ---
+
+    #[Test]
+    public function it_renders_create_service_order_page(): void
+    {
+        $response = $this->get(route('service-orders.create'));
+
+        $response->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ServiceOrder/Create')
+                ->has('customers')
+                ->has('products')
+                ->has('services')
+            );
+    }
+
+    #[Test]
+    public function it_renders_edit_service_order_page(): void
+    {
+        $order = ServiceOrder::factory()->create(['branch_id' => $this->branch->id]);
+
+        $response = $this->get(route('service-orders.edit', $order));
+
+        $response->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ServiceOrder/Edit')
+                ->has('serviceOrder')
+                ->has('customers')
+                ->has('products')
+            );
+    }
+
+    #[Test]
+    public function it_shows_service_order_details(): void
+    {
+        $order = ServiceOrder::factory()->create(['branch_id' => $this->branch->id]);
+
+        $response = $this->get(route('service-orders.show', $order));
+
+        $response->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ServiceOrder/Show')
+                ->has('serviceOrder')
+                ->has('activities')
+                ->has('availableTemplates')
+            );
+    }
+
+    #[Test]
+    public function it_can_delete_a_service_order(): void
+    {
+        $order = ServiceOrder::factory()->create(['branch_id' => $this->branch->id]);
+        // Las OS siempre tienen una transacción ligada, creémosla para testear que el controller la borra en cascada
+        $order->transaction()->create([
+            'branch_id' => $this->branch->id,
+            'subtotal' => 100,
+            'status' => TransactionStatus::PENDING,
+            'folio' => 'DEL-001',
+            'channel' => TransactionChannel::SERVICE_ORDER->value, // <-- CORRECCIÓN: Campo obligatorio añadido
+        ]);
+
+        $response = $this->delete(route('service-orders.destroy', $order));
+
+        $response->assertRedirect(route('service-orders.index'));
+        $this->assertDatabaseMissing('service_orders', ['id' => $order->id]);
+        $this->assertDatabaseMissing('transactions', ['folio' => 'DEL-001']);
+    }
+
+    #[Test]
+    public function it_can_batch_delete_service_orders(): void
+    {
+        $order1 = ServiceOrder::factory()->create(['branch_id' => $this->branch->id]);
+        $order2 = ServiceOrder::factory()->create(['branch_id' => $this->branch->id]);
+        
+        $ids = [$order1->id, $order2->id];
+
+        $response = $this->post(route('service-orders.batchDestroy'), ['ids' => $ids]);
+
+        $response->assertRedirect(route('service-orders.index'));
+        
+        foreach ($ids as $id) {
+            $this->assertDatabaseMissing('service_orders', ['id' => $id]);
+        }
+    }
+
+    #[Test]
+    public function it_denies_access_without_permissions(): void
+    {
+        // Quitar rol y permisos
+        $this->user->roles()->detach();
+
+        // Middleware intercepta
+        $response = $this->get(route('service-orders.index'));
+        $response->assertForbidden(); 
     }
 }

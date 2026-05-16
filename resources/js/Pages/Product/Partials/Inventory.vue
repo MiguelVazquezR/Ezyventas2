@@ -277,13 +277,18 @@ const removeCompositeItem = (index) => {
                         <RadioButton v-model="form.product_type" inputId="type_simple" value="simple" />
                         <label for="type_simple" class="ml-2 cursor-pointer font-medium text-gray-700 dark:text-gray-300">Producto simple</label>
                     </div>
+                    <!-- NUEVA OPCIÓN: Granel -->
+                    <div class="flex items-center">
+                        <RadioButton v-model="form.product_type" inputId="type_bulk" value="bulk" />
+                        <label for="type_bulk" class="ml-2 cursor-pointer font-medium text-gray-700 dark:text-gray-300">Venta a granel</label>
+                    </div>
                     <div class="flex items-center">
                         <RadioButton v-model="form.product_type" inputId="type_variant" value="variant" />
-                        <label for="type_variant" class="ml-2 cursor-pointer font-medium text-gray-700 dark:text-gray-300">Producto con variantes</label>
+                        <label for="type_variant" class="ml-2 cursor-pointer font-medium text-gray-700 dark:text-gray-300">Con variantes</label>
                     </div>
                     <div class="flex items-center">
                         <RadioButton v-model="form.product_type" inputId="type_composite" value="composite" />
-                        <label for="type_composite" class="ml-2 cursor-pointer font-medium text-gray-700 dark:text-gray-300">Producto compuesto (Kit/Combo)</label>
+                        <label for="type_composite" class="ml-2 cursor-pointer font-medium text-gray-700 dark:text-gray-300">Kit/Combo</label>
                     </div>
                 </div>
             </div>
@@ -299,7 +304,6 @@ const removeCompositeItem = (index) => {
 
                 <div class="col-span-full">
                     <InputLabel value="Buscar productos para agregar al kit" />
-                    <!-- Mejorada experiencia con spinner (loading) y minLength=1 -->
                     <AutoComplete 
                         v-model="selectedItemSearch" 
                         :suggestions="searchResults" 
@@ -364,25 +368,43 @@ const removeCompositeItem = (index) => {
             </template>
 
 
-            <!-- PRODUCTO SIMPLE -->
-            <template v-else-if="form.product_type === 'simple'">
+            <!-- PRODUCTO SIMPLE O GRANEL (Comparten campos pero Granel acepta decimales) -->
+            <template v-else-if="['simple', 'bulk'].includes(form.product_type)">
+                
+                <div v-if="form.product_type === 'bulk'" class="col-span-full bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg border border-orange-100 dark:border-orange-800 mb-2">
+                    <h3 class="font-bold text-orange-800 dark:text-orange-200 m-0 text-base">Venta a granel (Fraccionada)</h3>
+                    <p class="text-sm text-orange-600 dark:text-orange-300 mt-1 mb-0">
+                        Este producto permitirá ventas e inventarios con cantidades decimales (Ej. 1.5 Kg, 0.25 Lts).
+                    </p>
+                </div>
+
                 <div>
                     <InputLabel for="current_stock" value="Stock actual" />
-                    <InputNumber v-model="form.current_stock" id="current_stock" class="w-full mt-1" />
+                    <!-- maxFractionDigits es clave para permitir o restringir decimales dinámicamente -->
+                    <InputNumber v-model="form.current_stock" id="current_stock" class="w-full mt-1" 
+                        :minFractionDigits="0" 
+                        :maxFractionDigits="form.product_type === 'bulk' ? 3 : 0" 
+                    />
                     <InputError :message="form.errors.current_stock" class="mt-2" />
                 </div>
                 <div>
                     <InputLabel for="measure_unit" value="Unidad de medida *" />
-                    <Select v-model="form.measure_unit" id="measure_unit" :options="['Pza', 'Kg', 'Lts', 'Mts']" class="w-full mt-1" />
+                    <Select v-model="form.measure_unit" id="measure_unit" :options="['Pza', 'Kg', 'Grs', 'Lts', 'Mts', 'Cm']" class="w-full mt-1" />
                     <InputError :message="form.errors.measure_unit" class="mt-2" />
                 </div>
                 <div>
                     <InputLabel for="min_stock" value="Stock mínimo (Opcional)" />
-                    <InputNumber v-model="form.min_stock" id="min_stock" class="w-full mt-1" />
+                    <InputNumber v-model="form.min_stock" id="min_stock" class="w-full mt-1" 
+                        :minFractionDigits="0" 
+                        :maxFractionDigits="form.product_type === 'bulk' ? 3 : 0" 
+                    />
                 </div>
                 <div>
                     <InputLabel for="max_stock" value="Stock máximo (Opcional)" />
-                    <InputNumber v-model="form.max_stock" id="max_stock" class="w-full mt-1" />
+                    <InputNumber v-model="form.max_stock" id="max_stock" class="w-full mt-1" 
+                        :minFractionDigits="0" 
+                        :maxFractionDigits="form.product_type === 'bulk' ? 3 : 0" 
+                    />
                 </div>
             </template>
 

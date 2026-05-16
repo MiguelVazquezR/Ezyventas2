@@ -1,6 +1,6 @@
 <script setup>
-import { computed, ref } from 'vue';
-import { Link } from '@inertiajs/vue3';
+import { computed } from 'vue';
+import { Head, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 // --- Imports de los parciales ---
@@ -18,12 +18,8 @@ const props = defineProps({
     subscriptionStatus: Object,
     pendingPayment: Object, 
     lastRejectedPayment: Object,
-    // RECIBIMOS LA URL LIMPIA DESDE EL CONTROLADOR
     fiscalDocumentUrl: String,
 });
-
-const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
-const breadcrumbItems = ref([{ label: 'Mi suscripción' }]);
 
 // --- Helpers Globales para pasar a hijos ---
 const mainBranch = computed(() => {
@@ -55,39 +51,62 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 </script>
 
 <template>
-    <AppLayout title="Mi suscripción">
-        <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0 mb-6" />
+    <Head title="Mi suscripción" />
+    <AppLayout>
+        
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+            
+            <!-- Breadcrumb / Botón de regreso -->
+            <div class="flex items-center">
+                <Link :href="route('dashboard')" class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
+                    <i class="pi pi-arrow-left !text-[10px]"></i> Volver al panel principal
+                </Link>
+            </div>
 
-        <div class="p-4 md:p-6 lg:p-8">
-            <header class="mb-6">
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Mi suscripción</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">
-                    Aquí puedes ver los detalles de tu plan, historial de
-                    pagos, gestión de sucursales, cuentas bancarias e información fiscal.
-                </p>
-            </header>
-
-            <Message v-if="pendingPayment" severity="info" :closable="false" class="mb-6">
-                Tu pago de {{ formatCurrency(pendingPayment.amount) }} por transferencia está en revisión.
-                Tu plan se activará automáticamente una vez aprobado.
-            </Message>
-            <Message v-if="lastRejectedPayment" severity="error" :closable="false" class="mb-6">
-                <div class="flex flex-col">
-                    <span class="font-bold">Tu último pago fue rechazado.</span>
-                    <p class="m-0">Motivo: {{ lastRejectedPayment.payment_details.rejection_reason }}</p>
-                    <p class="m-0 mt-2">
-                        Por favor, ve a
-                        <Link :href="route('subscription.manage')" class="font-bold underline">
-                            Gestionar suscripción
-                        </Link>
-                        para intentarlo de nuevo.
+            <!-- Header Principal -->
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+                <div>
+                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">Mi suscripción</h1>
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)] animate-pulse"></span>
+                        Gestión de plan, sucursales y facturación
                     </p>
                 </div>
-            </Message>
+            </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Alerta: Pago Pendiente -->
+            <div v-if="pendingPayment" class="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-2xl flex items-start gap-4 border border-blue-100 dark:border-blue-900/30">
+                <div class="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                    <i class="pi pi-info-circle !text-lg text-blue-600 dark:text-blue-400"></i>
+                </div>
+                <div>
+                    <p class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest m-0 mb-1">Pago en revisión</p>
+                    <p class="text-sm text-blue-900 dark:text-blue-200 m-0 leading-relaxed tracking-tight">
+                        Tu pago de <strong class="font-bold font-mono">{{ formatCurrency(pendingPayment.amount) }}</strong> por transferencia está en revisión. 
+                        Tu plan se activará automáticamente una vez aprobado por nuestro equipo.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Alerta: Pago Rechazado -->
+            <div v-if="lastRejectedPayment" class="bg-red-50 dark:bg-red-900/10 p-5 rounded-2xl flex items-start gap-4 border border-red-100 dark:border-red-900/30">
+                <div class="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                    <i class="pi pi-exclamation-circle !text-lg text-red-600 dark:text-red-400"></i>
+                </div>
+                <div>
+                    <p class="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-widest m-0 mb-1">Pago rechazado</p>
+                    <p class="text-sm text-red-900 dark:text-red-200 m-0 leading-relaxed tracking-tight mb-2">
+                        Tu último pago fue rechazado por el siguiente motivo: <strong class="font-bold">{{ lastRejectedPayment.payment_details.rejection_reason }}</strong>
+                    </p>
+                    <Link :href="route('subscription.manage')">
+                        <Button label="Gestionar pago nuevamente" size="small" severity="danger" outlined class="!rounded-xl !text-[10px] !uppercase !tracking-widest !font-bold" />
+                    </Link>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
                 <!-- Columna Izquierda -->
-                <div class="lg:col-span-1 space-y-6">
+                <div class="lg:col-span-1 space-y-6 lg:space-y-8">
                     <GeneralInfoCard 
                         :subscription="subscription" 
                         :main-branch="mainBranch" 
@@ -100,7 +119,7 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                 </div>
 
                 <!-- Columna Derecha -->
-                <div class="lg:col-span-2 space-y-6">
+                <div class="lg:col-span-2 space-y-6 lg:space-y-8">
                     <PlanDetailsCard 
                         :current-version="currentVersion"
                         :plan-items="planItems"

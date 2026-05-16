@@ -1,13 +1,13 @@
 <script setup>
-import { ref, watch, computed } from 'vue';
-import { router, Link, usePage } from '@inertiajs/vue3';
+import { ref, watch } from 'vue';
+import { Head, router, usePage, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ImportServicesModal from './Partials/ImportServicesModal.vue';
 import { usePermissions } from '@/Composables';
-import Drawer from 'primevue/drawer'; 
-import Tag from 'primevue/tag';
-import Divider from 'primevue/divider';
+
+// Importamos el nuevo componente
+import ServiceDrawerDetails from './Partials/ServiceDrawerDetails.vue';
 
 const props = defineProps({
     services: Object,
@@ -20,9 +20,14 @@ const page = usePage();
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
 
+// --- Estado y Lógica ---
 const selectedServices = ref([]);
 const searchTerm = ref(props.filters.search || '');
 const showImportModal = ref(false);
+
+// Estado para el Drawer (Panel lateral)
+const isDrawerVisible = ref(false);
+const drawerService = ref(null);
 
 const headerMenu = ref();
 const toggleHeaderMenu = (event) => {
@@ -34,42 +39,6 @@ const splitButtonItems = ref([
 
 const menu = ref();
 const selectedServiceForMenu = ref(null);
-
-// --- ESTADO Y LÓGICA DEL DRAWER (VISTA RÁPIDA) ---
-const isDrawerVisible = ref(false);
-const drawerService = ref(null);
-
-// Variables para la búsqueda y paginación virtual en el Drawer
-const variantSearch = ref('');
-const visibleVariantsCount = ref(50); // Mostramos solo 50 iniciales para no congelar el DOM
-
-// Filtra las variantes en base al buscador
-const filteredVariants = computed(() => {
-    if (!drawerService.value || !drawerService.value.variants) return [];
-    
-    let variants = drawerService.value.variants;
-    if (variantSearch.value.trim()) {
-        const term = variantSearch.value.toLowerCase().trim();
-        variants = variants.filter(v => v.name.toLowerCase().includes(term));
-    }
-    return variants;
-});
-
-// Extrae la porción visible para el DOM (Virtual Pagination)
-const displayedVariants = computed(() => {
-    return filteredVariants.value.slice(0, visibleVariantsCount.value);
-});
-
-// Reinicia la paginación y búsqueda cuando abres un nuevo Drawer
-watch(() => drawerService.value, () => {
-    variantSearch.value = '';
-    visibleVariantsCount.value = 50;
-});
-
-const loadMoreVariants = () => {
-    visibleVariantsCount.value += 50;
-};
-// --- FIN LÓGICA DEL DRAWER ---
 
 const deleteSingleService = () => {
     if (!selectedServiceForMenu.value) return;
@@ -83,6 +52,9 @@ const deleteSingleService = () => {
                 preserveScroll: true,
                 onSuccess: () => {
                     selectedServices.value = selectedServices.value.filter(s => s.id !== selectedServiceForMenu.value.id);
+                    if (drawerService.value?.id === selectedServiceForMenu.value.id) {
+                        isDrawerVisible.value = false;
+                    }
                 }
             });
         }
@@ -100,7 +72,11 @@ const deleteSelectedServices = () => {
         accept: () => {
             const idsToDelete = selectedServices.value.map(s => s.id);
             router.post(route('services.batchDestroy'), { ids: idsToDelete }, {
-                onSuccess: () => selectedServices.value = []
+                onSuccess: () => {
+                    selectedServices.value = [];
+                    isDrawerVisible.value = false;
+                },
+                preserveScroll: true,
             });
         }
     });
@@ -145,68 +121,124 @@ const onRowClick = (event) => {
         return;
     }
 
-    // 1. Obtenemos la preferencia del usuario desde los props globales
-    // Si no ha configurado nada, usamos el Drawer por defecto
     const clickAction = page.props.auth.preferences?.service_table_row_click_action || 'Vista lateral con algunos detalles';
 
-    // 2. Evaluamos la cadena de texto exacta configurada en las opciones
     if (clickAction === 'Redirección a vista de detalles') {
         router.get(route('services.show', event.data.id));
     } else {
-        // Abrir Drawer (Comportamiento por defecto o seleccionado)
         drawerService.value = event.data;
         isDrawerVisible.value = true;
     }
-    
+};
+
+const goToDetails = (id) => {
+    router.visit(route('services.show', id));
+};
+
+const goToEdit = (id) => {
+    router.visit(route('services.edit', id));
+};
+
+// --- TESLA UI PASS-THROUGH (PT) CONFIGURATIONS ---
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl !p-2 !shadow-2xl' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' }
+};
+
+const dataTablePt = {
+    root: { class: 'border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden' },
+    headerRow: { class: 'bg-gray-50 dark:bg-[#1a1a1a]' },
+    headerCell: { class: 'bg-transparent text-[10px] uppercase tracking-widest text-gray-500 font-bold py-4 px-4 border-b border-gray-100 dark:border-[#3a3a3a]' },
+    bodyRow: { class: 'dark:bg-[#232323] hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors text-sm text-gray-700 dark:text-gray-300 group' },
+    bodyCell: { class: 'py-4 px-4 border-b border-gray-50 dark:border-[#2a2a2a]' },
+    paginator: { root: { class: 'dark:bg-[#1a1a1a] border-t border-gray-100 dark:border-[#3a3a3a] p-3' } }
+};
+
+const inputPt = {
+    root: { class: '!rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2 !text-sm w-full' }
+};
+
+const tagPt = {
+    root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' },
+    icon: { class: '!text-[10px] !mr-1.5' }
+};
+
+const drawerPt = {
+    root: { class: 'dark:!bg-[#232323] !border-l-gray-100 dark:!border-l-[#3a3a3a]' },
+    header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 py-5' },
+    title: { class: 'text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0' },
+    content: { class: 'dark:bg-[#232323] p-0 custom-scrollbar' }, 
+    closeButton: { class: 'hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors rounded-full w-8 h-8 flex items-center justify-center' },
+    closeButtonIcon: { class: 'dark:text-gray-400 !text-sm' },
+    mask: { class: 'backdrop-blur-sm bg-gray-900/40 dark:bg-black/60' }
 };
 </script>
 
 <template>
-    <AppLayout title="Catálogo de servicios">
-        <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
-                <!-- Header -->
-                <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Catálogo de servicios</h1>
-                    <div class="flex items-center gap-2">
-                        <IconField iconPosition="left" class="w-full md:w-auto">
-                            <InputIcon class="pi pi-search"></InputIcon>
-                            <InputText v-model="searchTerm" placeholder="Buscar servicio..." class="w-full" />
-                        </IconField>
-                        <ButtonGroup>
-                            <span v-tooltip.bottom="serviceLimitReached ? 'Límite de servicios/variantes alcanzado en tu plan actual. Mejora tu suscripción para agregar más.' : ''">
-                                <Button 
-                                    v-if="hasPermission('services.catalog.create')" 
-                                    label="Nuevo servicio" 
-                                    icon="pi pi-plus"
-                                    @click="router.get(route('services.create'))" 
-                                    severity="warning"
-                                    class="!rounded-r-none"
-                                    :disabled="serviceLimitReached"
-                                />
-                            </span>
-                            <Button v-if="hasPermission('services.catalog.import_export')" icon="pi pi-chevron-down"
-                                @click="toggleHeaderMenu" class="!rounded-l-none" severity="warning" />
-                        </ButtonGroup>
-                        <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" />
+    <Head title="Catálogo de servicios" />
+    <AppLayout>
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+            
+            <!-- Banner de Alerta de Límite (Estilo Tesla UI) -->
+            <div v-if="serviceLimitReached" class="bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div class="flex items-center gap-3">
+                    <i class="pi pi-exclamation-circle text-orange-500 !text-xl"></i>
+                    <div>
+                        <p class="font-bold text-sm text-orange-800 dark:text-orange-400 m-0">Límite de servicios alcanzado</p>
+                        <p class="text-xs text-orange-700 dark:text-orange-300/80 m-0 mt-0.5">Has alcanzado el límite de servicios o variantes de tu plan actual.</p>
+                    </div>
+                </div>
+                <Link :href="route('subscription.manage')">
+                    <Button label="Mejorar plan" size="small" severity="warning" class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold" />
+                </Link>
+            </div>
+
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                
+                <!-- Header con Título -->
+                <div class="mb-8">
+                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">Catálogo de servicios</h1>
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)] animate-pulse"></span>
+                        Gestión de ofertas y mano de obra
+                    </p>
+                </div>
+
+                <!-- Barra de Herramientas de Filtros (Estilo Panel de Control) -->
+                <div class="flex flex-col md:flex-row gap-4 items-center justify-between bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] mb-6">
+                    <IconField iconPosition="left" class="w-full md:w-1/2 lg:w-1/3">
+                        <InputIcon class="pi pi-search !text-sm text-gray-400 dark:text-gray-500"></InputIcon>
+                        <InputText v-model="searchTerm" placeholder="Buscar servicio..." :pt="inputPt" class="!pl-10" />
+                    </IconField>
+                    
+                    <div class="flex items-center gap-2 w-full md:w-auto">
+                        <span v-tooltip.bottom="serviceLimitReached ? 'Límite alcanzado' : ''" class="flex-grow md:flex-none">
+                            <Button v-if="hasPermission('services.catalog.create')" label="Nuevo servicio"
+                                icon="pi pi-plus" @click="router.get(route('services.create'))"
+                                severity="warning"
+                                :disabled="serviceLimitReached"
+                                class="!rounded-xl !text-xs !uppercase !tracking-wider w-full md:w-auto" />
+                        </span>
+                        
+                        <Button v-if="hasPermission('services.catalog.import_export')" icon="pi pi-chevron-down"
+                            @click="toggleHeaderMenu" severity="warning" class="!rounded-xl !size-9 !p-0 shrink-0" />
+                        
+                        <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" :pt="menuPt" />
                     </div>
                 </div>
 
-                <Message v-if="serviceLimitReached" severity="warn" :closable="false" class="mb-4">
-                    <div class="flex items-center justify-between w-full">
-                        <span>Has alcanzado el límite de servicios de tu plan.</span>
-                        <Link :href="route('subscription.manage')">
-                            <Button label="Mejorar plan" size="small" outlined severity="warning" class="ml-4" />
-                        </Link>
+                <!-- Barra de Acciones Masivas Contextual -->
+                <div v-if="selectedServices.length > 0" class="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl p-3 mb-6 flex flex-col md:flex-row justify-between items-center gap-4 transition-all duration-300">
+                    <span class="font-bold text-xs uppercase tracking-widest text-blue-700 dark:text-blue-300 m-0">
+                        <i class="pi pi-check-square mr-1"></i> {{ selectedServices.length }} seleccionados
+                    </span>
+                    <div class="flex items-center gap-2 w-full md:w-auto overflow-x-auto custom-scrollbar pb-1 md:pb-0">
+                        <Button v-if="hasPermission('services.catalog.delete')" @click="deleteSelectedServices" label="Eliminar"
+                            icon="pi pi-trash" size="small" severity="danger" outlined 
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider shrink-0" />
                     </div>
-                </Message>
-
-                <div v-if="selectedServices.length > 0"
-                    class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-2 mb-4 flex justify-between items-center">
-                    <span class="font-semibold text-sm text-blue-800 dark:text-blue-200">{{ selectedServices.length }}
-                        servicio(s) seleccionado(s)</span>
-                    <Button v-if="hasPermission('services.catalog.delete')" @click="deleteSelectedServices" label="Eliminar" icon="pi pi-trash" size="small"
-                        severity="danger" outlined />
                 </div>
 
                 <!-- Tabla de Servicios -->
@@ -215,181 +247,106 @@ const onRowClick = (event) => {
                     dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 60rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} servicios"
-                    rowHover
-                    class="cursor-pointer"
-                    @row-click="onRowClick">
+                    class="cursor-pointer" rowHover @row-click="onRowClick" :pt="dataTablePt">
+
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
-                    <Column field="name" header="Nombre del Servicio" sortable></Column>
+                    
+                    <Column field="name" header="Nombre del Servicio" sortable>
+                        <template #body="{ data }">
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ data.name }}</span>
+                        </template>
+                    </Column>
+                    
                     <Column field="category.name" header="Categoría" sortable>
                         <template #body="{ data }">
-                            <Tag v-if="data.category" :value="data.category.name" severity="info" rounded />
-                            <span v-else class="text-gray-400 italic">Sin categoría</span>
+                            <Tag v-if="data.category" :value="data.category.name" severity="info" :pt="tagPt" />
+                            <span v-else class="text-xs text-gray-400 italic">Sin categoría</span>
                         </template>
                     </Column>
+
                     <Column field="base_price" header="Precio Base" sortable>
-                        <template #body="{ data }"> 
-                            <span v-if="parseFloat(data.base_price) === 0" class="text-gray-500 italic text-sm">Variable</span>
-                            <span v-else class="font-medium">{{ formatCurrency(data.base_price) }}</span>
+                        <template #body="{ data }">
+                            <span v-if="parseFloat(data.base_price) === 0" class="text-xs font-medium text-gray-500 italic">Variable</span>
+                            <span v-else class="font-light tracking-tight text-lg dark:text-white">{{ formatCurrency(data.base_price) }}</span>
                         </template>
                     </Column>
+                    
                     <Column field="duration_estimate" header="Duración Estimada" sortable>
                         <template #body="{ data }">
-                            <span class="text-gray-500 italic text-sm">{{ data.duration_estimate || 'Variable' }}</span>
+                            <span class="text-xs text-gray-600 dark:text-gray-400">{{ data.duration_estimate || 'Variable' }}</span>
                         </template>
                     </Column>
+
                     <Column header="Variantes" style="min-width: 6rem; text-align: center;">
                         <template #body="{ data }">
                             <Tag 
                                 :value="data.variants ? data.variants.length : 0" 
                                 :severity="data.variants && data.variants.length > 0 ? 'info' : 'secondary'" 
-                                rounded 
+                                :pt="tagPt"
                                 v-tooltip.top="data.variants && data.variants.length > 0 ? 'Ver variantes en el detalle' : 'Servicio único sin variantes'"
                             />
                         </template>
                     </Column>
+
                     <Column header="Sucursales" style="min-width: 12rem">
                         <template #body="{ data }">
-                            <div class="flex flex-wrap gap-1">
+                            <div class="flex flex-wrap gap-1.5">
                                 <Tag 
-                                    v-for="branch in data.branches" 
+                                    v-for="branch in data.branches?.slice(0, 2)" 
                                     :key="branch.id" 
                                     :value="branch.name" 
                                     severity="secondary" 
-                                    rounded 
+                                    :pt="tagPt" 
                                 />
-                                <span v-if="!data.branches || data.branches.length === 0" class="text-gray-400 italic text-sm">Ninguna</span>
+                                <Tag v-if="data.branches?.length > 2" :value="`+${data.branches.length - 2}`"
+                                    severity="secondary" :pt="tagPt" class="cursor-help"
+                                    v-tooltip.top="data.branches.slice(2).map(b => b.name).join(', ')" />
+                                <span v-if="!data.branches || data.branches.length === 0" class="text-xs text-gray-400 italic">Ninguna</span>
                             </div>
                         </template>
                     </Column>
+                    
                     <Column headerStyle="width: 5rem; text-align: center">
-                        <template #body="{ data }"> <Button @click.stop="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
-                                text rounded severity="secondary" /> </template>
+                        <template #body="{ data }"> 
+                            <Button @click.stop="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded
+                                class="!w-8 !h-8 !text-gray-400 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors" aria-haspopup="true" aria-controls="overlay_menu" /> 
+                        </template>
                     </Column>
+                    
                     <template #empty>
-                        <div class="text-center py-4">No hay servicios registrados.</div>
+                        <div class="flex flex-col items-center justify-center text-center py-10">
+                            <i class="pi pi-wrench !text-3xl text-gray-400 mb-3"></i>
+                            <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin resultados</p>
+                            <p class="text-xs text-gray-400 mt-1">No hay servicios registrados o que coincidan con la búsqueda.</p>
+                        </div>
                     </template>
                 </DataTable>
 
-                <Menu ref="menu" :model="menuItems" :popup="true" />
+                <Menu ref="menu" id="overlay_menu" :model="menuItems" :popup="true" :pt="menuPt" />
             </div>
         </div>
 
-        <!-- DRAWER DE VISTA RÁPIDA DE SERVICIO -->
-        <Drawer v-model:visible="isDrawerVisible" position="right" class="!w-full md:!w-[400px]">
+        <!-- Drawer de Detalles del Servicio Aislado -->
+        <Drawer v-model:visible="isDrawerVisible" position="right" class="w-full md:!w-[30rem]" :pt="drawerPt">
             <template #header>
                 <div class="flex items-center gap-2">
-                    <i class="pi pi-wrench text-xl text-primary-500"></i>
-                    <span class="font-bold text-lg truncate max-w-[250px]" :title="drawerService?.name">
-                        {{ drawerService?.name }}
-                    </span>
+                    <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
+                        <i class="pi pi-wrench text-blue-500 !text-sm"></i>
+                    </div>
+                    <span class="text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0">Detalles rápidos</span>
                 </div>
             </template>
             
-            <div v-if="drawerService" class="flex flex-col h-full">
-                <!-- Contenido Principal -->
-                <div class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-5 pb-6">
-                    
-                    <!-- Info Rápida -->
-                    <div class="grid grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg border border-gray-100 dark:border-gray-700">
-                        <div class="flex flex-col gap-1">
-                            <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Categoría</span>
-                            <div><Tag :value="drawerService.category?.name || 'General'" severity="info" rounded /></div>
-                        </div>
-                        <div class="flex flex-col gap-1">
-                            <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Duración</span>
-                            <span class="font-medium text-sm flex items-center gap-1">
-                                <i class="pi pi-clock text-gray-400"></i>
-                                {{ drawerService.duration_estimate || 'No especificada' }}
-                            </span>
-                        </div>
-                        <!-- Mostrar Sucursales -->
-                        <div class="col-span-2 flex flex-col gap-1 border-t dark:border-gray-700 pt-3 mt-1">
-                            <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Disponible en:</span>
-                            <div class="flex flex-wrap gap-1 mt-1">
-                                <Tag 
-                                    v-for="branch in drawerService.branches" 
-                                    :key="branch.id" 
-                                    :value="branch.name" 
-                                    severity="secondary" 
-                                    rounded 
-                                />
-                                <span v-if="!drawerService.branches || drawerService.branches.length === 0" class="text-gray-400 italic text-sm">No disponible</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <Divider class="!my-0" />
-
-                    <!-- Precio / Variantes -->
-                    <div class="flex flex-col gap-2">
-                        <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Precio y Variantes</span>
-                        
-                        <div v-if="parseFloat(drawerService.base_price) > 0" class="flex items-center justify-between bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 p-3 rounded border border-green-200 dark:border-green-800">
-                            <span class="font-semibold">Precio General:</span>
-                            <span class="font-bold text-lg">{{ formatCurrency(drawerService.base_price) }}</span>
-                        </div>
-
-                        <div v-else-if="parseFloat(drawerService.base_price) === 0" class="bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200 p-3 rounded border border-blue-200 dark:border-blue-800">
-                            <div class="flex items-center justify-between mb-3">
-                                <div class="flex items-center gap-2">
-                                    <i class="pi pi-sitemap"></i>
-                                    <span class="font-semibold">Variantes ({{ drawerService.variants?.length || 0 }})</span>
-                                </div>
-                            </div>
-
-                            <!-- BUSCADOR INTERNO DE VARIANTES (Se muestra si hay más de 10) -->
-                            <IconField iconPosition="left" class="w-full mb-3" v-if="drawerService.variants && drawerService.variants.length > 10">
-                                <InputIcon class="pi pi-search"></InputIcon>
-                                <InputText v-model="variantSearch" placeholder="Buscar modelo o variante..." class="w-full text-sm bg-white dark:bg-gray-800" />
-                            </IconField>
-                            
-                            <ul v-if="displayedVariants.length > 0" class="flex flex-col gap-2 border-t border-blue-200 dark:border-blue-800 pt-3">
-                                <li v-for="variant in displayedVariants" :key="variant.id" class="flex justify-between items-center text-sm p-px">
-                                    <span class="font-medium truncate pr-2" :title="variant.name">- {{ variant.name }}</span>
-                                    <span class="font-bold">{{ formatCurrency(variant.price) }}</span>
-                                </li>
-                            </ul>
-                            
-                            <div v-else-if="variantSearch" class="text-sm text-center text-gray-500 py-3 italic">
-                                No se encontraron variantes con ese nombre.
-                            </div>
-
-                            <!-- BOTÓN PARA CARGAR MÁS -->
-                            <div v-if="filteredVariants.length > visibleVariantsCount" class="mt-3 text-center">
-                                <Button label="Cargar más modelos" size="small" text @click="loadMoreVariants" icon="pi pi-refresh" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <Divider class="!my-0" />
-
-                    <!-- Descripción -->
-                    <div class="flex flex-col gap-2 overflow-hidden">
-                        <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Descripción del Servicio</span>
-                        <div v-if="drawerService.description" 
-                             class="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 p-3 rounded border dark:border-gray-700 break-words overflow-x-auto" 
-                             v-html="drawerService.description">
-                        </div>
-                        <div v-else class="text-sm text-gray-400 italic bg-gray-50 dark:bg-gray-800 p-3 rounded border dark:border-gray-700 text-center">
-                            No se ha proporcionado una descripción detallada.
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Footer (Botones de Acción) -->
-                <div class="mt-auto pt-4 border-t dark:border-gray-700 bg-white dark:bg-gray-900 flex gap-2 shrink-0">
-                    <Button 
-                        v-if="hasPermission('services.catalog.see_details')"
-                        label="Ver información completa" 
-                        icon="pi pi-external-link" 
-                        class="w-full" 
-                        severity="primary"
-                        @click="router.visit(route('services.show', drawerService.id))" 
-                    />
-                </div>
-            </div>
+            <ServiceDrawerDetails 
+                v-if="drawerService"
+                :service="drawerService"
+                :can-see-details="hasPermission('services.catalog.see_details')"
+                :can-edit="hasPermission('services.catalog.edit')"
+                @go-to-details="goToDetails(drawerService.id)"
+                @go-to-edit="goToEdit(drawerService.id)"
+            />
         </Drawer>
-
+        
         <!-- Modal de Importación -->
         <ImportServicesModal :visible="showImportModal" @update:visible="showImportModal = false" />
     </AppLayout>

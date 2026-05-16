@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, provide } from 'vue';
-import { router, usePage, useForm } from '@inertiajs/vue3';
+import { router, usePage, useForm, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from "primevue/usetoast";
@@ -9,6 +9,13 @@ import PrintModal from '@/Components/PrintModal.vue';
 import ActivityHistory from '@/Components/ActivityHistory.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
 import { usePermissions } from '@/Composables';
+
+import Button from 'primevue/button';
+import Menu from 'primevue/menu';
+import Dialog from 'primevue/dialog';
+import Textarea from 'primevue/textarea';
+import FileUpload from 'primevue/fileupload';
+import Tag from 'primevue/tag';
 
 // --- Partials Importados ---
 import OrderItemsPanel from './Partials/OrderItemsPanel.vue';
@@ -125,12 +132,6 @@ const onRemoveClosingImage = (event) => {
     diagnosisForm.closing_evidence_images = diagnosisForm.closing_evidence_images.filter(img => img.objectURL !== event.file.objectURL);
 };
 
-const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
-const breadcrumbItems = ref([
-    { label: 'Órdenes de servicio', url: route('service-orders.index') },
-    { label: `Orden #${props.serviceOrder.folio || props.serviceOrder.id}` }
-]);
-
 const isCancelled = computed(() => props.serviceOrder.status === 'cancelado');
 
 const totalPaid = computed(() => {
@@ -199,112 +200,209 @@ const actionItems = computed(() => [
 const getCustomFieldDefinition = (key) => {
     return props.customFieldDefinitions?.find(def => def.key === key);
 };
+
+const formatDate = (date) => date ? new Date(date).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+
+const getStatusSeverity = (status) => {
+    if (!status) return 'secondary';
+    const map = {
+        cancelado: 'danger',
+        pendiente: 'warn',
+        en_progreso: 'info',
+        esperando_refaccion: 'secondary',
+        terminado: 'success',
+        entregado: 'success',
+    };
+    return map[status] || 'secondary';
+};
+
+// --- TESLA UI PASS-THROUGH (PT) CONFIGURATIONS ---
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl !p-2 !shadow-2xl mt-1' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' }
+};
+
+const dialogPt = {
+    root: { class: 'dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] rounded-3xl shadow-2xl overflow-hidden' },
+    header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 py-5' },
+    title: { class: 'text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0' },
+    content: { class: 'dark:bg-[#232323] p-6 lg:p-8' },
+    closeButton: { class: 'hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors rounded-full w-8 h-8 flex items-center justify-center' },
+    closeButtonIcon: { class: 'dark:text-gray-400 !text-sm' },
+    mask: { class: 'bg-gray-900/60 dark:bg-black/80' } // Sin blur
+};
+
+const textareaPt = {
+    root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-3 !text-sm w-full' }
+};
+
+const tagPt = {
+    root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' }
+};
 </script>
 
 <template>
-    <AppLayout :title="`Orden de servicio #${serviceOrder.folio || serviceOrder.id}`">
-        <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
-
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
-            <div>
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">
-                    Orden de Servicio #{{ serviceOrder.folio || serviceOrder.id }}
-                </h1>
+    <Head :title="`Orden #${serviceOrder.folio || serviceOrder.id}`" />
+    <AppLayout>
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+            
+            <!-- Breadcrumb / Botón de regreso -->
+            <div class="flex items-center">
+                <Link :href="route('service-orders.index')" class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
+                    <i class="pi pi-arrow-left !text-[10px]"></i> Volver al historial de órdenes
+                </Link>
             </div>
-            <div class="flex items-center gap-2 mt-4 sm:mt-0">
-                <Button v-if="!isCancelled && hasPermission('services.orders.change_status')" @click="cancelOrder"
-                    label="Cancelar orden" severity="danger" outlined />
-                    
-                <Button @click="toggleMenu" label="Acciones" icon="pi pi-chevron-down" iconPos="right" severity="secondary" outlined />
-                <Menu ref="menu" :model="actionItems" :popup="true" />
+
+            <!-- Header Principal -->
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+                <div>
+                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0 flex items-center gap-4">
+                        Orden de Servicio #{{ serviceOrder.folio || serviceOrder.id }}
+                    </h1>
+                    <div class="flex items-center gap-4 mt-3 flex-wrap">
+                        <Tag :value="(serviceOrder.status || '').replace('_', ' ')" :severity="getStatusSeverity(serviceOrder.status)" :pt="tagPt" />
+                        
+                        <span class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
+                        
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0">Recepción:</span>
+                            <span class="text-xs font-medium text-gray-900 dark:text-gray-100 flex items-center gap-1.5">
+                                <i class="pi pi-calendar-plus !text-[10px] text-gray-400"></i>
+                                {{ formatDate(serviceOrder.received_at) }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="w-full sm:w-auto shrink-0 flex gap-2">
+                    <Button v-if="!isCancelled && hasPermission('services.orders.change_status')" @click="cancelOrder"
+                        label="Cancelar orden" severity="danger" outlined class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto" />
+                        
+                    <Button type="button" label="Opciones" icon="pi pi-chevron-down" iconPos="right" @click="toggleMenu" severity="secondary" outlined class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto" />
+                    <Menu ref="menu" :model="actionItems" :popup="true" :pt="menuPt" />
+                </div>
             </div>
-        </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- COMPONENTE: Stepper Dinámico -->
-            <OrderStatusStepper 
-                :service-order="serviceOrder"
-                :amount-due="amountDue"
-                @require-payment="openPaymentModal"
-            />
-
-            <!-- Columna Principal (Izquierda) -->
-            <div class="lg:col-span-2 space-y-6">
-                <!-- COMPONENTE: Resumen de Cliente y Orden -->
-                <OrderSummaryPanel 
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+                <!-- COMPONENTE: Stepper Dinámico (Adaptaremos luego si es necesario) -->
+                <OrderStatusStepper 
                     :service-order="serviceOrder"
-                    :technician-commission-cost-numeric="technicianCommissionCostNumeric"
-                />
-
-                <!-- Campos Personalizados -->
-                <div v-if="serviceOrder.custom_fields && Object.keys(serviceOrder.custom_fields).length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles adicionales</h2>
-                    <ul class="space-y-4 text-sm">
-                        <li v-for="(value, key) in serviceOrder.custom_fields" :key="key">
-                            <span class="font-semibold capitalize">{{ key.replace(/_/g, ' ') }}</span>
-                            <div v-if="getCustomFieldDefinition(key)?.type === 'pattern'" class="mt-2">
-                                <PatternLock :modelValue="value" :edit="false" />
-                            </div>
-                            <div v-else-if="getCustomFieldDefinition(key)?.type === 'select'">
-                                <p class="text-gray-700 dark:text-gray-300">{{ value || 'N/A' }}</p>
-                            </div>
-                            <div v-else-if="getCustomFieldDefinition(key)?.type === 'checkbox'" class="flex flex-col gap-2 mt-2">
-                                <div v-for="option in getCustomFieldDefinition(key)?.options" :key="option" class="flex items-center">
-                                    <i :class="[value && value.includes(option) ? 'pi pi-check-circle text-green-500' : 'pi pi-times-circle text-red-500', 'mr-2']"></i>
-                                    <span :class="{ 'font-medium': value && value.includes(option), 'text-gray-500': !value || !value.includes(option) }">{{ option }}</span>
-                                </div>
-                            </div>
-                            <p v-else class="text-gray-700 dark:text-gray-300">{{ value === true ? 'Sí' : value === false ? 'No' : value || 'N/A' }}</p>
-                        </li>
-                    </ul>
-                </div>
-
-                <!-- COMPONENTE: Refacciones y Mano de Obra -->
-                <OrderItemsPanel 
-                    :service-order="serviceOrder" 
-                    :is-cancelled="isCancelled" 
-                />
-
-                <!-- Detalles del equipo y fallas -->
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles del equipo y falla</h2>
-                    <div>
-                        <p class="font-semibold m-0">Descripción del equipo</p>
-                        <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ serviceOrder.item_description }}</p>
-                    </div>
-                    <div class="mt-4">
-                        <p class="font-semibold m-0">Problemas reportados por el cliente</p>
-                        <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ serviceOrder.reported_problems }}</p>
-                    </div>
-                    <div v-if="serviceOrder.technician_diagnosis" class="mt-4 pt-4 border-t">
-                        <p class="font-semibold m-0">Diagnóstico del técnico</p>
-                        <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ serviceOrder.technician_diagnosis }}</p>
-                    </div>
-                </div>
-
-                <!-- Historial de actividad -->
-                <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/60 mt-6">
-                    <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
-                        <i class="pi pi-history text-gray-400"></i> Historial de movimientos
-                    </h3>
-                    <ActivityHistory :activities="activities" />
-                </div>
-            </div>
-
-            <!-- Columna Secundaria (Derecha) -->
-            <div class="lg:col-span-1 space-y-6">
-                <!-- COMPONENTE: Paneles Financieros y Pagos -->
-                <OrderFinancialPanel 
-                    :service-order="serviceOrder"
-                    :total-paid="totalPaid"
                     :amount-due="amountDue"
-                    :technician-commission-cost-numeric="technicianCommissionCostNumeric"
+                    @require-payment="openPaymentModal"
                 />
 
-                <!-- COMPONENTE: Galería de Evidencias -->
-                <OrderEvidencePanel 
-                    :service-order="serviceOrder"
-                />
+                <!-- Columna Principal (Izquierda) -->
+                <div class="lg:col-span-2 space-y-6 lg:space-y-8 flex flex-col">
+                    <!-- COMPONENTE: Resumen de Cliente y Orden -->
+                    <OrderSummaryPanel 
+                        :service-order="serviceOrder"
+                        :technician-commission-cost-numeric="technicianCommissionCostNumeric"
+                    />
+
+                    <!-- Campos Personalizados -->
+                    <div v-if="serviceOrder.custom_fields && Object.keys(serviceOrder.custom_fields).length > 0" class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col">
+                        <div class="mb-6 flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0 border border-purple-100 dark:border-purple-900/30">
+                                <i class="pi pi-list !text-sm text-purple-500"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Detalles adicionales</h2>
+                                <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Información personalizada del servicio</p>
+                            </div>
+                        </div>
+
+                        <ul class="m-0 p-0 list-none space-y-4">
+                            <li v-for="(value, key) in serviceOrder.custom_fields" :key="key" class="border-b border-gray-100 dark:border-[#2a2a2a] pb-4 last:border-0 last:pb-0">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 block mb-2">{{ key.replace(/_/g, ' ') }}</span>
+                                
+                                <div v-if="getCustomFieldDefinition(key)?.type === 'pattern'" class="mt-2 bg-gray-50 dark:bg-[#1a1a1a] p-4 rounded-xl border border-gray-200 dark:border-[#3a3a3a] inline-block">
+                                    <PatternLock :modelValue="value" :edit="false" />
+                                </div>
+                                <div v-else-if="getCustomFieldDefinition(key)?.type === 'select'">
+                                    <p class="text-sm font-medium text-gray-900 dark:text-white m-0">{{ value || 'N/A' }}</p>
+                                </div>
+                                <div v-else-if="getCustomFieldDefinition(key)?.type === 'checkbox'" class="flex flex-col gap-2 mt-2 bg-gray-50 dark:bg-[#1a1a1a] p-4 rounded-xl border border-gray-200 dark:border-[#3a3a3a]">
+                                    <div v-for="option in getCustomFieldDefinition(key)?.options" :key="option" class="flex items-center gap-2">
+                                        <i :class="[value && value.includes(option) ? 'pi pi-check-circle text-green-500' : 'pi pi-times-circle text-gray-400 dark:text-gray-600', '!text-sm']"></i>
+                                        <span class="text-sm m-0" :class="{ 'font-medium text-gray-900 dark:text-white': value && value.includes(option), 'text-gray-500 line-through': !value || !value.includes(option) }">{{ option }}</span>
+                                    </div>
+                                </div>
+                                <p v-else class="text-sm font-medium text-gray-900 dark:text-white m-0">{{ value === true ? 'Sí' : value === false ? 'No' : value || 'N/A' }}</p>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- COMPONENTE: Refacciones y Mano de Obra -->
+                    <OrderItemsPanel 
+                        :service-order="serviceOrder" 
+                        :is-cancelled="isCancelled" 
+                    />
+
+                    <!-- Detalles del equipo y fallas -->
+                    <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col">
+                        <div class="mb-6 flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-orange-50 dark:bg-orange-900/20 flex items-center justify-center flex-shrink-0 border border-orange-100 dark:border-orange-900/30">
+                                <i class="pi pi-box !text-sm text-orange-500"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Detalles del equipo y falla</h2>
+                                <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Reporte inicial y diagnóstico</p>
+                            </div>
+                        </div>
+
+                        <div class="bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] overflow-hidden">
+                            <div class="p-5 border-b border-gray-200 dark:border-[#2a2a2a]">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 block mb-2">Descripción del equipo</span>
+                                <p class="text-sm font-medium text-gray-900 dark:text-white m-0">{{ serviceOrder.item_description }}</p>
+                            </div>
+                            
+                            <div class="p-5 border-b border-gray-200 dark:border-[#2a2a2a] bg-orange-50/50 dark:bg-orange-900/5">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-orange-600 dark:text-orange-500 m-0 block mb-2 flex items-center gap-1.5"><i class="pi pi-exclamation-triangle !text-[9px]"></i> Problemas reportados por el cliente</span>
+                                <p class="text-sm text-gray-800 dark:text-gray-200 m-0 leading-relaxed italic">{{ serviceOrder.reported_problems }}</p>
+                            </div>
+                            
+                            <div v-if="serviceOrder.technician_diagnosis" class="p-5 bg-blue-50/50 dark:bg-blue-900/5">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-blue-600 dark:text-blue-500 m-0 block mb-2 flex items-center gap-1.5"><i class="pi pi-file-edit !text-[9px]"></i> Diagnóstico del técnico</span>
+                                <p class="text-sm text-gray-800 dark:text-gray-200 m-0 leading-relaxed">{{ serviceOrder.technician_diagnosis }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Historial de actividad -->
+                    <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col">
+                        <div class="mb-6 flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-gray-50 dark:bg-[#1a1a1a] flex items-center justify-center flex-shrink-0 border border-gray-200 dark:border-[#3a3a3a]">
+                                <i class="pi pi-history !text-sm text-gray-500"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Historial de movimientos</h2>
+                                <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Auditoría y registro de cambios</p>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] p-4 lg:p-6 overflow-hidden">
+                            <ActivityHistory :activities="activities" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Columna Secundaria (Derecha) -->
+                <div class="lg:col-span-1 space-y-6 lg:space-y-8 flex flex-col">
+                    <!-- COMPONENTE: Paneles Financieros y Pagos -->
+                    <OrderFinancialPanel 
+                        :service-order="serviceOrder"
+                        :total-paid="totalPaid"
+                        :amount-due="amountDue"
+                        :technician-commission-cost-numeric="technicianCommissionCostNumeric"
+                    />
+
+                    <!-- COMPONENTE: Galería de Evidencias -->
+                    <OrderEvidencePanel 
+                        :service-order="serviceOrder"
+                    />
+                </div>
             </div>
         </div>
 
@@ -317,32 +415,59 @@ const getCustomFieldDefinition = (key) => {
             :data-source="{ type: 'service_order', id: serviceOrder.id }" :available-templates="availableTemplates"
             @hide="handlePrintModalClosed" />
 
-        <Dialog v-model:visible="isDiagnosisModalVisible" modal header="Registrar Diagnóstico y Evidencia" :style="{ width: '40rem' }">
-            <div class="p-fluid formgrid grid">
-                <div class="field col-12 mb-4">
-                    <label for="technician_diagnosis" class="font-semibold">Diagnóstico del técnico</label>
-                    <Textarea id="technician_diagnosis" v-model="diagnosisForm.technician_diagnosis" rows="5"
-                        class="w-full mt-2" :class="{ 'p-invalid': diagnosisForm.errors.technician_diagnosis }" />
-                    <small class="p-error" v-if="diagnosisForm.errors.technician_diagnosis">{{ diagnosisForm.errors.technician_diagnosis }}</small>
+        <Dialog v-model:visible="isDiagnosisModalVisible" modal class="w-full max-w-lg mx-4" :pt="dialogPt">
+            <template #header>
+                <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-500 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
+                        <i class="pi pi-file-edit !text-sm"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-light tracking-tight text-gray-900 dark:text-white m-0 leading-tight">Registrar diagnóstico</h2>
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1">
+                            Notas del técnico y evidencia
+                        </p>
+                    </div>
+                </div>
+            </template>
+            
+            <div class="flex flex-col gap-5 pt-2">
+                <div class="flex flex-col">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 mb-2">Diagnóstico del técnico</label>
+                    <Textarea v-model="diagnosisForm.technician_diagnosis" rows="5" placeholder="Detalla el problema encontrado y las acciones a tomar..." :pt="textareaPt" :class="{ '!border-red-500': diagnosisForm.errors.technician_diagnosis }" />
+                    <span class="text-xs text-red-500 font-medium mt-1.5" v-if="diagnosisForm.errors.technician_diagnosis">{{ diagnosisForm.errors.technician_diagnosis }}</span>
                 </div>
 
-                <div class="field col-12">
-                    <label class="font-semibold mb-2 block">Evidencia de cierre (Máx. 5 imágenes)</label>
-                    <FileUpload name="closing_evidence_images[]" @select="onSelectClosingImages"
-                        @remove="onRemoveClosingImage" :multiple="true" :show-upload-button="false" accept="image/*"
-                        :maxFileSize="10000000" :fileLimit="MAX_CLOSING_EVIDENCE_IMAGES"
-                        :invalidFileSizeMessage="'{0}: El tamaño del archivo excede el límite de 10MB.'"
-                        :invalidFileLimitMessage="'Máximo {0} archivos permitidos.'">
-                        <template #empty>
-                            <p>Arrastra y suelta las imágenes finales del servicio aquí.</p>
-                        </template>
-                    </FileUpload>
-                    <small class="p-error" v-if="diagnosisForm.errors.closing_evidence_images">{{ diagnosisForm.errors.closing_evidence_images }}</small>
+                <div class="flex flex-col">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 mb-2">Evidencia de cierre (Máx. 5 imágenes)</label>
+                    <div class="bg-gray-50 dark:bg-[#1a1a1a] rounded-xl border border-gray-200 dark:border-[#3a3a3a] p-2">
+                        <FileUpload name="closing_evidence_images[]" @select="onSelectClosingImages"
+                            @remove="onRemoveClosingImage" :multiple="true" :show-upload-button="false" accept="image/*"
+                            :maxFileSize="10000000" :fileLimit="MAX_CLOSING_EVIDENCE_IMAGES"
+                            :invalidFileSizeMessage="'{0}: El tamaño del archivo excede el límite de 10MB.'"
+                            :invalidFileLimitMessage="'Máximo {0} archivos permitidos.'"
+                            class="!border-none !bg-transparent"
+                            :pt="{
+                                content: { class: '!bg-transparent !p-4' },
+                                chooseButton: { class: '!bg-blue-50 dark:!bg-blue-900/30 !text-blue-600 dark:!text-blue-400 !border-none !rounded-xl !text-xs uppercase font-bold tracking-wider hover:!bg-blue-100 dark:hover:!bg-blue-900/50 transition-colors' },
+                                empty: { class: '!flex !items-center !justify-center !text-center !p-6 !text-gray-500 !italic !text-sm' }
+                            }">
+                            <template #empty>
+                                <div class="flex flex-col items-center">
+                                    <i class="pi pi-images !text-3xl text-gray-400 mb-2"></i>
+                                    <p class="m-0">Arrastra y suelta las imágenes finales del servicio aquí.</p>
+                                </div>
+                            </template>
+                        </FileUpload>
+                    </div>
+                    <span class="text-xs text-red-500 font-medium mt-1.5" v-if="diagnosisForm.errors.closing_evidence_images">{{ diagnosisForm.errors.closing_evidence_images }}</span>
                 </div>
             </div>
+            
             <template #footer>
-                <Button label="Cancelar" text @click="isDiagnosisModalVisible = false" />
-                <Button label="Guardar diagnóstico" @click="handleDiagnosisSubmit" :loading="diagnosisForm.processing" />
+                <div class="flex justify-end items-center gap-3 w-full mt-4 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
+                    <Button label="Cancelar" text @click="isDiagnosisModalVisible = false" class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold" />
+                    <Button label="Guardar diagnóstico" @click="handleDiagnosisSubmit" :loading="diagnosisForm.processing" class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-6 shadow-sm" severity="primary" />
+                </div>
             </template>
         </Dialog>
     </AppLayout>

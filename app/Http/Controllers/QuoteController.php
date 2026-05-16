@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\CustomerBalanceMovementType;
+use App\Actions\Quote\ChangeQuoteStatusAction;
+use App\Actions\Quote\ConvertQuoteToSaleAction;
+use App\Actions\Quote\StoreQuoteAction;
+use App\Actions\Quote\UpdateQuoteAction;
 use App\Enums\QuoteStatus;
-use App\Enums\TransactionChannel;
-use App\Enums\TransactionStatus;
 use App\Http\Requests\StoreQuoteRequest;
 use App\Http\Requests\UpdateQuoteRequest;
 use App\Models\Customer;
@@ -15,14 +16,12 @@ use App\Models\Product;
 use App\Models\ProductAttribute;
 use App\Models\Quote;
 use App\Models\Service;
-use App\Models\Transaction;
 use App\Services\ActivityLogService;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -50,9 +49,7 @@ class QuoteController extends Controller implements HasMiddleware
         $query = Quote::query()
             ->whereNull('parent_quote_id')
             ->leftJoin('customers', 'quotes.customer_id', '=', 'customers.id')
-            ->whereHas('branch.subscription', function ($q) use ($subscriptionId) {
-                $q->where('id', $subscriptionId);
-            })
+            ->whereHas('branch.subscription', fn ($q) => $q->where('id', $subscriptionId))
             ->with(['customer:id,name', 'versions.customer:id,name'])
             ->select('quotes.*');
 
@@ -65,13 +62,10 @@ class QuoteController extends Controller implements HasMiddleware
         }
 
         $sortField = $request->input('sortField', 'created_at');
-        $sortOrder = $request->input('sortOrder', 'desc');
-        $query->orderBy($sortField === 'customer.name' ? 'customers.name' : $sortField, $sortOrder);
-
-        $quotes = $query->paginate($request->input('rows', 20))->withQueryString();
+        $query->orderBy($sortField === 'customer.name' ? 'customers.name' : $sortField, $request->input('sortOrder', 'desc'));
 
         return Inertia::render('Quote/Index', [
-            'quotes' => $quotes,
+            'quotes' => $query->paginate($request->input('rows', 20))->withQueryString(),
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
         ]);
     }
@@ -81,30 +75,11 @@ class QuoteController extends Controller implements HasMiddleware
         return Inertia::render('Quote/Create', $this->getFormData());
     }
 
-    public function store(StoreQuoteRequest $request)
+    public function store(StoreQuoteRequest $request, StoreQuoteAction $action)
     {
-        DB::transaction(function () use ($request) {
-            $user = Auth::user();
-            $validated = $request->validated();
+        $validatedData = array_merge($request->validated(), $this->validateCustomFields($request));
 
-            $customFieldsData = $this->validateCustomFields($request);
-            $validatedData = array_merge($validated, $customFieldsData);
-
-            $lastQuote = Quote::where('branch_id', $user->branch_id)->latest('id')->first();
-            $nextFolioNumber = $lastQuote ? (int) substr($lastQuote->folio, 4) + 1 : 1;
-            $folio = 'COT-' . $nextFolioNumber;
-
-            $quote = Quote::create(array_merge($validatedData, [
-                'branch_id' => $user->branch_id,
-                'user_id' => $user->id,
-                'folio' => $folio,
-                'status' => QuoteStatus::DRAFT,
-            ]));
-
-            foreach ($validatedData['items'] as $item) {
-                $quote->items()->create($item);
-            }
-        });
+        $action->execute($validatedData, Auth::user());
 
         return redirect()->route('quotes.index')->with('success', 'Cotización creada con éxito.');
     }
@@ -116,29 +91,11 @@ class QuoteController extends Controller implements HasMiddleware
         return Inertia::render('Quote/Edit', array_merge($this->getFormData(), ['quote' => $quote]));
     }
 
-    public function update(UpdateQuoteRequest $request, Quote $quote)
+    public function update(UpdateQuoteRequest $request, Quote $quote, UpdateQuoteAction $action)
     {
-        DB::transaction(function () use ($request, $quote) {
-            $validated = $request->validated();
-            $customFieldsData = $this->validateCustomFields($request);
-            $validatedData = array_merge($validated, $customFieldsData);
+        $validatedData = array_merge($request->validated(), $this->validateCustomFields($request));
 
-            $quote->update($validatedData);
-
-            // --- Registro manual de cambio en items ---
-            if (count($validatedData['items']) > 0 || $quote->items()->count() > 0) {
-                 activity()
-                    ->performedOn($quote)
-                    ->causedBy(Auth::user())
-                    ->event('updated')
-                    ->log('Se actualizaron los conceptos de la cotización.');
-            }
-
-            $quote->items()->delete(); 
-            foreach ($validatedData['items'] as $item) {
-                $quote->items()->create($item);
-            }
-        });
+        $action->execute($quote, $validatedData, Auth::user());
 
         return redirect()->route('quotes.index')->with('success', 'Cotización actualizada con éxito.');
     }
@@ -159,109 +116,66 @@ class QuoteController extends Controller implements HasMiddleware
             }
         ]);
 
-        // Llamamos al servicio con el parámetro true para "strictChanges"
-        $formattedActivities = $activityLogService->getFormattedActivities($quote, $request, 'Quote', true);
-
         $subscriptionId = Auth::user()->branch->subscription_id;
-        $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
-            ->where('module', 'quotes')
-            ->get();
-
-        $printTemplates = PrintTemplate::where('subscription_id', $subscriptionId)
-            ->where('type', 'cotizacion')
-            ->whereHas('branches', function ($q) use ($quote) {
-                $q->where('branches.id', $quote->branch_id);
-            })
-            ->select('id', 'name')
-            ->get();
 
         return Inertia::render('Quote/Show', [
             'quote' => $quote,
-            'activities' => $formattedActivities,
-            'customFieldDefinitions' => $customFieldDefinitions,
-            'printTemplates' => $printTemplates,
+            'activities' => $activityLogService->getFormattedActivities($quote, $request, 'Quote', true),
+            'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'quotes')->get(),
+            'printTemplates' => PrintTemplate::where('subscription_id', $subscriptionId)
+                ->where('type', 'cotizacion')
+                ->whereHas('branches', fn ($q) => $q->where('branches.id', $quote->branch_id))
+                ->select('id', 'name')
+                ->get(),
         ]);
     }
 
-    public function updateStatus(Request $request, Quote $quote)
+    public function updateStatus(Request $request, Quote $quote, ChangeQuoteStatusAction $action, ConvertQuoteToSaleAction $convertAction)
     {
         $validated = $request->validate([
             'status' => ['required', Rule::enum(QuoteStatus::class)],
         ]);
 
-        $newStatus = $validated['status'];
-        $oldStatus = $quote->status->value;
+        $newStatus = QuoteStatus::from($validated['status']);
 
-        if ($newStatus === QuoteStatus::SALE_GENERATED->value && !$quote->transaction_id) {
+        // Shortcut: Si el estado es convertir a venta, usamos la acción dedicada.
+        if ($newStatus === QuoteStatus::SALE_GENERATED && !$quote->transaction_id) {
             try {
-                $this->createSaleTransaction($quote, Auth::user());
+                $convertAction->execute($quote, Auth::user());
                 return redirect()->back()->with('success', 'Venta generada automáticamente desde el cambio de estatus.');
             } catch (\Exception $e) {
-                return redirect()->back()->with('error', 'Error al generar la venta: ' . $e->getMessage());
+                return redirect()->back()->with('error', $e->getMessage());
             }
         }
 
-        if (
-            $newStatus === QuoteStatus::CANCELLED->value &&
-            $oldStatus === QuoteStatus::SALE_GENERATED->value &&
-            $quote->transaction_id
-        ) {
-            DB::transaction(function () use ($quote) {
-                $quote->load(['transaction.payments', 'items']);
-                $transaction = $quote->transaction;
+        // De lo contrario, procedemos con el cambio de estado (que maneja las cancelaciones)
+        $result = $action->execute($quote, $newStatus, Auth::user());
 
-                if ($transaction && $transaction->status !== TransactionStatus::CANCELLED && $transaction->status !== TransactionStatus::REFUNDED) {
-                    
-                    // ACTUALIZACIÓN MULTI-SUCURSAL: Devolvemos stock usando la tabla pivot correspondiente
-                    foreach ($quote->items as $item) {
-                        $this->returnStock($item->itemable_type, $item->itemable_id, $item->quantity, $quote->branch_id);
-                    }
-
-                    $totalPaid = $transaction->payments->sum('amount');
-                    $transaction->status = $totalPaid > 0 ? TransactionStatus::REFUNDED : TransactionStatus::CANCELLED;
-                    $transaction->save();
-
-                    if ($transaction->customer_id) {
-                        $customer = Customer::find($transaction->customer_id);
-                        if ($customer) {
-                            $creditAmount = $transaction->subtotal - $transaction->total_discount + $transaction->total_tax;
-                            $customer->increment('balance', $creditAmount);
-                            $customer->balanceMovements()->create([
-                                'transaction_id' => $transaction->id,
-                                'type' => CustomerBalanceMovementType::CANCELLATION_CREDIT,
-                                'amount' => $creditAmount,
-                                'balance_after' => $customer->fresh()->balance,
-                            ]);
-                        }
-                    }
-                }
-            });
+        if (!$result['success']) {
+            return redirect()->back();
         }
 
-        $quote->update(['status' => $newStatus]);
-        return redirect()->back()->with('success', 'Estatus de la cotización actualizado.');
+        return redirect()->back()->with('success', $result['message']);
     }
 
     public function newVersion(Quote $quote)
     {
-        $newQuote = DB::transaction(function () use ($quote) {
-            $newVersionNumber = ($quote->versions()->max('version_number') ?? $quote->version_number) + 1;
-
-            $replicatedQuote = $quote->replicate()->fill([
-                'parent_quote_id' => $quote->parent_quote_id ?? $quote->id,
-                'version_number' => $newVersionNumber,
-                'status' => QuoteStatus::DRAFT,
-                'folio' => $quote->folio . '-V' . $newVersionNumber,
-            ]);
-            $replicatedQuote->save();
-
-            foreach ($quote->items as $item) {
-                $replicatedQuote->items()->create($item->toArray());
-            }
-            return $replicatedQuote;
-        });
+        $newQuote = $quote->createNewVersion();
 
         return redirect()->route('quotes.edit', $newQuote->id);
+    }
+
+    public function convertToSale(Request $request, Quote $quote, ConvertQuoteToSaleAction $action)
+    {
+        try {
+            $newTransaction = $action->execute($quote, Auth::user());
+
+            return redirect()->route('quotes.show', $quote->id)
+                ->with('success', 'Cotización convertida a venta con éxito. Folio de Venta: ' . $newTransaction->folio)
+                ->with('transaction_id', $newTransaction->id);
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        }
     }
 
     public function destroy(Quote $quote)
@@ -292,58 +206,15 @@ class QuoteController extends Controller implements HasMiddleware
         ]);
 
         $subscriptionId = Auth::user()->branch->subscription_id;
-        $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
-            ->where('module', 'quotes')
-            ->get();
-
-        $printTemplate = null;
-        if ($request->has('template_id')) {
-            $printTemplate = PrintTemplate::find($request->input('template_id'));
-        }
 
         return Inertia::render('Quote/Print', [
             'quote' => $quote,
-            'customFieldDefinitions' => $customFieldDefinitions,
-            'printTemplate' => $printTemplate,
+            'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'quotes')->get(),
+            'printTemplate' => $request->has('template_id') ? PrintTemplate::find($request->input('template_id')) : null,
         ]);
     }
 
-    public function convertToSale(Request $request, Quote $quote)
-    {
-        if ($quote->status !== QuoteStatus::AUTHORIZED) {
-            return redirect()->back()->with('error', 'Solo las cotizaciones autorizadas pueden convertirse en venta.');
-        }
-        if ($quote->transaction_id) {
-            return redirect()->back()->with('error', 'Esta cotización ya tiene una venta asociada.');
-        }
-
-        try {
-            $newTransaction = $this->createSaleTransaction($quote, Auth::user());
-
-            return redirect()->route('quotes.show', $quote->id)
-                ->with('success', 'Cotización convertida a venta con éxito. Folio de Venta: ' . $newTransaction->folio)
-                ->with('transaction_id', $newTransaction->id);
-        } catch (\Exception $e) {
-            return redirect()->back()->with('error', 'Error al convertir: ' . $e->getMessage());
-        }
-    }
-
-    private function generateSaleFolio($branchId): string
-    {
-        $lastTransaction = Transaction::where('branch_id', $branchId)
-            ->where('folio', 'LIKE', 'V-%')
-            ->orderBy('id', 'desc') 
-            ->first();
-
-        $sequence = 1; 
-
-        if ($lastTransaction) {
-            $lastFolioNumber = (int) substr($lastTransaction->folio, 2);
-            $sequence = $lastFolioNumber + 1;
-        }
-
-        return 'V-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
-    }
+    // --- HELPERS ---
 
     private function getFormData()
     {
@@ -352,106 +223,26 @@ class QuoteController extends Controller implements HasMiddleware
 
         return [
             'customers' => Customer::whereHas('branch.subscription', fn($q) => $q->where('id', $subscriptionId))->get(['id', 'name']),
-            
-            // ACTUALIZACIÓN MULTI-SUCURSAL: Traemos productos mapeando stock desde la pivot
-            'products' => Product::whereHas('branches', function ($q) use ($user) {
-                $q->where('branches.id', $user->branch_id);
-            })
-            ->with(['productAttributes.branches', 'branches'])
-            ->get()
-            ->map(function ($p) use ($user) {
-                $branchPivot = $p->branches->where('id', $user->branch_id)->first()?->pivot;
-                $p->current_stock = $branchPivot ? $branchPivot->current_stock : 0;
-                
-                if ($p->productAttributes) {
-                    $p->productAttributes->transform(function ($v) use ($user) {
-                        $vPivot = $v->branches->where('id', $user->branch_id)->first()?->pivot;
-                        $v->current_stock = $vPivot ? $vPivot->current_stock : 0;
-                        return $v;
-                    });
-                }
-                return $p;
-            }),
-
-            // ACTUALIZACIÓN MULTI-SUCURSAL: Traemos servicios compartidos con esta sucursal y sus variantes
-            'services' => Service::whereHas('branches', function ($q) use ($user) {
-                $q->where('branches.id', $user->branch_id);
-            })->with('variants')->get(),
-            
+            'products' => Product::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))
+                ->with(['productAttributes.branches', 'branches'])
+                ->get()
+                ->map(function ($p) use ($user) {
+                    // Reutilizamos el helper que creamos antes en Product
+                    return $p->loadStockForBranch($user->branch_id);
+                }),
+            'services' => Service::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->with('variants')->get(),
             'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)->where('module', 'quotes')->get(),
         ];
     }
 
-    private function createSaleTransaction(Quote $quote, $user)
-    {
-        return DB::transaction(function () use ($quote, $user) {
-            $folio = $this->generateSaleFolio($user->branch_id);
-
-            $transaction = Transaction::create([
-                'folio' => $folio,
-                'customer_id' => $quote->customer_id,
-                'branch_id' => $user->branch_id,
-                'user_id' => $user->id,
-                'transactionable_id' => $quote->id,
-                'transactionable_type' => Quote::class,
-                'status' => TransactionStatus::PENDING,
-                'channel' => TransactionChannel::QUOTE,
-                'subtotal' => $quote->subtotal,
-                'total_discount' => $quote->total_discount,
-                'total_tax' => $quote->total_tax,
-            ]);
-
-            foreach ($quote->items as $quoteItem) {
-                $transaction->items()->create([
-                    'itemable_id' => $quoteItem->itemable_id,
-                    'itemable_type' => $quoteItem->itemable_type,
-                    'description' => $quoteItem->description,
-                    'quantity' => $quoteItem->quantity,
-                    'unit_price' => $quoteItem->unit_price,
-                    'discount_amount' => 0,
-                    'tax_amount' => 0,
-                    'line_total' => $quoteItem->line_total,
-                ]);
-
-                // ACTUALIZACIÓN MULTI-SUCURSAL: Descontamos stock al convertir en venta
-                $this->deductStock($quoteItem->itemable_type, $quoteItem->itemable_id, $quoteItem->quantity, $user->branch_id);
-            }
-
-            $quote->update([
-                'status' => QuoteStatus::SALE_GENERATED,
-                'transaction_id' => $transaction->id,
-            ]);
-
-            if ($quote->customer_id) {
-                $customer = Customer::find($quote->customer_id);
-                if ($customer) {
-                    $debtAmount = $quote->total_amount;
-                    $customer->decrement('balance', $debtAmount);
-
-                    $customer->balanceMovements()->create([
-                        'transaction_id' => $transaction->id,
-                        'type' => CustomerBalanceMovementType::CREDIT_SALE,
-                        'amount' => -$debtAmount,
-                        'balance_after' => $customer->fresh()->balance,
-                    ]);
-                }
-            }
-
-            return $transaction;
-        });
-    }
-
     private function validateCustomFields(Request $request)
     {
-        $user = $request->user();
-        $subscriptionId = $user->branch->subscription_id;
+        $subscriptionId = $request->user()->branch->subscription_id;
         $definitions = CustomFieldDefinition::where('subscription_id', $subscriptionId)
             ->where('module', 'quotes')
             ->get();
 
-        if ($definitions->isEmpty()) {
-            return ['custom_fields' => []];
-        }
+        if ($definitions->isEmpty()) return ['custom_fields' => []];
 
         $rules = [];
         $messages = [];
@@ -464,8 +255,7 @@ class QuoteController extends Controller implements HasMiddleware
             switch ($field->type) {
                 case 'text':
                 case 'textarea':
-                    $rules[$ruleKey][] = 'string';
-                    $rules[$ruleKey][] = 'max:255';
+                    $rules[$ruleKey] = array_merge($rules[$ruleKey], ['string', 'max:255']);
                     break;
                 case 'number':
                     $rules[$ruleKey][] = 'numeric';
@@ -475,9 +265,7 @@ class QuoteController extends Controller implements HasMiddleware
                     break;
                 case 'select':
                     $rules[$ruleKey][] = 'string';
-                    if (!empty($field->options)) {
-                        $rules[$ruleKey][] = Rule::in($field->options);
-                    }
+                    if (!empty($field->options)) $rules[$ruleKey][] = Rule::in($field->options);
                     break;
                 case 'checkbox':
                     $rules[$ruleKey] = 'array';
@@ -490,61 +278,6 @@ class QuoteController extends Controller implements HasMiddleware
             }
         }
 
-        return $request->validate([
-            'custom_fields' => ['nullable', 'array'],
-            ...$rules
-        ], $messages);
-    }
-
-    /**
-     * Helper centralizado para descontar stock físico de la sucursal actual.
-     */
-    private function deductStock(string $itemableType, int $itemableId, float $quantity, int $branchId): void
-    {
-        if ($itemableType === Product::class) {
-            DB::table('branch_product')
-                ->where('product_id', $itemableId)
-                ->where('branch_id', $branchId)
-                ->decrement('current_stock', $quantity);
-        } elseif ($itemableType === ProductAttribute::class) {
-            DB::table('branch_product_attribute')
-                ->where('product_attribute_id', $itemableId)
-                ->where('branch_id', $branchId)
-                ->decrement('current_stock', $quantity);
-
-            $variant = ProductAttribute::find($itemableId);
-            if ($variant) {
-                DB::table('branch_product')
-                    ->where('product_id', $variant->product_id)
-                    ->where('branch_id', $branchId)
-                    ->decrement('current_stock', $quantity);
-            }
-        }
-    }
-
-    /**
-     * Helper centralizado para retornar stock físico a la sucursal actual.
-     */
-    private function returnStock(string $itemableType, int $itemableId, float $quantity, int $branchId): void
-    {
-        if ($itemableType === Product::class) {
-            DB::table('branch_product')
-                ->where('product_id', $itemableId)
-                ->where('branch_id', $branchId)
-                ->increment('current_stock', $quantity);
-        } elseif ($itemableType === ProductAttribute::class) {
-            DB::table('branch_product_attribute')
-                ->where('product_attribute_id', $itemableId)
-                ->where('branch_id', $branchId)
-                ->increment('current_stock', $quantity);
-
-            $variant = ProductAttribute::find($itemableId);
-            if ($variant) {
-                DB::table('branch_product')
-                    ->where('product_id', $variant->product_id)
-                    ->where('branch_id', $branchId)
-                    ->increment('current_stock', $quantity);
-            }
-        }
+        return $request->validate(array_merge(['custom_fields' => ['nullable', 'array']], $rules), $messages);
     }
 }

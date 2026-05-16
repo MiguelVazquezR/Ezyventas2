@@ -53,12 +53,20 @@ const onMouseMove = (e) => {
     <div class="flex items-center pb-2 overflow-x-auto category-scroll-container cursor-grab" ref="scrollContainer"
         @mousedown.prevent="onMouseDown" @mouseleave="onMouseLeaveOrUp" @mouseup="onMouseLeaveOrUp"
         @mousemove="onMouseMove">
-        <div class="flex gap-2">
+        <div class="flex gap-3 px-1 py-1">
             <button v-for="category in categories" :key="category.id" @click="selectCategory(category.id)"
-                :class="selectedCategoryId === category.id ? 'text-[#373737] font-bold' : 'text-[#999999]'"
-                class="whitespace-nowrap rounded-full bg-white border border-[#D9D9D9] px-4 py-2 flex items-center gap-2 transition cursor-grab active:cursor-grabbing">
-                <span class="mr-2">{{ category.name }}</span>
-                <span class="bg-[#F2F2F2] px-2 py-px rounded text-sm" :class="selectedCategoryId === category.id ? 'font-bold' : null">
+                :class="selectedCategoryId === category.id 
+                    ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white text-white dark:text-gray-900 shadow-md scale-100' 
+                    : 'bg-white dark:bg-[#1a1a1a] border-gray-200 dark:border-[#3a3a3a] text-gray-600 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 hover:text-gray-900 dark:hover:text-gray-200 scale-95 hover:scale-100'"
+                class="whitespace-nowrap rounded-full px-5 py-2 flex items-center gap-3 transition-all duration-300 cursor-grab active:cursor-grabbing text-sm font-medium border select-none group">
+                
+                <span class="tracking-wide">{{ category.name }}</span>
+                
+                <span 
+                    :class="selectedCategoryId === category.id 
+                        ? 'bg-gray-700 dark:bg-gray-200 text-gray-200 dark:text-gray-700' 
+                        : 'bg-gray-100 dark:bg-[#2a2a2a] text-gray-500 dark:text-gray-400 group-hover:bg-gray-200 dark:group-hover:bg-[#3a3a3a]'"
+                    class="px-2 py-0.5 rounded-full text-[10px] font-bold transition-colors tracking-widest">
                     {{ category.products_count }}
                 </span>
             </button>

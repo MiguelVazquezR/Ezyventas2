@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\CustomerBalanceMovementType;
 use App\Enums\TransactionStatus;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -15,17 +17,8 @@ class Customer extends Model
     use HasFactory;
 
     protected $fillable = [
-        'branch_id',
-        'company_name',
-        'name',
-        'email',
-        'phone',
-        'address',
-        'tax_id',
-        'balance',
-        'credit_limit',
-        'created_at',
-        'updated_at',
+        'branch_id', 'company_name', 'name', 'email', 'phone',
+        'address', 'tax_id', 'balance', 'credit_limit', 'created_at', 'updated_at',
     ];
 
     protected function casts(): array
@@ -39,24 +32,13 @@ class Customer extends Model
 
     protected $appends = ['available_credit'];
     
-    // --- ACCESORS ---
-
-    /**
-     * Calcula el crédito disponible del cliente.
-     * Si el balance es negativo (deuda), se resta del límite de crédito.
-     */
     protected function availableCredit(): Attribute
     {
         return Attribute::make(
-            get: fn () => $this->balance < 0
-                ? $this->credit_limit + $this->balance // balance es negativo, así que se suma
-                : $this->credit_limit,
+            get: fn () => $this->balance < 0 ? $this->credit_limit + $this->balance : $this->credit_limit,
         );
     }
 
-    /**
-     * Genera un historial unificado de movimientos y transacciones del cliente.
-     */
     protected function historicalMovements(): Attribute
     {
         return Attribute::make(
@@ -64,11 +46,10 @@ class Customer extends Model
                 $balanceMovements = $this->balanceMovements()->with('transaction:id,folio')->get();
                 $transactions = $this->transactions()->get();
 
-                // 1. Mapear los movimientos de saldo a un formato estándar
                 $formattedMovements = $balanceMovements->map(function ($movement) {
                     return (object) [
                         'date' => $movement->created_at,
-                        'type' => str_replace('_', ' ', $movement->type->value),
+                        'type' => str_replace('_', ' ', $movement->type->value ?? $movement->type),
                         'description' => $movement->notes ?? 'Abono a venta #' . $movement->transaction?->folio,
                         'amount' => $movement->amount,
                         'resulting_balance' => $movement->balance_after,
@@ -76,18 +57,11 @@ class Customer extends Model
                     ];
                 });
 
-                // 2. Identificar transacciones que no generaron movimiento de saldo (ej. ventas de contado)
                 $movementTransactionIds = $balanceMovements->pluck('transaction_id')->filter()->unique();
                 $transactionsWithoutMovement = $transactions->whereNotIn('id', $movementTransactionIds)->where('status', 'completado');
 
-                // 3. Mapear estas transacciones y encontrar su saldo resultante
                 $formattedTransactions = $transactionsWithoutMovement->map(function ($transaction) use ($formattedMovements) {
-                    // Buscar el movimiento inmediatamente anterior para saber cuál era el saldo
-                    $previousMovement = $formattedMovements
-                        ->where('date', '<=', $transaction->created_at)
-                        ->sortByDesc('date')
-                        ->first();
-                    
+                    $previousMovement = $formattedMovements->where('date', '<=', $transaction->created_at)->sortByDesc('date')->first();
                     $balance = $previousMovement ? $previousMovement->resulting_balance : 0;
 
                     return (object) [
@@ -100,61 +74,87 @@ class Customer extends Model
                     ];
                 });
 
-                // 4. Unir y ordenar todas las entradas
-                return $formattedMovements->concat($formattedTransactions)
-                    ->sortByDesc('date')
-                    ->values(); // Reset array keys
+                return $formattedMovements->concat($formattedTransactions)->sortByDesc('date')->values();
             }
         );
     }
 
     /*
     |--------------------------------------------------------------------------
-    | RELACIONES
+    | LÓGICA DE NEGOCIO: MOVIMIENTOS DE SALDO (REFACTOR)
     |--------------------------------------------------------------------------
     */
 
     /**
-     * Obtiene la sucursal "hogar" del cliente.
+     * Motor base que actualiza el balance y crea el historial automáticamente.
      */
-    public function branch(): BelongsTo
+    public function applyBalanceMovement(float $amount, CustomerBalanceMovementType $type, int $transactionId, string $notes, ?Carbon $timestamp = null): CustomerBalanceMovement
     {
-        return $this->belongsTo(Branch::class);
+        $this->increment('balance', $amount);
+        
+        return $this->balanceMovements()->create([
+            'transaction_id' => $transactionId,
+            'type' => $type,
+            'amount' => $amount, 
+            'balance_after' => $this->balance,
+            'notes' => $notes,
+            'created_at' => $timestamp ?? now(),
+            'updated_at' => $timestamp ?? now(),
+        ]);
     }
 
-    /**
-     * Obtiene todas las transacciones de este cliente.
-     */
-    public function transactions(): HasMany
+    public function useBalance(float $amount, int $transactionId, string $notes, ?Carbon $timestamp = null): CustomerBalanceMovement
     {
-        return $this->hasMany(Transaction::class);
+        // Decrementamos el saldo (enviamos cantidad negativa)
+        return $this->applyBalanceMovement(-$amount, CustomerBalanceMovementType::CREDIT_USAGE, $transactionId, $notes, $timestamp);
     }
 
-    /**
-     * Obtiene el historial de movimientos de saldo para este cliente.
-     */
-    public function balanceMovements(): HasMany
+    public function addDebt(float $amount, CustomerBalanceMovementType $debtType, int $transactionId, string $notes, ?Carbon $timestamp = null): CustomerBalanceMovement
     {
-        return $this->hasMany(CustomerBalanceMovement::class);
+        // La deuda hace el balance más negativo
+        return $this->applyBalanceMovement(-$amount, $debtType, $transactionId, $notes, $timestamp);
     }
 
-    /**
-     * Obtiene todas las transacciones que están activamente "en_apartado".
-     */
-    public function layawayTransactions(): HasMany
+    public function payDebt(float $amount, int $transactionId, string $notes, ?Carbon $timestamp = null): CustomerBalanceMovement
     {
-        return $this->hasMany(Transaction::class)->where('status', TransactionStatus::ON_LAYAWAY);
+        // Un abono suma al balance positivamente
+        return $this->applyBalanceMovement($amount, CustomerBalanceMovementType::PAYMENT, $transactionId, $notes, $timestamp);
     }
 
-    /**
-     * Obtiene todos los *items* (TransactionItem) que están dentro de transacciones "en_apartado".
-     * Esto nos permite sumar las cantidades de productos.
-     */
-    public function layawayItems(): HasManyThrough
+    public function addRefund(float $amount, int $transactionId, string $notes, ?Carbon $timestamp = null): CustomerBalanceMovement
     {
-        return $this->hasManyThrough(
-            TransactionItem::class, // El modelo final al que queremos llegar
-            Transaction::class      // El modelo intermedio
-        )->where('transactions.status', TransactionStatus::ON_LAYAWAY);
+        return $this->applyBalanceMovement($amount, CustomerBalanceMovementType::REFUND_CREDIT, $transactionId, $notes, $timestamp);
     }
+
+    public function cancelDebt(float $amount, int $transactionId, string $notes, ?Carbon $timestamp = null): CustomerBalanceMovement
+    {
+        // Cancelar una deuda es como un abono que te devuelve crédito a favor
+        return $this->applyBalanceMovement($amount, CustomerBalanceMovementType::CANCELLATION_CREDIT, $transactionId, $notes, $timestamp);
+    }
+
+     /**
+     * Ajusta el saldo manualmente sin requerir una transacción (Para Store y AdjustBalance)
+     */
+    public function manualBalanceAdjustment(string $adjustmentType, float $amount, string $notes): void
+    {
+        $adjustmentAmount = $adjustmentType === 'add' ? $amount : ($amount - $this->balance);
+
+        if ($adjustmentAmount != 0) {
+            $this->increment('balance', $adjustmentAmount);
+
+            $this->balanceMovements()->create([
+                'type' => CustomerBalanceMovementType::MANUAL_ADJUSTMENT,
+                'amount' => $adjustmentAmount, 
+                'balance_after' => $this->balance,
+                'notes' => $notes,
+            ]);
+        }
+    }
+
+    /* RELACIONES */
+    public function branch(): BelongsTo { return $this->belongsTo(Branch::class); }
+    public function transactions(): HasMany { return $this->hasMany(Transaction::class); }
+    public function balanceMovements(): HasMany { return $this->hasMany(CustomerBalanceMovement::class); }
+    public function layawayTransactions(): HasMany { return $this->hasMany(Transaction::class)->where('status', TransactionStatus::ON_LAYAWAY); }
+    public function layawayItems(): HasManyThrough { return $this->hasManyThrough(TransactionItem::class, Transaction::class)->where('transactions.status', TransactionStatus::ON_LAYAWAY); }
 }

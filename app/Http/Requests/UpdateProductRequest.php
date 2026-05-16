@@ -46,7 +46,7 @@ class UpdateProductRequest extends FormRequest
             'price_tiers' => 'nullable|array',
             'price_tiers.*.min_quantity' => [
                 'required',
-                'integer',
+                'numeric',
                 'min:2', 
                 'distinct' 
             ],
@@ -71,9 +71,15 @@ class UpdateProductRequest extends FormRequest
             'variants_matrix.*.sku' => 'nullable|string|max:255',
             'variants_matrix.*.location' => 'nullable|string|max:255',
             'variants_matrix.*.current_stock' => 'nullable|numeric|min:0',
-            'variants_matrix.*.min_stock' => 'nullable|numeric|min:0', // NUEVO
-            'variants_matrix.*.max_stock' => 'nullable|numeric|min:0', // NUEVO
+            'variants_matrix.*.min_stock' => 'nullable|numeric|min:0',
+            'variants_matrix.*.max_stock' => 'nullable|numeric|min:0',
             'variants_matrix.*.selling_price_modifier' => 'nullable|numeric',
+
+            // REFACTOR: Componentes (Kits/Combos)
+            'composite_items' => 'nullable|array',
+            'composite_items.*.id' => 'required|integer',
+            'composite_items.*.type' => 'required|string',
+            'composite_items.*.quantity' => 'required|numeric|min:0.01',
             
             // Imágenes
             'general_images' => 'nullable|array|max:5',

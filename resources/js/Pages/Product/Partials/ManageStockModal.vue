@@ -69,11 +69,11 @@ const form = useForm({
     type: 'simple',
     operation: 'entry',
     reason: 'Compra / Reabastecimiento',
-    
+
     // Para modo individual
     quantity: null,
     variants: [],
-    
+
     // Para modo masivo
     products: [],
 
@@ -198,38 +198,47 @@ const submit = () => {
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="emit('update:visible', $event)" modal :header="isSingleMode ? 'Gestión de Stock' : 'Actualización Masiva'" :style="{ width: '45rem' }" :breakpoints="{ '1199px': '75vw', '575px': '90vw' }">
+    <Dialog :visible="visible" @update:visible="emit('update:visible', $event)" modal
+        :header="isSingleMode ? 'Gestión de stock' : 'Actualización masiva'" :style="{ width: '45rem' }"
+        :breakpoints="{ '1199px': '75vw', '575px': '90vw' }">
         <form @submit.prevent="submit" class="mt-2">
-            
+
             <div class="flex justify-center mb-6">
-                <SelectButton v-model="operation" :options="[{label: 'Dar Entrada', value: 'entry'}, {label: 'Dar Salida', value: 'exit'}]" optionLabel="label" optionValue="value" @change="setOperation($event.value)" />
+                <SelectButton v-model="operation"
+                    :options="[{ label: 'Dar entrada', value: 'entry' }, { label: 'Dar salida', value: 'exit' }]"
+                    optionLabel="label" optionValue="value" @change="setOperation($event.value)" />
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <div>
-                     <InputLabel value="Motivo / Concepto *" />
-                     <Select v-model="form.reason" :options="operation === 'entry' ? entryReasons : exitReasons" class="w-full mt-1" />
-                     <InputError :message="form.errors.reason" />
-                 </div>
+                <div>
+                    <InputLabel value="Motivo / Concepto *" />
+                    <Select v-model="form.reason" :options="operation === 'entry' ? entryReasons : exitReasons"
+                        class="w-full mt-1" />
+                    <InputError :message="form.errors.reason" />
+                </div>
 
-                 <!-- Si es un solo producto y NO tiene variantes -->
-                 <div v-if="isSingleMode && !isVariantProduct">
-                     <InputLabel :value="operation === 'entry' ? 'Cantidad a ingresar *' : 'Cantidad a descontar *'" />
-                     <InputNumber fluid v-model="form.quantity" :min="1" class="w-full mt-1" showButtons />
-                     <InputError :message="form.errors.quantity" />
-                 </div>
+                <!-- Si es un solo producto y NO tiene variantes -->
+                <div v-if="isSingleMode && !isVariantProduct">
+                    <InputLabel :value="operation === 'entry' ? 'Cantidad a ingresar *' : 'Cantidad a descontar *'" />
+                    <InputNumber fluid v-model="form.quantity" :min="0.001"
+                        :maxFractionDigits="3" :step="0.250" class="w-full mt-1"
+                        showButtons />
+                    <InputError :message="form.errors.quantity" />
+                </div>
             </div>
 
             <!-- --- MODO INDIVIDUAL: Variantes --- -->
             <div v-if="isSingleMode && isVariantProduct" class="mt-6">
-                 <div class="border dark:border-gray-700 rounded-lg overflow-hidden">
-                    <div class="bg-gray-50 dark:bg-gray-800 p-3 border-b dark:border-gray-700 font-semibold text-sm flex justify-between">
+                <div class="border dark:border-gray-700 rounded-lg overflow-hidden">
+                    <div
+                        class="bg-gray-50 dark:bg-gray-800 p-3 border-b dark:border-gray-700 font-semibold text-sm flex justify-between">
                         <span>Variantes disponibles</span>
-                        <span class="text-primary-600 dark:text-primary-400">{{ operation === 'entry' ? 'Ingreso' : 'Descuento' }}</span>
+                        <span class="text-primary-600 dark:text-primary-400">{{ operation === 'entry' ? 'Ingreso' :
+                            'Descuento' }}</span>
                     </div>
                     <div class="p-2 space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-                        <div v-for="(variant, index) in form.variants" :key="variant.id" 
-                             class="flex items-center justify-between p-3 bg-white dark:bg-gray-900 border dark:border-gray-700 rounded-lg hover:shadow-sm transition-shadow">
+                        <div v-for="(variant, index) in form.variants" :key="variant.id"
+                            class="flex items-center justify-between p-3 bg-white dark:bg-gray-900 border dark:border-gray-700 rounded-lg hover:shadow-sm transition-shadow">
                             <div class="flex items-center gap-3 w-full">
                                 <div class="flex-grow text-sm md:text-xs">
                                     <div class="font-semibold text-gray-700 dark:text-gray-300">
@@ -239,39 +248,50 @@ const submit = () => {
                                     </div>
                                     <span class="text-gray-500">Stock actual: {{ variant.current_stock }}</span>
                                 </div>
-                                <InputNumber fluid v-model="variant.quantity" :min="0" placeholder="0" class="!w-24" showButtons inputClass="text-center text-sm" />
+                                <InputNumber fluid v-model="variant.quantity" :min="0" placeholder="0" class="!w-24"
+                                    showButtons inputClass="text-center text-sm" />
                             </div>
                         </div>
                     </div>
-                 </div>
-                 <InputError :message="form.errors.products" />
+                </div>
+                <InputError :message="form.errors.products" />
             </div>
 
             <!-- --- MODO MASIVO (BATCH) --- -->
             <div v-if="!isSingleMode" class="mt-6">
-                <div class="bg-gray-50 dark:bg-gray-800 p-3 border dark:border-gray-700 rounded-t-lg font-semibold text-sm flex justify-between items-center">
+                <div
+                    class="bg-gray-50 dark:bg-gray-800 p-3 border dark:border-gray-700 rounded-t-lg font-semibold text-sm flex justify-between items-center">
                     <span>Productos seleccionados ({{ form.products.length }})</span>
-                    <span class="text-primary-600 dark:text-primary-400">{{ operation === 'entry' ? 'Cantidades a ingresar' : 'Cantidades a descontar' }}</span>
+                    <span class="text-primary-600 dark:text-primary-400">
+                        {{ operation === 'entry' ? 'Cantidades a ingresar' : 'Cantidades a descontar' }}
+                    </span>
                 </div>
-                <div class="border border-t-0 dark:border-gray-700 rounded-b-lg p-3 space-y-4 max-h-[400px] overflow-y-auto custom-scrollbar bg-white dark:bg-gray-900">
-                    
-                    <div v-for="(prod, index) in form.products" :key="prod.id" class="border dark:border-gray-700 rounded-lg p-3 bg-gray-50/50 dark:bg-gray-800/50">
+                <div
+                    class="border border-t-0 dark:border-gray-700 rounded-b-lg p-3 space-y-4 max-h-[400px] overflow-y-auto custom-scrollbar bg-white dark:bg-gray-900">
+
+                    <div v-for="(prod, index) in form.products" :key="prod.id"
+                        class="border dark:border-gray-700 rounded-lg p-3 bg-gray-50/50 dark:bg-gray-800/50">
                         <div class="font-bold text-gray-800 dark:text-gray-200 mb-3">{{ prod.name }}</div>
-                        
+
                         <!-- Producto Simple en Masa -->
                         <div v-if="prod.type === 'simple'" class="flex items-center justify-between">
-                            <span class="text-sm text-gray-500"><i class="pi pi-box !text-xs mr-1"></i> Stock actual: {{ prod.current_stock }}</span>
-                            <InputNumber fluid v-model="prod.quantity" :min="0" class="!w-32" showButtons inputClass="text-center" />
+                            <span class="text-sm text-gray-500"><i class="pi pi-box !text-xs mr-1"></i> Stock actual: {{
+                                prod.current_stock }}</span>
+                            <InputNumber fluid v-model="prod.quantity" :min="0" class="!w-32" showButtons
+                                inputClass="text-center" />
                         </div>
-                        
+
                         <!-- Producto con Variantes en Masa -->
                         <div v-else class="space-y-2">
-                            <div v-for="v in prod.variants" :key="v.id" class="flex items-center justify-between bg-white dark:bg-gray-900 p-2 rounded border dark:border-gray-700">
+                            <div v-for="v in prod.variants" :key="v.id"
+                                class="flex items-center justify-between bg-white dark:bg-gray-900 p-2 rounded border dark:border-gray-700">
                                 <div class="text-sm">
-                                    <span v-for="(val, key) in v.attributes" :key="key" class="mr-1 font-semibold text-gray-700 dark:text-gray-300">{{ val }}</span>
+                                    <span v-for="(val, key) in v.attributes" :key="key"
+                                        class="mr-1 font-semibold text-gray-700 dark:text-gray-300">{{ val }}</span>
                                     <div class="text-xs text-gray-500 mt-0.5">Stock: {{ v.current_stock }}</div>
                                 </div>
-                                <InputNumber fluid v-model="v.quantity" :min="0" class="!w-28" showButtons inputClass="text-center text-sm" />
+                                <InputNumber fluid v-model="v.quantity" :min="0" class="!w-28" showButtons
+                                    inputClass="text-center text-sm" />
                             </div>
                         </div>
                     </div>
@@ -280,26 +300,34 @@ const submit = () => {
             </div>
 
             <!-- --- BLOQUE DE REGISTRO DE GASTO (Aplica para Individual y Masivo) --- -->
-            <div v-if="operation === 'entry' && form.reason === 'Compra / Reabastecimiento'" class="mt-6 p-4 border border-blue-100 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 rounded-lg">
+            <div v-if="operation === 'entry' && form.reason === 'Compra / Reabastecimiento'"
+                class="mt-6 p-4 border border-blue-100 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 rounded-lg">
                 <div class="flex items-center justify-between mb-3">
-                    <span class="font-semibold text-blue-800 dark:text-blue-300">¿Registrar gasto contable por esta compra?</span>
+                    <span class="font-semibold text-blue-800 dark:text-blue-300">¿Registrar gasto contable por esta
+                        compra?</span>
                     <ToggleSwitch v-model="form.register_expense" />
                 </div>
 
-                <div v-if="form.register_expense" class="space-y-4 animate-fade-in mt-4 border-t border-blue-200 dark:border-blue-800/50 pt-4">
+                <div v-if="form.register_expense"
+                    class="space-y-4 animate-fade-in mt-4 border-t border-blue-200 dark:border-blue-800/50 pt-4">
                     <!-- Tipo de Monto -->
                     <div>
                         <InputLabel value="Monto del gasto" />
                         <div class="flex flex-col gap-3 mt-2">
                             <div class="flex items-center">
-                                <RadioButton v-model="form.expense_amount_type" inputId="calc" name="amount_type" value="calculated" />
+                                <RadioButton v-model="form.expense_amount_type" inputId="calc" name="amount_type"
+                                    value="calculated" />
                                 <label for="calc" class="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                                    Usar precio de compra registrado <span class="font-bold text-green-600 dark:text-green-400">({{ formatCurrency(calculatedExpenseTotal) }})</span>
+                                    Usar precio de compra registrado <span
+                                        class="font-bold text-green-600 dark:text-green-400">({{
+                                        formatCurrency(calculatedExpenseTotal) }})</span>
                                 </label>
                             </div>
                             <div class="flex items-center">
-                                <RadioButton v-model="form.expense_amount_type" inputId="man" name="amount_type" value="manual" />
-                                <label for="man" class="ml-2 text-sm text-gray-700 dark:text-gray-300">Ingresar total de forma manual (Ej. Total del ticket o factura)</label>
+                                <RadioButton v-model="form.expense_amount_type" inputId="man" name="amount_type"
+                                    value="manual" />
+                                <label for="man" class="ml-2 text-sm text-gray-700 dark:text-gray-300">Ingresar total de
+                                    forma manual (Ej. Total del ticket o factura)</label>
                             </div>
                         </div>
                     </div>
@@ -307,7 +335,8 @@ const submit = () => {
                     <!-- Input Monto Manual -->
                     <div v-if="form.expense_amount_type === 'manual'">
                         <InputLabel value="Total pagado" />
-                        <InputNumber v-model="form.expense_amount" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-1" :min="0" />
+                        <InputNumber v-model="form.expense_amount" mode="currency" currency="MXN" locale="es-MX"
+                            class="w-full mt-1" :min="0" />
                         <InputError :message="form.errors.expense_amount" class="mt-1" />
                     </div>
 
@@ -315,34 +344,44 @@ const submit = () => {
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <InputLabel value="Método de pago" />
-                            <Select v-model="form.payment_method" :options="paymentMethods" optionLabel="label" optionValue="value" class="w-full mt-1" />
+                            <Select v-model="form.payment_method" :options="paymentMethods" optionLabel="label"
+                                optionValue="value" class="w-full mt-1" />
                             <InputError :message="form.errors.payment_method" class="mt-1" />
                         </div>
 
                         <!-- Cuentas Bancarias -->
                         <div v-if="['tarjeta', 'transferencia'].includes(form.payment_method)">
                             <InputLabel value="Cuenta bancaria (De dónde salió el dinero)" />
-                            <Select v-model="form.bank_account_id" :options="userBankAccounts" optionLabel="account_name" optionValue="id" placeholder="Selecciona una cuenta" class="w-full mt-1" />
+                            <Select v-model="form.bank_account_id" :options="userBankAccounts"
+                                optionLabel="account_name" optionValue="id" placeholder="Selecciona una cuenta"
+                                class="w-full mt-1" />
                             <InputError :message="form.errors.bank_account_id" class="mt-1" />
                         </div>
                     </div>
 
                     <!-- Opciones Efectivo (Caja) -->
-                    <div v-if="form.payment_method === 'efectivo'" class="flex items-start gap-2 bg-white dark:bg-gray-800 p-3 rounded-md border border-gray-200 dark:border-gray-700">
-                        <Checkbox v-model="form.take_from_cash_register" :binary="true" inputId="take_cash" :disabled="!activeSession" />
+                    <div v-if="form.payment_method === 'efectivo'"
+                        class="flex items-start gap-2 bg-white dark:bg-gray-800 p-3 rounded-md border border-gray-200 dark:border-gray-700">
+                        <Checkbox v-model="form.take_from_cash_register" :binary="true" inputId="take_cash"
+                            :disabled="!activeSession" />
                         <div class="flex flex-col">
-                            <label for="take_cash" class="text-sm font-medium cursor-pointer" :class="{'text-gray-400': !activeSession}">Tomar dinero de la caja registradora</label>
-                            <span v-if="!activeSession" class="text-xs text-red-500 mt-1">No hay una sesión de caja activa.</span>
-                            <span v-else class="text-xs text-gray-500 mt-0.5">Se registrará el egreso automáticamente en la sesión actual para no descuadrar.</span>
+                            <label for="take_cash" class="text-sm font-medium cursor-pointer"
+                                :class="{ 'text-gray-400': !activeSession }">Tomar dinero de la caja registradora</label>
+                            <span v-if="!activeSession" class="text-xs text-red-500 mt-1">No hay una sesión de caja
+                                activa.</span>
+                            <span v-else class="text-xs text-gray-500 mt-0.5">Se registrará el egreso automáticamente en
+                                la sesión actual para no descuadrar.</span>
                         </div>
                     </div>
-                    <InputError v-if="form.payment_method === 'efectivo'" :message="form.errors.take_from_cash_register" class="mt-1" />
+                    <InputError v-if="form.payment_method === 'efectivo'" :message="form.errors.take_from_cash_register"
+                        class="mt-1" />
                 </div>
             </div>
 
             <div class="flex justify-end gap-2 mt-6 pt-4 border-t dark:border-gray-700">
                 <Button type="button" label="Cancelar" severity="secondary" @click="closeModal" text></Button>
-                <Button type="submit" :label="operationLabel" :icon="iconClass" :severity="operationColor" :loading="form.processing"></Button>
+                <Button type="submit" :label="operationLabel" :icon="iconClass" :severity="operationColor"
+                    :loading="form.processing"></Button>
             </div>
         </form>
     </Dialog>
@@ -352,24 +391,36 @@ const submit = () => {
 .animate-fade-in {
     animation: fadeIn 0.3s ease-in-out;
 }
+
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-5px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-track {
     background: transparent;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb {
     background-color: #cbd5e1;
     border-radius: 20px;
 }
+
 .dark .custom-scrollbar::-webkit-scrollbar-thumb {
     background-color: #4b5563;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background-color: #94a3b8;
 }

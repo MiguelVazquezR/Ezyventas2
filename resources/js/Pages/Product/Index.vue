@@ -66,9 +66,12 @@ const hasVariants = (product) => {
     return getVariants(product).length > 0;
 };
 
-// NUEVO: Identificar productos compuestos
 const isComposite = (product) => {
     return product.components && product.components.length > 0;
+};
+
+const isBulk = (product) => {
+    return product.is_bulk;
 };
 
 const getCalculatedStock = (product) => {
@@ -96,18 +99,25 @@ const getStockSeverity = (product) => {
     if (availableStock <= 0) return 'danger';
     const minStock = Number(product.min_stock);
     if (minStock && availableStock <= minStock) {
-        return 'warning';
+        return 'warn';
     }
     return 'success';
 };
-// ------------------------------------------------
+
+// Formateador de stock (Hasta 3 decimales para granel, 0 para normales)
+const formatStock = (stock, isBulkProduct) => {
+    const num = Number(stock) || 0;
+    if (isBulkProduct) {
+        return new Intl.NumberFormat('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 3 }).format(num);
+    }
+    return new Intl.NumberFormat('es-MX', { maximumFractionDigits: 0 }).format(Math.round(num));
+};
 
 // --- GESTIÓN DE STOCK ---
 const openStockModal = (products) => {
     productsForStockModal.value = Array.isArray(products) ? products : [products];
     showManageStockModal.value = true;
 };
-// --------------------------------
 
 const openPrintModal = (product) => {
     printDataSource.value = {
@@ -210,7 +220,6 @@ const onRowClick = (event) => {
         selectedProductDetails.value = event.data;
         isDrawerVisible.value = true;
     }
-
 };
 
 const goToDetails = (id) => {
@@ -218,56 +227,103 @@ const goToDetails = (id) => {
         router.visit(route('products.show', id));
     }
 };
+
+// --- TESLA UI PASS-THROUGH (PT) CONFIGURATIONS ---
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl !p-2 !shadow-2xl' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' }
+};
+
+const dataTablePt = {
+    root: { class: 'border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden' },
+    headerRow: { class: 'bg-gray-50 dark:bg-[#1a1a1a]' },
+    headerCell: { class: 'bg-transparent text-[10px] uppercase tracking-widest text-gray-500 font-bold py-4 px-4 border-b border-gray-100 dark:border-[#3a3a3a]' },
+    bodyRow: { class: 'dark:bg-[#232323] hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors text-sm text-gray-700 dark:text-gray-300 group' },
+    bodyCell: { class: 'py-4 px-4 border-b border-gray-50 dark:border-[#2a2a2a]' },
+    paginator: { root: { class: 'dark:bg-[#1a1a1a] border-t border-gray-100 dark:border-[#3a3a3a] p-3' } }
+};
+
+const inputPt = {
+    root: { class: '!rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2 !text-sm w-full' }
+};
+
+const tagPt = {
+    root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' },
+    icon: { class: '!text-[10px] !mr-1.5' }
+};
+
+const drawerPt = {
+    root: { class: 'dark:!bg-[#232323] !border-l-gray-100 dark:!border-l-[#3a3a3a]' },
+    header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 py-5' },
+    title: { class: 'text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0' },
+    content: { class: 'dark:bg-[#232323] p-0 custom-scrollbar' },
+    closeButton: { class: 'hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors rounded-full w-8 h-8 flex items-center justify-center' },
+    closeButtonIcon: { class: 'dark:text-gray-400 !text-sm' },
+    mask: { class: 'backdrop-blur-sm bg-gray-900/40 dark:bg-black/60' }
+};
 </script>
 
 <template>
     <AppLayout title="Mis productos">
-        <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
-                <!-- Header -->
-                <div class="mb-6">
-                    <ProductNavigation v-if="hasPermission('products.manage_global_products')" />
-                    <div class="flex flex-col md:flex-row justify-between items-center gap-4 mt-4">
-                        <IconField iconPosition="left" class="w-full md:w-1/3">
-                            <InputIcon class="pi pi-search"></InputIcon>
-                            <InputText v-model="searchTerm" placeholder="Buscar en mis productos..." class="w-full" />
-                        </IconField>
-                        <div class="flex items-center gap-2">
-                            <div>
-                                <ButtonGroup>
-                                    <Button v-if="hasPermission('products.create')" label="Nuevo producto"
-                                        icon="pi pi-plus" @click="router.get(route('products.create'))"
-                                        severity="warning" :disabled="limitReached" 
-                                        v-tooltip.bottom="limitReached ? `Límite de ${productLimit} productos alcanzado` : 'Crear nuevo producto'" />
-                                    <!-- NUEVO BOTÓN PARA ABRIR RESUMEN -->
-                                    <Button icon="pi pi-chart-pie" @click="showInventorySummary = true"
-                                        severity="primary" v-tooltip.top="'Ver resumen de inventario'" />
-                                    <Button v-if="hasPermission('products.import_export')" icon="pi pi-chevron-down"
-                                        @click="toggleHeaderMenu" severity="warning" />
-                                </ButtonGroup>
-                            </div>
-                            <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" />
-                        </div>
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+            
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                
+                <!-- Header con Título -->
+                <div class="mb-8">
+                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">Catálogo de productos</h1>
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)] animate-pulse"></span>
+                        Gestión de inventario y artículos
+                    </p>
+                </div>
+
+                <!-- Componente de Navegación Existente -->
+                <ProductNavigation v-if="hasPermission('products.manage_global_products')" class="mb-6" />
+
+                <!-- Barra de Herramientas de Filtros (Estilo Panel de Control) -->
+                <div class="flex flex-col md:flex-row gap-4 items-center justify-between bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] mb-6">
+                    <IconField iconPosition="left" class="w-full md:w-1/2 lg:w-1/3">
+                        <InputIcon class="pi pi-search !text-sm text-gray-400 dark:text-gray-500"></InputIcon>
+                        <InputText v-model="searchTerm" placeholder="Buscar por código o nombre..." :pt="inputPt" class="!pl-10" />
+                    </IconField>
+                    
+                    <div class="flex items-center gap-2 w-full md:w-auto">
+                        <Button v-if="hasPermission('products.create')" label="Nuevo producto"
+                            icon="pi pi-plus" @click="router.get(route('products.create'))"
+                            severity="warning" :disabled="limitReached" 
+                            v-tooltip.bottom="limitReached ? `Límite de ${productLimit} productos alcanzado` : 'Crear nuevo producto'" 
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider flex-grow md:flex-none" />
+                        
+                        <Button icon="pi pi-chart-pie" @click="showInventorySummary = true"
+                            severity="primary" v-tooltip.top="'Ver resumen de inventario'" class="!rounded-xl !size-9 !p-0 shrink-0" />
+                        
+                        <Button v-if="hasPermission('products.import_export')" icon="pi pi-chevron-down"
+                            @click="toggleHeaderMenu" severity="warning" class="!rounded-xl !size-9 !p-0 shrink-0" />
+                        
+                        <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" :pt="menuPt" />
                     </div>
                 </div>
 
                 <!-- Barra de Acciones Masivas Contextual -->
-                <div class="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700 rounded-lg p-2 mb-4 flex justify-between items-center transition-all duration-300">
-                    <span class="font-semibold text-sm text-[#373737] dark:text-gray-200">
-                        {{ selectedProducts.length }} producto(s) seleccionado(s)
+                <div v-if="selectedProducts.length > 0" class="bg-primary-50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-900/30 rounded-2xl p-3 mb-6 flex flex-col md:flex-row justify-between items-center gap-4 transition-all duration-300">
+                    <span class="font-bold text-xs uppercase tracking-widest text-primary-700 dark:text-primary-300 m-0">
+                        <i class="pi pi-check-square mr-1"></i> {{ selectedProducts.length }} seleccionados
                     </span>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 w-full md:w-auto overflow-x-auto custom-scrollbar pb-1 md:pb-0">
                         <Button v-if="hasPermission('products.edit')" @click="showBulkEditModal = true"
                             label="Edición rápida" icon="pi pi-pencil" size="small" severity="success" outlined 
-                            :disabled="selectedProducts.length === 0" />
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider shrink-0" />
 
                         <Button v-if="hasPermission('products.manage_stock')" @click="openStockModal(selectedProducts)"
                             label="Ajustar stock" icon="pi pi-box" size="small" severity="info" outlined 
-                            :disabled="selectedProducts.length === 0" />
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider shrink-0" />
 
                         <Button v-if="hasPermission('products.delete')" @click="deleteSelectedProducts" label="Eliminar"
                             icon="pi pi-trash" size="small" severity="danger" outlined 
-                            :disabled="selectedProducts.length === 0" />
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider shrink-0" />
                     </div>
                 </div>
 
@@ -277,19 +333,16 @@ const goToDetails = (id) => {
                     dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 75rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} productos"
-                    class="p-datatable-sm cursor-pointer" rowHover @row-click="onRowClick">
+                    class="cursor-pointer" rowHover @row-click="onRowClick" :pt="dataTablePt">
 
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
 
                     <Column header="Imagen" style="width: 5rem">
                         <template #body="{ data }">
-                            <div @click.stop class="flex items-center justify-center size-12 bg-gray-100">
+                            <div @click.stop class="flex items-center justify-center w-10 h-10 bg-gray-100 dark:bg-[#1a1a1a] rounded-xl overflow-hidden border border-gray-200 dark:border-[#3a3a3a]">
                                 <Image v-if="data.media && data.media.length > 0" :src="data.media[0].original_url"
-                                    :alt="data.name" class="rounded-md shadow-sm !h-full object-cover" preview />
-                                <div v-else
-                                    class="w-12 h-12 rounded-md bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                                    <i class="pi pi-image text-2xl text-gray-400 dark:text-gray-500"></i>
-                                </div>
+                                    :alt="data.name" class="!h-full w-full object-cover" preview />
+                                <i v-else class="pi pi-image text-lg text-gray-400 dark:text-gray-500"></i>
                             </div>
                         </template>
                     </Column>
@@ -299,27 +352,28 @@ const goToDetails = (id) => {
                             <div class="flex items-center gap-2 -ml-2">
                                 <Button v-if="data.sku && hasPermission('pos.access')"
                                     @click.stop="openPrintModal(data)" icon="pi pi-print" text rounded
-                                    severity="secondary" v-tooltip.bottom="'Imprimir etiqueta'" />
-                                <span class="font-mono text-sm">{{ data.sku }}</span>
+                                    severity="secondary" v-tooltip.bottom="'Imprimir etiqueta'" class="!w-8 !h-8 !text-gray-400 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors" />
+                                <span class="font-mono font-bold dark:text-gray-300">{{ data.sku }}</span>
                             </div>
                         </template>
                     </Column>
 
-                    <!-- COLUMNA NOMBRE: Muestra el tag de Kit/Combo si aplica -->
+                    <!-- COLUMNA NOMBRE -->
                     <Column field="name" header="Nombre" sortable>
                         <template #body="{ data }">
                             <div class="flex flex-col gap-1 items-start justify-center">
-                                <span>{{ data.name }}</span>
-                                <Tag v-if="isComposite(data)" value="Kit/Combo" severity="contrast" class="!text-[10px] !px-2" />
+                                <span class="font-medium text-gray-900 dark:text-gray-100">{{ data.name }}</span>
+                                <Tag v-if="isComposite(data)" value="Kit/Combo" severity="contrast" :pt="tagPt" />
+                                <Tag v-else-if="isBulk(data)" value="Venta a granel" severity="warn" :pt="tagPt" />
                             </div>
                         </template>
                     </Column>
 
-                    <Column field="show_in_pos" header="Tipo / POS" sortable alignFrozen="right">
+                    <Column field="show_in_pos" header="Visibilidad" sortable alignFrozen="right">
                         <template #body="{ data }">
                             <div class="flex justify-center items-center">
-                                <i v-if="data.show_in_pos" class="pi pi-shop text-green-500 font-bold" v-tooltip.top="'Visible en Punto de Venta'"></i>
-                                <i v-else class="pi pi-eye-slash text-gray-400 font-bold" v-tooltip.top="'Solo Insumo (Oculto en POS)'"></i>
+                                <i v-if="data.show_in_pos" class="pi pi-shop text-green-500" v-tooltip.top="'Visible en Punto de Venta'"></i>
+                                <i v-else class="pi pi-eye-slash text-gray-400" v-tooltip.top="'Solo Insumo (Oculto en POS)'"></i>
                             </div>
                         </template>
                     </Column>
@@ -328,9 +382,9 @@ const goToDetails = (id) => {
                         <template #body="{ data }">
                             <div class="flex flex-wrap gap-1">
                                 <Tag v-for="branch in data.branches?.slice(0, 2)" :key="branch.id" :value="branch.name"
-                                    severity="info" class="!text-xs" />
+                                    severity="info" :pt="tagPt" />
                                 <Tag v-if="data.branches?.length > 2" :value="`+${data.branches.length - 2}`"
-                                    severity="secondary" class="!text-xs cursor-help"
+                                    severity="secondary" :pt="tagPt" class="cursor-help"
                                     v-tooltip.top="data.branches.slice(2).map(b => b.name).join(', ')" />
                             </div>
                         </template>
@@ -338,31 +392,31 @@ const goToDetails = (id) => {
 
                     <Column field="location" header="Ubicación" sortable>
                         <template #body="{ data }">
-                            <span class="text-sm text-gray-600 dark:text-gray-400">
+                            <span class="text-gray-600 dark:text-gray-400">
                                 <template v-if="isComposite(data)">--</template>
-                                <template v-else-if="hasVariants(data)">Múltiples (Ver detalle)</template>
+                                <template v-else-if="hasVariants(data)">Múltiples</template>
                                 <template v-else>{{ data.location || '--' }}</template>
                             </span>
                         </template>
                     </Column>
 
-                    <!-- COLUMNA EXISTENCIAS: Muestra "Dinámico" si es Kit/Combo -->
+                    <!-- COLUMNA EXISTENCIAS ACTUALIZADA CON FORMATEO DINÁMICO -->
                     <Column field="current_stock" header="Existencias" sortable>
                         <template #body="{ data }">
                             <div v-if="isComposite(data)" class="flex items-center space-x-2">
-                                <Tag value="Dinámico" severity="info" class="!bg-blue-100 !text-blue-600" icon="pi pi-link" v-tooltip.top="'Stock dependiente de sus componentes'" />
+                                <Tag value="Dinámico" severity="info" icon="pi pi-link" :pt="tagPt" v-tooltip.top="'Stock dependiente de sus componentes'" />
                             </div>
                             <div v-else class="flex items-center space-x-2">
-                                <Tag :value="getAvailableStock(data)" :severity="getStockSeverity(data)" />
+                                <Tag :value="formatStock(getAvailableStock(data), isBulk(data))" :severity="getStockSeverity(data)" :pt="tagPt" />
 
                                 <Tag v-if="getCalculatedReserved(data) > 0"
-                                    :value="getCalculatedReserved(data) + ' apartado(s)'"
-                                    v-tooltip.bottom="`Stock físico Total: ${getCalculatedStock(data)}`"
-                                    class="!bg-indigo-100 !text-indigo-600" />
+                                    :value="formatStock(getCalculatedReserved(data), isBulk(data)) + ' apartado(s)'"
+                                    v-tooltip.bottom="`Stock físico Total: ${formatStock(getCalculatedStock(data), isBulk(data))}`"
+                                    severity="secondary" :pt="tagPt" />
 
                                 <!-- Tooltip visual de Variantes -->
-                                <i v-if="hasVariants(data)" class="pi pi-sitemap text-gray-400 cursor-help"
-                                    v-tooltip.top="`Se suman las existencias de ${getVariants(data).length} variantes`">
+                                <i v-if="hasVariants(data)" class="pi pi-sitemap text-gray-400 !text-xs cursor-help"
+                                    v-tooltip.top="`Se suman existencias de ${getVariants(data).length} variantes`">
                                 </i>
                             </div>
                         </template>
@@ -370,43 +424,50 @@ const goToDetails = (id) => {
 
                     <Column field="selling_price" header="Precio" sortable>
                         <template #body="{ data }">
-                            <span class="font-semibold">
+                            <span class="font-light tracking-tight text-lg dark:text-white">
                                 {{ new Intl.NumberFormat('es-MX', {
                                     style: 'currency', currency: 'MXN'
                                 }).format(data.selling_price) }}
                             </span>
                         </template>
                     </Column>
-                    <Column field="min_stock" header="Exist. mínimas" sortable>
+                    
+                    <Column field="min_stock" header="Mínimo" sortable>
                         <template #body="{ data }">
-                            <span class="text-sm text-gray-500">{{ data.min_stock || '--' }}</span>
+                            <span class="font-mono dark:text-gray-400">{{ data.min_stock !== null ? formatStock(data.min_stock, isBulk(data)) : '--' }}</span>
                         </template>
                     </Column>
+                    
                     <Column headerStyle="width: 5rem; text-align: center">
                         <template #body="{ data }">
                             <!-- Botón con stop propagation -->
                             <Button @click.stop="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded
-                                severity="secondary" aria-haspopup="true" aria-controls="overlay_menu" />
+                                class="!w-8 !h-8 !text-gray-400 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors" aria-haspopup="true" aria-controls="overlay_menu" />
                         </template>
                     </Column>
+                    
                     <template #empty>
-                        <div class="text-center text-gray-500 py-4">
-                            No hay productos registrados.
+                        <div class="flex flex-col items-center justify-center text-center py-10">
+                            <i class="pi pi-box !text-3xl text-gray-400 mb-3"></i>
+                            <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin resultados</p>
+                            <p class="text-xs text-gray-400 mt-1">No hay productos que coincidan con la búsqueda actual.</p>
                         </div>
                     </template>
                 </DataTable>
 
-                <Menu ref="menu" id="overlay_menu" :model="menuItems" :popup="true" />
+                <Menu ref="menu" id="overlay_menu" :model="menuItems" :popup="true" :pt="menuPt" />
             </div>
         </div>
 
         <!-- DRAWER DE DETALLES DEL PRODUCTO -->
         <Drawer v-model:visible="isDrawerVisible" position="right"
-            class="w-full md:!w-[32rem] !bg-gray-50 dark:!bg-gray-900">
+            class="w-full md:!w-[32rem]" :pt="drawerPt">
             <template #header>
-                <div class="flex items-center gap-2 font-bold text-lg text-gray-800 dark:text-gray-200">
-                    <i class="pi pi-box"></i>
-                    <span>Vista rápida</span>
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
+                        <i class="pi pi-box text-blue-500 !text-sm"></i>
+                    </div>
+                    <span class="text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0">Vista rápida</span>
                 </div>
             </template>
 

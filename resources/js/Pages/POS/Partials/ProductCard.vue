@@ -77,8 +77,6 @@ const quantityInCart = computed(() => {
     }
 
     // 2. Si no tiene variantes (producto simple) O no ha seleccionado variante aún
-    //    En este caso, sumamos TODAS las instancias de este producto en el carrito (incluyendo variantes mixtas si las hubiera)
-    //    Esto da un feedback general de "ya tienes este producto" aunque no especifique cuál variante.
     const items = props.cartItems.filter(i => i.id === props.product.id);
     return items.reduce((sum, i) => sum + i.quantity, 0);
 });
@@ -185,97 +183,135 @@ const formatCurrency = (value) => {
         currency: 'MXN'
     }).format(value || 0);
 };
+
+// Formateador de stock (Hasta 3 decimales para granel, 0 para normales)
+const formatStock = (stock, isBulkProduct) => {
+    const num = Number(stock) || 0;
+    if (isBulkProduct) {
+        return new Intl.NumberFormat('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 3 }).format(num);
+    }
+    return new Intl.NumberFormat('es-MX', { maximumFractionDigits: 0 }).format(Math.round(num));
+};
 </script>
 
 <template>
-    <div
-        class="relative border border-gray-200 dark:border-gray-700 rounded-[15px] overflow-hidden flex flex-col bg-white dark:bg-gray-800 transition-shadow hover:shadow-lg h-full">
+    <div class="relative border border-gray-100 dark:border-[#3a3a3a] rounded-3xl overflow-hidden flex flex-col bg-white dark:bg-[#1a1a1a] transition-all duration-300 hover:shadow-xl hover:-translate-y-1 hover:border-primary-500/30 group h-full">
                 
-        <div class="m-3 relative">
-            <img :src="displayImage" :alt="product.name" class="w-full h-40 object-contain bg-[#F2F2F2] rounded-xl">
+        <!-- CONTENEDOR DE IMAGEN (Altura reducida a h-36) -->
+        <div class="m-2 relative group">
+            <div class="bg-gray-50 dark:bg-[#232323] rounded-2xl flex items-center justify-center h-36 overflow-hidden p-3 border border-transparent group-hover:border-gray-100 dark:group-hover:border-[#2a2a2a] transition-colors">
+                <img :src="displayImage" :alt="product.name" class="w-full h-full object-contain drop-shadow-sm transition-transform duration-500 group-hover:scale-105">
+            </div>
             
-            <!-- INDICADOR DE CANTIDAD EN CARRITO -->
+            <!-- BADGE: Cantidad en Carrito -->
             <div v-if="quantityInCart > 0" 
-                 class="absolute bottom-2 left-2 bg-blue-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-md z-10 flex items-center gap-1 animate-in fade-in zoom-in duration-300">
-                <i class="pi pi-shopping-cart !text-xs"></i>
-                <span>{{ quantityInCart }} en carrito</span>
+                 class="absolute bottom-2 left-2 bg-primary-500 text-white text-[10px] uppercase tracking-widest font-bold px-3 py-1 rounded-full shadow-[0_0_10px_rgba(246,140,15,0.4)] flex items-center gap-1.5 animate-in fade-in zoom-in duration-300">
+                <i class="pi pi-shopping-cart !text-[10px]"></i>
+                <span>{{ formatStock(quantityInCart, product.is_bulk) }} en carrito</span>
             </div>
 
-              <!-- ETIQUETA VISUAL PARA KITS/COMBOS -->
-        <div v-if="isComposite" class="absolute bottom-2 right-2 z-10">
-            <Tag value="Combo" severity="contrast" icon="pi pi-link" class="!text-[10px] !px-1.5 shadow-sm" />
-        </div>
-
-            <!-- INDICADOR DE STOCK DINÁMICO (COMBO) VS FÍSICO -->
-            <span v-if="isComposite"
-                class="absolute top-0 left-0 rounded-none rounded-tl-[15px] rounded-br-[15px] text-sm text-white dark:text-gray-900 px-2 py-1 bg-[#122C3C] dark:bg-gray-400 flex items-center gap-1">
-                <i class="pi pi-link text-[10px]"></i> Dinámico
-            </span>
-            <span v-else
-                class="absolute top-0 left-0 rounded-none rounded-tl-[15px] rounded-br-[15px] text-sm text-white dark:text-gray-900 px-2 py-1"
-                :class="displayStock > 0 ? 'bg-[#122C3C] dark:bg-gray-400' : 'bg-red-600 dark:bg-red-400'">
-                {{ displayStock }} disponibles
-                <span v-if="displayReservedStock > 0">
-                    | {{ displayReservedStock }} apartados
+            <!-- BADGE: Dinámico / Combo -->
+            <div v-if="isComposite" class="absolute bottom-2 right-2 z-10">
+                <span class="bg-purple-500 text-white text-[9px] uppercase tracking-widest font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                    <i class="pi pi-link !text-[9px]"></i> Combo
                 </span>
-            </span>
+            </div>
 
-            <button class="absolute top-1 right-1 bg-[#5c5c5c]/70 dark:bg-black/50 text-white rounded-[6px] size-7 border border-white flex items-center justify-center"
+            <!-- BADGE: Stock (Más Notorio y de Alto Contraste) -->
+            <div class="absolute top-2 left-2 z-10">
+                <span class="text-[10px] uppercase tracking-widest font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-sm border"
+                    :class="displayStock > 0 
+                        ? 'bg-green-100 border-green-200 text-green-700 dark:bg-green-900/40 dark:border-green-800 dark:text-green-400' 
+                        : 'bg-red-100 border-red-200 text-red-700 dark:bg-red-900/40 dark:border-red-800 dark:text-red-400'">
+                    <span class="w-2 h-2 rounded-full shadow-inner animate-pulse" :class="displayStock > 0 ? 'bg-green-500' : 'bg-red-500'"></span>
+                    {{ formatStock(displayStock, product.is_bulk) }} disp. 
+                    <span v-if="displayReservedStock > 0" class="opacity-70 ml-1 border-l pl-1 border-current">
+                        {{ formatStock(displayReservedStock, product.is_bulk) }} apart.
+                    </span>
+                </span>
+            </div>
+
+            <!-- BOTÓN: Expandir Detalles -->
+            <button class="absolute top-2 right-2 bg-white/80 dark:bg-[#232323]/80 backdrop-blur-md text-gray-700 dark:text-gray-300 rounded-full w-7 h-7 border border-gray-200 dark:border-[#3a3a3a] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 hover:bg-white dark:hover:bg-gray-800 hover:scale-110 shadow-sm"
                 @click="emit('showDetails', product)" v-tooltip.bottom="'Ver detalles'">
-                <i class="pi pi-arrow-up-right-and-arrow-down-left-from-center !text-xs"></i>
+                <i class="pi pi-expand !text-[10px]"></i>
             </button>
         </div>
         
+        <!-- CUERPO DE LA TARJETA (Paddings y Gaps reducidos) -->
         <div class="px-4 py-2 flex flex-col flex-grow">
-            <h3 class="font-bold text-gray-800 dark:text-gray-200 text-lg overflow-hidden m-0">{{ product.name }}</h3>
-            <p v-if="product.sku" class="text-gray-600 dark:text-gray-100 text-xs m-0 flex items-center gap-2">
-                <i class="pi pi-barcode"></i> 
-                <span>{{ product.sku }}</span>
-            </p>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">{{ product.category?.name || product.category || 'General' }}</p>
-            <div class="space-y-2 my-2 min-h-[1rem]">
-                <div v-if="hasVariants" class="space-y-3">
-                    <div v-for="(options, variantName) in product.variants" :key="variantName">
-                        <p class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 capitalize">{{
-                            variantName }}</p>
-                        <div class="flex flex-wrap gap-2">
-                            <Button v-for="option in options" :key="option.value || option" :label="option.value || option"
-                                :outlined="!isCardOptionSelected(variantName, option.value || option)" severity="contrast"
-                                class="p-button-sm !text-xs !py-1 !px-2"
-                                @click="selectCardOption(variantName, option.value || option)"
-                                :disabled="isCardOptionDisabled(variantName, option.value || option)" />
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="mb-3 mt-auto flex items-center gap-1">
-                <div v-if="displayPrice < product.original_price" class="flex items-baseline gap-2">
-                    <p class="text-xl font-semibold text-green-600 m-0">{{ formatCurrency(displayPrice) }}</p>
-                    <del class="text-md text-gray-500">{{ formatCurrency(product.original_price) }}</del>
-                </div>
-                <p v-else class="text-xl font-semibold text-gray-900 dark:text-gray-100 m-0">
-                    {{ formatCurrency(displayPrice) }}
+            
+            <!-- Título y Categoría -->
+            <div class="mb-3">
+                <h3 class="font-medium text-gray-900 dark:text-white text-[15px] leading-tight m-0 mb-1 line-clamp-2">{{ product.name }}</h3>
+                <p class="text-[9px] text-gray-500 uppercase tracking-widest m-0 flex items-center gap-1.5 truncate">
+                    <span v-if="product.sku" class="flex items-center gap-1"><i class="pi pi-barcode !text-[9px]"></i> {{ product.sku }}</span>
+                    <span v-if="product.sku && product.category?.name" class="opacity-50">•</span>
+                    <span>{{ product.category?.name || product.category || 'General' }}</span>
                 </p>
-                <button v-if="product.promotions && product.promotions.length > 0" @click="togglePromoPopover"
-                    class="cursor-pointer focus:outline-none" v-tooltip.bottom="'Ver detalles de la promoción'">
-                    <FireIcon class="size-5 text-[#AE080B] dark:text-red-400 animate-pulse" />
-                </button>
-                <Popover ref="promoPopover">
-                    <div class="p-3 w-64">
-                        <h4 class="font-bold text-lg mb-2 border-b pb-2">Promociones Disponibles</h4>
-                        <div class="space-y-3 max-h-48 overflow-y-auto">
-                            <div v-for="promo in product.promotions" :key="promo.name" class="text-sm">
-                                <p class="font-semibold m-0">{{ promo.name }}</p>
-                                <p class="text-xs text-gray-600 m-0">{{ getPromotionSummary(promo) }}</p>
-                            </div>
-                        </div>
-                    </div>
-                </Popover>
             </div>
 
-            <Button :label="hasVariants && !cardSelectedCombination ? 'Elegir opciones' : 'Agregar al carrito'"
-                icon="pi pi-plus" severity="warning" class="w-full font-bold" rounded size="small" @click="handlePrimaryAction" />
+            <!-- Variantes (Más compactas) -->
+            <div class="space-y-2 mb-3 mt-auto">
+                <div v-if="hasVariants" class="space-y-2">
+                    <div v-for="(options, variantName) in product.variants" :key="variantName">
+                        <p class="text-[9px] font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0 mb-1.5">{{ variantName }}</p>
+                        <div class="flex flex-wrap gap-1.5">
+                            <button v-for="option in options" :key="option.value || option"
+                                @click="selectCardOption(variantName, option.value || option)"
+                                :disabled="isCardOptionDisabled(variantName, option.value || option)"
+                                class="text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-all duration-300 select-none"
+                                :class="[
+                                    isCardOptionSelected(variantName, option.value || option)
+                                        ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white text-white dark:text-gray-900 scale-105 shadow-sm'
+                                        : 'bg-transparent border-gray-200 dark:border-[#3a3a3a] text-gray-600 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 disabled:opacity-30 disabled:cursor-not-allowed'
+                                ]">
+                                {{ option.value || option }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Precio y Acciones (Gap reducido) -->
+            <div class="mt-auto pt-3 border-t border-gray-100 dark:border-[#3a3a3a] flex flex-col gap-3">
+                
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <div v-if="displayPrice < product.original_price" class="flex flex-col">
+                            <del class="text-[10px] text-gray-400 m-0 leading-none mb-0.5">{{ formatCurrency(product.original_price) }}</del>
+                            <p class="text-xl font-light tracking-tight text-green-500 m-0 leading-none">{{ formatCurrency(displayPrice) }}</p>
+                        </div>
+                        <p v-else class="text-xl font-light tracking-tight text-gray-900 dark:text-white m-0 leading-none">
+                            {{ formatCurrency(displayPrice) }}
+                        </p>
+                        
+                        <!-- Popover Promociones -->
+                        <button v-if="product.promotions && product.promotions.length > 0" @click="togglePromoPopover"
+                            class="ml-1 w-6 h-6 rounded-full bg-red-50 dark:bg-red-900/20 text-red-500 flex items-center justify-center hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors" v-tooltip.top="'Ver promoción'">
+                            <FireIcon class="size-3.5 animate-pulse" />
+                        </button>
+                        <Popover ref="promoPopover" :pt="{ root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl shadow-xl' } }">
+                            <div class="p-4 w-72">
+                                <h4 class="font-medium text-gray-900 dark:text-white m-0 mb-3 tracking-tight border-b border-gray-100 dark:border-[#3a3a3a] pb-2">Promociones activas</h4>
+                                <div class="space-y-4 max-h-48 overflow-y-auto custom-scrollbar pr-2">
+                                    <div v-for="promo in product.promotions" :key="promo.name">
+                                        <p class="text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-widest m-0 mb-1">{{ promo.name }}</p>
+                                        <p class="text-xs text-gray-600 dark:text-gray-400 m-0 leading-relaxed">{{ getPromotionSummary(promo) }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </Popover>
+                    </div>
+                </div>
+
+                <Button :label="hasVariants && !cardSelectedCombination ? 'Elegir opciones' : 'Añadir'"
+                    :icon="hasVariants && !cardSelectedCombination ? 'pi pi-sliders-h' : 'pi pi-plus'" 
+                    :severity="hasVariants && !cardSelectedCombination ? 'secondary' : 'primary'"
+                    class="w-full !rounded-xl !text-[11px] !uppercase !tracking-widest !font-bold !py-2.5" 
+                    @click="handlePrimaryAction" />
+            </div>
+
         </div>
     </div>
 </template>
