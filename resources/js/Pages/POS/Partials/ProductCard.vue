@@ -183,6 +183,15 @@ const formatCurrency = (value) => {
         currency: 'MXN'
     }).format(value || 0);
 };
+
+// Formateador de stock (Hasta 3 decimales para granel, 0 para normales)
+const formatStock = (stock, isBulkProduct) => {
+    const num = Number(stock) || 0;
+    if (isBulkProduct) {
+        return new Intl.NumberFormat('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 3 }).format(num);
+    }
+    return new Intl.NumberFormat('es-MX', { maximumFractionDigits: 0 }).format(Math.round(num));
+};
 </script>
 
 <template>
@@ -198,7 +207,7 @@ const formatCurrency = (value) => {
             <div v-if="quantityInCart > 0" 
                  class="absolute bottom-2 left-2 bg-primary-500 text-white text-[10px] uppercase tracking-widest font-bold px-3 py-1 rounded-full shadow-[0_0_10px_rgba(246,140,15,0.4)] flex items-center gap-1.5 animate-in fade-in zoom-in duration-300">
                 <i class="pi pi-shopping-cart !text-[10px]"></i>
-                <span>{{ quantityInCart }} en carrito</span>
+                <span>{{ formatStock(quantityInCart, product.is_bulk) }} en carrito</span>
             </div>
 
             <!-- BADGE: Dinámico / Combo -->
@@ -215,9 +224,9 @@ const formatCurrency = (value) => {
                         ? 'bg-green-100 border-green-200 text-green-700 dark:bg-green-900/40 dark:border-green-800 dark:text-green-400' 
                         : 'bg-red-100 border-red-200 text-red-700 dark:bg-red-900/40 dark:border-red-800 dark:text-red-400'">
                     <span class="w-2 h-2 rounded-full shadow-inner animate-pulse" :class="displayStock > 0 ? 'bg-green-500' : 'bg-red-500'"></span>
-                    {{ displayStock }} disp. 
+                    {{ formatStock(displayStock, product.is_bulk) }} disp. 
                     <span v-if="displayReservedStock > 0" class="opacity-70 ml-1 border-l pl-1 border-current">
-                        {{ displayReservedStock }} apart.
+                        {{ formatStock(displayReservedStock, product.is_bulk) }} apart.
                     </span>
                 </span>
             </div>

@@ -104,6 +104,15 @@ const getStockSeverity = (product) => {
     return 'success';
 };
 
+// Formateador de stock (Hasta 3 decimales para granel, 0 para normales)
+const formatStock = (stock, isBulkProduct) => {
+    const num = Number(stock) || 0;
+    if (isBulkProduct) {
+        return new Intl.NumberFormat('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 3 }).format(num);
+    }
+    return new Intl.NumberFormat('es-MX', { maximumFractionDigits: 0 }).format(Math.round(num));
+};
+
 // --- GESTIÓN DE STOCK ---
 const openStockModal = (products) => {
     productsForStockModal.value = Array.isArray(products) ? products : [products];
@@ -391,18 +400,18 @@ const drawerPt = {
                         </template>
                     </Column>
 
-                    <!-- COLUMNA EXISTENCIAS -->
+                    <!-- COLUMNA EXISTENCIAS ACTUALIZADA CON FORMATEO DINÁMICO -->
                     <Column field="current_stock" header="Existencias" sortable>
                         <template #body="{ data }">
                             <div v-if="isComposite(data)" class="flex items-center space-x-2">
                                 <Tag value="Dinámico" severity="info" icon="pi pi-link" :pt="tagPt" v-tooltip.top="'Stock dependiente de sus componentes'" />
                             </div>
                             <div v-else class="flex items-center space-x-2">
-                                <Tag :value="getAvailableStock(data).toString()" :severity="getStockSeverity(data)" :pt="tagPt" />
+                                <Tag :value="formatStock(getAvailableStock(data), isBulk(data))" :severity="getStockSeverity(data)" :pt="tagPt" />
 
                                 <Tag v-if="getCalculatedReserved(data) > 0"
-                                    :value="getCalculatedReserved(data) + ' apartado(s)'"
-                                    v-tooltip.bottom="`Stock físico Total: ${getCalculatedStock(data)}`"
+                                    :value="formatStock(getCalculatedReserved(data), isBulk(data)) + ' apartado(s)'"
+                                    v-tooltip.bottom="`Stock físico Total: ${formatStock(getCalculatedStock(data), isBulk(data))}`"
                                     severity="secondary" :pt="tagPt" />
 
                                 <!-- Tooltip visual de Variantes -->
@@ -422,11 +431,13 @@ const drawerPt = {
                             </span>
                         </template>
                     </Column>
+                    
                     <Column field="min_stock" header="Mínimo" sortable>
                         <template #body="{ data }">
-                            <span class="font-mono dark:text-gray-400">{{ data.min_stock || '--' }}</span>
+                            <span class="font-mono dark:text-gray-400">{{ data.min_stock !== null ? formatStock(data.min_stock, isBulk(data)) : '--' }}</span>
                         </template>
                     </Column>
+                    
                     <Column headerStyle="width: 5rem; text-align: center">
                         <template #body="{ data }">
                             <!-- Botón con stop propagation -->
@@ -434,6 +445,7 @@ const drawerPt = {
                                 class="!w-8 !h-8 !text-gray-400 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors" aria-haspopup="true" aria-controls="overlay_menu" />
                         </template>
                     </Column>
+                    
                     <template #empty>
                         <div class="flex flex-col items-center justify-center text-center py-10">
                             <i class="pi pi-box !text-3xl text-gray-400 mb-3"></i>
