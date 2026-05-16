@@ -98,218 +98,246 @@ const submitFinalClose = () => {
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" modal header="Cerrar sesión de caja" :style="{ width: '35rem' }">
+    <Dialog :visible="visible" @update:visible="closeModal" modal header="Cierre de caja" 
+        class="w-full max-w-2xl"
+        :breakpoints="{ '1199px': '75vw', '575px': '95vw' }"
+        :pt="{
+            root: { class: 'dark:bg-[#232323] border-none shadow-2xl rounded-3xl overflow-hidden' },
+            header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 md:px-8 py-5 md:py-6' },
+            title: { class: 'text-xl md:text-2xl font-light tracking-tight text-gray-900 dark:text-white m-0' },
+            content: { class: 'dark:bg-[#232323] px-6 md:px-8 py-6' },
+            footer: { class: 'dark:bg-[#232323] border-t border-gray-100 dark:border-[#3a3a3a] px-6 md:px-8 py-4 md:py-5' }
+        }">
         <div v-if="session" class="p-2">
 
             <!-- VISTA 1: Elección para Múltiples Usuarios -->
-            <div v-if="!isLastUser && view === 'initial'">
-                <div class="text-center">
-                    <i class="pi pi-users !text-5xl text-blue-500 mb-4"></i>
-                    <h3 class="text-xl font-bold mb-2">Hay más usuarios en esta caja</h3>
-                    <p class="text-gray-600 dark:text-gray-400 mb-4">
-                        Además de ti, <strong>{{ otherUsers.map(u => u.name).join(', ') }}</strong> también está(n) en esta sesión. ¿Qué deseas hacer?
-                    </p>
+            <div v-if="!isLastUser && view === 'initial'" class="flex flex-col items-center">
+                <div class="w-16 h-16 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-500 flex items-center justify-center mb-6 border border-blue-100 dark:border-blue-900/50 shadow-sm">
+                    <i class="pi pi-users !text-2xl"></i>
                 </div>
-                <div class="mt-4 space-y-3">
-                     <Button @click="view = 'confirmClose'" severity="danger" outlined class="w-full text-left p-button-lg" >
-                        <div class="flex items-center">
-                            <i class="pi pi-power-off text-xl"></i>
-                            <div class="ml-4 text-left">
-                                <span class="font-bold">Realizar corte de caja</span>
-                                <p class="font-normal text-sm whitespace-normal">Esto cerrará la sesión para TODOS y requerirá el conteo de efectivo.</p>
-                            </div>
+                <h3 class="text-2xl font-light tracking-tight text-gray-900 dark:text-white m-0 mb-3">Conexiones múltiples activas</h3>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mb-8 max-w-md text-center leading-relaxed m-0">
+                    Además de ti, <strong>{{ otherUsers.map(u => u.name).join(', ') }}</strong> está(n) conectado(s) a esta sesión. Elige una acción:
+                </p>
+                
+                <div class="w-full space-y-4 max-w-lg">
+                     <button @click="view = 'confirmClose'" 
+                        class="w-full text-left p-5 rounded-3xl border-2 border-red-500 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/20 transition-all duration-300 flex items-start gap-5 group">
+                        <div class="w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
+                            <i class="pi pi-power-off !text-sm"></i>
                         </div>
-                    </Button>
-                    <Button @click="leaveSession" severity="secondary" class="w-full text-left p-button-lg">
-                         <div class="flex items-center">
-                            <i class="pi pi-sign-out text-xl"></i>
-                            <div class="ml-4 text-left">
-                                <span class="font-bold">Solo salir de la sesión</span>
-                                <p class="font-normal text-sm whitespace-normal">La caja seguirá abierta para los demás. Podrás unirte a otra caja.</p>
-                            </div>
+                        <div>
+                            <span class="block text-lg font-bold text-red-700 dark:text-red-400 mb-1">Corte total de caja</span>
+                            <span class="block text-xs text-red-600 dark:text-red-300/80 font-medium leading-relaxed">Requiere conteo físico. Desconectará automáticamente a todos los usuarios.</span>
                         </div>
-                    </Button>
+                    </button>
+                    
+                    <button @click="leaveSession" 
+                        class="w-full text-left p-5 rounded-3xl border-2 border-gray-200 dark:border-[#3a3a3a] bg-white dark:bg-[#1a1a1a] hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all duration-300 flex items-start gap-5 group">
+                         <div class="w-10 h-10 rounded-full bg-gray-100 dark:bg-[#2a2a2a] text-gray-500 group-hover:bg-blue-500 group-hover:text-white flex items-center justify-center flex-shrink-0 transition-colors">
+                            <i class="pi pi-sign-out !text-sm"></i>
+                        </div>
+                        <div>
+                            <span class="block text-lg font-bold text-gray-900 dark:text-white mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">Desconexión personal</span>
+                            <span class="block text-xs text-gray-500 dark:text-gray-400 leading-relaxed">La caja seguirá operando. Podrás iniciar sesión en otro equipo si lo deseas.</span>
+                        </div>
+                    </button>
                 </div>
             </div>
 
             <!-- VISTA 2: Confirmación antes del corte final -->
-             <div v-if="!isLastUser && view === 'confirmClose'">
-                 <div class="text-center p-3 bg-red-50 dark:bg-red-900/30 border-l-4 border-red-500 rounded">
-                     <i class="pi pi-exclamation-triangle !text-3xl text-red-500 mb-3"></i>
-                     <h3 class="text-lg font-bold">Confirmación de cierre total</h3>
-                     <p>Estás a punto de hacer el corte de caja. Esta acción <strong>expulsará a todos los demás usuarios</strong> de la sesión actual.
-                     </p>
+             <div v-if="!isLastUser && view === 'confirmClose'" class="flex flex-col items-center py-4">
+                 <div class="w-16 h-16 rounded-full bg-red-50 dark:bg-red-900/30 text-red-500 flex items-center justify-center mb-6 border border-red-100 dark:border-red-900/50 shadow-sm animate-pulse">
+                     <i class="pi pi-exclamation-triangle !text-2xl"></i>
                  </div>
-                 <div class="flex justify-end gap-2 mt-4">
-                     <Button label="Regresar" icon="pi pi-arrow-left" @click="view = 'initial'" text />
-                     <Button label="Continuar con el corte" @click="view = 'finalClose'" severity="danger" />
+                 <h3 class="text-2xl font-light tracking-tight text-gray-900 dark:text-white m-0 mb-3 text-center">Advertencia de sistema</h3>
+                 <p class="text-sm text-gray-600 dark:text-gray-400 mb-8 max-w-md text-center leading-relaxed m-0">
+                    Estás a punto de iniciar el cierre definitivo. Esta acción cerrará los cobros y <strong>expulsará a todos</strong> de la sesión.
+                 </p>
+                 <div class="flex w-full max-w-sm gap-3">
+                     <Button label="Atrás" icon="pi pi-arrow-left" @click="view = 'initial'" severity="secondary" text class="flex-1 !rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold" />
+                     <Button label="Proceder al corte" @click="view = 'finalClose'" severity="danger" class="flex-1 !rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold shadow-[0_4px_10px_rgba(239,68,68,0.4)]" />
                  </div>
              </div>
 
             <!-- VISTA 3: El Corte de Caja Final -->
-            <div v-if="isLastUser || view === 'finalClose'">
-                <div class="space-y-4">
+            <div v-if="isLastUser || view === 'finalClose'" class="space-y-6">
+                
+                <div class="flex items-center gap-3 mb-2">
+                    <div class="w-10 h-10 rounded-full bg-red-50 dark:bg-red-900/30 text-red-500 flex items-center justify-center border border-red-100 dark:border-red-900/50 shadow-sm flex-shrink-0">
+                        <i class="pi pi-lock !text-sm"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-medium text-lg text-gray-900 dark:text-white m-0 tracking-tight">Cierre y arqueo</h3>
+                        <p class="text-xs text-gray-500 uppercase tracking-widest m-0">Sesión #{{ session.id }}</p>
+                    </div>
+                </div>
+
+                <!-- Bloque: Resumen Efectivo -->
+                <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                    <h6 class="text-sm uppercase tracking-widest font-bold text-gray-400 m-0 mb-4 flex items-center gap-2">
+                        <i class="pi pi-wallet !text-sm"></i> Movimientos en Efectivo
+                    </h6>
                     
-                    <!-- Resumen de Efectivo Desplegable -->
-                    <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border dark:border-gray-700">
-                        <h6 class="font-bold mb-3 text-center border-b dark:border-gray-700 pb-2">Resumen de efectivo en caja</h6>
+                    <div class="space-y-3">
+                        <!-- Fondo inicial -->
+                        <div class="flex justify-between items-center bg-white dark:bg-[#232323] p-3 rounded-2xl border border-gray-100 dark:border-[#2a2a2a]">
+                            <span class="text-base text-gray-600 dark:text-gray-400 font-medium">Apertura inicial</span> 
+                            <span class="font-mono text-lg font-bold text-gray-900 dark:text-gray-100">{{ formatCurrency(session.opening_cash_balance) }}</span>
+                        </div>
                         
-                        <div class="space-y-1 text-sm select-none">
-                            <!-- Fondo inicial -->
-                            <div class="flex justify-between p-1">
-                                <span>Fondo inicial:</span> 
-                                <span class="font-semibold">{{ formatCurrency(session.opening_cash_balance) }}</span>
-                            </div>
-                            
-                            <!-- Pagos en Efectivo -->
-                            <div class="flex flex-col">
-                                <div class="flex justify-between items-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 p-1 -mx-1 rounded transition-colors" @click="showCashDetails = !showCashDetails">
-                                    <span class="flex items-center gap-2">
-                                        <i :class="showCashDetails ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" class="text-[10px] text-gray-500 w-3 text-center"></i>
-                                        (+) Pagos y abonos en efectivo:
-                                    </span>
-                                    <span class="font-semibold text-green-600">+ {{ formatCurrency(cashSales) }}</span>
-                                </div>
-                                <div v-show="showCashDetails" class="pl-6 pr-2 py-1 text-xs space-y-2 border-l-2 border-gray-200 dark:border-gray-600 ml-1.5 my-1 max-h-40 overflow-y-auto custom-scrollbar">
-                                    <div v-for="payment in cashPaymentsList" :key="payment.id" class="flex justify-between items-center text-gray-600 dark:text-gray-400">
-                                        <div class="flex flex-col truncate pr-2">
-                                            <span class="font-medium text-gray-800 dark:text-gray-200">Folio #{{ payment.transaction?.folio || 'N/A' }}</span>
-                                            <span v-if="payment.notes" class="italic opacity-75 text-[10px]">{{ payment.notes }}</span>
-                                        </div>
-                                        <span class="font-semibold">{{ formatCurrency(payment.amount) }}</span>
+                        <!-- Entradas (+) -->
+                        <div class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#2a2a2a] overflow-hidden">
+                            <button class="w-full flex justify-between items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" @click="showCashDetails = !showCashDetails">
+                                <span class="text-base font-bold text-green-600 dark:text-green-500 flex items-center gap-2">
+                                    <i :class="showCashDetails ? 'pi pi-angle-up' : 'pi pi-angle-down'" class="text-sm"></i>
+                                    Ingresos por ventas
+                                </span>
+                                <span class="font-mono text-lg font-bold text-green-600 dark:text-green-500">+ {{ formatCurrency(cashSales) }}</span>
+                            </button>
+                            <div v-show="showCashDetails" class="px-4 py-2 border-t border-gray-100 dark:border-[#2a2a2a] bg-gray-50/50 dark:bg-[#1a1a1a]/50 max-h-40 overflow-y-auto custom-scrollbar">
+                                <div v-for="payment in cashPaymentsList" :key="payment.id" class="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-[#2a2a2a] last:border-0">
+                                    <div class="flex flex-col">
+                                        <span class="font-mono text-sm text-gray-600 dark:text-gray-400">#{{ payment.transaction?.folio || 'N/A' }}</span>
                                     </div>
-                                    <div v-if="!cashPaymentsList.length" class="text-gray-400 italic">No hay pagos en efectivo.</div>
+                                    <span class="font-mono text-base">{{ formatCurrency(payment.amount) }}</span>
                                 </div>
-                            </div>
-
-                            <!-- Otras Entradas -->
-                            <div class="flex flex-col">
-                                <div class="flex justify-between items-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 p-1 -mx-1 rounded transition-colors" @click="showInflowDetails = !showInflowDetails">
-                                    <span class="flex items-center gap-2">
-                                        <i :class="showInflowDetails ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" class="text-[10px] text-gray-500 w-3 text-center"></i>
-                                        (+) Otras entradas (manual):
-                                    </span>
-                                    <span class="font-semibold text-green-600">+ {{ formatCurrency(inflows) }}</span>
-                                </div>
-                                <div v-show="showInflowDetails" class="pl-6 pr-2 py-1 text-xs space-y-2 border-l-2 border-gray-200 dark:border-gray-600 ml-1.5 my-1 max-h-40 overflow-y-auto custom-scrollbar">
-                                    <div v-for="mov in inflowList" :key="mov.id" class="flex justify-between items-center text-gray-600 dark:text-gray-400">
-                                        <span class="truncate pr-2 font-medium text-gray-800 dark:text-gray-200">{{ mov.description || 'Ingreso manual' }}</span>
-                                        <span class="font-semibold">{{ formatCurrency(mov.amount) }}</span>
-                                    </div>
-                                    <div v-if="!inflowList.length" class="text-gray-400 italic">No hay entradas adicionales registradas.</div>
-                                </div>
-                            </div>
-
-                            <!-- Salidas -->
-                            <div class="flex flex-col">
-                                <div class="flex justify-between items-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 p-1 -mx-1 rounded transition-colors" @click="showOutflowDetails = !showOutflowDetails">
-                                    <span class="flex items-center gap-2">
-                                        <i :class="showOutflowDetails ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" class="text-[10px] text-gray-500 w-3 text-center"></i>
-                                        (-) Salidas / Retiros:
-                                    </span>
-                                    <span class="font-semibold text-red-500">- {{ formatCurrency(outflows) }}</span>
-                                </div>
-                                <div v-show="showOutflowDetails" class="pl-6 pr-2 py-1 text-xs space-y-2 border-l-2 border-gray-200 dark:border-gray-600 ml-1.5 my-1 max-h-40 overflow-y-auto custom-scrollbar">
-                                    <div v-for="mov in outflowList" :key="mov.id" class="flex justify-between items-center text-gray-600 dark:text-gray-400">
-                                        <span class="truncate pr-2 font-medium text-gray-800 dark:text-gray-200">{{ mov.description || 'Retiro manual' }}</span>
-                                        <span class="font-semibold text-red-500">-{{ formatCurrency(mov.amount) }}</span>
-                                    </div>
-                                    <div v-if="!outflowList.length" class="text-gray-400 italic">No hay salidas registradas.</div>
-                                </div>
-                            </div>
-
-                            <!-- Total Esperado -->
-                            <div class="flex justify-between items-center font-bold text-lg border-t border-gray-300 dark:border-gray-600 pt-2 mt-2 p-1 bg-gray-100 dark:bg-gray-700/50 rounded">
-                                <span>Total esperado en caja:</span> 
-                                <span class="text-primary-600 dark:text-primary-400">{{ formatCurrency(expectedCashTotal) }}</span>
+                                <div v-if="!cashPaymentsList.length" class="text-sm italic text-gray-400 py-2">Sin registros.</div>
                             </div>
                         </div>
-                    </div>
-                    
-                    <!-- Resumen de otros métodos de pago -->
-                    <div class="bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border dark:border-gray-700">
-                        <h6 class="font-semibold text-center text-sm mb-2 text-gray-600 dark:text-gray-300">Resumen de otros métodos de pago (informativo)</h6>
-                        
-                        <div class="space-y-1 text-sm select-none">
-                            <!-- Pagos con Tarjeta -->
-                            <div class="flex flex-col">
-                                <div class="flex justify-between items-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 p-1 -mx-1 rounded transition-colors" @click="showCardDetails = !showCardDetails">
-                                    <span class="flex items-center gap-2">
-                                        <i :class="showCardDetails ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" class="text-[10px] text-gray-500 w-3 text-center"></i>
-                                        <i class="pi pi-credit-card text-blue-500 w-4"></i>
-                                        Pagos con tarjeta:
-                                    </span>
-                                    <span class="font-semibold">{{ formatCurrency(cardSales) }}</span>
-                                </div>
-                                <div v-show="showCardDetails" class="pl-8 pr-2 py-1 text-xs space-y-2 border-l-2 border-gray-200 dark:border-gray-600 ml-1.5 my-1 max-h-40 overflow-y-auto custom-scrollbar">
-                                    <div v-for="payment in cardPaymentsList" :key="payment.id" class="flex justify-between items-center text-gray-600 dark:text-gray-400">
-                                        <div class="flex flex-col truncate pr-2">
-                                            <span class="font-medium text-gray-800 dark:text-gray-200">Folio #{{ payment.transaction?.folio || 'N/A' }}</span>
-                                        </div>
-                                        <span class="font-semibold">{{ formatCurrency(payment.amount) }}</span>
-                                    </div>
-                                    <div v-if="!cardPaymentsList.length" class="text-gray-400 italic">No hay pagos con tarjeta.</div>
-                                </div>
-                            </div>
 
-                            <!-- Pagos con Transferencia -->
-                            <div class="flex flex-col mt-1">
-                                <div class="flex justify-between items-center cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 p-1 -mx-1 rounded transition-colors" @click="showTransferDetails = !showTransferDetails">
-                                    <span class="flex items-center gap-2">
-                                        <i :class="showTransferDetails ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" class="text-[10px] text-gray-500 w-3 text-center"></i>
-                                        <i class="pi pi-arrows-h text-orange-500 w-4"></i>
-                                        Transferencias:
-                                    </span>
-                                    <span class="font-semibold">{{ formatCurrency(transferSales) }}</span>
+                        <!-- Otras Entradas (+) -->
+                        <div class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#2a2a2a] overflow-hidden">
+                            <button class="w-full flex justify-between items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" @click="showInflowDetails = !showInflowDetails">
+                                <span class="text-base font-bold text-green-600 dark:text-green-500 flex items-center gap-2">
+                                    <i :class="showInflowDetails ? 'pi pi-angle-up' : 'pi pi-angle-down'" class="text-sm"></i>
+                                    Entradas manuales
+                                </span>
+                                <span class="font-mono text-lg font-bold text-green-600 dark:text-green-500">+ {{ formatCurrency(inflows) }}</span>
+                            </button>
+                            <div v-show="showInflowDetails" class="px-4 py-2 border-t border-gray-100 dark:border-[#2a2a2a] bg-gray-50/50 dark:bg-[#1a1a1a]/50 max-h-40 overflow-y-auto custom-scrollbar">
+                                <div v-for="mov in inflowList" :key="mov.id" class="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-[#2a2a2a] last:border-0">
+                                    <span class="text-[11px] text-gray-600 dark:text-gray-400 truncate pr-2">{{ mov.description || 'Ingreso manual' }}</span>
+                                    <span class="font-mono text-base">{{ formatCurrency(mov.amount) }}</span>
                                 </div>
-                                <div v-show="showTransferDetails" class="pl-8 pr-2 py-1 text-xs space-y-2 border-l-2 border-gray-200 dark:border-gray-600 ml-1.5 my-1 max-h-40 overflow-y-auto custom-scrollbar">
-                                    <div v-for="payment in transferPaymentsList" :key="payment.id" class="flex justify-between items-center text-gray-600 dark:text-gray-400">
-                                        <div class="flex flex-col truncate pr-2">
-                                            <span class="font-medium text-gray-800 dark:text-gray-200">Folio #{{ payment.transaction?.folio || 'N/A' }}</span>
-                                        </div>
-                                        <span class="font-semibold">{{ formatCurrency(payment.amount) }}</span>
-                                    </div>
-                                    <div v-if="!transferPaymentsList.length" class="text-gray-400 italic">No hay transferencias registradas.</div>
+                                <div v-if="!inflowList.length" class="text-sm italic text-gray-400 py-2">Sin registros.</div>
+                            </div>
+                        </div>
+
+                        <!-- Salidas (-) -->
+                        <div class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#2a2a2a] overflow-hidden">
+                            <button class="w-full flex justify-between items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" @click="showOutflowDetails = !showOutflowDetails">
+                                <span class="text-base font-bold text-red-500 flex items-center gap-2">
+                                    <i :class="showOutflowDetails ? 'pi pi-angle-up' : 'pi pi-angle-down'" class="text-sm"></i>
+                                    Salidas manuales
+                                </span>
+                                <span class="font-mono text-lg font-bold text-red-500">- {{ formatCurrency(outflows) }}</span>
+                            </button>
+                            <div v-show="showOutflowDetails" class="px-4 py-2 border-t border-gray-100 dark:border-[#2a2a2a] bg-gray-50/50 dark:bg-[#1a1a1a]/50 max-h-40 overflow-y-auto custom-scrollbar">
+                                <div v-for="mov in outflowList" :key="mov.id" class="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-[#2a2a2a] last:border-0">
+                                    <span class="text-[11px] text-gray-600 dark:text-gray-400 truncate pr-2">{{ mov.description || 'Retiro manual' }}</span>
+                                    <span class="font-mono text-base text-red-400">-{{ formatCurrency(mov.amount) }}</span>
                                 </div>
+                                <div v-if="!outflowList.length" class="text-sm italic text-gray-400 py-2">Sin registros.</div>
+                            </div>
+                        </div>
+
+                        <!-- Total Esperado -->
+                        <div class="flex justify-between items-end mt-4 pt-4 border-t border-gray-200 dark:border-[#3a3a3a]">
+                            <span class="text-sm font-bold uppercase tracking-widest text-gray-500 m-0 mb-1">Total del sistema</span> 
+                            <span class="text-3xl font-light tracking-tight text-gray-900 dark:text-white leading-none">{{ formatCurrency(expectedCashTotal) }}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Bloque: Otros Métodos -->
+                <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                    <h6 class="text-sm uppercase tracking-widest font-bold text-gray-400 m-0 mb-4 flex items-center gap-2">
+                        <i class="pi pi-credit-card !text-sm"></i> Ingresos Digitales
+                    </h6>
+                    
+                    <div class="space-y-3">
+                        <!-- Tarjeta -->
+                        <div class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#2a2a2a] overflow-hidden">
+                            <button class="w-full flex justify-between items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" @click="showCardDetails = !showCardDetails">
+                                <span class="text-base font-bold text-blue-600 dark:text-blue-500 flex items-center gap-2">
+                                    <i :class="showCardDetails ? 'pi pi-angle-up' : 'pi pi-angle-down'" class="text-sm"></i>
+                                    Cobros con tarjeta
+                                </span>
+                                <span class="font-mono text-lg font-bold text-blue-600 dark:text-blue-500">{{ formatCurrency(cardSales) }}</span>
+                            </button>
+                            <div v-show="showCardDetails" class="px-4 py-2 border-t border-gray-100 dark:border-[#2a2a2a] bg-gray-50/50 dark:bg-[#1a1a1a]/50 max-h-40 overflow-y-auto custom-scrollbar">
+                                <div v-for="payment in cardPaymentsList" :key="payment.id" class="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-[#2a2a2a] last:border-0">
+                                    <span class="font-mono text-sm text-gray-600 dark:text-gray-400">#{{ payment.transaction?.folio || 'N/A' }}</span>
+                                    <span class="font-mono text-base">{{ formatCurrency(payment.amount) }}</span>
+                                </div>
+                                <div v-if="!cardPaymentsList.length" class="text-sm italic text-gray-400 py-2">Sin registros.</div>
+                            </div>
+                        </div>
+
+                        <!-- Transferencia -->
+                        <div class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#2a2a2a] overflow-hidden">
+                            <button class="w-full flex justify-between items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors" @click="showTransferDetails = !showTransferDetails">
+                                <span class="text-base font-bold text-orange-500 dark:text-orange-400 flex items-center gap-2">
+                                    <i :class="showTransferDetails ? 'pi pi-angle-up' : 'pi pi-angle-down'" class="text-sm"></i>
+                                    Transferencias/SPEI
+                                </span>
+                                <span class="font-mono text-lg font-bold text-orange-500 dark:text-orange-400">{{ formatCurrency(transferSales) }}</span>
+                            </button>
+                            <div v-show="showTransferDetails" class="px-4 py-2 border-t border-gray-100 dark:border-[#2a2a2a] bg-gray-50/50 dark:bg-[#1a1a1a]/50 max-h-40 overflow-y-auto custom-scrollbar">
+                                <div v-for="payment in transferPaymentsList" :key="payment.id" class="flex justify-between items-center py-1.5 border-b border-gray-100 dark:border-[#2a2a2a] last:border-0">
+                                    <span class="font-mono text-sm text-gray-600 dark:text-gray-400">#{{ payment.transaction?.folio || 'N/A' }}</span>
+                                    <span class="font-mono text-xs">{{ formatCurrency(payment.amount) }}</span>
+                                </div>
+                                <div v-if="!transferPaymentsList.length" class="text-sm italic text-gray-400 py-2">Sin registros.</div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <form @submit.prevent="submitFinalClose" class="space-y-4 mt-6 border-t dark:border-gray-700 pt-4">
-                    <div>
-                        <InputLabel for="closing-balance" value="Monto final en caja (conteo físico) *" class="!font-bold !text-base" />
-                        <InputNumber id="closing-balance" v-model="form.closing_cash_balance" mode="currency" currency="MXN" locale="es-MX" class="w-full mt-2" inputClass="w-full !text-xl !font-bold !py-3" placeholder="$0.00" />
-                        <InputError :message="form.errors.closing_cash_balance" class="mt-1" />
-                    </div>
+                <form @submit.prevent="submitFinalClose" class="space-y-6 pt-4 border-t border-gray-100 dark:border-[#3a3a3a]">
                     
-                    <!-- Aviso de Diferencia -->
-                    <div v-if="form.closing_cash_balance !== null" class="flex justify-between items-center font-bold text-base p-4 rounded-lg shadow-inner" 
-                        :class="{ 
-                            'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200': cashDifference !== 0, 
-                            'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200': cashDifference === 0 
-                        }">
-                        <div class="flex items-center gap-2">
-                            <i :class="cashDifference === 0 ? 'pi pi-check-circle' : 'pi pi-exclamation-triangle'"></i>
-                            <span>Diferencia de caja:</span>
+                    <div class="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-3xl border border-blue-100 dark:border-blue-900/30">
+                        <InputLabel for="closing-balance" value="Monto final físico en caja *" class="!text-xs !font-bold !uppercase !tracking-widest !text-blue-800 dark:!text-blue-400 !mb-3" />
+                        <InputNumber id="closing-balance" v-model="form.closing_cash_balance" mode="currency" currency="MXN" locale="es-MX" 
+                            class="w-full" 
+                            :pt="{ input: { root: { class: 'w-full !rounded-2xl !bg-white dark:!bg-[#232323] !border-blue-200 dark:!border-blue-800 focus:dark:!border-blue-500 transition-colors !py-4 !text-3xl !font-light !text-gray-900 dark:!text-white' } } }" 
+                            placeholder="$0.00" />
+                        <InputError :message="form.errors.closing_cash_balance" class="mt-2" />
+                        
+                        <!-- Aviso de Diferencia (Telemetría visual) -->
+                        <div v-if="form.closing_cash_balance !== null" class="mt-4 flex justify-between items-center p-4 rounded-2xl border" 
+                            :class="{ 
+                                'bg-orange-100 dark:bg-orange-900/40 border-orange-200 dark:border-orange-800 text-orange-800 dark:text-orange-400': cashDifference !== 0, 
+                                'bg-green-100 dark:bg-green-900/40 border-green-200 dark:border-green-800 text-green-800 dark:text-green-400': cashDifference === 0 
+                            }">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                                     :class="cashDifference === 0 ? 'bg-green-200 dark:bg-green-800' : 'bg-orange-200 dark:bg-orange-800 animate-pulse'">
+                                    <i :class="cashDifference === 0 ? 'pi pi-check' : 'pi pi-exclamation-triangle'" class="!text-lg text-current"></i>
+                                </div>
+                                <span class="font-bold text-lg tracking-tight m-0">Descuadre / Diferencia</span>
+                            </div>
+                            <span class="text-xl font-mono font-bold">{{ formatCurrency(cashDifference) }}</span>
                         </div>
-                        <span class="text-xl">{{ formatCurrency(cashDifference) }}</span>
                     </div>
 
                     <div>
-                        <InputLabel for="notes" value="Notas de cierre (opcional)" />
-                        <Textarea id="notes" v-model="form.notes" rows="2" class="w-full mt-1" placeholder="Ej. Hubo un sobrante de $50..." />
+                        <InputLabel for="notes" value="Notas de arqueo (Opcional)" class="!text-sm !uppercase !tracking-widest !text-gray-500 mb-2" />
+                        <Textarea id="notes" v-model="form.notes" rows="2" 
+                            class="w-full !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors resize-none !py-3" 
+                            placeholder="Ej. Faltante por dar cambio incorrecto, se dejó fondo extra..." />
                     </div>
 
-                    <div class="flex justify-end gap-3 mt-6 pt-2">
-                         <Button v-if="!isLastUser" type="button" label="Regresar" severity="secondary" @click="view = 'confirmClose'" text></Button>
-                         <Button type="submit" label="Confirmar cierre definitivo" icon="pi pi-lock" :loading="form.processing" severity="danger" class="w-full md:w-auto p-button-lg"></Button>
+                    <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-100 dark:border-[#3a3a3a]">
+                         <Button v-if="!isLastUser" type="button" label="Regresar" severity="secondary" @click="view = 'confirmClose'" text class="!rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold"></Button>
+                         <Button type="submit" label="Finalizar turno" icon="pi pi-check" :loading="form.processing" severity="danger" class="!rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold px-8 !py-3 shadow-[0_4px_10px_rgba(239,68,68,0.4)]"></Button>
                     </div>
                 </form>
             </div>
         </div>
          <template #footer v-if="!isLastUser && view === 'initial'">
-             <Button label="Cancelar" text severity="secondary" @click="closeModal" />
+             <Button label="Cancelar" text severity="secondary" @click="closeModal" class="!rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold" />
          </template>
     </Dialog>
 </template>

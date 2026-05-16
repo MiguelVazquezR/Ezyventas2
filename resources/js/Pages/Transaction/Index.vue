@@ -15,7 +15,7 @@ const props = defineProps({
     transactions: Object,
     filters: Object,
     availableTemplates: Array,
-    userBankAccounts: Array, // MODIFICACIÓN: Agregamos la prop de cuentas de banco
+    userBankAccounts: Array, 
 });
 
 const confirm = useConfirm();
@@ -42,6 +42,7 @@ const statuses = [
     { label: 'Cancelado', value: 'cancelado' },
     { label: 'Reembolsado', value: 'reembolsado' },
     { label: 'Apartado', value: 'apartado' },
+    { label: 'Cambiado', value: 'cambiado' },
     { label: 'Por entregar', value: 'por_entregar' },
     { label: 'En ruta', value: 'en_ruta' },
     { label: 'Entregado por pagar', value: 'entregado_por_pagar' },
@@ -71,7 +72,7 @@ const menuItems = computed(() => {
 
     const canCancelOrRefund = (() => {
         if (!transaction || !transaction.status) return false;
-        return !['cancelado', 'reembolsado'].includes(transaction.status);
+        return !['cancelado', 'reembolsado', 'cambiado'].includes(transaction.status);
     })();
 
     return [
@@ -117,7 +118,6 @@ const onRowClick = (event) => {
         return;
     }
     
-    // Obtenemos la preferencia global dinámica configurada para ventas
     const clickAction = page.props.auth.preferences?.sale_table_row_click_action || 'Vista lateral con algunos detalles';
 
     if (clickAction === 'Redirección a vista de detalles') {
@@ -145,14 +145,12 @@ const confirmDeleteTransaction = () => {
     });
 };
 
-// --- LÓGICA UNIFICADA Y DELEGADA ---
 const initiateCancellation = (transaction) => {
     selectedTransactionForMenu.value = transaction;
     
     const totalPaid = (Array.isArray(transaction.payments) ? transaction.payments : [])
         .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
 
-    // Caso 1: No hay pagos, cancelación directa
     if (totalPaid <= 0.01) {
         let message = `¿Seguro que quieres cancelar la venta #${transaction.folio}? Se liberará el inventario reservado.`;
         if (transaction.status === 'apartado') {
@@ -175,7 +173,6 @@ const initiateCancellation = (transaction) => {
         return;
     }
 
-    // Caso 2: Hay pagos, el Modal se encarga del resto
     isCancellationModalVisible.value = true;
 };
 
@@ -211,11 +208,31 @@ watch(dateRange, (newVal) => {
     if (!newVal || (Array.isArray(newVal) && newVal[0] && newVal[1])) fetchData({ page: 1 });
 });
 
+// Helper para colores e íconos de canales de venta
+const getChannelConfig = (channel) => {
+    const map = {
+        'punto_de_venta': { icon: 'pi pi-shop', severity: 'info', label: 'Punto de venta' },
+        'tienda_en_linea': { icon: 'pi pi-shopping-cart', severity: 'success', label: 'Tienda en línea' },
+        'orden_de_servicio': { icon: 'pi pi-wrench', severity: 'warn', label: 'Orden de servicio' },
+        'cotizacion': { icon: 'pi pi-file-check', severity: 'secondary', label: 'Cotización' },
+        'manual': { icon: 'pi pi-pen-to-square', severity: 'secondary', label: 'Manual' },
+        'abono_a_saldo': { icon: 'pi pi-wallet', severity: 'success', label: 'Abono a saldo' },
+        'whatsapp': { icon: 'pi pi-whatsapp', severity: 'success', label: 'WhatsApp' }
+    };
+    
+    if (!channel) return { icon: 'pi pi-tag', severity: 'secondary', label: 'Desconocido' };
+    return map[channel] || { 
+        icon: 'pi pi-tag', 
+        severity: 'secondary', 
+        label: channel.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) 
+    };
+};
+
 const getStatusSeverity = (status) => {
     const map = { 
         completado: 'success', pendiente: 'warn', cancelado: 'danger', 
         reembolsado: 'info', apartado: 'warn', por_entregar: 'info',
-        en_ruta: 'info', entregado_por_pagar: 'warn'
+        en_ruta: 'info', entregado_por_pagar: 'warn', cambiado: 'secondary'
     };
     return map[status] || 'secondary';
 };
@@ -224,6 +241,11 @@ const formatStatusLabel = (status) => {
     if (!status) return '';
     const text = status.replace(/_/g, ' ');
     return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
+};
+
+const getOrderTagLabel = (status) => {
+    const pedidoStatuses = ['por_entregar', 'en_ruta', 'entregado_por_pagar'];
+    return pedidoStatuses.includes(status) ? 'Pedido' : 'Comanda';
 };
 
 const formatDate = (dateString) => {
@@ -239,35 +261,82 @@ const formatCurrency = (value) => {
      if (isNaN(numberValue)) return '';
      return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(numberValue);
 };
+
+// --- TESLA UI PASS-THROUGH (PT) CONFIGURATIONS ---
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl !p-2 !shadow-2xl' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' }
+};
+
+const dataTablePt = {
+    root: { class: 'border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden' },
+    headerRow: { class: 'bg-gray-50 dark:bg-[#1a1a1a]' },
+    headerCell: { class: 'bg-transparent text-[10px] uppercase tracking-widest text-gray-500 font-bold py-4 px-4 border-b border-gray-100 dark:border-[#3a3a3a]' },
+    bodyRow: { class: 'dark:bg-[#232323] hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors text-sm text-gray-700 dark:text-gray-300 group' },
+    bodyCell: { class: 'py-4 px-4 border-b border-gray-50 dark:border-[#2a2a2a]' },
+    paginator: { root: { class: 'dark:bg-[#1a1a1a] border-t border-gray-100 dark:border-[#3a3a3a] p-3' } }
+};
+
+const inputPt = {
+    root: { class: '!rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2 !text-sm w-full' }
+};
+
+const selectPt = {
+    root: { class: '!rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors w-full' },
+    label: { class: '!text-sm !py-2' },
+    panel: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-xl' }
+};
+
+const datePickerPt = {
+    input: inputPt,
+    panel: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-xl' }
+};
+
+const tagPt = {
+    root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' },
+    icon: { class: '!text-[10px] !mr-1.5' }
+};
+
 </script>
 
 <template>
     <AppLayout title="Historial de ventas">
-        <div class="p-4 md:p-6 lg:p-8 bg-surface-100 dark:bg-surface-900 min-h-full">
-            <div class="bg-white dark:bg-surface-800 rounded-lg shadow-md p-4 md:p-6">
-                <!-- Header con Título y Filtros -->
-                <div class="mb-6 flex flex-col gap-4">
-                    <div class="flex justify-between items-center">
-                        <h1 class="text-2xl font-bold text-surface-800 dark:text-surface-200">Historial de ventas</h1>
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+            
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                
+                <!-- Header con Título -->
+                <div class="mb-8">
+                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">Historial de ventas</h1>
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)] animate-pulse"></span>
+                        Registro operativo y financiero
+                    </p>
+                </div>
+                
+                <!-- Barra de Herramientas de Filtros (Estilo Panel de Control) -->
+                <div class="flex flex-col md:flex-row gap-4 items-center bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] mb-6">
+                    <!-- Buscador -->
+                    <IconField iconPosition="left" class="w-full md:w-1/3">
+                        <InputIcon class="pi pi-search !text-sm text-gray-400 dark:text-gray-500"></InputIcon>
+                        <InputText v-model="searchTerm" placeholder="Buscar por folio o cliente..." :pt="inputPt" class="!pl-10" />
+                    </IconField>
+
+                    <!-- Filtro de Fechas -->
+                    <div class="w-full md:w-1/4 flex items-center gap-2">
+                        <DatePicker v-model="dateRange" selectionMode="range" :manualInput="false" placeholder="Rango de fechas" :pt="datePickerPt" showButtonBar class="w-full flex-1" />
+                        <Button v-if="dateRange && (Array.isArray(dateRange) ? dateRange[0] : dateRange)" 
+                            icon="pi pi-times" severity="secondary" text rounded 
+                            @click="dateRange = null" 
+                            v-tooltip.top="'Limpiar fechas'"
+                            class="!w-10 !h-10 !p-0 shrink-0 !text-gray-400 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] transition-colors" />
                     </div>
-                    
-                    <!-- Barra de Herramientas de Filtros -->
-                    <div class="flex flex-col md:flex-row gap-4 items-end md:items-center">
-                        <!-- Buscador -->
-                        <IconField iconPosition="left" class="w-full md:w-1/3">
-                            <InputIcon class="pi pi-search"></InputIcon>
-                            <InputText v-model="searchTerm" placeholder="Buscar por folio o cliente..." class="w-full" />
-                        </IconField>
 
-                        <!-- Filtro de Fechas -->
-                        <div class="w-full md:w-1/4">
-                            <DatePicker v-model="dateRange" selectionMode="range" :manualInput="false" placeholder="Rango de fechas" class="w-full" showButtonBar />
-                        </div>
-
-                        <!-- Filtro de Estatus -->
-                        <div class="w-full md:w-1/4">
-                            <Select v-model="statusFilter" :options="statuses" optionLabel="label" optionValue="value" placeholder="Filtrar por estatus" class="w-full" showClear />
-                        </div>
+                    <!-- Filtro de Estatus -->
+                    <div class="w-full md:w-1/4">
+                        <Select v-model="statusFilter" :options="statuses" optionLabel="label" optionValue="value" placeholder="Filtrar por estatus" :pt="selectPt" showClear />
                     </div>
                 </div>
 
@@ -275,61 +344,82 @@ const formatCurrency = (value) => {
                 <DataTable :value="transactions.data" v-model:selection="selectedTransactions" lazy paginator
                     :totalRecords="transactions.total" :rows="transactions.per_page"
                     :rowsPerPageOptions="[20, 50, 100, 200]" dataKey="id" @page="onPage" @sort="onSort" removableSort
-                    tableStyle="min-width: 60rem"
-                    rowHover
-                    @row-click="onRowClick"
-                    class="cursor-pointer"
+                    rowHover @row-click="onRowClick" class="cursor-pointer"
+                    :pt="dataTablePt"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} ventas">
                     
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
-                    <Column field="folio" header="Folio" sortable></Column>
-                    <Column field="created_at" header="Fecha y Hora" sortable>
-                        <template #body="{ data }"> {{ formatDate(data.created_at) }} </template>
+                    
+                    <Column field="folio" header="Folio" sortable>
+                        <template #body="{ data }"> 
+                            <span class="font-mono font-bold dark:text-gray-300">{{ data.folio }}</span> 
+                        </template>
                     </Column>
+                    
+                    <Column field="created_at" header="Fecha y Hora" sortable>
+                        <template #body="{ data }"> 
+                            <span class="text-gray-600 dark:text-gray-400">{{ formatDate(data.created_at) }}</span> 
+                        </template>
+                    </Column>
+                    
                     <Column field="customer.name" header="Cliente" sortable>
                         <template #body="{ data }">
-                            <Link v-if="data.customer" :href="route('customers.show', data.customer.id)" class="text-primary-600 hover:underline">
+                            <Link v-if="data.customer" :href="route('customers.show', data.customer.id)" class="font-medium text-gray-900 dark:text-gray-100 hover:text-primary-500 transition-colors m-0 block w-max">
                                 {{ data.customer.name }}
                             </Link>
-                            <span v-else-if="data.contact_info && data.contact_info.name" class="flex items-center gap-2">
-                                {{ data.contact_info.name }}
-                                <Tag severity="info" value="Comanda" class="!text-[10px] !px-1.5 !py-0.5" />
-                            </span>
-                            <span v-else>Público en general</span>
+                            <div v-else-if="data.contact_info && data.contact_info.name" class="flex items-center gap-2 m-0">
+                                <span class="font-medium text-gray-900 dark:text-gray-100">{{ data.contact_info.name }}</span>
+                                <Tag severity="info" :value="getOrderTagLabel(data.status)" class="!text-[9px] !px-1.5 !py-0.5" />
+                            </div>
+                            <span v-else class="text-gray-500 italic m-0">Público en general</span>
                         </template>
                     </Column>
+                    
                     <Column field="channel" header="Canal" sortable>
                          <template #body="{ data }">
-                            <span class="capitalize">{{ (data.channel || '').replace(/_/g, ' ') }}</span>
+                            <Tag :value="getChannelConfig(data.channel).label" 
+                                 :icon="getChannelConfig(data.channel).icon" 
+                                 :severity="getChannelConfig(data.channel).severity"
+                                 :pt="tagPt" />
                         </template>
                     </Column>
+                    
                      <Column field="total" header="Total Venta" sortable class="text-right">
-                        <template #body="{ data }"> {{ formatCurrency(data.total) }}
+                        <template #body="{ data }"> 
+                            <span class="font-light tracking-tight text-lg dark:text-white">{{ formatCurrency(data.total) }}</span>
                         </template>
                     </Column>
+                    
                     <Column field="status" header="Estatus" sortable>
                         <template #body="{ data }">
-                            <Tag :value="formatStatusLabel(data.status)" :severity="getStatusSeverity(data.status)" />
+                            <Tag :value="formatStatusLabel(data.status)" :severity="getStatusSeverity(data.status)" :pt="tagPt" />
                         </template>
                     </Column>
+                    
                     <Column field="user.name" header="Cajero" sortable>
                          <template #body="{ data }">
-                            {{ data.user?.name || 'N/A' }}
+                            <span class="text-xs text-gray-600 dark:text-gray-400">{{ data.user?.name || 'N/A' }}</span>
                         </template>
                     </Column>
+                    
                     <Column headerStyle="width: 5rem; text-align: center">
                         <template #body="{ data }"> 
                             <Button @click.stop="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
-                                text rounded severity="secondary" /> 
+                                text rounded class="!w-8 !h-8 !text-gray-400 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors" /> 
                         </template>
                     </Column>
+                    
                     <template #empty>
-                        <div class="text-center py-4">No hay ventas registradas que coincidan con la búsqueda.</div>
+                        <div class="flex flex-col items-center justify-center text-center py-10">
+                            <i class="pi pi-inbox !text-3xl text-gray-400 mb-3"></i>
+                            <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin resultados</p>
+                            <p class="text-xs text-gray-400 mt-1">No hay ventas que coincidan con la búsqueda actual.</p>
+                        </div>
                     </template>
                 </DataTable>
 
-                <Menu ref="menu" :model="menuItems" :popup="true" />
+                <Menu ref="menu" :model="menuItems" :popup="true" :pt="menuPt" />
             </div>
         </div>
 
@@ -337,7 +427,6 @@ const formatCurrency = (value) => {
         
         <TransactionDrawer v-model:visible="isDrawerVisible" :transaction="drawerTransaction" />
         
-        <!-- MODIFICACIÓN: Pasamos userBankAccounts al modal -->
         <TransactionCancellationModal 
             v-model:visible="isCancellationModalVisible" 
             :transaction="selectedTransactionForMenu" 

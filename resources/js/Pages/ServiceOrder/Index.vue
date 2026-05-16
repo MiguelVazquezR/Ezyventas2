@@ -1,15 +1,14 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { router, usePage } from '@inertiajs/vue3';
+import { router, usePage, Head } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ImportServiceOrdersModal from './Partials/ImportServiceOrdersModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import { usePermissions } from '@/Composables';
 
-// Nuevas importaciones para el Drawer
-import Drawer from 'primevue/drawer';
-import Divider from 'primevue/divider';
+// Importamos el nuevo componente
+import ServiceOrderDrawerDetail from './Partials/ServiceOrderDrawerDetail.vue';
 
 const props = defineProps({
     serviceOrders: Object,
@@ -18,25 +17,29 @@ const props = defineProps({
 });
 
 const page = usePage();
-
 const confirm = useConfirm();
-
-// composables
 const { hasPermission } = usePermissions();
 
+// --- Estado y Lógica ---
 const selectedOrders = ref([]);
 const searchTerm = ref(props.filters.search || '');
+const showImportModal = ref(false);
+
+const headerMenu = ref();
+const toggleHeaderMenu = (event) => {
+    headerMenu.value.toggle(event);
+};
+
+const splitButtonItems = ref([
+    { label: 'Exportar Órdenes', icon: 'pi pi-download', command: () => window.location.href = route('import-export.service-orders.export') },
+]);
+
 const menu = ref();
 const selectedOrderForMenu = ref(null);
-const showImportModal = ref(false);
 
 // --- Lógica del Modal de Impresión ---
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
-
-// --- Lógica del Drawer (Vista Rápida) ---
-const isDrawerVisible = ref(false);
-const drawerOrder = ref(null);
 
 const openPrintModal = (serviceOrder) => {
     printDataSource.value = {
@@ -46,24 +49,29 @@ const openPrintModal = (serviceOrder) => {
     isPrintModalVisible.value = true;
 };
 
-const headerMenu = ref();
-const toggleHeaderMenu = (event) => {
-    headerMenu.value.toggle(event);
-};
-const splitButtonItems = ref([
-    { label: 'Exportar Órdenes', icon: 'pi pi-download', command: () => window.location.href = route('import-export.service-orders.export') },
-]);
+// --- Estado para el Drawer (Panel lateral) ---
+const isDrawerVisible = ref(false);
+const drawerOrder = ref(null);
 
+// --- Lógica de Acciones ---
 const deleteSingleOrder = () => {
+    if (!selectedOrderForMenu.value) return;
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar esta orden de servicio?`,
         header: 'Confirmar eliminación',
         icon: 'pi pi-info-circle',
         acceptClass: 'p-button-danger',
+        acceptLabel: 'Sí, eliminar',
+        rejectLabel: 'Cancelar',
         accept: () => {
             router.delete(route('service-orders.destroy', selectedOrderForMenu.value.id), {
                 preserveScroll: true,
-                onSuccess: () => selectedOrders.value = selectedOrders.value.filter(o => o.id !== selectedOrderForMenu.value.id),
+                onSuccess: () => {
+                    selectedOrders.value = selectedOrders.value.filter(o => o.id !== selectedOrderForMenu.value.id);
+                    if (drawerOrder.value?.id === selectedOrderForMenu.value.id) {
+                        isDrawerVisible.value = false;
+                    }
+                }
             });
         }
     });
@@ -74,10 +82,17 @@ const deleteSelectedOrders = () => {
         message: `¿Estás seguro de que quieres eliminar las ${selectedOrders.value.length} órdenes seleccionadas?`,
         header: 'Eliminación Masiva',
         icon: 'pi pi-exclamation-triangle',
+        acceptClass: 'p-button-danger',
+        acceptLabel: 'Sí, eliminar',
+        rejectLabel: 'Cancelar',
         accept: () => {
             const idsToDelete = selectedOrders.value.map(o => o.id);
             router.post(route('service-orders.batchDestroy'), { ids: idsToDelete }, {
-                onSuccess: () => selectedOrders.value = [],
+                onSuccess: () => {
+                    selectedOrders.value = [];
+                    isDrawerVisible.value = false;
+                },
+                preserveScroll: true,
             });
         }
     });
@@ -100,6 +115,7 @@ const toggleMenu = (event, data) => {
     menu.value.toggle(event);
 };
 
+// --- Lógica de la Tabla ---
 const fetchData = (options = {}) => {
     const queryParams = {
         page: options.page || 1,
@@ -117,26 +133,9 @@ watch(searchTerm, () => fetchData());
 
 // --- Funciones de formato y visualización ---
 const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
+    if (!dateString) return '--';
     const date = new Date(dateString);
     return date.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' });
-};
-
-const formatFriendlyDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    try {
-        const d = new Date(dateString);
-        const day = d.getDate();
-        const month = new Intl.DateTimeFormat('es-MX', { month: 'long' }).format(d);
-        let hour = d.getHours();
-        const minute = d.getMinutes().toString().padStart(2, '0');
-        const ampm = hour >= 12 ? 'pm' : 'am';
-        hour = hour % 12;
-        hour = hour ? hour : 12;
-        return `${day} de ${month}, ${hour}:${minute}${ampm}`;
-    } catch (e) {
-        return dateString;
-    }
 };
 
 const formatCurrency = (value) => {
@@ -159,246 +158,215 @@ const getStatusSeverity = (status) => {
     return map[status] || 'secondary';
 };
 
-// Helper para obtener pagos
-const getOrderTotalPaid = (order) => {
-    return (Array.isArray(order?.transaction?.payments) ? order.transaction.payments : [])
-        .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-};
-
-// Helper para obtener saldo pendiente
-const getOrderPending = (order) => {
-    if (!order) return 0;
-    const total = parseFloat(order.final_total || 0);
-    const paid = getOrderTotalPaid(order);
-    return Math.max(0, total - paid);
-};
-
 // --- NAVEGACIÓN Y APERTURA DEL DRAWER ---
 const onRowClick = (event) => {
     const target = event.originalEvent.target;
-    // Evitamos navegar si se hizo clic en un botón, checkbox o enlace
     if (target.closest('button') || target.closest('.p-button') || target.closest('.p-checkbox') || target.closest('a')) {
         return;
     }
 
-    // 1. Obtenemos la preferencia del usuario desde los props globales
-    // Si no ha configurado nada, usamos el Drawer por defecto
     const clickAction = page.props.auth.preferences?.service_order_table_row_click_action || 'Vista lateral con algunos detalles';
 
-    // 2. Evaluamos la cadena de texto exacta configurada en las opciones
     if (clickAction === 'Redirección a vista de detalles') {
         router.get(route('service-orders.show', event.data.id));
     } else {
-        // Abrir Drawer (Comportamiento por defecto o seleccionado)
         drawerOrder.value = event.data;
         isDrawerVisible.value = true;
     }
-    
+};
+
+const goToDetails = (id) => {
+    router.visit(route('service-orders.show', id));
+};
+
+const goToEdit = (id) => {
+    router.visit(route('service-orders.edit', id));
+};
+
+// --- TESLA UI PASS-THROUGH (PT) CONFIGURATIONS ---
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl !p-2 !shadow-2xl' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' }
+};
+
+const dataTablePt = {
+    root: { class: 'border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden' },
+    headerRow: { class: 'bg-gray-50 dark:bg-[#1a1a1a]' },
+    headerCell: { class: 'bg-transparent text-[10px] uppercase tracking-widest text-gray-500 font-bold py-4 px-4 border-b border-gray-100 dark:border-[#3a3a3a]' },
+    bodyRow: { class: 'dark:bg-[#232323] hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors text-sm text-gray-700 dark:text-gray-300 group' },
+    bodyCell: { class: 'py-4 px-4 border-b border-gray-50 dark:border-[#2a2a2a]' },
+    paginator: { root: { class: 'dark:bg-[#1a1a1a] border-t border-gray-100 dark:border-[#3a3a3a] p-3' } }
+};
+
+const inputPt = {
+    root: { class: '!rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2 !text-sm w-full' }
+};
+
+const tagPt = {
+    root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' }
+};
+
+const drawerPt = {
+    root: { class: 'dark:!bg-[#232323] !border-l-gray-100 dark:!border-l-[#3a3a3a]' },
+    header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 py-5' },
+    title: { class: 'text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0' },
+    content: { class: 'dark:bg-[#232323] p-0 custom-scrollbar' }, 
+    closeButton: { class: 'hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors rounded-full w-8 h-8 flex items-center justify-center' },
+    closeButtonIcon: { class: 'dark:text-gray-400 !text-sm' },
+    mask: { class: 'backdrop-blur-sm bg-gray-900/40 dark:bg-black/60' }
 };
 </script>
 
 <template>
-    <AppLayout title="Órdenes de servicio">
-        <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
-                <!-- Header -->
-                <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Órdenes de servicio</h1>
-                    <div class="flex items-center gap-2">
-                        <IconField iconPosition="left" class="w-full md:w-auto">
-                            <InputIcon class="pi pi-search"></InputIcon>
-                            <InputText v-model="searchTerm" placeholder="Buscar por folio, cliente o equipo..."
-                                class="w-full" />
-                        </IconField>
-                        <ButtonGroup>
-                            <Button v-if="hasPermission('services.orders.create')" label="Nueva orden" icon="pi pi-plus"
-                                @click="router.get(route('service-orders.create'))" severity="warning" />
-                            <Button v-if="hasPermission('services.orders.import_export')" icon="pi pi-chevron-down"
-                                @click="toggleHeaderMenu" severity="warning" />
-                        </ButtonGroup>
-                        <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" />
+    <Head title="Órdenes de servicio" />
+    <AppLayout>
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+            
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                
+                <!-- Header con Título -->
+                <div class="mb-8">
+                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">Órdenes de servicio</h1>
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)] animate-pulse"></span>
+                        Gestión de reparaciones y mantenimientos
+                    </p>
+                </div>
+
+                <!-- Barra de Herramientas de Filtros (Estilo Panel de Control) -->
+                <div class="flex flex-col md:flex-row gap-4 items-center justify-between bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] mb-6">
+                    <IconField iconPosition="left" class="w-full md:w-1/2 lg:w-1/3">
+                        <InputIcon class="pi pi-search !text-sm text-gray-400 dark:text-gray-500"></InputIcon>
+                        <InputText v-model="searchTerm" placeholder="Buscar por folio, cliente o equipo..." :pt="inputPt" class="!pl-10" />
+                    </IconField>
+                    
+                    <div class="flex items-center gap-2 w-full md:w-auto">
+                        <Button v-if="hasPermission('services.orders.create')" label="Nueva orden"
+                            icon="pi pi-plus" @click="router.get(route('service-orders.create'))"
+                            severity="warning"
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider flex-grow md:flex-none" />
+                        
+                        <Button v-if="hasPermission('services.orders.import_export')" icon="pi pi-chevron-down"
+                            @click="toggleHeaderMenu" severity="warning" class="!rounded-xl !size-9 !p-0 shrink-0" />
+                        
+                        <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" :pt="menuPt" />
                     </div>
                 </div>
 
-                <!-- Barra de Acciones Masivas -->
-                <div v-if="selectedOrders.length > 0"
-                    class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-2 mb-4 flex justify-between items-center">
-                    <span class="font-semibold text-sm text-blue-800 dark:text-blue-200">{{ selectedOrders.length }}
-                        órdenes seleccionada(s)</span>
-                    <Button @click="deleteSelectedOrders" label="Eliminar" icon="pi pi-trash" size="small"
-                        severity="danger" outlined />
+                <!-- Barra de Acciones Masivas Contextual -->
+                <div v-if="selectedOrders.length > 0" class="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl p-3 mb-6 flex flex-col md:flex-row justify-between items-center gap-4 transition-all duration-300">
+                    <span class="font-bold text-xs uppercase tracking-widest text-blue-700 dark:text-blue-300 m-0">
+                        <i class="pi pi-check-square mr-1"></i> {{ selectedOrders.length }} seleccionados
+                    </span>
+                    <div class="flex items-center gap-2 w-full md:w-auto overflow-x-auto custom-scrollbar pb-1 md:pb-0">
+                        <Button @click="deleteSelectedOrders" label="Eliminar"
+                            icon="pi pi-trash" size="small" severity="danger" outlined 
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider shrink-0" />
+                    </div>
                 </div>
 
                 <!-- Tabla de Órdenes -->
                 <DataTable :value="serviceOrders.data" v-model:selection="selectedOrders" lazy paginator
-                    :totalRecords="serviceOrders.total" :rows="serviceOrders.per_page"
-                    :rowsPerPageOptions="[20, 50, 100, 200]" dataKey="id" @page="onPage" @sort="onSort" removableSort
-                    tableStyle="min-width: 60rem"
+                    :totalRecords="serviceOrders.total" :rows="serviceOrders.per_page" :rowsPerPageOptions="[20, 50, 100, 200]"
+                    dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 60rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} órdenes"
-                    rowHover
-                    class="cursor-pointer"
-                    @row-click="onRowClick">
+                    class="cursor-pointer" rowHover @row-click="onRowClick" :pt="dataTablePt">
+
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
-                    <Column field="folio" header="Folio" sortable></Column>
-                    <Column field="customer_name" header="Cliente" sortable></Column>
-                    <Column field="item_description" header="Equipo" sortable></Column>
-                    <Column field="status" header="Estatus" sortable>
+                    
+                    <Column field="folio" header="Folio" sortable>
                         <template #body="{ data }">
-                            <Tag :value="(data.status || '').replace('_', ' ')" :severity="getStatusSeverity(data.status)"
-                                class="capitalize" />
+                            <span class="font-mono font-bold dark:text-gray-300">{{ data.folio }}</span>
                         </template>
                     </Column>
-                    <Column field="received_at" header="Fecha de recepción" sortable>
-                        <template #body="{ data }"> {{ formatDate(data.received_at) }} </template>
+                    
+                    <Column field="customer_name" header="Cliente" sortable>
+                        <template #body="{ data }">
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ data.customer_name || 'Público general' }}</span>
+                        </template>
                     </Column>
+                    
+                    <Column field="item_description" header="Equipo" sortable>
+                        <template #body="{ data }">
+                            <span class="text-gray-600 dark:text-gray-400 truncate max-w-[200px] block" :title="data.item_description">
+                                {{ data.item_description }}
+                            </span>
+                        </template>
+                    </Column>
+                    
+                    <Column field="status" header="Estatus" sortable>
+                        <template #body="{ data }">
+                            <Tag :value="(data.status || '').replace('_', ' ')" :severity="getStatusSeverity(data.status)" class="capitalize" :pt="tagPt" />
+                        </template>
+                    </Column>
+                    
+                    <Column field="received_at" header="Fecha recepción" sortable>
+                        <template #body="{ data }"> 
+                            <span class="text-gray-600 dark:text-gray-400">{{ formatDate(data.received_at) }}</span> 
+                        </template>
+                    </Column>
+                    
                     <Column field="promised_at" header="Fecha promesa" sortable>
-                        <template #body="{ data }"> {{ formatDate(data.promised_at) }} </template>
+                        <template #body="{ data }"> 
+                            <span class="text-gray-600 dark:text-gray-400">{{ formatDate(data.promised_at) }}</span> 
+                        </template>
                     </Column>
+                    
                     <Column field="final_total" header="Total" sortable>
-                        <template #body="{ data }"> {{ formatCurrency(data.final_total) }} </template>
+                        <template #body="{ data }">
+                            <span class="font-light tracking-tight text-lg dark:text-white">{{ formatCurrency(data.final_total) }}</span>
+                        </template>
                     </Column>
+                    
                     <Column headerStyle="width: 5rem; text-align: center">
-                        <template #body="{ data }"> <Button @click.stop="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
-                                text rounded severity="secondary" /> </template>
+                        <template #body="{ data }"> 
+                            <Button @click.stop="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded
+                                class="!w-8 !h-8 !text-gray-400 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors" aria-haspopup="true" aria-controls="overlay_menu" /> 
+                        </template>
                     </Column>
+                    
                     <template #empty>
-                        <div class="text-center py-4">No hay órdenes de servicio registrados.</div>
+                        <div class="flex flex-col items-center justify-center text-center py-10">
+                            <i class="pi pi-clipboard !text-3xl text-gray-400 mb-3"></i>
+                            <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin resultados</p>
+                            <p class="text-xs text-gray-400 mt-1">No hay órdenes de servicio que coincidan con la búsqueda actual.</p>
+                        </div>
                     </template>
                 </DataTable>
 
-                <Menu ref="menu" :model="menuItems" :popup="true" />
+                <Menu ref="menu" id="overlay_menu" :model="menuItems" :popup="true" :pt="menuPt" />
             </div>
         </div>
 
-        <!-- Modal de Importación -->
-        <ImportServiceOrdersModal :visible="showImportModal" @update:visible="showImportModal = false" />
-
-        <!-- Modal de Impresión -->
-        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
-            :available-templates="availableTemplates" />
-
-        <!-- DRAWER DE VISTA RÁPIDA -->
-        <Drawer v-model:visible="isDrawerVisible" position="right" class="!w-full md:!w-[400px]">
+        <!-- Drawer de Detalles de la Orden Aislado -->
+        <Drawer v-model:visible="isDrawerVisible" position="right" class="w-full md:!w-[30rem]" :pt="drawerPt">
             <template #header>
                 <div class="flex items-center gap-2">
-                    <span class="font-bold text-lg">Resumen Orden #{{ drawerOrder?.folio }}</span>
+                    <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
+                        <i class="pi pi-clipboard text-blue-500 !text-sm"></i>
+                    </div>
+                    <span class="text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0">Detalles rápidos</span>
                 </div>
             </template>
             
-            <div v-if="drawerOrder" class="flex flex-col gap-6">
-                <!-- Información General -->
-                <div class="flex flex-col gap-2">
-                    <div class="flex justify-between items-center">
-                        <span class="text-gray-500 text-sm">Estatus</span>
-                        <Tag :value="(drawerOrder.status || '').replace('_', ' ')" :severity="getStatusSeverity(drawerOrder.status)" class="capitalize" />
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-gray-500 text-sm">Ingreso</span>
-                        <span class="font-medium text-sm">{{ formatFriendlyDate(drawerOrder.received_at) }}</span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-gray-500 text-sm">Entrega Promesa</span>
-                        <span class="font-medium text-sm text-primary-600 dark:text-primary-400">
-                            {{ formatFriendlyDate(drawerOrder.promised_at) }}
-                        </span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-gray-500 text-sm">Cliente</span>
-                        <span class="font-medium text-sm text-right truncate max-w-[200px]" :title="drawerOrder.customer_name">
-                            {{ drawerOrder.customer_name || 'Público en general' }}
-                        </span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-gray-500 text-sm">Técnico Asignado</span>
-                        <span class="font-medium text-sm text-right">
-                            {{ drawerOrder.technician_name || 'Sin asignar' }}
-                        </span>
-                    </div>
-                </div>
-
-                <Divider class="!my-0" />
-
-                <!-- Datos del Equipo -->
-                <div class="flex flex-col gap-2 bg-blue-50 dark:bg-blue-900/10 p-3 rounded-lg border border-blue-100 dark:border-blue-900/30">
-                    <span class="text-gray-500 text-sm font-bold uppercase tracking-wider">Equipo / Dispositivo</span>
-                    <span class="font-semibold text-gray-800 dark:text-gray-200">{{ drawerOrder.item_description }}</span>
-                    <div v-if="drawerOrder.reported_problems" class="mt-2 text-sm text-gray-600 dark:text-gray-400 border-t border-blue-200 dark:border-blue-800/50 pt-2">
-                        <span class="font-semibold block mb-1">Falla reportada:</span>
-                        {{ drawerOrder.reported_problems }}
-                    </div>
-                </div>
-
-                <Divider class="!my-0" />
-
-                <!-- Lista de Artículos / Conceptos -->
-                <div class="flex flex-col gap-2">
-                    <span class="text-gray-500 text-sm font-bold uppercase tracking-wider">Conceptos (Refacciones/Servicios)</span>
-                    <ul v-if="drawerOrder.items && drawerOrder.items.length" class="flex flex-col gap-3">
-                        <li v-for="item in drawerOrder.items" :key="item.id" class="flex justify-between text-sm">
-                            <div class="flex flex-col flex-1">
-                                <span class="font-medium leading-tight">
-                                    <span class="text-gray-500 mr-1">{{ Math.round(item.quantity) }}x</span>
-                                    {{ item.description }}
-                                </span>
-                            </div>
-                            <span class="font-semibold ml-2">{{ formatCurrency(item.line_total) }}</span>
-                        </li>
-                    </ul>
-                    <div v-else class="text-sm text-gray-400 italic">
-                        No hay artículos registrados o no están cargados en esta vista.
-                    </div>
-                </div>
-
-                <Divider class="!my-0" />
-
-                <!-- Historial de Pagos -->
-                <div class="flex flex-col gap-2">
-                    <span class="text-gray-500 text-sm font-bold uppercase tracking-wider">Historial de Pagos</span>
-                    <ul v-if="drawerOrder.transaction && drawerOrder.transaction.payments && drawerOrder.transaction.payments.length" class="flex flex-col gap-3 relative border-l-2 border-gray-200 dark:border-gray-700 ml-2 pl-4 py-1">
-                        <li v-for="payment in drawerOrder.transaction.payments" :key="payment.id" class="flex flex-col text-sm relative">
-                            <!-- Timeline dot -->
-                            <div class="absolute w-2 h-2 bg-primary-500 rounded-full -left-[21px] top-1.5"></div>
-                            
-                            <div class="flex justify-between items-start">
-                                <span class="font-medium capitalize">{{ (payment.payment_method || 'Desconocido').replace(/_/g, ' ') }}</span>
-                                <span class="font-bold text-green-600 dark:text-green-400">{{ formatCurrency(payment.amount) }}</span>
-                            </div>
-                            <span class="text-xs text-gray-500">{{ formatFriendlyDate(payment.created_at) }}</span>
-                        </li>
-                    </ul>
-                    <div v-else class="text-sm text-gray-400 italic">No se han registrado pagos para esta orden.</div>
-                </div>
-
-                <!-- Resumen Financiero Total -->
-                <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg flex flex-col gap-1 border dark:border-gray-700">
-                    <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                        <span>Total de la orden:</span>
-                        <span>{{ formatCurrency(drawerOrder.final_total) }}</span>
-                    </div>
-                    <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                        <span>Abonado (Anticipos):</span>
-                        <span>{{ formatCurrency(getOrderTotalPaid(drawerOrder)) }}</span>
-                    </div>
-                    <div class="flex justify-between font-bold text-lg mt-2 pt-2 border-t dark:border-gray-600">
-                        <span>Resta:</span>
-                        <span :class="getOrderPending(drawerOrder) > 0 ? 'text-red-500' : 'text-green-500'">
-                            {{ formatCurrency(getOrderPending(drawerOrder)) }}
-                        </span>
-                    </div>
-                </div>
-
-                <!-- Acción Footer -->
-                <div class="mt-auto pt-4 flex gap-2">
-                    <Button 
-                        v-if="hasPermission('services.orders.see_details')"
-                        label="Ver detalles completos" 
-                        icon="pi pi-external-link" 
-                        class="w-full" 
-                        @click="router.visit(route('service-orders.show', drawerOrder.id))" 
-                    />
-                </div>
-            </div>
+            <ServiceOrderDrawerDetail 
+                v-if="drawerOrder"
+                :order="drawerOrder"
+                :can-see-details="hasPermission('services.orders.see_details')"
+                :can-edit="hasPermission('services.orders.edit')"
+                @go-to-details="goToDetails(drawerOrder.id)"
+                @go-to-edit="goToEdit(drawerOrder.id)"
+            />
         </Drawer>
+        
+        <!-- Modal de Importación -->
+        <ImportServiceOrdersModal :visible="showImportModal" @update:visible="showImportModal = false" />
+        
+        <!-- Modal de Impresión -->
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
+            :available-templates="availableTemplates" />
     </AppLayout>
 </template>

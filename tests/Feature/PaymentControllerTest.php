@@ -13,6 +13,9 @@ use App\Models\CashRegisterSession;
 use App\Models\Transaction;
 use App\Enums\TransactionStatus;
 use App\Enums\CustomerBalanceMovementType;
+use App\Services\TransactionPaymentService;
+use Exception;
+use Mockery\MockInterface;
 use PHPUnit\Framework\Attributes\Test; // <-- Usar el atributo
 
 class PaymentControllerTest extends TestCase
@@ -123,5 +126,62 @@ class PaymentControllerTest extends TestCase
         ]);
         $this->assertEquals(5300.00, $this->bankAccount->fresh()->balance);
         $this->assertEquals(TransactionStatus::PENDING, $this->transaction->fresh()->status);
+    }
+
+    // --- NUEVAS PRUEBAS AÑADIDAS PARA COBERTURA AL 100% ---
+
+    #[Test]
+    public function it_validates_required_fields_when_storing_a_payment(): void
+    {
+        // Enviamos un payload completamente vacío
+        $response = $this->actingAs($this->user)
+            ->post(route('payments.store', $this->transaction), []);
+
+        // Debe fallar la validación porque faltan parámetros base (session_id y use_balance)
+        $response->assertSessionHasErrors([
+            'cash_register_session_id',
+            'use_balance'
+        ]);
+    }
+
+    #[Test]
+    public function it_requires_at_least_one_payment_method_or_use_balance(): void
+    {
+        $payload = [
+            'cash_register_session_id' => $this->session->id,
+            'use_balance' => false,
+            'payments' => [] // Sin array de pagos
+        ];
+
+        $response = $this->actingAs($this->user)
+            ->post(route('payments.store', $this->transaction), $payload);
+
+        // El controlador lanza ValidationException manual si usa_balance es falso y payments viene vacío
+        $response->assertSessionHasErrors(['payments']);
+    }
+
+    #[Test]
+    public function it_handles_exceptions_thrown_by_the_payment_service(): void
+    {
+        // 1. Payload válido
+        $payload = [
+            'cash_register_session_id' => $this->session->id,
+            'use_balance' => true,
+        ];
+
+        // 2. Mockear el Servicio para forzar excepción
+        $this->mock(TransactionPaymentService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('applyPaymentToTransaction')
+                ->once()
+                ->andThrow(new Exception('Error simulado al procesar el abono a la transacción'));
+        });
+
+        // 3. Ejecutar
+        $response = $this->actingAs($this->user)
+            ->post(route('payments.store', $this->transaction), $payload);
+
+        // 4. Assert de la redirección con mensaje atrapado en el catch
+        $response->assertRedirect();
+        $response->assertSessionHas('error', 'Error al procesar el pago: Error simulado al procesar el abono a la transacción');
     }
 }

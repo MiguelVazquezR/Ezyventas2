@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed } from 'vue';
 import { Head, useForm, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import ManageCategoriesModal from '@/Components/ManageCategoriesModal.vue';
@@ -7,6 +7,10 @@ import ManageBrandsModal from '@/Components/ManageBrandsModal.vue';
 import ManageProvidersModal from '@/Components/ManageProvidersModal.vue';
 import ManageAttributesModal from './Partials/ManageAttributesModal.vue';
 import { useConfirm } from 'primevue/useconfirm';
+
+// Lógica de navegación
+import FormNavigationSidebar from '@/Components/FormNavigationSidebar.vue';
+import { useScrollspy } from '@/Composables/useScrollspy';
 
 // Importación de Parciales Modulares
 import GeneralInfo from './Partials/GeneralInfo.vue';
@@ -37,7 +41,7 @@ const form = useForm({
     description: '',
     sku: '',
     location: '', 
-    branch_ids: [props.current_branch_id], // Inicia seleccionando la sucursal actual
+    branch_ids: [props.current_branch_id],
     category_id: null,
     brand_id: null,
     provider_id: null,
@@ -45,7 +49,7 @@ const form = useForm({
     selling_price: null,
     show_in_pos: true,
     price_tiers: [],
-    product_type: 'simple',
+    product_type: 'simple', // Arranca como simple
     current_stock: null,
     min_stock: null,
     max_stock: null,
@@ -79,55 +83,14 @@ const handleNewProvider = (p) => { localProviders.value.push(p); form.provider_i
 const handleProviderUpdate = (p) => { const idx = localProviders.value.findIndex(x => x.id === p.id); if (idx !== -1) localProviders.value[idx] = p; };
 const handleProviderDelete = (id) => { localProviders.value = localProviders.value.filter(p => p.id !== id); if (form.provider_id === id) form.provider_id = null; };
 
-// --- LÓGICA DE SCROLLSPY Y NAVEGACIÓN ---
-const activeSection = ref('general');
-let observer = null;
-let isManualScrolling = false;
-
-const scrollTo = (id) => {
-    isManualScrolling = true;
-    activeSection.value = id;
-    const element = document.getElementById(id);
-    if (element) {
-        element.scrollIntoView({ behavior: 'smooth' });
-        // Pausar el observer brevemente para que no parpadee mientras hace el scroll suave
-        setTimeout(() => { isManualScrolling = false; }, 800);
-    }
-};
-
-onMounted(() => {
-    // Configuramos el Intersection Observer
-    const options = {
-        root: null,
-        // Detectará la sección cuando cruce el 20% superior de la pantalla hasta la mitad
-        rootMargin: '-20% 0px -50% 0px', 
-        threshold: 0
-    };
-
-    observer = new IntersectionObserver((entries) => {
-        if (isManualScrolling) return; // Ignorar si el usuario hizo clic en el menú
-        
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                activeSection.value = entry.target.id;
-            }
-        });
-    }, options);
-
-    // Observar cada sección por su ID
-    setTimeout(() => {
-        const sections = ['general', 'pricing', 'inventory', 'images'];
-        sections.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) observer.observe(el);
-        });
-    }, 300);
-});
-
-onUnmounted(() => {
-    if (observer) observer.disconnect();
-});
-// --- FIN LÓGICA DE SCROLLSPY ---
+// --- LÓGICA DE NAVEGACIÓN ---
+const formSections = [
+    { id: 'general', label: 'Información general' },
+    { id: 'inventory', label: 'Inventario y variantes' }, // Movido antes de Precios
+    { id: 'pricing', label: 'Precios' },
+    { id: 'images', label: 'Imágenes' }
+];
+const { activeSection, scrollTo } = useScrollspy(formSections.map(s => s.id));
 
 const submit = () => {
     // Transformamos para quitar atributos temporales (como _localId)
@@ -170,62 +133,45 @@ const submit = () => {
         <!-- FORMULARIO ORQUESTADO -->
         <div v-else class="mt-6 flex flex-col md:flex-row gap-6 items-start relative">
             
-            <!-- Sidebar de Navegación -->
-            <div class="w-full md:w-1/4 sticky top-24 z-10 hidden md:block">
-                <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm">
-                    <h5 class="font-bold mb-4 text-gray-700 dark:text-gray-300">Secciones</h5>
-                    <ul class="space-y-2">
-                        <li>
-                            <button type="button" @click="scrollTo('general')" class="text-left w-full px-3 py-2 rounded-md transition-colors" :class="activeSection === 'general' ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400 font-medium' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700'">
-                                Información general
-                            </button>
-                        </li>
-                        <li>
-                            <button type="button" @click="scrollTo('pricing')" class="text-left w-full px-3 py-2 rounded-md transition-colors" :class="activeSection === 'pricing' ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400 font-medium' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700'">
-                                Precios
-                            </button>
-                        </li>
-                        <li>
-                            <button type="button" @click="scrollTo('inventory')" class="text-left w-full px-3 py-2 rounded-md transition-colors" :class="activeSection === 'inventory' ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400 font-medium' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700'">
-                                Inventario y variantes
-                            </button>
-                        </li>
-                        <li>
-                            <button type="button" @click="scrollTo('images')" class="text-left w-full px-3 py-2 rounded-md transition-colors" :class="activeSection === 'images' ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400 font-medium' : 'text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700'">
-                                Imágenes
-                            </button>
-                        </li>
-                    </ul>
-                </div>
-            </div>
+            <!-- Sidebar de Navegación Refactorizado -->
+            <FormNavigationSidebar :sections="formSections" :activeSection="activeSection" @scrollTo="scrollTo" />
 
             <!-- Contenedor Principal de Parciales -->
             <div class="w-full md:w-3/4">
                 <form @submit.prevent="submit" class="space-y-6">
                     
-                    <GeneralInfo 
-                        :form="form" 
-                        :categories="localCategories" 
-                        :brands="localBrands" 
-                        :providers="localProviders" 
-                        :branches="branches"
-                        @open-category="showCategoryModal = true"
-                        @open-brand="showBrandModal = true"
-                        @open-provider="showProviderModal = true"
-                    />
+                    <div id="general">
+                        <GeneralInfo 
+                            :form="form" 
+                            :categories="localCategories" 
+                            :brands="localBrands" 
+                            :providers="localProviders" 
+                            :branches="branches"
+                            @open-category="showCategoryModal = true"
+                            @open-brand="showBrandModal = true"
+                            @open-provider="showProviderModal = true"
+                        />
+                    </div>
 
-                    <Pricing :form="form" />
+                    <!-- INVENTARIO AHORA VA ANTES DE PRECIOS -->
+                    <div id="inventory">
+                        <Inventory 
+                            :form="form" 
+                            :attributeDefinitions="attributeDefinitions"
+                            @open-attributes="showAttributesModal = true"
+                        />
+                    </div>
 
-                    <Inventory 
-                        :form="form" 
-                        :attributeDefinitions="attributeDefinitions"
-                        @open-attributes="showAttributesModal = true"
-                    />
+                    <div id="pricing">
+                        <Pricing :form="form" />
+                    </div>
 
-                    <Images 
-                        :form="form" 
-                        :attributeDefinitions="attributeDefinitions"
-                    />
+                    <div id="images">
+                        <Images 
+                            :form="form" 
+                            :attributeDefinitions="attributeDefinitions"
+                        />
+                    </div>
 
                     <div class="flex justify-end sticky bottom-4 z-20">
                         <Button type="submit" label="Crear producto" icon="pi pi-check" severity="primary" size="large" :loading="form.processing" class="shadow-xl" />

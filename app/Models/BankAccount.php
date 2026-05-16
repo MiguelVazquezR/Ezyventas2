@@ -27,36 +27,54 @@ class BankAccount extends Model
         'balance' => 'decimal:2',
     ];
 
+    /*
+    |--------------------------------------------------------------------------
+    | LÓGICA DE NEGOCIO (REFACTOR)
+    |--------------------------------------------------------------------------
+    */
+
     /**
-     * Obtiene la suscripción a la que pertenece la cuenta.
+     * Retira un monto de la cuenta bancaria.
      */
+    public function withdraw(float $amount): void
+    {
+        if ($amount > 0) {
+            $this->decrement('balance', $amount);
+        }
+    }
+
+    /**
+     * Deposita un monto en la cuenta bancaria.
+     */
+    public function deposit(float $amount): void
+    {
+        if ($amount > 0) {
+            $this->increment('balance', $amount);
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | RELACIONES
+    |--------------------------------------------------------------------------
+    */
+
     public function subscription(): BelongsTo
     {
         return $this->belongsTo(Subscription::class);
     }
 
-    /**
-     * Obtiene las sucursales a las que esta cuenta está asignada.
-     */
     public function branches(): BelongsToMany
     {
         return $this->belongsToMany(Branch::class, 'bank_account_branch')
             ->withPivot('is_favorite');
     }
 
-    // --- NUEVAS RELACIONES ---
-
-    /**
-     * Obtiene todos los pagos (ingresos) asociados a esta cuenta.
-     */
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
     }
 
-    /**
-     * Obtiene todos los gastos (egresos) asociados a esta cuenta.
-     */
     public function expenses(): HasMany
     {
         return $this->hasMany(Expense::class);

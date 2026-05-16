@@ -190,7 +190,7 @@ const addToCart = (data) => {
 
         cartItems.value.push(newItem);
         if (stock <= 0) {
-            toast.add({ severity: 'warn', summary: 'Sin Stock', detail: `El producto se agregó al carrito pero no tiene stock disponible.`, life: 6000 });
+            toast.add({ severity: 'warn', summary: 'Sin stock', detail: `El producto se agregó al carrito pero no tiene stock disponible.`, life: 6000 });
         }
     }
 };
@@ -284,7 +284,7 @@ const resumePendingCart = (cartId) => {
 };
 const deletePendingCart = (cartId) => {
     pendingCarts.value = pendingCarts.value.filter(c => c.id !== cartId);
-    toast.add({ severity: 'warn', summary: 'Carrito Descartado', detail: 'Se ha eliminado un carrito de la lista de espera.', life: 3000 });
+    toast.add({ severity: 'warn', summary: 'Carrito descartado', detail: 'Se ha eliminado un carrito de la lista de espera.', life: 3000 });
 };
 
 // --- Sesión de Caja ---
@@ -355,7 +355,7 @@ const mapCartItems = () => {
 
 const handleOrderSubmit = (orderData) => {
     if (!props.activeSession) {
-        toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar pedidos.', life: 5000 });
+        toast.add({ severity: 'error', summary: 'Caja cerrada', detail: 'Debes tener una sesión de caja activa para registrar pedidos.', life: 5000 });
         return;
     }
 
@@ -387,7 +387,7 @@ const handleOrderSubmit = (orderData) => {
         onSuccess: () => {
             clearCart();
             isOrderModalVisible.value = false;
-            toast.add({ severity: 'success', summary: 'Pedido Creado', detail: 'El pedido ha sido registrado correctamente.', life: 3000 });
+            toast.add({ severity: 'success', summary: 'Pedido creado', detail: 'El pedido ha sido registrado correctamente.', life: 3000 });
             // MODIFICACIÓN CLAVE: recarga manteniendo filtros pero forzando fresh data
             router.get(route('pos.index'), props.filters, { only: ['products'], preserveState: true, preserveScroll: false });
         },
@@ -400,7 +400,7 @@ const handleOrderSubmit = (orderData) => {
 
 const handleCheckout = (checkoutData) => {
     if (!props.activeSession) {
-        toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar una venta.', life: 5000 });
+        toast.add({ severity: 'error', summary: 'Caja cerrada', detail: 'Debes tener una sesión de caja activa para registrar una venta.', life: 5000 });
         return;
     }
 
@@ -440,7 +440,7 @@ const handleCheckout = (checkoutData) => {
         },
         onError: (errors) => {
             const errorMessage = errors.default || errors.message || Object.values(errors).flat().join(' ');
-            toast.add({ severity: 'error', summary: 'Error al Procesar', detail: errorMessage || 'Ocurrió un error inesperado.', life: 7000 });
+            toast.add({ severity: 'error', summary: 'Error al procesar', detail: errorMessage || 'Ocurrió un error inesperado.', life: 7000 });
         }
     });
 };
@@ -451,12 +451,13 @@ const currentCartTotal = computed(() => {
 </script>
 
 <template>
-
     <Head title="Punto de venta" />
     <AppLayout>
+        
+        <!-- Sesión Activa -->
         <template v-if="activeSession">
-            <div class="flex flex-col lg:flex-row gap-4 h-[calc(86vh)]">
-                <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden">
+            <div class="flex flex-col lg:flex-row gap-4 h-[calc(100vh-98px)] max-w-[1920px] mx-auto">
+                <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden rounded-3xl">
                     <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
                         :filters="filters" :active-session="activeSession" :cart-items="cartItems" :pos-mode="posMode"
                         @add-to-cart="addToCart" @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
@@ -466,7 +467,7 @@ const currentCartTotal = computed(() => {
                         @open-close-session-modal="isCloseSessionModalVisible = true"
                         @update:posMode="posMode = $event" class="h-full" />
                 </div>
-                <div class="lg:w-1/3 xl:w-1/4 h-full overflow-hidden">
+                <div class="lg:w-1/3 xl:w-1/4 h-full overflow-hidden rounded-3xl">
                     <ShoppingCart :items="cartItems" :client="selectedClient" :customers="localCustomers"
                         :default-customer="defaultCustomer" :active-promotions="activePromotions"
                         :loading="form.processing" :payment-modal-visible="isPaymentModalVisible" :pos-mode="posMode"
@@ -480,51 +481,62 @@ const currentCartTotal = computed(() => {
             </div>
         </template>
 
+        <!-- Empty State: Sin Sesión (Estilo Pantalla de Sistema) -->
         <template v-else>
-            <div class="flex items-center justify-center h-[calc(100vh-150px)] dark:bg-gray-900 rounded-lg">
-                <div class="text-center p-8">
-                    <div
-                        class="bg-primary-100 dark:bg-primary-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
-                        <i class="pi pi-inbox !text-4xl text-primary-500"></i>
-                    </div>
+            <div class="flex items-center justify-center min-h-[80vh] px-4">
+                <div class="bg-white dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] rounded-3xl p-10 md:p-14 max-w-xl w-full text-center shadow-2xl relative overflow-hidden group">
+                    
+                    <!-- Glow effect interactivo -->
+                    <div class="absolute -top-32 -left-32 w-72 h-72 bg-primary-500/10 rounded-full blur-3xl group-hover:bg-primary-500/20 transition-all duration-700 pointer-events-none"></div>
 
-                    <h2 v-if="(joinableSessions && joinableSessions.length > 0) || (availableCashRegisters && availableCashRegisters.length > 0)"
-                        class="text-2xl font-bold text-gray-800 dark:text-gray-200">
-                        Bienvenido al punto de venta
-                    </h2>
-                    <h2 v-else class="text-2xl font-bold text-gray-800 dark:text-gray-200">
-                        Punto de venta bloqueado
-                    </h2>
+                    <div class="relative z-10">
+                        <div class="w-20 h-20 bg-gray-50 dark:bg-[#1a1a1a] rounded-full flex items-center justify-center mx-auto mb-8 border border-gray-100 dark:border-[#3a3a3a] shadow-inner">
+                            <i class="pi" :class="(joinableSessions?.length || availableCashRegisters?.length) ? 'pi-desktop text-primary-500' : 'pi-lock text-gray-400'" style="font-size: 1.8rem;"></i>
+                        </div>
 
-                    <p class="text-gray-600 dark:text-gray-400 mt-2 max-w-md">
-                        <span
-                            v-if="(joinableSessions && joinableSessions.length > 0) || (availableCashRegisters && availableCashRegisters.length > 0)">
-                            Selecciona una opción para comenzar a registrar ventas.
-                        </span>
-                        <span v-else>
-                            No hay cajas disponibles para unirse o abrir en esta sucursal. Contacta al administrador.
-                        </span>
-                    </p>
+                        <h2 class="text-3xl font-light text-gray-900 dark:text-white tracking-tight mb-3">
+                            {{ (joinableSessions?.length || availableCashRegisters?.length) ? 'Abrir sesión de caja' : 'Terminal bloqueada' }}
+                        </h2>
 
-                    <div class="flex flex-col sm:flex-row gap-4 justify-center mt-6">
-                        <Button v-if="joinableSessions && joinableSessions.length > 0"
-                            @click="isJoinSessionModalVisible = true" label="Unirse a una sesión" icon="pi pi-users"
-                            severity="primary" />
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-10 max-w-sm mx-auto leading-relaxed">
+                            <span v-if="joinableSessions?.length || availableCashRegisters?.length">
+                                El sistema requiere inicializar una sesión de caja para comenzar a procesar ventas.
+                            </span>
+                            <span v-else>
+                                No hay cajas disponibles para operar en esta sucursal. Contacta al administrador para que registre una nueva caja.
+                            </span>
+                        </p>
 
-                        <Button v-if="availableCashRegisters && availableCashRegisters.length > 0"
-                            @click="isStartSessionModalVisible = true" label="Abrir una nueva caja"
-                            icon="pi pi-lock-open" severity="success" />
-                    </div>
+                        <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                            <Button v-if="joinableSessions?.length"
+                                @click="isJoinSessionModalVisible = true" 
+                                label="Unirse a sesión activa" 
+                                icon="pi pi-users"
+                                class="!rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold px-6 py-3" />
 
-                    <div v-if="!joinableSessions?.length && !availableCashRegisters?.length"
-                        class="text-sm text-gray-500 pt-4 mt-8">
-                        <Button @click="$inertia.visit(route('cash-registers.create'))" label="Crear una caja"
-                            icon="pi pi-inbox" text />
+                            <Button v-if="availableCashRegisters?.length"
+                                @click="isStartSessionModalVisible = true" 
+                                label="Inicializar caja"
+                                icon="pi pi-power-off" 
+                                severity="contrast"
+                                class="!rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold px-6 py-3" />
+                        </div>
+
+                        <div v-if="!joinableSessions?.length && !availableCashRegisters?.length"
+                            class="mt-8 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
+                            <Button @click="$inertia.visit(route('cash-registers.create'))" 
+                                label="Configurar nueva caja"
+                                icon="pi pi-cog" 
+                                text 
+                                severity="secondary"
+                                class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold" />
+                        </div>
                     </div>
                 </div>
             </div>
         </template>
 
+        <!-- Modales -->
         <StartSessionModal :visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
             :user-bank-accounts="userBankAccounts" @update:visible="isStartSessionModalVisible = $event" />
         <JoinSessionModal :visible="isJoinSessionModalVisible" :sessions="joinableSessions"
@@ -535,8 +547,8 @@ const currentCartTotal = computed(() => {
             @update:visible="isHistoryModalVisible = $event" />
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
             :available-templates="availableTemplates" />
-
         <OrderFormModal v-model:visible="isOrderModalVisible" :cart-total="currentCartTotal" :client="selectedClient"
             :loading="form.processing" @submit="handleOrderSubmit" />
+
     </AppLayout>
 </template>
