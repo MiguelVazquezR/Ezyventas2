@@ -4,6 +4,7 @@ import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import EditVersionModal from './Partials/EditVersionModal.vue';
 import PaymentHistoryTable from './Partials/PaymentHistoryTable.vue';
+import SubscriptionSettings from './Partials/SubscriptionSettings.vue';
 
 const props = defineProps({
     subscription: Object,
@@ -12,6 +13,7 @@ const props = defineProps({
     dynamicModules: Array,  // Inyectado por el backend
     subscriptionStatus: Object,
     fiscalDocumentUrl: String,
+    settingsData: Object,   // Configuraciones (definiciones + entidades)
 });
 
 // --- ESTADOS DE MODALES ---
@@ -232,6 +234,14 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
                             @review-payment="showPaymentApprovalModal = true" 
                         />
                     </div>
+                </div>
+
+                <!-- Sección de Configuraciones -->
+                <div class="mt-8">
+                    <SubscriptionSettings
+                        :settings-data="settingsData"
+                        :subscription-id="subscription.id"
+                    />
                 </div>
 
             </div>

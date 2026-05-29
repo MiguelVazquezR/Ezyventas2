@@ -125,7 +125,7 @@ class PrintEncoderService
             $operations[] = ['nombre' => 'TextoSegunPaginaDeCodigos', 'argumentos' => [0, $config['codepage'] ?? 'cp850', $rawText]];
         }
 
-        Log::info($operations);
+        //Log::info($operations);
         return $operations;
     }
 
