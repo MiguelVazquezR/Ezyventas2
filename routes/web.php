@@ -34,6 +34,9 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     });
 });
 
+// Public store routes (no auth required)
+require __DIR__ . '/tienda.php';
+
 require __DIR__ . '/web/POS.php';
 require __DIR__ . '/web/products.php';
 require __DIR__ . '/web/products-stock.php';
@@ -71,6 +74,7 @@ require __DIR__ . '/web/providers.php';
 require __DIR__ . '/web/expense-categories.php';
 require __DIR__ . '/web/super-admin.php';
 require __DIR__ . '/web/release-notes.php';
+require __DIR__ . '/web/online-store.php';
 
 Route::get('/centro-ayuda', function () {
     return Inertia::render('HelpCenter');

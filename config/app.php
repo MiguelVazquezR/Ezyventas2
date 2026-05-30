@@ -123,4 +123,18 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Online Store Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Controls how store URLs are generated.
+    | store_url_mode: 'path' (shared hosting) or 'subdomain' (VPS)
+    | store_base_domain: the root domain for subdomain mode
+    |
+    */
+
+    'store_url_mode' => env('STORE_URL_MODE', 'path'),
+    'store_base_domain' => env('STORE_BASE_DOMAIN', env('APP_URL') ? parse_url(env('APP_URL'), PHP_URL_HOST) : 'localhost'),
+
 ];

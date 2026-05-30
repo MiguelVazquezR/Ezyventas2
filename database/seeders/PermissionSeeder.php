@@ -125,6 +125,17 @@ class PermissionSeeder extends Seeder
                 'settings.templates.edit' => 'Editar plantillas.',
                 'settings.templates.delete' => 'Eliminar plantillas.',
             ],
+            'Tienda en línea' => [
+                'online_store.config.access' => 'Acceder a la configuración de la tienda en línea',
+                'online_store.config.edit' => 'Editar la configuración de la tienda en línea',
+                'online_store.products.access' => 'Ver productos de la tienda en línea',
+                'online_store.products.create' => 'Agregar productos a la tienda en línea',
+                'online_store.products.edit' => 'Editar productos de la tienda en línea',
+                'online_store.products.delete' => 'Eliminar productos de la tienda en línea',
+                'online_store.orders.access' => 'Ver pedidos de la tienda en línea',
+                'online_store.orders.see_details' => 'Ver detalles de pedidos',
+                'online_store.orders.change_status' => 'Cambiar estado de pedidos',
+            ],
             'Sistema' => [
                 'system.branches.switch' => 'Cambiar entre sucursales',
                 'system.bank_accounts.manage' => 'Ver y editar saldos de cuentas bancarias al abrir caja',

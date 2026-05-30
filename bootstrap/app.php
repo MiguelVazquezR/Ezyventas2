@@ -24,7 +24,9 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\CheckSubscriptionStatus::class,
         ]);
 
-        //
+        $middleware->alias([
+            'resolve.store' => \App\Http\Middleware\ResolveStore::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         
