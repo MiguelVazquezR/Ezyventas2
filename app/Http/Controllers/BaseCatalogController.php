@@ -119,8 +119,16 @@ class BaseCatalogController extends Controller
                     'category_id' => $globalProduct->category_id,
                     'brand_id' => $globalProduct->brand_id,
                     'slug' => $slug,
-                    'current_stock' => 0, // Stock inicial en 0
                     'show_online' => false,
+                ]);
+
+                // 3.1 Vincular producto a la sucursal en la tabla pivote (necesario para que aparezca en el índice)
+                $newProduct->branches()->attach($branch->id, [
+                    'current_stock' => 0,
+                    'reserved_stock' => 0,
+                    'min_stock' => null,
+                    'max_stock' => null,
+                    'location' => null,
                 ]);
 
                 // 4. Copiar Imágenes (Usando Spatie Media Library)
