@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ManageStockModal from './Partials/ManageStockModal.vue';
@@ -23,12 +23,6 @@ const props = defineProps({
 
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
-
-const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
-const items = ref([
-    { label: 'Productos', url: route('products.index') },
-    { label: props.product.name }
-]);
 
 const showManageStockModal = ref(false);
 
@@ -86,32 +80,56 @@ const deleteProduct = () => {
 <template>
     <Head :title="`Producto: ${product.name}`" />
     <AppLayout>
-        <Breadcrumb :home="home" :model="items" class="!bg-transparent !p-0" />
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
 
-        <!-- Header Minimalista -->
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-end mt-2 mb-6 gap-4">
-            <div>
-                <div class="flex items-center gap-3 mb-1">
-                    <Tag v-if="product.is_on_sale" severity="danger" value="En Oferta" rounded></Tag>
-                    <Tag v-if="product.is_featured" severity="info" value="Destacado" rounded></Tag>
-                    <!-- INDICADOR DE POS / INSUMO / KIT -->
-                    <Tag v-if="product.show_in_pos" severity="success" value="Venta POS" rounded icon="pi pi-shop"></Tag>
-                    <Tag v-else severity="secondary" value="Insumo" rounded icon="pi pi-eye-slash" v-tooltip.top="'Oculto en el Punto de Venta'"></Tag>
-                    <Tag v-if="isComposite" severity="contrast" value="Kit/Combo" rounded icon="pi pi-link"></Tag>
-                    <Tag v-if="product.is_bulk" severity="primary" value="Venta a granel" rounded></Tag>
-                    <span class="text-xs font-semibold text-gray-500 tracking-wider uppercase">
-                        {{ product.category?.name || 'Sin categoría' }}
-                    </span>
+            <!-- Breadcrumb / Botón de regreso -->
+            <div class="flex items-center">
+                <Link :href="route('products.index')" class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
+                    <i class="pi pi-arrow-left !text-[10px]"></i> Volver al catálogo de productos
+                </Link>
+            </div>
+
+            <!-- Header de la página al estilo Tesla UI -->
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div>
+                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">{{ product.name }}</h1>
+                    <div class="flex items-center gap-4 mt-3 flex-wrap">
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 flex items-center gap-2">
+                            <span class="w-1.5 h-1.5 rounded-full" :class="product.show_in_pos ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)] animate-pulse' : 'bg-gray-400 dark:bg-gray-600'"></span>
+                            {{ product.show_in_pos ? 'Visible en POS' : 'Insumo interno' }}
+                        </p>
+
+                        <span class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
+
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0">Categoría:</span>
+                            <span class="text-xs font-medium text-gray-900 dark:text-gray-100">{{ product.category?.name || 'Sin categoría' }}</span>
+                        </div>
+
+                        <span class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
+
+                        <div v-if="product.show_online" class="flex items-center gap-2">
+                            <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0">Tienda en línea:</span>
+                            <span class="text-xs font-medium text-green-600 dark:text-green-400 flex items-center gap-1">
+                                <span class="w-1.5 h-1.5 rounded-full bg-green-500" />
+                                Visible
+                            </span>
+                        </div>
+
+                        <span v-if="product.show_online" class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
+
+                        <div v-if="product.is_featured" class="flex items-center gap-2">
+                            <i class="pi pi-star-fill text-yellow-500 !text-xs" />
+                            <span class="text-xs font-medium text-yellow-600 dark:text-yellow-400">Destacado</span>
+                        </div>
+                    </div>
                 </div>
-                <h1 class="text-3xl font-black text-gray-900 dark:text-white tracking-tight leading-none">{{ product.name }}</h1>
+
+                <div class="w-full md:w-auto shrink-0">
+                    <Button label="Opciones" icon="pi pi-chevron-down" iconPos="right" @click="toggleActionMenu" severity="secondary" outlined class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full md:w-auto" />
+                    <Menu ref="actionMenu" :model="actionItems" :popup="true" />
+                </div>
             </div>
-            
-            <!-- Menú de Acciones Principal -->
-            <div>
-                <Button label="Acciones" icon="pi pi-chevron-down" iconPos="right" @click="toggleActionMenu" severity="secondary" outlined class="w-full sm:w-auto" />
-                <Menu ref="actionMenu" :model="actionItems" :popup="true" />
-            </div>
-        </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             
@@ -131,11 +149,46 @@ const deleteProduct = () => {
             <div class="lg:col-span-9 space-y-6">
                 
                 <!-- Sección: Descripción (Minimalista) -->
-                <div v-if="product.description" class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/60">
-                    <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 flex items-center gap-2">
+                <div v-if="product.description" class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                    <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 m-0 flex items-center gap-2">
                         <i class="pi pi-align-left text-gray-400"></i> Descripción del producto
                     </h3>
                     <div class="prose prose-sm prose-gray dark:prose-invert max-w-none text-gray-600 dark:text-gray-400 leading-relaxed" v-html="product.description"></div>
+                </div>
+
+                <!-- Online store info (if applicable) -->
+                <div v-if="product.show_online" class="bg-emerald-50 dark:bg-emerald-900/10 p-6 rounded-3xl border border-emerald-100 dark:border-emerald-900/30">
+                    <h3 class="text-sm font-semibold text-emerald-800 dark:text-emerald-300 mb-4 m-0 flex items-center gap-2">
+                        <i class="pi pi-globe"></i> Información en tienda en línea
+                    </h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="flex flex-col gap-1">
+                            <span class="text-[10px] uppercase tracking-widest font-bold text-emerald-600 dark:text-emerald-400 m-0">Estado</span>
+                            <span class="text-sm font-medium text-emerald-800 dark:text-emerald-200 flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.6)] animate-pulse" />
+                                Visible
+                            </span>
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <span class="text-[10px] uppercase tracking-widest font-bold text-emerald-600 dark:text-emerald-400 m-0">Precio en línea</span>
+                            <span class="text-sm font-semibold text-emerald-800 dark:text-emerald-200">
+                                {{ product.online_price
+                                    ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(product.online_price)
+                                    : 'Igual que POS' }}
+                            </span>
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <span class="text-[10px] uppercase tracking-widest font-bold text-emerald-600 dark:text-emerald-400 m-0">Destacado</span>
+                            <span class="text-sm font-medium text-emerald-800 dark:text-emerald-200 flex items-center gap-1.5">
+                                <i :class="product.is_featured ? 'pi pi-star-fill text-yellow-500' : 'pi pi-star text-gray-400'" />
+                                {{ product.is_featured ? 'Sí' : 'No' }}
+                            </span>
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <span class="text-[10px] uppercase tracking-widest font-bold text-emerald-600 dark:text-emerald-400 m-0">Slug</span>
+                            <span class="text-sm font-mono text-emerald-800 dark:text-emerald-200">{{ product.slug || '—' }}</span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Sección: Inventario y Variantes / Componentes -->
@@ -155,14 +208,15 @@ const deleteProduct = () => {
                 />
 
                 <!-- Sección: Historial de Actividad -->
-                <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/60">
-                    <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
+                <div class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                    <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 m-0 flex items-center gap-2">
                         <i class="pi pi-history text-gray-400"></i> Historial de movimientos
                     </h3>
                     <ActivityHistory :activities="activities" />
                 </div>
 
             </div>
+        </div>
         </div>
 
         <!-- Modales de la Vista -->

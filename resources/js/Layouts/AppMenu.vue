@@ -34,7 +34,7 @@ const model = ref([
             },
             { label: 'Cotizaciones', icon: 'pi pi-file-check', to: route('quotes.index'), routeName: 'quotes.*', permission: 'quotes.access' },
             {
-                label: 'Tienda en línea', icon: 'pi pi-shopping-bag',
+                label: 'Tienda en línea', icon: 'pi pi-globe',
                 items: [
                     {
                         label: 'Configuración',
@@ -42,13 +42,6 @@ const model = ref([
                         to: route('online-store.config'),
                         routeName: 'online-store.config',
                         permission: 'online_store.config.access'
-                    },
-                    {
-                        label: 'Productos',
-                        icon: 'pi pi-barcode',
-                        to: route('online-store.products.index'),
-                        routeName: 'online-store.products.*',
-                        permission: 'online_store.products.access'
                     },
                     {
                         label: 'Pedidos',

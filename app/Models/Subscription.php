@@ -305,6 +305,7 @@ class Subscription extends Model implements HasMedia
     }
 
     public function branches(): HasMany { return $this->hasMany(Branch::class, 'subscription_id'); }
+    public function storeConfig(): \Illuminate\Database\Eloquent\Relations\HasOne { return $this->hasOne(StoreConfig::class, 'subscription_id'); }
     public function versions(): HasMany { return $this->hasMany(SubscriptionVersion::class, 'subscription_id'); }
     
     public function payments(): HasManyThrough

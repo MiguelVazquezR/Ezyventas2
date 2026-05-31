@@ -42,14 +42,14 @@ const goToProduct = (product) => {
 </script>
 
 <template>
-    <Head title="Store" />
+    <Head title="Tienda" />
     <StoreLayout>
         <div class="max-w-6xl mx-auto px-4 py-8">
             <!-- Search -->
             <div class="mb-8">
                 <IconField iconPosition="left" class="w-full max-w-md mx-auto">
                     <InputIcon class="pi pi-search !text-sm text-gray-400" />
-                    <InputText v-model="search" @input="onSearch" placeholder="Search products..." class="w-full !rounded-2xl !py-3 !bg-white !border-gray-200" />
+                    <InputText v-model="search" @input="onSearch" placeholder="Buscar productos..." class="w-full !rounded-2xl !py-3 !bg-white !border-gray-200" />
                 </IconField>
             </div>
 
@@ -91,7 +91,7 @@ const goToProduct = (product) => {
 
                     <div v-if="products.data.length === 0" class="text-center py-16">
                         <i class="pi pi-search !text-4xl text-gray-300 mb-4 block" />
-                        <p class="text-gray-500">No products found.</p>
+                        <p class="text-gray-500">No se encontraron productos.</p>
                     </div>
                 </div>
             </div>

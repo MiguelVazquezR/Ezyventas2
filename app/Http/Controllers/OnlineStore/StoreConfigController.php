@@ -46,7 +46,13 @@ class StoreConfigController extends Controller
 
         $storeConfig = StoreConfig::where('subscription_id', $subscription->id)->firstOrFail();
 
-        $storeConfig->update($request->validated());
+        $storeConfig->update($request->safe()->except(['logo', 'remove_logo']));
+
+        // Handle logo removal
+        if ($request->boolean('remove_logo')) {
+            $storeConfig->clearMediaCollection('store-logo');
+            $storeConfig->update(['logo_url' => null]);
+        }
 
         // Handle logo upload
         if ($request->hasFile('logo')) {
@@ -55,6 +61,27 @@ class StoreConfigController extends Controller
             $storeConfig->update(['logo_url' => $storeConfig->getFirstMediaUrl('store-logo')]);
         }
 
-        return back()->with('success', 'Store configuration updated successfully.');
+        return back()->with('success', 'Configuración de tienda actualizada correctamente.');
+    }
+
+    /**
+     * Check if a slug is available for the current subscription.
+     */
+    public function checkSlug(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $request->validate([
+            'slug' => ['required', 'string', 'max:50', 'regex:/^[a-z0-9-]+$/'],
+        ]);
+
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+
+        $existing = StoreConfig::where('slug', $request->slug)
+            ->when($subscriptionId, fn($q) => $q->where('subscription_id', '!=', $subscriptionId))
+            ->exists();
+
+        return response()->json([
+            'available' => !$existing,
+        ]);
     }
 }

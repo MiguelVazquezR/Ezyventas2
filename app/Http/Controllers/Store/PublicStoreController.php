@@ -101,7 +101,7 @@ class PublicStoreController extends Controller
         // Rate limiting: 5 orders per minute per IP
         $rateLimitKey = 'store-order:' . $request->ip();
         if (RateLimiter::tooManyAttempts($rateLimitKey, 5)) {
-            return back()->with('error', 'Too many attempts. Please wait a moment.');
+            return back()->with('error', 'Demasiados intentos. Espera un momento.');
         }
         RateLimiter::hit($rateLimitKey, 60);
 
@@ -119,10 +119,10 @@ class PublicStoreController extends Controller
 
         // Validate delivery type is enabled
         if ($validated['delivery_type'] === 'delivery' && !$storeConfig->accepts_delivery) {
-            return back()->with('error', 'Delivery is not available for this store.');
+            return back()->with('error', 'El envío a domicilio no está disponible en esta tienda.');
         }
         if ($validated['delivery_type'] === 'pickup' && !$storeConfig->accepts_pickup) {
-            return back()->with('error', 'Pickup is not available for this store.');
+            return back()->with('error', 'Recoger en tienda no está disponible en esta tienda.');
         }
 
         // Fetch products and validate they belong to this store
@@ -135,7 +135,7 @@ class PublicStoreController extends Controller
             ->keyBy('id');
 
         if ($products->count() !== count($productIds)) {
-            return back()->with('error', 'Some products are no longer available.');
+            return back()->with('error', 'Algunos productos ya no están disponibles.');
         }
 
         // Calculate totals
@@ -177,7 +177,7 @@ class PublicStoreController extends Controller
             ]);
 
             $order->items()->createMany($orderItems);
-            $order->logStatusChange(OrderStatus::Pending, OrderStatus::Pending, 'Order placed by customer.');
+            $order->logStatusChange(OrderStatus::Pending, OrderStatus::Pending, 'Pedido realizado por el cliente.');
 
             return $order;
         });

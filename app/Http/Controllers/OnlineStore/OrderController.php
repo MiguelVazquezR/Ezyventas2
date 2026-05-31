@@ -69,7 +69,7 @@ class OrderController extends Controller
 
         // Validate transition is allowed
         if (!in_array($newStatus, $oldStatus->allowedTransitions())) {
-            return back()->with('error', 'Invalid status transition.');
+            return back()->with('error', 'Transición de estado no válida.');
         }
 
         $order->update(['status' => $newStatus]);

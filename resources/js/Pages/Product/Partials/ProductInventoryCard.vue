@@ -135,9 +135,9 @@ const getVariantImage = (variant) => {
 </script>
 
 <template>
-    <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+    <div class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
         <div class="flex justify-between items-center mb-5">
-            <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 m-0 flex items-center gap-2">
                 <i v-if="isComposite" class="pi pi-link text-blue-500"></i>
                 <i v-else class="pi pi-box text-blue-500"></i>
                 {{ isComposite ? 'Componentes del Kit/Combo' : 'Inventario y variantes' }}
@@ -148,7 +148,7 @@ const getVariantImage = (variant) => {
         <!-- SI ES PRODUCTO COMPUESTO: Mostrar Componentes en vez de Stock Físico -->
         <div v-if="isComposite">
             <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">Este producto es dinámico. Al venderse en caja, se descontará el stock de los siguientes artículos de forma proporcional:</p>
-            <div class="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+            <div class="border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden">
                 <DataTable :value="product.components" class="p-datatable-sm" stripedRows>
                     <Column header="Componente">
                         <template #body="{ data }">
@@ -182,35 +182,35 @@ const getVariantImage = (variant) => {
         <template v-else>
             <!-- Indicadores (Cards) -->
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                <div class="bg-gray-50 dark:bg-gray-900/40 p-4 rounded-xl border border-gray-100 dark:border-gray-700/50 flex flex-col justify-center items-center text-center transition-colors hover:bg-gray-100 dark:hover:bg-gray-900/60">
+                <div class="bg-gray-50 dark:bg-[#1a1a1a] p-4 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col justify-center items-center text-center transition-colors hover:bg-gray-100 dark:hover:bg-[#232323]">
                     <span class="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Stock físico</span>
                     <span class="text-2xl font-black text-gray-800 dark:text-gray-100">{{ totalStock }}</span>
                 </div>
-                <div class="bg-green-50/50 dark:bg-green-900/10 p-4 rounded-xl border border-green-100 dark:border-green-900/30 flex flex-col justify-center items-center text-center transition-colors hover:bg-green-50 dark:hover:bg-green-900/20">
+                <div class="bg-green-50/50 dark:bg-green-900/10 p-4 rounded-2xl border border-green-100 dark:border-green-900/30 flex flex-col justify-center items-center text-center transition-colors hover:bg-green-50 dark:hover:bg-green-900/20">
                     <span class="text-[11px] font-bold text-green-600 dark:text-green-500 uppercase tracking-wider mb-1">Disponible</span>
                     <span class="text-2xl font-black text-green-600 dark:text-green-400">{{ totalAvailable }}</span>
                 </div>
-                <div class="bg-indigo-50/50 dark:bg-indigo-900/10 p-4 rounded-xl border border-indigo-100 dark:border-indigo-900/30 flex flex-col justify-center items-center text-center transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
+                <div class="bg-indigo-50/50 dark:bg-indigo-900/10 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-900/30 flex flex-col justify-center items-center text-center transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
                     <span class="text-[11px] font-bold text-indigo-600 dark:text-indigo-500 uppercase tracking-wider mb-1">Apartados</span>
                     <span class="text-2xl font-black text-indigo-600 dark:text-indigo-400">{{ totalReserved }}</span>
                 </div>
-                <div class="bg-gray-50 dark:bg-gray-900/40 p-4 rounded-xl border border-gray-100 dark:border-gray-700/50 flex flex-col justify-center items-center text-center transition-colors hover:bg-gray-100 dark:hover:bg-gray-900/60">
+                <div class="bg-gray-50 dark:bg-[#1a1a1a] p-4 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col justify-center items-center text-center transition-colors hover:bg-gray-100 dark:hover:bg-[#232323]">
                     <span class="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Stock mínimo</span>
                     <span class="text-2xl font-black text-gray-400 dark:text-gray-500">{{ totalMinStock }}</span>
                 </div>
             </div>
 
             <!-- Tabla de Variantes (Solo si existen) -->
-            <div v-if="isVariantProduct" class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+            <div v-if="isVariantProduct" class="overflow-hidden rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
                 <DataTable :value="product.product_attributes" class="p-datatable-sm" stripedRows>
                     <Column headerStyle="width: 4rem" bodyStyle="padding: 0.5rem">
                     <template #body="{ data }">
                             <Image v-if="getVariantImage(data)"
                                 :src="getVariantImage(data)"
                                 preview
-                                imageClass="w-10 h-10 object-cover rounded-md border border-gray-100 dark:border-gray-700 cursor-pointer" />
+                                imageClass="w-10 h-10 object-cover rounded-lg border border-gray-100 dark:border-[#3a3a3a] cursor-pointer" />
                             <div v-else
-                                class="w-10 h-10 rounded-md bg-gray-100 dark:bg-gray-800 flex items-center justify-center border border-gray-100 dark:border-gray-700">
+                                class="w-10 h-10 rounded-lg bg-gray-100 dark:bg-[#1a1a1a] flex items-center justify-center border border-gray-100 dark:border-[#3a3a3a]">
                                 <i class="pi pi-image text-gray-400 text-sm"></i>
                             </div>
                         </template>
@@ -254,7 +254,7 @@ const getVariantImage = (variant) => {
             <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
                 <i class="pi pi-clock text-indigo-400"></i> Detalle de apartados activos
             </h4>
-            <div class="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+            <div class="border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden">
                 <DataTable :value="activeLayaways" class="p-datatable-sm" responsiveLayout="scroll" sortField="date" :sortOrder="-1">
                     <Column field="date" header="Fecha" sortable class="text-xs">
                         <template #body="{ data }">{{ formatDateOnly(data.date) }}</template>

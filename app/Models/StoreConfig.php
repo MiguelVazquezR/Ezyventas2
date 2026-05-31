@@ -27,6 +27,7 @@ class StoreConfig extends Model implements HasMedia
         'accepts_pickup',
         'accepts_delivery',
         'delivery_fee',
+        'free_shipping_minimum',
         'preparation_time_minutes',
         'delivery_policy',
         'footer_note',
@@ -38,6 +39,7 @@ class StoreConfig extends Model implements HasMedia
         'accepts_pickup' => 'boolean',
         'accepts_delivery' => 'boolean',
         'delivery_fee' => 'decimal:2',
+        'free_shipping_minimum' => 'decimal:2',
     ];
 
     public function registerMediaCollections(): void

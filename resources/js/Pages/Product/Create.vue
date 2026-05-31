@@ -48,6 +48,9 @@ const form = useForm({
     cost_price: null,
     selling_price: null,
     show_in_pos: true,
+    show_online: false,
+    online_price: null,
+    is_featured: false,
     price_tiers: [],
     product_type: 'simple', // Arranca como simple
     current_stock: null,

@@ -50,7 +50,7 @@ const addToCart = () => {
 
                     <!-- Info -->
                     <div class="flex flex-col">
-                        <p class="text-xs text-gray-400 uppercase tracking-widest font-bold m-0">{{ product.category || 'Product' }}</p>
+                        <p class="text-xs text-gray-400 uppercase tracking-widest font-bold m-0">{{ product.category || 'Producto' }}</p>
                         <h1 class="text-2xl font-bold text-gray-900 mt-2 mb-4 m-0">{{ product.name }}</h1>
 
                         <p v-if="product.description" class="text-gray-600 text-sm leading-relaxed mb-6">{{ product.description }}</p>
@@ -59,11 +59,11 @@ const addToCart = () => {
                             <p class="text-3xl font-bold m-0 mb-6" style="color: var(--store-primary)">{{ formatCurrency(product.price) }}</p>
 
                             <div class="flex items-center gap-3 mb-4">
-                                <label class="text-sm text-gray-500">Quantity:</label>
+                                <label class="text-sm text-gray-500">Cantidad:</label>
                                 <InputNumber v-model="quantity" :min="1" :max="99" class="w-20" :pt="{ input: { root: { class: '!rounded-xl !text-center' } } }" />
                             </div>
 
-                            <Button label="Add to cart" icon="pi pi-shopping-cart" @click="addToCart" class="w-full !rounded-xl" style="background: var(--store-primary); border-color: var(--store-primary)" />
+                            <Button label="Agregar al carrito" icon="pi pi-shopping-cart" @click="addToCart" class="w-full !rounded-xl" style="background: var(--store-primary); border-color: var(--store-primary)" />
                         </div>
                     </div>
                 </div>

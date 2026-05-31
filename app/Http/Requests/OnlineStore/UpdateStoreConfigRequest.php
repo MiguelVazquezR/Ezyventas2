@@ -19,12 +19,14 @@ class UpdateStoreConfigRequest extends FormRequest
             'store_name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
             'logo' => ['nullable', 'image', 'max:2048'],
+            'remove_logo' => ['boolean'],
             'primary_color' => ['nullable', 'string', 'max:7'],
             'secondary_color' => ['nullable', 'string', 'max:7'],
             'welcome_message' => ['nullable', 'string', 'max:500'],
             'accepts_pickup' => ['boolean'],
             'accepts_delivery' => ['boolean'],
             'delivery_fee' => ['nullable', 'numeric', 'min:0'],
+            'free_shipping_minimum' => ['nullable', 'numeric', 'min:0'],
             'preparation_time_minutes' => ['nullable', 'integer', 'min:1'],
             'delivery_policy' => ['nullable', 'string', 'max:2000'],
             'footer_note' => ['nullable', 'string', 'max:500'],
@@ -34,8 +36,9 @@ class UpdateStoreConfigRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'slug.regex' => 'The slug may only contain lowercase letters, numbers, and hyphens.',
-            'slug.unique' => 'This slug is already in use. Please choose another one.',
+            'slug.regex' => 'El slug solo puede contener letras minúsculas, números y guiones.',
+            'slug.unique' => 'Este slug ya está en uso. Elige otro.',
+            'store_name.required' => 'El nombre de la tienda es obligatorio.',
         ];
     }
 }
