@@ -20,16 +20,22 @@ class StoreConfig extends Model implements HasMedia
         'is_active',
         'store_name',
         'description',
+        'tagline',
         'logo_url',
         'primary_color',
         'secondary_color',
+        'theme_mode',
         'welcome_message',
         'accepts_pickup',
         'accepts_delivery',
+        'allow_out_of_stock_purchases',
+        'out_of_stock_extra_minutes',
+        'whatsapp_number',
         'delivery_fee',
         'free_shipping_minimum',
         'preparation_time_minutes',
         'delivery_policy',
+        'terms_policy',
         'footer_note',
         'custom_domain',
     ];
@@ -38,6 +44,7 @@ class StoreConfig extends Model implements HasMedia
         'is_active' => 'boolean',
         'accepts_pickup' => 'boolean',
         'accepts_delivery' => 'boolean',
+        'allow_out_of_stock_purchases' => 'boolean',
         'delivery_fee' => 'decimal:2',
         'free_shipping_minimum' => 'decimal:2',
     ];
@@ -45,6 +52,15 @@ class StoreConfig extends Model implements HasMedia
     public function registerMediaCollections(): void
     {
         $this->addMediaCollection('store-logo')->singleFile();
+        $this->addMediaCollection('store-banners');
+    }
+
+    public function getBannersAttribute(): array
+    {
+        return $this->getMedia('store-banners')->map(fn($media) => [
+            'id' => $media->id,
+            'url' => $media->getFullUrl(),
+        ])->toArray();
     }
 
     public function getLogoUrlAttribute(): ?string

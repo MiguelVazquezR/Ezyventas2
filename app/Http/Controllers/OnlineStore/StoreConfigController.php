@@ -46,7 +46,7 @@ class StoreConfigController extends Controller
 
         $storeConfig = StoreConfig::where('subscription_id', $subscription->id)->firstOrFail();
 
-        $storeConfig->update($request->safe()->except(['logo', 'remove_logo']));
+        $storeConfig->update($request->safe()->except(['logo', 'remove_logo', 'banners', 'remove_banners', 'prep_days', 'prep_hours', 'prep_minutes']));
 
         // Handle logo removal
         if ($request->boolean('remove_logo')) {
@@ -59,6 +59,18 @@ class StoreConfigController extends Controller
             $storeConfig->clearMediaCollection('store-logo');
             $storeConfig->addMediaFromRequest('logo')->toMediaCollection('store-logo');
             $storeConfig->update(['logo_url' => $storeConfig->getFirstMediaUrl('store-logo')]);
+        }
+
+        // Handle banner removal
+        if ($request->boolean('remove_banners')) {
+            $storeConfig->clearMediaCollection('store-banners');
+        }
+
+        // Handle banner uploads
+        if ($request->hasFile('banners')) {
+            foreach ($request->file('banners') as $banner) {
+                $storeConfig->addMedia($banner)->toMediaCollection('store-banners');
+            }
         }
 
         return back()->with('success', 'Configuración de tienda actualizada correctamente.');

@@ -32,4 +32,7 @@ Route::middleware(['web', 'resolve.store'])->prefix('store/{slug}')->name('store
 
     // Order confirmation
     Route::get('/order/{order}/confirmed', [PublicStoreController::class, 'confirmed'])->name('order.confirmed');
+
+    // Policies
+    Route::get('/policies', [PublicStoreController::class, 'policies'])->name('policies');
 });

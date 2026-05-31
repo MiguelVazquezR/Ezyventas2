@@ -55,16 +55,33 @@ class ResolveStore
         \Inertia\Inertia::share('store', [
             'name' => $storeConfig->store_name,
             'description' => $storeConfig->description,
+            'tagline' => $storeConfig->tagline,
             'logo_url' => $storeConfig->logo_url,
-            'primary_color' => $storeConfig->primary_color,
-            'secondary_color' => $storeConfig->secondary_color,
+            'primary_color' => $storeConfig->primary_color ? $this->ensureHash($storeConfig->primary_color) : null,
+            'secondary_color' => $storeConfig->secondary_color ? $this->ensureHash($storeConfig->secondary_color) : null,
             'welcome_message' => $storeConfig->welcome_message,
             'footer_note' => $storeConfig->footer_note,
             'accepts_pickup' => $storeConfig->accepts_pickup,
             'accepts_delivery' => $storeConfig->accepts_delivery,
+            'allow_out_of_stock_purchases' => $storeConfig->allow_out_of_stock_purchases,
+            'out_of_stock_extra_minutes' => $storeConfig->out_of_stock_extra_minutes,
+            'whatsapp_number' => $storeConfig->whatsapp_number,
             'delivery_fee' => $storeConfig->delivery_fee,
+            'free_shipping_minimum' => $storeConfig->free_shipping_minimum,
+            'theme_mode' => $storeConfig->theme_mode ?? 'light',
+            'banners' => $storeConfig->banners,
+            'terms_policy' => $storeConfig->terms_policy,
         ]);
 
         return $next($request);
+    }
+
+    private function ensureHash(?string $value): ?string
+    {
+        if ($value === null || $value === '' || str_starts_with($value, '#')) {
+            return $value;
+        }
+
+        return '#' . $value;
     }
 }

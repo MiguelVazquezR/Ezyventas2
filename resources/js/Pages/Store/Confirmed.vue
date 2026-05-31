@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import StoreLayout from '@/Layouts/StoreLayout.vue';
 import Button from 'primevue/button';
@@ -19,27 +19,51 @@ const slug = computed(() => {
 const formatCurrency = (num) => {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(num || 0);
 };
+
+const showContent = ref(false);
+
+onMounted(() => {
+    // Trigger animation sequence
+    setTimeout(() => { showContent.value = true; }, 300);
+});
 </script>
 
 <template>
     <Head :title="'Pedido confirmado — ' + (store.name || 'Tienda')" />
     <StoreLayout>
-        <div class="max-w-xl mx-auto px-4 md:px-6 py-12">
-            <div class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] p-8 md:p-10 text-center">
+        <div class="max-w-xl mx-auto px-4 md:px-6 py-12 relative">
+            <!-- Success wave animation overlay -->
+            <div class="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+                <!-- Expanding rings -->
+                <div class="absolute w-16 h-16 rounded-full bg-green-500 animate-[ping_1.5s_ease-out_forwards] opacity-0" />
+                <div class="absolute w-16 h-16 rounded-full bg-green-400 animate-[ping_2s_ease-out_0.2s_forwards] opacity-0" />
+                <div class="absolute w-16 h-16 rounded-full bg-green-300 animate-[ping_2.5s_ease-out_0.4s_forwards] opacity-0" />
+                
+                <!-- Center checkmark -->
+                <div class="w-20 h-20 rounded-full bg-green-500 flex items-center justify-center shadow-[0_0_40px_rgba(34,197,94,0.5)] animate-[scaleIn_0.5s_ease-out_0.3s_both]">
+                    <i class="pi pi-check !text-3xl text-white" />
+                </div>
+            </div>
+
+            <!-- Content card (fades in after animation) -->
+            <div :class="[
+                'bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] p-8 md:p-10 text-center transition-all duration-700 ease-out',
+                showContent ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+            ]">
                 <!-- Success indicator -->
-                <div class="flex items-center justify-center gap-2 mb-8">
+                <div class="flex items-center justify-center gap-2 mb-6">
                     <span class="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)] animate-pulse" />
                     <span class="text-[10px] uppercase tracking-widest font-bold text-green-500">Pedido confirmado</span>
                 </div>
 
-                <!-- Success icon -->
-                <div class="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"
+                <!-- Success icon (static, smaller) -->
+                <div class="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"
                     :style="{ background: 'var(--store-primary-glow)' }">
-                    <i class="pi pi-check !text-3xl" :style="{ color: 'var(--store-primary)' }" />
+                    <i class="pi pi-check !text-2xl" :style="{ color: 'var(--store-primary)' }" />
                 </div>
 
                 <h1 class="text-2xl md:text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0 mb-2">
-                    ¡Pedido confirmado!
+                    ¡Compra realizada!
                 </h1>
                 <p class="text-sm text-gray-500 dark:text-gray-400 mb-8 m-0">
                     Gracias por tu pedido. Aquí está tu número de orden:
@@ -69,6 +93,10 @@ const formatCurrency = (num) => {
                             {{ formatCurrency(item.subtotal) }}
                         </span>
                     </div>
+                    <div v-if="order.delivery_fee > 0" class="flex justify-between text-sm">
+                        <span class="text-gray-500 dark:text-gray-400">Costo de envío</span>
+                        <span class="text-gray-900 dark:text-white">{{ formatCurrency(order.delivery_fee) }}</span>
+                    </div>
                     <div class="border-t border-gray-200 dark:border-[#3a3a3a] pt-2 mt-2 flex justify-between">
                         <span class="text-sm font-semibold text-gray-900 dark:text-white">Total</span>
                         <span class="text-lg font-light tracking-tight text-gray-900 dark:text-white"
@@ -95,3 +123,30 @@ const formatCurrency = (num) => {
         </div>
     </StoreLayout>
 </template>
+
+<style scoped>
+@keyframes ping {
+    0% {
+        transform: scale(1);
+        opacity: 0.6;
+    }
+    100% {
+        transform: scale(30);
+        opacity: 0;
+    }
+}
+@keyframes scaleIn {
+    0% {
+        transform: scale(0);
+        opacity: 0;
+    }
+    70% {
+        transform: scale(1.15);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+</style>

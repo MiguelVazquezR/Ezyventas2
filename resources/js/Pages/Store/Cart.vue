@@ -2,12 +2,6 @@
 import { ref, computed, onMounted } from 'vue';
 import { Head, router, usePage, Link } from '@inertiajs/vue3';
 import StoreLayout from '@/Layouts/StoreLayout.vue';
-import Button from 'primevue/button';
-import InputText from 'primevue/inputtext';
-import Textarea from 'primevue/textarea';
-import SelectButton from 'primevue/selectbutton';
-import InputNumber from 'primevue/inputnumber';
-import Message from 'primevue/message';
 import { useToast } from 'primevue/usetoast';
 
 const page = usePage();
@@ -40,7 +34,14 @@ const updateQuantity = (index, qty) => {
     sessionStorage.setItem('store_cart', JSON.stringify(cartItems.value));
 };
 
-const subtotal = computed(() => cartItems.value.reduce((sum, i) => sum + i.price * i.quantity, 0));
+const subtotal = computed(() => cartItems.value.reduce((sum, i) => sum + Number(i.price) * Number(i.quantity), 0));
+
+const freeShippingMin = computed(() => Number(store.value.free_shipping_minimum) || 0);
+const freeShippingReached = computed(() => freeShippingMin.value > 0 && subtotal.value >= freeShippingMin.value);
+const freeShippingRemaining = computed(() => {
+    if (freeShippingReached.value || freeShippingMin.value <= 0) return 0;
+    return freeShippingMin.value - subtotal.value;
+});
 
 const deliveryTypes = computed(() => {
     const types = [];
@@ -50,8 +51,15 @@ const deliveryTypes = computed(() => {
 });
 
 const deliveryType = ref('pickup');
-const deliveryFee = computed(() => deliveryType.value === 'delivery' ? (store.value.delivery_fee || 0) : 0);
-const total = computed(() => subtotal.value + deliveryFee.value);
+const deliveryFee = computed(() => {
+    if (deliveryType.value !== 'delivery') return 0;
+    if (freeShippingReached.value) return 0;
+    return Number(store.value.delivery_fee) || 0;
+});
+const total = computed(() => Number(subtotal.value) + Number(deliveryFee.value));
+
+const getStep = (item) => item.is_bulk ? 0.1 : 1;
+const getMin = (item) => item.is_bulk ? 0.1 : 1;
 
 const form = ref({
     customer_name: '',
@@ -156,10 +164,11 @@ const isEmpty = computed(() => cartItems.value.length === 0);
                             <h3 class="font-medium text-sm text-gray-900 dark:text-white m-0 truncate">{{ item.name }}</h3>
                             <p class="text-sm font-light tracking-tight mt-0.5 m-0" :style="{ color: 'var(--store-primary)' }">
                                 {{ formatCurrency(item.price) }}
+                                <span v-if="item.is_bulk" class="text-[10px] text-gray-400 dark:text-gray-500">/ {{ item.measure_unit || 'unidad' }}</span>
                             </p>
                         </div>
                         <div class="flex items-center gap-2">
-                            <InputNumber v-model="item.quantity" :min="1" :max="99" class="w-[72px]"
+                            <InputNumber fluid v-model="item.quantity" :min="getMin(item)" :max="999" :step="getStep(item)" showButtons class="!w-[108px]"
                                 @update:modelValue="updateQuantity(index, $event)"
                                 :pt="{ input: { root: { class: '!rounded-xl !text-center !text-sm !bg-white dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] !text-gray-900 dark:!text-white' } } }" />
                             <Button icon="pi pi-trash" text rounded severity="danger" size="small" @click="removeItem(index)"
@@ -205,9 +214,23 @@ const isEmpty = computed(() => cartItems.value.length === 0);
                             <span class="text-gray-500 dark:text-gray-400">Subtotal</span>
                             <span class="font-medium text-gray-900 dark:text-white">{{ formatCurrency(subtotal) }}</span>
                         </div>
+                        <!-- Free shipping progress -->
+                        <div v-if="freeShippingMin > 0 && !freeShippingReached" class="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1.5 py-1">
+                            <i class="pi pi-truck !text-xs" />
+                            Agrega {{ formatCurrency(freeShippingRemaining) }} más para envío gratis
+                        </div>
+                        <!-- Free shipping reached -->
+                        <div v-if="freeShippingReached" class="text-xs text-green-600 dark:text-green-400 flex items-center gap-1.5 py-1">
+                            <i class="pi pi-check-circle !text-xs" />
+                            ¡Envío gratis!
+                        </div>
                         <div v-if="deliveryFee > 0" class="flex justify-between text-sm">
                             <span class="text-gray-500 dark:text-gray-400">Costo de envío</span>
                             <span class="text-gray-900 dark:text-white">{{ formatCurrency(deliveryFee) }}</span>
+                        </div>
+                        <div v-else-if="deliveryType === 'delivery' && freeShippingReached" class="flex justify-between text-sm">
+                            <span class="text-gray-500 dark:text-gray-400">Costo de envío</span>
+                            <span class="text-green-600 dark:text-green-400 line-through">{{ formatCurrency(store.delivery_fee) }}</span>
                         </div>
                         <div class="flex justify-between pt-2 border-t border-gray-100 dark:border-[#3a3a3a]">
                             <span class="text-base font-semibold text-gray-900 dark:text-white">Total</span>

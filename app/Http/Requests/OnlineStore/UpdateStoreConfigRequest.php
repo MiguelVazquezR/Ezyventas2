@@ -11,6 +11,30 @@ class UpdateStoreConfigRequest extends FormRequest
         return $this->user()->can('online_store.config.edit');
     }
 
+    protected function prepareForValidation(): void
+    {
+        // Convert prep time from days/hours/minutes to total minutes
+        $prepDays = (int) ($this->prep_days ?? 0);
+        $prepHours = (int) ($this->prep_hours ?? 0);
+        $prepMinutes = (int) ($this->prep_minutes ?? 0);
+        $totalMinutes = ($prepDays * 1440) + ($prepHours * 60) + $prepMinutes;
+
+        $this->merge([
+            'primary_color' => $this->ensureHash($this->primary_color),
+            'secondary_color' => $this->ensureHash($this->secondary_color),
+            'preparation_time_minutes' => $totalMinutes > 0 ? $totalMinutes : ($this->preparation_time_minutes ?? 30),
+        ]);
+    }
+
+    private function ensureHash(?string $value): ?string
+    {
+        if ($value === null || $value === '' || str_starts_with($value, '#')) {
+            return $value;
+        }
+
+        return '#' . $value;
+    }
+
     public function rules(): array
     {
         return [
@@ -25,10 +49,22 @@ class UpdateStoreConfigRequest extends FormRequest
             'welcome_message' => ['nullable', 'string', 'max:500'],
             'accepts_pickup' => ['boolean'],
             'accepts_delivery' => ['boolean'],
+            'allow_out_of_stock_purchases' => ['boolean'],
+            'out_of_stock_extra_minutes' => ['nullable', 'integer', 'min:0', 'required_if:allow_out_of_stock_purchases,true'],
+            'whatsapp_number' => ['nullable', 'string', 'max:20', 'regex:/^\+?[0-9]{10,15}$/'],
+            'tagline' => ['nullable', 'string', 'max:120'],
+            'theme_mode' => ['nullable', 'string', 'in:light,dark'],
+            'banners' => ['nullable', 'array', 'max:3'],
+            'banners.*' => ['image', 'max:4096'],
+            'remove_banners' => ['boolean'],
+            'prep_days' => ['nullable', 'integer', 'min:0', 'max:30'],
+            'prep_hours' => ['nullable', 'integer', 'min:0', 'max:23'],
+            'prep_minutes' => ['nullable', 'integer', 'min:0', 'max:59'],
             'delivery_fee' => ['nullable', 'numeric', 'min:0'],
             'free_shipping_minimum' => ['nullable', 'numeric', 'min:0'],
             'preparation_time_minutes' => ['nullable', 'integer', 'min:1'],
             'delivery_policy' => ['nullable', 'string', 'max:2000'],
+            'terms_policy' => ['nullable', 'string', 'max:10000'],
             'footer_note' => ['nullable', 'string', 'max:500'],
         ];
     }

@@ -15,22 +15,38 @@ const slugAvailable = ref(null); // null = checking, true = available, false = t
 const checkingSlug = ref(false);
 const logoPreview = ref(props.storeConfig.logo_url || null);
 
+function ensureHash(color) {
+    if (!color || color.startsWith('#')) return color;
+    return '#' + color;
+}
+
 const form = useForm({
     slug: props.storeConfig.slug || '',
     is_active: props.storeConfig.is_active || false,
     store_name: props.storeConfig.store_name || '',
     description: props.storeConfig.description || '',
+    tagline: props.storeConfig.tagline || '',
     logo: null,
     remove_logo: false,
-    primary_color: props.storeConfig.primary_color || '#3B82F6',
-    secondary_color: props.storeConfig.secondary_color || '#1D4ED8',
+    primary_color: ensureHash(props.storeConfig.primary_color) || '#3B82F6',
+    secondary_color: ensureHash(props.storeConfig.secondary_color) || '#1D4ED8',
     welcome_message: props.storeConfig.welcome_message || '',
     accepts_pickup: props.storeConfig.accepts_pickup ?? true,
     accepts_delivery: props.storeConfig.accepts_delivery ?? true,
+    allow_out_of_stock_purchases: props.storeConfig.allow_out_of_stock_purchases ?? false,
+    out_of_stock_extra_minutes: props.storeConfig.out_of_stock_extra_minutes || '',
+    whatsapp_number: props.storeConfig.whatsapp_number || '',
     delivery_fee: props.storeConfig.delivery_fee || 0,
     free_shipping_minimum: props.storeConfig.free_shipping_minimum || 0,
     preparation_time_minutes: props.storeConfig.preparation_time_minutes || 30,
+    prep_days: 0,
+    prep_hours: 0,
+    prep_minutes: props.storeConfig.preparation_time_minutes || 30,
+    banners: [],
+    remove_banners: false,
+    theme_mode: props.storeConfig.theme_mode || 'light',
     delivery_policy: props.storeConfig.delivery_policy || '',
+    terms_policy: props.storeConfig.terms_policy || '',
     footer_note: props.storeConfig.footer_note || '',
 });
 
@@ -80,6 +96,10 @@ const checkSlug = useDebounceFn(async () => {
 }, 500);
 
 function submit() {
+    // Ensure colors always include the # prefix
+    form.primary_color = ensureHash(form.primary_color);
+    form.secondary_color = ensureHash(form.secondary_color);
+
     if (form.logo instanceof File) {
         // Inertia + file uploads: must use POST with _method=PUT via transform()
         // form.put() with forceFormData loses non-file fields in the FormData
@@ -112,6 +132,30 @@ function onLogoSelect(event) {
         form.logo = file;
         form.remove_logo = false;
         logoPreview.value = URL.createObjectURL(file);
+    }
+}
+
+const bannerPreviews = ref((props.storeConfig.banners || []).map(b => b.url));
+
+function onBannerSelect(event) {
+    const files = Array.from(event.files || []);
+    files.forEach(file => {
+        bannerPreviews.value.push(URL.createObjectURL(file));
+        form.banners.push(file);
+    });
+    form.remove_banners = false;
+}
+
+function removeBanner(index) {
+    if (bannerPreviews.value[index]?.startsWith('blob:')) {
+        URL.revokeObjectURL(bannerPreviews.value[index]);
+    }
+    bannerPreviews.value.splice(index, 1);
+    if (index < form.banners.length) {
+        form.banners.splice(index, 1);
+    } else {
+        // Removing an existing (server-side) banner
+        form.remove_banners = true;
     }
 }
 
@@ -161,6 +205,14 @@ const inputPt = {
                                 <Message v-if="form.errors.store_name" severity="error" variant="simple" size="small">{{ form.errors.store_name }}</Message>
                             </div>
                             <div class="flex flex-col gap-1.5">
+                                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Eslogan</label>
+                                <InputText v-model="form.tagline" :pt="inputPt" class="w-full" placeholder="Calidad y confianza" maxlength="120" />
+                                <p class="text-[11px] text-gray-400 dark:text-gray-500 m-0 leading-relaxed">
+                                    <i class="pi pi-info-circle !text-xs mr-1" />
+                                    Frase corta que aparece debajo del nombre de tu tienda. Máximo 120 caracteres.
+                                </p>
+                            </div>
+                            <div class="flex flex-col gap-1.5">
                                 <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Slug de URL *</label>
                                 <InputText v-model="form.slug" :pt="inputPt" class="w-full" placeholder="mi-tienda"
                                     @focus="slugManuallyEdited = true"
@@ -191,6 +243,15 @@ const inputPt = {
                         <div class="flex flex-col gap-1.5">
                             <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Mensaje de bienvenida</label>
                             <InputText v-model="form.welcome_message" :pt="inputPt" class="w-full" placeholder="¡Bienvenido a nuestra tienda!" />
+                        </div>
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">WhatsApp de contacto</label>
+                            <InputText v-model="form.whatsapp_number" :pt="inputPt" class="w-full" placeholder="+521234567890" maxlength="20" />
+                            <p class="text-[11px] text-gray-400 dark:text-gray-500 m-0 leading-relaxed">
+                                <i class="pi pi-info-circle !text-xs mr-1" />
+                                Número de WhatsApp para que tus clientes te contacten. Se mostrará un botón flotante en tu tienda.
+                            </p>
+                            <Message v-if="form.errors.whatsapp_number" severity="error" variant="simple" size="small">{{ form.errors.whatsapp_number }}</Message>
                         </div>
                     </section>
 
@@ -226,6 +287,42 @@ const inputPt = {
                             </div>
                             <Message v-if="form.errors.logo" severity="error" variant="simple" size="small">{{ form.errors.logo }}</Message>
                         </div>
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Tema de la tienda</label>
+                            <SelectButton v-model="form.theme_mode" :options="[
+                                { label: 'Claro', value: 'light', icon: 'pi pi-sun' },
+                                { label: 'Oscuro', value: 'dark', icon: 'pi pi-moon' },
+                            ]" optionLabel="label" optionValue="value"
+                                :pt="{
+                                    root: { class: '!bg-transparent !border-0 !p-0' },
+                                    button: { class: '!text-xs !rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-400' }
+                                }" />
+                            <p class="text-[11px] text-gray-400 dark:text-gray-500 m-0 leading-relaxed">
+                                <i class="pi pi-info-circle !text-xs mr-1" />
+                                Define si los fondos de tu tienda serán claros u oscuros.
+                            </p>
+                        </div>
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Banners</label>
+                            <p class="text-[11px] text-gray-400 dark:text-gray-500 m-0 leading-relaxed">
+                                <i class="pi pi-info-circle !text-xs mr-1" />
+                                Imágenes que aparecerán en un carrusel al inicio de tu tienda. Úsalas para promociones, nuevos productos u ofertas. Máximo 3 banners.
+                            </p>
+                            <div v-if="bannerPreviews.length > 0" class="flex gap-3 flex-wrap mt-1">
+                                <div v-for="(url, i) in bannerPreviews" :key="i" class="relative group">
+                                    <img :src="url" class="h-24 w-40 object-cover rounded-xl border border-gray-100 dark:border-[#3a3a3a]" />
+                                    <button type="button" @click="removeBanner(i)"
+                                        class="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md hover:bg-red-600"
+                                        title="Eliminar banner">
+                                        <i class="pi pi-times !text-[10px]" />
+                                    </button>
+                                </div>
+                            </div>
+                            <FileUpload mode="basic" accept="image/*" :maxFileSize="4000000" customUpload auto multiple @select="onBannerSelect"
+                                chooseLabel="Agregar banner" :disabled="bannerPreviews.length >= 3"
+                                :pt="{ chooseButton: { class: '!rounded-xl' } }" />
+                            <Message v-if="form.errors.banners" severity="error" variant="simple" size="small">{{ form.errors.banners }}</Message>
+                        </div>
                     </section>
 
                     <!-- Delivery & Footer -->
@@ -248,6 +345,22 @@ const inputPt = {
                             </div>
                         </div>
                         <template v-if="form.accepts_delivery">
+                            <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl">
+                                <div>
+                                    <span class="text-sm font-medium dark:text-white">Permitir comprar productos agotados</span>
+                                    <p class="text-xs text-gray-400 m-0">Los clientes podrán pedir productos sin stock, con tiempo extra de preparación.</p>
+                                </div>
+                                <ToggleSwitch v-model="form.allow_out_of_stock_purchases" />
+                            </div>
+                            <div v-if="form.allow_out_of_stock_purchases" class="flex flex-col gap-1.5">
+                                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Tiempo extra por resurtimiento (min)</label>
+                                <InputNumber v-model="form.out_of_stock_extra_minutes" :min="0" :pt="{ input: { root: { class: 'w-full !rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-sm' } } }" />
+                                <p class="text-[11px] text-gray-400 dark:text-gray-500 m-0 leading-relaxed">
+                                    <i class="pi pi-info-circle !text-xs mr-1" />
+                                    Minutos adicionales de preparación cuando un producto requiere resurtimiento.
+                                </p>
+                                <Message v-if="form.errors.out_of_stock_extra_minutes" severity="error" variant="simple" size="small">{{ form.errors.out_of_stock_extra_minutes }}</Message>
+                            </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div class="flex flex-col gap-1.5">
                                     <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Costo de envío</label>
@@ -265,14 +378,66 @@ const inputPt = {
                                 </div>
                             </div>
                             <div class="flex flex-col gap-1.5">
-                                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Tiempo de preparación (min)</label>
-                                <InputNumber v-model="form.preparation_time_minutes" :pt="{ input: { root: { class: 'w-full !rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-sm' } } }" />
+                                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Tiempo de preparación</label>
+                                <div class="grid grid-cols-3 gap-3">
+                                    <div class="flex flex-col gap-1">
+                                        <span class="text-[9px] text-gray-400">Días</span>
+                                        <InputNumber v-model="form.prep_days" :min="0" :max="30" :pt="{ input: { root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-sm !text-center' } } }" />
+                                    </div>
+                                    <div class="flex flex-col gap-1">
+                                        <span class="text-[9px] text-gray-400">Horas</span>
+                                        <InputNumber v-model="form.prep_hours" :min="0" :max="23" :pt="{ input: { root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-sm !text-center' } } }" />
+                                    </div>
+                                    <div class="flex flex-col gap-1">
+                                        <span class="text-[9px] text-gray-400">Minutos</span>
+                                        <InputNumber v-model="form.prep_minutes" :min="0" :max="59" :pt="{ input: { root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-sm !text-center' } } }" />
+                                    </div>
+                                </div>
+                                <p class="text-[11px] text-gray-400 dark:text-gray-500 m-0 leading-relaxed">
+                                    <i class="pi pi-info-circle !text-xs mr-1" />
+                                    Tiempo estimado que tardas en preparar un pedido. Se guardará en minutos.
+                                </p>
                             </div>
                             <div class="flex flex-col gap-1.5">
                                 <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Política de envío</label>
                                 <Textarea v-model="form.delivery_policy" :pt="inputPt" rows="3" class="w-full" />
                             </div>
                         </template>
+                    </section>
+
+                    <!-- Policies -->
+                    <section class="space-y-4">
+                        <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-300 m-0 pb-2 border-b border-gray-100 dark:border-[#3a3a3a]">Políticas de la tienda</h2>
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Políticas, devoluciones y términos</label>
+                            <Editor v-model="form.terms_policy" editorStyle="height: 250px" class="w-full"
+                                :pt="{
+                                    root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a]' }
+                                }">
+                                <template v-slot:toolbar>
+                                    <span class="ql-formats">
+                                        <select class="ql-header" defaultValue="3"><option value="1">Título</option><option value="2">Subtítulo</option><option value="3">Normal</option></select>
+                                    </span>
+                                    <span class="ql-formats">
+                                        <button class="ql-bold"></button>
+                                        <button class="ql-italic"></button>
+                                        <button class="ql-underline"></button>
+                                    </span>
+                                    <span class="ql-formats">
+                                        <button class="ql-list" value="ordered"></button>
+                                        <button class="ql-list" value="bullet"></button>
+                                    </span>
+                                    <span class="ql-formats">
+                                        <button class="ql-link"></button>
+                                    </span>
+                                </template>
+                            </Editor>
+                            <p class="text-[11px] text-gray-400 dark:text-gray-500 m-0 leading-relaxed">
+                                <i class="pi pi-info-circle !text-xs mr-1" />
+                                Estas políticas se mostrarán en una página accesible desde el pie de tu tienda.
+                            </p>
+                            <Message v-if="form.errors.terms_policy" severity="error" variant="simple" size="small">{{ form.errors.terms_policy }}</Message>
+                        </div>
                     </section>
 
                     <!-- Footer -->
