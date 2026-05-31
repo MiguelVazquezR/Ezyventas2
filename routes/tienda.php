@@ -22,7 +22,7 @@ Route::middleware(['web', 'resolve.store'])->prefix('store/{slug}')->name('store
     Route::get('/', [PublicStoreController::class, 'index'])->name('home');
 
     // Product detail
-    Route::get('/product/{storeProduct}', [PublicStoreController::class, 'show'])->name('product.show');
+    Route::get('/product/{product}', [PublicStoreController::class, 'show'])->name('product.show');
 
     // Cart / Order form
     Route::get('/cart', [PublicStoreController::class, 'cart'])->name('cart');

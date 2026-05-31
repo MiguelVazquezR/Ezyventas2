@@ -1,10 +1,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { Head, router, usePage } from '@inertiajs/vue3';
+import { Head, router, usePage, Link } from '@inertiajs/vue3';
 import StoreLayout from '@/Layouts/StoreLayout.vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
-import InputMask from 'primevue/inputmask';
 import Textarea from 'primevue/textarea';
 import SelectButton from 'primevue/selectbutton';
 import InputNumber from 'primevue/inputnumber';
@@ -14,6 +13,11 @@ import { useToast } from 'primevue/usetoast';
 const page = usePage();
 const store = computed(() => page.props.store || {});
 const toast = useToast();
+
+const slug = computed(() => {
+    const parts = window.location.pathname.split('/');
+    return parts[2] || '';
+});
 
 const formatCurrency = (num) => {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(num || 0);
@@ -82,7 +86,7 @@ const placeOrder = () => {
 
     submitting.value = true;
 
-    router.post(route('store.order.place', { slug: new URL(window.location.href).pathname.split('/')[2] }), {
+    router.post(route('store.order.place', { slug: slug.value }), {
         items: cartItems.value.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
         customer_name: form.value.customer_name,
         customer_phone: form.value.customer_phone,
@@ -103,55 +107,82 @@ const placeOrder = () => {
 };
 
 const inputPt = {
-    root: { class: '!rounded-xl !bg-white !border-gray-200 focus:!border-primary-500 transition-colors' }
+    root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:!border-gray-300 dark:focus:!border-gray-600 !text-gray-900 dark:!text-white transition-colors' }
 };
 
 const isEmpty = computed(() => cartItems.value.length === 0);
 </script>
 
 <template>
-    <Head title="Carrito" />
+    <Head :title="'Carrito — ' + (store.name || 'Tienda')" />
     <StoreLayout>
-        <div class="max-w-4xl mx-auto px-4 py-8">
-            <h1 class="text-2xl font-bold text-gray-900 mb-8 m-0">Tu pedido</h1>
+        <div class="max-w-5xl mx-auto px-4 md:px-6 py-8">
+            <!-- Back link -->
+            <Link :href="route('store.home', { slug: slug })"
+                class="inline-flex items-center gap-1.5 text-xs font-medium text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mb-6">
+                <i class="pi pi-arrow-left !text-[10px]" />
+                Volver a la tienda
+            </Link>
+
+            <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white mb-8 m-0">Tu pedido</h1>
 
             <!-- Empty cart -->
-            <div v-if="isEmpty" class="bg-white rounded-2xl border border-gray-200 p-12 text-center">
-                <i class="pi pi-shopping-cart !text-5xl text-gray-300 mb-4 block" />
-                <p class="text-gray-500 text-lg mb-4">Tu carrito está vacío.</p>
-                <a :href="route('store.home', { slug: $page.url.split('/')[2] })" class="text-sm font-semibold" style="color: var(--store-primary)">Ver productos</a>
+            <div v-if="isEmpty" class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] p-16 text-center">
+                <div class="w-20 h-20 mx-auto mb-6 rounded-full bg-gray-50 dark:bg-[#1a1a1a] flex items-center justify-center">
+                    <i class="pi pi-shopping-cart !text-2xl text-gray-300 dark:text-gray-600" />
+                </div>
+                <p class="text-gray-500 dark:text-gray-400 text-lg mb-4 m-0">Tu carrito está vacío.</p>
+                <Link :href="route('store.home', { slug: slug })"
+                    class="inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-medium text-white transition-all"
+                    :style="{ background: 'var(--store-primary)' }">
+                    <i class="pi pi-arrow-left !text-xs" />
+                    Ver productos
+                </Link>
             </div>
 
             <div v-else class="grid grid-cols-1 lg:grid-cols-5 gap-6">
                 <!-- Cart items -->
-                <div class="lg:col-span-3 space-y-4">
-                    <div v-for="(item, index) in cartItems" :key="index" class="bg-white rounded-2xl border border-gray-200 p-4 flex gap-4">
-                        <div class="w-16 h-16 bg-gray-50 rounded-xl flex items-center justify-center shrink-0">
+                <div class="lg:col-span-3 space-y-3">
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-2">
+                        {{ cartItems.length }} {{ cartItems.length === 1 ? 'producto' : 'productos' }}
+                    </p>
+                    <div v-for="(item, index) in cartItems" :key="index"
+                        class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] p-4 flex gap-4 items-center group">
+                        <div class="w-16 h-16 bg-gray-50 dark:bg-[#1a1a1a] rounded-xl flex items-center justify-center shrink-0">
                             <img v-if="item.image_url" :src="item.image_url" class="max-h-full max-w-full object-contain" />
-                            <i v-else class="pi pi-image text-gray-300" />
+                            <i v-else class="pi pi-image text-gray-300 dark:text-gray-600" />
                         </div>
                         <div class="flex-1 min-w-0">
-                            <h3 class="font-medium text-sm text-gray-900 m-0 truncate">{{ item.name }}</h3>
-                            <p class="text-sm font-bold mt-1 m-0" style="color: var(--store-primary)">{{ formatCurrency(item.price) }}</p>
+                            <h3 class="font-medium text-sm text-gray-900 dark:text-white m-0 truncate">{{ item.name }}</h3>
+                            <p class="text-sm font-light tracking-tight mt-0.5 m-0" :style="{ color: 'var(--store-primary)' }">
+                                {{ formatCurrency(item.price) }}
+                            </p>
                         </div>
                         <div class="flex items-center gap-2">
-                            <InputNumber v-model="item.quantity" :min="1" :max="99" class="w-16" @update:modelValue="updateQuantity(index, $event)" :pt="{ input: { root: { class: '!rounded-xl !text-center !text-sm' } } }" />
-                            <Button icon="pi pi-trash" text rounded severity="danger" size="small" @click="removeItem(index)" />
+                            <InputNumber v-model="item.quantity" :min="1" :max="99" class="w-[72px]"
+                                @update:modelValue="updateQuantity(index, $event)"
+                                :pt="{ input: { root: { class: '!rounded-xl !text-center !text-sm !bg-white dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] !text-gray-900 dark:!text-white' } } }" />
+                            <Button icon="pi pi-trash" text rounded severity="danger" size="small" @click="removeItem(index)"
+                                :pt="{ root: { class: '!text-gray-400 hover:!text-red-500 dark:hover:!text-red-400 transition-colors' } }" />
                         </div>
                     </div>
                 </div>
 
                 <!-- Order form -->
-                <div class="lg:col-span-2 space-y-6">
+                <div class="lg:col-span-2 space-y-4">
                     <!-- Delivery type -->
-                    <div class="bg-white rounded-2xl border border-gray-200 p-4">
-                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-3 block">Tipo de entrega</label>
-                        <SelectButton v-model="deliveryType" :options="deliveryTypes" optionLabel="label" optionValue="value" class="w-full" :pt="{ button: { class: '!text-xs !rounded-xl flex-1' } }" />
+                    <div class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] p-4">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-3 block">Tipo de entrega</label>
+                        <SelectButton v-model="deliveryType" :options="deliveryTypes" optionLabel="label" optionValue="value" class="w-full"
+                            :pt="{
+                                root: { class: '!bg-transparent !border-0 !p-0' },
+                                button: { class: '!text-xs !rounded-xl flex-1 !bg-white dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-400' }
+                            }" />
                     </div>
 
                     <!-- Customer info -->
-                    <div class="bg-white rounded-2xl border border-gray-200 p-4 space-y-3">
-                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 block">Tu información</label>
+                    <div class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] p-4 space-y-3">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 block">Tu información</label>
                         <div>
                             <InputText v-model="form.customer_name" placeholder="Nombre completo *" :pt="inputPt" class="w-full" />
                             <Message v-if="errors.customer_name" severity="error" variant="simple" size="small" class="mt-1">{{ errors.customer_name }}</Message>
@@ -169,22 +200,26 @@ const isEmpty = computed(() => cartItems.value.length === 0);
                     </div>
 
                     <!-- Totals -->
-                    <div class="bg-white rounded-2xl border border-gray-200 p-4 space-y-2">
+                    <div class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] p-4 space-y-2">
                         <div class="flex justify-between text-sm">
-                            <span class="text-gray-500">Subtotal</span>
-                            <span class="font-mono font-semibold">{{ formatCurrency(subtotal) }}</span>
+                            <span class="text-gray-500 dark:text-gray-400">Subtotal</span>
+                            <span class="font-medium text-gray-900 dark:text-white">{{ formatCurrency(subtotal) }}</span>
                         </div>
                         <div v-if="deliveryFee > 0" class="flex justify-between text-sm">
-                            <span class="text-gray-500">Costo de envío</span>
-                            <span class="font-mono">{{ formatCurrency(deliveryFee) }}</span>
+                            <span class="text-gray-500 dark:text-gray-400">Costo de envío</span>
+                            <span class="text-gray-900 dark:text-white">{{ formatCurrency(deliveryFee) }}</span>
                         </div>
-                        <div class="flex justify-between font-bold text-lg pt-2 border-t border-gray-100">
-                            <span>Total</span>
-                            <span class="font-mono" style="color: var(--store-primary)">{{ formatCurrency(total) }}</span>
+                        <div class="flex justify-between pt-2 border-t border-gray-100 dark:border-[#3a3a3a]">
+                            <span class="text-base font-semibold text-gray-900 dark:text-white">Total</span>
+                            <span class="text-xl font-light tracking-tight" :style="{ color: 'var(--store-primary)' }">
+                                {{ formatCurrency(total) }}
+                            </span>
                         </div>
                     </div>
 
-                    <Button label="Hacer pedido" icon="pi pi-check" :loading="submitting" @click="placeOrder" class="w-full !rounded-xl !py-3" style="background: var(--store-primary); border-color: var(--store-primary)" />
+                    <Button label="Hacer pedido" icon="pi pi-check" :loading="submitting" @click="placeOrder"
+                        class="w-full !rounded-xl !py-3"
+                        :pt="{ root: { style: `background: var(--store-primary); border-color: var(--store-primary);` } }" />
                 </div>
             </div>
         </div>

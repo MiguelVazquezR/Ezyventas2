@@ -60,25 +60,30 @@ class PublicStoreController extends Controller
     /**
      * Product detail page.
      */
-    public function show(Product $product): Response
+    public function show(Request $request, $product): Response
     {
         $storeConfig = app('resolvedStore');
         $subscriptionId = $storeConfig->subscription_id;
 
-        if (!$product->show_online || $product->branch?->subscription_id !== $subscriptionId) {
+        $productModel = Product::where('id', $product)
+            ->where('show_online', true)
+            ->whereHas('branch', fn($q) => $q->where('subscription_id', $subscriptionId))
+            ->first();
+
+        if (!$productModel) {
             abort(404);
         }
 
-        $product->load('media');
+        $productModel->load('media');
 
         return Inertia::render('Store/Show', [
             'product' => [
-                'id' => $product->id,
-                'name' => $product->name,
-                'description' => $product->description,
-                'price' => $product->online_price ?? $product->selling_price,
-                'category' => $product->category?->name,
-                'image_url' => $product->getFirstMediaUrl('product-general-images') ?: null,
+                'id' => $productModel->id,
+                'name' => $productModel->name,
+                'description' => $productModel->description,
+                'price' => $productModel->online_price ?? $productModel->selling_price,
+                'category' => $productModel->category?->name,
+                'image_url' => $productModel->getFirstMediaUrl('product-general-images') ?: null,
             ],
         ]);
     }

@@ -52,17 +52,18 @@ class ResolveStore
         app()->instance(StoreConfig::class, $storeConfig);
 
         // Share with Inertia for public pages
-        if (method_exists(\Inertia\Inertia::class, 'share')) {
-            \Inertia\Inertia::share('store', [
-                'name' => $storeConfig->store_name,
-                'description' => $storeConfig->description,
-                'logo_url' => $storeConfig->logo_url,
-                'primary_color' => $storeConfig->primary_color,
-                'secondary_color' => $storeConfig->secondary_color,
-                'welcome_message' => $storeConfig->welcome_message,
-                'footer_note' => $storeConfig->footer_note,
-            ]);
-        }
+        \Inertia\Inertia::share('store', [
+            'name' => $storeConfig->store_name,
+            'description' => $storeConfig->description,
+            'logo_url' => $storeConfig->logo_url,
+            'primary_color' => $storeConfig->primary_color,
+            'secondary_color' => $storeConfig->secondary_color,
+            'welcome_message' => $storeConfig->welcome_message,
+            'footer_note' => $storeConfig->footer_note,
+            'accepts_pickup' => $storeConfig->accepts_pickup,
+            'accepts_delivery' => $storeConfig->accepts_delivery,
+            'delivery_fee' => $storeConfig->delivery_fee,
+        ]);
 
         return $next($request);
     }
