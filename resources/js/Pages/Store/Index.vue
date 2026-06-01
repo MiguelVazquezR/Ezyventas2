@@ -85,314 +85,199 @@ const goToProduct = (product) => {
 };
 
 const showBackToTop = ref(false);
-
-const onScroll = () => {
-    showBackToTop.value = window.scrollY > 500;
-};
-
+const onScroll = () => { showBackToTop.value = window.scrollY > 500; };
 window.addEventListener('scroll', onScroll, { passive: true });
-
-const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-};
+const scrollToTop = () => { window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
 const pageTitle = computed(() => store.value.name || 'Tienda');
 
 const getProductPrice = (item) => Number(item.online_price || item.selling_price);
-
 const getStockInfo = (item) => {
     const available = Number(item.available_stock ?? 0);
-    return {
-        available,
-        isOut: available <= 0,
-    };
+    return { available, isOut: available <= 0 };
 };
 </script>
 
 <template>
     <Head :title="pageTitle" />
     <StoreLayout>
-        <div class="max-w-7xl mx-auto px-4 md:px-6 py-8">
+        <div class="max-w-7xl mx-auto px-4 md:px-8 py-8 md:py-12">
             <!-- Welcome message -->
-            <div v-if="store.welcome_message" class="mb-8 text-center">
-                <p class="text-xl md:text-2xl font-light tracking-tight m-0"
-                    :class="isDarkTheme ? 'text-gray-500' : 'text-gray-800'">{{ store.welcome_message }}</p>
-            </div>
-
-            <!-- Featured products -->
-            <div v-if="featured && featured.length > 0" class="mb-8">
-                <p class="text-[10px] uppercase tracking-widest font-bold m-0 mb-4 flex items-center gap-2">
-                    <span class="w-1 h-4 rounded-full" :style="{ background: 'var(--store-secondary)' }" />
-                    <span :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Productos destacados</span>
+            <div v-if="store.welcome_message" class="mb-12 text-center">
+                <p class="text-lg md:text-xl font-light tracking-wide leading-relaxed max-w-2xl mx-auto m-0"
+                    :class="isDarkTheme ? 'text-gray-300' : 'text-gray-600'">
+                    {{ store.welcome_message }}
                 </p>
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div v-for="item in featured" :key="item.id"
-                        :class="[
-                            'rounded-3xl border overflow-hidden cursor-pointer transition-all duration-300 group relative',
-                            isDarkTheme
-                                ? 'bg-[#232323] border-[#3a3a3a] hover:border-gray-600'
-                                : 'bg-white border-gray-100 hover:border-gray-300'
-                        ]"
-                        @click="goToProduct(item)">
-                        <div :class="[
-                            'h-40 flex items-center justify-center p-4',
-                            isDarkTheme ? 'bg-[#1a1a1a]' : 'bg-gray-50'
-                        ]">
-                            <img v-if="item.media?.length" :src="item.media[0].original_url"
-                                class="max-h-full max-w-full object-contain transition-transform duration-500 group-hover:scale-105" />
-                            <i v-else class="pi pi-image !text-3xl"
-                                :class="isDarkTheme ? 'text-gray-600' : 'text-gray-300'" />
-                        </div>
-                        <div class="p-3">
-                            <h3 class="font-medium text-xs line-clamp-2 m-0 leading-snug"
-                                :class="isDarkTheme ? 'text-white' : 'text-gray-900'">{{ item.name }}</h3>
-                            <p class="text-sm font-light tracking-tight mt-1.5 m-0"
-                                :style="{ color: 'var(--store-primary)' }">
-                                {{ formatCurrency(item.online_price || item.selling_price).replace(/\.00$/, '') }}
-                            </p>
-                        </div>
-                        <!-- Cart quantity badge -->
-                        <span v-if="getCartQuantity(item.id) > 0"
-                            class="absolute top-2 right-2 min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-bold text-white"
-                            :style="{ background: 'var(--store-primary)' }">
-                            {{ getCartQuantity(item.id) }}
-                        </span>
-                    </div>
-                </div>
             </div>
 
-            <!-- Search (sticky) -->
-            <div :class="[
-                'sticky top-[57px] z-30 backdrop-blur-md -mx-4 md:-mx-6 px-4 md:px-6 py-3 mb-6'
-            ]">
-                <IconField iconPosition="left" class="w-full max-w-lg mx-auto">
+            <!-- Search bar -->
+            <div class="max-w-xl mx-auto mb-10">
+                <IconField iconPosition="left" class="w-full">
                     <InputIcon class="pi pi-search !text-sm"
-                        :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'" />
+                        :class="isDarkTheme ? 'text-gray-600' : 'text-gray-400'" />
                     <InputText v-model="search" @input="onSearch" placeholder="Buscar productos..."
                         class="w-full"
                         :pt="{
                             root: {
                                 class: [
-                                    '!rounded-2xl !py-3 !text-sm focus:!border-gray-300 transition-colors',
+                                    '!rounded-full !py-3 !pl-10 !pr-5 !text-sm !border transition-colors',
                                     isDarkTheme
-                                        ? '!bg-[#232323] !border-[#3a3a3a] !text-white focus:!border-gray-600'
-                                        : '!bg-white !border-gray-100 !text-gray-900'
+                                        ? '!bg-[#252525] !border-[#2a2a2a] !text-gray-200 placeholder:!text-gray-600 focus:!border-gray-500'
+                                        : '!bg-white !border-[#e8e3dc] !text-gray-800 placeholder:!text-gray-400 focus:!border-gray-400'
                                 ].join(' ')
                             }
                         }" />
                 </IconField>
             </div>
 
-            <div class="flex flex-col md:flex-row gap-8">
-                <!-- Sidebar: Categories + Price filter -->
-                <div class="md:w-52 shrink-0 space-y-6">
-                    <!-- Category sidebar -->
-                    <div v-if="categories.length > 0" :class="[
-                        'rounded-2xl p-4',
-                        isDarkTheme ? 'bg-[#1c1c1c]' : 'bg-gray-50/80'
-                    ]">
-                        <p class="text-[10px] uppercase tracking-widest font-bold m-0 mb-3"
-                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Categorías</p>
-                        <div class="flex flex-wrap md:flex-col gap-1.5">
-                            <button v-for="cat in categories" :key="cat.id"
-                                class="text-left px-4 py-2 text-xs font-medium rounded-full transition-all duration-200 border"
-                                :class="[
-                                    activeCategory === String(cat.id)
-                                        ? 'text-white border-transparent'
-                                        : isDarkTheme
-                                            ? 'text-gray-400 bg-[#232323] border-[#3a3a3a] hover:border-gray-600'
-                                            : 'text-gray-600 bg-white border-gray-100 hover:border-gray-300'
-                                ]"
-                                :style="activeCategory === String(cat.id) ? { background: 'var(--store-primary)', borderColor: 'var(--store-primary)' } : {}"
-                                @click="filterCategory(String(cat.id))">
-                                {{ cat.name }}
-                            </button>
-                        </div>
-                    </div>
+            <!-- Category chips -->
+            <div v-if="categories.length > 0" class="flex flex-wrap justify-center gap-2 mb-10">
+                <button v-for="cat in categories" :key="cat.id"
+                    class="px-5 py-2 text-xs font-medium rounded-full transition-all duration-200 border"
+                    :class="[
+                        activeCategory === String(cat.id)
+                            ? 'text-white border-transparent'
+                            : isDarkTheme
+                                ? 'text-gray-400 bg-[#252525] border-[#2a2a2a] hover:border-gray-600 hover:text-gray-200'
+                                : 'text-gray-500 bg-white border-[#e8e3dc] hover:border-gray-300 hover:text-gray-700'
+                    ]"
+                    :style="activeCategory === String(cat.id) ? { background: 'var(--store-primary)', borderColor: 'var(--store-primary)' } : {}"
+                    @click="filterCategory(String(cat.id))">
+                    {{ cat.name }}
+                </button>
+            </div>
 
-                    <!-- Price filter -->
-                    <div :class="[
-                        'rounded-2xl p-4',
-                        isDarkTheme ? 'bg-[#1c1c1c]' : 'bg-gray-50/80'
-                    ]">
-                        <p class="text-[10px] uppercase tracking-widest font-bold m-0 mb-3"
-                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Precio</p>
-                        <div class="space-y-2">
-                            <InputNumber fluid v-model="minPrice" placeholder="Mínimo" mode="currency" currency="MXN"
-                                @update:modelValue="onPriceChange" class="w-full"
-                                :pt="{
-                                    input: {
-                                        root: {
-                                            class: [
-                                                '!rounded-xl !text-xs',
-                                                isDarkTheme
-                                                    ? '!bg-[#232323] !border-[#3a3a3a] !text-white'
-                                                    : '!bg-white !border-gray-100 !text-gray-900'
-                                            ].join(' ')
-                                        }
-                                    }
-                                }" />
-                            <InputNumber fluid v-model="maxPrice" placeholder="Máximo" mode="currency" currency="MXN"
-                                @update:modelValue="onPriceChange" class="w-full"
-                                :pt="{
-                                    input: {
-                                        root: {
-                                            class: [
-                                                '!rounded-xl !text-xs',
-                                                isDarkTheme
-                                                    ? '!bg-[#232323] !border-[#3a3a3a] !text-white'
-                                                    : '!bg-white !border-gray-100 !text-gray-900'
-                                            ].join(' ')
-                                        }
-                                    }
-                                }" />
-                        </div>
-                    </div>
+            <!-- Sort + count bar -->
+            <div v-if="products.data.length > 0" class="flex items-center justify-between mb-6">
+                <p class="text-[11px] tracking-wider font-medium m-0"
+                    :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
+                    {{ products.total }} {{ products.total === 1 ? 'producto' : 'productos' }}
+                </p>
+                <Select v-model="sortBy" @change="onSortChange" :options="[
+                    { label: 'Más relevantes', value: '' },
+                    { label: 'Menor precio', value: 'price_asc' },
+                    { label: 'Mayor precio', value: 'price_desc' },
+                ]" optionLabel="label" optionValue="value" placeholder="Ordenar"
+                    class="w-44"
+                    :pt="{
+                        root: {
+                            class: [
+                                '!rounded-full !text-xs',
+                                isDarkTheme ? '!bg-[#252525] !border-[#2a2a2a] !text-gray-300' : '!bg-white !border-[#e8e3dc] !text-gray-600'
+                            ].join(' ')
+                        }
+                    }" />
+            </div>
 
-                    <!-- Clear filters -->
-                    <button v-if="hasFilters" @click="clearFilters"
-                        :class="[
-                            'w-full text-[10px] uppercase tracking-widest font-bold transition-colors py-2',
-                            isDarkTheme ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
-                        ]">
-                        Limpiar filtros
-                    </button>
-                </div>
+            <!-- Clear filters -->
+            <div v-if="hasFilters" class="flex justify-center mb-8">
+                <button @click="clearFilters"
+                    class="text-[10px] uppercase tracking-widest font-bold transition-colors py-1 px-4 rounded-full border"
+                    :class="isDarkTheme ? 'text-gray-500 border-[#2a2a2a] hover:text-gray-300 hover:border-gray-600' : 'text-gray-400 border-[#e8e3dc] hover:text-gray-600 hover:border-gray-300'">
+                    Limpiar filtros
+                </button>
+            </div>
 
-                <!-- Product grid -->
-                <div class="flex-1 min-w-0">
-                    <!-- Results count + Sort -->
-                    <div class="flex items-center justify-between mb-4">
-                        <p class="text-[10px] uppercase tracking-widest font-bold m-0"
-                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
-                            {{ products.total }} {{ products.total === 1 ? 'producto' : 'productos' }}
-                        </p>
-                        <Select v-model="sortBy" @change="onSortChange" :options="[
-                            { label: 'Más relevantes', value: '' },
-                            { label: 'Menor precio', value: 'price_asc' },
-                            { label: 'Mayor precio', value: 'price_desc' },
-                        ]" optionLabel="label" optionValue="value" placeholder="Ordenar"
-                            class="w-40"
-                            :pt="{
-                                root: {
-                                    class: [
-                                        '!rounded-xl !text-xs',
-                                        isDarkTheme ? '!bg-[#232323] !border-[#3a3a3a]' : '!bg-white !border-gray-100'
-                                    ].join(' ')
-                                }
-                            }" />
-                    </div>
-
-                    <DataView :value="products.data" layout="grid" :pt="{ content: { class: '!bg-transparent !p-0' } }">
-                        <template #grid="slotProps">
-                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                <div v-for="item in slotProps.items" :key="item.id"
-                                    :class="[
-                                        'rounded-3xl border overflow-hidden cursor-pointer transition-all duration-300 group relative',
-                                        isDarkTheme
-                                            ? 'bg-[#232323] border-[#3a3a3a] hover:border-gray-600'
-                                            : 'bg-white border-gray-100 hover:border-gray-300'
-                                    ]"
-                                    @click="goToProduct(item)">
-                                    <!-- Cart quantity badge -->
-                                    <span v-if="getCartQuantity(item.id) > 0"
-                                        class="absolute top-2 right-2 z-10 min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-bold text-white"
-                                        :style="{ background: 'var(--store-primary)' }">
-                                        {{ getCartQuantity(item.id) }}
+            <!-- Product grid -->
+            <DataView :value="products.data" layout="grid" :pt="{ content: { class: '!bg-transparent !p-0' } }">
+                <template #grid="slotProps">
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 md:gap-6">
+                        <div v-for="item in slotProps.items" :key="item.id"
+                            :class="[
+                                'group cursor-pointer rounded-2xl overflow-hidden transition-all duration-300 border',
+                                isDarkTheme
+                                    ? 'bg-[#252525] border-transparent hover:border-[#3a3a3a]'
+                                    : 'bg-white border-transparent hover:border-[#e0dbd4] hover:shadow-sm'
+                            ]"
+                            @click="goToProduct(item)">
+                            <!-- Image -->
+                            <div :class="[
+                                'aspect-square flex items-center justify-center p-6 relative overflow-hidden',
+                                isDarkTheme ? 'bg-[#1a1a1a]' : 'bg-[#f5f2ed]'
+                            ]">
+                                <img v-if="item.media?.length" :src="item.media[0].original_url"
+                                    class="max-h-full max-w-full object-contain transition-transform duration-500 group-hover:scale-[1.04]"
+                                    :class="{ 'opacity-40': getStockInfo(item).isOut }" />
+                                <i v-else class="pi pi-image !text-3xl"
+                                    :class="isDarkTheme ? 'text-gray-700' : 'text-gray-300'" />
+                                <!-- Stock overlay -->
+                                <div v-if="getStockInfo(item).isOut"
+                                    class="absolute inset-0 flex items-center justify-center"
+                                    :class="isDarkTheme ? 'bg-black/30' : 'bg-black/5'">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-red-500 px-3 py-1 rounded-full"
+                                        :class="isDarkTheme ? 'bg-black/60' : 'bg-white/90'">
+                                        Agotado
                                     </span>
-                                    <!-- Image -->
-                                    <div :class="[
-                                        'h-52 flex items-center justify-center p-6 relative',
-                                        isDarkTheme ? 'bg-[#1a1a1a]' : 'bg-gray-50'
-                                    ]">
-                                        <img v-if="item.media?.length" :src="item.media[0].original_url"
-                                            class="max-h-full max-w-full object-contain transition-transform duration-500 group-hover:scale-105"
-                                            :class="{ 'opacity-50': getStockInfo(item).isOut }" />
-                                        <i v-else class="pi pi-image !text-4xl"
-                                            :class="isDarkTheme ? 'text-gray-600' : 'text-gray-300'" />
-                                        <!-- Out of stock overlay -->
-                                        <div v-if="getStockInfo(item).isOut" class="absolute inset-0 flex items-center justify-center">
-                                            <span class="text-[10px] uppercase tracking-widest font-bold text-red-500 px-3 py-1 rounded-full"
-                                                :class="isDarkTheme ? 'bg-black/60' : 'bg-white/90'">
-                                                Agotado
-                                            </span>
-                                        </div>
-                                        <!-- Low stock -->
-                                        <span v-else-if="getStockInfo(item).available > 0 && getStockInfo(item).available <= 5"
-                                            :class="[
-                                                'absolute bottom-2 left-2 text-[9px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-full',
-                                                isDarkTheme ? 'text-amber-400 bg-black/60' : 'text-amber-600 bg-white/90'
-                                            ]">
-                                            {{ getStockInfo(item).available }} quedan
-                                        </span>
-                                    </div>
-                                    <!-- Info -->
-                                    <div class="p-4">
-                                        <p class="text-[10px] uppercase tracking-widest font-bold m-0 mb-1"
-                                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
-                                            {{ item.category?.name || '' }}
-                                        </p>
-                                        <h3 class="font-medium text-sm line-clamp-2 m-0 leading-snug"
-                                            :class="isDarkTheme ? 'text-white' : 'text-gray-900'">
-                                            {{ item.name }}
-                                        </h3>
-                                        <div class="flex items-baseline gap-1 mt-3">
-                                            <span class="text-lg font-light tracking-tight"
-                                                :class="isDarkTheme ? 'text-white' : 'text-gray-900'"
-                                                :style="{ color: 'var(--store-primary)' }">
-                                                {{ formatCurrency(item.online_price || item.selling_price).replace(/\.00$/, '') }}
-                                            </span>
-                                        </div>
-                                    </div>
                                 </div>
+                                <!-- Cart badge -->
+                                <span v-if="getCartQuantity(item.id) > 0"
+                                    class="absolute top-3 right-3 min-w-[22px] h-[22px] flex items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm"
+                                    :style="{ background: 'var(--store-primary)' }">
+                                    {{ getCartQuantity(item.id) }}
+                                </span>
                             </div>
-                        </template>
-                    </DataView>
-
-                    <!-- Pagination -->
-                    <div v-if="products.total > products.per_page" class="mt-10 flex justify-center">
-                        <Paginator :rows="products.per_page" :totalRecords="products.total"
-                            :first="(products.current_page - 1) * products.per_page"
-                            @page="onPageChange"
-                            :pt="{
-                                root: { class: '!bg-transparent' },
-                                pageButton: ({ context }) => ({
-                                    class: context.active
-                                        ? '!rounded-xl !text-white'
-                                        : [
-                                            '!rounded-xl !border-gray-100 !text-gray-600',
-                                            isDarkTheme ? '!bg-[#232323] !border-[#3a3a3a] !text-gray-400' : '!bg-white'
-                                        ].join(' ')
-                                }),
-                            }"
-                            :style="{ '--p-paginator-page-button-active-background': 'var(--store-secondary)' }" />
-                    </div>
-
-                    <!-- Empty state -->
-                    <div v-if="products.data.length === 0" class="text-center py-20">
-                        <div :class="[
-                            'w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center',
-                            isDarkTheme ? 'bg-[#232323]' : 'bg-gray-100'
-                        ]">
-                            <i class="pi pi-search !text-2xl"
-                                :class="isDarkTheme ? 'text-gray-600' : 'text-gray-300'" />
+                            <!-- Info -->
+                            <div class="p-4">
+                                <p class="text-[10px] uppercase tracking-widest font-bold m-0 mb-1"
+                                    :class="isDarkTheme ? 'text-gray-600' : 'text-gray-400'">
+                                    {{ item.category?.name || '' }}
+                                </p>
+                                <h3 class="text-[13px] font-medium leading-snug m-0 line-clamp-2"
+                                    :class="isDarkTheme ? 'text-gray-200' : 'text-gray-800'">
+                                    {{ item.name }}
+                                </h3>
+                                <p class="text-sm font-medium tracking-tight mt-2 m-0"
+                                    :style="{ color: 'var(--store-primary)' }">
+                                    {{ formatCurrency(getProductPrice(item)).replace(/\.00$/, '') }}
+                                </p>
+                            </div>
                         </div>
-                        <p class="text-sm m-0"
-                            :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">No se encontraron productos.</p>
-                        <p class="text-xs mt-1 m-0"
-                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Intenta con otra búsqueda o categoría.</p>
                     </div>
+                </template>
+            </DataView>
+
+            <!-- Pagination -->
+            <div v-if="products.total > products.per_page" class="mt-10 flex justify-center">
+                <Paginator :rows="products.per_page" :totalRecords="products.total"
+                    :first="(products.current_page - 1) * products.per_page"
+                    @page="onPageChange"
+                    :pt="{
+                        root: { class: '!bg-transparent' },
+                        pageButton: ({ context }) => ({
+                            class: context.active
+                                ? '!rounded-full !text-white'
+                                : [
+                                    '!rounded-full !text-gray-500',
+                                    isDarkTheme
+                                        ? '!bg-[#252525] !border-[#2a2a2a] hover:!bg-[#2a2a2a]'
+                                        : '!bg-white !border-[#e8e3dc] hover:!bg-gray-50'
+                                ].join(' ')
+                        }),
+                    }"
+                    :style="{ '--p-paginator-page-button-active-background': 'var(--store-primary)' }" />
+            </div>
+
+            <!-- Empty state -->
+            <div v-if="products.data.length === 0" class="text-center py-20">
+                <div :class="[
+                    'w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center',
+                    isDarkTheme ? 'bg-[#252525]' : 'bg-[#f5f2ed]'
+                ]">
+                    <i class="pi pi-search !text-2xl"
+                        :class="isDarkTheme ? 'text-gray-600' : 'text-gray-300'" />
                 </div>
+                <p class="text-sm m-0 mb-1"
+                    :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">No se encontraron productos.</p>
+                <p class="text-xs m-0"
+                    :class="isDarkTheme ? 'text-gray-600' : 'text-gray-400'">Intenta con otra búsqueda o categoría.</p>
             </div>
         </div>
 
         <!-- Back to top -->
         <button v-if="showBackToTop" @click="scrollToTop"
             :class="[
-                'fixed bottom-20 right-6 z-50 w-10 h-10 rounded-full border flex items-center justify-center shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300',
-                isDarkTheme
-                    ? 'bg-[#232323] border-[#3a3a3a] text-gray-400'
-                    : 'bg-white border-gray-100 text-gray-500'
+                'fixed bottom-20 right-6 z-50 w-10 h-10 rounded-full border flex items-center justify-center shadow-sm hover:shadow transition-all duration-300',
+                isDarkTheme ? 'bg-[#252525] border-[#2a2a2a] text-gray-400' : 'bg-white border-[#e8e3dc] text-gray-500'
             ]"
             title="Volver arriba">
             <i class="pi pi-chevron-up !text-sm" />

@@ -22,9 +22,12 @@ const cartCount = computed(() => {
 
 const rootStyles = computed(() => ({
     '--store-primary': store.value.primary_color || '#3B82F6',
+    '--store-primary-light': store.value.primary_color
+        ? store.value.primary_color + '1A'
+        : 'rgba(59,130,246,0.1)',
     '--store-primary-glow': store.value.primary_color
-        ? store.value.primary_color + '33'
-        : 'rgba(59,130,246,0.2)',
+        ? store.value.primary_color + '26'
+        : 'rgba(59,130,246,0.15)',
     '--store-secondary': store.value.secondary_color || '#1D4ED8',
 }));
 
@@ -34,39 +37,48 @@ const banners = computed(() => store.value.banners || []);
 </script>
 
 <template>
-    <div :style="rootStyles" :class="['min-h-screen flex flex-col', isDarkTheme ? 'bg-gray-200' : 'bg-gray-50']">
-        <!-- Header -->
-        <header class="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b"
-            :class="[isDarkTheme ? '!bg-black/95 border-gray-800' : 'border-gray-100']">
-            <div class="max-w-7xl mx-auto px-4 md:px-6 py-3 flex items-center justify-between">
-                <Link :href="route('store.home', { slug: slug })" class="flex items-center gap-3 group">
-                    <img v-if="store.logo_url" :src="store.logo_url" class="h-12 max-w-[120px] object-contain object-left" alt="Logo" />
-                    <div v-else class="h-10 w-10 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0" :style="{ background: 'var(--store-primary)' }">
+    <div :style="rootStyles"
+        :class="[
+            'min-h-screen flex flex-col font-sans antialiased',
+            isDarkTheme ? 'bg-[#1c1c1c] text-gray-200' : 'bg-[#faf8f5] text-gray-800'
+        ]">
+        <!-- Header — Midori clean style -->
+        <header :class="[
+            'sticky top-0 z-40 backdrop-blur-xl border-b transition-colors',
+            isDarkTheme ? 'bg-[#1c1c1c]/95 border-[#2a2a2a]' : 'bg-[#faf8f5]/90 border-[#e8e3dc]'
+        ]">
+            <div class="max-w-7xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between">
+                <!-- Logo + Name -->
+                <Link :href="route('store.home', { slug: slug })" class="flex items-center gap-3.5 group">
+                    <img v-if="store.logo_url" :src="store.logo_url"
+                        class="h-10 max-w-[100px] object-contain object-left" alt="Logo" />
+                    <div v-else class="h-9 w-9 rounded-lg flex items-center justify-center text-white font-bold text-xs shrink-0"
+                        :style="{ background: 'var(--store-primary)' }">
                         {{ (store.name || 'T').charAt(0).toUpperCase() }}
                     </div>
-                    <div>
-                        <h1 class="text-base font-semibold m-0 transition-colors"
-                            :class="isDarkTheme ? 'text-white' : 'text-gray-900'"
-                            :style="{ color: 'var(--store-primary)' }">
+                    <div class="flex flex-col">
+                        <span class="text-[13px] font-medium tracking-wide m-0 leading-tight"
+                            :class="isDarkTheme ? 'text-gray-100' : 'text-gray-800'">
                             {{ store.name || 'Tienda' }}
-                        </h1>
-                        <p v-if="store.tagline" class="text-[10px] uppercase tracking-widest font-bold m-0" :style="{ color: 'var(--store-secondary)' }">
+                        </span>
+                        <span v-if="store.tagline" class="text-[10px] tracking-[0.15em] font-medium m-0 leading-tight"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
                             {{ store.tagline }}
-                        </p>
+                        </span>
                     </div>
                 </Link>
-                <!-- Cart icon -->
+
+                <!-- Cart -->
                 <Link :href="route('store.cart', { slug: slug })"
                     :class="[
-                        'relative w-10 h-10 flex items-center justify-center rounded-full border transition-colors',
+                        'relative w-10 h-10 flex items-center justify-center rounded-full border transition-all duration-200',
                         isDarkTheme
-                            ? 'border-gray-700 bg-[#1a1a1a] hover:border-gray-600'
-                            : 'border-gray-100 bg-white hover:border-gray-300'
+                            ? 'border-[#2a2a2a] bg-[#252525] hover:border-gray-600 text-gray-400 hover:text-gray-200'
+                            : 'border-[#e8e3dc] bg-white hover:border-gray-300 text-gray-500 hover:text-gray-700'
                     ]">
-                    <i class="pi pi-shopping-cart !text-sm"
-                        :class="isDarkTheme ? 'text-gray-300' : 'text-gray-600'" />
+                    <i class="pi pi-shopping-bag !text-sm" />
                     <span v-if="cartCount > 0"
-                        class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white"
+                        class="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white"
                         :style="{ background: 'var(--store-primary)' }">
                         {{ cartCount }}
                     </span>
@@ -74,17 +86,20 @@ const banners = computed(() => store.value.banners || []);
             </div>
         </header>
 
-        <!-- Banner carousel (only on store home) -->
+        <!-- Banner carousel -->
         <div v-if="isIndexPage && banners.length > 0" class="w-full">
             <Galleria :value="banners" :numVisible="1" :showThumbnails="false" :showIndicators="banners.length > 1"
-                :autoPlay="true" :circular="true" :transitionInterval="4000"
+                :autoPlay="true" :circular="true" :transitionInterval="5000"
                 :pt="{
                     root: { class: '!w-full' },
                     itemWrapper: { class: '!w-full' },
                     item: { class: '!w-full !flex !justify-center' },
+                    indicator: { class: '!w-2 !h-2 !rounded-full !bg-white/60 !mx-1' },
+                    indicatorList: { class: '!bottom-4' },
                 }">
                 <template #item="slotProps">
-                    <img :src="slotProps.item.url" class="w-full h-48 md:h-64 lg:h-80 object-cover" alt="Banner" />
+                    <img :src="slotProps.item.url"
+                        class="w-full h-52 md:h-72 lg:h-[420px] object-cover" alt="Banner" />
                 </template>
             </Galleria>
         </div>
@@ -98,34 +113,48 @@ const banners = computed(() => store.value.banners || []);
         <a v-if="store.whatsapp_number"
             :href="'https://wa.me/' + store.whatsapp_number.replace(/\D/g, '')"
             target="_blank"
-            class="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110"
+            class="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-0.5"
             title="Contactar por WhatsApp">
-            <i class="pi pi-whatsapp !text-2xl" />
+            <i class="pi pi-whatsapp !text-xl" />
         </a>
 
-        <!-- Footer -->
+        <!-- Footer — Midori style -->
         <footer :class="[
             'border-t mt-auto',
-            isDarkTheme ? 'border-gray-800 bg-black' : 'border-gray-100 bg-white'
+            isDarkTheme ? 'border-[#2a2a2a] bg-[#1a1a1a]' : 'border-[#e8e3dc] bg-white'
         ]">
-            <div class="max-w-7xl mx-auto px-4 md:px-6 py-6 text-center">
-                <p v-if="store.description" class="text-[11px] m-0 leading-relaxed mb-2"
-                    :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">{{ store.description }}</p>
-                <div class="flex items-center justify-center gap-4 flex-wrap mb-2">
-                    <Link v-if="store.terms_policy" :href="route('store.policies', { slug: slug })"
-                        :class="[
-                            'text-[11px] transition-colors',
-                            isDarkTheme ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
-                        ]">
-                        Políticas de la tienda
-                    </Link>
+            <div class="max-w-7xl mx-auto px-4 md:px-8 py-8">
+                <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+                    <!-- Store info -->
+                    <div class="text-center md:text-left">
+                        <p v-if="store.name" class="text-sm font-medium m-0 mb-1"
+                            :class="isDarkTheme ? 'text-gray-300' : 'text-gray-700'">
+                            {{ store.name }}
+                        </p>
+                        <p v-if="store.description" class="text-[11px] m-0 leading-relaxed max-w-md"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
+                            {{ store.description }}
+                        </p>
+                    </div>
+
+                    <!-- Links -->
+                    <div class="flex items-center gap-6">
+                        <Link v-if="store.terms_policy" :href="route('store.policies', { slug: slug })"
+                            :class="[
+                                'text-[11px] transition-colors hover:underline underline-offset-4',
+                                isDarkTheme ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
+                            ]">
+                            Políticas de la tienda
+                        </Link>
+                        <span class="text-[11px]"
+                            :class="isDarkTheme ? 'text-gray-600' : 'text-gray-300'">
+                            Desarrollado por EzyVentas
+                        </span>
+                    </div>
                 </div>
-                <p v-if="store.footer_note" class="text-[11px] m-0 leading-relaxed"
-                    :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">{{ store.footer_note }}</p>
-                <p v-if="!store.footer_note && !store.description" class="text-[11px] m-0"
-                    :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
-                    {{ store.name || 'Tienda' }} &mdash; Desarrollado por <span class="font-semibold"
-                        :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">EzyVentas</span>
+                <p v-if="store.footer_note" class="text-[10px] text-center mt-4 m-0"
+                    :class="isDarkTheme ? 'text-gray-600' : 'text-gray-400'">
+                    {{ store.footer_note }}
                 </p>
             </div>
         </footer>

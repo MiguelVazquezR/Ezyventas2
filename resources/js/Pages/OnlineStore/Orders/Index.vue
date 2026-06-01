@@ -2,10 +2,6 @@
 import { ref, computed } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import Button from 'primevue/button';
-import DataTable from 'primevue/datatable';
-import Column from 'primevue/column';
-import Tag from 'primevue/tag';
 
 const props = defineProps({
     orders: Object,
@@ -62,7 +58,7 @@ const totalPending = computed(() => props.counts?.pending || 0);
                 <!-- Status tabs -->
                 <div class="flex flex-wrap gap-2 mb-6">
                     <Button :label="'Todas'" :severity="!activeStatus ? 'primary' : 'secondary'" :outlined="!!activeStatus" size="small" class="!rounded-full !text-[10px] !uppercase !tracking-widest !font-bold" @click="filterByStatus('')" />
-                    <Button v-for="status in statuses" :key="status.value" :label="`${statusLabelMap[status.value]} (${counts?.[status.value] || 0})`" :severity="activeStatus === status.value ? 'primary' : 'secondary'" :outlined="activeStatus !== status.value" size="small" class="!rounded-full !text-[10px] !uppercase !tracking-widest !font-bold" @click="filterByStatus(status.value)" />
+                    <Button v-for="status in statuses" :key="status" :label="`${statusLabelMap[status]} (${counts?.[status] || 0})`" :severity="activeStatus === status ? 'primary' : 'secondary'" :outlined="activeStatus !== status" size="small" class="!rounded-full !text-[10px] !uppercase !tracking-widest !font-bold" @click="filterByStatus(status)" />
                 </div>
 
                 <DataTable :value="orders.data" paginator :rows="20" :totalRecords="orders.total" class="w-full"

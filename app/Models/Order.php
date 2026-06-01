@@ -30,6 +30,11 @@ class Order extends Model
         'delivered_at',
     ];
 
+    protected $appends = [
+        'formatted_order_number',
+        'whats_app_link',
+    ];
+
     protected $casts = [
         'status' => OrderStatus::class,
         'subtotal' => 'decimal:2',
@@ -42,7 +47,7 @@ class Order extends Model
     {
         static::creating(function (Order $order) {
             if (empty($order->order_number)) {
-                $lastNumber = static::where('store_config_id', $order->store_config_id)->max('order_number') ?? 0;
+                $lastNumber = static::where('subscription_id', $order->subscription_id)->max('order_number') ?? 0;
                 $order->order_number = $lastNumber + 1;
             }
         });
@@ -92,7 +97,8 @@ class Order extends Model
     // Helpers
     public function getFormattedOrderNumberAttribute(): string
     {
-        return '#' . str_pad((string) $this->order_number, 4, '0', STR_PAD_LEFT);
+        $digits = $this->order_number < 10000 ? 4 : strlen((string) $this->order_number);
+        return str_pad((string) $this->order_number, $digits, '0', STR_PAD_LEFT);
     }
 
     public function getIsPendingAttribute(): bool

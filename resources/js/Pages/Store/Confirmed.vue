@@ -24,12 +24,15 @@ const isDarkTheme = computed(() => store.value.theme_mode === 'dark');
 
 const showContent = ref(false);
 const showAnimation = ref(true);
+const animationFading = ref(false);
 
 onMounted(() => {
-    // Trigger content fade-in after animation
+    // Start fading the green overlay after checkmark appears
+    setTimeout(() => { animationFading.value = true; }, 1200);
+    // Show content underneath
     setTimeout(() => { showContent.value = true; }, 300);
-    // Hide success overlay after animation completes
-    setTimeout(() => { showAnimation.value = false; }, 2500);
+    // Remove overlay completely
+    setTimeout(() => { showAnimation.value = false; }, 2200);
 });
 </script>
 
@@ -37,16 +40,21 @@ onMounted(() => {
     <Head :title="'Pedido confirmado — ' + (store.name || 'Tienda')" />
     <StoreLayout>
         <div class="max-w-xl mx-auto px-4 md:px-6 py-12 relative">
-            <!-- Success wave animation overlay -->
-            <div v-if="showAnimation" class="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+            <!-- Success fullscreen green overlay -->
+            <div v-if="showAnimation"
+                :class="[
+                    'fixed inset-0 z-50 flex items-center justify-center transition-opacity duration-700 ease-out',
+                    animationFading ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                ]"
+                style="background: rgba(34, 197, 94, 0.92);">
                 <!-- Expanding rings -->
-                <div class="absolute w-16 h-16 rounded-full bg-green-500 animate-[ping_1.5s_ease-out_forwards] opacity-0" />
-                <div class="absolute w-16 h-16 rounded-full bg-green-400 animate-[ping_2s_ease-out_0.2s_forwards] opacity-0" />
-                <div class="absolute w-16 h-16 rounded-full bg-green-300 animate-[ping_2.5s_ease-out_0.4s_forwards] opacity-0" />
+                <div class="absolute w-16 h-16 rounded-full bg-white/30 animate-[ping_1.5s_ease-out_forwards] opacity-0" />
+                <div class="absolute w-16 h-16 rounded-full bg-white/20 animate-[ping_2s_ease-out_0.2s_forwards] opacity-0" />
+                <div class="absolute w-16 h-16 rounded-full bg-white/10 animate-[ping_2.5s_ease-out_0.4s_forwards] opacity-0" />
                 
                 <!-- Center checkmark -->
-                <div class="w-20 h-20 rounded-full bg-green-500 flex items-center justify-center shadow-[0_0_40px_rgba(34,197,94,0.5)] animate-[scaleIn_0.5s_ease-out_0.3s_both]">
-                    <i class="pi pi-check !text-3xl text-white" />
+                <div class="w-24 h-24 rounded-full bg-white flex items-center justify-center shadow-[0_0_60px_rgba(255,255,255,0.6)] animate-[scaleIn_0.5s_ease-out_0.3s_both]">
+                    <i class="pi pi-check !text-4xl text-green-500" />
                 </div>
             </div>
 
@@ -58,7 +66,7 @@ onMounted(() => {
             ]">
                 <!-- Success indicator -->
                 <div class="flex items-center justify-center gap-2 mb-6">
-                    <span class="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)] animate-pulse" />
+                    <span class="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)]" />
                     <span class="text-[10px] uppercase tracking-widest font-bold text-green-500">Pedido confirmado</span>
                 </div>
 

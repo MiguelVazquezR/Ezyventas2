@@ -137,14 +137,14 @@ const restockTimeLabel = computed(() => {
 
             <div :class="[
                 'rounded-3xl border p-6 md:p-8',
-                isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100'
+                isDarkTheme ? 'bg-[#252525] border-[#2a2a2a]' : 'bg-white border-[#e8e3dc]'
             ]">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-10">
                     <!-- Image gallery -->
                     <div class="space-y-3">
                         <div :class="[
                             'h-72 md:h-96 flex items-center justify-center rounded-2xl relative overflow-hidden',
-                            isDarkTheme ? 'bg-[#1a1a1a]' : 'bg-gray-50'
+                            isDarkTheme ? 'bg-[#1a1a1a]' : 'bg-[#f5f2ed]'
                         ]">
                             <img v-if="selectedImage" :src="selectedImage"
                                 class="max-h-full max-w-full object-contain p-4" />
