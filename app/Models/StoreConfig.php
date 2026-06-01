@@ -49,6 +49,8 @@ class StoreConfig extends Model implements HasMedia
         'free_shipping_minimum' => 'decimal:2',
     ];
 
+    protected $appends = ['banners'];
+
     public function registerMediaCollections(): void
     {
         $this->addMediaCollection('store-logo')->singleFile();

@@ -150,7 +150,7 @@ const getStockInfo = (item) => {
             </div>
 
             <!-- Search (sticky) -->
-            <div class="sticky top-[57px] z-30 bg-gray-50/90 dark:bg-[#1a1a1a]/90 backdrop-blur-md -mx-4 md:-mx-6 px-4 md:px-6 py-3 mb-6">
+            <div class="sticky top-[57px] z-30 bg-gray-50/90 dark:bg-black/95 backdrop-blur-md -mx-4 md:-mx-6 px-4 md:px-6 py-3 mb-6">
                 <IconField iconPosition="left" class="w-full max-w-lg mx-auto">
                     <InputIcon class="pi pi-search !text-sm text-gray-400 dark:text-gray-500" />
                     <InputText v-model="search" @input="onSearch" placeholder="Buscar productos..."
@@ -165,7 +165,7 @@ const getStockInfo = (item) => {
                 <!-- Sidebar: Categories + Price filter -->
                 <div class="md:w-52 shrink-0 space-y-6">
                     <!-- Category sidebar -->
-                    <div v-if="categories.length > 0" class="bg-gray-50/80 dark:bg-[#1e1e1e] rounded-2xl p-4">
+                    <div v-if="categories.length > 0" class="bg-gray-50/80 dark:bg-[#1c1c1c] rounded-2xl p-4">
                         <p class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-3">Categorías</p>
                         <div class="flex flex-wrap md:flex-col gap-1.5">
                             <button v-for="cat in categories" :key="cat.id"
@@ -181,7 +181,7 @@ const getStockInfo = (item) => {
                     </div>
 
                     <!-- Price filter -->
-                    <div class="bg-gray-50/80 dark:bg-[#1e1e1e] rounded-2xl p-4">
+                    <div class="bg-gray-50/80 dark:bg-[#1c1c1c] rounded-2xl p-4">
                         <p class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-3">Precio</p>
                         <div class="space-y-2">
                             <InputNumber v-model="minPrice" placeholder="Mínimo" mode="currency" currency="MXN"

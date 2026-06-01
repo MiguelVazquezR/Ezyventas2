@@ -144,6 +144,11 @@ class PublicStoreController extends Controller
 
         $productModel->load('media');
 
+        // Compute stock status
+        $current = (int) ($productModel->current_stock ?? 0);
+        $reserved = (int) ($productModel->reserved_stock ?? 0);
+        $isOutOfStock = ($current - $reserved) <= 0;
+
         // Get all product images (up to 5)
         $images = $productModel->getMedia('product-general-images')->map(fn($m) => $m->getFullUrl())->values()->toArray();
 
@@ -158,7 +163,7 @@ class PublicStoreController extends Controller
                 'images' => $images,
                 'is_bulk' => $productModel->is_bulk,
                 'measure_unit' => $productModel->measure_unit,
-                'is_out_of_stock' => $productModel->is_out_of_stock ?? false,
+                'is_out_of_stock' => $isOutOfStock,
             ],
             'freeShippingMinimum' => $storeConfig->free_shipping_minimum,
             'allowOutOfStockPurchases' => $storeConfig->allow_out_of_stock_purchases,

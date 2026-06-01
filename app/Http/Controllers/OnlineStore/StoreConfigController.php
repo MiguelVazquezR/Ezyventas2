@@ -46,7 +46,7 @@ class StoreConfigController extends Controller
 
         $storeConfig = StoreConfig::where('subscription_id', $subscription->id)->firstOrFail();
 
-        $storeConfig->update($request->safe()->except(['logo', 'remove_logo', 'banners', 'remove_banners', 'prep_days', 'prep_hours', 'prep_minutes']));
+        $storeConfig->update($request->safe()->except(['logo', 'remove_logo', 'banners', 'remove_banners', 'removed_banner_ids', 'prep_days', 'prep_hours', 'prep_minutes', 'restock_days', 'restock_hours', 'restock_minutes']));
 
         // Handle logo removal
         if ($request->boolean('remove_logo')) {
@@ -61,12 +61,13 @@ class StoreConfigController extends Controller
             $storeConfig->update(['logo_url' => $storeConfig->getFirstMediaUrl('store-logo')]);
         }
 
-        // Handle banner removal
-        if ($request->boolean('remove_banners')) {
-            $storeConfig->clearMediaCollection('store-banners');
+        // Handle specific banner removal by media IDs
+        $removedIds = $request->input('removed_banner_ids', []);
+        if (!empty($removedIds)) {
+            $storeConfig->media()->whereIn('id', $removedIds)->get()->each->delete();
         }
 
-        // Handle banner uploads
+        // Handle banner uploads (only new files, never re-upload existing ones)
         if ($request->hasFile('banners')) {
             foreach ($request->file('banners') as $banner) {
                 $storeConfig->addMedia($banner)->toMediaCollection('store-banners');

@@ -4,6 +4,7 @@ import { usePage, Link } from '@inertiajs/vue3';
 
 const page = usePage();
 const store = computed(() => page.props.store || {});
+const isIndexPage = computed(() => page.component === 'Store/Index');
 
 const slug = computed(() => {
     const parts = window.location.pathname.split('/');
@@ -33,10 +34,10 @@ const banners = computed(() => store.value.banners || []);
 </script>
 
 <template>
-    <div :style="rootStyles" :class="['min-h-screen flex flex-col', isDarkTheme ? 'bg-[#0f0f0f]' : 'bg-gray-50 dark:bg-[#1a1a1a]']">
+    <div :style="rootStyles" :class="['min-h-screen flex flex-col', isDarkTheme ? 'bg-[#1e1e1e]' : 'bg-gray-50']">
         <!-- Header -->
-        <header class="sticky top-0 z-40 bg-white/80 dark:bg-[#232323]/90 backdrop-blur-xl border-b border-gray-100 dark:border-[#3a3a3a]"
-            :class="{ 'dark:!bg-[#1a1a1a]/90': isDarkTheme }">
+        <header class="sticky top-0 z-40 bg-white/80 dark:bg-black/95 backdrop-blur-xl border-b border-gray-100 dark:border-gray-800"
+            :class="{ 'dark:!bg-black/95': isDarkTheme }">
             <div class="max-w-7xl mx-auto px-4 md:px-6 py-3 flex items-center justify-between">
                 <Link :href="route('store.home', { slug: slug })" class="flex items-center gap-3 group">
                     <img v-if="store.logo_url" :src="store.logo_url" class="h-12 max-w-[120px] object-contain object-left" alt="Logo" />
@@ -54,7 +55,7 @@ const banners = computed(() => store.value.banners || []);
                 </Link>
                 <!-- Cart icon -->
                 <Link :href="route('store.cart', { slug: slug })"
-                    class="relative w-10 h-10 flex items-center justify-center rounded-full border border-gray-100 dark:border-[#3a3a3a] bg-white dark:bg-[#232323] hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
+                    class="relative w-10 h-10 flex items-center justify-center rounded-full border border-gray-100 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
                     <i class="pi pi-shopping-cart text-gray-600 dark:text-gray-300 !text-sm" />
                     <span v-if="cartCount > 0"
                         class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white"
@@ -65,8 +66,8 @@ const banners = computed(() => store.value.banners || []);
             </div>
         </header>
 
-        <!-- Banner carousel -->
-        <div v-if="banners.length > 0" class="w-full">
+        <!-- Banner carousel (only on store home) -->
+        <div v-if="isIndexPage && banners.length > 0" class="w-full">
             <Galleria :value="banners" :numVisible="1" :showThumbnails="false" :showIndicators="banners.length > 1"
                 :autoPlay="true" :circular="true" :transitionInterval="4000"
                 :pt="{
@@ -95,7 +96,7 @@ const banners = computed(() => store.value.banners || []);
         </a>
 
         <!-- Footer -->
-        <footer class="border-t border-gray-100 dark:border-[#3a3a3a] bg-white dark:bg-[#232323] mt-auto">
+        <footer class="border-t border-gray-100 dark:border-gray-800 bg-white dark:bg-black mt-auto">
             <div class="max-w-7xl mx-auto px-4 md:px-6 py-6 text-center">
                 <p v-if="store.description" class="text-[11px] text-gray-500 dark:text-gray-400 m-0 leading-relaxed mb-2">{{ store.description }}</p>
                 <div class="flex items-center justify-center gap-4 flex-wrap mb-2">

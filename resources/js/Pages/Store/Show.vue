@@ -102,8 +102,21 @@ const goBack = () => {
 const safeDescription = computed(() => {
     const desc = props.product.description;
     if (!desc) return '';
-    // The description comes from a rich text editor, render it as HTML
     return desc;
+});
+
+// Convert total minutes to a human-readable days/hours/minutes string
+const restockTimeLabel = computed(() => {
+    const t = Math.max(0, parseInt(props.outOfStockExtraMinutes) || 0);
+    if (t === 0) return '';
+    const days = Math.floor(t / 1440);
+    const hours = Math.floor((t % 1440) / 60);
+    const minutes = t % 60;
+    const parts = [];
+    if (days > 0) parts.push(`${days} ${days === 1 ? 'día' : 'días'}`);
+    if (hours > 0) parts.push(`${hours} ${hours === 1 ? 'hora' : 'horas'}`);
+    if (minutes > 0) parts.push(`${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}`);
+    return parts.join(', ');
 });
 </script>
 
@@ -168,7 +181,7 @@ const safeDescription = computed(() => {
                                 <div>
                                     <p class="text-xs font-medium text-amber-700 dark:text-amber-300 m-0">Producto agotado — disponible bajo pedido</p>
                                     <p class="text-[11px] text-amber-600 dark:text-amber-400 m-0 mt-0.5 leading-relaxed">
-                                        Tiempo estimado de preparación: {{ outOfStockExtraMinutes }} min adicionales por resurtimiento.
+                                        Tiempo estimado de resurtimiento: {{ restockTimeLabel }}.
                                     </p>
                                 </div>
                             </div>

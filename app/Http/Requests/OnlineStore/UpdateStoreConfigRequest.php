@@ -17,12 +17,19 @@ class UpdateStoreConfigRequest extends FormRequest
         $prepDays = (int) ($this->prep_days ?? 0);
         $prepHours = (int) ($this->prep_hours ?? 0);
         $prepMinutes = (int) ($this->prep_minutes ?? 0);
-        $totalMinutes = ($prepDays * 1440) + ($prepHours * 60) + $prepMinutes;
+        $totalPrepMinutes = ($prepDays * 1440) + ($prepHours * 60) + $prepMinutes;
+
+        // Convert restock time from days/hours/minutes to total minutes
+        $restockDays = (int) ($this->restock_days ?? 0);
+        $restockHours = (int) ($this->restock_hours ?? 0);
+        $restockMinutes = (int) ($this->restock_minutes ?? 0);
+        $totalRestockMinutes = ($restockDays * 1440) + ($restockHours * 60) + $restockMinutes;
 
         $this->merge([
             'primary_color' => $this->ensureHash($this->primary_color),
             'secondary_color' => $this->ensureHash($this->secondary_color),
-            'preparation_time_minutes' => $totalMinutes > 0 ? $totalMinutes : ($this->preparation_time_minutes ?? 30),
+            'preparation_time_minutes' => $totalPrepMinutes > 0 ? $totalPrepMinutes : ($this->preparation_time_minutes ?? 30),
+            'out_of_stock_extra_minutes' => $totalRestockMinutes > 0 ? $totalRestockMinutes : ($this->out_of_stock_extra_minutes ?? 0),
         ]);
     }
 
@@ -50,13 +57,18 @@ class UpdateStoreConfigRequest extends FormRequest
             'accepts_pickup' => ['boolean'],
             'accepts_delivery' => ['boolean'],
             'allow_out_of_stock_purchases' => ['boolean'],
-            'out_of_stock_extra_minutes' => ['nullable', 'integer', 'min:0', 'required_if:allow_out_of_stock_purchases,true'],
+            'out_of_stock_extra_minutes' => ['nullable', 'integer', 'min:0'],
+            'restock_days' => ['nullable', 'integer', 'min:0', 'max:30'],
+            'restock_hours' => ['nullable', 'integer', 'min:0', 'max:23'],
+            'restock_minutes' => ['nullable', 'integer', 'min:0', 'max:59'],
             'whatsapp_number' => ['nullable', 'string', 'max:20', 'regex:/^\+?[0-9]{10,15}$/'],
             'tagline' => ['nullable', 'string', 'max:120'],
             'theme_mode' => ['nullable', 'string', 'in:light,dark'],
             'banners' => ['nullable', 'array', 'max:3'],
             'banners.*' => ['image', 'max:4096'],
             'remove_banners' => ['boolean'],
+            'removed_banner_ids' => ['nullable', 'array'],
+            'removed_banner_ids.*' => ['integer'],
             'prep_days' => ['nullable', 'integer', 'min:0', 'max:30'],
             'prep_hours' => ['nullable', 'integer', 'min:0', 'max:23'],
             'prep_minutes' => ['nullable', 'integer', 'min:0', 'max:59'],
