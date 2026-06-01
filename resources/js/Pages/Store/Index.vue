@@ -6,6 +6,7 @@ import { useDebounceFn } from '@vueuse/core';
 
 const page = usePage();
 const store = computed(() => page.props.store || {});
+const isDarkTheme = computed(() => store.value.theme_mode === 'dark');
 
 const props = defineProps({
     products: Object,
@@ -114,26 +115,37 @@ const getStockInfo = (item) => {
         <div class="max-w-7xl mx-auto px-4 md:px-6 py-8">
             <!-- Welcome message -->
             <div v-if="store.welcome_message" class="mb-8 text-center">
-                <p class="text-xl md:text-2xl font-light tracking-tight text-gray-800 dark:text-white m-0">{{ store.welcome_message }}</p>
+                <p class="text-xl md:text-2xl font-light tracking-tight m-0"
+                    :class="isDarkTheme ? 'text-gray-500' : 'text-gray-800'">{{ store.welcome_message }}</p>
             </div>
 
             <!-- Featured products -->
             <div v-if="featured && featured.length > 0" class="mb-8">
                 <p class="text-[10px] uppercase tracking-widest font-bold m-0 mb-4 flex items-center gap-2">
                     <span class="w-1 h-4 rounded-full" :style="{ background: 'var(--store-secondary)' }" />
-                    <span class="text-gray-400 dark:text-gray-500">Productos destacados</span>
+                    <span :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Productos destacados</span>
                 </p>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div v-for="item in featured" :key="item.id"
-                        class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] overflow-hidden cursor-pointer hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-300 group relative"
+                        :class="[
+                            'rounded-3xl border overflow-hidden cursor-pointer transition-all duration-300 group relative',
+                            isDarkTheme
+                                ? 'bg-[#232323] border-[#3a3a3a] hover:border-gray-600'
+                                : 'bg-white border-gray-100 hover:border-gray-300'
+                        ]"
                         @click="goToProduct(item)">
-                        <div class="h-40 flex items-center justify-center p-4 bg-gray-50 dark:bg-[#1a1a1a]">
+                        <div :class="[
+                            'h-40 flex items-center justify-center p-4',
+                            isDarkTheme ? 'bg-[#1a1a1a]' : 'bg-gray-50'
+                        ]">
                             <img v-if="item.media?.length" :src="item.media[0].original_url"
                                 class="max-h-full max-w-full object-contain transition-transform duration-500 group-hover:scale-105" />
-                            <i v-else class="pi pi-image !text-3xl text-gray-300 dark:text-gray-600" />
+                            <i v-else class="pi pi-image !text-3xl"
+                                :class="isDarkTheme ? 'text-gray-600' : 'text-gray-300'" />
                         </div>
                         <div class="p-3">
-                            <h3 class="font-medium text-gray-900 dark:text-white text-xs line-clamp-2 m-0 leading-snug">{{ item.name }}</h3>
+                            <h3 class="font-medium text-xs line-clamp-2 m-0 leading-snug"
+                                :class="isDarkTheme ? 'text-white' : 'text-gray-900'">{{ item.name }}</h3>
                             <p class="text-sm font-light tracking-tight mt-1.5 m-0"
                                 :style="{ color: 'var(--store-primary)' }">
                                 {{ formatCurrency(item.online_price || item.selling_price).replace(/\.00$/, '') }}
@@ -150,13 +162,23 @@ const getStockInfo = (item) => {
             </div>
 
             <!-- Search (sticky) -->
-            <div class="sticky top-[57px] z-30 bg-gray-50/90 dark:bg-black/95 backdrop-blur-md -mx-4 md:-mx-6 px-4 md:px-6 py-3 mb-6">
+            <div :class="[
+                'sticky top-[57px] z-30 backdrop-blur-md -mx-4 md:-mx-6 px-4 md:px-6 py-3 mb-6'
+            ]">
                 <IconField iconPosition="left" class="w-full max-w-lg mx-auto">
-                    <InputIcon class="pi pi-search !text-sm text-gray-400 dark:text-gray-500" />
+                    <InputIcon class="pi pi-search !text-sm"
+                        :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'" />
                     <InputText v-model="search" @input="onSearch" placeholder="Buscar productos..."
                         class="w-full"
                         :pt="{
-                            root: { class: '!rounded-2xl !py-3 !bg-white dark:!bg-[#232323] !border-gray-100 dark:!border-[#3a3a3a] !text-gray-900 dark:!text-white !text-sm focus:!border-gray-300 dark:focus:!border-gray-600 transition-colors' }
+                            root: {
+                                class: [
+                                    '!rounded-2xl !py-3 !text-sm focus:!border-gray-300 transition-colors',
+                                    isDarkTheme
+                                        ? '!bg-[#232323] !border-[#3a3a3a] !text-white focus:!border-gray-600'
+                                        : '!bg-white !border-gray-100 !text-gray-900'
+                                ].join(' ')
+                            }
                         }" />
                 </IconField>
             </div>
@@ -165,14 +187,22 @@ const getStockInfo = (item) => {
                 <!-- Sidebar: Categories + Price filter -->
                 <div class="md:w-52 shrink-0 space-y-6">
                     <!-- Category sidebar -->
-                    <div v-if="categories.length > 0" class="bg-gray-50/80 dark:bg-[#1c1c1c] rounded-2xl p-4">
-                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-3">Categorías</p>
+                    <div v-if="categories.length > 0" :class="[
+                        'rounded-2xl p-4',
+                        isDarkTheme ? 'bg-[#1c1c1c]' : 'bg-gray-50/80'
+                    ]">
+                        <p class="text-[10px] uppercase tracking-widest font-bold m-0 mb-3"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Categorías</p>
                         <div class="flex flex-wrap md:flex-col gap-1.5">
                             <button v-for="cat in categories" :key="cat.id"
                                 class="text-left px-4 py-2 text-xs font-medium rounded-full transition-all duration-200 border"
-                                :class="activeCategory === String(cat.id)
-                                    ? 'text-white border-transparent'
-                                    : 'text-gray-600 dark:text-gray-400 bg-white dark:bg-[#232323] border-gray-100 dark:border-[#3a3a3a] hover:border-gray-300 dark:hover:border-gray-600'"
+                                :class="[
+                                    activeCategory === String(cat.id)
+                                        ? 'text-white border-transparent'
+                                        : isDarkTheme
+                                            ? 'text-gray-400 bg-[#232323] border-[#3a3a3a] hover:border-gray-600'
+                                            : 'text-gray-600 bg-white border-gray-100 hover:border-gray-300'
+                                ]"
                                 :style="activeCategory === String(cat.id) ? { background: 'var(--store-primary)', borderColor: 'var(--store-primary)' } : {}"
                                 @click="filterCategory(String(cat.id))">
                                 {{ cat.name }}
@@ -181,21 +211,50 @@ const getStockInfo = (item) => {
                     </div>
 
                     <!-- Price filter -->
-                    <div class="bg-gray-50/80 dark:bg-[#1c1c1c] rounded-2xl p-4">
-                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-3">Precio</p>
+                    <div :class="[
+                        'rounded-2xl p-4',
+                        isDarkTheme ? 'bg-[#1c1c1c]' : 'bg-gray-50/80'
+                    ]">
+                        <p class="text-[10px] uppercase tracking-widest font-bold m-0 mb-3"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Precio</p>
                         <div class="space-y-2">
-                            <InputNumber v-model="minPrice" placeholder="Mínimo" mode="currency" currency="MXN"
+                            <InputNumber fluid v-model="minPrice" placeholder="Mínimo" mode="currency" currency="MXN"
                                 @update:modelValue="onPriceChange" class="w-full"
-                                :pt="{ input: { root: { class: '!rounded-xl !text-xs !bg-white dark:!bg-[#232323] !border-gray-100 dark:!border-[#3a3a3a] !text-gray-900 dark:!text-white' } } }" />
-                            <InputNumber v-model="maxPrice" placeholder="Máximo" mode="currency" currency="MXN"
+                                :pt="{
+                                    input: {
+                                        root: {
+                                            class: [
+                                                '!rounded-xl !text-xs',
+                                                isDarkTheme
+                                                    ? '!bg-[#232323] !border-[#3a3a3a] !text-white'
+                                                    : '!bg-white !border-gray-100 !text-gray-900'
+                                            ].join(' ')
+                                        }
+                                    }
+                                }" />
+                            <InputNumber fluid v-model="maxPrice" placeholder="Máximo" mode="currency" currency="MXN"
                                 @update:modelValue="onPriceChange" class="w-full"
-                                :pt="{ input: { root: { class: '!rounded-xl !text-xs !bg-white dark:!bg-[#232323] !border-gray-100 dark:!border-[#3a3a3a] !text-gray-900 dark:!text-white' } } }" />
+                                :pt="{
+                                    input: {
+                                        root: {
+                                            class: [
+                                                '!rounded-xl !text-xs',
+                                                isDarkTheme
+                                                    ? '!bg-[#232323] !border-[#3a3a3a] !text-white'
+                                                    : '!bg-white !border-gray-100 !text-gray-900'
+                                            ].join(' ')
+                                        }
+                                    }
+                                }" />
                         </div>
                     </div>
 
                     <!-- Clear filters -->
                     <button v-if="hasFilters" @click="clearFilters"
-                        class="w-full text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors py-2">
+                        :class="[
+                            'w-full text-[10px] uppercase tracking-widest font-bold transition-colors py-2',
+                            isDarkTheme ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
+                        ]">
                         Limpiar filtros
                     </button>
                 </div>
@@ -204,7 +263,8 @@ const getStockInfo = (item) => {
                 <div class="flex-1 min-w-0">
                     <!-- Results count + Sort -->
                     <div class="flex items-center justify-between mb-4">
-                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0">
+                        <p class="text-[10px] uppercase tracking-widest font-bold m-0"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
                             {{ products.total }} {{ products.total === 1 ? 'producto' : 'productos' }}
                         </p>
                         <Select v-model="sortBy" @change="onSortChange" :options="[
@@ -214,7 +274,12 @@ const getStockInfo = (item) => {
                         ]" optionLabel="label" optionValue="value" placeholder="Ordenar"
                             class="w-40"
                             :pt="{
-                                root: { class: '!rounded-xl !text-xs !bg-white dark:!bg-[#232323] !border-gray-100 dark:!border-[#3a3a3a]' }
+                                root: {
+                                    class: [
+                                        '!rounded-xl !text-xs',
+                                        isDarkTheme ? '!bg-[#232323] !border-[#3a3a3a]' : '!bg-white !border-gray-100'
+                                    ].join(' ')
+                                }
                             }" />
                     </div>
 
@@ -222,7 +287,12 @@ const getStockInfo = (item) => {
                         <template #grid="slotProps">
                             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                 <div v-for="item in slotProps.items" :key="item.id"
-                                    class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] overflow-hidden cursor-pointer hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-300 group relative"
+                                    :class="[
+                                        'rounded-3xl border overflow-hidden cursor-pointer transition-all duration-300 group relative',
+                                        isDarkTheme
+                                            ? 'bg-[#232323] border-[#3a3a3a] hover:border-gray-600'
+                                            : 'bg-white border-gray-100 hover:border-gray-300'
+                                    ]"
                                     @click="goToProduct(item)">
                                     <!-- Cart quantity badge -->
                                     <span v-if="getCartQuantity(item.id) > 0"
@@ -231,33 +301,44 @@ const getStockInfo = (item) => {
                                         {{ getCartQuantity(item.id) }}
                                     </span>
                                     <!-- Image -->
-                                    <div class="h-52 flex items-center justify-center p-6 bg-gray-50 dark:bg-[#1a1a1a] relative">
+                                    <div :class="[
+                                        'h-52 flex items-center justify-center p-6 relative',
+                                        isDarkTheme ? 'bg-[#1a1a1a]' : 'bg-gray-50'
+                                    ]">
                                         <img v-if="item.media?.length" :src="item.media[0].original_url"
                                             class="max-h-full max-w-full object-contain transition-transform duration-500 group-hover:scale-105"
                                             :class="{ 'opacity-50': getStockInfo(item).isOut }" />
-                                        <i v-else class="pi pi-image !text-4xl text-gray-300 dark:text-gray-600" />
+                                        <i v-else class="pi pi-image !text-4xl"
+                                            :class="isDarkTheme ? 'text-gray-600' : 'text-gray-300'" />
                                         <!-- Out of stock overlay -->
                                         <div v-if="getStockInfo(item).isOut" class="absolute inset-0 flex items-center justify-center">
-                                            <span class="text-[10px] uppercase tracking-widest font-bold text-red-500 bg-white/90 dark:bg-black/60 px-3 py-1 rounded-full">
+                                            <span class="text-[10px] uppercase tracking-widest font-bold text-red-500 px-3 py-1 rounded-full"
+                                                :class="isDarkTheme ? 'bg-black/60' : 'bg-white/90'">
                                                 Agotado
                                             </span>
                                         </div>
                                         <!-- Low stock -->
                                         <span v-else-if="getStockInfo(item).available > 0 && getStockInfo(item).available <= 5"
-                                            class="absolute bottom-2 left-2 text-[9px] uppercase tracking-widest font-bold text-amber-600 dark:text-amber-400 bg-white/90 dark:bg-black/60 px-2 py-0.5 rounded-full">
+                                            :class="[
+                                                'absolute bottom-2 left-2 text-[9px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-full',
+                                                isDarkTheme ? 'text-amber-400 bg-black/60' : 'text-amber-600 bg-white/90'
+                                            ]">
                                             {{ getStockInfo(item).available }} quedan
                                         </span>
                                     </div>
                                     <!-- Info -->
                                     <div class="p-4">
-                                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-1">
+                                        <p class="text-[10px] uppercase tracking-widest font-bold m-0 mb-1"
+                                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
                                             {{ item.category?.name || '' }}
                                         </p>
-                                        <h3 class="font-medium text-gray-900 dark:text-white text-sm line-clamp-2 m-0 leading-snug">
+                                        <h3 class="font-medium text-sm line-clamp-2 m-0 leading-snug"
+                                            :class="isDarkTheme ? 'text-white' : 'text-gray-900'">
                                             {{ item.name }}
                                         </h3>
                                         <div class="flex items-baseline gap-1 mt-3">
-                                            <span class="text-lg font-light tracking-tight text-gray-900 dark:text-white"
+                                            <span class="text-lg font-light tracking-tight"
+                                                :class="isDarkTheme ? 'text-white' : 'text-gray-900'"
                                                 :style="{ color: 'var(--store-primary)' }">
                                                 {{ formatCurrency(item.online_price || item.selling_price).replace(/\.00$/, '') }}
                                             </span>
@@ -278,7 +359,10 @@ const getStockInfo = (item) => {
                                 pageButton: ({ context }) => ({
                                     class: context.active
                                         ? '!rounded-xl !text-white'
-                                        : '!rounded-xl !bg-white dark:!bg-[#232323] !border-gray-100 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-400'
+                                        : [
+                                            '!rounded-xl !border-gray-100 !text-gray-600',
+                                            isDarkTheme ? '!bg-[#232323] !border-[#3a3a3a] !text-gray-400' : '!bg-white'
+                                        ].join(' ')
                                 }),
                             }"
                             :style="{ '--p-paginator-page-button-active-background': 'var(--store-secondary)' }" />
@@ -286,11 +370,17 @@ const getStockInfo = (item) => {
 
                     <!-- Empty state -->
                     <div v-if="products.data.length === 0" class="text-center py-20">
-                        <div class="w-20 h-20 mx-auto mb-6 rounded-full bg-gray-100 dark:bg-[#232323] flex items-center justify-center">
-                            <i class="pi pi-search !text-2xl text-gray-300 dark:text-gray-600" />
+                        <div :class="[
+                            'w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center',
+                            isDarkTheme ? 'bg-[#232323]' : 'bg-gray-100'
+                        ]">
+                            <i class="pi pi-search !text-2xl"
+                                :class="isDarkTheme ? 'text-gray-600' : 'text-gray-300'" />
                         </div>
-                        <p class="text-sm text-gray-500 dark:text-gray-400 m-0">No se encontraron productos.</p>
-                        <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 m-0">Intenta con otra búsqueda o categoría.</p>
+                        <p class="text-sm m-0"
+                            :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">No se encontraron productos.</p>
+                        <p class="text-xs mt-1 m-0"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Intenta con otra búsqueda o categoría.</p>
                     </div>
                 </div>
             </div>
@@ -298,7 +388,12 @@ const getStockInfo = (item) => {
 
         <!-- Back to top -->
         <button v-if="showBackToTop" @click="scrollToTop"
-            class="fixed bottom-20 right-6 z-50 w-10 h-10 rounded-full bg-white dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] text-gray-500 dark:text-gray-400 flex items-center justify-center shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300"
+            :class="[
+                'fixed bottom-20 right-6 z-50 w-10 h-10 rounded-full border flex items-center justify-center shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300',
+                isDarkTheme
+                    ? 'bg-[#232323] border-[#3a3a3a] text-gray-400'
+                    : 'bg-white border-gray-100 text-gray-500'
+            ]"
             title="Volver arriba">
             <i class="pi pi-chevron-up !text-sm" />
         </button>

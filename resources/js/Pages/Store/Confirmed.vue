@@ -20,11 +20,16 @@ const formatCurrency = (num) => {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(num || 0);
 };
 
+const isDarkTheme = computed(() => store.value.theme_mode === 'dark');
+
 const showContent = ref(false);
+const showAnimation = ref(true);
 
 onMounted(() => {
-    // Trigger animation sequence
+    // Trigger content fade-in after animation
     setTimeout(() => { showContent.value = true; }, 300);
+    // Hide success overlay after animation completes
+    setTimeout(() => { showAnimation.value = false; }, 2500);
 });
 </script>
 
@@ -33,7 +38,7 @@ onMounted(() => {
     <StoreLayout>
         <div class="max-w-xl mx-auto px-4 md:px-6 py-12 relative">
             <!-- Success wave animation overlay -->
-            <div class="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+            <div v-if="showAnimation" class="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
                 <!-- Expanding rings -->
                 <div class="absolute w-16 h-16 rounded-full bg-green-500 animate-[ping_1.5s_ease-out_forwards] opacity-0" />
                 <div class="absolute w-16 h-16 rounded-full bg-green-400 animate-[ping_2s_ease-out_0.2s_forwards] opacity-0" />
@@ -47,7 +52,8 @@ onMounted(() => {
 
             <!-- Content card (fades in after animation) -->
             <div :class="[
-                'bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] p-8 md:p-10 text-center transition-all duration-700 ease-out',
+                'rounded-3xl border p-8 md:p-10 text-center transition-all duration-700 ease-out',
+                isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100',
                 showContent ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
             ]">
                 <!-- Success indicator -->
@@ -62,16 +68,22 @@ onMounted(() => {
                     <i class="pi pi-check !text-2xl" :style="{ color: 'var(--store-primary)' }" />
                 </div>
 
-                <h1 class="text-2xl md:text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0 mb-2">
+                <h1 class="text-2xl md:text-3xl font-light tracking-tight m-0 mb-2"
+                    :class="isDarkTheme ? 'text-white' : 'text-gray-900'">
                     ¡Compra realizada!
                 </h1>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mb-8 m-0">
+                <p class="text-sm mb-8 m-0"
+                    :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">
                     Gracias por tu pedido. Aquí está tu número de orden:
                 </p>
 
                 <!-- Order number -->
-                <div class="bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl p-6 mb-8 inline-block">
-                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-1">
+                <div :class="[
+                    'rounded-2xl p-6 mb-8 inline-block',
+                    isDarkTheme ? 'bg-[#1a1a1a]' : 'bg-gray-50'
+                ]">
+                    <p class="text-[10px] uppercase tracking-widest font-bold m-0 mb-1"
+                        :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
                         Número de pedido
                     </p>
                     <p class="text-3xl md:text-4xl font-light tracking-tight m-0"
@@ -81,32 +93,43 @@ onMounted(() => {
                 </div>
 
                 <!-- Order details -->
-                <div class="text-left bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl p-5 mb-8 space-y-2">
-                    <h2 class="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider m-0 mb-3">
+                <div :class="[
+                    'text-left rounded-2xl p-5 mb-8 space-y-2',
+                    isDarkTheme ? 'bg-[#1a1a1a]' : 'bg-gray-50'
+                ]">
+                    <h2 class="text-xs font-semibold uppercase tracking-wider m-0 mb-3"
+                        :class="isDarkTheme ? 'text-gray-300' : 'text-gray-700'">
                         Resumen del pedido
                     </h2>
                     <div v-for="item in order.items" :key="item.id" class="flex justify-between text-sm">
-                        <span class="text-gray-600 dark:text-gray-400">
+                        <span :class="isDarkTheme ? 'text-gray-400' : 'text-gray-600'">
                             {{ item.quantity }}x {{ item.product_name }}
                         </span>
-                        <span class="text-gray-900 dark:text-white font-medium">
+                        <span class="font-medium"
+                            :class="isDarkTheme ? 'text-white' : 'text-gray-900'">
                             {{ formatCurrency(item.subtotal) }}
                         </span>
                     </div>
                     <div v-if="order.delivery_fee > 0" class="flex justify-between text-sm">
-                        <span class="text-gray-500 dark:text-gray-400">Costo de envío</span>
-                        <span class="text-gray-900 dark:text-white">{{ formatCurrency(order.delivery_fee) }}</span>
+                        <span :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">Costo de envío</span>
+                        <span :class="isDarkTheme ? 'text-white' : 'text-gray-900'">{{ formatCurrency(order.delivery_fee) }}</span>
                     </div>
-                    <div class="border-t border-gray-200 dark:border-[#3a3a3a] pt-2 mt-2 flex justify-between">
-                        <span class="text-sm font-semibold text-gray-900 dark:text-white">Total</span>
-                        <span class="text-lg font-light tracking-tight text-gray-900 dark:text-white"
+                    <div :class="[
+                        'border-t pt-2 mt-2 flex justify-between',
+                        isDarkTheme ? 'border-[#3a3a3a]' : 'border-gray-200'
+                    ]">
+                        <span class="text-sm font-semibold"
+                            :class="isDarkTheme ? 'text-white' : 'text-gray-900'">Total</span>
+                        <span class="text-lg font-light tracking-tight"
+                            :class="isDarkTheme ? 'text-white' : 'text-gray-900'"
                             :style="{ color: 'var(--store-primary)' }">
                             {{ formatCurrency(order.total) }}
                         </span>
                     </div>
                 </div>
 
-                <p class="text-xs text-gray-500 dark:text-gray-400 mb-8 m-0">
+                <p class="text-xs mb-8 m-0"
+                    :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">
                     {{ order.delivery_type === 'pickup'
                         ? 'Puedes recoger tu pedido en la tienda. Te avisaremos cuando esté listo.'
                         : 'Tu pedido será enviado a la dirección proporcionada.' }}
@@ -116,7 +139,12 @@ onMounted(() => {
                     <Button label="Seguir comprando" icon="pi pi-arrow-left" outlined
                         class="!rounded-full !px-8"
                         :pt="{
-                            root: { class: '!border-gray-200 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-400 hover:!border-gray-400 dark:hover:!border-gray-500' }
+                            root: { 
+                                class: [
+                                    '!border-gray-200 !text-gray-600 hover:!border-gray-400',
+                                    isDarkTheme ? '!border-[#3a3a3a] !text-gray-400 hover:!border-gray-500' : ''
+                                ].filter(Boolean).join(' ')
+                            }
                         }" />
                 </Link>
             </div>

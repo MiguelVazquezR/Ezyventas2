@@ -244,7 +244,7 @@ function hasRealContent(html) {
 <template>
     <Head title="Configuración de tienda" />
     <AppLayout>
-        <div class="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto space-y-6">
+        <div class="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
             <div class="mb-4">
                 <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200 m-0">Configuración de tienda</h1>
                 <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1 flex items-center gap-2">

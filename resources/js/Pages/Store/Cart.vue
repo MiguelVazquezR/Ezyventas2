@@ -6,6 +6,7 @@ import { useToast } from 'primevue/usetoast';
 
 const page = usePage();
 const store = computed(() => page.props.store || {});
+const isDarkTheme = computed(() => store.value.theme_mode === 'dark');
 const toast = useToast();
 
 const slug = computed(() => {
@@ -114,9 +115,16 @@ const placeOrder = () => {
     });
 };
 
-const inputPt = {
-    root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:!border-gray-300 dark:focus:!border-gray-600 !text-gray-900 dark:!text-white transition-colors' }
-};
+const inputPt = computed(() => ({
+    root: {
+        class: [
+            '!rounded-xl !border-gray-100 focus:!border-gray-300 transition-colors',
+            isDarkTheme.value
+                ? '!bg-[#1a1a1a] !border-[#3a3a3a] focus:!border-gray-600 !text-white'
+                : '!bg-white !border-gray-100 !text-gray-900'
+        ].join(' ')
+    }
+}));
 
 const isEmpty = computed(() => cartItems.value.length === 0);
 </script>
@@ -127,19 +135,31 @@ const isEmpty = computed(() => cartItems.value.length === 0);
         <div class="max-w-5xl mx-auto px-4 md:px-6 py-8">
             <!-- Back link -->
             <Link :href="route('store.home', { slug: slug })"
-                class="inline-flex items-center gap-1.5 text-xs font-medium text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors mb-6">
+                :class="[
+                    'inline-flex items-center gap-1.5 text-xs font-medium transition-colors mb-6',
+                    isDarkTheme ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
+                ]">
                 <i class="pi pi-arrow-left !text-[10px]" />
                 Volver a la tienda
             </Link>
 
-            <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white mb-8 m-0">Tu pedido</h1>
+            <h1 class="text-3xl md:text-4xl font-light tracking-tight mb-8 m-0"
+                :class="isDarkTheme ? 'text-white' : 'text-gray-900'">Tu pedido</h1>
 
             <!-- Empty cart -->
-            <div v-if="isEmpty" class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] p-16 text-center">
-                <div class="w-20 h-20 mx-auto mb-6 rounded-full bg-gray-50 dark:bg-[#1a1a1a] flex items-center justify-center">
-                    <i class="pi pi-shopping-cart !text-2xl text-gray-300 dark:text-gray-600" />
+            <div v-if="isEmpty" :class="[
+                'rounded-3xl border p-16 text-center',
+                isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100'
+            ]">
+                <div :class="[
+                    'w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center',
+                    isDarkTheme ? 'bg-[#1a1a1a]' : 'bg-gray-50'
+                ]">
+                    <i class="pi pi-shopping-cart !text-2xl"
+                        :class="isDarkTheme ? 'text-gray-600' : 'text-gray-300'" />
                 </div>
-                <p class="text-gray-500 dark:text-gray-400 text-lg mb-4 m-0">Tu carrito está vacío.</p>
+                <p class="text-lg mb-4 m-0"
+                    :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">Tu carrito está vacío.</p>
                 <Link :href="route('store.home', { slug: slug })"
                     class="inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-medium text-white transition-all"
                     :style="{ background: 'var(--store-primary)' }">
@@ -151,28 +171,56 @@ const isEmpty = computed(() => cartItems.value.length === 0);
             <div v-else class="grid grid-cols-1 lg:grid-cols-5 gap-6">
                 <!-- Cart items -->
                 <div class="lg:col-span-3 space-y-3">
-                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-2">
+                    <p class="text-[10px] uppercase tracking-widest font-bold m-0 mb-2"
+                        :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
                         {{ cartItems.length }} {{ cartItems.length === 1 ? 'producto' : 'productos' }}
                     </p>
                     <div v-for="(item, index) in cartItems" :key="index"
-                        class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] p-4 flex gap-4 items-center group">
-                        <div class="w-16 h-16 bg-gray-50 dark:bg-[#1a1a1a] rounded-xl flex items-center justify-center shrink-0">
+                        :class="[
+                            'rounded-2xl border p-4 flex gap-4 items-center group',
+                            isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100'
+                        ]">
+                        <div :class="[
+                            'w-16 h-16 rounded-xl flex items-center justify-center shrink-0',
+                            isDarkTheme ? 'bg-[#1a1a1a]' : 'bg-gray-50'
+                        ]">
                             <img v-if="item.image_url" :src="item.image_url" class="max-h-full max-w-full object-contain" />
-                            <i v-else class="pi pi-image text-gray-300 dark:text-gray-600" />
+                            <i v-else class="pi pi-image"
+                                :class="isDarkTheme ? 'text-gray-600' : 'text-gray-300'" />
                         </div>
                         <div class="flex-1 min-w-0">
-                            <h3 class="font-medium text-sm text-gray-900 dark:text-white m-0 truncate">{{ item.name }}</h3>
+                            <h3 class="font-medium text-sm m-0 truncate"
+                                :class="isDarkTheme ? 'text-white' : 'text-gray-900'">{{ item.name }}</h3>
                             <p class="text-sm font-light tracking-tight mt-0.5 m-0" :style="{ color: 'var(--store-primary)' }">
                                 {{ formatCurrency(item.price) }}
-                                <span v-if="item.is_bulk" class="text-[10px] text-gray-400 dark:text-gray-500">/ {{ item.measure_unit || 'unidad' }}</span>
+                                <span v-if="item.is_bulk" class="text-[10px]"
+                                    :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">/ {{ item.measure_unit || 'unidad' }}</span>
                             </p>
                         </div>
                         <div class="flex items-center gap-2">
                             <InputNumber fluid v-model="item.quantity" :min="getMin(item)" :max="999" :step="getStep(item)" showButtons class="!w-[108px]"
                                 @update:modelValue="updateQuantity(index, $event)"
-                                :pt="{ input: { root: { class: '!rounded-xl !text-center !text-sm !bg-white dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] !text-gray-900 dark:!text-white' } } }" />
+                                :pt="{
+                                    input: {
+                                        root: {
+                                            class: [
+                                                '!rounded-xl !text-center !text-sm',
+                                                isDarkTheme
+                                                    ? '!bg-[#1a1a1a] !border-[#3a3a3a] !text-white'
+                                                    : '!bg-white !border-gray-100 !text-gray-900'
+                                            ].join(' ')
+                                        }
+                                    }
+                                }" />
                             <Button icon="pi pi-trash" text rounded severity="danger" size="small" @click="removeItem(index)"
-                                :pt="{ root: { class: '!text-gray-400 hover:!text-red-500 dark:hover:!text-red-400 transition-colors' } }" />
+                                :pt="{
+                                    root: {
+                                        class: [
+                                            '!text-gray-400 hover:!text-red-500 transition-colors',
+                                            isDarkTheme ? 'hover:!text-red-400' : ''
+                                        ].filter(Boolean).join(' ')
+                                    }
+                                }" />
                         </div>
                     </div>
                 </div>
@@ -180,18 +228,31 @@ const isEmpty = computed(() => cartItems.value.length === 0);
                 <!-- Order form -->
                 <div class="lg:col-span-2 space-y-4">
                     <!-- Delivery type -->
-                    <div class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] p-4">
-                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-3 block">Tipo de entrega</label>
+                    <div :class="[
+                        'rounded-2xl border p-4',
+                        isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100'
+                    ]">
+                        <label class="text-[10px] uppercase tracking-widest font-bold m-0 mb-3 block"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Tipo de entrega</label>
                         <SelectButton v-model="deliveryType" :options="deliveryTypes" optionLabel="label" optionValue="value" class="w-full"
                             :pt="{
                                 root: { class: '!bg-transparent !border-0 !p-0' },
-                                button: { class: '!text-xs !rounded-xl flex-1 !bg-white dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-400' }
+                                button: {
+                                    class: [
+                                        '!text-xs !rounded-xl flex-1 !border-gray-100 !text-gray-600',
+                                        isDarkTheme ? '!bg-[#1a1a1a] !border-[#3a3a3a] !text-gray-400' : '!bg-white'
+                                    ].join(' ')
+                                }
                             }" />
                     </div>
 
                     <!-- Customer info -->
-                    <div class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] p-4 space-y-3">
-                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 block">Tu información</label>
+                    <div :class="[
+                        'rounded-2xl border p-4 space-y-3',
+                        isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100'
+                    ]">
+                        <label class="text-[10px] uppercase tracking-widest font-bold m-0 block"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Tu información</label>
                         <div>
                             <InputText v-model="form.customer_name" placeholder="Nombre completo *" :pt="inputPt" class="w-full" />
                             <Message v-if="errors.customer_name" severity="error" variant="simple" size="small" class="mt-1">{{ errors.customer_name }}</Message>
@@ -209,31 +270,41 @@ const isEmpty = computed(() => cartItems.value.length === 0);
                     </div>
 
                     <!-- Totals -->
-                    <div class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] p-4 space-y-2">
+                    <div :class="[
+                        'rounded-2xl border p-4 space-y-2',
+                        isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100'
+                    ]">
                         <div class="flex justify-between text-sm">
-                            <span class="text-gray-500 dark:text-gray-400">Subtotal</span>
-                            <span class="font-medium text-gray-900 dark:text-white">{{ formatCurrency(subtotal) }}</span>
+                            <span :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">Subtotal</span>
+                            <span class="font-medium"
+                                :class="isDarkTheme ? 'text-white' : 'text-gray-900'">{{ formatCurrency(subtotal) }}</span>
                         </div>
                         <!-- Free shipping progress -->
-                        <div v-if="freeShippingMin > 0 && !freeShippingReached" class="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1.5 py-1">
+                        <div v-if="freeShippingMin > 0 && !freeShippingReached" class="text-xs flex items-center gap-1.5 py-1"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
                             <i class="pi pi-truck !text-xs" />
                             Agrega {{ formatCurrency(freeShippingRemaining) }} más para envío gratis
                         </div>
                         <!-- Free shipping reached -->
-                        <div v-if="freeShippingReached" class="text-xs text-green-600 dark:text-green-400 flex items-center gap-1.5 py-1">
+                        <div v-if="freeShippingReached" class="text-xs flex items-center gap-1.5 py-1"
+                            :class="isDarkTheme ? 'text-green-400' : 'text-green-600'">
                             <i class="pi pi-check-circle !text-xs" />
                             ¡Envío gratis!
                         </div>
                         <div v-if="deliveryFee > 0" class="flex justify-between text-sm">
-                            <span class="text-gray-500 dark:text-gray-400">Costo de envío</span>
-                            <span class="text-gray-900 dark:text-white">{{ formatCurrency(deliveryFee) }}</span>
+                            <span :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">Costo de envío</span>
+                            <span :class="isDarkTheme ? 'text-white' : 'text-gray-900'">{{ formatCurrency(deliveryFee) }}</span>
                         </div>
                         <div v-else-if="deliveryType === 'delivery' && freeShippingReached" class="flex justify-between text-sm">
-                            <span class="text-gray-500 dark:text-gray-400">Costo de envío</span>
-                            <span class="text-green-600 dark:text-green-400 line-through">{{ formatCurrency(store.delivery_fee) }}</span>
+                            <span :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">Costo de envío</span>
+                            <span :class="isDarkTheme ? 'text-green-400' : 'text-green-600'" class="line-through">{{ formatCurrency(store.delivery_fee) }}</span>
                         </div>
-                        <div class="flex justify-between pt-2 border-t border-gray-100 dark:border-[#3a3a3a]">
-                            <span class="text-base font-semibold text-gray-900 dark:text-white">Total</span>
+                        <div :class="[
+                            'flex justify-between pt-2 border-t',
+                            isDarkTheme ? 'border-[#3a3a3a]' : 'border-gray-100'
+                        ]">
+                            <span class="text-base font-semibold"
+                                :class="isDarkTheme ? 'text-white' : 'text-gray-900'">Total</span>
                             <span class="text-xl font-light tracking-tight" :style="{ color: 'var(--store-primary)' }">
                                 {{ formatCurrency(total) }}
                             </span>

@@ -34,10 +34,10 @@ const banners = computed(() => store.value.banners || []);
 </script>
 
 <template>
-    <div :style="rootStyles" :class="['min-h-screen flex flex-col', isDarkTheme ? 'bg-[#1e1e1e]' : 'bg-gray-50']">
+    <div :style="rootStyles" :class="['min-h-screen flex flex-col', isDarkTheme ? 'bg-gray-200' : 'bg-gray-50']">
         <!-- Header -->
-        <header class="sticky top-0 z-40 bg-white/80 dark:bg-black/95 backdrop-blur-xl border-b border-gray-100 dark:border-gray-800"
-            :class="{ 'dark:!bg-black/95': isDarkTheme }">
+        <header class="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b"
+            :class="[isDarkTheme ? '!bg-black/95 border-gray-800' : 'border-gray-100']">
             <div class="max-w-7xl mx-auto px-4 md:px-6 py-3 flex items-center justify-between">
                 <Link :href="route('store.home', { slug: slug })" class="flex items-center gap-3 group">
                     <img v-if="store.logo_url" :src="store.logo_url" class="h-12 max-w-[120px] object-contain object-left" alt="Logo" />
@@ -45,7 +45,9 @@ const banners = computed(() => store.value.banners || []);
                         {{ (store.name || 'T').charAt(0).toUpperCase() }}
                     </div>
                     <div>
-                        <h1 class="text-base font-semibold m-0 text-gray-900 dark:text-white transition-colors" :style="{ color: 'var(--store-primary)' }">
+                        <h1 class="text-base font-semibold m-0 transition-colors"
+                            :class="isDarkTheme ? 'text-white' : 'text-gray-900'"
+                            :style="{ color: 'var(--store-primary)' }">
                             {{ store.name || 'Tienda' }}
                         </h1>
                         <p v-if="store.tagline" class="text-[10px] uppercase tracking-widest font-bold m-0" :style="{ color: 'var(--store-secondary)' }">
@@ -55,8 +57,14 @@ const banners = computed(() => store.value.banners || []);
                 </Link>
                 <!-- Cart icon -->
                 <Link :href="route('store.cart', { slug: slug })"
-                    class="relative w-10 h-10 flex items-center justify-center rounded-full border border-gray-100 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
-                    <i class="pi pi-shopping-cart text-gray-600 dark:text-gray-300 !text-sm" />
+                    :class="[
+                        'relative w-10 h-10 flex items-center justify-center rounded-full border transition-colors',
+                        isDarkTheme
+                            ? 'border-gray-700 bg-[#1a1a1a] hover:border-gray-600'
+                            : 'border-gray-100 bg-white hover:border-gray-300'
+                    ]">
+                    <i class="pi pi-shopping-cart !text-sm"
+                        :class="isDarkTheme ? 'text-gray-300' : 'text-gray-600'" />
                     <span v-if="cartCount > 0"
                         class="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-bold text-white"
                         :style="{ background: 'var(--store-primary)' }">
@@ -96,18 +104,28 @@ const banners = computed(() => store.value.banners || []);
         </a>
 
         <!-- Footer -->
-        <footer class="border-t border-gray-100 dark:border-gray-800 bg-white dark:bg-black mt-auto">
+        <footer :class="[
+            'border-t mt-auto',
+            isDarkTheme ? 'border-gray-800 bg-black' : 'border-gray-100 bg-white'
+        ]">
             <div class="max-w-7xl mx-auto px-4 md:px-6 py-6 text-center">
-                <p v-if="store.description" class="text-[11px] text-gray-500 dark:text-gray-400 m-0 leading-relaxed mb-2">{{ store.description }}</p>
+                <p v-if="store.description" class="text-[11px] m-0 leading-relaxed mb-2"
+                    :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">{{ store.description }}</p>
                 <div class="flex items-center justify-center gap-4 flex-wrap mb-2">
                     <Link v-if="store.terms_policy" :href="route('store.policies', { slug: slug })"
-                        class="text-[11px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                        :class="[
+                            'text-[11px] transition-colors',
+                            isDarkTheme ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
+                        ]">
                         Políticas de la tienda
                     </Link>
                 </div>
-                <p v-if="store.footer_note" class="text-[11px] text-gray-500 dark:text-gray-400 m-0 leading-relaxed">{{ store.footer_note }}</p>
-                <p v-if="!store.footer_note && !store.description" class="text-[11px] text-gray-400 dark:text-gray-500 m-0">
-                    {{ store.name || 'Tienda' }} &mdash; Desarrollado por <span class="font-semibold text-gray-500 dark:text-gray-400">EzyVentas</span>
+                <p v-if="store.footer_note" class="text-[11px] m-0 leading-relaxed"
+                    :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">{{ store.footer_note }}</p>
+                <p v-if="!store.footer_note && !store.description" class="text-[11px] m-0"
+                    :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
+                    {{ store.name || 'Tienda' }} &mdash; Desarrollado por <span class="font-semibold"
+                        :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">EzyVentas</span>
                 </p>
             </div>
         </footer>
