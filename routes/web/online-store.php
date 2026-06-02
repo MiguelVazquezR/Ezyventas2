@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\OnlineStore\StoreConfigController;
 use App\Http\Controllers\OnlineStore\OrderController;
+use App\Http\Controllers\OnlineStore\MercadoPagoController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -16,6 +17,11 @@ Route::middleware(['auth', 'verified'])->prefix('online-store')->name('online-st
     Route::get('/config', [StoreConfigController::class, 'show'])->name('config');
     Route::put('/config', [StoreConfigController::class, 'update'])->name('config.update');
     Route::post('/config/check-slug', [StoreConfigController::class, 'checkSlug'])->name('config.check-slug');
+
+    // Mercado Pago OAuth
+    Route::get('/mp/connect', [MercadoPagoController::class, 'connect'])->name('mp.connect');
+    Route::get('/mp/callback', [MercadoPagoController::class, 'callback'])->name('mp.callback');
+    Route::post('/mp/disconnect', [MercadoPagoController::class, 'disconnect'])->name('mp.disconnect');
 
     // Orders
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');

@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { usePage, Link } from '@inertiajs/vue3';
 
 const page = usePage();
@@ -11,7 +11,12 @@ const slug = computed(() => {
     return parts[2] || '';
 });
 
+// Reactive cart count
+const cartVersion = ref(0);
+
 const cartCount = computed(() => {
+    // eslint-disable-next-line no-unused-vars
+    void cartVersion.value; // reactivity trigger
     try {
         const items = JSON.parse(sessionStorage.getItem('store_cart') || '[]');
         return items.reduce((sum, i) => sum + i.quantity, 0);
@@ -19,6 +24,11 @@ const cartCount = computed(() => {
         return 0;
     }
 });
+
+const onCartUpdated = () => { cartVersion.value++; };
+
+onMounted(() => window.addEventListener('cart-updated', onCartUpdated));
+onUnmounted(() => window.removeEventListener('cart-updated', onCartUpdated));
 
 const rootStyles = computed(() => ({
     '--store-primary': store.value.primary_color || '#3B82F6',
@@ -34,6 +44,8 @@ const rootStyles = computed(() => ({
 const isDarkTheme = computed(() => store.value.theme_mode === 'dark');
 
 const banners = computed(() => store.value.banners || []);
+
+const mpEnabled = computed(() => store.value.payment_mp_enabled ?? false);
 </script>
 
 <template>
@@ -42,6 +54,9 @@ const banners = computed(() => store.value.banners || []);
             'min-h-screen flex flex-col font-sans antialiased',
             isDarkTheme ? 'bg-[#1c1c1c] text-gray-200' : 'bg-[#faf8f5] text-gray-800'
         ]">
+        <!-- Toast -->
+        <Toast position="bottom-right" group="store" :pt="{ root: { class: '!z-[9999]' }, message: { class: '!rounded-2xl !text-sm' } }" />
+
         <!-- Header — Midori clean style -->
         <header :class="[
             'sticky top-0 z-40 backdrop-blur-xl border-b transition-colors',
@@ -135,6 +150,16 @@ const banners = computed(() => store.value.banners || []);
                             :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
                             {{ store.description }}
                         </p>
+                    </div>
+
+                    <!-- Mercado Pago trust badge -->
+                    <div v-if="mpEnabled" class="flex items-center gap-3">
+                        <span class="text-[10px]"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
+                            Pagos seguros con
+                        </span>
+                        <img src="/images/Mercado_Pago_logo.png" alt="Mercado Pago"
+                            class="h-5 object-contain opacity-80" />
                     </div>
 
                     <!-- Links -->

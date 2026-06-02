@@ -30,6 +30,10 @@ Route::middleware(['web', 'resolve.store'])->prefix('store/{slug}')->name('store
     // Submit order
     Route::post('/order', [PublicStoreController::class, 'placeOrder'])->name('order.place');
 
+    // Mercado Pago payment
+    Route::get('/order/{order}/pay', [PublicStoreController::class, 'pay'])->name('order.pay');
+    Route::get('/order/{order}/payment/return', [PublicStoreController::class, 'paymentReturn'])->name('order.payment.return');
+
     // Order confirmation
     Route::get('/order/{order}/confirmed', [PublicStoreController::class, 'confirmed'])->name('order.confirmed');
 

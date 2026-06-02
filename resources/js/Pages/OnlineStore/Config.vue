@@ -10,6 +10,8 @@ import { useScrollspy } from '@/Composables/useScrollspy';
 const props = defineProps({
     storeConfig: Object,
     storeUrl: String,
+    mpConnected: Boolean,
+    mpUserId: String,
 });
 
 // --- Helpers ---
@@ -66,6 +68,9 @@ const form = useForm({
     delivery_policy: props.storeConfig.delivery_policy || '',
     terms_policy: props.storeConfig.terms_policy || '',
     footer_note: props.storeConfig.footer_note || '',
+    payment_mp_enabled: props.storeConfig.payment_mp_enabled ?? false,
+    payment_cash_enabled: props.storeConfig.payment_cash_enabled ?? true,
+    cash_instructions: props.storeConfig.cash_instructions || '',
 });
 
 // --- Navigation sections ---
@@ -74,6 +79,7 @@ const formSections = [
     { id: 'basic', label: 'Información básica' },
     { id: 'branding', label: 'Personalización' },
     { id: 'delivery', label: 'Opciones de entrega' },
+    { id: 'payments', label: 'Métodos de pago' },
     { id: 'policies', label: 'Políticas de la tienda' },
     { id: 'footer', label: 'Pie de página' },
 ];
@@ -498,6 +504,55 @@ function hasRealContent(html) {
                                     <Textarea v-model="form.delivery_policy" :pt="inputPt" rows="3" class="w-full" />
                                 </div>
                             </template>
+                        </div>
+
+                        <!-- Payments -->
+                        <div id="payments" class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] space-y-4">
+                            <h2 class="text-sm font-semibold text-gray-700 dark:text-gray-300 m-0 pb-2 border-b border-gray-100 dark:border-[#3a3a3a]">Métodos de pago</h2>
+
+                            <!-- Mercado Pago -->
+                            <div class="flex flex-col gap-1.5">
+                                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Mercado Pago</label>
+                                <div v-if="mpConnected" class="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/10 rounded-2xl border border-green-100 dark:border-green-900/30">
+                                    <div class="flex items-center gap-3">
+                                        <img src="@/../../public/images/Mercado_Pago_logo.png" alt="Mercado Pago" class="h-8 object-contain" />
+                                        <span class="text-xs text-green-700 dark:text-green-400">
+                                            Conectado{{ mpUserId ? ' (' + mpUserId + ')' : '' }}
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <ToggleSwitch v-model="form.payment_mp_enabled" :disabled="!mpConnected" />
+                                        <a :href="route('online-store.mp.disconnect')"
+                                            @click.prevent="$inertia.post(route('online-store.mp.disconnect'))"
+                                            class="text-[10px] text-red-500 hover:text-red-600 font-medium">Desconectar</a>
+                                    </div>
+                                </div>
+                                <div v-else class="p-3 bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex items-center justify-between">
+                                    <span class="text-xs text-gray-500">Conecta tu cuenta de Mercado Pago para aceptar pagos en línea.</span>
+                                    <a :href="route('online-store.mp.connect')"
+                                        class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[10px] uppercase tracking-widest font-bold text-white transition-all"
+                                        style="background: #009EE3;">
+                                        <i class="pi pi-link !text-xs" />
+                                        Conectar
+                                    </a>
+                                </div>
+                            </div>
+
+                            <!-- Cash on delivery -->
+                            <div class="flex flex-col gap-1.5">
+                                <div class="flex items-center justify-between">
+                                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Pago en efectivo (contra entrega)</label>
+                                    <ToggleSwitch v-model="form.payment_cash_enabled" />
+                                </div>
+                                <p class="text-[11px] text-gray-400 dark:text-gray-500 m-0 leading-relaxed">
+                                    Permite que los clientes paguen en efectivo al recibir su pedido.
+                                </p>
+                            </div>
+
+                            <div v-if="form.payment_cash_enabled" class="flex flex-col gap-1.5">
+                                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Instrucciones para pago en efectivo</label>
+                                <InputText v-model="form.cash_instructions" :pt="inputPt" class="w-full" placeholder="Ej: Pagar en efectivo al repartidor al momento de la entrega." />
+                            </div>
                         </div>
 
                         <!-- Policies -->

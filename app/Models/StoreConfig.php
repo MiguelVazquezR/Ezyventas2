@@ -38,6 +38,14 @@ class StoreConfig extends Model implements HasMedia
         'terms_policy',
         'footer_note',
         'custom_domain',
+        'mp_access_token',
+        'mp_refresh_token',
+        'mp_user_id',
+        'mp_public_key',
+        'mp_token_expires_at',
+        'payment_mp_enabled',
+        'payment_cash_enabled',
+        'cash_instructions',
     ];
 
     protected $casts = [
@@ -47,6 +55,14 @@ class StoreConfig extends Model implements HasMedia
         'allow_out_of_stock_purchases' => 'boolean',
         'delivery_fee' => 'decimal:2',
         'free_shipping_minimum' => 'decimal:2',
+        'payment_mp_enabled' => 'boolean',
+        'payment_cash_enabled' => 'boolean',
+        'mp_token_expires_at' => 'datetime',
+    ];
+
+    protected $hidden = [
+        'mp_access_token',
+        'mp_refresh_token',
     ];
 
     protected $appends = ['banners'];
@@ -67,10 +83,40 @@ class StoreConfig extends Model implements HasMedia
 
     public function getLogoUrlAttribute(): ?string
     {
-        // Override the DB column with the media library URL if available
         $mediaUrl = $this->getFirstMediaUrl('store-logo');
         return $mediaUrl ?: $this->attributes['logo_url'] ?? null;
     }
+
+    // ─── Mercado Pago encrypted accessors ───────────────────────────────
+
+    public function getMpAccessTokenAttribute(): ?string
+    {
+        $value = $this->attributes['mp_access_token'] ?? null;
+        return $value ? decrypt($value) : null;
+    }
+
+    public function setMpAccessTokenAttribute(?string $value): void
+    {
+        $this->attributes['mp_access_token'] = $value ? encrypt($value) : null;
+    }
+
+    public function getMpRefreshTokenAttribute(): ?string
+    {
+        $value = $this->attributes['mp_refresh_token'] ?? null;
+        return $value ? decrypt($value) : null;
+    }
+
+    public function setMpRefreshTokenAttribute(?string $value): void
+    {
+        $this->attributes['mp_refresh_token'] = $value ? encrypt($value) : null;
+    }
+
+    public function isMpConnected(): bool
+    {
+        return !empty($this->mp_access_token);
+    }
+
+    // ────────────────────────────────────────────────────────────────────
 
     public function subscription(): BelongsTo
     {

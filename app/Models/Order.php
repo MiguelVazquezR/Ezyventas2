@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
 
 class Order extends Model
 {
@@ -19,6 +20,7 @@ class Order extends Model
         'order_number',
         'status',
         'delivery_type',
+        'payment_method',
         'customer_name',
         'customer_phone',
         'customer_email',
@@ -66,6 +68,15 @@ class Order extends Model
     public function transaction(): BelongsTo
     {
         return $this->belongsTo(Transaction::class);
+    }
+
+    /**
+     * The Transaction that was automatically created for this online store order.
+     * Uses the polymorphic transactionable relation on the Transaction model.
+     */
+    public function saleTransaction(): MorphOne
+    {
+        return $this->morphOne(Transaction::class, 'transactionable');
     }
 
     public function items(): HasMany

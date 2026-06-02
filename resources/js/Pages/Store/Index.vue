@@ -3,10 +3,14 @@ import { ref, computed } from 'vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import StoreLayout from '@/Layouts/StoreLayout.vue';
 import { useDebounceFn } from '@vueuse/core';
+import { useToast } from 'primevue/usetoast';
 
 const page = usePage();
 const store = computed(() => page.props.store || {});
 const isDarkTheme = computed(() => store.value.theme_mode === 'dark');
+const allowOutOfStock = computed(() => store.value.allow_out_of_stock_purchases ?? false);
+
+const toast = useToast();
 
 const props = defineProps({
     products: Object,
@@ -36,6 +40,49 @@ const getCartItems = () => {
 const getCartQuantity = (productId) => {
     const item = getCartItems().find(i => i.product_id === productId);
     return item ? item.quantity : 0;
+};
+
+// Reactive cart trigger for badge updates
+const cartTrigger = ref(0);
+const refreshCart = () => {
+    cartTrigger.value++;
+    window.dispatchEvent(new Event('cart-updated'));
+};
+
+const addToCart = (product, event) => {
+    if (event) event.stopPropagation();
+
+    const stockInfo = getStockInfo(product);
+    if (stockInfo.isOut && !allowOutOfStock.value) return;
+
+    const cartItems = getCartItems();
+    const existing = cartItems.find(i => i.product_id === product.id);
+    const step = product.is_bulk ? 0.1 : 1;
+
+    if (existing) {
+        existing.quantity += step;
+    } else {
+        cartItems.push({
+            product_id: product.id,
+            name: product.name,
+            price: getProductPrice(product),
+            quantity: step,
+            image_url: product.media?.length ? product.media[0].original_url : null,
+            is_bulk: product.is_bulk || false,
+            measure_unit: product.measure_unit || '',
+        });
+    }
+
+    sessionStorage.setItem('store_cart', JSON.stringify(cartItems));
+    refreshCart();
+
+    toast.add({
+        severity: 'success',
+        summary: 'Agregado al carrito',
+        detail: product.name,
+        life: 2000,
+        group: 'store',
+    });
 };
 
 const doFilter = useDebounceFn(() => {
@@ -95,6 +142,11 @@ const getProductPrice = (item) => Number(item.online_price || item.selling_price
 const getStockInfo = (item) => {
     const available = Number(item.available_stock ?? 0);
     return { available, isOut: available <= 0 };
+};
+const canPurchase = (item) => {
+    const stock = getStockInfo(item);
+    if (!stock.isOut) return true;
+    return allowOutOfStock.value;
 };
 </script>
 
@@ -184,7 +236,7 @@ const getStockInfo = (item) => {
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 md:gap-6">
                         <div v-for="item in slotProps.items" :key="item.id"
                             :class="[
-                                'group cursor-pointer rounded-2xl overflow-hidden transition-all duration-300 border',
+                                'group cursor-pointer rounded-2xl overflow-hidden transition-all duration-300 border relative',
                                 isDarkTheme
                                     ? 'bg-[#252525] border-transparent hover:border-[#3a3a3a]'
                                     : 'bg-white border-transparent hover:border-[#e0dbd4] hover:shadow-sm'
@@ -197,16 +249,24 @@ const getStockInfo = (item) => {
                             ]">
                                 <img v-if="item.media?.length" :src="item.media[0].original_url"
                                     class="max-h-full max-w-full object-contain transition-transform duration-500 group-hover:scale-[1.04]"
-                                    :class="{ 'opacity-40': getStockInfo(item).isOut }" />
+                                    :class="{ 'opacity-40': getStockInfo(item).isOut && !allowOutOfStock }" />
                                 <i v-else class="pi pi-image !text-3xl"
                                     :class="isDarkTheme ? 'text-gray-700' : 'text-gray-300'" />
-                                <!-- Stock overlay -->
-                                <div v-if="getStockInfo(item).isOut"
-                                    class="absolute inset-0 flex items-center justify-center"
+                                <!-- Agotado badge -->
+                                <div v-if="getStockInfo(item).isOut && !allowOutOfStock"
+                                    class="absolute inset-0 flex items-start justify-center"
                                     :class="isDarkTheme ? 'bg-black/30' : 'bg-black/5'">
-                                    <span class="text-[10px] uppercase tracking-widest font-bold text-red-500 px-3 py-1 rounded-full"
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-red-500 px-3 py-1 mt-2 rounded-full"
                                         :class="isDarkTheme ? 'bg-black/60' : 'bg-white/90'">
                                         Agotado
+                                    </span>
+                                </div>
+                                <!-- Bajo pedido badge -->
+                                <div v-if="getStockInfo(item).isOut && allowOutOfStock"
+                                    class="absolute top-2 left-2">
+                                    <span class="text-[9px] uppercase tracking-widest font-bold text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full"
+                                        :class="isDarkTheme ? 'bg-amber-400/10' : 'bg-amber-50'">
+                                        Bajo pedido
                                     </span>
                                 </div>
                                 <!-- Cart badge -->
@@ -215,6 +275,14 @@ const getStockInfo = (item) => {
                                     :style="{ background: 'var(--store-primary)' }">
                                     {{ getCartQuantity(item.id) }}
                                 </span>
+                                <!-- Add to cart button -->
+                                <button v-if="canPurchase(item)"
+                                    class="absolute bottom-3 right-3 w-8 h-8 rounded-full flex items-center justify-center text-white shadow-md opacity-0 group-hover:opacity-100 transition-all duration-200 hover:scale-110 active:scale-95"
+                                    :style="{ background: 'var(--store-primary)' }"
+                                    @click="addToCart(item, $event)"
+                                    title="Agregar al carrito">
+                                    <i class="pi pi-plus !text-xs" />
+                                </button>
                             </div>
                             <!-- Info -->
                             <div class="p-4">
@@ -229,6 +297,22 @@ const getStockInfo = (item) => {
                                 <p class="text-sm font-medium tracking-tight mt-2 m-0"
                                     :style="{ color: 'var(--store-primary)' }">
                                     {{ formatCurrency(getProductPrice(item)).replace(/\.00$/, '') }}
+                                </p>
+                                <!-- Stock info -->
+                                <p class="text-[10px] m-0 mt-1"
+                                    :class="[
+                                        getStockInfo(item).isOut
+                                            ? (allowOutOfStock ? 'text-amber-500 dark:text-amber-400' : 'text-red-400')
+                                            : getStockInfo(item).available <= 5
+                                                ? 'text-orange-400'
+                                                : (isDarkTheme ? 'text-gray-500' : 'text-gray-400')
+                                    ]">
+                                    <template v-if="getStockInfo(item).isOut">
+                                        {{ allowOutOfStock ? 'Disponible bajo pedido' : 'Sin existencias' }}
+                                    </template>
+                                    <template v-else>
+                                        {{ getStockInfo(item).available }} {{ getStockInfo(item).available === 1 ? 'disponible' : 'disponibles' }}
+                                    </template>
                                 </p>
                             </div>
                         </div>

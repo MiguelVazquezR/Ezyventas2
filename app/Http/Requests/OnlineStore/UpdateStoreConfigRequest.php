@@ -78,6 +78,9 @@ class UpdateStoreConfigRequest extends FormRequest
             'delivery_policy' => ['nullable', 'string', 'max:2000'],
             'terms_policy' => ['nullable', 'string', 'max:10000'],
             'footer_note' => ['nullable', 'string', 'max:500'],
+            'payment_mp_enabled'   => ['boolean'],
+            'payment_cash_enabled' => ['boolean'],
+            'cash_instructions'    => ['nullable', 'string', 'max:500'],
         ];
     }
 

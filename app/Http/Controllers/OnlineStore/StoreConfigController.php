@@ -35,7 +35,9 @@ class StoreConfigController extends Controller
 
         return Inertia::render('OnlineStore/Config', [
             'storeConfig' => $storeConfig,
-            'storeUrl' => $storeUrl,
+            'storeUrl'     => $storeUrl,
+            'mpConnected'  => $storeConfig->isMpConnected(),
+            'mpUserId'     => $storeConfig->mp_user_id,
         ]);
     }
 
@@ -46,7 +48,11 @@ class StoreConfigController extends Controller
 
         $storeConfig = StoreConfig::where('subscription_id', $subscription->id)->firstOrFail();
 
-        $storeConfig->update($request->safe()->except(['logo', 'remove_logo', 'banners', 'remove_banners', 'removed_banner_ids', 'prep_days', 'prep_hours', 'prep_minutes', 'restock_days', 'restock_hours', 'restock_minutes']));
+        $storeConfig->update($request->safe()->except([
+            'logo', 'remove_logo', 'banners', 'remove_banners', 'removed_banner_ids',
+            'prep_days', 'prep_hours', 'prep_minutes',
+            'restock_days', 'restock_hours', 'restock_minutes',
+        ]));
 
         // Handle logo removal
         if ($request->boolean('remove_logo')) {

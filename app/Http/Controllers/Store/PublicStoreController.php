@@ -2,19 +2,25 @@
 
 namespace App\Http\Controllers\Store;
 
+use App\Actions\Store\CreateStoreTransactionAction;
 use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Product;
+use App\Services\MercadoPagoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class PublicStoreController extends Controller
 {
+    public function __construct(
+        private readonly MercadoPagoService $mpService,
+    ) {}
     /**
      * Store home page — product catalog.
      */
@@ -219,6 +225,7 @@ class PublicStoreController extends Controller
             'delivery_type' => ['required', 'in:pickup,delivery'],
             'delivery_address' => ['required_if:delivery_type,delivery', 'nullable', 'string', 'max:500'],
             'customer_notes' => ['nullable', 'string', 'max:1000'],
+            'payment_method' => ['required', 'in:mercadopago,cash'],
         ]);
 
         // Validate delivery type is enabled
@@ -268,28 +275,120 @@ class PublicStoreController extends Controller
             $order = Order::create([
                 'subscription_id' => $storeConfig->subscription_id,
                 'store_config_id' => $storeConfig->id,
-                'status' => OrderStatus::Pending,
-                'delivery_type' => $validated['delivery_type'],
-                'customer_name' => $validated['customer_name'],
-                'customer_phone' => $validated['customer_phone'],
-                'customer_email' => $validated['customer_email'] ?? null,
+                'status'           => OrderStatus::Pending,
+                'delivery_type'    => $validated['delivery_type'],
+                'customer_name'    => $validated['customer_name'],
+                'customer_phone'   => $validated['customer_phone'],
+                'customer_email'   => $validated['customer_email'] ?? null,
                 'delivery_address' => $validated['delivery_address'] ?? null,
-                'customer_notes' => $validated['customer_notes'] ?? null,
-                'subtotal' => $subtotal,
-                'delivery_fee' => $deliveryFee,
-                'total' => $total,
+                'customer_notes'   => $validated['customer_notes'] ?? null,
+                'subtotal'         => $subtotal,
+                'delivery_fee'     => $deliveryFee,
+                'total'            => $total,
+                'payment_method'   => $validated['payment_method'],
             ]);
 
             $order->items()->createMany($orderItems);
             $order->logStatusChange(OrderStatus::Pending, OrderStatus::Pending, 'Pedido realizado por el cliente.');
 
+            // Create linked Transaction for sales history & reports
+            app(CreateStoreTransactionAction::class)->execute($order);
+
             return $order;
         });
 
+        // If Mercado Pago, redirect to create the preference
+        if ($validated['payment_method'] === 'mercadopago') {
+            return redirect()->route('store.order.pay', [
+                'slug'  => $storeConfig->slug,
+                'order' => $order->id,
+            ]);
+        }
+
+        // Cash payment — go straight to confirmation
         return redirect()->route('store.order.confirmed', [
-            'slug' => $storeConfig->slug,
+            'slug'  => $storeConfig->slug,
             'order' => $order->id,
         ]);
+    }
+
+    /**
+     * Create Mercado Pago preference and redirect to checkout.
+     */
+    public function pay($slug, Order $order): RedirectResponse
+    {
+        $storeConfig = app('resolvedStore');
+
+        if ($order->subscription_id !== $storeConfig->subscription_id) {
+            abort(404);
+        }
+
+        if ($order->payment_method !== 'mercadopago') {
+            return redirect()->route('store.order.confirmed', ['slug' => $slug, 'order' => $order->id]);
+        }
+
+        $order->load('items');
+
+        try {
+            $preference = $this->mpService->createPreference($storeConfig, [
+                'items'         => $order->items->map(fn($i) => [
+                    'product_id'   => $i->product_id,
+                    'product_name' => $i->product_name,
+                    'quantity'     => $i->quantity,
+                    'unit_price'   => $i->unit_price,
+                ])->toArray(),
+                'shipping_cost' => $order->delivery_fee ?? 0,
+                'order_id'      => $order->id,
+                'success_url'   => route('store.order.payment.return', ['slug' => $slug, 'order' => $order->id, 'status' => 'success']),
+                'failure_url'   => route('store.order.payment.return', ['slug' => $slug, 'order' => $order->id, 'status' => 'failure']),
+                'pending_url'   => route('store.order.payment.return', ['slug' => $slug, 'order' => $order->id, 'status' => 'pending']),
+            ]);
+
+            return redirect()->away($preference['init_point']);
+        } catch (\Exception $e) {
+            Log::error('MP preference creation failed', ['order' => $order->id, 'error' => $e->getMessage()]);
+            return redirect()->route('store.order.confirmed', ['slug' => $slug, 'order' => $order->id])
+                ->with('error', 'No se pudo iniciar el pago con Mercado Pago. Intenta de nuevo.');
+        }
+    }
+
+    /**
+     * Handle Mercado Pago return after payment attempt.
+     */
+    public function paymentReturn($slug, Order $order, Request $request): RedirectResponse
+    {
+        $storeConfig = app('resolvedStore');
+
+        if ($order->subscription_id !== $storeConfig->subscription_id) {
+            abort(404);
+        }
+
+        $status = $request->query('status');
+        $paymentId = $request->query('payment_id');
+
+        if ($status === 'success' && $paymentId) {
+            // Update the pending payment to completed
+            $transaction = $order->transaction;
+            if ($transaction) {
+                $payment = $transaction->payments()
+                    ->where('payment_method', 'card')
+                    ->where('status', 'procesando')
+                    ->first();
+
+                if ($payment) {
+                    $payment->update([
+                        'status' => 'completado',
+                        'notes'  => "Pago con Mercado Pago #{$paymentId} — pedido en línea #{$order->formatted_order_number}",
+                    ]);
+                }
+
+                if ($transaction->fresh()->isFullyPaid()) {
+                    $transaction->update(['status' => \App\Enums\TransactionStatus::COMPLETED]);
+                }
+            }
+        }
+
+        return redirect()->route('store.order.confirmed', ['slug' => $slug, 'order' => $order->id]);
     }
 
     /**

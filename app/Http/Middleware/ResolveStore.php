@@ -71,6 +71,9 @@ class ResolveStore
             'theme_mode' => $storeConfig->theme_mode ?? 'light',
             'banners' => $storeConfig->banners,
             'terms_policy' => $storeConfig->terms_policy,
+            'payment_mp_enabled' => $storeConfig->payment_mp_enabled ?? false,
+            'payment_cash_enabled' => $storeConfig->payment_cash_enabled ?? true,
+            'cash_instructions' => $storeConfig->cash_instructions ?? '',
         ]);
 
         return $next($request);

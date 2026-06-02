@@ -72,6 +72,11 @@ const form = ref({
 
 const errors = ref({});
 const submitting = ref(false);
+const paymentMethod = ref('cash'); // 'cash' or 'mercadopago'
+
+const mpEnabled = computed(() => store.value.payment_mp_enabled ?? false);
+const cashEnabled = computed(() => store.value.payment_cash_enabled ?? true);
+const cashInstructions = computed(() => store.value.cash_instructions || 'Pagar en efectivo al recibir tu pedido.');
 
 const placeOrder = () => {
     errors.value = {};
@@ -103,6 +108,7 @@ const placeOrder = () => {
         delivery_type: deliveryType.value,
         delivery_address: form.value.delivery_address || undefined,
         customer_notes: form.value.customer_notes || undefined,
+        payment_method: paymentMethod.value,
     }, {
         onError: (err) => {
             errors.value = err;
@@ -311,7 +317,53 @@ const isEmpty = computed(() => cartItems.value.length === 0);
                         </div>
                     </div>
 
-                    <Button label="Hacer pedido" icon="pi pi-check" :loading="submitting" @click="placeOrder"
+                    <!-- Payment method -->
+                    <div v-if="mpEnabled || cashEnabled" :class="[
+                        'rounded-2xl border p-4 space-y-3',
+                        isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100'
+                    ]">
+                        <label class="text-[10px] uppercase tracking-widest font-bold m-0 block"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Método de pago</label>
+
+                        <div v-if="mpEnabled" class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all"
+                            :class="[
+                                paymentMethod === 'mercadopago'
+                                    ? (isDarkTheme ? 'bg-[#1a1a1a] border-gray-600' : 'bg-blue-50 border-blue-300')
+                                    : (isDarkTheme ? 'bg-[#1a1a1a] border-[#2a2a2a] hover:border-gray-600' : 'bg-gray-50 border-gray-200 hover:border-gray-300')
+                            ]"
+                            @click="paymentMethod = 'mercadopago'">
+                            <img src="/images/Mercado_Pago_logo.png" alt="Mercado Pago" class="h-5 object-contain" />
+                            <div class="flex-1">
+                                <p class="text-sm font-medium m-0"
+                                    :class="isDarkTheme ? 'text-white' : 'text-gray-900'">Mercado Pago</p>
+                                <p class="text-[11px] m-0"
+                                    :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Tarjeta de crédito, débito o saldo de MP.</p>
+                            </div>
+                            <i v-if="paymentMethod === 'mercadopago'" class="pi pi-check-circle !text-sm text-blue-500" />
+                        </div>
+
+                        <div v-if="cashEnabled" class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all"
+                            :class="[
+                                paymentMethod === 'cash'
+                                    ? (isDarkTheme ? 'bg-[#1a1a1a] border-gray-600' : 'bg-green-50 border-green-300')
+                                    : (isDarkTheme ? 'bg-[#1a1a1a] border-[#2a2a2a] hover:border-gray-600' : 'bg-gray-50 border-gray-200 hover:border-gray-300')
+                            ]"
+                            @click="paymentMethod = 'cash'">
+                            <i class="pi pi-money-bill !text-lg"
+                                :class="paymentMethod === 'cash' ? 'text-green-500' : (isDarkTheme ? 'text-gray-500' : 'text-gray-400')" />
+                            <div class="flex-1">
+                                <p class="text-sm font-medium m-0"
+                                    :class="isDarkTheme ? 'text-white' : 'text-gray-900'">Pago en efectivo</p>
+                                <p class="text-[11px] m-0"
+                                    :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">{{ cashInstructions }}</p>
+                            </div>
+                            <i v-if="paymentMethod === 'cash'" class="pi pi-check-circle !text-sm text-green-500" />
+                        </div>
+                    </div>
+
+                    <Button :label="paymentMethod === 'mercadopago' ? 'Pagar con Mercado Pago' : 'Hacer pedido'" 
+                        :icon="paymentMethod === 'mercadopago' ? 'pi pi-credit-card' : 'pi pi-check'" 
+                        :loading="submitting" @click="placeOrder"
                         class="w-full !rounded-xl !py-3"
                         :pt="{ root: { style: `background: var(--store-primary); border-color: var(--store-primary);` } }" />
                 </div>
