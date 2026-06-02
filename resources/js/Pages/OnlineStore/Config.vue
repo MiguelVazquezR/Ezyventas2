@@ -12,6 +12,8 @@ const props = defineProps({
     storeUrl: String,
     mpConnected: Boolean,
     mpUserId: String,
+    mpTestMode: Boolean,
+    mpAccountInfo: Object,
 });
 
 // --- Helpers ---
@@ -513,28 +515,56 @@ function hasRealContent(html) {
                             <!-- Mercado Pago -->
                             <div class="flex flex-col gap-1.5">
                                 <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Mercado Pago</label>
+                                <!-- Test mode banner -->
+                                <div v-if="mpTestMode" class="flex items-center gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-200 dark:border-amber-900/30">
+                                    <i class="pi pi-exclamation-triangle !text-xs text-amber-600 dark:text-amber-400" />
+                                    <span class="text-[11px] text-amber-700 dark:text-amber-400 font-medium">Modo de prueba activo — Mercado Pago simulado</span>
+                                </div>
                                 <div v-if="mpConnected" class="flex items-center justify-between p-3 bg-green-50 dark:bg-green-900/10 rounded-2xl border border-green-100 dark:border-green-900/30">
                                     <div class="flex items-center gap-3">
-                                        <img src="@/../../public/images/Mercado_Pago_logo.png" alt="Mercado Pago" class="h-8 object-contain" />
+                                        <img src="/images/Mercado_Pago_logo.png" alt="Mercado Pago" class="h-7 object-contain dark:hidden" />
+                                        <img src="/images/Mercado_Pago_logo_claro.png" alt="Mercado Pago" class="h-7 object-contain hidden dark:block" />
                                         <span class="text-xs text-green-700 dark:text-green-400">
-                                            Conectado{{ mpUserId ? ' (' + mpUserId + ')' : '' }}
+                                            Conectado{{ mpUserId && !mpTestMode ? ' (' + mpUserId + ')' : '' }}
                                         </span>
                                     </div>
                                     <div class="flex items-center gap-2">
                                         <ToggleSwitch v-model="form.payment_mp_enabled" :disabled="!mpConnected" />
-                                        <a :href="route('online-store.mp.disconnect')"
+                                        <a v-if="!mpTestMode" :href="route('online-store.mp.disconnect')"
                                             @click.prevent="$inertia.post(route('online-store.mp.disconnect'))"
                                             class="text-[10px] text-red-500 hover:text-red-600 font-medium">Desconectar</a>
                                     </div>
                                 </div>
                                 <div v-else class="p-3 bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex items-center justify-between">
-                                    <span class="text-xs text-gray-500">Conecta tu cuenta de Mercado Pago para aceptar pagos en línea.</span>
+                                    <div class="flex items-center gap-3">
+                                        <img src="/images/Mercado_Pago_logo.png" alt="Mercado Pago" class="h-6 object-contain opacity-60 dark:hidden" />
+                                        <img src="/images/Mercado_Pago_logo_claro.png" alt="Mercado Pago" class="h-6 object-contain opacity-60 hidden dark:block" />
+                                        <span class="text-xs text-gray-500">Conecta tu cuenta de Mercado Pago para aceptar pagos en línea.</span>
+                                    </div>
                                     <a :href="route('online-store.mp.connect')"
                                         class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[10px] uppercase tracking-widest font-bold text-white transition-all"
                                         style="background: #009EE3;">
                                         <i class="pi pi-link !text-xs" />
                                         Conectar
                                     </a>
+                                </div>
+                                <!-- Account details -->
+                                <div v-if="mpAccountInfo" class="p-3 bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
+                                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">Datos de la cuenta</p>
+                                    <div class="space-y-1">
+                                        <div v-if="mpAccountInfo.name" class="flex items-center gap-2">
+                                            <span class="text-[10px] text-gray-400 w-16">Nombre</span>
+                                            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ mpAccountInfo.name }}</span>
+                                        </div>
+                                        <div v-if="mpAccountInfo.country" class="flex items-center gap-2">
+                                            <span class="text-[10px] text-gray-400 w-16">País</span>
+                                            <span class="text-xs font-medium text-gray-700 dark:text-gray-300">{{ mpAccountInfo.country }}</span>
+                                        </div>
+                                        <div v-if="mpAccountInfo.user_id" class="flex items-center gap-2">
+                                            <span class="text-[10px] text-gray-400 w-16">User ID</span>
+                                            <span class="text-xs font-mono text-gray-700 dark:text-gray-300">{{ mpAccountInfo.user_id }}</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 

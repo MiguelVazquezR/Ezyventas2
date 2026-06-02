@@ -75,6 +75,7 @@ const submitting = ref(false);
 const paymentMethod = ref('cash'); // 'cash' or 'mercadopago'
 
 const mpEnabled = computed(() => store.value.payment_mp_enabled ?? false);
+const mpTestMode = computed(() => store.value.mp_test_mode ?? false);
 const cashEnabled = computed(() => store.value.payment_cash_enabled ?? true);
 const cashInstructions = computed(() => store.value.cash_instructions || 'Pagar en efectivo al recibir tu pedido.');
 
@@ -332,10 +333,16 @@ const isEmpty = computed(() => cartItems.value.length === 0);
                                     : (isDarkTheme ? 'bg-[#1a1a1a] border-[#2a2a2a] hover:border-gray-600' : 'bg-gray-50 border-gray-200 hover:border-gray-300')
                             ]"
                             @click="paymentMethod = 'mercadopago'">
-                            <img src="/images/Mercado_Pago_logo.png" alt="Mercado Pago" class="h-5 object-contain" />
+                            <img v-if="isDarkTheme" src="/images/Mercado_Pago_logo_claro.png" alt="Mercado Pago" class="h-5 object-contain" />
+                            <img v-else src="/images/Mercado_Pago_logo.png" alt="Mercado Pago" class="h-5 object-contain" />
                             <div class="flex-1">
-                                <p class="text-sm font-medium m-0"
-                                    :class="isDarkTheme ? 'text-white' : 'text-gray-900'">Mercado Pago</p>
+                                <div class="flex items-center gap-2">
+                                    <p class="text-sm font-medium m-0"
+                                        :class="isDarkTheme ? 'text-white' : 'text-gray-900'">Mercado Pago</p>
+                                    <span v-if="mpTestMode" class="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                        Modo prueba
+                                    </span>
+                                </div>
                                 <p class="text-[11px] m-0"
                                     :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Tarjeta de crédito, débito o saldo de MP.</p>
                             </div>

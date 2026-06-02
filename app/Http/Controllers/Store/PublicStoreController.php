@@ -217,8 +217,8 @@ class PublicStoreController extends Controller
 
         $validated = $request->validate([
             'items' => ['required', 'array', 'min:1'],
-            'items.*.product_id' => ['required', 'integer', 'exists:products,id'],
-            'items.*.quantity' => ['required', 'integer', 'min:1', 'max:99'],
+            'items.*.product_id' => ['required', 'numeric', 'exists:products,id'],
+            'items.*.quantity' => ['required', 'numeric', 'min:0.01', 'max:99.99'],
             'customer_name' => ['required', 'string', 'max:255'],
             'customer_phone' => ['required', 'string', 'max:30'],
             'customer_email' => ['nullable', 'email', 'max:255'],
@@ -325,6 +325,12 @@ class PublicStoreController extends Controller
 
         if ($order->payment_method !== 'mercadopago') {
             return redirect()->route('store.order.confirmed', ['slug' => $slug, 'order' => $order->id]);
+        }
+
+        // Test mode — simulate successful payment
+        if (app()->environment('local')) {
+            return redirect()->route('store.order.confirmed', ['slug' => $slug, 'order' => $order->id])
+                ->with('info', 'Pago simulado — modo prueba. El pedido fue creado exitosamente.');
         }
 
         $order->load('items');

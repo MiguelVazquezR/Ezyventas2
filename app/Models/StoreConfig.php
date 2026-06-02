@@ -113,7 +113,36 @@ class StoreConfig extends Model implements HasMedia
 
     public function isMpConnected(): bool
     {
+        if (app()->environment('local')) {
+            return true;
+        }
         return !empty($this->mp_access_token);
+    }
+
+    public function isMpTestMode(): bool
+    {
+        return app()->environment('local');
+    }
+
+    public function mpAccountInfo(): ?array
+    {
+        if ($this->isMpTestMode()) {
+            return [
+                'user_id'  => '3442108157',
+                'name'     => 'Seller Test User',
+                'country'  => 'México',
+                'test_mode' => true,
+            ];
+        }
+
+        if ($this->isMpConnected() && !empty($this->mp_user_id)) {
+            return [
+                'user_id'  => $this->mp_user_id,
+                'test_mode' => false,
+            ];
+        }
+
+        return null;
     }
 
     // ────────────────────────────────────────────────────────────────────

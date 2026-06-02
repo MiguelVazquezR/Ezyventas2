@@ -46,6 +46,20 @@ const isDarkTheme = computed(() => store.value.theme_mode === 'dark');
 const banners = computed(() => store.value.banners || []);
 
 const mpEnabled = computed(() => store.value.payment_mp_enabled ?? false);
+const mpTestMode = computed(() => store.value.mp_test_mode ?? false);
+
+const galleriaPt = computed(() => ({
+    root: { class: '!w-full !border-0 !rounded-none' },
+    content: { class: '!border-0' },
+    itemWrapper: { class: '!w-full !border-0' },
+    item: { class: '!w-full !flex !justify-center !border-0' },
+    previousItemButton: {
+        class: '!w-10 !h-10 !rounded-full !bg-white/20 dark:!bg-black/30 !backdrop-blur-md !text-white !border-0 hover:!bg-white/40 dark:hover:!bg-black/50 !transition-all !absolute !left-4 !top-1/2 !-translate-y-1/2 !z-10',
+    },
+    nextItemButton: {
+        class: '!w-10 !h-10 !rounded-full !bg-white/20 dark:!bg-black/30 !backdrop-blur-md !text-white !border-0 hover:!bg-white/40 dark:hover:!bg-black/50 !transition-all !absolute !right-4 !top-1/2 !-translate-y-1/2 !z-10',
+    },
+}));
 </script>
 
 <template>
@@ -103,15 +117,10 @@ const mpEnabled = computed(() => store.value.payment_mp_enabled ?? false);
 
         <!-- Banner carousel -->
         <div v-if="isIndexPage && banners.length > 0" class="w-full">
-            <Galleria :value="banners" :numVisible="1" :showThumbnails="false" :showIndicators="banners.length > 1"
+            <Galleria :value="banners" :numVisible="1" :showThumbnails="false" :showIndicators="false"
+                :showItemNavigators="true" :showItemNavigatorsOnHover="true"
                 :autoPlay="true" :circular="true" :transitionInterval="5000"
-                :pt="{
-                    root: { class: '!w-full' },
-                    itemWrapper: { class: '!w-full' },
-                    item: { class: '!w-full !flex !justify-center' },
-                    indicator: { class: '!w-2 !h-2 !rounded-full !bg-white/60 !mx-1' },
-                    indicatorList: { class: '!bottom-4' },
-                }">
+                :pt="galleriaPt">
                 <template #item="slotProps">
                     <img :src="slotProps.item.url"
                         class="w-full h-52 md:h-72 lg:h-[420px] object-cover" alt="Banner" />
@@ -153,13 +162,18 @@ const mpEnabled = computed(() => store.value.payment_mp_enabled ?? false);
                     </div>
 
                     <!-- Mercado Pago trust badge -->
-                    <div v-if="mpEnabled" class="flex items-center gap-3">
+                    <div class="flex items-center gap-3">
                         <span class="text-[10px]"
                             :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
                             Pagos seguros con
                         </span>
-                        <img src="/images/Mercado_Pago_logo.png" alt="Mercado Pago"
+                        <img v-if="isDarkTheme" src="/images/Mercado_Pago_logo_claro.png" alt="Mercado Pago"
                             class="h-5 object-contain opacity-80" />
+                        <img v-else src="/images/Mercado_Pago_logo.png" alt="Mercado Pago"
+                            class="h-5 object-contain opacity-80" />
+                        <span v-if="mpTestMode" class="text-[9px] px-2 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                            Modo prueba
+                        </span>
                     </div>
 
                     <!-- Links -->

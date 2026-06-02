@@ -2,11 +2,6 @@
 import { ref, computed } from 'vue';
 import { Head, router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import Button from 'primevue/button';
-import Tag from 'primevue/tag';
-import Textarea from 'primevue/textarea';
-import SelectButton from 'primevue/selectbutton';
-import Menu from 'primevue/menu';
 
 const props = defineProps({
     order: Object,
@@ -185,6 +180,17 @@ const tagPt = {
                                         :class="order.delivery_type === 'pickup' ? 'pi-building !text-blue-500' : 'pi-truck !text-orange-500'" />
                                     <span class="text-sm font-medium text-gray-900 dark:text-white">
                                         {{ order.delivery_type === 'pickup' ? 'Recoger en tienda' : 'Envío a domicilio' }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="space-y-1">
+                                <p class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0">Método de pago</p>
+                                <div class="flex items-center gap-2">
+                                    <img v-if="order.payment_method === 'mercadopago'" src="/images/Mercado_Pago_logo.png" alt="Mercado Pago" class="h-7 object-contain dark:hidden" />
+                                    <img v-if="order.payment_method === 'mercadopago'" src="/images/Mercado_Pago_logo_claro.png" alt="Mercado Pago" class="h-7 object-contain hidden dark:block" />
+                                    <i v-else class="pi pi-money-bill !text-green-500 !text-sm" />
+                                    <span class="text-sm font-medium text-gray-900 dark:text-white">
+                                        {{ order.payment_method === 'mercadopago' ? 'Mercado Pago' : 'Efectivo' }}
                                     </span>
                                 </div>
                             </div>

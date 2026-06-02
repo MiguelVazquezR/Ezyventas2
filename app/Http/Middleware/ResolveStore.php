@@ -74,6 +74,8 @@ class ResolveStore
             'payment_mp_enabled' => $storeConfig->payment_mp_enabled ?? false,
             'payment_cash_enabled' => $storeConfig->payment_cash_enabled ?? true,
             'cash_instructions' => $storeConfig->cash_instructions ?? '',
+            'mp_test_mode' => app()->environment('local'),
+            'mp_account_info' => $storeConfig->mpAccountInfo(),
         ]);
 
         return $next($request);

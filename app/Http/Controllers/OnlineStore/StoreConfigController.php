@@ -36,8 +36,10 @@ class StoreConfigController extends Controller
         return Inertia::render('OnlineStore/Config', [
             'storeConfig' => $storeConfig,
             'storeUrl'     => $storeUrl,
-            'mpConnected'  => $storeConfig->isMpConnected(),
-            'mpUserId'     => $storeConfig->mp_user_id,
+            'mpConnected'    => $storeConfig->isMpConnected(),
+            'mpUserId'       => $storeConfig->mp_user_id,
+            'mpTestMode'     => $storeConfig->isMpTestMode(),
+            'mpAccountInfo'  => $storeConfig->mpAccountInfo(),
         ]);
     }
 
