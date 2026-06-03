@@ -13,6 +13,15 @@ use App\Models\StoreConfig;
 class TiendaUrlService
 {
     /**
+     * Get the base URL for store links.
+     * Uses APP_URL — set this to your tunnel URL when testing with Expose.
+     */
+    public function baseUrl(): string
+    {
+        return rtrim(config('app.url'), '/');
+    }
+
+    /**
      * Get the full public URL for a store.
      */
     public function storeUrl(StoreConfig $storeConfig): string
@@ -25,7 +34,7 @@ class TiendaUrlService
         }
 
         // Path mode (default for shared hosting)
-        return url("/store/{$slug}");
+        return $this->baseUrl() . "/store/{$slug}";
     }
 
     /**

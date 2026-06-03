@@ -47,7 +47,7 @@ class OrderController extends Controller
     {
         $this->authorizeOrder($order);
 
-        $order->load(['items', 'statusLogs.user', 'storeConfig']);
+        $order->load(['items', 'statusLogs.user', 'storeConfig', 'saleTransaction']);
 
         return Inertia::render('OnlineStore/Orders/Show', [
             'order' => $order,

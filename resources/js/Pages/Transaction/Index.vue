@@ -370,7 +370,7 @@ const tagPt = {
                             </Link>
                             <div v-else-if="data.contact_info && data.contact_info.name" class="flex items-center gap-2 m-0">
                                 <span class="font-medium text-gray-900 dark:text-gray-100">{{ data.contact_info.name }}</span>
-                                <Tag severity="info" :value="getOrderTagLabel(data.status)" class="!text-[9px] !px-1.5 !py-0.5" />
+                                <Tag v-if="data.channel !== 'tienda_en_linea'" severity="info" :value="getOrderTagLabel(data.status)" class="!text-[9px] !px-1.5 !py-0.5" />
                             </div>
                             <span v-else class="text-gray-500 italic m-0">Público en general</span>
                         </template>

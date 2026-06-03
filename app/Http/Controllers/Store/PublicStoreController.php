@@ -297,6 +297,13 @@ class PublicStoreController extends Controller
             return $order;
         });
 
+        // Send email notifications if enabled
+        if ($storeConfig->notify_email_enabled && !empty($storeConfig->notification_emails)) {
+            $order->loadMissing('items', 'storeConfig');
+            \Illuminate\Support\Facades\Mail::to($storeConfig->notification_emails)
+                ->send(new \App\Mail\NewStoreOrderNotification($order));
+        }
+
         // If Mercado Pago, redirect to create the preference
         if ($validated['payment_method'] === 'mercadopago') {
             return redirect()->route('store.order.pay', [
@@ -325,12 +332,6 @@ class PublicStoreController extends Controller
 
         if ($order->payment_method !== 'mercadopago') {
             return redirect()->route('store.order.confirmed', ['slug' => $slug, 'order' => $order->id]);
-        }
-
-        // Test mode — simulate successful payment
-        if (app()->environment('local')) {
-            return redirect()->route('store.order.confirmed', ['slug' => $slug, 'order' => $order->id])
-                ->with('info', 'Pago simulado — modo prueba. El pedido fue creado exitosamente.');
         }
 
         $order->load('items');

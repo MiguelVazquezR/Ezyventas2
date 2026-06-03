@@ -10,6 +10,7 @@ import PendingCartsPopover from './PendingCartsPopover.vue';
 import ProductDetailModal from './ProductDetailModal.vue';
 import CreateProductModal from '@/Components/CreateProductModal.vue';
 import CashMovementModal from '@/Components/CashMovementModal.vue';
+import OnlineOrdersModal from './OnlineOrdersModal.vue';
 
 const props = defineProps({
     products: { type: Object, required: true },
@@ -18,7 +19,8 @@ const props = defineProps({
     filters: { type: Object, default: () => ({}) },
     activeSession: { type: Object, default: null },
     cartItems: { type: Array, default: () => [] },
-    posMode: { type: String, default: 'retail' }
+    posMode: { type: String, default: 'retail' },
+    hasOnlineStore: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['addToCart', 'resumeCart', 'deleteCart', 'productCreatedAndAddToCart', 'refreshSessionData', 'openCloseSessionModal', 'openHistoryModal', 'update:posMode']);
@@ -264,6 +266,7 @@ const showProductDetails = (product) => {
     isDetailModalVisible.value = true;
 };
 const isCreateProductModalVisible = ref(false);
+const isOnlineOrdersModalVisible = ref(false);
 const handleProductCreated = (newProduct) => {
     emit('productCreatedAndAddToCart', newProduct);
 };
@@ -290,6 +293,10 @@ const handleProductCreated = (newProduct) => {
 
                 <!-- Botones de Acción Superiores -->
                 <div class="flex items-center gap-2">
+                     <Button v-if="hasOnlineStore" @click="isOnlineOrdersModalVisible = true" icon="pi pi-globe" rounded 
+                        v-tooltip.bottom="'Pedidos de tienda en línea'"
+                        class="!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-blue-500 hover:!border-blue-500 transition-colors" />
+
                     <Button @click="$emit('update:posMode', posMode === 'retail' ? 'food' : 'retail')"
                         :icon="posMode === 'retail' ? 'pi pi-shop' : 'pi pi-receipt'" rounded 
                         v-tooltip.bottom="posMode === 'retail' ? 'Cambiar a comandas' : 'Cambiar a retail'"
@@ -298,7 +305,6 @@ const handleProductCreated = (newProduct) => {
                     <Button @click="isCreateProductModalVisible = true" icon="pi pi-plus" rounded 
                         v-tooltip.bottom="'Agregar producto'"
                         class="!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-300 hover:!border-primary-500 transition-colors" />
-
                     <Button @click="toggleMenu" icon="pi pi-wallet" rounded 
                         v-tooltip.bottom="'Resumen de sesión'"
                         class="!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-300 hover:!border-primary-500 transition-colors" />
@@ -405,6 +411,8 @@ const handleProductCreated = (newProduct) => {
         <CreateProductModal v-model:visible="isCreateProductModalVisible" @created="handleProductCreated" />
         <CashMovementModal v-if="activeSession" v-model:visible="isCashMovementModalVisible" :type="movementType"
             :session-id="activeSession.id" @submitted="handleMovementSubmitted" />
+
+        <OnlineOrdersModal v-model:visible="isOnlineOrdersModalVisible" />
 
         <!-- MODAL AYUDA BÚSQUEDA INTELIGENTE -->
         <Dialog v-model:visible="isSmartSearchHelpVisible" modal header="Búsqueda inteligente"

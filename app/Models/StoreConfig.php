@@ -46,6 +46,8 @@ class StoreConfig extends Model implements HasMedia
         'payment_mp_enabled',
         'payment_cash_enabled',
         'cash_instructions',
+        'notify_email_enabled',
+        'notification_emails',
     ];
 
     protected $casts = [
@@ -57,6 +59,8 @@ class StoreConfig extends Model implements HasMedia
         'free_shipping_minimum' => 'decimal:2',
         'payment_mp_enabled' => 'boolean',
         'payment_cash_enabled' => 'boolean',
+        'notify_email_enabled' => 'boolean',
+        'notification_emails' => 'array',
         'mp_token_expires_at' => 'datetime',
     ];
 
@@ -114,7 +118,7 @@ class StoreConfig extends Model implements HasMedia
     public function isMpConnected(): bool
     {
         if (app()->environment('local')) {
-            return true;
+            return !empty(config('services.mercadopago.test_access_token')) || !empty($this->mp_access_token);
         }
         return !empty($this->mp_access_token);
     }
@@ -126,19 +130,23 @@ class StoreConfig extends Model implements HasMedia
 
     public function mpAccountInfo(): ?array
     {
-        if ($this->isMpTestMode()) {
+        $isLocal = app()->environment('local');
+
+        // Real OAuth connection (production or local with real tokens)
+        if ($this->isMpConnected() && !empty($this->mp_user_id)) {
             return [
-                'user_id'  => '3442108157',
-                'name'     => 'Seller Test User',
-                'country'  => 'México',
-                'test_mode' => true,
+                'user_id'   => $this->mp_user_id,
+                'test_mode' => $isLocal,
             ];
         }
 
-        if ($this->isMpConnected() && !empty($this->mp_user_id)) {
+        // Local dev with test access token — show test account
+        if ($isLocal && config('services.mercadopago.test_access_token')) {
             return [
-                'user_id'  => $this->mp_user_id,
-                'test_mode' => false,
+                'user_id'   => '3442108157',
+                'name'      => 'Seller Test User',
+                'country'   => 'México',
+                'test_mode' => true,
             ];
         }
 

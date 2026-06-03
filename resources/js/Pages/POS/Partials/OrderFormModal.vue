@@ -196,7 +196,7 @@ const formatCurrency = (value) => {
                     label="Confirmar pedido" 
                     icon="pi pi-check" 
                     @click="handleSubmit" 
-                    :disabled="!isFormValid" 
+                    :disabled="loading || !isFormValid" 
                     :loading="loading" 
                     class="!rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold !py-3 px-8"
                 />

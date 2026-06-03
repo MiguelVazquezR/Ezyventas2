@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\CashRegisterSessionStatus;
 use App\Enums\CustomerBalanceMovementType;
+use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PromotionEffectType;
 use App\Enums\PromotionType;
@@ -17,6 +18,7 @@ use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Promotion;
 use App\Models\ServiceOrder;
+use App\Models\Order;
 use App\Models\Transaction;
 use App\Services\TransactionPaymentService;
 use Illuminate\Http\Request;
@@ -35,7 +37,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('can:pos.access', only: ['index', 'searchCustomers', 'checkEntity']),
+            new Middleware('can:pos.access', only: ['index', 'searchCustomers', 'checkEntity', 'getOnlineOrders', 'updateOnlineOrderStatus']),
             new Middleware('can:pos.create_sale', only: ['checkout']),
         ];
     }
@@ -124,6 +126,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'availableCashRegisters' => $availableCashRegisters,
             'availableTemplates' => $availableTemplates,
             'userBankAccounts' => $userBankAccounts,
+            'hasOnlineStore' => in_array('Tienda en línea', $user->branch->subscription->getAvailableModuleNames()),
         ];
 
         $agent = new Agent();
@@ -569,5 +572,107 @@ class PointOfSaleController extends Controller implements HasMiddleware
     private function getDefaultCustomerData()
     {
         return ['id' => null, 'name' => 'Público en General', 'phone' => '', 'balance' => 0.0, 'credit_limit' => 0.0, 'available_credit' => 0.0];
+    }
+
+    /**
+     * Fetch online store orders for the POS modal (JSON).
+     */
+    public function getOnlineOrders(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+
+        $statusFilter = $request->input('status');
+
+        $query = Order::with(['items', 'storeConfig:id,store_name'])
+            ->where('subscription_id', $subscriptionId)
+            ->when($statusFilter, fn($q) => $q->where('status', $statusFilter))
+            ->latest();
+
+        $orders = $query->paginate(15)->withQueryString();
+
+        // Count by status for tabs (raw query returns stdClass, not models)
+        $counts = Order::where('subscription_id', $subscriptionId)
+            ->selectRaw('status, COUNT(*) as count')
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+
+        return response()->json([
+            'orders' => $orders->through(fn(Order $order) => [
+                'id' => $order->id,
+                'order_number' => $order->formatted_order_number,
+                'customer_name' => $order->customer_name,
+                'customer_phone' => $order->customer_phone,
+                'delivery_type' => $order->delivery_type,
+                'payment_method' => $order->payment_method,
+                'status' => [
+                    'value' => $order->status->value,
+                    'label' => $order->status->label(),
+                    'color' => $order->status->color(),
+                ],
+                'all_statuses' => collect(OrderStatus::cases())
+                    ->reject(fn(OrderStatus $s) => $s === $order->status)
+                    ->map(fn(OrderStatus $s) => [
+                        'value' => $s->value,
+                        'label' => $s->label(),
+                    ])->values(),
+                'total' => (float) $order->total,
+                'items_count' => $order->items->count(),
+                'items' => $order->items->map(fn($item) => [
+                    'product_name' => $item->product_name,
+                    'quantity' => (float) $item->quantity,
+                    'unit_price' => (float) $item->unit_price,
+                    'subtotal' => (float) $item->subtotal,
+                ]),
+                'order_detail_url' => route('online-store.orders.show', $order->id),
+                'created_at' => $order->created_at->toISOString(),
+                'whats_app_link' => $order->whats_app_link,
+            ]),
+            'counts' => $counts,
+            'statuses' => collect(OrderStatus::cases())->map(fn(OrderStatus $s) => [
+                'value' => $s->value,
+                'label' => $s->label(),
+                'color' => $s->color(),
+            ]),
+        ]);
+    }
+
+    /**
+     * Update an online store order status from the POS modal (JSON).
+     */
+    public function updateOnlineOrderStatus(Request $request, Order $order): \Illuminate\Http\JsonResponse
+    {
+        $user = Auth::user();
+
+        if ($order->subscription_id !== $user->branch->subscription_id) {
+            return response()->json(['message' => 'No autorizado.'], 403);
+        }
+
+        $validated = $request->validate([
+            'status' => ['required', Rule::enum(OrderStatus::class)],
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $newStatus = OrderStatus::from($validated['status']);
+        $oldStatus = $order->status;
+
+        $order->update(['status' => $newStatus]);
+        $order->logStatusChange($oldStatus, $newStatus, $validated['note'] ?? null, $user->id);
+
+        return response()->json([
+            'message' => "Pedido actualizado a '{$newStatus->label()}'.",
+            'status' => [
+                'value' => $newStatus->value,
+                'label' => $newStatus->label(),
+                'color' => $newStatus->color(),
+            ],
+            'all_statuses' => collect(OrderStatus::cases())
+                ->reject(fn(OrderStatus $s) => $s === $newStatus)
+                ->map(fn(OrderStatus $s) => [
+                    'value' => $s->value,
+                    'label' => $s->label(),
+                ])->values(),
+        ]);
     }
 }

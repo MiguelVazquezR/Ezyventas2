@@ -60,6 +60,11 @@ class MercadoPagoService
     {
         $accessToken = $storeConfig->mp_access_token;
 
+        // In local dev, fall back to test access token from env
+        if (!$accessToken && app()->environment('local')) {
+            $accessToken = config('services.mercadopago.test_access_token');
+        }
+
         if (!$accessToken) {
             throw new \RuntimeException('Mercado Pago is not connected for this store.');
         }

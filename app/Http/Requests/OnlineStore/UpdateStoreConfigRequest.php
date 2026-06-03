@@ -30,6 +30,7 @@ class UpdateStoreConfigRequest extends FormRequest
             'secondary_color' => $this->ensureHash($this->secondary_color),
             'preparation_time_minutes' => $totalPrepMinutes > 0 ? $totalPrepMinutes : ($this->preparation_time_minutes ?? 30),
             'out_of_stock_extra_minutes' => $totalRestockMinutes > 0 ? $totalRestockMinutes : ($this->out_of_stock_extra_minutes ?? 0),
+            'notification_emails' => collect($this->notification_emails)->filter(fn($e) => !empty(trim($e)))->values()->toArray(),
         ]);
     }
 
@@ -81,6 +82,9 @@ class UpdateStoreConfigRequest extends FormRequest
             'payment_mp_enabled'   => ['boolean'],
             'payment_cash_enabled' => ['boolean'],
             'cash_instructions'    => ['nullable', 'string', 'max:500'],
+            'notify_email_enabled' => ['boolean'],
+            'notification_emails'  => ['nullable', 'array', 'max:3'],
+            'notification_emails.*' => ['nullable', 'email', 'max:255'],
         ];
     }
 

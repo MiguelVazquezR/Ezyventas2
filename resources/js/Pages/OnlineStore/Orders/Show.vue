@@ -250,6 +250,28 @@ const tagPt = {
                                 </tfoot>
                             </table>
                         </div>
+
+                        <!-- Transaction link -->
+                        <div v-if="order.sale_transaction" class="mt-4 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/30">
+                            <div class="flex items-start gap-3">
+                                <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                    <i class="pi pi-receipt !text-sm text-blue-600 dark:text-blue-400" />
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-medium text-blue-800 dark:text-blue-300 m-0 mb-1">
+                                        Venta registrada en el historial
+                                    </p>
+                                    <p class="text-[11px] text-blue-600 dark:text-blue-400 m-0 mb-2">
+                                        Para gestionar pagos, imprimir ticket, cancelar o devolver, ve a los detalles de la venta.
+                                    </p>
+                                    <Link :href="route('transactions.show', order.sale_transaction.id)"
+                                        class="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 transition-colors">
+                                        <i class="pi pi-arrow-right !text-[10px]" />
+                                        Ver detalles de la venta
+                                    </Link>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

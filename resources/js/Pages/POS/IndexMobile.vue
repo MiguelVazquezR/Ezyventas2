@@ -25,6 +25,7 @@ const props = defineProps({
     availableTemplates: Array,
     joinableSessions: Array,
     userBankAccounts: Array,
+    hasOnlineStore: Boolean,
 });
 
 const page = usePage();
@@ -470,7 +471,7 @@ const currentCartTotal = computed(() => {
                 <!-- PANEL IZQUIERDO DE PRODUCTOS (Ocupa toda la pantalla en móvil) -->
                 <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
                     :filters="filters" :active-session="activeSession" :cart-items="cartItems"
-                    :pos-mode="posMode" @add-to-cart="addToCart"
+                    :pos-mode="posMode" :has-online-store="hasOnlineStore" @add-to-cart="addToCart"
                     @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
                     @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
                     @refresh-session-data="handleRefreshSessionData" @open-history-modal="isHistoryModalVisible = true"
