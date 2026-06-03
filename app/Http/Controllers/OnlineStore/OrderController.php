@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\OnlineStore;
 
 use App\Enums\OrderStatus;
+use App\Enums\TransactionStatus;
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\Order;
+use App\Models\Product;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -73,6 +76,12 @@ class OrderController extends Controller
         }
 
         $order->update(['status' => $newStatus]);
+
+        // Restore stock when cancelling
+        if ($newStatus === OrderStatus::Cancelled) {
+            $this->restoreOrderStock($order);
+        }
+
         $order->logStatusChange($oldStatus, $newStatus, $validated['note'] ?? null, Auth::id());
 
         return back()->with('success', "Order status changed to '{$newStatus->label()}'.");
@@ -83,6 +92,35 @@ class OrderController extends Controller
         $user = Auth::user();
         if ($order->subscription_id !== $user->branch->subscription_id) {
             abort(403);
+        }
+    }
+
+    /**
+     * Restore stock for all items in a cancelled order.
+     */
+    private function restoreOrderStock(Order $order): void
+    {
+        $order->loadMissing('items');
+
+        $branch = Branch::where('subscription_id', $order->subscription_id)->first();
+        if (! $branch) return;
+
+        foreach ($order->items as $orderItem) {
+            $product = Product::find($orderItem->product_id);
+            if ($product) {
+                $product->restock(
+                    $branch->id,
+                    $orderItem->quantity,
+                    null,
+                    "Reposición por cancelación de pedido en línea #{$order->formatted_order_number}"
+                );
+            }
+        }
+
+        // Cancel the linked transaction if exists
+        $transaction = $order->saleTransaction;
+        if ($transaction && ! in_array($transaction->status->value, ['cancelado', 'reembolsado'])) {
+            $transaction->update(['status' => TransactionStatus::CANCELLED]);
         }
     }
 }

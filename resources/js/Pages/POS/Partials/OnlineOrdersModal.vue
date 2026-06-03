@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue';
 import axios from 'axios';
 import { useToast } from 'primevue/usetoast';
+import { useConfirm } from 'primevue/useconfirm';
 
 const props = defineProps({
     visible: Boolean,
@@ -10,6 +11,7 @@ const props = defineProps({
 const emit = defineEmits(['update:visible']);
 
 const toast = useToast();
+const confirm = useConfirm();
 
 // ─── State ────────────────────────────────────────────────
 const orders = ref([]);
@@ -50,6 +52,22 @@ const filterByStatus = (status) => {
 };
 
 // ─── Status update ────────────────────────────────────────
+const handleStatusChange = (order, newStatusValue) => {
+    if (newStatusValue === 'cancelled') {
+        confirm.require({
+            message: `El stock del pedido #${order.order_number} será repuesto en el inventario. Los pagos realizados por el cliente deberán gestionarse manualmente (reembolso en efectivo desde caja o registro de gasto).`,
+            header: '¿Cancelar este pedido?',
+            icon: 'pi pi-exclamation-triangle',
+            acceptLabel: 'Sí, cancelar pedido',
+            rejectLabel: 'No',
+            acceptClass: 'p-button-danger',
+            accept: () => updateOrderStatus(order, newStatusValue),
+        });
+        return;
+    }
+    updateOrderStatus(order, newStatusValue);
+};
+
 const updateOrderStatus = async (order, newStatusValue) => {
     isUpdating.value = true;
     try {
@@ -196,7 +214,7 @@ const totalPending = computed(() => getStatusCount('pending'));
                         <div v-if="order.all_statuses?.length > 0" class="flex items-center gap-1.5" @click.stop>
                             <Select
                                 :modelValue="null"
-                                @update:modelValue="(val) => updateOrderStatus(order, val)"
+                                @update:modelValue="(val) => handleStatusChange(order, val)"
                                 :options="order.all_statuses"
                                 optionLabel="label"
                                 optionValue="value"

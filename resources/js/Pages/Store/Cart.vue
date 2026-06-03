@@ -333,8 +333,7 @@ const isEmpty = computed(() => cartItems.value.length === 0);
                                     : (isDarkTheme ? 'bg-[#1a1a1a] border-[#2a2a2a] hover:border-gray-600' : 'bg-gray-50 border-gray-200 hover:border-gray-300')
                             ]"
                             @click="paymentMethod = 'mercadopago'">
-                            <img v-if="isDarkTheme" src="/images/Mercado_Pago_logo_claro.png" alt="Mercado Pago" class="h-5 object-contain" />
-                            <img v-else src="/images/Mercado_Pago_logo.png" alt="Mercado Pago" class="h-5 object-contain" />
+                            <img src="/images/Mercado_Pago_logo.webp" alt="Mercado Pago" class="h-10 object-contain" />
                             <div class="flex-1">
                                 <div class="flex items-center gap-2">
                                     <p class="text-sm font-medium m-0"

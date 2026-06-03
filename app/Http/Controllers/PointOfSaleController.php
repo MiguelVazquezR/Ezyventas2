@@ -658,6 +658,12 @@ class PointOfSaleController extends Controller implements HasMiddleware
         $oldStatus = $order->status;
 
         $order->update(['status' => $newStatus]);
+
+        // Restore stock when cancelling an order
+        if ($newStatus === OrderStatus::Cancelled) {
+            $this->restoreOrderStock($order);
+        }
+
         $order->logStatusChange($oldStatus, $newStatus, $validated['note'] ?? null, $user->id);
 
         return response()->json([
@@ -674,5 +680,34 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     'label' => $s->label(),
                 ])->values(),
         ]);
+    }
+
+    /**
+     * Restore stock for all items in a cancelled order.
+     */
+    private function restoreOrderStock(Order $order): void
+    {
+        $order->loadMissing('items');
+
+        $branch = \App\Models\Branch::where('subscription_id', $order->subscription_id)->first();
+        if (!$branch) return;
+
+        foreach ($order->items as $orderItem) {
+            $product = \App\Models\Product::find($orderItem->product_id);
+            if ($product) {
+                $product->restock(
+                    $branch->id,
+                    $orderItem->quantity,
+                    null,
+                    "Reposición por cancelación de pedido en línea #{$order->formatted_order_number}"
+                );
+            }
+        }
+
+        // Cancel the linked transaction if exists
+        $transaction = $order->saleTransaction;
+        if ($transaction && !in_array($transaction->status->value, ['cancelado', 'reembolsado'])) {
+            $transaction->update(['status' => \App\Enums\TransactionStatus::CANCELLED]);
+        }
     }
 }

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { Head, router, Link } from '@inertiajs/vue3';
+import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
@@ -12,6 +13,7 @@ const selectedStatus = ref(null);
 const note = ref('');
 const loading = ref(false);
 const menu = ref();
+const confirm = useConfirm();
 
 const formatCurrency = (num) => {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(num || 0);
@@ -51,6 +53,24 @@ const transitionOptions = computed(() => {
 
 const updateStatus = () => {
     if (!selectedStatus.value) return;
+
+    if (selectedStatus.value === 'cancelled') {
+        confirm.require({
+            message: `El stock del pedido será repuesto en el inventario. Los pagos realizados por el cliente deberán gestionarse manualmente (reembolso en efectivo desde caja o registro de gasto).`,
+            header: '¿Cancelar este pedido?',
+            icon: 'pi pi-exclamation-triangle',
+            acceptLabel: 'Sí, cancelar pedido',
+            rejectLabel: 'No',
+            acceptClass: 'p-button-danger',
+            accept: () => submitStatusUpdate(),
+        });
+        return;
+    }
+
+    submitStatusUpdate();
+};
+
+const submitStatusUpdate = () => {
     loading.value = true;
     router.put(route('online-store.orders.update-status', props.order.id), {
         status: selectedStatus.value,

@@ -167,10 +167,8 @@ const galleriaPt = computed(() => ({
                             :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
                             Pagos seguros con
                         </span>
-                        <img v-if="isDarkTheme" src="/images/Mercado_Pago_logo_claro.png" alt="Mercado Pago"
-                            class="h-5 object-contain opacity-80" />
-                        <img v-else src="/images/Mercado_Pago_logo.png" alt="Mercado Pago"
-                            class="h-5 object-contain opacity-80" />
+                        <img src="/images/Mercado_Pago_logo.webp" alt="Mercado Pago"
+                            class="h-10 object-contain opacity-80" />
                         <span v-if="mpTestMode" class="text-[9px] px-2 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
                             Modo prueba
                         </span>
