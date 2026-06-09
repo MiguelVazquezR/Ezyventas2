@@ -12,6 +12,7 @@ use App\Http\Requests\StoreServiceOrderRequest;
 use App\Http\Requests\UpdateServiceOrderRequest;
 use App\Models\Customer;
 use App\Models\CustomFieldDefinition;
+use App\Models\PrintTemplate;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\ServiceOrder;
@@ -94,9 +95,42 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
                 ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER, TemplateContextType::GENERAL])
                 ->get(),
+            'printTemplates' => Auth::user()->branch->subscription->printTemplates()
+                ->where('type', TemplateType::SERVICE_RECEIPT)
+                ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER, TemplateContextType::GENERAL])
+                ->get(),
             'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)
                 ->where('module', 'service_orders')
                 ->get(),
+        ]);
+    }
+
+    public function print(Request $request, ServiceOrder $serviceOrder): Response
+    {
+        $serviceOrder->load([
+            'branch.subscription',
+            'user',
+            'customer',
+            'items.itemable' => function (MorphTo $morphTo) {
+                $morphTo->morphWith([
+                    Product::class => ['media'],
+                    Service::class => ['media'],
+                ]);
+            },
+            'media',
+            'transaction.payments',
+        ]);
+
+        $subscriptionId = Auth::user()->branch->subscription_id;
+
+        return Inertia::render('ServiceOrder/Print', [
+            'serviceOrder' => $serviceOrder,
+            'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)
+                ->where('module', 'service_orders')
+                ->get(),
+            'printTemplate' => $request->has('template_id')
+                ? PrintTemplate::find($request->input('template_id'))
+                : null,
         ]);
     }
 

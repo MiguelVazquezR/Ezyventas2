@@ -8,7 +8,11 @@ use App\Models\PlanItem;
 use App\Models\SubscriptionVersion;
 use App\Models\SettingDefinition;
 use App\Http\Requests\Admin\UpdateSubscriptionVersionRequest;
+use App\Http\Requests\Admin\UpdateVersionItemsRequest;
+use App\Http\Requests\Admin\StoreVersionWithPaymentRequest;
 use App\Actions\Admin\Subscriptions\UpdateSubscriptionVersionAction;
+use App\Actions\Admin\Subscriptions\UpdateVersionItemsAction;
+use App\Actions\Admin\Subscriptions\CreateVersionWithPaymentAction;
 use App\Actions\Admin\Subscriptions\UpdateEntitySettingsAction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -166,6 +170,32 @@ class SubscriptionController extends Controller
         $action->execute($version, $request->validated());
 
         return redirect()->back()->with('success', 'La vigencia y los recursos del plan han sido actualizados exitosamente.');
+    }
+
+    /**
+     * Actualiza los items (módulos y límites) de una versión específica.
+     */
+    public function updateVersionItems(
+        SubscriptionVersion $version,
+        UpdateVersionItemsRequest $request,
+        UpdateVersionItemsAction $action,
+    ) {
+        $action->execute($version, $request->validated());
+
+        return redirect()->back()->with('success', 'Los items de la versión han sido actualizados exitosamente.');
+    }
+
+    /**
+     * Crea una nueva versión con su pago asociado para una suscripción.
+     */
+    public function storeVersion(
+        Subscription $subscription,
+        StoreVersionWithPaymentRequest $request,
+        CreateVersionWithPaymentAction $action,
+    ) {
+        $action->execute($subscription, $request->validated());
+
+        return redirect()->back()->with('success', 'La nueva versión y el pago han sido registrados exitosamente.');
     }
 
     /**
