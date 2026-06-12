@@ -76,6 +76,78 @@ class ServiceOrder extends Model implements HasMedia
             ->withResponsiveImages();
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | LÓGICA DE NEGOCIO (REFACTORIZADA)
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Genera automáticamente el folio consecutivo de la orden para la sucursal.
+     */
+    public static function generateFolio(int $branchId): string
+    {
+        $lastOrder = static::where('branch_id', $branchId)
+            ->where('folio', 'like', 'OS-%')
+            ->orderByRaw('CAST(SUBSTRING(folio, 4) AS UNSIGNED) DESC')
+            ->first();
+
+        $sequence = $lastOrder ? ((int) substr($lastOrder->folio, 3)) + 1 : 1;
+        
+        return 'OS-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Agrega items a la orden y gestiona el stock delegando a los modelos Polimórficos.
+     */
+    public function addItemsWithStock(array $itemsData, ?User $user = null): bool
+    {
+        if (empty($itemsData)) {
+            return false;
+        }
+
+        foreach ($itemsData as $itemData) {
+            // Limpieza requerida si viene itemable_id = 0 desde el frontend
+            if (isset($itemData['itemable_id']) && $itemData['itemable_id'] == 0) {
+                unset($itemData['itemable_id']);
+            }
+
+            $item = $this->items()->create($itemData);
+
+            // Delega la deducción al modelo (Product o ProductAttribute)
+            if ($item->itemable_id && $item->itemable) {
+                if (method_exists($item->itemable, 'deductStock')) {
+                    $item->itemable->deductStock($this->branch_id, $item->quantity, $user, "Orden de Servicio #{$this->folio}");
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Restaura el stock de los items de la orden actual (Usado en Edición y Cancelación).
+     */
+    public function restoreStock(?User $user = null, string $note = ''): void
+    {
+        $logNote = $note ?: "Reversión/Cancelación de O.S. #{$this->folio}";
+        
+        foreach ($this->items as $item) {
+            if ($item->itemable_id && $item->itemable) {
+                if (method_exists($item->itemable, 'restock')) {
+                    $item->itemable->restock($this->branch_id, $item->quantity, $user, $logNote);
+                }
+            }
+        }
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | RELACIONES Y LOGS
+    |--------------------------------------------------------------------------
+    */
+
     public function transaction(): MorphOne
     {
         return $this->morphOne(Transaction::class, 'transactionable');
@@ -90,23 +162,11 @@ class ServiceOrder extends Model implements HasMedia
     {
         return LogOptions::defaults()
             ->logOnly([
-                'folio',
-                'customer_name',
-                'customer_phone',
-                'customer_email',
-                'status',
-                'received_at',
-                'promised_at',
-                'item_description',
-                'reported_problems',
-                'technician_name',
-                'technician_diagnosis',
-                'technician_commission_type',
-                'technician_commission_value',
-                'subtotal',
-                'discount_amount',
-                'final_total',
-                'custom_fields'
+                'folio', 'customer_name', 'customer_phone', 'customer_email',
+                'status', 'received_at', 'promised_at', 'item_description',
+                'reported_problems', 'technician_name', 'technician_diagnosis',
+                'technician_commission_type', 'technician_commission_value',
+                'subtotal', 'discount_amount', 'final_total', 'custom_fields'
             ])
             ->setDescriptionForEvent(fn(string $eventName) => "La orden de servicio ha sido {$this->translateEventName($eventName)}")
             ->logOnlyDirty()

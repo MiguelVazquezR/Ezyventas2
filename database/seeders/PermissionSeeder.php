@@ -30,6 +30,8 @@ class PermissionSeeder extends Seeder
                 'transactions.cancel' => 'Cancelar ventas',
                 'transactions.add_payment' => 'Registrar abonos o pagos a ventas',
                 'transactions.exchange' => 'Hacer cambios de productos en ventas',
+                'transactions.edit_payment' => 'Editar pagos de ventas',
+                'transactions.delete' => 'Eliminar ventas',
             ],
             'Productos' => [
                 'products.access' => 'Ver listado de productos',
@@ -52,6 +54,7 @@ class PermissionSeeder extends Seeder
                 'expenses.delete' => 'Eliminar gastos',
                 'expenses.import_export' => 'Importar y exportar gastos',
                 'expenses.change_status' => 'Cambiar status de gastos (pendiente, pagado)',
+                'expenses.manage_categories' => 'Administrar categorías de gastos',
             ],
             'Clientes' => [
                 'customers.access' => 'Ver listado de clientes',
@@ -102,10 +105,13 @@ class PermissionSeeder extends Seeder
                 'cash_registers.manage' => 'Administrar cajas registradoras',
                 'cash_registers.sessions.access' => 'Ver historial de cortes de caja (sesiones)',
                 'cash_registers.sessions.create_movements' => 'Crear movimientos de efectivo en sesiones de caja',
+                'cash_registers.sessions.edit_movements' => 'Editar movimientos de efectivo en sesiones de caja',
+                'cash_registers.sessions.delete_movements' => 'Eliminar movimientos de efectivo en sesiones de caja',
             ],
             'Configuraciones' => [
                 'settings.generals.access' => 'Acceder a las configuraciones generales',
-                'settings.generals.update' => 'Modificar la configuración',
+                'settings.generals.update_branch' => 'Modificar las configuraciones a nivel de sucursal',
+                'settings.generals.update_subscription' => 'Modificar las configuraciones a nivel de suscripción',
                 'settings.roles_permissions.access' => 'Acceder a las configuraciones de roles y permisos',
                 'settings.roles_permissions.manage' => 'Crear roles, asignar y remover permisos',
                 'settings.roles_permissions.delete' => 'Eliminar roles',
@@ -119,9 +125,25 @@ class PermissionSeeder extends Seeder
                 'settings.templates.edit' => 'Editar plantillas.',
                 'settings.templates.delete' => 'Eliminar plantillas.',
             ],
+            'Tienda en línea' => [
+                'online_store.config.access' => 'Acceder a la configuración de la tienda en línea',
+                'online_store.config.edit' => 'Editar la configuración de la tienda en línea',
+                // 'online_store.products.access' => 'Ver productos de la tienda en línea',
+                // 'online_store.products.create' => 'Agregar productos a la tienda en línea',
+                // 'online_store.products.edit' => 'Editar productos de la tienda en línea',
+                // 'online_store.products.delete' => 'Eliminar productos de la tienda en línea',
+                'online_store.orders.access' => 'Ver pedidos de la tienda en línea',
+                'online_store.orders.see_details' => 'Ver detalles de pedidos',
+                'online_store.orders.change_status' => 'Cambiar estado de pedidos',
+            ],
             'Sistema' => [
                 'system.branches.switch' => 'Cambiar entre sucursales',
                 'system.bank_accounts.manage' => 'Ver y editar saldos de cuentas bancarias al abrir caja',
+                'dashboard.see_sales' => 'Inicio: Ver ventas del día y semanal',
+                'dashboard.see_layaways' => 'Inicio: Ver panel de ventas apartadas',
+                'dashboard.see_orders' => 'Inicio: Ver panel de pedidos',
+                'dashboard.see_outstanding_balances' => 'Inicio: Ver panel de saldos por cobrar',
+                'dashboard.see_inventory_details' => 'Inicio: Ver detalles de inventario',
             ],
         ];
 

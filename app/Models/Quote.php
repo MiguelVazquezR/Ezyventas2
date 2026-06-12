@@ -59,7 +59,6 @@ class Quote extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            // CORRECCIÓN: Ampliamos los campos vigilados para un historial detallado
             ->logOnly([
                 'folio',
                 'status',
@@ -86,6 +85,94 @@ class Quote extends Model
         return ['created' => 'creada', 'updated' => 'actualizada', 'deleted' => 'eliminada'][$eventName] ?? $eventName;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | LÓGICA DE NEGOCIO Y HELPERS (REFACTOR)
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Sincroniza los items de la cotización.
+     */
+    public function syncItems(array $itemsData): void
+    {
+        $this->items()->delete(); 
+        foreach ($itemsData as $itemData) {
+            $this->items()->create($itemData);
+        }
+    }
+
+    /**
+     * Deduce el stock de todos los items de la cotización (ej. al convertir a venta).
+     */
+    public function deductStockForSale(?User $user = null): void
+    {
+        $note = "Conversión de Cotización a Venta #{$this->folio}";
+        foreach ($this->items as $item) {
+            if ($item->itemable && method_exists($item->itemable, 'deductStock')) {
+                $item->itemable->deductStock($this->branch_id, $item->quantity, $user, $note);
+            }
+        }
+    }
+
+    /**
+     * Retorna el stock de todos los items (ej. si se cancela la venta originada).
+     */
+    public function returnStockFromCancelledSale(?User $user = null): void
+    {
+        $note = "Cancelación de Venta derivada de Cotización #{$this->folio}";
+        foreach ($this->items as $item) {
+            if ($item->itemable && method_exists($item->itemable, 'restock')) {
+                $item->itemable->restock($this->branch_id, $item->quantity, $user, $note);
+            }
+        }
+    }
+
+    /**
+     * Crea una nueva versión de esta cotización (Duplicado).
+     */
+    public function createNewVersion(): self
+    {
+        $newVersionNumber = ($this->versions()->max('version_number') ?? $this->version_number) + 1;
+
+        $replicatedQuote = $this->replicate()->fill([
+            'parent_quote_id' => $this->parent_quote_id ?? $this->id,
+            'version_number' => $newVersionNumber,
+            'status' => QuoteStatus::DRAFT,
+            'folio' => $this->folio . '-V' . $newVersionNumber,
+        ]);
+        $replicatedQuote->save();
+
+        foreach ($this->items as $item) {
+            $replicatedQuote->items()->create($item->toArray());
+        }
+
+        return $replicatedQuote;
+    }
+
+    /**
+     * Genera el siguiente folio consecutivo para una cotización nueva.
+     */
+    public static function generateFolio(int $branchId): string
+    {
+        $lastQuote = self::where('branch_id', $branchId)
+            ->whereNull('parent_quote_id') // Ignorar sub-versiones (ej. COT-001-V2) para calcular el número
+            ->orderByRaw('CAST(SUBSTRING(folio, 5) AS UNSIGNED) DESC') // Toma el número después de 'COT-'
+            ->first();
+        
+        $nextFolioNumber = $lastQuote ? ((int) substr($lastQuote->folio, 4)) + 1 : 1;
+        
+        // Rellenar con ceros a la izquierda (ej. COT-001, COT-002)
+        return 'COT-' . str_pad($nextFolioNumber, 3, '0', STR_PAD_LEFT);
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | RELACIONES
+    |--------------------------------------------------------------------------
+    */
+
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
@@ -106,17 +193,11 @@ class Quote extends Model
         return $this->belongsTo(Transaction::class);
     }
 
-    /**
-     * Obtiene la cotización anterior (si es una nueva versión).
-     */
     public function parent(): BelongsTo
     {
         return $this->belongsTo(Quote::class, 'parent_quote_id');
     }
 
-    /**
-     * Obtiene las nuevas versiones de esta cotización.
-     */
     public function versions(): HasMany
     {
         return $this->hasMany(Quote::class, 'parent_quote_id');

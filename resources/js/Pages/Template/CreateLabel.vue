@@ -3,7 +3,6 @@ import { Link, useForm } from '@inertiajs/vue3';
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { v4 as uuidv4 } from 'uuid';
-import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
@@ -15,6 +14,7 @@ const props = defineProps([
     'templateLimit',
     'templateUsage',
     'customFieldDefinitions',
+    'contextTypes', // Nueva prop con las opciones de contexto
     'printTemplate' // Prop para modo edición
 ]);
 
@@ -55,6 +55,8 @@ const isJustFinishedDragging = ref(false);
 const form = useForm({
     name: '',
     type: 'etiqueta',
+    context_type: 'pos', // Valor por defecto
+    is_default: false, // NUEVO: Inicializamos el campo auto-selección
     branch_ids: [],
     content: {
         config: {
@@ -74,6 +76,8 @@ onMounted(() => {
         // Modo Edición
         form.name = props.printTemplate.name;
         form.branch_ids = props.printTemplate.branches ? props.printTemplate.branches.map(b => b.id) : [];
+        form.context_type = props.printTemplate.context_type || 'pos'; 
+        form.is_default = props.printTemplate.is_default ? true : false; // Cargar valor existente
         
         if (props.printTemplate.content) {
             form.content.config = { ...form.content.config, ...props.printTemplate.content.config };
@@ -325,6 +329,10 @@ const addElement = (type) => {
     if (type === 'text') {
         newElement.data.value = 'Texto';
         newElement.data.font_size = 3; // TSPL font size index
+        
+        // CORRECCIÓN: Valores por defecto de escala multiplicadora para texto
+        newElement.data.x_scale = 1;
+        newElement.data.y_scale = 1;
     }
     if (type === 'barcode') {
         newElement.data.value = '{{p.sku}}';
@@ -359,7 +367,8 @@ const labelStyle = computed(() => ({
     height: `${form.content.config.height * pxPerMm.value}px`,
 }));
 
-const tsplFontDotHeights = { 1: 12, 2: 20, 3: 24, 4: 32, 5: 48, 6: 64, 7: 80, 8: 96 };
+// const tsplFontDotHeights = { 1: 12, 2: 20, 3: 24, 4: 32, 5: 48, 6: 64, 7: 80, 8: 96 };
+const tsplFontDotHeights = { 1: 14, 2: 16, 3: 18, 4: 20, 5: 22, 6: 24, 7: 26, 8: 26 };
 
 const getElementStyle = (element) => {
     const xPx = element.data.x * pxPerMm.value;
@@ -369,7 +378,6 @@ const getElementStyle = (element) => {
         position: 'absolute',
         left: `${xPx}px`,
         top: `${yPx}px`,
-        transform: `rotate(${element.data.rotation}deg)`,
         transformOrigin: 'top left',
     };
 
@@ -381,7 +389,15 @@ const getElementStyle = (element) => {
         baseStyle.fontSize = `${mmHeight * pxPerMm.value * visualDpiScale}px`;
         baseStyle.lineHeight = '1';
         baseStyle.whiteSpace = 'nowrap';
+        
+        // CORRECCIÓN: Agregar la escala X y Y para la representación visual en el editor
+        const xScale = element.data.x_scale || 1;
+        const yScale = element.data.y_scale || 1;
+        baseStyle.transform = `rotate(${element.data.rotation}deg) scale(${xScale}, ${yScale})`;
+    } else {
+        baseStyle.transform = `rotate(${element.data.rotation}deg)`;
     }
+
     if (element.type === 'barcode') {
         const heightMm = element.data.height / 8; 
         baseStyle.height = `${heightMm * pxPerMm.value}px`;
@@ -463,6 +479,11 @@ const dpiOptions = [203, 300, 600];
                             <InputError :message="form.errors.name" class="mt-1" />
                         </div>
                         <div>
+                            <InputLabel value="Contexto de uso *" />
+                            <Select v-model="form.context_type" :options="props.contextTypes" optionLabel="label" optionValue="value" class="w-full" :invalid="!!form.errors.context_type" placeholder="Seleccionar contexto" />
+                            <InputError :message="form.errors.context_type" class="mt-1" />
+                        </div>
+                        <div>
                             <InputLabel value="Sucursales *" />
                             <MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" optionValue="id" placeholder="Seleccionar" class="w-full" :maxSelectedLabels="1" :invalid="!!form.errors.branch_ids" />
                             <InputError :message="form.errors.branch_ids" class="mt-1" />
@@ -485,6 +506,15 @@ const dpiOptions = [203, 300, 600];
                                 <InputLabel value="Espacio (GAP)" />
                                 <InputNumber fluid v-model="form.content.config.gap" class="w-full" suffix=" mm" :min="0" />
                             </div>
+                        </div>
+
+                        <!-- NUEVO TOGGLE DE SELECCION AUTOMATICA -->
+                        <div class="flex items-center justify-between pt-4 mt-2 border-t dark:border-gray-700">
+                            <div class="flex flex-col">
+                                <span class="font-bold text-sm text-gray-700 dark:text-gray-300">Selección automática</span>
+                                <span class="text-[10px] text-gray-500">Se seleccionará sola al imprimir.</span>
+                            </div>
+                            <InputSwitch v-model="form.is_default" />
                         </div>
                     </div>
 
@@ -534,9 +564,31 @@ const dpiOptions = [203, 300, 600];
                             @touchstart.stop.prevent="startDragElement($event, element)"
                             @click.stop="selectedElement = element"
                             :style="getElementStyle(element)"
-                            class="hover:outline hover:outline-1 hover:outline-blue-300 cursor-move select-none"
-                            :class="{ '!outline !outline-2 !outline-blue-600 z-50': selectedElement?.id === element.id }">
+                            class="group cursor-move select-none"
+                            :class="{ 'z-50': selectedElement?.id === element.id }">
                             
+                            <!-- Borde Hover (Neutraliza Escala) -->
+                            <div v-if="selectedElement?.id !== element.id"
+                                 class="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+                                 :style="{
+                                     borderTop: `${1 / (element.data.y_scale || 1)}px dashed #93c5fd`,
+                                     borderBottom: `${1 / (element.data.y_scale || 1)}px dashed #93c5fd`,
+                                     borderLeft: `${1 / (element.data.x_scale || 1)}px dashed #93c5fd`,
+                                     borderRight: `${1 / (element.data.x_scale || 1)}px dashed #93c5fd`,
+                                 }">
+                            </div>
+
+                            <!-- Borde Selección (Neutraliza Escala) -->
+                            <div v-if="selectedElement?.id === element.id"
+                                 class="absolute inset-0 pointer-events-none"
+                                 :style="{
+                                     borderTop: `${2 / (element.data.y_scale || 1)}px solid #2563eb`,
+                                     borderBottom: `${2 / (element.data.y_scale || 1)}px solid #2563eb`,
+                                     borderLeft: `${2 / (element.data.x_scale || 1)}px solid #2563eb`,
+                                     borderRight: `${2 / (element.data.x_scale || 1)}px solid #2563eb`,
+                                 }">
+                            </div>
+
                             <!-- Visualización de Elementos -->
                             <div v-if="element.type === 'text'" class="text-black">{{ element.data.value }}</div>
                             
@@ -548,11 +600,14 @@ const dpiOptions = [203, 300, 600];
                                 <i class="pi pi-qrcode text-black text-2xl"></i>
                             </div>
 
-                            <!-- Botón Eliminar Flotante -->
+                            <!-- Botón Eliminar Flotante INVERSAMENTE ESCALADO -->
                             <button v-if="selectedElement?.id === element.id" 
                                 @click.stop="removeElement(element.id)" 
                                 @touchstart.stop.prevent="removeElement(element.id)"
-                                class="absolute -top-3 -right-3 bg-red-500 text-white rounded-full size-4 flex items-center justify-center shadow hover:bg-red-600 z-[60]"
+                                class="absolute top-0 right-0 size-4 bg-red-500 text-white rounded-full flex items-center justify-center shadow hover:bg-red-600 z-[60]"
+                                :style="{
+                                    transform: `translate(50%, -50%) scale(${1 / (element.data.x_scale || 1)}, ${1 / (element.data.y_scale || 1)})`
+                                }"
                                 title="Eliminar">
                                 <i class="pi pi-times !text-[9px]"></i>
                             </button>
@@ -614,9 +669,23 @@ const dpiOptions = [203, 300, 600];
                         <InputLabel value="Contenido" />
                         <Textarea v-model="selectedElement.data.value" rows="3" class="w-full mt-1 text-sm font-mono" />
                         
-                        <InputLabel value="Tamaño Fuente (TSPL)" class="mt-4" />
-                        <InputNumber v-model="selectedElement.data.font_size" class="w-full" showButtons :min="1" :max="10" />
-                        <small class="text-gray-500 text-xs">Índice de fuente interna de impresora.</small>
+                        <!-- CORRECCIÓN: Agregadas escalas X y Y a las propiedades -->
+                        <div class="mt-4 p-3 bg-blue-50/50 border border-blue-100 rounded-lg">
+                            <InputLabel value="Fuente base" />
+                            <InputNumber fluid v-model="selectedElement.data.font_size" class="w-full mb-1" showButtons :min="1" :max="8" />
+                            <small class="text-gray-500 text-xs block mb-3 leading-tight">La fuente base (1-8) define el estilo. Usa los multiplicadores de abajo para hacer la letra más grande.</small>
+                            
+                            <div class="grid grid-cols-2 gap-3 pt-2 border-t border-blue-200">
+                                <div>
+                                    <InputLabel value="Ancho (X)" class="text-xs" />
+                                    <InputNumber fluid v-model="selectedElement.data.x_scale" class="w-full h-8" inputClass="!py-1 text-sm" showButtons :min="1" :max="10" />
+                                </div>
+                                <div>
+                                    <InputLabel value="Alto (Y)" class="text-xs" />
+                                    <InputNumber fluid v-model="selectedElement.data.y_scale" class="w-full h-8" inputClass="!py-1 text-sm" showButtons :min="1" :max="10" />
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- MODIFICADO: Iteración de grupos de variables -->
                         <Accordion class="mt-4"><AccordionPanel value="0"><AccordionHeader>Variables</AccordionHeader><AccordionContent>

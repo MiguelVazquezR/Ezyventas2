@@ -44,7 +44,7 @@ const form = useForm({
     required_quantity: 1,
     free_product_id: props.product.id,
     free_quantity: 1,
-    // MODIFICADO: Ahora es un array de objetos para soportar cantidades
+    // Ahora es un array de objetos para soportar cantidades
     bundle_products: [{
         id: props.product.id,
         name: props.product.name,
@@ -86,9 +86,28 @@ watch(promotionType, (newType) => {
     form.bundle_price = null;
 });
 
+// --- UTILIDAD: Formatear fecha a hora local sin conversión a UTC ---
+const formatToLocalString = (date) => {
+    if (!date) return null;
+    const d = date instanceof Date ? date : new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const seconds = String(d.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+};
+
 const submit = () => {
     form.type = promotionType.value;
-    form.post(route('products.promotions.store', props.product.id));
+    
+    // transform() de Inertia nos permite mutar los datos justo antes de enviarlos.
+    form.transform((data) => ({
+        ...data,
+        start_date: formatToLocalString(data.start_date),
+        end_date: formatToLocalString(data.end_date),
+    })).post(route('products.promotions.store', props.product.id));
 };
 
 </script>
@@ -169,7 +188,7 @@ const submit = () => {
                     </div>
                 </div>
 
-                <!-- INICIA SECCIÓN MODIFICADA PARA PAQUETE -->
+                <!-- SECCIÓN PARA PAQUETE -->
                 <div v-if="promotionType === 'BUNDLE_PRICE'" class="mt-6 space-y-6">
                     <div>
                         <h3 class="font-semibold mb-2">Regla: "Productos en el paquete"</h3>
@@ -198,7 +217,7 @@ const submit = () => {
                         <InputError :message="form.errors.bundle_price" />
                     </div>
                 </div>
-                <!-- TERMINA SECCIÓN MODIFICADA -->
+                <!-- TERMINA SECCIÓN PARA PAQUETE -->
             </div>
 
             <div class="flex justify-end">

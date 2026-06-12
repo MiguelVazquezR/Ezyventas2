@@ -2,7 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\TransactionStatus; // Asegúrate de importar el Enum
+use App\Enums\ExpenseStatus;
+use App\Enums\TransactionStatus;
 use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\Customer;
@@ -28,7 +29,8 @@ class DashboardController extends Controller
         $isAdmin = !$user->roles()->exists();
         $stats = [];
 
-        $cacheKey = "dashboard_stats_branch_{$branchId}";
+        // Subimos versión caché a v9 para invalidar los cálculos viejos y aplicar la corrección de 15 días
+        $cacheKey = "dashboard_stats_branch_{$branchId}_v9";
 
         // --- 1. Ventas y Transacciones ---
         if ($isAdmin || $user->can('transactions.access')) {
@@ -37,8 +39,8 @@ class DashboardController extends Controller
 
             $todayAggregates = Transaction::where('branch_id', $branchId)
                 ->whereBetween('created_at', [$startOfDay, $endOfDay])
-                ->where('status', TransactionStatus::COMPLETED) // Usar Enum si es posible, o 'completado'
-                ->selectRaw('SUM(subtotal - total_discount) as total_sales')
+                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+                ->selectRaw('SUM(subtotal - total_discount + total_tax) as total_sales')
                 ->selectRaw('COUNT(*) as total_count')
                 ->first();
 
@@ -47,7 +49,7 @@ class DashboardController extends Controller
 
             $stats['today_sales'] = (float) $totalSales;
             $stats['average_ticket_today'] = $transactionCount > 0 ? $totalSales / $transactionCount : 0;
-            
+
             $stats['yesterday_sales'] = Cache::remember("{$cacheKey}_yesterday", 600, function () use ($branchId) {
                 return $this->getSalesTotalForPeriod($branchId, today()->subDay(), today()->subDay());
             });
@@ -56,12 +58,16 @@ class DashboardController extends Controller
                 return $this->getWeeklySalesTrend($branchId);
             });
 
-            // --- NUEVO: Conteo de Apartados por Vencer (Ligero) ---
-            // Contamos apartados activos cuya fecha de vencimiento es hoy o en los próximos 5 días (o ya vencidos)
-            $stats['expiring_layaways_count'] = Transaction::where('branch_id', $branchId)
-                ->where('status', TransactionStatus::ON_LAYAWAY)
+            $stats['expiring_debts_count'] = Transaction::where('branch_id', $branchId)
+                ->whereIn('status', [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING])
                 ->whereNotNull('layaway_expiration_date')
-                ->whereDate('layaway_expiration_date', '<=', now()->addDays(5))
+                ->whereDate('layaway_expiration_date', '<=', now()->addDays(3))
+                ->count();
+
+            $stats['upcoming_deliveries_count'] = Transaction::where('branch_id', $branchId)
+                ->where('status', TransactionStatus::TO_DELIVER)
+                ->whereNotNull('delivery_date')
+                ->whereDate('delivery_date', '<=', now()->addDays(3))
                 ->count();
         }
 
@@ -71,15 +77,16 @@ class DashboardController extends Controller
                 return Expense::where('branch_id', $branchId)
                     ->whereMonth('expense_date', now()->month)
                     ->whereYear('expense_date', now()->year)
+                    ->where('status', ExpenseStatus::PAID)
                     ->sum('amount');
             });
         }
-        
+
         if ($isAdmin || $user->can('financials.manage_cash_registers')) {
             $stats['cash_registers_status'] = CashRegister::where('branch_id', $branchId)
                 ->where('is_active', true)
-                ->selectRaw("COUNT(CASE WHEN in_use = 1 THEN 1 END) as in_use")
-                ->selectRaw("COUNT(CASE WHEN in_use = 0 THEN 1 END) as available")
+                ->selectRaw("COUNT(CASE WHEN in_use = 1 THEN 1 END) as in_use_count")
+                ->selectRaw("COUNT(CASE WHEN in_use = 0 THEN 1 END) as available_count")
                 ->first()
                 ->toArray();
         }
@@ -95,7 +102,7 @@ class DashboardController extends Controller
             });
 
             $stats['low_turnover_products'] = Cache::remember("{$cacheKey}_low_turnover", 3600, function () use ($branchId) {
-                return $this->getLowTurnoverProducts($branchId);
+                return $this->getLowTurnoverProductsOptimized($branchId);
             });
         }
 
@@ -129,10 +136,10 @@ class DashboardController extends Controller
             });
         }
 
-        $userBankAccounts = $isAdmin 
-            ? BankAccount::whereHas('branches', fn($q) => $q->where('branch_id', $branchId))->get() 
+        $userBankAccounts = $isAdmin
+            ? BankAccount::whereHas('branches', fn($q) => $q->where('branch_id', $branchId))->get()
             : $user->bankAccounts()->get();
-            
+
         $allSubscriptionBankAccounts = BankAccount::where('subscription_id', $user->branch->subscription_id)->get();
 
         return Inertia::render('Dashboard', [
@@ -142,31 +149,26 @@ class DashboardController extends Controller
         ]);
     }
 
-    /**
-     * Endpoint AJAX para cargar el detalle de apartados por vencer.
-     * Retorna JSON para no recargar la página.
-     */
     public function getExpiringLayaways(Request $request)
     {
         $user = Auth::user();
-        
-        // Obtenemos los apartados por vencer
-        // Optimizamos usando withSum para obtener lo pagado sin hidratar todos los modelos de pagos
-        $layaways = Transaction::where('branch_id', $user->branch_id)
-            ->where('status', TransactionStatus::ON_LAYAWAY)
+
+        $debts = Transaction::where('branch_id', $user->branch_id)
+            ->whereIn('status', [TransactionStatus::ON_LAYAWAY, TransactionStatus::PENDING])
             ->whereNotNull('layaway_expiration_date')
             ->whereDate('layaway_expiration_date', '<=', now()->addDays(5))
-            ->with('customer:id,name,phone') // Cargamos cliente básico
-            ->withSum('payments', 'amount') // Sumamos los pagos realizados
-            ->orderBy('layaway_expiration_date', 'asc') // Los más urgentes primero
+            ->with('customer:id,name,phone')
+            ->withSum('payments', 'amount')
+            ->orderBy('layaway_expiration_date', 'asc')
             ->get()
             ->map(function ($t) {
                 $totalPaid = $t->payments_sum_amount ?? 0;
-                $total = (float) $t->total; // Usando el accesor 'total' del modelo Transaction
-                
+                $total = (float) $t->total;
+
                 return [
                     'id' => $t->id,
                     'folio' => $t->folio,
+                    'type' => $t->status === TransactionStatus::ON_LAYAWAY ? 'apartado' : 'credito',
                     'customer_id' => $t->customer_id,
                     'customer_name' => $t->customer ? $t->customer->name : 'Público en General',
                     'customer_phone' => $t->customer?->phone,
@@ -177,64 +179,205 @@ class DashboardController extends Controller
                 ];
             });
 
-        return response()->json($layaways);
+        return response()->json($debts);
     }
 
-    // ... (El resto de tus métodos privados se mantienen igual: getInventorySummaryOptimized, etc.)
+    public function getUpcomingDeliveries(Request $request)
+    {
+        $user = Auth::user();
+
+        $deliveries = Transaction::where('branch_id', $user->branch_id)
+            ->where('status', TransactionStatus::TO_DELIVER)
+            ->whereNotNull('delivery_date')
+            ->whereDate('delivery_date', '<=', now()->addDays(7))
+            ->with('customer:id,name,phone')
+            ->orderBy('delivery_date', 'asc')
+            ->get()
+            ->map(function ($t) {
+                $deliveryDate = Carbon::parse($t->delivery_date);
+                $clientName = $t->customer ? $t->customer->name : ($t->contact_info['name'] ?? 'Cliente Invitado');
+                $clientPhone = $t->customer ? $t->customer->phone : ($t->contact_info['phone'] ?? '-');
+
+                return [
+                    'id' => $t->id,
+                    'folio' => $t->folio,
+                    'customer_name' => $clientName,
+                    'customer_phone' => $clientPhone,
+                    'delivery_date' => $deliveryDate->format('Y-m-d H:i'),
+                    'days_remaining' => number_format(now()->diffInDays($deliveryDate, false), 0),
+                    'is_today' => $deliveryDate->isToday(),
+                    'shipping_address' => $t->shipping_address,
+                    'notes' => Str::limit($t->notes, 30),
+                ];
+            });
+
+        return response()->json($deliveries);
+    }
+
     private function getInventorySummaryOptimized($branchId)
     {
-        $summary = DB::table('products')
-            ->where('branch_id', $branchId)
-            ->selectRaw('COUNT(*) as total_products')
-            ->selectRaw('SUM(cost_price * current_stock) as total_cost')
-            ->selectRaw('SUM(selling_price * current_stock) as total_sale_value')
-            ->selectRaw('SUM(CASE WHEN current_stock > COALESCE(min_stock, 0) THEN 1 ELSE 0 END) as in_stock_count')
-            ->selectRaw('SUM(CASE WHEN current_stock > 0 AND current_stock <= COALESCE(min_stock, 0) THEN 1 ELSE 0 END) as low_stock_count')
-            ->selectRaw('SUM(CASE WHEN current_stock <= 0 THEN 1 ELSE 0 END) as out_of_stock_count')
+        // 1. Resumen de productos SIMPLES (consultando el pivot branch_product)
+        $simpleSummary = DB::table('branch_product as bp')
+            ->join('products as p', 'p.id', '=', 'bp.product_id')
+            ->where('bp.branch_id', $branchId)
+            // Excluir productos que tienen variantes para no contar inventarios padre con 0 unidades
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('product_attributes as pa')
+                    ->whereColumn('pa.product_id', 'p.id');
+            })
+            ->selectRaw('COUNT(*) as total_items')
+            ->selectRaw('SUM(p.cost_price * bp.current_stock) as total_cost')
+            ->selectRaw('SUM(p.selling_price * bp.current_stock) as total_sale_value') // <--- REMOVIDO bp.price_modifier
+            ->selectRaw('SUM(CASE WHEN bp.current_stock > COALESCE(bp.min_stock, 0) THEN 1 ELSE 0 END) as in_stock_count')
+            ->selectRaw('SUM(CASE WHEN bp.current_stock > 0 AND bp.current_stock <= COALESCE(bp.min_stock, 0) THEN 1 ELSE 0 END) as low_stock_count')
+            ->selectRaw('SUM(CASE WHEN bp.current_stock <= 0 THEN 1 ELSE 0 END) as out_of_stock_count')
             ->first();
 
-        if (!$summary || $summary->total_products == 0) {
+        // 2. Resumen de VARIANTES (consultando el pivot branch_product_attribute)
+        $variantSummary = DB::table('branch_product_attribute as bpa')
+            ->join('product_attributes as pa', 'pa.id', '=', 'bpa.product_attribute_id')
+            ->join('products as p', 'p.id', '=', 'pa.product_id')
+            ->where('bpa.branch_id', $branchId)
+            ->selectRaw('COUNT(*) as total_items')
+            ->selectRaw('SUM(p.cost_price * bpa.current_stock) as total_cost')
+            ->selectRaw('SUM((p.selling_price + pa.selling_price_modifier) * bpa.current_stock) as total_sale_value') // <--- REMOVIDO bpa.price_modifier
+            ->selectRaw('SUM(CASE WHEN bpa.current_stock > COALESCE(bpa.min_stock, 0) THEN 1 ELSE 0 END) as in_stock_count') // <--- AÑADIDO CÁLCULO DE MIN STOCK PARA VARIANTES
+            ->selectRaw('SUM(CASE WHEN bpa.current_stock > 0 AND bpa.current_stock <= COALESCE(bpa.min_stock, 0) THEN 1 ELSE 0 END) as low_stock_count') // <--- AÑADIDO CÁLCULO DE MIN STOCK PARA VARIANTES
+            ->selectRaw('SUM(CASE WHEN bpa.current_stock <= 0 THEN 1 ELSE 0 END) as out_of_stock_count')
+            ->first();
+
+        $totalProducts = ($simpleSummary->total_items ?? 0) + ($variantSummary->total_items ?? 0);
+
+        if ($totalProducts == 0) {
             return null;
         }
 
+        // Consolida los totales
         return [
-            'total_cost' => (float) $summary->total_cost,
-            'total_sale_value' => (float) $summary->total_sale_value,
-            'total_products' => (int) $summary->total_products,
-            'in_stock_count' => (int) $summary->in_stock_count,
-            'low_stock_count' => (int) $summary->low_stock_count,
-            'out_of_stock_count' => (int) $summary->out_of_stock_count,
+            'total_cost' => (float) (($simpleSummary->total_cost ?? 0) + ($variantSummary->total_cost ?? 0)),
+            'total_sale_value' => (float) (($simpleSummary->total_sale_value ?? 0) + ($variantSummary->total_sale_value ?? 0)),
+            'total_products' => (int) $totalProducts,
+            'in_stock_count' => (int) (($simpleSummary->in_stock_count ?? 0) + ($variantSummary->in_stock_count ?? 0)),
+            'low_stock_count' => (int) (($simpleSummary->low_stock_count ?? 0) + ($variantSummary->low_stock_count ?? 0)),
+            'out_of_stock_count' => (int) (($simpleSummary->out_of_stock_count ?? 0) + ($variantSummary->out_of_stock_count ?? 0)),
         ];
     }
 
-    private function getLowTurnoverProducts($branchId)
+    private function getLowTurnoverProductsOptimized($branchId)
     {
-        $thresholdDate = now()->subDays(15);
-        $lastSaleSubquery = DB::table('transactions_items')
+        $soldItemsRaw = DB::table('transactions_items')
             ->join('transactions', 'transactions.id', '=', 'transactions_items.transaction_id')
             ->where('transactions.branch_id', $branchId)
-            ->whereRaw("((transactions_items.itemable_type = ? AND transactions_items.itemable_id = products.id) OR (transactions_items.itemable_type = ? AND transactions_items.itemable_id IN (SELECT id FROM product_attributes WHERE product_id = products.id)))", [Product::class, ProductAttribute::class])
-            ->selectRaw('MAX(transactions.created_at)');
+            ->whereNotIn('transactions.status', [TransactionStatus::CANCELLED, TransactionStatus::REFUNDED])
+            ->select('itemable_id', 'itemable_type', DB::raw('MAX(transactions.created_at) as last_sale'))
+            ->groupBy('itemable_id', 'itemable_type')
+            ->get();
 
-        return Product::where('branch_id', $branchId)
-            ->select('id', 'name', 'selling_price', 'current_stock')
-            ->selectSub($lastSaleSubquery, 'last_sale_date')
-            ->with('media')
-            ->having('last_sale_date', '<', $thresholdDate)
-            ->orHavingNull('last_sale_date')
-            ->orderBy('last_sale_date', 'asc')
+        $productLastSales = [];
+
+        $variantIds = $soldItemsRaw->where('itemable_type', ProductAttribute::class)->pluck('itemable_id');
+        $variantMap = DB::table('product_attributes')
+            ->whereIn('id', $variantIds)
+            ->pluck('product_id', 'id');
+
+        foreach ($soldItemsRaw as $item) {
+            $productId = null;
+            if ($item->itemable_type === Product::class) {
+                $productId = $item->itemable_id;
+            } elseif ($item->itemable_type === ProductAttribute::class) {
+                $productId = $variantMap[$item->itemable_id] ?? null;
+            }
+
+            if ($productId) {
+                $saleDate = Carbon::parse($item->last_sale);
+                if (!isset($productLastSales[$productId]) || $saleDate->gt($productLastSales[$productId])) {
+                    $productLastSales[$productId] = $saleDate;
+                }
+            }
+        }
+
+        $allSoldProductIds = array_keys($productLastSales);
+
+        // FILTRO APLICADO: Solo considerar productos cuya última venta fue hace 15 días o más
+        $thresholdDate = now()->subDays(15)->endOfDay();
+        $validProductLastSales = array_filter($productLastSales, function ($date) use ($thresholdDate) {
+            return $date->lte($thresholdDate);
+        });
+
+        $lowTurnoverCollection = collect();
+
+        // 1. Productos sin ventas (Nunca se han vendido)
+        $neverSoldProducts = Product::whereHas('branches', function ($q) use ($branchId) {
+            $q->where('branches.id', $branchId);
+        })
+            ->whereNotIn('id', $allSoldProductIds) // Solo los que NUNCA aparecen en ventas
+            ->with(['media', 'productAttributes.branches' => function ($q) use ($branchId) {
+                $q->where('branches.id', $branchId);
+            }, 'branches' => function ($q) use ($branchId) {
+                $q->where('branches.id', $branchId);
+            }])
             ->limit(5)
             ->get()
-            ->map(function ($product) {
-                return [
-                    'id' => $product->id,
-                    'name' => $product->name,
-                    'selling_price' => (float)$product->selling_price,
-                    'current_stock' => $product->current_stock,
-                    'days_since_last_sale' => $product->last_sale_date ? Carbon::parse($product->last_sale_date)->diffInDays(now()) : null,
-                    'image' => $product->getFirstMediaUrl('product-general-images') ?: null,
-                ];
+            ->map(function ($p) {
+                $p->virtual_last_sale_date = null;
+                return $p;
             });
+
+        $lowTurnoverCollection = $lowTurnoverCollection->merge($neverSoldProducts);
+
+        // 2. Rellenar con los de menor rotación histórica que cumplan con los >15 días
+        if ($lowTurnoverCollection->count() < 5) {
+            $needed = 5 - $lowTurnoverCollection->count();
+            asort($validProductLastSales);
+            $oldestIds = array_slice(array_keys($validProductLastSales), 0, $needed);
+
+            if (!empty($oldestIds)) {
+                $oldSoldProducts = Product::whereIn('id', $oldestIds)
+                    ->with(['media', 'productAttributes.branches' => function ($q) use ($branchId) {
+                        $q->where('branches.id', $branchId);
+                    }, 'branches' => function ($q) use ($branchId) {
+                        $q->where('branches.id', $branchId);
+                    }])
+                    ->get()
+                    ->each(function ($p) use ($validProductLastSales) {
+                        $p->virtual_last_sale_date = $validProductLastSales[$p->id];
+                    });
+
+                $oldSoldProducts = $oldSoldProducts->sortBy(function ($p) {
+                    return $p->virtual_last_sale_date->timestamp;
+                });
+
+                $lowTurnoverCollection = $lowTurnoverCollection->merge($oldSoldProducts);
+            }
+        }
+
+        // Mapear finalmente calculando el stock físico correcto
+        return $lowTurnoverCollection->map(function ($product) {
+            $stock = 0;
+
+            if ($product->productAttributes && $product->productAttributes->count() > 0) {
+                // Sumatoria del stock de cada variante en el pivot local
+                $stock = $product->productAttributes->sum(function ($variant) {
+                    return $variant->branches->first()?->pivot->current_stock ?? 0;
+                });
+            } else {
+                // Stock del producto simple desde su pivot local
+                $stock = $product->branches->first()?->pivot->current_stock ?? 0;
+            }
+
+            return [
+                'id' => $product->id,
+                'name' => $product->name,
+                'selling_price' => (float)$product->selling_price,
+                'current_stock' => $stock,
+                // FORZADO A ENTERO: Usamos startOfDay() para contar solo días calendario enteros
+                'days_since_last_sale' => $product->virtual_last_sale_date
+                    ? (int) now()->startOfDay()->diffInDays($product->virtual_last_sale_date->copy()->startOfDay())
+                    : null,
+                'image' => $product->getFirstMediaUrl('product-general-images') ?: null,
+            ];
+        })->values();
     }
 
     private function getTopSellingProducts($branchId)
@@ -243,6 +386,7 @@ class DashboardController extends Controller
             ->join('transactions', 'transactions_items.transaction_id', '=', 'transactions.id')
             ->where('transactions.branch_id', $branchId)
             ->where('transactions.created_at', '>=', now()->startOfMonth())
+            ->whereNotIn('transactions.status', [TransactionStatus::CANCELLED])
             ->select('itemable_id', 'itemable_type', DB::raw('SUM(quantity) as total_sold'))
             ->groupBy('itemable_id', 'itemable_type')
             ->orderByDesc('total_sold')
@@ -279,8 +423,8 @@ class DashboardController extends Controller
     {
         return Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$start->startOfDay(), $end->endOfDay()])
-            ->where('status', TransactionStatus::COMPLETED)
-            ->sum(DB::raw('subtotal - total_discount'));
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+            ->sum(DB::raw('subtotal - total_discount + total_tax'));
     }
 
     private function getWeeklySalesTrend($branchId): array
@@ -290,18 +434,41 @@ class DashboardController extends Controller
 
         $trendData = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$startOfWeek, $endOfWeek])
-            ->where('status', TransactionStatus::COMPLETED)
-            ->selectRaw('DATE(created_at) as date')
-            ->selectRaw('SUM(subtotal - total_discount) as total')
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+            ->select(
+                DB::raw('DATE(created_at) as date'),
+                DB::raw('SUM(subtotal) as total_subtotal'),
+                DB::raw('SUM(total_discount) as total_discount'),
+                DB::raw('SUM(total_tax) as total_tax')
+            )
             ->groupBy('date')
-            ->pluck('total', 'date');
+            ->orderBy('date', 'asc')
+            ->get()
+            ->keyBy('date');
 
         $weekSales = [];
+
         for ($i = 0; $i < 7; $i++) {
             $date = $startOfWeek->copy()->addDays($i);
             $dateString = $date->format('Y-m-d');
-            $weekSales[] = ['day' => $date->translatedFormat('D'), 'total' => (float) ($trendData[$dateString] ?? 0)];
+
+            $dayData = $trendData->get($dateString);
+
+            $total = 0;
+            if ($dayData) {
+                $subtotal = $dayData->total_subtotal ?? 0;
+                $discount = $dayData->total_discount ?? 0;
+                $tax = $dayData->total_tax ?? 0;
+
+                $total = ($subtotal - $discount) + $tax;
+            }
+
+            $weekSales[] = [
+                'day' => $date->translatedFormat('D'),
+                'total' => (float) $total
+            ];
         }
+
         return $weekSales;
     }
 }

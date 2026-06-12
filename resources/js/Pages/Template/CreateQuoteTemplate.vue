@@ -16,7 +16,8 @@ const props = defineProps([
     'templateLimit',
     'templateUsage',
     'customFieldDefinitions',
-    'printTemplate'
+    'printTemplate',
+    'templateType',
 ]);
 
 const limitReached = computed(() => {
@@ -55,7 +56,8 @@ const lastFocusedColumn = ref('col1');
 
 const form = useForm({
     name: '',
-    type: 'cotizacion',
+    type: props.templateType || 'cotizacion',
+    context_type: props.templateType === 'recibo_servicio' ? 'service_order' : 'quote',
     branch_ids: [],
     content: {
         config: {
@@ -80,6 +82,10 @@ onMounted(() => {
             form.content.elements = props.printTemplate.content.elements || [];
             templateElements.value = props.printTemplate.content.elements || [];
         }
+    } else if (props.templateType) {
+        // Para nueva plantilla, usar el tipo de plantilla desde el prop
+        form.type = props.templateType;
+        form.context_type = props.templateType === 'recibo_servicio' ? 'service_order' : 'quote';
     }
     
     window.addEventListener('keydown', handleKeyDown);
@@ -304,7 +310,12 @@ const deleteImage = async (imgId) => {
     }
 };
 
-const { placeholderOptions } = useTemplateVariables(() => props.customFieldDefinitions, 'cotizacion');
+const templateModule = computed(() => {
+    if (props.templateType === 'recibo_servicio') return 'service_orders';
+    return 'cotizacion';
+});
+
+const { placeholderOptions } = useTemplateVariables(() => props.customFieldDefinitions, templateModule.value);
 
 const insertVariable = (variable) => {
     if (!selectedElement.value) return;
@@ -386,6 +397,7 @@ const availableElements = ref([
     { id: 'quote_table', name: 'Tabla de Conceptos', icon: 'pi pi-list', description: 'Lista de productos (Flujo)', type: 'flow' },
     { id: 'columns_2', name: '2 Columnas', icon: 'pi pi-pause', description: 'Info lado a lado (Flujo)', type: 'flow' },
     { id: 'separator', name: 'Separador', icon: 'pi pi-minus', description: 'Línea divisoria (Flujo)', type: 'flow' },
+    { id: 'spacer', name: 'Espaciado', icon: 'pi pi-arrow-down', description: 'Espacio vertical ajustable (Flujo)', type: 'flow' },
     { id: 'signature', name: 'Firma', icon: 'pi pi-pencil', description: 'Línea de firma (Flujo)', type: 'flow' },
     { id: 'image', name: 'Logo / Imagen', icon: 'pi pi-image', description: 'Libre posición', type: 'absolute' },
     { id: 'shape', name: 'Adorno / Figura', icon: 'pi pi-star', description: 'Libre posición', type: 'absolute' },
@@ -402,6 +414,7 @@ const addElementToEnd = (type) => {
     if (type === 'quote_table') newElement.data = { ...newElement.data, showImages: false, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'], showBreakdown: true };
     if (type === 'columns_2') newElement.data = { ...newElement.data, col1: '<p>Emisor...</p>', col2: '<p>Cliente...</p>', gap: '20px' };
     if (type === 'separator') newElement.data = { ...newElement.data, color: '#e5e7eb', height: 2, style: 'solid', margin: '20px' };
+    if (type === 'spacer') newElement.data = { ...newElement.data, height: 20 };
     if (type === 'signature') newElement.data = { ...newElement.data, label: 'Firma', align: 'center', lineWidth: '200px' };
     if (type === 'image') newElement.data = { positionType: 'absolute', url: '', width: 150, x: 50, y: 50, isUploading: false };
     if (type === 'shape') newElement.data = { positionType: 'absolute', shapeType: 'rectangle', color: '#3B82F6', width: 100, height: 100, x: 100, y: 100, opacity: 100, rotation: 0 };
@@ -435,6 +448,7 @@ const addElementRelative = (type) => {
     if (type === 'quote_table') temp.data = { ...temp.data, showImages: false, headerColor: '#f3f4f6', headerTextColor: '#111827', columns: ['sku', 'descripcion', 'cantidad', 'precio', 'total'], showBreakdown: true };
     if (type === 'columns_2') temp.data = { ...temp.data, col1: '<p>Columna 1</p>', col2: '<p>Columna 2</p>', gap: '20px' };
     if (type === 'separator') temp.data = { ...temp.data, color: '#e5e7eb', height: 2, style: 'solid', margin: '20px' };
+    if (type === 'spacer') temp.data = { ...temp.data, height: 20 };
     if (type === 'signature') temp.data = { ...temp.data, label: 'Firma', align: 'center', lineWidth: '200px' };
     const { id: targetId, position } = currentInsertionTarget.value;
     const targetIndex = templateElements.value.findIndex(el => el.id === targetId);
@@ -462,7 +476,7 @@ const alignOptions = [
 </script>
 
 <template>
-    <AppLayout :title="props.printTemplate ? 'Editar cotización' : 'Crear cotización'">
+    <AppLayout :title="props.printTemplate ? 'Editar plantilla' : (props.templateType === 'recibo_servicio' ? 'Crear recibo de servicio' : 'Crear cotización')">
         
         <div v-if="limitReached" class="h-[calc(100vh-7rem)] flex items-center justify-center p-4">
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 max-w-2xl mx-auto text-center">
@@ -480,7 +494,7 @@ const alignOptions = [
 
             <div class="lg:hidden w-full h-14 bg-white dark:bg-gray-800 border-b dark:border-gray-700 flex items-center justify-between px-4 z-20 shrink-0 shadow-sm">
                 <Button icon="pi pi-bars" text rounded severity="secondary" @click="showLeftDrawer = !showLeftDrawer" v-tooltip.bottom="'Configuración y Elementos'" />
-                <span class="font-bold text-sm text-gray-700 dark:text-gray-200 truncate">{{ form.name || 'Nueva Cotización' }}</span>
+                <span class="font-bold text-sm text-gray-700 dark:text-gray-200 truncate">{{ form.name || (props.templateType === 'recibo_servicio' ? 'Nuevo recibo de servicio' : 'Nueva cotización') }}</span>
                 <div class="relative">
                     <Button icon="pi pi-pencil" text rounded 
                             :severity="selectedElement ? 'primary' : 'secondary'" 
@@ -500,7 +514,7 @@ const alignOptions = [
                 </div>
 
                 <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
-                    <h3 class="font-bold mb-4 text-lg">Configuración cotización</h3>
+                    <h3 class="font-bold mb-4 text-lg">{{ props.templateType === 'recibo_servicio' ? 'Configuración recibo de servicio' : 'Configuración cotización' }}</h3>
                     <div class="space-y-4 mb-6">
                         <div>
                             <InputLabel value="Nombre *" />
@@ -613,6 +627,10 @@ const alignOptions = [
                                 </div>
 
                                 <div v-if="element.type === 'separator'" :style="{ borderTop: `${element.data.height}px ${element.data.style} ${element.data.color}`, margin: `${element.data.margin} 0` }"></div>
+
+                                <div v-if="element.type === 'spacer'" :style="{ height: element.data.height + 'px' }" class="bg-blue-50/30 border border-dashed border-blue-200 rounded flex items-center justify-center">
+                                    <span class="text-[9px] text-blue-400 uppercase tracking-widest font-bold">{{ element.data.height }}px</span>
+                                </div>
                                 
                                 <div v-if="element.type === 'signature'" 
                                     class="flex flex-col mt-8"
@@ -759,6 +777,12 @@ const alignOptions = [
                         <InputLabel value="Color" />
                         <div class="flex items-center gap-2 mt-1"><ColorPicker v-model="currentSeparatorColor" format="hex" /><InputText v-model="currentSeparatorColor" class="w-24 h-8 text-sm" /></div>
                         <InputLabel value="Grosor" class="mt-4" /><InputNumber v-model="selectedElement.data.height" class="w-full" />
+                    </div>
+
+                    <div v-if="selectedElement.type === 'spacer'">
+                        <InputLabel value="Altura (px)" />
+                        <InputNumber v-model="selectedElement.data.height" class="w-full" :min="1" :max="500" />
+                        <small class="text-[9px] text-gray-400 mt-1 block">Espacio vertical entre elementos.</small>
                     </div>
 
                     <div v-if="selectedElement.type === 'signature'">

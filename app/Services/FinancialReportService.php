@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\ExpenseStatus;
+use App\Enums\TransactionStatus;
 use App\Models\BankAccount;
 use App\Models\Branch;
 use App\Models\Expense;
@@ -28,14 +29,14 @@ class FinancialReportService
     public function generateReportData(): array
     {
         $periods = $this->getComparisonPeriods();
-        
+
         return [
             'kpis' => $this->getKpis($periods),
             'chartData' => $this->getChartData(),
             'paymentMethods' => $this->getPaymentMethodsDistribution(),
             'salesByChannel' => $this->getSalesByChannel(),
             'expensesByCategory' => $this->getExpensesByCategory(),
-            'bankAccounts' => $this->getBankAccounts(), // <-- DATO AÑADIDO
+            'bankAccounts' => $this->getBankAccounts(),
             'filters' => ['startDate' => $this->startDate->toDateString(), 'endDate' => $this->endDate->toDateString()]
         ];
     }
@@ -46,7 +47,7 @@ class FinancialReportService
         $currentSales = $this->queryTotal(Transaction::class, 'created_at', $periods['current']);
         $currentPayments = $this->queryTotal(Payment::class, 'payment_date', $periods['current']);
         $currentExpenses = $this->queryTotal(Expense::class, 'expense_date', $periods['current']);
-        
+
         // Totales del periodo anterior
         $previousSales = $this->queryTotal(Transaction::class, 'created_at', $periods['previous']);
         $previousPayments = $this->queryTotal(Payment::class, 'payment_date', $periods['previous']);
@@ -81,10 +82,10 @@ class FinancialReportService
             foreach ($period as $date) {
                 $startOfWeek = $date->copy()->startOfWeek(Carbon::MONDAY);
                 $endOfWeek = $date->copy()->endOfWeek(Carbon::SUNDAY);
-                
+
                 $labelStart = $startOfWeek->isBefore($this->startDate) ? $this->startDate : $startOfWeek;
                 $labelEnd = $endOfWeek->isAfter($this->endDate) ? $this->endDate : $endOfWeek;
-                
+
                 $labels[] = "Sem " . $labelStart->format('W') . " (" . $labelStart->format('d') . ' - ' . $labelEnd->format('d M') . ")";
             }
             $sqlDateFormat = '%v'; // Semana del año (Lunes como primer día)
@@ -96,23 +97,25 @@ class FinancialReportService
         $sales = $this->queryChartPoints(Transaction::class, 'created_at', $sqlDateFormat, $labels);
         $payments = $this->queryChartPoints(Payment::class, 'payment_date', $sqlDateFormat, $labels);
         $expenses = $this->queryChartPoints(Expense::class, 'created_at', $sqlDateFormat, $labels);
-        
+
         return ['labels' => $labels, 'sales' => $sales, 'payments' => $payments, 'expenses' => $expenses];
     }
 
     private function getPaymentMethodsDistribution()
     {
+        // CORRECCIÓN: Filtramos también los pagos de transacciones cambiadas/canceladas
         $payments = Payment::where('status', 'completado')
-            ->whereHas('transaction', fn ($q) => $q->where('branch_id', $this->branchId))
+            ->whereHas('transaction', fn($q) => $q->where('branch_id', $this->branchId)
+                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED]))
             ->whereBetween('payment_date', [$this->startDate, $this->endDate])
             ->groupBy('payment_method')
             ->select('payment_method', DB::raw('SUM(amount) as total'))
             ->get();
-        
+
         $totalPayments = $payments->sum('total');
 
         if ($totalPayments == 0) return [];
-        
+
         return $payments->map(function ($payment) use ($totalPayments) {
             return [
                 'method' => $payment->payment_method->value,
@@ -124,8 +127,10 @@ class FinancialReportService
 
     private function getSalesByChannel()
     {
+        // CORRECCIÓN: Filtrar ventas cambiadas/canceladas
         $results = Transaction::where('branch_id', $this->branchId)
             ->whereBetween('created_at', [$this->startDate, $this->endDate])
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
             ->groupBy('channel')
             ->select(
                 'channel',
@@ -163,39 +168,38 @@ class FinancialReportService
             });
     }
 
-    // --- INICIO DE CAMBIO: MÉTODO PARA OBTENER CUENTAS BANCARIAS ---
     private function getBankAccounts()
     {
-        // Las cuentas bancarias pertenecen a la suscripción, no a la sucursal.
-        // Obtenemos el ID de la suscripción a partir del ID de la sucursal.
         $subscriptionId = Branch::find($this->branchId)->subscription_id;
-
-        // Devolvemos todas las cuentas bancarias de esa suscripción.
         return BankAccount::where('subscription_id', $subscriptionId)->get();
     }
-    // --- FIN DE CAMBIO ---
 
     private function getComparisonPeriods(): array
     {
-        // --- CORRECCIÓN: Lógica mejorada para calcular el periodo anterior ---
-        $daysInPeriod = $this->startDate->diffInDays($this->endDate);
-        $previousEnd = $this->startDate->copy()->subDay()->endOfDay();
-        $previousStart = $this->startDate->copy()->subDays($daysInPeriod + 1)->startOfDay();
+        $diffInDays = (int) round($this->startDate->floatDiffInDays($this->endDate->copy()->addSeconds(1)));
+        if ($diffInDays < 1) {
+            $diffInDays = 1;
+        }
+
+        $previousStartDate = $this->startDate->copy()->subDays($diffInDays);
+        $previousEndDate = $this->startDate->copy()->subSeconds(1);
 
         return [
             'current' => ['start' => $this->startDate, 'end' => $this->endDate],
-            'previous' => ['start' => $previousStart, 'end' => $previousEnd],
+            'previous' => ['start' => $previousStartDate, 'end' => $previousEndDate],
         ];
     }
-    
+
     private function queryTotal(string $model, string $dateColumn, array $period): float
     {
         $query = $model::query();
-        
+
         $sumField = 'amount';
         if ($model === Transaction::class) {
+            // CORRECCIÓN: Filtro principal de totales (KPIs)
             $result = $query->where('branch_id', $this->branchId)
                 ->whereBetween($dateColumn, [$period['start'], $period['end']])
+                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
                 ->select(
                     DB::raw('SUM(subtotal) as total_subtotal'),
                     DB::raw('SUM(total_discount) as total_total_discount'),
@@ -205,12 +209,14 @@ class FinancialReportService
         }
 
         if ($model === Payment::class) {
+            // CORRECCIÓN: Asegurar que los pagos de ventas cambiadas tampoco sumen (opcional pero recomendado)
             $query->where('status', 'completado')
-                  ->whereHas('transaction', fn ($q) => $q->where('branch_id', $this->branchId));
+                ->whereHas('transaction', fn($q) => $q->where('branch_id', $this->branchId)
+                    ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED]));
         } elseif ($model === Expense::class) {
             $query->where('branch_id', $this->branchId)->where('status', ExpenseStatus::PAID);
         }
-        
+
         return $query->whereBetween($dateColumn, [$period['start'], $period['end']])->sum($sumField);
     }
 
@@ -225,15 +231,16 @@ class FinancialReportService
             'percentage_change' => round($percentageChange, 2),
         ];
     }
-    
+
     private function queryChartPoints(string $model, string $dateColumn, string $sqlDateFormat, $labels)
     {
         $query = $model::query();
 
         if ($model === Transaction::class) {
-            // --- CORRECCIÓN: Consulta robusta para Ventas Totales ---
+            // CORRECCIÓN: Filtro para la gráfica de ventas
             $results = $query->where('branch_id', $this->branchId)
                 ->whereBetween($dateColumn, [$this->startDate, $this->endDate])
+                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
                 ->select(
                     DB::raw("DATE_FORMAT({$dateColumn}, '{$sqlDateFormat}') as point"),
                     DB::raw('SUM(subtotal) as total_subtotal'),
@@ -243,7 +250,7 @@ class FinancialReportService
                 ->groupBy('point')
                 ->get()
                 ->keyBy('point');
-            
+
             $data = [];
             foreach ($labels as $index => $label) {
                 $key = $this->getSqlKeyForLabel($sqlDateFormat, $index, $label);
@@ -255,24 +262,26 @@ class FinancialReportService
                 }
             }
             return $data;
-
         } elseif ($model === Payment::class) {
-            $query->where('status', 'completado')->whereHas('transaction', fn ($q) => $q->where('branch_id', $this->branchId));
+            // CORRECCIÓN: Filtro para la gráfica de pagos
+            $query->where('status', 'completado')
+                ->whereHas('transaction', fn($q) => $q->where('branch_id', $this->branchId)
+                    ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED]));
         } elseif ($model === Expense::class) {
             $query->where('branch_id', $this->branchId)->where('status', ExpenseStatus::PAID);
         }
-        
+
         $results = $query->whereBetween($dateColumn, [$this->startDate, $this->endDate])
             ->select(DB::raw("DATE_FORMAT({$dateColumn}, '{$sqlDateFormat}') as point"), DB::raw('SUM(amount) as total'))
             ->groupBy('point')
             ->pluck('total', 'point');
-        
+
         $data = [];
         foreach ($labels as $index => $label) {
             $key = $this->getSqlKeyForLabel($sqlDateFormat, $index, $label);
             $data[] = floatval($results[$key] ?? 0);
         }
-        
+
         return $data;
     }
 

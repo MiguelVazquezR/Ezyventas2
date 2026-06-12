@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\CashRegisterSessionStatus;
 use App\Enums\CustomerBalanceMovementType;
+use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PromotionEffectType;
 use App\Enums\PromotionType;
@@ -16,8 +17,9 @@ use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Promotion;
+use App\Models\ServiceOrder;
+use App\Models\Order;
 use App\Models\Transaction;
-use App\Models\ServiceOrder; // <-- IMPORTADO
 use App\Services\TransactionPaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -35,12 +37,11 @@ class PointOfSaleController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('can:pos.access', only: ['index', 'searchCustomers', 'checkEntity']),
+            new Middleware('can:pos.access', only: ['index', 'searchCustomers', 'checkEntity', 'getOnlineOrders', 'updateOnlineOrderStatus']),
             new Middleware('can:pos.create_sale', only: ['checkout']),
         ];
     }
 
-    // Inyectar el nuevo servicio en el constructor
     public function __construct(protected TransactionPaymentService $transactionPaymentService) {}
 
     public function index(Request $request): Response
@@ -69,8 +70,8 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ])
             ->first();
 
-        $joinableSessions = null;
-        $availableCashRegisters = null;
+        $joinableSessions = [];
+        $availableCashRegisters = [];
         $userBankAccounts = null;
 
         if (!$activeSession) {
@@ -79,11 +80,11 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 ->with('cashRegister:id,name', 'opener:id,name')
                 ->get();
 
-            if ($joinableSessions->isEmpty()) {
-                $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
-                    ->where('is_active', true)->where('in_use', false)
-                    ->select('id', 'name')->get();
-            }
+            $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
+                ->where('is_active', true)
+                ->where('in_use', false)
+                ->select('id', 'name')
+                ->get();
 
             if ($isOwner) {
                 $userBankAccounts = Auth::user()->branch->bankAccounts()->get();
@@ -110,7 +111,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         $categoryId = $request->input('category');
         $availableTemplates = $user->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
-            ->whereIn('context_type', [TemplateContextType::TRANSACTION, TemplateContextType::GENERAL])
+            ->whereIn('context_type', [TemplateContextType::POS, TemplateContextType::GENERAL])
             ->get();
 
         $props = [
@@ -125,6 +126,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'availableCashRegisters' => $availableCashRegisters,
             'availableTemplates' => $availableTemplates,
             'userBankAccounts' => $userBankAccounts,
+            'hasOnlineStore' => in_array('Tienda en línea', $user->branch->subscription->getAvailableModuleNames()),
         ];
 
         $agent = new Agent();
@@ -145,7 +147,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
         $customers = Customer::where('branch_id', $branchId)
             ->where(function ($q) use ($query) {
                 $q->where('name', 'like', "%{$query}%")
-                  ->orWhere('phone', 'like', "%{$query}%");
+                    ->orWhere('phone', 'like', "%{$query}%");
             })
             ->limit(20)
             ->select('id', 'name', 'phone', 'balance', 'credit_limit')
@@ -163,9 +165,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
         return response()->json($customers);
     }
 
-    /**
-     * Verifica si el texto escaneado es una Venta, Orden de Servicio o un Cliente.
-     */
     public function checkEntity(Request $request)
     {
         $query = trim($request->input('query'));
@@ -173,7 +172,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
         $branchId = Auth::user()->branch_id;
 
-        // 1. Verificar si es un FOLIO DE VENTA (Ej: V-001)
         $transaction = Transaction::where('branch_id', $branchId)
             ->where('folio', $query)
             ->first(['id', 'folio']);
@@ -188,8 +186,6 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ]);
         }
 
-        // 2. NUEVO: Verificar si es una ORDEN DE SERVICIO (Ej: OS-V-001)
-        // Se asume que el folio es único por sucursal o globalmente según tu lógica de modelo
         $serviceOrder = ServiceOrder::where('branch_id', $branchId)
             ->where('folio', $query)
             ->first(['id', 'folio']);
@@ -204,11 +200,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ]);
         }
 
-        // 3. Verificar si es un CLIENTE (Teléfono o Nombre)
         $customer = Customer::where('branch_id', $branchId)
-            ->where(function($q) use ($query) {
+            ->where(function ($q) use ($query) {
                 $q->where('phone', $query)
-                  ->orWhere('name', 'like', $query); // Nombre exacto o parcial
+                    ->orWhere('name', 'like', $query);
             })
             ->first(['id', 'name', 'phone']);
 
@@ -238,6 +233,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'cartItems.*.discount' => 'required|numeric',
             'cartItems.*.discount_reason' => 'nullable|string|max:255',
             'customerId' => 'nullable|exists:customers,id',
+            'guest_name' => 'nullable|string|max:255', // NUEVO: Para modo comandas/comida
             'subtotal' => 'required|numeric',
             'total_discount' => 'nullable|numeric',
             'total' => 'required|numeric',
@@ -247,6 +243,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'payments.*.bank_account_id' => 'nullable|exists:bank_accounts,id',
             'payments.*.notes' => 'nullable|string|max:255',
             'use_balance' => 'required|boolean',
+            'layaway_expiration_date' => 'nullable|date',
         ]);
 
         $user = Auth::user();
@@ -263,7 +260,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
             return redirect()->route('pos.index')
                 ->with('success', 'Venta registrada con éxito. Folio: ' . $transaction->folio)
-                ->with('print_data', ['type' => 'transaction', 'id' => $transaction->id]);
+                ->with('print_data', ['type' => 'pos', 'id' => $transaction->id]);
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar la venta: ' . $e->getMessage());
         }
@@ -282,6 +279,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             'cartItems.*.discount' => 'required|numeric',
             'cartItems.*.discount_reason' => 'nullable|string|max:255',
             'customerId' => 'nullable|exists:customers,id',
+            'guest_name' => 'nullable|string|max:255', // NUEVO: Por si acaso se usa en apartados sin cliente
             'subtotal' => 'required|numeric',
             'total_discount' => 'nullable|numeric',
             'total' => 'required|numeric',
@@ -295,7 +293,9 @@ class PointOfSaleController extends Controller implements HasMiddleware
         ]);
 
         $user = Auth::user();
-        $customer = Customer::find($validated['customerId']);
+        // Nota: Para un apartado lo ideal es tener un customer registrado, 
+        // pero lo dejamos igual por compatibilidad de código.
+        $customer = $validated['customerId'] ? Customer::find($validated['customerId']) : null;
 
         try {
             $transaction = $this->transactionPaymentService->handleNewSale(
@@ -308,7 +308,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
             return redirect()->route('pos.index')
                 ->with('success', 'Apartado registrado con éxito. Folio: ' . $transaction->folio)
-                ->with('print_data', ['type' => 'transaction', 'id' => $transaction->id]);
+                ->with('print_data', ['type' => 'pos', 'id' => $transaction->id]);
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar el apartado: ' . $e->getMessage());
         }
@@ -317,7 +317,11 @@ class PointOfSaleController extends Controller implements HasMiddleware
     private function getProductsData($search = null, $categoryId = null)
     {
         $branchId = Auth::user()->branch_id;
-        $query = Product::where('branch_id', $branchId);
+
+        // 1. Filtrar los productos asegurándonos que pertenecen a la sucursal en el Pivot
+        $query = Product::whereHas('branches', function ($q) use ($branchId) {
+            $q->where('branches.id', $branchId);
+        })->where('show_in_pos', true); // Oculta los insumos del POS
 
         if ($search) {
             $query->where(function ($q) use ($search) {
@@ -328,15 +332,42 @@ class PointOfSaleController extends Controller implements HasMiddleware
             $query->where('category_id', $categoryId);
         }
 
-        $paginatedProducts = $query->with(['media', 'category:id,name', 'productAttributes'])
+        // 2. Traemos las relaciones, en particular los pivots de inventario
+        $paginatedProducts = $query->with([
+            'media',
+            'category:id,name',
+            'branches', // Necesario para pivot local
+            'productAttributes.branches', // Necesario para pivot de variantes local
+            'components.componentable'
+        ])
             ->orderBy('name', 'asc')
             ->cursorPaginate(20)
             ->withQueryString();
 
-        $paginatedProducts->through(function ($product) {
+        $paginatedProducts->through(function ($product) use ($branchId) {
             $promotionData = $this->getPromotionData($product);
             $variantImages = $product->getMedia('product-variant-images');
             $generalImages = $product->getMedia('product-general-images')->map->getUrl();
+
+            // Determinar tipo de producto
+            $isVariantProduct = $product->productAttributes && $product->productAttributes->count() > 0;
+
+            if ($isVariantProduct) {
+                // Stock total calculado de todas las variantes locales
+                $currentStock = $product->productAttributes->sum(function ($variant) use ($branchId) {
+                    return $variant->branches->where('id', $branchId)->first()?->pivot->current_stock ?? 0;
+                });
+                $reservedStock = $product->productAttributes->sum(function ($variant) use ($branchId) {
+                    return $variant->branches->where('id', $branchId)->first()?->pivot->reserved_stock ?? 0;
+                });
+            } else {
+                // Stock del producto simple
+                $branchPivot = $product->branches->where('id', $branchId)->first()?->pivot;
+                $currentStock = $branchPivot ? $branchPivot->current_stock : 0;
+                $reservedStock = $branchPivot ? $branchPivot->reserved_stock : 0;
+            }
+
+            $availableStock = max(0, $currentStock - $reservedStock);
 
             return [
                 'id' => $product->id,
@@ -345,16 +376,20 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'original_price' => $promotionData['original_price'],
                 'selling_price' => (float) $product->selling_price,
                 'price_tiers' => $product->price_tiers ?? [],
-                'stock' => $product->available_stock,
-                'reserved_stock' => (int) $product->reserved_stock,
+                'stock' => (float) $availableStock,
+                'reserved_stock' => (float) $reservedStock,
                 'category' => $product->category->name ?? 'Sin categoría',
                 'image' => $generalImages->first() ?: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' . urlencode($product->name),
                 'general_images' => $generalImages,
                 'description' => $product->description,
                 'sku' => $product->sku,
-                'variants' => $this->mapVariants($product->productAttributes),
-                'variant_combinations' => $this->mapVariantCombinations($product, $variantImages),
+                'variants' => $this->mapVariants($product->productAttributes, $branchId),
+                'variant_combinations' => $this->mapVariantCombinations($product, $variantImages, $branchId),
                 'promotions' => $promotionData['promotions'],
+                'components' => $product->components,
+                // <--- NUEVO: Incorporamos is_bulk y measure_unit para que las lea el CartItem.vue --->
+                'is_bulk' => (bool) $product->is_bulk,
+                'measure_unit' => $product->measure_unit,
             ];
         });
 
@@ -439,39 +474,57 @@ class PointOfSaleController extends Controller implements HasMiddleware
             ->get();
     }
 
-    private function mapVariants($productAttributes)
+    private function mapVariants($productAttributes, $branchId)
     {
         if ($productAttributes->isEmpty()) return new \stdClass();
         $variantsGrouped = [];
+
         foreach ($productAttributes as $attributeCombination) {
+            $vPivot = $attributeCombination->branches->where('id', $branchId)->first()?->pivot;
+            // Sumamos a las visualizaciones solo el stock disponible de la variante
+            $stock = $vPivot ? max(0, $vPivot->current_stock - $vPivot->reserved_stock) : 0;
+
             foreach ($attributeCombination->attributes as $key => $value) {
                 if (!isset($variantsGrouped[$key])) $variantsGrouped[$key] = [];
                 if (!isset($variantsGrouped[$key][$value])) $variantsGrouped[$key][$value] = ['value' => $value, 'stock' => 0];
-                $variantsGrouped[$key][$value]['stock'] += $attributeCombination->current_stock;
+                $variantsGrouped[$key][$value]['stock'] += $stock;
             }
         }
         return array_map('array_values', $variantsGrouped);
     }
 
-    private function mapVariantCombinations(Product $product, $variantImages)
+    private function mapVariantCombinations(Product $product, $variantImages, $branchId)
     {
-        return $product->productAttributes->map(function ($attr) use ($variantImages) {
+        return $product->productAttributes->map(function ($attr) use ($variantImages, $branchId) {
             $imageUrl = null;
             if ($variantImages->isNotEmpty()) {
-                foreach ($attr->attributes as $optionValue) {
-                    $foundImage = $variantImages->first(fn($media) => $media->getCustomProperty('variant_option') === $optionValue);
+                foreach ($attr->attributes as $key => $optionValue) {
+                    // Match inteligente de imagen
+                    $formattedKey = "{$key}_{$optionValue}";
+                    $foundImage = $variantImages->first(
+                        fn($media) =>
+                        $media->getCustomProperty('variant_key') === $formattedKey ||
+                            $media->getCustomProperty('variant_option') === $optionValue
+                    );
                     if ($foundImage) {
                         $imageUrl = $foundImage->getUrl();
                         break;
                     }
                 }
             }
+
+            // Sacamos inventario de las variantes
+            $vPivot = $attr->branches->where('id', $branchId)->first()?->pivot;
+            $stock = $vPivot ? $vPivot->current_stock : 0;
+            $reserved = $vPivot ? $vPivot->reserved_stock : 0;
+            $available = max(0, $stock - $reserved);
+
             return [
                 'id' => $attr->id,
                 'attributes' => $attr->attributes,
                 'price_modifier' => (float) $attr->selling_price_modifier,
-                'stock' => $attr->available_stock,
-                'reserved_stock' => (int) $attr->reserved_stock,
+                'stock' => (float) $available,
+                'reserved_stock' => (float) $reserved,
                 'sku_suffix' => $attr->sku_suffix,
                 'image_url' => $imageUrl,
             ];
@@ -482,11 +535,18 @@ class PointOfSaleController extends Controller implements HasMiddleware
     {
         $branchId = Auth::user()->branch_id;
         $subscriptionId = Auth::user()->branch->subscription_id;
+
         $categories = Category::where('subscription_id', $subscriptionId)
             ->where('type', 'product')
-            ->withCount(['products' => fn($q) => $q->where('branch_id', $branchId)])
+            ->withCount(['products' => fn($q) => $q->whereHas('branches', function ($b) use ($branchId) {
+                $b->where('branches.id', $branchId);
+            })])
             ->get();
-        $totalProducts = Product::where('branch_id', $branchId)->count();
+
+        $totalProducts = Product::whereHas('branches', function ($q) use ($branchId) {
+            $q->where('branches.id', $branchId);
+        })->count();
+
         $formattedCategories = $categories->map(fn($cat) => ['id' => $cat->id, 'name' => $cat->name, 'products_count' => $cat->products_count]);
         return collect([['id' => null, 'name' => 'Todos', 'products_count' => $totalProducts]])->merge($formattedCategories);
     }
@@ -512,5 +572,142 @@ class PointOfSaleController extends Controller implements HasMiddleware
     private function getDefaultCustomerData()
     {
         return ['id' => null, 'name' => 'Público en General', 'phone' => '', 'balance' => 0.0, 'credit_limit' => 0.0, 'available_credit' => 0.0];
+    }
+
+    /**
+     * Fetch online store orders for the POS modal (JSON).
+     */
+    public function getOnlineOrders(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+
+        $statusFilter = $request->input('status');
+
+        $query = Order::with(['items', 'storeConfig:id,store_name'])
+            ->where('subscription_id', $subscriptionId)
+            ->when($statusFilter, fn($q) => $q->where('status', $statusFilter))
+            ->latest();
+
+        $orders = $query->paginate(15)->withQueryString();
+
+        // Count by status for tabs (raw query returns stdClass, not models)
+        $counts = Order::where('subscription_id', $subscriptionId)
+            ->selectRaw('status, COUNT(*) as count')
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+
+        return response()->json([
+            'orders' => $orders->through(fn(Order $order) => [
+                'id' => $order->id,
+                'order_number' => $order->formatted_order_number,
+                'customer_name' => $order->customer_name,
+                'customer_phone' => $order->customer_phone,
+                'delivery_type' => $order->delivery_type,
+                'payment_method' => $order->payment_method,
+                'status' => [
+                    'value' => $order->status->value,
+                    'label' => $order->status->label(),
+                    'color' => $order->status->color(),
+                ],
+                'all_statuses' => collect(OrderStatus::cases())
+                    ->reject(fn(OrderStatus $s) => $s === $order->status)
+                    ->map(fn(OrderStatus $s) => [
+                        'value' => $s->value,
+                        'label' => $s->label(),
+                    ])->values(),
+                'total' => (float) $order->total,
+                'items_count' => $order->items->count(),
+                'items' => $order->items->map(fn($item) => [
+                    'product_name' => $item->product_name,
+                    'quantity' => (float) $item->quantity,
+                    'unit_price' => (float) $item->unit_price,
+                    'subtotal' => (float) $item->subtotal,
+                ]),
+                'order_detail_url' => route('online-store.orders.show', $order->id),
+                'created_at' => $order->created_at->toISOString(),
+                'whats_app_link' => $order->whats_app_link,
+            ]),
+            'counts' => $counts,
+            'statuses' => collect(OrderStatus::cases())->map(fn(OrderStatus $s) => [
+                'value' => $s->value,
+                'label' => $s->label(),
+                'color' => $s->color(),
+            ]),
+        ]);
+    }
+
+    /**
+     * Update an online store order status from the POS modal (JSON).
+     */
+    public function updateOnlineOrderStatus(Request $request, Order $order): \Illuminate\Http\JsonResponse
+    {
+        $user = Auth::user();
+
+        if ($order->subscription_id !== $user->branch->subscription_id) {
+            return response()->json(['message' => 'No autorizado.'], 403);
+        }
+
+        $validated = $request->validate([
+            'status' => ['required', Rule::enum(OrderStatus::class)],
+            'note' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $newStatus = OrderStatus::from($validated['status']);
+        $oldStatus = $order->status;
+
+        $order->update(['status' => $newStatus]);
+
+        // Restore stock when cancelling an order
+        if ($newStatus === OrderStatus::Cancelled) {
+            $this->restoreOrderStock($order);
+        }
+
+        $order->logStatusChange($oldStatus, $newStatus, $validated['note'] ?? null, $user->id);
+
+        return response()->json([
+            'message' => "Pedido actualizado a '{$newStatus->label()}'.",
+            'status' => [
+                'value' => $newStatus->value,
+                'label' => $newStatus->label(),
+                'color' => $newStatus->color(),
+            ],
+            'all_statuses' => collect(OrderStatus::cases())
+                ->reject(fn(OrderStatus $s) => $s === $newStatus)
+                ->map(fn(OrderStatus $s) => [
+                    'value' => $s->value,
+                    'label' => $s->label(),
+                ])->values(),
+        ]);
+    }
+
+    /**
+     * Restore stock for all items in a cancelled order.
+     */
+    private function restoreOrderStock(Order $order): void
+    {
+        $order->loadMissing('items');
+
+        $branch = \App\Models\Branch::where('subscription_id', $order->subscription_id)->first();
+        if (!$branch) return;
+
+        foreach ($order->items as $orderItem) {
+            $product = \App\Models\Product::find($orderItem->product_id);
+            if ($product) {
+                $product->restock(
+                    $branch->id,
+                    $orderItem->quantity,
+                    null,
+                    "Reposición por cancelación de pedido en línea #{$order->formatted_order_number}"
+                );
+            }
+        }
+
+        // Cancel the linked transaction if exists
+        $transaction = $order->saleTransaction;
+        if ($transaction && !in_array($transaction->status->value, ['cancelado', 'reembolsado'])) {
+            $transaction->update(['status' => \App\Enums\TransactionStatus::CANCELLED]);
+        }
     }
 }

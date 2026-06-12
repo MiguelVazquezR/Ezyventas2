@@ -2,69 +2,72 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Product\CreateProduct;
+use App\Actions\Product\UpdateProduct;
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
-use App\Enums\TransactionStatus;
 use App\Http\Requests\StoreProductRequest;
 use App\Http\Requests\UpdateProductRequest;
 use App\Models\AttributeDefinition;
 use App\Models\Brand;
+use App\Models\Branch;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductAttribute;
-use App\Models\Promotion;
 use App\Models\Provider;
-use App\Models\TransactionItem;
-use App\Traits\OptimizeMediaLocal;
+use App\Services\ActivityLogService;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
-use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 class ProductController extends Controller implements HasMiddleware
 {
-    use OptimizeMediaLocal;
-
     public static function middleware(): array
     {
         return [
             new Middleware('can:products.access', only: ['index']),
             new Middleware('can:products.create', only: ['create', 'store']),
             new Middleware('can:products.see_details', only: ['show']),
-            new Middleware('can:products.edit', only: ['edit', 'update']),
+            new Middleware('can:products.edit', only: ['edit', 'update', 'updatePriceFromPOS']),
             new Middleware('can:products.delete', only: ['destroy', 'batchDestroy']),
         ];
-    }
-
-    private function getProductLimitData()
-    {
-        $subscription = Auth::user()->branch->subscription;
-        $currentVersion = $subscription->versions()->latest('start_date')->first();
-        $limit = -1;
-        if ($currentVersion) {
-            $limitItem = $currentVersion->items()->where('item_key', 'limit_products')->first();
-            if ($limitItem) {
-                $limit = $limitItem->quantity;
-            }
-        }
-        // Count products specifically for the current subscription
-        $usage = Product::whereHas('branch.subscription', function ($q) use ($subscription) {
-            $q->where('id', $subscription->id);
-        })->count();
-        return ['limit' => $limit, 'usage' => $usage];
     }
 
     public function index(Request $request): Response
     {
         $user = Auth::user();
-        $query = Product::query()->where('branch_id', $user->branch_id)->with('media');
+        $branchId = $user->branch_id;
+        $subscription = $user->branch->subscription;
+
+        $productsCount = $subscription->products_count;
+        $currentVersion = $subscription->currentVersion();
+        $limitItem = $currentVersion ? $currentVersion->items()->where('item_key', 'limit_products')->first() : null;
+        $limitProducts = $limitItem ? $limitItem->quantity : -1;
+
+        $productLimitReached = $subscription->hasReachedProductLimit();
+
+        $query = Product::query()
+            ->with([
+                'category',
+                'brand',
+                'media',
+                'branches',
+                'productAttributes.branches',
+                'components.componentable' => function (MorphTo $morphTo) {
+                    $morphTo->morphWith([
+                        ProductAttribute::class => ['product']
+                    ]);
+                }
+            ])
+            ->whereHas('branches', function ($q) use ($branchId) {
+                $q->where('branches.id', $branchId);
+            });
 
         if ($request->has('search')) {
             $searchTerm = $request->input('search');
@@ -76,361 +79,180 @@ class ProductController extends Controller implements HasMiddleware
 
         $sortField = $request->input('sortField', 'created_at');
         $sortOrder = $request->input('sortOrder', 'desc');
-        $query->orderBy($sortField, $sortOrder);
+
+        if ($sortField === 'category.name') {
+            $query->join('categories', 'products.category_id', '=', 'categories.id')
+                ->orderBy('categories.name', $sortOrder)
+                ->select('products.*');
+        } elseif (in_array($sortField, ['current_stock', 'min_stock', 'max_stock', 'location'])) {
+            $query->join('branch_product', function ($join) use ($branchId) {
+                $join->on('products.id', '=', 'branch_product.product_id')
+                    ->where('branch_product.branch_id', '=', $branchId);
+            })
+                ->orderBy('branch_product.' . $sortField, $sortOrder)
+                ->select('products.*');
+        } else {
+            $query->orderBy('products.' . $sortField, $sortOrder);
+            $query->select('products.*');
+        }
 
         $products = $query->paginate($request->input('rows', 20))->withQueryString();
+
+        // REFACTOR: Uso del modelo para inyectar stocks locales a los productos dinámicamente
+        $products->getCollection()->transform(function ($product) use ($branchId) {
+            return $product->loadStockForBranch($branchId);
+        });
 
         $availableTemplates = $user->branch->printTemplates()
             ->where('type', TemplateType::LABEL)
             ->whereIn('context_type', [TemplateContextType::PRODUCT, TemplateContextType::GENERAL])
             ->get();
 
-        $limitData = $this->getProductLimitData();
-
         $stockByCategory = Category::query()
             ->where('type', 'product')
-            ->where('subscription_id', $user->branch->subscription_id)
-            ->withSum(['products' => function ($query) use ($user) {
-                $query->where('branch_id', $user->branch_id);
-            }], 'current_stock')
+            ->where('subscription_id', $subscription->id)
+            ->select('categories.*')
+            ->selectRaw('(
+                SELECT COALESCE(SUM(bp.current_stock), 0)
+                FROM products p
+                JOIN branch_product bp ON bp.product_id = p.id
+                WHERE p.category_id = categories.id
+                AND bp.branch_id = ?
+            ) as simple_stock', [$branchId])
+            ->selectRaw('(
+                SELECT COALESCE(SUM(bpa.current_stock), 0)
+                FROM products p
+                JOIN product_attributes pa ON pa.product_id = p.id
+                JOIN branch_product_attribute bpa ON bpa.product_attribute_id = pa.id
+                WHERE p.category_id = categories.id
+                AND bpa.branch_id = ?
+            ) as variant_stock', [$branchId])
             ->get()
+            ->map(function ($cat) {
+                $cat->products_sum_current_stock = (float)$cat->simple_stock + (float)$cat->variant_stock;
+                return $cat;
+            })
             ->filter(fn($category) => $category->products_sum_current_stock > 0)
-            ->sortBy('name')
+            ->sortByDesc('products_sum_current_stock')
             ->values();
+
+        $isOwner = !$user->roles()->exists();
+        $userBankAccounts = $isOwner ? $user->branch->bankAccounts()->get() : $user->bankAccounts()->get();
 
         return Inertia::render('Product/Index', [
             'products' => $products,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
-            'productLimit' => $limitData['limit'],
-            'productUsage' => $limitData['usage'],
+            'productLimit' => (int) $limitProducts,
+            'productUsage' => (int) $productsCount,
+            'productLimitReached' => $productLimitReached,
             'availableTemplates' => $availableTemplates,
             'stockByCategory' => $stockByCategory,
+            'userBankAccounts' => $userBankAccounts,
         ]);
+    }
+
+    /**
+     * Extrae la carga de catálogos comunes para Create y Edit.
+     */
+    private function getFormCatalogs(int $subscriptionId): array
+    {
+        return [
+            'categories' => Category::where('subscription_id', $subscriptionId)->where('type', 'product')->get(),
+            'brands' => Brand::where('subscription_id', $subscriptionId)->get(),
+            'providers' => Provider::where('subscription_id', $subscriptionId)->get(),
+            'attributeDefinitions' => AttributeDefinition::with('options')->where('subscription_id', $subscriptionId)->get(),
+            'branches' => Branch::where('subscription_id', $subscriptionId)->get(['id', 'name']),
+        ];
     }
 
     public function create(): Response
     {
         $user = Auth::user();
-        $subscriptionId = $user->branch->subscription_id;
-        $limitData = $this->getProductLimitData();
+        $subscription = $user->branch->subscription;
 
-        $globalBrands = Brand::whereNull('subscription_id')
-            ->whereHas('businessTypes', function ($query) use ($user) {
-                if ($user->branch && $user->branch->subscription) {
-                    $query->where('business_type_id', $user->branch->subscription->business_type_id);
-                }
-            })->get(['id', 'name']);
-
-        $subscriberBrands = Brand::where('subscription_id', $subscriptionId)->get(['id', 'name']);
-
-        $formattedBrands = [
-            ['label' => 'Mis Marcas', 'items' => $subscriberBrands],
-            ['label' => 'Marcas del Catálogo', 'items' => $globalBrands],
-        ];
-        $categories = Category::where(['subscription_id' => $subscriptionId, 'type' => 'product'])->get(['id', 'name']);
-        $providers = Provider::where('subscription_id', $subscriptionId)->get(['id', 'name']);
-        $attributeDefinitions = AttributeDefinition::with('options')->where('subscription_id', $subscriptionId)->get();
-
-        return Inertia::render('Product/Create', [
-            'categories' => $categories,
-            'brands' => $formattedBrands,
-            'providers' => $providers,
-            'attributeDefinitions' => $attributeDefinitions,
-            'productLimit' => $limitData['limit'],
-            'productUsage' => $limitData['usage'],
-        ]);
+        return Inertia::render('Product/Create', array_merge(
+            $this->getFormCatalogs($subscription->id),
+            [
+                'current_branch_id' => $user->branch_id,
+                'productLimitReached' => $subscription->hasReachedProductLimit(),
+            ]
+        ));
     }
 
-    public function store(StoreProductRequest $request)
+    public function store(StoreProductRequest $request, CreateProduct $createProduct)
     {
-        $limitData = $this->getProductLimitData();
-        if ($limitData['limit'] !== -1 && $limitData['usage'] >= $limitData['limit']) {
-            throw ValidationException::withMessages([
-                'limit' => 'Has alcanzado el límite de productos de tu plan.'
-            ]);
+        $validated = $request->validated();
+        $user = Auth::user();
+        $subscription = $user->branch->subscription;
+
+        $compositeItems = $validated['composite_items'] ?? [];
+
+        $newItemsCount = 1 + (($validated['product_type'] === 'variant' && !empty($validated['variants_matrix'])) ? count($validated['variants_matrix']) : 0);
+
+        if ($subscription->hasReachedProductLimit($newItemsCount)) {
+            return redirect()->back()->with('error', 'Excedes tu límite de productos. Mejora tu suscripción.');
         }
 
-        DB::transaction(function () use ($request) {
-            $user = Auth::user();
-            $branch = $user->branch;
-            $validatedData = $request->validated();
-            $baseSlug = Str::slug($validatedData['name']);
-            $slug = $baseSlug;
-            $counter = 1;
-            while (Product::where('branch_id', $branch->id)->where('slug', $slug)->exists()) {
-                $slug = $baseSlug . '-' . $counter++;
-            }
-            $validatedData['slug'] = $slug;
+        $productData = collect($validated)->except([
+            'composite_items', 'general_images', 'variant_images', 'branch_ids'
+        ])->toArray();
 
-            if ($validatedData['product_type'] === 'variant') {
-                $variantsMatrix = $validatedData['variants_matrix'];
-                $validatedData['current_stock'] = collect($variantsMatrix)->where('selected', true)->sum('current_stock');
-            }
-            $productData = collect($validatedData)->except(['general_images', 'variant_images', 'variants_matrix'])->all();
-            $product = Product::create(array_merge($productData, ['branch_id' => $branch->id]));
+        $files = [
+            'general_images' => $request->file('general_images'),
+            'variant_images' => $request->file('variant_images')
+        ];
 
-            if ($request->hasFile('general_images')) {
-                foreach (array_keys($request->file('general_images')) as $key) {
-                    $mediaItem = $product->addMediaFromRequest("general_images.{$key}")
-                        ->toMediaCollection('product-general-images');
-                    // <-- 3. Usar método del Trait -->
-                    $this->optimizeMediaLocal($mediaItem);
-                }
-            }
-            if ($request->hasFile('variant_images')) {
-                foreach (array_keys($request->file('variant_images')) as $optionValue) {
-                    $mediaItem = $product->addMediaFromRequest("variant_images.{$optionValue}")
-                        ->withCustomProperties(['variant_option' => $optionValue])
-                        ->toMediaCollection('product-variant-images');
-                    // <-- 3. Usar método del Trait -->
-                    $this->optimizeMediaLocal($mediaItem);
-                }
-            }
-
-            if ($validatedData['product_type'] === 'variant') {
-                $variantsMatrix = $validatedData['variants_matrix'];
-                foreach ($variantsMatrix as $combination) {
-                    if (empty($combination['selected'])) continue;
-                    $attributes = collect($combination)->except(['selected', 'sku_suffix', 'current_stock', 'min_stock', 'max_stock', 'selling_price', 'row_id'])->all();
-                    $product->productAttributes()->create([
-                        'attributes' => $attributes,
-                        'sku_suffix' => $combination['sku_suffix'],
-                        'current_stock' => $combination['current_stock'],
-                        'min_stock' => $combination['min_stock'],
-                        'max_stock' => $combination['max_stock'],
-                        'selling_price_modifier' => $combination['selling_price'] - $product->selling_price,
-                    ]);
-                }
-            }
-        });
+        $createProduct->execute(
+            $productData,
+            $compositeItems,
+            $request->input('branch_ids', [$user->branch_id]),
+            $user,
+            $files
+        );
 
         return redirect()->route('products.index')->with('success', 'Producto creado con éxito.');
     }
 
-    public function edit(Product $product): Response
+    public function show(Request $request, Product $product, ActivityLogService $activityLogService): Response
     {
         $user = Auth::user();
-        $subscriptionId = $user->branch->subscription_id;
 
-        $product->load('productAttributes', 'media');
-
-        $formattedAttributes = $product->productAttributes->mapWithKeys(function ($attr) use ($product) {
-            $key = collect($attr->attributes)->sortKeys()->implode('-');
-            return [$key => [
-                'attributes' => $attr->attributes,
-                'sku_suffix' => $attr->sku_suffix,
-                'current_stock' => $attr->current_stock,
-                'min_stock' => $attr->min_stock,
-                'max_stock' => $attr->max_stock,
-                'selling_price' => $product->selling_price + $attr->selling_price_modifier,
-            ]];
-        });
-
-        $globalBrands = Brand::whereNull('subscription_id')
-            ->whereHas('businessTypes', function ($query) use ($user) {
-                if ($user->branch && $user->branch->subscription) {
-                    $query->where('business_type_id', $user->branch->subscription->business_type_id);
-                }
-            })->get(['id', 'name']);
-
-        $subscriberBrands = Brand::where('subscription_id', $subscriptionId)->get(['id', 'name']);
-
-        $formattedBrands = [
-            ['label' => 'Mis Marcas', 'items' => $subscriberBrands],
-            ['label' => 'Marcas del Catálogo', 'items' => $globalBrands],
-        ];
-
-        return Inertia::render('Product/Edit', [
-            'product' => $product->toArray() + ['formatted_attributes' => $formattedAttributes],
-            'categories' => Category::where(['subscription_id' => $subscriptionId, 'type' => 'product'])->get(['id', 'name']),
-            'brands' => $formattedBrands,
-            'providers' => Provider::where('subscription_id', $subscriptionId)->get(['id', 'name']),
-            'attributeDefinitions' => AttributeDefinition::with('options')->where('subscription_id', $subscriptionId)->get(),
-        ]);
-    }
-
-    public function update(UpdateProductRequest $request, Product $product)
-    {
-        DB::transaction(function () use ($request, $product) {
-            $validatedData = $request->validated();
-
-            if ($product->name !== $validatedData['name']) {
-                $baseSlug = Str::slug($validatedData['name']);
-                $slug = $baseSlug;
-                $counter = 1;
-                while (Product::where('branch_id', $product->branch_id)->where('slug', $slug)->where('id', '!=', $product->id)->exists()) {
-                    $slug = $baseSlug . '-' . $counter++;
-                }
-                $validatedData['slug'] = $slug;
-            } else {
-                unset($validatedData['slug']);
-            }
-
-
-            if ($validatedData['product_type'] === 'variant') {
-                $variantsMatrix = $validatedData['variants_matrix'];
-                $validatedData['current_stock'] = collect($variantsMatrix)->where('selected', true)->sum('current_stock');
-            }
-
-            $productData = collect($validatedData)->except(['general_images', 'variant_images', 'variants_matrix', 'deleted_media_ids'])->all();
-            $product->update($productData);
-
-            if (!empty($validatedData['deleted_media_ids'])) {
-                // Use Spatie's method to delete media by ID
-                $product->media()->whereIn('id', $validatedData['deleted_media_ids'])->each(function (Media $media) {
-                    $media->delete();
-                });
-            }
-
-            if ($request->hasFile('general_images')) {
-                foreach (array_keys($request->file('general_images')) as $key) {
-                    $mediaItem = $product->addMediaFromRequest("general_images.{$key}")->toMediaCollection('product-general-images');
-                    // <-- 3. Usar método del Trait -->
-                    $this->optimizeMediaLocal($mediaItem);
-                }
-            }
-            if ($request->hasFile('variant_images')) {
-                foreach (array_keys($request->file('variant_images')) as $optionValue) {
-                    $mediaItem = $product->addMediaFromRequest("variant_images.{$optionValue}")->withCustomProperties(['variant_option' => $optionValue])->toMediaCollection('product-variant-images');
-                    // <-- 3. Usar método del Trait -->
-                    $this->optimizeMediaLocal($mediaItem);
-                }
-            }
-
-            if ($validatedData['product_type'] === 'variant') {
-                $variantsMatrix = $validatedData['variants_matrix'];
-                $product->productAttributes()->delete();
-                foreach ($variantsMatrix as $combination) {
-                    if (empty($combination['selected'])) continue;
-                    $attributes = collect($combination)->except(['selected', 'sku_suffix', 'current_stock', 'min_stock', 'max_stock', 'selling_price', 'row_id'])->all();
-                    $product->productAttributes()->create([
-                        'attributes' => $attributes,
-                        'sku_suffix' => $combination['sku_suffix'],
-                        'current_stock' => $combination['current_stock'],
-                        'min_stock' => $combination['min_stock'],
-                        'max_stock' => $combination['max_stock'],
-                        'selling_price_modifier' => $combination['selling_price'] - $product->selling_price,
-                    ]);
-                }
-            } elseif ($product->product_type === 'simple') {
-                $product->productAttributes()->delete();
-            }
-        });
-
-        return redirect()->route('products.index')->with('success', 'Producto actualizado con éxito.');
-    }
-
-   public function show(Product $product): Response
-    {
         $product->load([
-            'category',
-            'brand',
-            'provider',
-            'productAttributes',
-            'media',
-            'activities.causer'
+            'category', 'brand', 'provider', 'media', 'branches',
+            'components.componentable' => fn ($m) => $m->morphWith([ProductAttribute::class => ['product']]),
+            'productAttributes.branches' => fn ($q) => $q->where('branches.id', $user->branch_id)
         ]);
 
-        $promotions = Promotion::query()
-            // Check if the product is directly involved in rules or effects
-            ->where(function ($query) use ($product) {
-                $query->whereHas('rules', fn($subQuery) => $subQuery->whereMorphedTo('itemable', $product))
-                    ->orWhereHas('effects', fn($subQuery) => $subQuery->whereMorphedTo('itemable', $product));
-            })
-            // Also include promotions that apply globally or by category/brand if needed
-            // ->orWhere(function ($query) use ($product) { ... add logic for broader promotion applicability ... })
-            ->with(['rules.itemable', 'effects.itemable'])
-            ->get();
+        $product->loadStockForBranch($user->branch_id);
 
+        $promotions = $product->promotions->load(['rules.itemable', 'effects.itemable']);
+        $formattedActivities = $activityLogService->getFormattedActivities($product, $request, 'Product');
 
-        $translations = config('log_translations.Product', []);
-
-        $formattedActivities = $product->activities->map(function ($activity) use ($translations) {
-            $changes = ['before' => [], 'after' => []];
-            $oldProps = $activity->properties->get('old', []);
-            $newProps = $activity->properties->get('attributes', []);
-
-            if (is_array($oldProps)) {
-                foreach ($oldProps as $key => $value) {
-                    $changes['before'][($translations[$key] ?? $key)] = $value;
-                }
-            }
-            if (is_array($newProps)) {
-                foreach ($newProps as $key => $value) {
-                    if (!isset($oldProps[$key]) || $oldProps[$key] !== $value) {
-                        $changes['after'][($translations[$key] ?? $key)] = $value;
-                    }
-                }
-            }
-            // Ensure 'before' only contains keys that actually changed or were removed
-            $changes['before'] = array_intersect_key($changes['before'], $changes['after']);
-
-
+        $formattedLayaways = $product->transactionItems()->whereHas('transaction', function ($q) {
+            $q->whereIn('status', [\App\Enums\TransactionStatus::ON_LAYAWAY, \App\Enums\TransactionStatus::TO_DELIVER]);
+        })->get()->map(function ($item) {
             return [
-                'id' => $activity->id,
-                'description' => $activity->description,
-                'event' => $activity->event,
-                'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
-                'timestamp' => $activity->created_at->diffForHumans(),
-                // Only include changes if there are actual differences
-                'changes' => (object)(!empty($changes['before']) || !empty($changes['after']) ? $changes : []),
-            ];
-        })
-        ->filter(fn($activity) => $activity['event'] !== 'updated' || !empty((array)$activity['changes'])) // Filter out 'updated' events with no changes shown
-        ->values(); // <--- CORRECCIÓN AQUI: Reindexar para enviar un Array JSON y no un Objeto JSON
-
-         // --- INICIO DE MODIFICACIÓN: Obtener Apartados Activos ---
-        $productAndVariantIds = $product->productAttributes->pluck('id')->push($product->id);
-        
-        // Obtenemos los IDs de los itemables (Product y ProductAttribute)
-        $itemableIds = [
-            Product::class => $product->id,
-            ProductAttribute::class => $product->productAttributes->pluck('id')->all(),
-        ];
-
-        $layawayItems = TransactionItem::query()
-            ->where(function ($query) use ($itemableIds) {
-                // Busca items que sean el producto principal
-                $query->where('itemable_type', Product::class)
-                      ->where('itemable_id', $itemableIds[Product::class]);
-                
-                // Busca items que sean variantes de este producto
-                if (!empty($itemableIds[ProductAttribute::class])) {
-                    $query->orWhere(function($q) use ($itemableIds) {
-                        $q->where('itemable_type', ProductAttribute::class)
-                          ->whereIn('itemable_id', $itemableIds[ProductAttribute::class]);
-                    });
-                }
-            })
-            ->whereHas('transaction', function ($q) {
-                // Filtra solo por transacciones 'en_apartado'
-                $q->where('status', TransactionStatus::ON_LAYAWAY);
-            })
-            ->with([
-                // Cargamos la información necesaria
-                'transaction:id,folio,customer_id,created_at,layaway_expiration_date', // <--- AGREGADO: layaway_expiration_date
-                'transaction.customer:id,name'
-            ])
-            ->get();
-        
-        $formattedLayaways = $layawayItems->map(function($item) {
-            return [
-                'transaction_id' => $item->transaction->id,
+                'id' => $item->transaction->id,
+                'transaction_id' => $item->transaction->id, 
+                'transaction' => $item->transaction->id,    
                 'folio' => $item->transaction->folio,
-                'customer_name' => $item->transaction->customer?->name ?? 'Cliente Eliminado',
+                'status' => $item->transaction->status instanceof \App\Enums\TransactionStatus ? $item->transaction->status->value : $item->transaction->status,
+                'customer_name' => $item->transaction->customer->name ?? 'Público en general',
                 'customer_id' => $item->transaction->customer_id,
                 'quantity' => $item->quantity,
-                'description' => $item->description, // Descripción del item (ej. "Playera (Roja, M)")
+                'description' => $item->description,
                 'date' => $item->transaction->created_at->toDateTimeString(),
-                'layaway_expiration_date' => $item->transaction->layaway_expiration_date, // <--- AGREGADO
+                'layaway_expiration_date' => $item->transaction->layaway_expiration_date,
             ];
         });
-        // --- FIN DE MODIFICACIÓN ---
 
-        $availableTemplates = Auth::user()->branch->printTemplates()
-            ->where('type', TemplateType::LABEL)
-            ->whereIn('context_type', [TemplateContextType::PRODUCT, TemplateContextType::GENERAL])
+        $availableTemplates = $user->branch->printTemplates()
+            ->where('type', \App\Enums\TemplateType::LABEL)
+            ->whereIn('context_type', [\App\Enums\TemplateContextType::PRODUCT, \App\Enums\TemplateContextType::GENERAL])
             ->get();
+
+        $isOwner = !$user->roles()->exists();
+        $userBankAccounts = $isOwner ? $user->branch->bankAccounts()->get() : $user->bankAccounts()->get();
 
         return Inertia::render('Product/Show', [
             'product' => $product,
@@ -438,12 +260,68 @@ class ProductController extends Controller implements HasMiddleware
             'activities' => $formattedActivities,
             'availableTemplates' => $availableTemplates,
             'activeLayaways' => $formattedLayaways,
+            'userBankAccounts' => $userBankAccounts, 
         ]);
+    }
+
+    public function edit(Product $product): Response
+    {
+        $user = Auth::user();
+
+        $product->load([
+            'media', 'branches:id', 'productAttributes.branches',
+            'components.componentable' => fn ($m) => $m->morphWith([ProductAttribute::class => ['product']])
+        ]);
+
+        $product->loadStockForBranch($user->branch_id);
+        $product->composite_items = $product->formatted_components;
+
+        return Inertia::render('Product/Edit', array_merge(
+            ['product' => $product],
+            $this->getFormCatalogs($user->branch->subscription_id)
+        ));
+    }
+
+    public function update(UpdateProductRequest $request, Product $product, UpdateProduct $updateProduct)
+    {
+        $validated = $request->validated();
+        $user = Auth::user();
+        $subscription = $user->branch->subscription;
+
+        $compositeItems = $validated['composite_items'] ?? [];
+
+        if ($validated['product_type'] === 'variant' && !empty($validated['variants_matrix'])) {
+            $newVariantsCount = collect($validated['variants_matrix'])->filter(fn($v) => empty($v['id']))->count();
+            
+            if ($newVariantsCount > 0 && $subscription->hasReachedProductLimit($newVariantsCount)) {
+                return redirect()->back()->with('error', 'No puedes agregar estas variantes porque excedes el límite de productos de tu plan.');
+            }
+        }
+
+        $productData = collect($validated)->except([
+            'composite_items', 'deleted_media_ids', 'general_images', 'variant_images', 'branch_ids'
+        ])->toArray();
+
+        $files = [
+            'general_images' => $request->file('general_images'),
+            'variant_images' => $request->file('variant_images')
+        ];
+
+        $updateProduct->execute(
+            $product,
+            $productData,
+            $compositeItems,
+            $request->input('branch_ids', [$user->branch_id]),
+            $user,
+            $files,
+            $validated['deleted_media_ids'] ?? []
+        );
+
+        return redirect()->route('products.index')->with('success', 'Producto actualizado con éxito.');
     }
 
     public function destroy(Product $product)
     {
-        // Add authorization check if needed: $this->authorize('delete', $product);
         $product->delete();
         return redirect()->route('products.index')->with('success', 'Producto eliminado con éxito.');
     }
@@ -454,8 +332,126 @@ class ProductController extends Controller implements HasMiddleware
             'ids' => 'required|array',
             'ids.*' => 'exists:products,id',
         ]);
-        // Add authorization check if needed: $this->authorize('delete-multiple', Product::class);
         Product::whereIn('id', $validated['ids'])->delete();
         return redirect()->route('products.index')->with('success', 'Productos seleccionados eliminados con éxito.');
+    }
+
+    public function bulkUpdate(Request $request)
+    {
+        $validated = $request->validate([
+            'items' => 'required|array',
+            'items.*.type' => 'required|in:product,variant',
+            'items.*.id' => 'required|integer',
+            'items.*.name' => 'nullable|string|max:255',
+            'items.*.sku' => 'nullable|string|max:100',
+            'items.*.selling_price' => 'nullable|numeric|min:0',
+            'items.*.cost_price' => 'nullable|numeric|min:0',
+            'items.*.min_stock' => 'nullable|numeric|min:0',
+            'items.*.max_stock' => 'nullable|numeric|min:0',
+            'items.*.show_in_pos' => 'nullable|boolean',
+            'items.*.show_online' => 'nullable|boolean',
+            'items.*.is_featured' => 'nullable|boolean',
+        ]);
+
+        $branchId = Auth::user()->branch_id;
+
+        DB::transaction(function () use ($validated, $branchId) {
+            foreach ($validated['items'] as $item) {
+                if ($item['type'] === 'product') {
+                    $product = Product::find($item['id']);
+                    if ($product) {
+                        $product->update([
+                            'name' => $item['name'] ?? $product->name,
+                            'sku' => $item['sku'] ?? $product->sku,
+                            'selling_price' => $item['selling_price'] ?? $product->selling_price,
+                            'cost_price' => $item['cost_price'] ?? $product->cost_price,
+                            'show_in_pos' => $item['show_in_pos'] ?? $product->show_in_pos,
+                            'show_online' => $item['show_online'] ?? $product->show_online,
+                            'is_featured' => $item['is_featured'] ?? $product->is_featured,
+                        ]);
+
+                        if (array_key_exists('min_stock', $item) || array_key_exists('max_stock', $item)) {
+                            $product->branches()->syncWithoutDetaching([
+                                $branchId => [
+                                    'min_stock' => $item['min_stock'] ?? null,
+                                    'max_stock' => $item['max_stock'] ?? null,
+                                ]
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            foreach ($validated['items'] as $item) {
+                if ($item['type'] === 'variant') {
+                    $variant = ProductAttribute::with('product')->find($item['id']);
+                    
+                    if ($variant) {
+                        if (array_key_exists('selling_price', $item)) {
+                            $variant->updatePriceFromTotal($item['selling_price']);
+                        }
+
+                        $variant->update(['sku_suffix' => $item['sku'] ?? $variant->sku_suffix]);
+                        
+                        if (array_key_exists('min_stock', $item) || array_key_exists('max_stock', $item)) {
+                            $variant->branches()->syncWithoutDetaching([
+                                $branchId => [
+                                    'min_stock' => $item['min_stock'] ?? null,
+                                    'max_stock' => $item['max_stock'] ?? null,
+                                ]
+                            ]);
+                        }
+                    }
+                }
+            }
+        });
+
+        return redirect()->back()->with('success', 'Productos actualizados masivamente con éxito.');
+    }
+
+    public function updatePriceFromPOS(Request $request)
+    {
+        $request->validate([
+            'product_id' => 'required|exists:products,id',
+            'product_attribute_id' => 'nullable|exists:product_attributes,id',
+            'new_price' => 'required|numeric|min:0'
+        ]);
+
+        if ($request->product_attribute_id) {
+            $variant = ProductAttribute::with('product')->findOrFail($request->product_attribute_id);
+            $variant->updatePriceFromTotal($request->new_price);
+        } else {
+            $product = Product::findOrFail($request->product_id);
+            $product->update(['selling_price' => $request->new_price]);
+        }
+
+        return response()->json(['success' => true]);
+    }
+
+    public function toggleOnline(Product $product): RedirectResponse
+    {
+        $product->update(['show_online' => !$product->show_online]);
+
+        return back()->with('success', $product->show_online
+            ? 'El producto ahora es visible en tu tienda en línea.'
+            : 'El producto ahora está oculto de tu tienda en línea.');
+    }
+
+    public function toggleFeatured(Product $product): RedirectResponse
+    {
+        $product->update(['is_featured' => !$product->is_featured]);
+
+        return back()->with('success', $product->is_featured
+            ? 'El producto ahora es destacado en tu tienda en línea.'
+            : 'El producto ya no es destacado.');
+    }
+
+    public function togglePos(Product $product): RedirectResponse
+    {
+        $product->update(['show_in_pos' => !$product->show_in_pos]);
+
+        return back()->with('success', $product->show_in_pos
+            ? 'El producto ahora es visible en el punto de venta.'
+            : 'El producto ahora está oculto del punto de venta.');
     }
 }

@@ -25,8 +25,7 @@ const toggleHeaderMenu = (event) => {
     headerMenu.value.toggle(event);
 };
 const splitButtonItems = ref([
-    //{ label: 'Importar Gastos', icon: 'pi pi-upload', command: () => showImportModal.value = true },
-    { label: 'Exportar Gastos', icon: 'pi pi-download', command: () => window.location.href = route('import-export.expenses.export') },
+    { label: 'Exportar gastos', icon: 'pi pi-download', command: () => window.location.href = route('import-export.expenses.export') },
 ]);
 
 const menu = ref();
@@ -36,7 +35,7 @@ const deleteSingleExpense = () => {
     if (!selectedExpenseForMenu.value) return;
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar el gasto con concepto "${selectedExpenseForMenu.value.folio || 'N/A'}"?`,
-        header: 'Confirmar Eliminación',
+        header: 'Confirmar eliminación',
         icon: 'pi pi-info-circle',
         acceptClass: 'p-button-danger',
         accept: () => {
@@ -53,7 +52,7 @@ const deleteSingleExpense = () => {
 const deleteSelectedExpenses = () => {
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar los ${selectedExpenses.value.length} gastos seleccionados?`,
-        header: 'Confirmación de Eliminación Masiva',
+        header: 'Confirmación de eliminación masiva',
         icon: 'pi pi-exclamation-triangle',
         acceptClass: 'p-button-danger',
         acceptLabel: 'Sí, eliminar',
@@ -69,7 +68,7 @@ const deleteSelectedExpenses = () => {
 };
 
 const menuItems = ref([
-    { label: 'Ver', icon: 'pi pi-eye', command: () => router.get(route('expenses.show', selectedExpenseForMenu.value.id)), visible: hasPermission('expenses.see_details') },
+    { label: 'Ver detalle', icon: 'pi pi-eye', command: () => router.get(route('expenses.show', selectedExpenseForMenu.value.id)), visible: hasPermission('expenses.see_details') },
     { label: 'Editar gasto', icon: 'pi pi-pencil', command: () => router.get(route('expenses.edit', selectedExpenseForMenu.value.id)), visible: hasPermission('expenses.edit') },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleExpense, visible: hasPermission('expenses.delete') },
@@ -96,16 +95,22 @@ const onSort = (event) => fetchData({ sortField: event.sortField, sortOrder: eve
 watch(searchTerm, () => fetchData());
 
 const getStatusSeverity = (status) => {
-    return status === 'pagado' ? 'success' : 'warning';
+    return status === 'pagado' ? 'success' : 'warn';
 };
 
 const formatDate = (dateString) => {
     const date = new Date(dateString);
     const userTimezoneOffset = date.getTimezoneOffset() * 60000;
-    return new Date(date.getTime() + userTimezoneOffset).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+    return new Date(date.getTime() + userTimezoneOffset).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
-// NUEVA FUNCIÓN: Devuelve el icono correspondiente al método de pago
+const formatCurrency = (value) => {
+    if (value === null || value === undefined) return '';
+    const numberValue = Number(value);
+    if (isNaN(numberValue)) return '';
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(numberValue);
+};
+
 const getPaymentMethodIcon = (method) => {
     const icons = {
         efectivo: 'pi pi-money-bill',
@@ -114,39 +119,91 @@ const getPaymentMethodIcon = (method) => {
     };
     return icons[method] || 'pi pi-question-circle';
 };
+
+const onRowClick = (event) => {
+    const target = event.originalEvent.target;
+    if (target.closest('button') || target.closest('.p-button') || target.closest('.p-checkbox')) {
+        return;
+    }
+    
+    if (hasPermission('expenses.see_details')) {
+        router.visit(route('expenses.show', event.data.id));
+    }
+};
+
+// --- TESLA UI PASS-THROUGH (PT) CONFIGURATIONS ---
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl !p-2 !shadow-2xl' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' }
+};
+
+const dataTablePt = {
+    root: { class: 'border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden' },
+    headerRow: { class: 'bg-gray-50 dark:bg-[#1a1a1a]' },
+    headerCell: { class: 'bg-transparent text-[10px] uppercase tracking-widest text-gray-500 font-bold py-4 px-4 border-b border-gray-100 dark:border-[#3a3a3a]' },
+    bodyRow: { class: 'dark:bg-[#232323] hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors text-sm text-gray-700 dark:text-gray-300 group' },
+    bodyCell: { class: 'py-4 px-4 border-b border-gray-50 dark:border-[#2a2a2a]' },
+    paginator: { root: { class: 'dark:bg-[#1a1a1a] border-t border-gray-100 dark:border-[#3a3a3a] p-3' } }
+};
+
+const inputPt = {
+    root: { class: '!rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2 !text-sm w-full' }
+};
+
+const tagPt = {
+    root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' },
+    icon: { class: '!text-[10px] !mr-1.5' }
+};
 </script>
 
 <template>
-
     <Head title="Gastos" />
     <AppLayout>
-        <div class="p-4 md:p-6 lg:p-8 bg-gray-100 dark:bg-gray-900 min-h-full">
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 md:p-6">
-                <!-- Header -->
-                <div class="mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <IconField iconPosition="left" class="w-full md:w-1/3">
-                        <InputIcon class="pi pi-search"></InputIcon>
-                        <InputText v-model="searchTerm" placeholder="Buscar por concepto o descripción..."
-                            class="w-full" />
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+            
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                
+                <!-- Header con Título -->
+                <div class="mb-8">
+                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">Historial de gastos</h1>
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse"></span>
+                        Egresos operativos y administrativos
+                    </p>
+                </div>
+
+                <!-- Barra de Herramientas de Filtros (Estilo Panel de Control) -->
+                <div class="flex flex-col md:flex-row gap-4 items-center justify-between bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] mb-6">
+                    <IconField iconPosition="left" class="w-full md:w-1/2 lg:w-1/3">
+                        <InputIcon class="pi pi-search !text-sm text-gray-400 dark:text-gray-500"></InputIcon>
+                        <InputText v-model="searchTerm" placeholder="Buscar por folio, concepto o descripción..." :pt="inputPt" class="!pl-10" />
                     </IconField>
-                    <div class="flex items-center gap-2">
-                        <ButtonGroup>
-                            <Button v-if="hasPermission('expenses.create')" label="Nuevo gasto" icon="pi pi-plus"
-                                @click="router.get(route('expenses.create'))" severity="warning" />
-                            <Button v-if="hasPermission('expenses.import_export')" icon="pi pi-chevron-down"
-                                @click="toggleHeaderMenu" severity="warning" />
-                        </ButtonGroup>
-                        <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" />
+                    
+                    <div class="flex items-center gap-2 w-full md:w-auto">
+                        <Button v-if="hasPermission('expenses.create')" label="Nuevo gasto"
+                            icon="pi pi-plus" @click="router.get(route('expenses.create'))"
+                            severity="warning"
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider flex-grow md:flex-none" />
+                        
+                        <Button v-if="hasPermission('expenses.import_export')" icon="pi pi-chevron-down"
+                            @click="toggleHeaderMenu" severity="warning" class="!rounded-xl !size-9 !p-0 shrink-0" />
+                        
+                        <Menu ref="headerMenu" :model="splitButtonItems" :popup="true" :pt="menuPt" />
                     </div>
                 </div>
 
-                <!-- Barra de Acciones Masivas -->
-                <div v-if="selectedExpenses.length > 0"
-                    class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-2 mb-4 flex justify-between items-center">
-                    <span class="font-semibold text-sm text-blue-800 dark:text-blue-200">{{ selectedExpenses.length }}
-                        gasto(s) seleccionado(s)</span>
-                    <Button v-if="hasPermission('expenses.delete')" @click="deleteSelectedExpenses" label="Eliminar"
-                        icon="pi pi-trash" size="small" severity="danger" outlined />
+                <!-- Barra de Acciones Masivas Contextual -->
+                <div v-if="selectedExpenses.length > 0" class="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-2xl p-3 mb-6 flex flex-col md:flex-row justify-between items-center gap-4 transition-all duration-300">
+                    <span class="font-bold text-xs uppercase tracking-widest text-red-700 dark:text-red-300 m-0">
+                        <i class="pi pi-check-square mr-1"></i> {{ selectedExpenses.length }} seleccionados
+                    </span>
+                    <div class="flex items-center gap-2 w-full md:w-auto overflow-x-auto custom-scrollbar pb-1 md:pb-0">
+                        <Button v-if="hasPermission('expenses.delete')" @click="deleteSelectedExpenses" label="Eliminar"
+                            icon="pi pi-trash" size="small" severity="danger" outlined 
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider shrink-0" />
+                    </div>
                 </div>
 
                 <!-- Tabla de Gastos -->
@@ -154,57 +211,89 @@ const getPaymentMethodIcon = (method) => {
                     :totalRecords="expenses.total" :rows="expenses.per_page" :rowsPerPageOptions="[20, 50, 100, 200]"
                     dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 60rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
-                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} gastos">
+                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} gastos"
+                    class="cursor-pointer" rowHover @row-click="onRowClick" :pt="dataTablePt">
+
                     <Column selectionMode="multiple" headerStyle="width: 3rem"></Column>
-                    <Column field="folio" header="Concepto" sortable></Column>
-                    <Column field="expense_date" header="Fecha" sortable>
-                        <template #body="{ data }"> {{ formatDate(data.expense_date) }} </template>
-                    </Column>
-                    <Column field="category.name" header="Categoría" sortable></Column>
-                    <Column field="description" header="Descripción"></Column>
-                    <Column field="amount" header="Monto" sortable>
-                        <template #body="{ data }"> {{ new Intl.NumberFormat('es-MX', {
-                            style: 'currency', currency:
-                                'MXN'
-                        }).format(data.amount) }} </template>
+                    
+                    <Column field="folio" header="Concepto" sortable>
+                        <template #body="{ data }">
+                            <span class="font-mono font-bold dark:text-gray-300">{{ data.folio }}</span>
+                        </template>
                     </Column>
                     
-                    <!-- INICIA NUEVA COLUMNA -->
+                    <Column field="expense_date" header="Fecha" sortable>
+                        <template #body="{ data }"> 
+                            <span class="text-gray-600 dark:text-gray-400">{{ formatDate(data.expense_date) }}</span> 
+                        </template>
+                    </Column>
+                    
+                    <Column field="category.name" header="Categoría" sortable>
+                        <template #body="{ data }">
+                            <span class="font-medium text-gray-900 dark:text-gray-100">{{ data.category?.name || '--' }}</span>
+                        </template>
+                    </Column>
+                    
+                    <Column field="description" header="Descripción">
+                        <template #body="{ data }">
+                            <span class="text-gray-500 dark:text-gray-400 truncate max-w-[200px] block" :title="data.description">
+                                {{ data.description || '--' }}
+                            </span>
+                        </template>
+                    </Column>
+                    
+                    <Column field="amount" header="Monto" sortable>
+                        <template #body="{ data }">
+                            <span class="font-light tracking-tight text-lg dark:text-white">{{ formatCurrency(data.amount) }}</span>
+                        </template>
+                    </Column>
+                    
                     <Column field="payment_method" header="Método de pago" sortable>
                         <template #body="{ data }">
-                            <div class="flex flex-col">
+                            <div class="flex flex-col gap-0.5">
                                 <div class="flex items-center gap-2">
-                                    <i :class="getPaymentMethodIcon(data.payment_method)" class="text-gray-500"></i>
-                                    <span class="capitalize font-medium">{{ data.payment_method }}</span>
+                                    <i :class="getPaymentMethodIcon(data.payment_method)" class="!text-[10px] text-gray-400"></i>
+                                    <span class="capitalize font-medium text-gray-700 dark:text-gray-300">{{ data.payment_method }}</span>
                                 </div>
-                                <small v-if="data.bank_account" class="text-gray-500 dark:text-gray-400 mt-1 pl-1">
-                                    {{ data.bank_account.account_name }}
-                                </small>
+                                <span v-if="data.bank_account" class="text-[9px] uppercase tracking-widest text-gray-500 dark:text-gray-500 flex items-center gap-1 pl-4" v-tooltip.bottom="data.bank_account.bank_name">
+                                    <i class="pi pi-building !text-[8px]"></i> {{ data.bank_account.account_name }}
+                                </span>
                             </div>
                         </template>
                     </Column>
-                    <!-- TERMINA NUEVA COLUMNA -->
 
                     <Column field="status" header="Estatus" sortable>
                         <template #body="{ data }">
-                            <Tag :value="data.status" :severity="getStatusSeverity(data.status)" />
+                            <Tag :value="data.status" :severity="getStatusSeverity(data.status)" :pt="tagPt" />
                         </template>
                     </Column>
-                    <Column field="user.name" header="Registrado por" sortable></Column>
-                    <Column headerStyle="width: 5rem; text-align: center">
-                        <template #body="{ data }"> <Button @click="toggleMenu($event, data)" icon="pi pi-ellipsis-v"
-                                text rounded severity="secondary" /> </template>
+                    
+                    <Column field="user.name" header="Registrado por" sortable>
+                        <template #body="{ data }">
+                            <span class="text-gray-600 dark:text-gray-400">{{ data.user?.name || 'N/A' }}</span>
+                        </template>
                     </Column>
+                    
+                    <Column headerStyle="width: 5rem; text-align: center">
+                        <template #body="{ data }"> 
+                            <Button @click.stop="toggleMenu($event, data)" icon="pi pi-ellipsis-v" text rounded
+                                class="!w-8 !h-8 !text-gray-400 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors" aria-haspopup="true" aria-controls="overlay_menu" /> 
+                        </template>
+                    </Column>
+                    
                     <template #empty>
-                        <div class="text-center text-gray-500 py-4">
-                            No hay gastos registrados.
+                        <div class="flex flex-col items-center justify-center text-center py-10">
+                            <i class="pi pi-arrow-up-right !text-3xl text-gray-400 mb-3"></i>
+                            <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin resultados</p>
+                            <p class="text-xs text-gray-400 mt-1">No hay gastos que coincidan con la búsqueda actual.</p>
                         </div>
                     </template>
                 </DataTable>
 
-                <Menu ref="menu" :model="menuItems" :popup="true" />
+                <Menu ref="menu" id="overlay_menu" :model="menuItems" :popup="true" :pt="menuPt" />
             </div>
         </div>
+        
         <!-- Modal de Importación -->
         <ImportExpensesModal :visible="showImportModal" @update:visible="showImportModal = false" />
     </AppLayout>

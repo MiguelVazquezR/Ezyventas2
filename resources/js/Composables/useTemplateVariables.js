@@ -22,7 +22,7 @@ const getAllVariables = () => ({
         ]
     },
     cliente: {
-        group: 'Cliente (Datos Generales)',
+        group: 'Cliente (datos generales)',
         items: [
             { label: 'Nombre completo', value: '{{cliente.nombre}}' },
             { label: 'Teléfono', value: '{{cliente.telefono}}' },
@@ -34,16 +34,17 @@ const getAllVariables = () => ({
     },
     // --- GRUPO ACTUALIZADO: ESTADO DE CUENTA ---
     cliente_estado: {
-        group: 'Cliente (Financiero / Estado)',
+        group: 'Cliente (financiero / estado)',
         items: [
-            { label: 'Saldo Actual', value: '{{c.saldo_actual}}' },
-            { label: 'Crédito Disponible', value: '{{c.credito_disponible}}' },
-            { label: 'Límite de Crédito', value: '{{c.limite_credito}}' },
-            { label: 'Total Deuda Vencida', value: '{{c.total_deuda}}' },
-            { label: 'Conteo Ventas Pendientes', value: '{{c.conteo_ventas_pendientes}}' },
+            { label: 'Saldo actual', value: '{{c.saldo_actual}}' },
+            { label: 'Crédito disponible', value: '{{c.credito_disponible}}' },
+            { label: 'Límite de crédito', value: '{{c.limite_credito}}' },
+            { label: 'Total deuda vencida', value: '{{c.total_deuda}}' },
+            { label: 'Conteo ventas pendientes', value: '{{c.conteo_ventas_pendientes}}' },
+            { label: 'Último abono a deuda general', value: '{{c.ultimo_abono}}' },
             // Variables de TABLAS
-            { label: 'Tabla: Último Pago Detallado', value: '{{c.tabla_ultimo_pago}}' },
-            { label: 'Tabla: Ventas Pendientes', value: '{{c.tabla_ventas_pendientes}}' },
+            { label: 'Tabla: último pago detallado', value: '{{c.tabla_ultimo_pago}}' },
+            { label: 'Tabla: ventas pendientes', value: '{{c.tabla_ventas_pendientes}}' },
         ]
     },
     // -------------------------------------
@@ -64,33 +65,41 @@ const getAllVariables = () => ({
     transaccion: {
         group: 'Venta / Ticket',
         items: [
-            { label: 'Folio Venta', value: '{{v.folio}}' },
+            { label: 'Folio venta', value: '{{v.folio}}' },
+            { label: 'Nombre de comanda / pedido', value: '{{v.pedido_comanda}}' },
             { label: 'Fecha', value: '{{v.fecha}}' },
             { label: 'Hora', value: '{{v.hora}}' },
-            { label: 'Total Pagado', value: '{{v.total_pagado}}' },
+            { label: 'Subtotal', value: '{{v.subtotal}}' },
+            { label: 'Total', value: '{{v.total}}' },
+            { label: 'Total pagado', value: '{{v.total_pagado}}' },
+            { label: 'Último pago registrado', value: '{{v.ultimo_pago}}' },
+            { label: 'Restante por pagar', value: '{{v.restante_por_pagar}}' },
+            { label: 'Descuentos', value: '{{v.descuentos}}' },
             { label: 'Cambio', value: '{{v.cambio}}' },
-            { label: 'Métodos de Pago', value: '{{v.metodos_pago}}' },
+            { label: 'Métodos de pago', value: '{{v.metodos_pago}}' },
             { label: 'Cajero', value: '{{vendedor.nombre}}' },
+            { label: 'Fecha vencimiento de apartado', value: '{{v.fecha_vencimiento_apartado}}' },
         ]
     },
     orden_servicio: {
-        group: 'Orden de Servicio',
+        group: 'Orden de servicio',
         items: [
             { label: 'Folio OS', value: '{{os.folio}}' },
-            { label: 'Fecha Recepción', value: '{{os.fecha_recepcion}}' },
+            { label: 'Fecha recepción', value: '{{os.fecha_recepcion}}' },
             { label: 'Equipo', value: '{{os.item_description}}' },
             { label: 'Problemas', value: '{{os.problemas_reportados}}' },
             { label: 'Diagnóstico', value: '{{os.diagnostico}}' },
-            { label: 'Fecha Promesa', value: '{{os.fecha_promesa}}' },
+            { label: 'Fecha promesa', value: '{{os.fecha_promesa}}' },
         ]
     },
     producto: { 
         group: 'Producto',
         items: [
             { label: 'Nombre', value: '{{p.nombre}}' },
+            { label: 'Descripción', value: '{{p.descripcion}}' },
             { label: 'Precio', value: '{{p.precio}}' },
             { label: 'SKU', value: '{{p.sku}}' },
-            { label: 'Código Barras', value: '{{p.codigo_barras}}' },
+            { label: 'Código barras', value: '{{p.codigo_barras}}' },
         ]
     }
 });
@@ -109,6 +118,8 @@ export function useTemplateVariables(customFieldDefinitionsGetter, context = 'ge
         // Lógica actualizada:
         if (context === 'cotizacion') {
             activeGroups.push(allVars.negocio, allVars.sucursal, allVars.cliente, allVars.cotizacion);
+        } else if (context === 'service_orders' || context === 'recibo_servicio') {
+            activeGroups.push(allVars.negocio, allVars.sucursal, allVars.cliente, allVars.orden_servicio);
         } else {
             // Base para tickets, etiquetas y clientes
             activeGroups.push(allVars.negocio, allVars.sucursal, allVars.cliente);
@@ -144,6 +155,16 @@ export function useTemplateVariables(customFieldDefinitionsGetter, context = 'ge
                     items: customFieldsByModule['quotes'].map(field => ({
                         label: field.name,
                         value: `{{cotizacion.custom.${field.key}}}`
+                    }))
+                });
+            }
+        } else if (context === 'service_orders' || context === 'recibo_servicio') {
+            if (customFieldsByModule['service_orders']) {
+                activeGroups.push({
+                    group: 'Campos Personalizados (OS)',
+                    items: customFieldsByModule['service_orders'].map(field => ({
+                        label: field.name,
+                        value: `{{os.custom.${field.key}}}`
                     }))
                 });
             }

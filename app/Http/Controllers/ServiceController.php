@@ -2,23 +2,23 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Service\StoreServiceAction;
+use App\Actions\Service\UpdateServiceAction;
 use App\Http\Requests\StoreServiceRequest;
 use App\Http\Requests\UpdateServiceRequest;
 use App\Models\Category;
 use App\Models\Service;
+use App\Models\Branch;
+use App\Services\ActivityLogService;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
-use Illuminate\Support\Str;
-use App\Traits\OptimizeMediaLocal;
 
 class ServiceController extends Controller implements HasMiddleware
 {
-    use OptimizeMediaLocal;
-
     public static function middleware(): array
     {
         return [
@@ -33,137 +33,101 @@ class ServiceController extends Controller implements HasMiddleware
     public function index(Request $request): Response
     {
         $user = Auth::user();
-        $branchId = $user->branch_id;
+        $subscription = $user->branch->subscription;
 
-        // SOLUCIÓN: Usar JOIN para permitir el ordenamiento por columnas de tablas relacionadas
         $query = Service::query()
             ->join('categories', 'services.category_id', '=', 'categories.id')
-            ->where('branch_id', $branchId)
-            ->with('category:id,name')
-            // Seleccionar explícitamente las columnas de la tabla principal para evitar conflictos
+            ->whereHas('branches', fn ($q) => $q->where('branches.id', $user->branch_id))
+            ->with([
+                'category:id,name', 
+                'variants:id,service_id,name,price,duration_estimate', 
+                'branches:id,name'
+            ])
             ->select('services.*');
 
         if ($request->has('search')) {
-            $searchTerm = $request->input('search');
-            // Especificar la tabla en la columna 'name' para evitar ambigüedad
-            $query->where('services.name', 'LIKE', "%{$searchTerm}%");
+            $query->where('services.name', 'LIKE', "%{$request->input('search')}%");
         }
 
         $sortField = $request->input('sortField', 'created_at');
-        $sortOrder = $request->input('sortOrder', 'desc');
-
-        // Usar el nombre completo de la columna para el ordenamiento
-        $sortColumn = $sortField === 'category.name' ? 'categories.name' : $sortField;
-        $query->orderBy($sortColumn, $sortOrder);
-
-        $services = $query->paginate($request->input('rows', 20))->withQueryString();
+        $sortColumn = $sortField === 'category.name' ? 'categories.name' : "services.{$sortField}";
+        $query->orderBy($sortColumn, $request->input('sortOrder', 'desc'));
 
         return Inertia::render('Service/Index', [
-            'services' => $services,
+            'services' => $query->paginate($request->input('rows', 20))->withQueryString(),
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
+            'serviceLimitReached' => $subscription->hasReachedServiceLimit(), 
         ]);
     }
 
     public function create(): Response
     {
-        $subscriptionId = Auth::user()->branch->subscription_id;
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+
         return Inertia::render('Service/Create', [
             'categories' => Category::where('subscription_id', $subscriptionId)->where('type', 'service')->get(['id', 'name']),
+            'branches' => Branch::where('subscription_id', $subscriptionId)->get(['id', 'name']),
+            'current_branch_id' => $user->branch_id,
+            'serviceLimitReached' => $user->branch->subscription->hasReachedServiceLimit(), 
         ]);
     }
 
-    public function store(StoreServiceRequest $request)
+    public function store(StoreServiceRequest $request, StoreServiceAction $action)
     {
         $validatedData = $request->validated();
-        $user = Auth::user();
+        $subscription = Auth::user()->branch->subscription;
+        
+        $newItemsCount = 1 + (!empty($validatedData['variants']) ? count($validatedData['variants']) : 0);
 
-        $baseSlug = Str::slug($validatedData['name']);
-        $slug = $baseSlug;
-        $counter = 1;
-        // El slug debe ser único por sucursal
-        while (Service::where('branch_id', $user->branch_id)->where('slug', $slug)->exists()) {
-            $slug = $baseSlug . '-' . $counter++;
+        if ($subscription->hasReachedServiceLimit($newItemsCount)) {
+            return redirect()->back()->with('error', 'Esta acción excede tu límite de servicios. Mejora tu suscripción.');
         }
 
-        $service = Service::create(array_merge($validatedData, [
-            'branch_id' => $user->branch_id,
-            'slug' => $slug,
-        ]));
-
-        if ($request->hasFile('image')) {
-            $mediaItem = $service->addMediaFromRequest('image')->toMediaCollection('service-image');
-            $this->optimizeMediaLocal($mediaItem);
-        }
+        $action->execute($validatedData, Auth::user(), $request->file('image'));
 
         return redirect()->route('services.index')->with('success', 'Servicio creado con éxito.');
     }
 
     public function edit(Service $service): Response
     {
-        $subscriptionId = Auth::user()->branch->subscription_id;
-        $service->load('media');
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+        
+        $service->load(['media', 'variants', 'branches:id']); 
+        
         return Inertia::render('Service/Edit', [
             'service' => $service,
             'categories' => Category::where('subscription_id', $subscriptionId)->where('type', 'service')->get(['id', 'name']),
+            'branches' => Branch::where('subscription_id', $subscriptionId)->get(['id', 'name']),
         ]);
     }
 
-    public function update(UpdateServiceRequest $request, Service $service)
+    public function update(UpdateServiceRequest $request, Service $service, UpdateServiceAction $action)
     {
         $validatedData = $request->validated();
+        $subscription = Auth::user()->branch->subscription;
 
-        if ($service->name !== $validatedData['name']) {
-            $baseSlug = Str::slug($validatedData['name']);
-            $slug = $baseSlug;
-            $counter = 1;
-            // Asegurarse de que el nuevo slug sea único, excluyendo el servicio actual
-            while (Service::where('branch_id', $service->branch_id)->where('slug', $slug)->where('id', '!=', $service->id)->exists()) {
-                $slug = $baseSlug . '-' . $counter++;
+        if (!empty($validatedData['has_variants']) && !empty($validatedData['variants'])) {
+            $newVariantsCount = collect($validatedData['variants'])->filter(fn($v) => empty($v['id']))->count();
+            
+            if ($newVariantsCount > 0 && $subscription->hasReachedServiceLimit($newVariantsCount)) {
+                return redirect()->back()->with('error', 'No puedes agregar estas variantes porque excedes el límite de servicios de tu plan.');
             }
-            $validatedData['slug'] = $slug; // Añadir el nuevo slug a los datos a actualizar
         }
 
-        $service->update($validatedData);
-
-        if ($request->hasFile('image')) {
-            $service->clearMediaCollection('service-image');
-            $mediaItem = $service->addMediaFromRequest('image')->toMediaCollection('service-image');
-            $this->optimizeMediaLocal($mediaItem);
-        }
+        $action->execute($service, $validatedData, Auth::user(), $request->file('image'));
 
         return redirect()->route('services.index')->with('success', 'Servicio actualizado con éxito.');
     }
 
-    public function show(Service $service): Response
+    public function show(Request $request, Service $service, ActivityLogService $activityLogService): Response
     {
-        $service->load(['category', 'media', 'activities.causer']);
-        $translations = config('log_translations.Service', []);
-
-        $formattedActivities = $service->activities->map(function ($activity) use ($translations) {
-            $changes = ['before' => [], 'after' => []];
-            if (isset($activity->properties['old'])) {
-                foreach ($activity->properties['old'] as $key => $value) {
-                    $changes['before'][($translations[$key] ?? $key)] = $value;
-                }
-            }
-            if (isset($activity->properties['attributes'])) {
-                foreach ($activity->properties['attributes'] as $key => $value) {
-                    $changes['after'][($translations[$key] ?? $key)] = $value;
-                }
-            }
-            return [
-                'id' => $activity->id,
-                'description' => $activity->description,
-                'event' => $activity->event,
-                'causer' => $activity->causer ? $activity->causer->name : 'Sistema',
-                'timestamp' => $activity->created_at->diffForHumans(),
-                'changes' => $changes,
-            ];
-        });
+        $service->load(['category', 'media', 'variants', 'branches']);
 
         return Inertia::render('Service/Show', [
             'service' => $service,
-            'activities' => $formattedActivities,
+            'activities' => $activityLogService->getFormattedActivities($service, $request, 'Service'),
         ]);
     }
 

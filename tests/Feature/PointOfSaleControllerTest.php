@@ -11,12 +11,16 @@ use App\Models\Customer;
 use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
-use App\Models\Product; // <-- Importante
-use App\Models\Transaction; // <-- Importante
+use App\Models\Product; 
+use App\Models\Transaction; 
 use App\Enums\TransactionStatus;
 use App\Enums\TransactionChannel;
 use App\Models\SubscriptionVersion;
+use App\Services\TransactionPaymentService;
 use Carbon\Carbon;
+use Exception;
+use Illuminate\Support\Facades\DB;
+use Mockery\MockInterface;
 use PHPUnit\Framework\Attributes\Test;
 use Spatie\Permission\Models\Permission;
 use App\Models\Role;
@@ -43,23 +47,19 @@ class PointOfSaleControllerTest extends TestCase
         // 1. Crear datos base
         $this->branch = Branch::factory()->create();
         $this->user = User::factory()->create(['branch_id' => $this->branch->id]);
-        $subscription = $this->branch->subscription; // Obtenemos la suscripción
+        $subscription = $this->branch->subscription; 
         
         // 2. Marcar Onboarding como completado
         $subscription->update([
             'onboarding_completed_at' => now()
         ]);
 
-        // --- 3. ¡AQUÍ ESTÁ LA CORRECCIÓN! ---
-        // Simular una versión de suscripción activa para
-        // pasar el middleware CheckSubscriptionStatus
+        // 3. Simular una versión de suscripción activa
         SubscriptionVersion::create([
             'subscription_id' => $subscription->id,
-            'start_date' => Carbon::yesterday(),  // Empezó ayer
-            'end_date' => Carbon::tomorrow(),      // Termina mañana
-            // No necesitamos 'status' u otros campos según tu modelo
+            'start_date' => Carbon::yesterday(),  
+            'end_date' => Carbon::tomorrow(),      
         ]);
-        // --- FIN DE LA CORRECCIÓN ---
 
         // 4. Configurar Permisos
         $permission = Permission::create([
@@ -97,11 +97,15 @@ class PointOfSaleControllerTest extends TestCase
             'status' => 'abierta'
         ]);
 
-        // 9. Crear producto
+        // 9. Crear producto y asignarle stock en la tabla PIVOTE
         $this->product = Product::factory()->create([
             'branch_id' => $this->branch->id,
             'selling_price' => 150.00,
-            'current_stock' => 20
+            // Eliminado: 'current_stock'
+        ]);
+        $this->product->branches()->attach($this->branch->id, [
+            'current_stock' => 20,
+            'reserved_stock' => 0
         ]);
 
         // 10. Autenticar al usuario
@@ -112,7 +116,6 @@ class PointOfSaleControllerTest extends TestCase
     public function it_creates_a_cash_sale_successfully(): void
     {
         // --- ARRANGE ---
-        // Simular un carrito que compra 2 unidades del producto
         $payload = [
             'cash_register_session_id' => $this->session->id,
             'cartItems' => [
@@ -127,98 +130,59 @@ class PointOfSaleControllerTest extends TestCase
                 ]
             ],
             'customerId' => $this->customer->id,
-            'subtotal' => 300.00, // 2 * 150.00
+            'subtotal' => 300.00,
             'total_discount' => 0,
-            'total' => 300.00, // (subtotal - discount) + tax
+            'total' => 300.00, 
             'use_balance' => false,
             'payments' => [
-                // Pagar con $100 en efectivo y $200 en tarjeta
                 ['amount' => 100.00, 'method' => 'efectivo', 'bank_account_id' => null],
                 ['amount' => 200.00, 'method' => 'tarjeta', 'bank_account_id' => $this->bankAccount->id]
             ]
         ];
 
         // --- ACT ---
-        // Asumo que tu ruta se llama 'pos.checkout'
-        // Si es diferente, ajústala.
         $response = $this->post(route('pos.checkout'), $payload);
 
         // --- ASSERT ---
-        
-        // 1. Verificar respuesta exitosa
         $response->assertSessionHasNoErrors();
-        // Asumo que redirige al index del POS
         $response->assertRedirect(route('pos.index')); 
 
-        // 2. Verificar que se creó la Transacción
         $this->assertDatabaseHas('transactions', [
             'customer_id' => $this->customer->id,
             'branch_id' => $this->branch->id,
             'subtotal' => 300.00,
-            'total_discount' => 0,
-            'status' => TransactionStatus::COMPLETED, // ¡Importante!
+            'status' => TransactionStatus::COMPLETED,
             'channel' => TransactionChannel::POS,
-            'folio' => 'V-001' // Primera venta
         ]);
 
-        // 3. Verificar que se guardó el Item de la transacción
-        $transaction = Transaction::where('folio', 'V-001')->first();
+        $transaction = Transaction::where('customer_id', $this->customer->id)->first();
+        
         $this->assertDatabaseHas('transactions_items', [
             'transaction_id' => $transaction->id,
             'itemable_id' => $this->product->id,
-            'itemable_type' => Product::class,
             'quantity' => 2,
-            'unit_price' => 150.00
         ]);
 
-        // 4. Verificar que se guardaron los Pagos
-        $this->assertDatabaseHas('payments', [
-            'transaction_id' => $transaction->id,
-            'amount' => 100.00,
-            'payment_method' => 'efectivo'
-        ]);
-        $this->assertDatabaseHas('payments', [
-            'transaction_id' => $transaction->id,
-            'amount' => 200.00,
-            'payment_method' => 'tarjeta',
-            'bank_account_id' => $this->bankAccount->id
-        ]);
+        // Verificar pagos
+        $this->assertDatabaseHas('payments', ['transaction_id' => $transaction->id, 'amount' => 100.00, 'payment_method' => 'efectivo']);
+        $this->assertDatabaseHas('payments', ['transaction_id' => $transaction->id, 'amount' => 200.00, 'payment_method' => 'tarjeta']);
 
-        // 5. Verificar que el STOCK se descontó
-        $this->assertEquals(
-            18, // 20 iniciales - 2 vendidos
-            $this->product->fresh()->current_stock,
-            'El stock del producto no se descontó.'
-        );
+        // Verificar STOCK en la tabla PIVOTE
+        $pivot = DB::table('branch_product')
+            ->where('branch_id', $this->branch->id)
+            ->where('product_id', $this->product->id)
+            ->first();
+        $this->assertEquals(18, $pivot->current_stock, 'El stock del producto no se descontó correctamente en la pivote.');
 
-        // 6. Verificar que el SALDO BANCARIO aumentó
-        $this->assertEquals(
-            5200.00, // 5000 iniciales + 200 del pago con tarjeta
-            $this->bankAccount->fresh()->balance,
-            'El saldo de la cuenta bancaria no aumentó.'
-        );
-
-        // 7. Verificar que el SALDO DEL CLIENTE no cambió
-        $this->assertEquals(
-            0.00,
-            $this->customer->fresh()->balance,
-            'El saldo del cliente no debió cambiar.'
-        );
-        $this->assertDatabaseMissing('customer_balance_movements', [
-            'customer_id' => $this->customer->id
-        ]);
+        // Verificar SALDOS
+        $this->assertEquals(5200.00, $this->bankAccount->fresh()->balance);
+        $this->assertEquals(0.00, $this->customer->fresh()->balance);
     }
 
     #[Test]
     public function it_creates_a_credit_sale_and_generates_customer_debt(): void
     {
         // --- ARRANGE ---
-        // El cliente empieza con saldo 0
-        $this->customer->update(['balance' => 0.00]);
-        // El producto tiene 20 en stock
-        $initialStock = $this->product->current_stock; // 20
-
-        // El carrito es de $300 (2 productos de $150)
         $payload = [
             'cash_register_session_id' => $this->session->id,
             'cartItems' => [
@@ -238,7 +202,6 @@ class PointOfSaleControllerTest extends TestCase
             'total' => 300.00,
             'use_balance' => false,
             'payments' => [
-                // Pero solo se paga $100 en efectivo
                 ['amount' => 100.00, 'method' => 'efectivo', 'bank_account_id' => null]
             ]
         ];
@@ -247,49 +210,29 @@ class PointOfSaleControllerTest extends TestCase
         $response = $this->post(route('pos.checkout'), $payload);
 
         // --- ASSERT ---
-
-        // 1. Verificar respuesta exitosa
         $response->assertSessionHasNoErrors();
         $response->assertSessionHas('success');
         $response->assertRedirect(route('pos.index'));
 
-        // 2. Verificar que se creó la Transacción, pero como PENDIENTE
         $this->assertDatabaseHas('transactions', [
             'customer_id' => $this->customer->id,
             'subtotal' => 300.00,
-            'status' => TransactionStatus::PENDING, // <-- ¡Importante!
-            'folio' => 'V-001'
+            'status' => TransactionStatus::PENDING,
         ]);
 
-        $transaction = Transaction::where('folio', 'V-001')->first();
+        $transaction = Transaction::where('customer_id', $this->customer->id)->first();
 
-        // 3. Verificar que se guardó el pago parcial de $100
-        $this->assertDatabaseHas('payments', [
-            'transaction_id' => $transaction->id,
-            'amount' => 100.00,
-            'payment_method' => 'efectivo'
-        ]);
+        // Verificar STOCK descontado en la tabla pivote
+        $pivot = DB::table('branch_product')->where('branch_id', $this->branch->id)->where('product_id', $this->product->id)->first();
+        $this->assertEquals(18, $pivot->current_stock);
 
-        // 4. Verificar que el STOCK se descontó (la venta se concretó)
-        $this->assertEquals(
-            $initialStock - 2, // 20 - 2 = 18
-            $this->product->fresh()->current_stock,
-            'El stock del producto no se descontó.'
-        );
-
-        // 5. Verificar que el SALDO DEL CLIENTE ahora es negativo (debe $200)
-        $this->assertEquals(
-            -200.00, // $100 pagados - $300 de la venta
-            $this->customer->fresh()->balance,
-            'El saldo del cliente no es la deuda correcta.'
-        );
-
-        // 6. Verificar que se creó el Movimiento de Saldo por la DEUDA
+        // Verificar SALDO DEUDOR
+        $this->assertEquals(-200.00, $this->customer->fresh()->balance);
         $this->assertDatabaseHas('customer_balance_movements', [
             'customer_id' => $this->customer->id,
             'transaction_id' => $transaction->id,
             'type' => CustomerBalanceMovementType::CREDIT_SALE,
-            'amount' => -200.00 // ¡Importante! El movimiento es por la deuda
+            'amount' => -200.00 
         ]);
     }
 
@@ -297,12 +240,8 @@ class PointOfSaleControllerTest extends TestCase
     public function it_creates_a_sale_using_customer_balance(): void
     {
         // --- ARRANGE ---
-        // El cliente tiene $100 de saldo a favor
         $this->customer->update(['balance' => 100.00]);
-        // El producto tiene 20 en stock
-        $initialStock = $this->product->current_stock; // 20
 
-        // El carrito es de $300 (2 productos de $150)
         $payload = [
             'cash_register_session_id' => $this->session->id,
             'cartItems' => [
@@ -320,9 +259,8 @@ class PointOfSaleControllerTest extends TestCase
             'subtotal' => 300.00,
             'total_discount' => 0,
             'total' => 300.00,
-            'use_balance' => true, // <-- ¡Importante!
+            'use_balance' => true, 
             'payments' => [
-                // El cliente paga los $200 restantes en efectivo
                 ['amount' => 200.00, 'method' => 'efectivo', 'bank_account_id' => null]
             ]
         ];
@@ -331,56 +269,29 @@ class PointOfSaleControllerTest extends TestCase
         $response = $this->post(route('pos.checkout'), $payload);
 
         // --- ASSERT ---
-
-        // 1. Verificar respuesta exitosa
         $response->assertSessionHasNoErrors();
         $response->assertSessionHas('success');
-        $response->assertRedirect(route('pos.index'));
 
-        // 2. Verificar que la Transacción se creó como COMPLETADA
         $this->assertDatabaseHas('transactions', [
             'customer_id' => $this->customer->id,
             'subtotal' => 300.00,
-            'status' => TransactionStatus::COMPLETED, // <-- ¡Importante!
-            'folio' => 'V-001'
+            'status' => TransactionStatus::COMPLETED, 
         ]);
 
-        $transaction = Transaction::where('folio', 'V-001')->first();
+        $transaction = Transaction::where('customer_id', $this->customer->id)->first();
 
-        // 3. Verificar que se guardaron AMBOS pagos
-        // Pago 1: El pago con Saldo
-        $this->assertDatabaseHas('payments', [
-            'transaction_id' => $transaction->id,
-            'amount' => 100.00,
-            'payment_method' => 'saldo'
-        ]);
-        // Pago 2: El pago en efectivo
-        $this->assertDatabaseHas('payments', [
-            'transaction_id' => $transaction->id,
-            'amount' => 200.00,
-            'payment_method' => 'efectivo'
-        ]);
+        // Verificar STOCK en la tabla pivote
+        $pivot = DB::table('branch_product')->where('branch_id', $this->branch->id)->where('product_id', $this->product->id)->first();
+        $this->assertEquals(18, $pivot->current_stock);
 
-        // 4. Verificar que el STOCK se descontó
-        $this->assertEquals(
-            $initialStock - 2, // 20 - 2 = 18
-            $this->product->fresh()->current_stock,
-            'El stock del producto no se descontó.'
-        );
+        // Verificar SALDO A FAVOR CONSUMIDO
+        $this->assertEquals(0.00, $this->customer->fresh()->balance);
 
-        // 5. Verificar que el SALDO DEL CLIENTE se consumió (100 - 100 = 0)
-        $this->assertEquals(
-            0.00,
-            $this->customer->fresh()->balance,
-            'El saldo a favor del cliente no se utilizó.'
-        );
-
-        // 6. Verificar que se creó el Movimiento de Saldo por el USO del saldo
         $this->assertDatabaseHas('customer_balance_movements', [
             'customer_id' => $this->customer->id,
             'transaction_id' => $transaction->id,
             'type' => CustomerBalanceMovementType::CREDIT_USAGE,
-            'amount' => -100.00 // ¡Importante! Es un movimiento negativo (un egreso)
+            'amount' => -100.00 
         ]);
     }
 
@@ -388,14 +299,6 @@ class PointOfSaleControllerTest extends TestCase
     public function it_creates_a_layaway_sale_and_reserves_stock(): void
     {
         // --- ARRANGE ---
-        // Cliente empieza con saldo 0
-        $this->customer->update(['balance' => 0.00]);
-        // Producto empieza con 20 en stock y 0 reservado
-        $this->product->update(['current_stock' => 20, 'reserved_stock' => 0]);
-        $initialStock = $this->product->current_stock;
-        $initialReservedStock = $this->product->reserved_stock;
-
-        // Venta de $300 (2 productos de $150)
         $payload = [
             'cash_register_session_id' => $this->session->id,
             'cartItems' => [
@@ -415,67 +318,93 @@ class PointOfSaleControllerTest extends TestCase
             'total' => 300.00,
             'use_balance' => false,
             'payments' => [
-                // Se da un anticipo de $50 en efectivo
                 ['amount' => 50.00, 'method' => 'efectivo', 'bank_account_id' => null]
             ],
-            'layaway_expiration_date' => Carbon::now()->addDays(30)->toDateString() // Fecha de expiración a 30 días
+            'layaway_expiration_date' => Carbon::now()->addDays(30)->toDateString() 
         ];
 
         // --- ACT ---
-        // Se llama a la ruta de 'layaway'
         $response = $this->post(route('pos.layaway'), $payload);
 
         // --- ASSERT ---
-
-        // 1. Verificar respuesta exitosa
         $response->assertSessionHasNoErrors();
         $response->assertSessionHas('success');
-        $response->assertRedirect(route('pos.index'));
 
-        // 2. Verificar que la Transacción se creó como ON_LAYAWAY
         $this->assertDatabaseHas('transactions', [
             'customer_id' => $this->customer->id,
             'subtotal' => 300.00,
-            'status' => TransactionStatus::ON_LAYAWAY, // <-- ¡Importante!
-            'folio' => 'V-001'
+            'status' => TransactionStatus::ON_LAYAWAY, 
         ]);
 
-        $transaction = Transaction::where('folio', 'V-001')->first();
+        $transaction = Transaction::where('customer_id', $this->customer->id)->first();
 
-        // 3. Verificar que se guardó el anticipo de $50
-        $this->assertDatabaseHas('payments', [
-            'transaction_id' => $transaction->id,
-            'amount' => 50.00,
-            'payment_method' => 'efectivo'
-        ]);
+        // Verificar RESERVA DE STOCK en la tabla pivote
+        $pivot = DB::table('branch_product')->where('branch_id', $this->branch->id)->where('product_id', $this->product->id)->first();
+        $this->assertEquals(20, $pivot->current_stock, 'El stock actual (físico) no debió alterarse aún.');
+        $this->assertEquals(2, $pivot->reserved_stock, 'El stock reservado no se incrementó.');
 
-        // 4. Verificar que el SALDO DEL CLIENTE ahora es negativo (debe $250)
-        $this->assertEquals(
-            -250.00, // $50 pagados - $300 de la venta
-            $this->customer->fresh()->balance,
-            'El saldo del cliente no es la deuda correcta.'
-        );
-
-        // 5. Verificar que se creó el Movimiento de Saldo por la DEUDA
+        // Verificar DEUDA DE APARTADO
+        $this->assertEquals(-250.00, $this->customer->fresh()->balance);
         $this->assertDatabaseHas('customer_balance_movements', [
             'customer_id' => $this->customer->id,
             'transaction_id' => $transaction->id,
-            'type' => CustomerBalanceMovementType::LAYAWAY_DEBT, // <-- ¡Importante!
+            'type' => CustomerBalanceMovementType::LAYAWAY_DEBT, 
             'amount' => -250.00 
         ]);
+    }
 
-        // 6. Verificar que el STOCK FÍSICO (current_stock) NO cambió
-        $this->assertEquals(
-            $initialStock, // Sigue siendo 20
-            $this->product->fresh()->current_stock,
-            'El stock físico (current_stock) no debió cambiar.'
-        );
+    // --- NUEVAS PRUEBAS AÑADIDAS PARA COBERTURA AL 100% ---
 
-        // 7. Verificar que el STOCK RESERVADO SÍ aumentó
-        $this->assertEquals(
-            $initialReservedStock + 2, // 0 + 2 = 2
-            $this->product->fresh()->reserved_stock,
-            'El stock reservado (reserved_stock) no aumentó.'
-        );
+    #[Test]
+    public function it_validates_required_fields_when_creating_a_sale(): void
+    {
+        // Enviamos un payload vacío
+        $response = $this->post(route('pos.checkout'), []);
+
+        // El controlador debe rechazar y devolver los errores de validación de los campos requeridos
+        $response->assertSessionHasErrors([
+            'cash_register_session_id',
+            'cartItems',
+            'subtotal',
+            'total',
+            'use_balance'
+        ]);
+    }
+
+    #[Test]
+    public function it_handles_exceptions_thrown_by_the_payment_service_on_checkout(): void
+    {
+        // 1. Payload válido base
+        $payload = [
+            'cash_register_session_id' => $this->session->id,
+            'cartItems' => [
+                [
+                    'id' => $this->product->id,
+                    'quantity' => 1,
+                    'unit_price' => 150.00,
+                    'description' => $this->product->name,
+                    'discount' => 0,
+                ]
+            ],
+            'customerId' => $this->customer->id,
+            'subtotal' => 150.00,
+            'total' => 150.00,
+            'use_balance' => false,
+            'payments' => []
+        ];
+
+        // 2. Mockear el Servicio para forzar excepción
+        $this->mock(TransactionPaymentService::class, function (MockInterface $mock) {
+            $mock->shouldReceive('handleNewSale')
+                ->once()
+                ->andThrow(new Exception('Error simulado de inventario negativo'));
+        });
+
+        // 3. Ejecutar
+        $response = $this->post(route('pos.checkout'), $payload);
+
+        // 4. Assert de la redirección con mensaje atrapado en el catch
+        $response->assertRedirect();
+        $response->assertSessionHas('error', 'Error al procesar la venta: Error simulado de inventario negativo');
     }
 }

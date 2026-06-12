@@ -10,32 +10,20 @@ import PendingCartsPopover from './PendingCartsPopover.vue';
 import ProductDetailModal from './ProductDetailModal.vue';
 import CreateProductModal from '@/Components/CreateProductModal.vue';
 import CashMovementModal from '@/Components/CashMovementModal.vue';
+import OnlineOrdersModal from './OnlineOrdersModal.vue';
 
-// --- Sintaxis explícita para evitar errores de compilación ---
 const props = defineProps({
-    products: {
-        type: Object,
-        required: true
-    },
-    categories: {
-        type: Array,
-        default: () => []
-    },
-    pendingCarts: {
-        type: Array,
-        default: () => []
-    },
-    filters: {
-        type: Object,
-        default: () => ({})
-    },
-    activeSession: {
-        type: Object,
-        default: null
-    }
+    products: { type: Object, required: true },
+    categories: { type: Array, default: () => [] },
+    pendingCarts: { type: Array, default: () => [] },
+    filters: { type: Object, default: () => ({}) },
+    activeSession: { type: Object, default: null },
+    cartItems: { type: Array, default: () => [] },
+    posMode: { type: String, default: 'retail' },
+    hasOnlineStore: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['addToCart', 'resumeCart', 'deleteCart', 'productCreatedAndAddToCart', 'refreshSessionData', 'openCloseSessionModal', 'openHistoryModal']);
+const emit = defineEmits(['addToCart', 'resumeCart', 'deleteCart', 'productCreatedAndAddToCart', 'refreshSessionData', 'openCloseSessionModal', 'openHistoryModal', 'update:posMode']);
 const confirm = useConfirm();
 
 // --- Lógica de Scroll simplificada ---
@@ -43,6 +31,17 @@ const loadedProducts = ref(props.products.data);
 const nextCursor = ref(props.products.next_page_url);
 const isLoadingMore = ref(false);
 const productsContainer = ref(null);
+
+// MODIFICACIÓN CLAVE: Este watcher escucha los cambios reales en los props (cuando hay una venta o filtro nuevo) 
+// y reemplaza los productos cargados en memoria, forzando la actualización visual.
+watch(() => props.products, (newProducts) => {
+    // Si no estamos en medio de una carga por scroll infinito
+    if (!isLoadingMore.value) {
+        loadedProducts.value = newProducts.data;
+        nextCursor.value = newProducts.next_page_url;
+        if (productsContainer.value) productsContainer.value.scrollTop = 0;
+    }
+}, { deep: true });
 
 const loadMoreProducts = () => {
     if (!nextCursor.value || isLoadingMore.value) return;
@@ -85,6 +84,12 @@ onUnmounted(() => {
 const searchTerm = ref(props.filters.search || '');
 const selectedCategoryId = ref(props.filters.category || null);
 
+const clearSearch = () => {
+    searchTerm.value = '';
+    const input = document.querySelector('.pos-search-input');
+    if (input) input.focus();
+};
+
 const applyFilters = () => {
     router.get(route('pos.index'), {
         search: searchTerm.value,
@@ -93,13 +98,8 @@ const applyFilters = () => {
         preserveState: true,
         preserveScroll: false,
         replace: true,
-        only: ['products'],
-        onSuccess: (page) => {
-            page.props.flash.success = null;
-            loadedProducts.value = page.props.products.data;
-            nextCursor.value = page.props.products.next_page_url;
-            if (productsContainer.value) productsContainer.value.scrollTop = 0;
-        },
+        only: ['products']
+        // El nuevo watch en props.products hará la actualización visual automáticamente
     });
 };
 
@@ -112,21 +112,17 @@ const handleCategoryFilter = (categoryId) => {
 };
 
 // --- Lógica de Detección de Entidades (Ventas / Clientes) ---
-const isCheckingEntity = ref(false); 
-const isSmartSearchHelpVisible = ref(false); 
+const isCheckingEntity = ref(false);
+const isSmartSearchHelpVisible = ref(false);
 
-// Helper para corregir errores comunes de lectores de código (ej: V'001 -> V-001)
 const sanitizeInput = (input) => {
     if (!input) return '';
-    // Reemplaza comilla simple por guion, y limpia espacios extras
     return input.replace(/'/g, '-').trim();
 };
 
 const checkAndRedirect = async (rawValue) => {
     const query = sanitizeInput(rawValue);
-    
-    // Validar longitud mínima
-    if (!query || query.length < 3) return false; 
+    if (!query || query.length < 3) return false;
 
     isCheckingEntity.value = true;
 
@@ -137,7 +133,7 @@ const checkAndRedirect = async (rawValue) => {
         if (result && result.found) {
             confirm.require({
                 message: result.message,
-                header: 'Entidad Detectada',
+                header: 'Entidad detectada',
                 icon: 'pi pi-info-circle',
                 acceptLabel: 'Ver detalles',
                 rejectLabel: 'Cancelar',
@@ -145,15 +141,11 @@ const checkAndRedirect = async (rawValue) => {
                     let routeName = 'transactions.show';
                     if (result.type === 'customer') routeName = 'customers.show';
                     if (result.type === 'service_order') routeName = 'service-orders.show';
-                    
-                    // Limpiar búsqueda si se aceptó ir al detalle
+
                     searchTerm.value = '';
-                    
                     window.open(route(routeName, result.id), '_blank');
-                    
                 },
                 reject: () => {
-                    // Si cancela, mostramos el término corregido en el input
                     if (searchTerm.value !== query) {
                         searchTerm.value = query;
                     }
@@ -169,87 +161,55 @@ const checkAndRedirect = async (rawValue) => {
     return false;
 };
 
-// --- Lógica para Lector de Código de Barras Global (MEJORADA) ---
+// --- Lógica para Lector de Código de Barras Global ---
 let barcodeBuffer = '';
 let barcodeTimer = null;
 
 const handleGlobalKeyDown = async (event) => {
     const activeElement = document.activeElement;
-    
-    // Verificar si el foco está en el input de búsqueda del POS
     const isSearchInput = activeElement.classList.contains('pos-search-input');
-    
-    // Verificar si hay algún OTRO input enfocado (ej: en un modal, o un campo de notas)
-    // Si es el input de búsqueda, SÍ queremos procesar (para detectar Enter y limpiar buffer)
-    // Si es otro input, NO queremos interferir.
     const isOtherInputFocused = ['INPUT', 'TEXTAREA'].includes(activeElement.tagName) && !isSearchInput;
     const isModalVisible = document.querySelector('.p-dialog-mask.p-component-overlay-enter');
 
-    // Si hay un modal abierto o el usuario escribe en otro campo, no interferir.
     if (isOtherInputFocused || isModalVisible) {
         return;
     }
 
-    // Si la tecla es Enter, procesamos el buffer acumulado
     if (event.key === 'Enter') {
-        // Si el buffer tiene contenido (vino del scanner o tipeo rápido sin foco)
         if (barcodeBuffer.length > 2) {
-            event.preventDefault(); // Prevenir submit de forms si los hubiera
-            
-            // 1. Sanitizar (arreglar V'001 -> V-001)
+            event.preventDefault();
             const cleanQuery = sanitizeInput(barcodeBuffer);
-            
-            // 2. Intentar detectar entidad inteligente
             const handled = await checkAndRedirect(cleanQuery);
-            
-            // 3. Si no fue entidad, ponerlo en el buscador para buscar producto
             if (!handled) {
                 searchTerm.value = cleanQuery;
             }
-            
             barcodeBuffer = '';
             return;
         }
-        
-        // Si el buffer está vacío pero estamos en el input de búsqueda y presionamos Enter,
-        // procesamos el valor actual del input manualmente.
+
         if (isSearchInput && searchTerm.value.length > 2) {
-             event.preventDefault();
-             await handleManualSearch();
-             return;
+            event.preventDefault();
+            await handleManualSearch();
+            return;
         }
     }
 
-    // Ignorar teclas de control, shift, etc., si vienen solas.
     if (event.key.length > 1) return;
 
-    // Acumular caracteres en el buffer
     barcodeBuffer += event.key;
 
-    // Reiniciar buffer si pasa mucho tiempo (escritura manual lenta vs scanner rápido)
-    // Aumentado a 200ms para ser más tolerante con scanners lentos o lag
     clearTimeout(barcodeTimer);
-    barcodeTimer = setTimeout(() => { 
-        // Si el buffer se limpia por timeout, asumimos que no fue un scan completo
-        // pero NO borramos el buffer si el usuario está escribiendo en el input enfocado,
-        // ya que el v-model se encarga de eso. El buffer es principalmente para cuando NO hay foco.
-        barcodeBuffer = ''; 
-    }, 200); 
+    barcodeTimer = setTimeout(() => {
+        barcodeBuffer = '';
+    }, 200);
 };
 
-// Manejo manual (cuando el usuario escribe y da Enter)
 const handleManualSearch = async () => {
     if (searchTerm.value.length > 2) {
-        // También sanitizamos lo escrito manualmente por si acaso
         const cleanQuery = sanitizeInput(searchTerm.value);
-        
-        // Verificamos entidad
         const handled = await checkAndRedirect(cleanQuery);
-        
-        // Si fue manejado (es entidad), checkAndRedirect ya limpió o gestionó.
-        // Si NO fue manejado, el watcher de `searchTerm` se encargará de filtrar productos.
         if (!handled && searchTerm.value !== cleanQuery) {
-             searchTerm.value = cleanQuery; // Actualizar con la versión corregida si cambió
+            searchTerm.value = cleanQuery;
         }
     }
 };
@@ -280,8 +240,8 @@ const cardTotal = computed(() => props.activeSession?.totals?.card || 0);
 const transferTotal = computed(() => props.activeSession?.totals?.transfer || 0);
 
 const menuItems = ref([
-    { label: 'Ingresar Efectivo', icon: 'pi pi-arrow-down-left', command: () => openCashMovementModal('ingreso') },
-    { label: 'Retirar Efectivo', icon: 'pi pi-arrow-up-right', command: () => openCashMovementModal('egreso') },
+    { label: 'Ingresar efectivo', icon: 'pi pi-arrow-down-left', command: () => openCashMovementModal('ingreso') },
+    { label: 'Retirar efectivo', icon: 'pi pi-arrow-up-right', command: () => openCashMovementModal('egreso') },
     { separator: true },
 ]);
 
@@ -306,168 +266,224 @@ const showProductDetails = (product) => {
     isDetailModalVisible.value = true;
 };
 const isCreateProductModalVisible = ref(false);
+const isOnlineOrdersModalVisible = ref(false);
 const handleProductCreated = (newProduct) => {
     emit('productCreatedAndAddToCart', newProduct);
 };
 </script>
 
 <template>
-    <div class="flex flex-col h-full mt-1">
-        <div class="lg:px-6 flex-shrink-0">
-            <div class="flex justify-between items-center mb-4">
-                <h1 class="hidden lg:block text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Registrar ventas</h1>
-                <div v-if="activeSession"
-                    class="p-1 text-center rounded-full px-2 lg:px-8 text-sm lg:text-base bg-gradient-to-r from-transparent via-[#CEEACB] dark:via-[#366531] to-transparent text-[#24880B] dark:text-[#69f446] font-semibold">
-                    Caja Activa: <span class="font-bold">{{ activeSession.cash_register.name }}</span>
+    <div class="flex flex-col h-full bg-white dark:bg-[#232323] p-4 lg:p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] shadow-sm">
+        
+        <!-- HEADER -->
+        <div class="flex-shrink-0">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                
+                <div class="flex items-center gap-4">
+                    <h1 class="hidden lg:block text-2xl md:text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0">Registrar ventas</h1>
+                    
+                    <!-- Badge Caja Activa (Estilo Telemetría) -->
+                    <div v-if="activeSession" class="flex items-center gap-2 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-1.5 rounded-full border border-gray-200 dark:border-[#3a3a3a] shadow-inner">
+                        <span class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse"></span>
+                        <span class="text-[10px] font-bold text-gray-600 dark:text-gray-300 tracking-widest uppercase m-0">
+                            Caja: {{ activeSession.cash_register.name }}
+                        </span>
+                    </div>
                 </div>
-                <div class="flex items-center gap-3">
-                    <Button @click="isCreateProductModalVisible = true" icon="pi pi-plus" rounded severity="secondary"
-                        v-tooltip.bottom="'Agregar nuevo producto'" variant="outlined" size="medium"
-                        class="!size-8 !bg-white" />
 
-                    <Button @click="toggleMenu" icon="pi pi-inbox" rounded severity="secondary"
-                        v-tooltip.bottom="'Resumen de Sesión'" variant="outlined" size="medium"
-                        class="!size-8 !bg-white" />
-                    <Menu ref="menu" :model="menuItems" :popup="true">
+                <!-- Botones de Acción Superiores -->
+                <div class="flex items-center gap-2">
+                     <Button v-if="hasOnlineStore" @click="isOnlineOrdersModalVisible = true" icon="pi pi-globe" rounded 
+                        v-tooltip.bottom="'Pedidos de tienda en línea'"
+                        class="!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-blue-500 hover:!border-blue-500 transition-colors" />
+
+                    <Button @click="$emit('update:posMode', posMode === 'retail' ? 'food' : 'retail')"
+                        :icon="posMode === 'retail' ? 'pi pi-shop' : 'pi pi-receipt'" rounded 
+                        v-tooltip.bottom="posMode === 'retail' ? 'Cambiar a comandas' : 'Cambiar a retail'"
+                        class="!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-purple-500 hover:!border-purple-500 transition-colors" />
+
+                    <Button @click="isCreateProductModalVisible = true" icon="pi pi-plus" rounded 
+                        v-tooltip.bottom="'Agregar producto'"
+                        class="!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-300 hover:!border-primary-500 transition-colors" />
+                    <Button @click="toggleMenu" icon="pi pi-wallet" rounded 
+                        v-tooltip.bottom="'Resumen de sesión'"
+                        class="!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-300 hover:!border-primary-500 transition-colors" />
+                    
+                    <Menu ref="menu" :model="menuItems" :popup="true" :pt="{ root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl' } }">
                         <template #end>
-                            <div class="lg:px-4 py-2 text-sm text-gray-700 dark:text-gray-200 space-y-3">
+                            <div class="px-4 py-3 text-sm text-gray-700 dark:text-gray-200 space-y-3 bg-gray-50 dark:bg-[#1a1a1a] m-2 rounded-xl">
                                 <div>
-                                    <span class="font-semibold">Efectivo en caja:</span>
-                                    <p class="text-lg font-bold text-right">${{ cashBalance.toFixed(2) }}</p>
+                                    <span class="text-[10px] uppercase tracking-widest text-gray-500">Efectivo en caja</span>
+                                    <p class="text-2xl font-light tracking-tight text-gray-900 dark:text-white m-0">${{ cashBalance.toFixed(2) }}</p>
                                 </div>
-                                <div class="border-t dark:border-gray-600 pt-2">
-                                    <span class="font-semibold">Ventas (sesión actual):</span>
-                                    <div class="flex justify-between text-xs mt-1">
-                                        <span>Tarjeta:</span>
-                                        <span class="font-mono">${{ cardTotal.toFixed(2) }}</span>
+                                <div class="border-t border-gray-200 dark:border-[#3a3a3a] pt-3">
+                                    <span class="text-[10px] uppercase tracking-widest text-gray-500">Ventas (sesión)</span>
+                                    <div class="flex justify-between items-center text-xs mt-2">
+                                        <span class="text-gray-600 dark:text-gray-400">Tarjeta</span>
+                                        <span class="font-mono font-medium">${{ cardTotal.toFixed(2) }}</span>
                                     </div>
-                                    <div class="flex justify-between text-xs">
-                                        <span>Transferencia:</span>
-                                        <span class="font-mono">${{ transferTotal.toFixed(2) }}</span>
+                                    <div class="flex justify-between items-center text-xs mt-1">
+                                        <span class="text-gray-600 dark:text-gray-400">Transferencia</span>
+                                        <span class="font-mono font-medium">${{ transferTotal.toFixed(2) }}</span>
                                     </div>
                                 </div>
                             </div>
                         </template>
                     </Menu>
 
-                    <Button @click="$emit('openHistoryModal')" icon="pi pi-clock" rounded severity="secondary"
-                        v-tooltip.bottom="'Ver historial de ventas'" variant="outlined" size="medium"
-                        class="!size-8 !bg-white" />
-                    <button @click="toggleOverlay" class="relative">
-                        <Button icon="pi pi-shopping-cart" rounded severity="secondary" aria-label="Carritos en espera"
-                            variant="outlined" size="medium" class="!size-8 !bg-white" />
+                    <Button @click="$emit('openHistoryModal')" icon="pi pi-clock" rounded 
+                        v-tooltip.bottom="'Historial de ventas'"
+                        class="!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-300 hover:!border-primary-500 transition-colors" />
+                    
+                    <button @click="toggleOverlay" class="relative group">
+                        <Button icon="pi pi-shopping-cart" rounded aria-label="Carritos en espera"
+                            class="!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-gray-600 dark:!text-gray-300 group-hover:!border-primary-500 transition-colors" />
                         <Badge v-if="pendingCarts.length" :value="pendingCarts.length" severity="contrast"
-                            class="absolute top-2 right-0 transform translate-x-1/2 -translate-y-1/2" size="small">
+                            class="absolute top-0 right-0 transform translate-x-1/4 -translate-y-1/4 !text-[10px]" size="small">
                         </Badge>
                     </button>
-                    <Button @click="$emit('openCloseSessionModal')" icon="pi pi-sign-out" rounded severity="danger"
-                        v-tooltip.bottom="'Cerrar Caja'" variant="outlined" size="medium" class="!size-8 !bg-white" />
-                    <Popover ref="op">
+                    
+                    <Button @click="$emit('openCloseSessionModal')" icon="pi pi-power-off" rounded 
+                        v-tooltip.bottom="'Cerrar caja'"
+                        class="!w-10 !h-10 !bg-red-50 dark:!bg-red-900/20 !border-red-200 dark:!border-red-900/50 !text-red-500 hover:!bg-red-500 hover:!text-white transition-all ml-2" />
+                    
+                    <Popover ref="op" :pt="{ root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-3xl !rounded-tl-none' } }">
                         <PendingCartsPopover :carts="pendingCarts" @resume-cart="$emit('resumeCart', $event)"
                             @delete-cart="$emit('deleteCart', $event)" />
                     </Popover>
                 </div>
             </div>
-            
-            <!-- BARRA DE BÚSQUEDA MEJORADA -->
-            <div class="mb-4 flex gap-2 items-center">
-                <div class="flex-grow">
-                    <IconField iconPosition="left">
-                        <!-- Spinner de carga o Lupa normal -->
-                        <InputIcon v-if="!isCheckingEntity" class="pi pi-search" />
-                        <InputIcon v-else class="pi pi-spin pi-spinner text-blue-500 font-bold" />
-                        
-                        <InputText v-model="searchTerm" @keydown.enter="handleManualSearch" placeholder="Escanear o buscar producto por nombre o SKU"
-                            class="w-full pos-search-input" />
+
+            <!-- BARRA DE BÚSQUEDA INTEGRADA -->
+            <div class="mb-6 flex flex-col md:flex-row gap-2 bg-gray-50 dark:bg-[#1a1a1a] p-2 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                <div class="flex-grow relative">
+                    <IconField iconPosition="left" class="w-full">
+                        <InputIcon v-if="!isCheckingEntity" class="pi pi-search text-gray-400" />
+                        <InputIcon v-else class="pi pi-spin pi-spinner text-primary-500 font-bold" />
+                        <InputText v-model="searchTerm" @keydown.enter="handleManualSearch"
+                            placeholder="Escanear o buscar producto..."
+                            class="w-full pos-search-input !bg-transparent !border-none !shadow-none !pl-10 !py-3 focus:!ring-0 dark:!text-white" />
                     </IconField>
+
+                    <button v-if="searchTerm" @click="clearSearch"
+                        class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500 transition-colors size-7 flex items-center justify-center rounded-full hover:bg-gray-200 dark:hover:bg-[#2a2a2a]"
+                        type="button" aria-label="Limpiar búsqueda">
+                        <i class="pi pi-times !text-xs font-bold"></i>
+                    </button>
                 </div>
-                <!-- Botón de Información de Búsqueda Inteligente -->
-                <Button label="Búsqueda Inteligente" icon="pi pi-sparkles" text size="small" severity="info" @click="isSmartSearchHelpVisible = true" />
+
+                <Button label="Búsqueda inteligente" icon="pi pi-sparkles" 
+                    @click="isSmartSearchHelpVisible = true"
+                    class="!rounded-2xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !text-gray-700 dark:!text-gray-300 hover:!border-primary-500 !text-[11px] !uppercase !tracking-widest !font-bold transition-all md:w-auto w-full" />
             </div>
 
+            <!-- FILTROS DE CATEGORÍA -->
             <CategoryFilters :categories="categories" :active-category-id="selectedCategoryId"
-                @filter="handleCategoryFilter" />
+                @filter="handleCategoryFilter" class="mb-4" />
         </div>
 
-        <div class="flex-grow lg:px-6 pb-6 overflow-y-auto" ref="productsContainer">
+        <!-- CONTENEDOR DE PRODUCTOS -->
+        <div class="flex-grow overflow-y-auto custom-scrollbar -mx-2 px-2" ref="productsContainer">
             <template v-if="loadedProducts.length > 0">
-                <div class="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2">
+                <div class="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 lg:gap-4 pb-6">
                     <ProductCard v-for="product in loadedProducts" :key="`${product.id}-${product.sku}`"
-                        :product="product" @showDetails="showProductDetails" @addToCart="$emit('addToCart', $event)" />
+                        :product="product" :cart-items="cartItems" @showDetails="showProductDetails"
+                        @addToCart="$emit('addToCart', $event)" />
                 </div>
             </template>
-            <p v-else-if="!isLoadingMore" class="text-center text-gray-500 mt-8">
-                No se encontraron productos.
-            </p>
-            <div v-if="isLoadingMore" class="flex justify-center items-center h-24">
-                <i class="pi pi-spin pi-spinner !text-3xl text-gray-400"></i>
+            
+            <div v-else-if="!isLoadingMore" class="flex flex-col items-center justify-center h-full text-center py-12">
+                <div class="w-16 h-16 bg-gray-50 dark:bg-[#1a1a1a] rounded-full flex items-center justify-center mb-4 border border-gray-100 dark:border-[#3a3a3a]">
+                    <i class="pi pi-box !text-2xl text-gray-400"></i>
+                </div>
+                <h3 class="text-xl font-light text-gray-900 dark:text-white tracking-tight m-0 mb-2">Sin resultados</h3>
+                <p class="text-sm text-gray-500">No se encontraron productos con esos filtros.</p>
+            </div>
+            
+            <div v-if="isLoadingMore" class="flex justify-center items-center py-8">
+                <i class="pi pi-spin pi-spinner-dotted !text-3xl text-primary-500"></i>
             </div>
         </div>
 
+        <!-- MODALES HIJOS -->
         <ProductDetailModal v-model:visible="isDetailModalVisible" :product="selectedProductForModal"
             @addToCart="$emit('addToCart', $event)" />
         <CreateProductModal v-model:visible="isCreateProductModalVisible" @created="handleProductCreated" />
         <CashMovementModal v-if="activeSession" v-model:visible="isCashMovementModalVisible" :type="movementType"
             :session-id="activeSession.id" @submitted="handleMovementSubmitted" />
 
-        <!-- MODAL DE AYUDA BÚSQUEDA INTELIGENTE -->
-        <Dialog v-model:visible="isSmartSearchHelpVisible" modal header="🧠 Búsqueda Inteligente" :style="{ width: '50rem' }" :breakpoints="{ '960px': '75vw', '640px': '90vw' }">
-            <div class="p-2 space-y-6">
-                <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg flex gap-4 items-start">
-                    <i class="pi pi-info-circle text-2xl text-blue-600 mt-1"></i>
+        <OnlineOrdersModal v-model:visible="isOnlineOrdersModalVisible" />
+
+        <!-- MODAL AYUDA BÚSQUEDA INTELIGENTE -->
+        <Dialog v-model:visible="isSmartSearchHelpVisible" modal header="Búsqueda inteligente"
+            class="w-full max-w-3xl"
+            :breakpoints="{ '960px': '75vw', '640px': '95vw' }"
+            :pt="{
+                root: { class: 'dark:bg-[#232323] border-none shadow-2xl rounded-3xl overflow-hidden' },
+                header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-8 py-6' },
+                title: { class: 'text-xl md:text-2xl font-light tracking-tight text-gray-900 dark:text-white m-0' },
+                content: { class: 'dark:bg-[#232323] px-8 py-6' },
+                footer: { class: 'dark:bg-[#232323] border-t border-gray-100 dark:border-[#3a3a3a] px-8 py-4' }
+            }">
+            
+            <div class="space-y-6">
+                <!-- Info Banner -->
+                <div class="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-2xl flex gap-4 items-start border border-blue-100 dark:border-blue-900/30">
+                    <div class="bg-blue-100 dark:bg-blue-900/30 w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0">
+                        <i class="pi pi-info-circle !text-xl text-blue-600 dark:text-blue-400"></i>
+                    </div>
                     <div>
-                        <h4 class="font-bold text-lg text-blue-800 dark:text-blue-200 m-0">¿Qué es esto?</h4>
-                        <p class="text-base text-blue-700 dark:text-blue-300 m-0">
-                            La barra de búsqueda principal no solo encuentra productos. Está diseñada para detectar automáticamente 
-                            códigos escaneados de tickets o información de clientes para agilizar tu flujo de trabajo.
-                            Si no cuentas con lector de códigos de barras, también puedes escribir manualmente los folios o números de teléfono y
-                            presionar <kbd class="bg-gray-300 text-gray-600 rounded-md px-1 py-px">Enter</kbd> para activar la búsqueda inteligente.
+                        <h4 class="font-medium text-lg text-blue-900 dark:text-blue-300 m-0 mb-1 tracking-tight">¿Cómo funciona?</h4>
+                        <p class="text-sm text-blue-800 dark:text-blue-200/70 m-0 leading-relaxed">
+                            La barra principal no solo encuentra productos. Detecta automáticamente códigos de tickets o teléfonos de clientes. 
+                            Escribe o escanea y presiona <kbd class="bg-white dark:bg-[#1a1a1a] text-xs px-2 py-1 rounded-md shadow-sm border border-blue-200 dark:border-blue-800 font-mono text-blue-900 dark:text-blue-300 mx-1">Enter</kbd> para activar la búsqueda.
                         </p>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <!-- Sección de Ventas -->
-                    <div class="border dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-shadow">
-                        <div class="flex items-center gap-2 mb-2 text-primary">
-                            <i class="pi pi-receipt !text-xl"></i>
-                            <h3 class="font-bold text-lg m-0">Folios de venta</h3>
+                <!-- Cards explicativas -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] rounded-2xl p-5 hover:border-primary-500/50 transition-colors group">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-10 h-10 rounded-full bg-white dark:bg-[#232323] flex items-center justify-center shadow-sm text-primary-500">
+                                <i class="pi pi-receipt !text-lg"></i>
+                            </div>
+                            <h3 class="font-medium text-lg text-gray-900 dark:text-white m-0 tracking-tight">Folios de venta</h3>
                         </div>
-                        <p class="text-sm text-gray-600 dark:text-gray-400 mb-3 m-0">
-                            Escanea el código de barras/QR de un ticket o escribe el folio (ej: <span class="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">V-001</span>, <span class="font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">OS-V-005</span>).
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4 m-0 leading-relaxed">
+                            Escanea un ticket o escribe el folio (ej: <span class="font-mono bg-white dark:bg-[#232323] px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700">V-001</span>).
                         </p>
-                        <ul class="text-sm space-y-2 text-gray-700 dark:text-gray-300">
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Cancelaciones rápidas</li>
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Devoluciones y cambios</li>
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Agregar pagos a créditos</li>
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Reimpresión de tickets</li>
+                        <ul class="text-[11px] uppercase tracking-wide space-y-3 text-gray-600 dark:text-gray-400 m-0 p-0 list-none">
+                            <li class="flex items-center gap-2"><i class="pi pi-check-circle text-green-500"></i> Cancelaciones rápidas</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check-circle text-green-500"></i> Devoluciones y cambios</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check-circle text-green-500"></i> Pagos a créditos</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check-circle text-green-500"></i> Reimpresión de tickets</li>
                         </ul>
-                        <small class="block mt-3 text-xs text-gray-500 italic">
-                            * Aplica para ventas fisicas desde punto de venta y Órdenes de Servicio (si el módulo está activo).
-                        </small>
                     </div>
 
-                    <!-- Sección de Clientes -->
-                    <div class="border dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-shadow">
-                        <div class="flex items-center gap-2 mb-2 text-purple-600">
-                            <i class="pi pi-user !text-xl"></i>
-                            <h3 class="font-bold text-lg m-0">Clientes</h3>
+                    <div class="bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] rounded-2xl p-5 hover:border-purple-500/50 transition-colors group">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-10 h-10 rounded-full bg-white dark:bg-[#232323] flex items-center justify-center shadow-sm text-purple-500">
+                                <i class="pi pi-user !text-lg"></i>
+                            </div>
+                            <h3 class="font-medium text-lg text-gray-900 dark:text-white m-0 tracking-tight">Clientes</h3>
                         </div>
-                        <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
-                            Escribe el <strong>número de teléfono</strong> (10 dígitos) o busca por <strong>nombre</strong> exacto.
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4 m-0 leading-relaxed">
+                            Escribe el teléfono a 10 dígitos o busca por nombre exacto.
                         </p>
-                        <ul class="text-sm space-y-2 text-gray-700 dark:text-gray-300">
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Abonar a saldo pendiente</li>
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Revisar historial de apartados</li>
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Imprimir estado de cuenta</li>
-                            <li class="flex items-center gap-2"><i class="pi pi-check text-green-500 !text-xs"></i> Ajustes de saldo</li>
+                        <ul class="text-[11px] uppercase tracking-wide space-y-3 text-gray-600 dark:text-gray-400 m-0 p-0 list-none">
+                            <li class="flex items-center gap-2"><i class="pi pi-check-circle text-purple-500"></i> Abonar saldo pendiente</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check-circle text-purple-500"></i> Historial de apartados</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check-circle text-purple-500"></i> Imprimir estado de cuenta</li>
+                            <li class="flex items-center gap-2"><i class="pi pi-check-circle text-purple-500"></i> Ajustes de saldo</li>
                         </ul>
                     </div>
                 </div>
             </div>
+            
             <template #footer>
                 <div class="flex justify-end">
-                    <Button label="Entendido" icon="pi pi-check" @click="isSmartSearchHelpVisible = false" autofocus />
+                    <Button label="Entendido" icon="pi pi-check" @click="isSmartSearchHelpVisible = false" autofocus class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-8" />
                 </div>
             </template>
         </Dialog>

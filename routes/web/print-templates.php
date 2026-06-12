@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('auth')->group(function () {
     // Ruta para la subida de imágenes
     Route::post('/print-templates/media', [PrintTemplateController::class, 'storeMedia'])->name('print-templates.media.store');
+    Route::patch('/print-templates/{printTemplate}/toggle-default', [PrintTemplateController::class, 'toggleDefault'])->name('print-templates.toggle-default');
     
     // Rutas del recurso para el CRUD de plantillas
     Route::resource('print-templates', PrintTemplateController::class);

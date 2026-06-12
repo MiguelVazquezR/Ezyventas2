@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, computed } from 'vue'; // <-- Asegurar computed
+import { ref, watch, computed, onMounted } from 'vue';
 import { Head, useForm, router, usePage } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -10,6 +10,7 @@ import CloseSessionModal from '@/Components/CloseSessionModal.vue';
 import SessionHistoryModal from '@/Components/SessionHistoryModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import JoinSessionModal from '@/Components/JoinSessionModal.vue';
+import OrderFormModal from './Partials/OrderFormModal.vue';
 import { v4 as uuidv4 } from 'uuid';
 
 const props = defineProps({
@@ -24,6 +25,7 @@ const props = defineProps({
     availableTemplates: Array,
     joinableSessions: Array,
     userBankAccounts: Array,
+    hasOnlineStore: Boolean,
 });
 
 const page = usePage();
@@ -32,6 +34,13 @@ const toast = useToast();
 const cartItems = ref([]);
 const selectedClient = ref(null);
 const isPaymentModalVisible = ref(false);
+const isOrderModalVisible = ref(false);
+
+// --- Lógica de Modo POS (Retail vs Comandas) ---
+const posMode = ref(localStorage.getItem('pos_mode') || 'retail');
+watch(posMode, (newVal) => {
+    localStorage.setItem('pos_mode', newVal);
+});
 
 // --- Lógica para Modales ---
 const isStartSessionModalVisible = ref(false);
@@ -41,16 +50,53 @@ const isHistoryModalVisible = ref(false);
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
 
-// Observa el flash message del backend para activar el modal de impresión
 watch(() => page.props.flash.print_data, (newPrintData) => {
     if (newPrintData) {
         printDataSource.value = newPrintData;
         isPrintModalVisible.value = true;
-        page.props.flash.print_data = null; // Limpiar para evitar reactivación
+        page.props.flash.print_data = null;
     }
 }, { immediate: true });
 
-// --- Helper CORREGIDO para calcular precio por volumen ---
+// --- PERSISTENCIA (LOCALSTORAGE) ---
+const userBranchKey = computed(() => {
+    const u = page.props.auth.user;
+    return `pos_data_${u.id}_${u.branch_id}`;
+});
+
+onMounted(() => {
+    const savedCart = localStorage.getItem(`${userBranchKey.value}_cart`);
+    const savedClient = localStorage.getItem(`${userBranchKey.value}_client`);
+    const savedPending = localStorage.getItem(`${userBranchKey.value}_pending`);
+
+    if (savedCart) {
+        try { cartItems.value = JSON.parse(savedCart); } catch (e) { console.error('Error restaurando carrito', e); }
+    }
+
+    if (savedClient) {
+        try { selectedClient.value = JSON.parse(savedClient); } catch (e) { console.error('Error restaurando cliente', e); }
+    }
+
+    if (savedPending) {
+        try { pendingCarts.value = JSON.parse(savedPending); } catch (e) { console.error('Error restaurando carritos pendientes', e); }
+    }
+});
+
+watch(cartItems, (newVal) => {
+    localStorage.setItem(`${userBranchKey.value}_cart`, JSON.stringify(newVal));
+}, { deep: true });
+
+watch(selectedClient, (newVal) => {
+    if (newVal) localStorage.setItem(`${userBranchKey.value}_client`, JSON.stringify(newVal));
+    else localStorage.removeItem(`${userBranchKey.value}_client`);
+});
+
+const pendingCarts = ref([]);
+watch(pendingCarts, (newVal) => {
+    localStorage.setItem(`${userBranchKey.value}_pending`, JSON.stringify(newVal));
+}, { deep: true });
+
+// --- Helper para calcular precio por volumen ---
 const getPriceForQuantity = (productData, quantity) => {
     const absoluteOriginalPrice = parseFloat(productData.selling_price);
     const basePriceAfterDirectPromo = parseFloat(productData.price);
@@ -77,15 +123,12 @@ const getPriceForQuantity = (productData, quantity) => {
         }
     }
     return {
-        price: basePriceAfterDirectPromo, // <- CORRECCIÓN: Volver al precio base (con promo)
+        price: basePriceAfterDirectPromo,
         original_price_base: absoluteOriginalPrice,
         isTierPrice: false
     };
 };
-// --- FIN: Helper CORREGIDO ---
 
-
-// --- addToCart CORREGIDO ---
 const addToCart = (data) => {
     const { product, variant } = data;
     const cartItemId = variant ? `prod-${product.id}-variant-${variant.id}` : `prod-${product.id}`;
@@ -126,15 +169,15 @@ const addToCart = (data) => {
             ...product,
             cartItemId: cartItemId,
             quantity: quantityToAdd,
-            selling_price: baseOriginalPrice, // Original base (sin promo, sin tier)
-            price_qty_1_promo: product.price, // Precio qty 1 (con promo directa si aplica)
-            price: calculatedPrice, // Precio calculado inicial
-            original_price: baseOriginalPrice, // Para calcular subtotal bruto y descuentos
+            selling_price: baseOriginalPrice,
+            price_qty_1_promo: product.price,
+            price: calculatedPrice,
+            original_price: baseOriginalPrice,
             isTierPrice: isTierPrice,
             isManualPrice: false,
             ...(variant && {
                 price: calculatedPrice + variant.price_modifier,
-                original_price: baseOriginalPrice + variant.price_modifier, // Base + modificador
+                original_price: baseOriginalPrice + variant.price_modifier,
                 sku: `${product.sku}-${variant.sku_suffix}`,
                 stock: variant.stock,
                 selectedVariant: variant.attributes,
@@ -142,20 +185,17 @@ const addToCart = (data) => {
                 image: variant.image_url || product.image,
             })
         };
-        // Asegurar que original_price en variante sume el modificador
         if (variant) {
             newItem.original_price = baseOriginalPrice + variant.price_modifier;
         }
 
         cartItems.value.push(newItem);
         if (stock <= 0) {
-            toast.add({ severity: 'warn', summary: 'Sin Stock', detail: `El producto se agregó al carrito pero no tiene stock disponible.`, life: 6000 });
+            toast.add({ severity: 'warn', summary: 'Sin stock', detail: `El producto se agregó al carrito pero no tiene stock disponible.`, life: 6000 });
         }
     }
 };
-// --- FIN: addToCart CORREGIDO ---
 
-// --- updateCartQuantity CORREGIDO ---
 const updateCartQuantity = ({ itemId, quantity }) => {
     const item = cartItems.value.find(i => i.cartItemId === itemId);
     if (item) {
@@ -178,16 +218,13 @@ const updateCartQuantity = ({ itemId, quantity }) => {
                 item.price = updatedPrice + variantModifier;
                 item.isTierPrice = updatedIsTier;
             } else {
-                console.error("Faltan datos base en el item para recalcular precio:", item);
                 item.quantity = oldQuantity;
                 toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo recalcular el precio.', life: 3000 });
             }
         }
     }
 };
-// --- FIN: updateCartQuantity CORREGIDO ---
 
-// --- updateCartPrice CORREGIDO ---
 const updateCartPrice = ({ itemId, price }) => {
     const item = cartItems.value.find(i => i.cartItemId === itemId);
     if (item) {
@@ -196,8 +233,6 @@ const updateCartPrice = ({ itemId, price }) => {
         item.isTierPrice = false;
     }
 };
-// --- FIN: updateCartPrice CORREGIDO ---
-
 
 const removeCartItem = (itemId) => {
     cartItems.value = cartItems.value.filter(i => i.cartItemId !== itemId);
@@ -218,7 +253,7 @@ const handleCustomerCreated = (newCustomer) => {
     selectedClient.value = newCustomer;
     toast.add({ severity: 'success', summary: 'Cliente creado', detail: 'El nuevo cliente ha sido seleccionado.', life: 3000 });
 };
-const pendingCarts = ref([]);
+
 const saveCartToPending = (payload) => {
     if (cartItems.value.length === 0) return;
     pendingCarts.value.push({
@@ -234,25 +269,34 @@ const saveCartToPending = (payload) => {
 const resumePendingCart = (cartId) => {
     const cartToResume = pendingCarts.value.find(c => c.id === cartId);
     if (!cartToResume) return;
-    if (cartItems.value.length > 0) saveCartToPending({ total: cartItems.value.reduce((acc, item) => acc + item.price * item.quantity, 0) });
+    if (cartItems.value.length > 0) {
+        pendingCarts.value.push({
+            id: uuidv4(),
+            client: selectedClient.value || props.defaultCustomer,
+            items: JSON.parse(JSON.stringify(cartItems.value)),
+            time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+            total: cartItems.value.reduce((acc, item) => acc + item.price * item.quantity, 0),
+        });
+    }
+
     cartItems.value = cartToResume.items;
     selectedClient.value = cartToResume.client.id === props.defaultCustomer.id ? null : cartToResume.client;
     pendingCarts.value = pendingCarts.value.filter(c => c.id !== cartId);
 };
 const deletePendingCart = (cartId) => {
     pendingCarts.value = pendingCarts.value.filter(c => c.id !== cartId);
-    toast.add({ severity: 'warn', summary: 'Carrito Descartado', detail: 'Se ha eliminado un carrito de la lista de espera.', life: 3000 });
+    toast.add({ severity: 'warn', summary: 'Carrito descartado', detail: 'Se ha eliminado un carrito de la lista de espera.', life: 3000 });
 };
 
 // --- Sesión de Caja ---
 const handleRefreshSessionData = () => {
-    router.reload({
+    router.get(route('pos.index'), props.filters, {
         preserveState: true,
         preserveScroll: true,
+        replace: true,
     });
 };
 
-// --- Creación Rápida de Producto ---
 const handleProductCreatedAndAddToCart = (newProduct) => {
     const formattedProduct = {
         id: newProduct.id,
@@ -265,13 +309,13 @@ const handleProductCreatedAndAddToCart = (newProduct) => {
         image: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' + encodeURIComponent(newProduct.name),
         description: newProduct.description || '',
         sku: newProduct.sku || '',
-        price_tiers: newProduct.price_tiers || [], // Asegurar que se pasan los tiers
+        price_tiers: newProduct.price_tiers || [],
         variants: {},
         variant_combinations: [],
         promotions: [],
     };
     addToCart({ product: formattedProduct });
-    router.reload({ preserveState: true, only: ['products'] });
+    router.get(route('pos.index'), props.filters, { preserveState: true, only: ['products'] });
 };
 
 // --- Checkout ---
@@ -281,16 +325,17 @@ const form = useForm({
     payments: [], use_balance: false,
     cash_register_session_id: null,
     layaway_expiration_date: null,
+    is_order: false,
+    contact_info: null,
+    delivery_date: null,
+    shipping_address: null,
+    shipping_cost: 0,
+    notes: null,
+    guest_name: null
 });
 
-const handleCheckout = (checkoutData) => {
-    if (!props.activeSession) {
-        toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar una venta.', life: 5000 });
-        return;
-    }
-
-    // 1. Mapear datos base
-    form.cartItems = cartItems.value.map(item => ({
+const mapCartItems = () => {
+    return cartItems.value.map(item => ({
         id: item.id,
         product_attribute_id: item.product_attribute_id || null,
         quantity: item.quantity,
@@ -302,37 +347,84 @@ const handleCheckout = (checkoutData) => {
             if (item.isManualPrice) {
                 return item.price < originalPrice ? 'Descuento manual' : (item.price > originalPrice ? 'Aumento manual' : null);
             }
-            if (item.isTierPrice) {
-                return 'Precio de mayoreo';
-            }
-            if (item.price < originalPrice) {
-                return 'Promoción de producto';
-            }
-            return null; // Sin descuento o motivo específico
+            if (item.isTierPrice) return 'Precio de mayoreo';
+            if (item.price < originalPrice) return 'Promoción de producto';
+            return null;
         })()
     }));
+};
+
+const handleOrderSubmit = (orderData) => {
+    if (!props.activeSession) {
+        toast.add({ severity: 'error', summary: 'Caja cerrada', detail: 'Debes tener una sesión de caja activa para registrar pedidos.', life: 5000 });
+        return;
+    }
+
+    const currentSubtotal = cartItems.value.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const itemsDiscountTotal = cartItems.value.reduce((acc, item) => {
+        const base = item.original_price ?? item.price;
+        return acc + ((base - item.price) * item.quantity);
+    }, 0);
+
+    form.reset();
+    form.cartItems = mapCartItems();
+    form.customerId = selectedClient.value ? selectedClient.value.id : null;
+    form.subtotal = currentSubtotal;
+    form.total_discount = itemsDiscountTotal;
+
+    form.is_order = true;
+    form.contact_info = {
+        name: orderData.contact_name,
+        phone: orderData.contact_phone
+    };
+    form.delivery_date = orderData.delivery_date;
+    form.shipping_address = orderData.shipping_address;
+    form.shipping_cost = orderData.shipping_cost;
+    form.notes = orderData.notes;
+    form.cash_register_session_id = props.activeSession.id;
+    form.total = currentSubtotal + parseFloat(orderData.shipping_cost);
+
+    form.post(route('pos.store-order'), {
+        onSuccess: () => {
+            clearCart();
+            isOrderModalVisible.value = false;
+            toast.add({ severity: 'success', summary: 'Pedido creado', detail: 'El pedido ha sido registrado correctamente.', life: 3000 });
+            // MODIFICACIÓN CLAVE: recarga manteniendo filtros pero forzando fresh data
+            router.get(route('pos.index'), props.filters, { only: ['products'], preserveState: true, preserveScroll: false });
+        },
+        onError: (errors) => {
+            console.error(errors);
+            toast.add({ severity: 'error', summary: 'Error', detail: 'Revisa los datos del pedido.', life: 5000 });
+        }
+    });
+};
+
+const handleCheckout = (checkoutData) => {
+    if (!props.activeSession) {
+        toast.add({ severity: 'error', summary: 'Caja cerrada', detail: 'Debes tener una sesión de caja activa para registrar una venta.', life: 5000 });
+        return;
+    }
+
+    form.cartItems = mapCartItems();
     form.customerId = selectedClient.value ? selectedClient.value.id : null;
     form.subtotal = checkoutData.subtotal;
     form.total_discount = checkoutData.total_discount;
     form.total = checkoutData.total;
     form.cash_register_session_id = props.activeSession.id;
-
-    // 2. Mapear nuevos datos de pago (del MultiPaymentProcessor)
     form.payments = checkoutData.payments;
     form.use_balance = checkoutData.use_balance;
-    form.layaway_expiration_date = checkoutData.layaway_expiration_date; // fecha de vencimiento
+    form.layaway_expiration_date = checkoutData.layaway_expiration_date;
+    form.guest_name = checkoutData.guest_name || null;
 
-    // 3. Determinar la ruta basada en el tipo de transacción
     let routeName;
     const transactionType = checkoutData.transactionType;
 
     switch (transactionType) {
         case 'contado':
         case 'credito':
-            routeName = 'pos.checkout'; // El backend (checkout) ya maneja la lógica de crédito
+            routeName = 'pos.checkout';
             break;
         case 'apartado':
-            // Esta es la ruta que crearemos en el backend
             routeName = 'pos.layaway';
             break;
         default:
@@ -340,100 +432,107 @@ const handleCheckout = (checkoutData) => {
             return;
     }
 
-    // 4. Enviar el formulario a la ruta correcta
     form.post(route(routeName), {
         onSuccess: () => {
             clearCart();
-            page.props.flash.success = null; // Limpiar flash de Inertia
-            router.reload({ only: ['products'], preserveState: true }); // Recargar productos (stock)
+            page.props.flash.success = null;
+            // MODIFICACIÓN CLAVE: recarga manteniendo filtros pero forzando fresh data
+            router.get(route('pos.index'), props.filters, { only: ['products'], preserveState: true, preserveScroll: false });
         },
         onError: (errors) => {
-            console.error("Error de validación:", errors);
             const errorMessage = errors.default || errors.message || Object.values(errors).flat().join(' ');
-            toast.add({ severity: 'error', summary: 'Error al Procesar', detail: errorMessage || 'Ocurrió un error inesperado.', life: 7000 });
+            toast.add({ severity: 'error', summary: 'Error al procesar', detail: errorMessage || 'Ocurrió un error inesperado.', life: 7000 });
         }
     });
 };
+
+const currentCartTotal = computed(() => {
+    return cartItems.value.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+});
 </script>
 
 <template>
-
     <Head title="Punto de venta" />
     <AppLayout>
-        <!-- Vista principal del POS (cuando la sesión está activa) -->
+        
+        <!-- Sesión Activa -->
         <template v-if="activeSession">
-            <div class="flex flex-col lg:flex-row gap-4 h-[calc(86vh)]">
-                <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden">
+            <div class="flex flex-col lg:flex-row gap-4 h-[calc(100vh-98px)] max-w-[1920px] mx-auto">
+                <div class="lg:w-2/3 xl:w-3/4 h-full overflow-hidden rounded-3xl">
                     <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
-                        :filters="filters" :active-session="activeSession" @add-to-cart="addToCart"
-                        @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
+                        :filters="filters" :active-session="activeSession" :cart-items="cartItems" :pos-mode="posMode"
+                        :has-online-store="hasOnlineStore"
+                        @add-to-cart="addToCart" @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
                         @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
                         @refresh-session-data="handleRefreshSessionData"
                         @open-history-modal="isHistoryModalVisible = true"
-                        @open-close-session-modal="isCloseSessionModalVisible = true" class="h-full" />
+                        @open-close-session-modal="isCloseSessionModalVisible = true"
+                        @update:posMode="posMode = $event" class="h-full" />
                 </div>
-                <div class="lg:w-1/3 xl:w-1/4 h-full overflow-hidden">
-                    <ShoppingCart 
-                        :items="cartItems" 
-                        :client="selectedClient" 
-                        :customers="localCustomers"
-                        :default-customer="defaultCustomer" 
-                        :active-promotions="activePromotions"
-                        :loading="form.processing"
-                        :payment-modal-visible="isPaymentModalVisible"
-                        @update-quantity="updateCartQuantity" 
-                        @update-price="updateCartPrice"
-                        @remove-item="removeCartItem" 
-                        @clear-cart="clearCart" 
-                        @select-customer="handleSelectCustomer"
-                        @customer-created="handleCustomerCreated" 
-                        @save-cart="saveCartToPending"
-                        @checkout="handleCheckout" 
-                        @open-payment-modal="isPaymentModalVisible = true"
+                <div class="lg:w-1/3 xl:w-1/4 h-full overflow-hidden rounded-3xl">
+                    <ShoppingCart :items="cartItems" :client="selectedClient" :customers="localCustomers"
+                        :default-customer="defaultCustomer" :active-promotions="activePromotions"
+                        :loading="form.processing" :payment-modal-visible="isPaymentModalVisible" :pos-mode="posMode"
+                        @update-quantity="updateCartQuantity" @update-price="updateCartPrice"
+                        @remove-item="removeCartItem" @clear-cart="clearCart" @select-customer="handleSelectCustomer"
+                        @customer-created="handleCustomerCreated" @save-cart="saveCartToPending"
+                        @checkout="handleCheckout" @open-payment-modal="isPaymentModalVisible = true"
                         @close-payment-modal="isPaymentModalVisible = false"
-                        class="h-full" 
-                    />
+                        @open-order-modal="isOrderModalVisible = true" class="h-full" />
                 </div>
             </div>
         </template>
 
-        <!-- Pantalla de "Lobby" cuando no hay sesión activa -->
+        <!-- Empty State: Sin Sesión (Estilo Pantalla de Sistema) -->
         <template v-else>
-            <div class="flex items-center justify-center h-[calc(100vh-150px)] dark:bg-gray-900 rounded-lg">
-                <div class="text-center p-8">
-                    <div
-                        class="bg-sky-100 dark:bg-sky-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
-                        <i class="pi pi-inbox !text-4xl text-sky-500"></i>
-                    </div>
-                    <!-- Mensaje cambia dependiendo de si hay sesiones para unirse o para crear -->
-                    <h2 v-if="joinableSessions && joinableSessions.length > 0"
-                        class="text-2xl font-bold text-gray-800 dark:text-gray-200">
-                        Sesiones de caja activas
-                    </h2>
-                    <h2 v-else class="text-2xl font-bold text-gray-800 dark:text-gray-200">
-                        Punto de venta bloqueado
-                    </h2>
+            <div class="flex items-center justify-center min-h-[80vh] px-4">
+                <div class="bg-white dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] rounded-3xl p-10 md:p-14 max-w-xl w-full text-center shadow-2xl relative overflow-hidden group">
+                    
+                    <!-- Glow effect interactivo -->
+                    <div class="absolute -top-32 -left-32 w-72 h-72 bg-primary-500/10 rounded-full blur-3xl group-hover:bg-primary-500/20 transition-all duration-700 pointer-events-none"></div>
 
-                    <p class="text-gray-600 dark:text-gray-400 mt-2 max-w-md">
-                        <span v-if="joinableSessions && joinableSessions.length > 0">
-                            Hay cajas abiertas por otros usuarios. Únete a una sesión para empezar a vender.
-                        </span>
-                        <span v-else>
-                            Necesitas abrir una nueva sesión de caja para poder registrar ventas.
-                        </span>
-                    </p>
+                    <div class="relative z-10">
+                        <div class="w-20 h-20 bg-gray-50 dark:bg-[#1a1a1a] rounded-full flex items-center justify-center mx-auto mb-8 border border-gray-100 dark:border-[#3a3a3a] shadow-inner">
+                            <i class="pi" :class="(joinableSessions?.length || availableCashRegisters?.length) ? 'pi-desktop text-primary-500' : 'pi-lock text-gray-400'" style="font-size: 1.8rem;"></i>
+                        </div>
 
-                    <!-- Botones cambian según el contexto -->
-                    <Button v-if="joinableSessions && joinableSessions.length > 0"
-                        @click="isJoinSessionModalVisible = true" label="Unirse a una sesión" icon="pi pi-users"
-                        class="mt-6" />
-                    <Button v-else-if="availableCashRegisters && availableCashRegisters.length > 0"
-                        @click="isStartSessionModalVisible = true" label="Abrir una caja" icon="pi pi-lock-open"
-                        class="mt-6" />
-                    <div v-else class="text-sm text-gray-500 pt-4 mt-8">
-                        <p>No hay cajas disponibles para unirse o abrir en esta sucursal.</p>
-                        <Button @click="$inertia.visit(route('cash-registers.create'))" label="Crear una caja"
-                            icon="pi pi-inbox" />
+                        <h2 class="text-3xl font-light text-gray-900 dark:text-white tracking-tight mb-3">
+                            {{ (joinableSessions?.length || availableCashRegisters?.length) ? 'Abrir sesión de caja' : 'Terminal bloqueada' }}
+                        </h2>
+
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-10 max-w-sm mx-auto leading-relaxed">
+                            <span v-if="joinableSessions?.length || availableCashRegisters?.length">
+                                El sistema requiere inicializar una sesión de caja para comenzar a procesar ventas.
+                            </span>
+                            <span v-else>
+                                No hay cajas disponibles para operar en esta sucursal. Contacta al administrador para que registre una nueva caja.
+                            </span>
+                        </p>
+
+                        <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                            <Button v-if="joinableSessions?.length"
+                                @click="isJoinSessionModalVisible = true" 
+                                label="Unirse a sesión activa" 
+                                icon="pi pi-users"
+                                class="!rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold px-6 py-3" />
+
+                            <Button v-if="availableCashRegisters?.length"
+                                @click="isStartSessionModalVisible = true" 
+                                label="Inicializar caja"
+                                icon="pi pi-power-off" 
+                                severity="contrast"
+                                class="!rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold px-6 py-3" />
+                        </div>
+
+                        <div v-if="!joinableSessions?.length && !availableCashRegisters?.length"
+                            class="mt-8 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
+                            <Button @click="$inertia.visit(route('cash-registers.create'))" 
+                                label="Configurar nueva caja"
+                                icon="pi pi-cog" 
+                                text 
+                                severity="secondary"
+                                class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold" />
+                        </div>
                     </div>
                 </div>
             </div>
@@ -450,5 +549,8 @@ const handleCheckout = (checkoutData) => {
             @update:visible="isHistoryModalVisible = $event" />
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
             :available-templates="availableTemplates" />
+        <OrderFormModal v-model:visible="isOrderModalVisible" :cart-total="currentCartTotal" :client="selectedClient"
+            :loading="form.processing" @submit="handleOrderSubmit" />
+
     </AppLayout>
 </template>

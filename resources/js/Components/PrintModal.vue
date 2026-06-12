@@ -2,17 +2,18 @@
 import { ref, watch, computed, onMounted } from 'vue';
 import axios from 'axios';
 import { useToast } from 'primevue/usetoast';
-import InputLabel from './InputLabel.vue'; // Asumiendo que existe
+import { router } from '@inertiajs/vue3';
+import InputLabel from './InputLabel.vue';
 
 // --- Importar Composables ---
 import { useDeviceDetection } from '@/Composables/useDeviceDetection';
 import { usePrintPlugin } from '@/Composables/usePrintPlugin';
 import { useWebBluetooth } from '@/Composables/useWebBluetooth';
 
-// --- Props y Emits (sin cambios) ---
+// --- Props y Emits ---
 const props = defineProps({
     visible: Boolean,
-    dataSource: Object, // { type: 'transaction' | 'product', id: number }
+    dataSource: Object, 
     availableTemplates: Array,
 });
 const emit = defineEmits(['update:visible']);
@@ -46,9 +47,7 @@ const printJobs = ref([]);
 const isPrinting = ref(false);
 const generalError = ref(null);
 const printMode = ref('plugin');
-
-// --- NUEVO: Estado para abrir cajón ---
-const openDrawer = ref(true); // Por defecto desactivado (opcional)
+const openDrawer = ref(true);
 
 // --- Lógica de Modo de Impresión ---
 onMounted(() => {
@@ -60,7 +59,6 @@ onMounted(() => {
             fetchPluginPrinters();
         }
     }
-    // Asegurar que isSecureContext se verifique al montar
     isSecureContext.value = window.isSecureContext;
 });
 
@@ -78,7 +76,6 @@ watch(printMode, (newMode) => {
 
 // --- Lógica de Trabajos ---
 const addJob = (template) => {
-    // Evitar añadir si ya está en la lista
     if (printJobs.value.some(job => job.template.id === template.id)) return;
     printJobs.value.push({
         id: `job-${Date.now()}-${Math.random()}`,
@@ -89,7 +86,6 @@ const addJob = (template) => {
 const hasTicketJobs = computed(() => printJobs.value.some(job => job.template.type === 'ticket_venta'));
 const hasLabelJobs = computed(() => printJobs.value.some(job => job.template.type === 'etiqueta'));
 
-// --- NUEVO: Computed para IDs de plantillas añadidas ---
 const addedTemplateIds = computed(() => {
     return new Set(printJobs.value.map(job => job.template.id));
 });
@@ -112,7 +108,6 @@ const loadOffsetsForPrinter = (printerName) => {
             labelOffsetX.value = offsets.x || 0.0;
             labelOffsetY.value = offsets.y || 0.0;
         } catch (e) {
-            console.error("Error parsing saved offsets:", e);
             labelOffsetX.value = 0.0;
             labelOffsetY.value = 0.0;
         }
@@ -123,12 +118,10 @@ const loadOffsetsForPrinter = (printerName) => {
 };
 
 const saveCurrentLabelOffsets = () => {
-    // Save offsets only in plugin mode and if a label printer is selected
     if (printMode.value === 'plugin' && selectedLabelPrinter.value) {
         const offsetKey = `printer_offset_${selectedLabelPrinter.value}`;
         localStorage.setItem(offsetKey, JSON.stringify({ x: labelOffsetX.value, y: labelOffsetY.value }));
     }
-    // Note: Could save offsets for BT using device.id or name if needed
 };
 
 watch(labelOffsetX, saveCurrentLabelOffsets);
@@ -143,7 +136,6 @@ watch(selectedLabelPrinter, (newPrinterName) => {
 const canPrint = computed(() => {
     if (printJobs.value.length === 0) return false;
     if (printMode.value === 'plugin') {
-        // CORRECCIÓN: Permitir imprimir si NO hay jobs de un tipo O si hay y se seleccionó impresora
         const ticketsOk = !hasTicketJobs.value || (hasTicketJobs.value && !!selectedTicketPrinter.value);
         const labelsOk = !hasLabelJobs.value || (hasLabelJobs.value && !!selectedLabelPrinter.value);
         return ticketsOk && labelsOk;
@@ -162,121 +154,148 @@ const print = async () => {
     bluetoothError.value = null;
 
     for (const job of printJobs.value) {
-        let printerIdentifier = null; // Nombre para plugin, null para BT (usa characteristic)
+        let printerIdentifier = null; 
 
         if (printMode.value === 'plugin') {
             printerIdentifier = job.template.type === 'ticket_venta' ? selectedTicketPrinter.value : selectedLabelPrinter.value;
-            // La validación ahora está en canPrint, aquí asumimos que está seleccionado si es necesario
-        } else { // Bluetooth mode
-            // La validación está en canPrint
-        }
+        } 
 
         for (let i = 0; i < job.copies; i++) {
             try {
-                // 1. Get payload from Laravel (common)
                 const payload = {
                     template_id: job.template.id,
                     data_source_type: props.dataSource.type,
                     data_source_id: props.dataSource.id,
                 };
                 
-                // Añadir offsets si es etiqueta
                 if (job.template.type === 'etiqueta') {
                     payload.offset_x = labelOffsetX.value;
                     payload.offset_y = labelOffsetY.value;
                 }
                 
-                // --- NUEVO: Añadir opción de abrir cajón si es ticket ---
-                // Solo enviamos esta opción si es un ticket de venta y el usuario marcó el checkbox
                 if (job.template.type === 'ticket_venta') {
                     payload.open_drawer = openDrawer.value;
                 }
 
-                console.log(`Generating payload for template ${job.template.id}, copy ${i + 1}/${job.copies}`);
                 const payloadResponse = await axios.post(route('print.payload'), payload);
                 const printData = payloadResponse.data;
 
-                // Extract raw commands (common)
                 let rawCommands = "";
                 if (printData.operations && Array.isArray(printData.operations)) {
                     printData.operations.forEach(op => {
                         if ((op.nombre === "EscribirTexto" || op.nombre === "TextoSegunPaginaDeCodigos") && op.argumentos?.length > 0) {
                             rawCommands += op.argumentos[op.argumentos.length - 1];
                         }
-                        // Add image logic if supported in BT later
                     });
                 }
 
                 if (!rawCommands && printMode.value === 'bluetooth') {
-                    console.warn(`No raw commands generated for template ${job.template.id}`);
-                    continue; // Skip copy if nothing to print in BT mode
+                    continue; 
                 }
 
-                // 2. Send according to mode
                 if (printMode.value === 'plugin') {
-                    console.log(`Sending to plugin: Printer=${printerIdentifier}, Width=${printData.paperWidth}`);
                     await sendToPlugin(printerIdentifier, printData.operations, printData.paperWidth);
                 } else {
-                    console.log(`Sending via Bluetooth (${rawCommands.length} chars)`);
-                    await sendViaWebBluetooth(rawCommands); // Needs only raw commands
+                    await sendViaWebBluetooth(rawCommands); 
                 }
 
-                console.log(`Copy ${i + 1}/${job.copies} of "${job.template.name}" sent (${printMode.value}).`);
-
             } catch (e) {
-                console.error(`Error on copy ${i + 1}/${job.copies} of "${job.template.name}" (${printMode.value}):`, e);
                 if (printMode.value === 'plugin') pluginError.value = e.message;
                 else bluetoothError.value = e.message;
                 generalError.value = `Error imprimiendo "${job.template.name}": ${e.message}`;
                 toast.add({ severity: 'error', summary: 'Error de Impresión', detail: generalError.value, life: 7000 });
                 isPrinting.value = false;
-                return; // Stop process if one copy fails
+                return; 
             }
-        } // End copies loop
-        if (generalError.value) break; // Exit jobs loop if error occurred
-    } // End jobs loop
+        } 
+        if (generalError.value) break; 
+    } 
 
     isPrinting.value = false;
-    if (!generalError.value) { // Show success only if no errors
+    if (!generalError.value) { 
         toast.add({ severity: 'success', summary: 'Éxito', detail: 'Trabajos de impresión enviados.', life: 3000 });
         closeModal();
     }
 };
 
-
 // --- Cerrar Modal ---
 const closeModal = () => {
     emit('update:visible', false);
     printJobs.value = [];
-    openDrawer.value = false; // Resetear checkbox al cerrar
+    openDrawer.value = false; 
 };
 
-// --- Watchers y Helpers UI ---
+// --- MEJORA: Auto-selección infalible (Reactiva) ---
+const evaluateAutoSelection = () => {
+    if (!props.visible) return;
+    if (printJobs.value.length > 0) return; // Si ya hay algo añadido, no interferimos
+
+    if (props.availableTemplates && props.availableTemplates.length > 0) {
+        if (props.availableTemplates.length === 1) {
+            addJob(props.availableTemplates[0]);
+        } else {
+            // Evaluamos si is_default es true o 1
+            const autoSelectTemplates = props.availableTemplates.filter(t => t.is_default || t.is_default === 1);
+            if (autoSelectTemplates.length > 0) {
+                autoSelectTemplates.forEach(t => addJob(t));
+            }
+        }
+    }
+};
+
+// --- NUEVO: Botón de Toggle Rápido de Plantilla Default ---
+const toggleDefaultTemplate = (template) => {
+    router.patch(route('print-templates.toggle-default', template.id), {}, {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            const isNowDefault = !template.is_default;
+            toast.add({ 
+                severity: 'success', 
+                summary: 'Configuración actualizada', 
+                detail: isNowDefault ? 'Plantilla marcada para auto-selección' : 'Se removió la auto-selección', 
+                life: 2000 
+            });
+        },
+        onError: () => {
+            toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo actualizar la plantilla', life: 3000 });
+        }
+    });
+};
+
+// --- Watchers ---
+
+// AÑADIDO { immediate: true } para que funcione desde la primera vez que nace el Modal
 watch(() => props.visible, (newVal) => {
     if (newVal) {
         generalError.value = null;
         pluginError.value = null;
         bluetoothError.value = null;
-        openDrawer.value = false; // Resetear al abrir (o quitar si quieres persistencia)
-        isSecureContext.value = window.isSecureContext; // Check secure context for BT
+        openDrawer.value = false; 
+        
+        // Prevención por si window no está definido aún
+        if (typeof window !== 'undefined') {
+            isSecureContext.value = window.isSecureContext; 
+        }
 
-        // Cargar impresoras y offsets solo si es necesario y en el modo correcto
+        // Ejecutamos la autoselección en caso de que los datos ya existan
+        evaluateAutoSelection();
+
         if (printMode.value === 'plugin') {
             fetchPluginPrinters().then(() => {
-                // Cargar offsets DESPUÉS de cargar impresoras
                 loadOffsetsForPrinter(selectedLabelPrinter.value);
             });
         } else {
-            // Resetear offsets si no es modo plugin
             labelOffsetX.value = 0.0;
             labelOffsetY.value = 0.0;
         }
-
-    } else {
-        // Optional: Disconnect BT when modal closes
-        // disconnectBluetooth();
     }
-});
+}, { immediate: true }); 
+
+// AÑADIDO { immediate: true } al observador profundo de las plantillas
+watch(() => props.availableTemplates, () => {
+    evaluateAutoSelection();
+}, { deep: true, immediate: true });
 
 
 const getTemplateTypeText = (type) => {
@@ -298,25 +317,6 @@ const getTemplateTypeSeverity = (type) => {
 
         <div class="p-4 space-y-4 dark:bg-gray-900 rounded-lg">
 
-            <!-- Selector de Modo (Comentado) -->
-            <!-- <div v-if="!isMobileOrTablet" class="mb-6">
-                <label id="print-mode-label" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Modo de Impresión</label>
-                <SelectButton v-model="printMode"
-                    :options="[{label: 'Plugin (Windows)', value: 'plugin', icon: 'pi pi-desktop'}, {label: 'Bluetooth (Navegador)', value: 'bluetooth', icon: 'pi pi-bluetooth'}]"
-                    optionLabel="label" optionValue="value" aria-labelledby="print-mode-label">
-                     <template #option="slotProps">
-                        <div class="flex items-center justify-center gap-2 px-3 py-2">
-                            <i :class="slotProps.option.icon"></i>
-                            <span>{{ slotProps.option.label }}</span>
-                        </div>
-                    </template>
-</SelectButton>
-<small v-if="printMode === 'bluetooth' && !isSecureContext" class="text-orange-500 mt-1 block">
-    El modo Bluetooth requiere HTTPS o localhost.
-</small>
-</div> -->
-
-            <!-- REORDENADO: Fieldset: Selección de Plantillas y Trabajos PRIMERO -->
             <Fieldset legend="1. Selecciona plantillas y copias" :toggleable="false">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <!-- Columna Plantillas Disponibles -->
@@ -329,7 +329,6 @@ const getTemplateTypeSeverity = (type) => {
                             <Listbox :options="availableTemplates" optionLabel="name"
                                 class="w-full border-none !shadow-none" listStyle="max-height: 200px">
                                 <template #option="slotProps">
-                                    <!-- Aplicar clases y cambiar icono si ya está añadida -->
                                     <div class="flex justify-between items-center w-full p-2 rounded transition-colors"
                                         :class="{
                                             'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 !bg-transparent': !addedTemplateIds.has(slotProps.option.id),
@@ -337,14 +336,26 @@ const getTemplateTypeSeverity = (type) => {
                                         }"
                                         @click="!addedTemplateIds.has(slotProps.option.id) ? addJob(slotProps.option) : null">
                                         <div class="flex items-center gap-2 min-w-0">
-                                            <!-- Cambiar icono si ya está añadida -->
-                                            <i
-                                                :class="addedTemplateIds.has(slotProps.option.id) ? 'pi pi-check-circle text-green-600' : 'pi pi-plus-circle text-blue-600'"></i>
+                                            <i :class="addedTemplateIds.has(slotProps.option.id) ? 'pi pi-check-circle text-green-600' : 'pi pi-plus-circle text-blue-600'"></i>
                                             <span class="truncate text-sm">{{ slotProps.option.name }}</span>
                                         </div>
-                                        <Tag :value="getTemplateTypeText(slotProps.option.type)"
-                                            :severity="getTemplateTypeSeverity(slotProps.option.type)"
-                                            class="text-xs flex-shrink-0" />
+                                        
+                                        <div class="flex items-center gap-2 flex-shrink-0">
+                                            <Tag :value="getTemplateTypeText(slotProps.option.type)"
+                                                :severity="getTemplateTypeSeverity(slotProps.option.type)"
+                                                class="text-[10px]" />
+                                            
+                                            <!-- Botón de Estrella para activar/desactivar auto-selección -->
+                                            <Button 
+                                                :icon="slotProps.option.is_default ? 'pi pi-star-fill' : 'pi pi-star'" 
+                                                class="!w-7 !h-7 !p-0"
+                                                :class="slotProps.option.is_default ? 'text-yellow-500 hover:text-yellow-600' : 'text-gray-300 hover:text-yellow-400'"
+                                                text 
+                                                rounded 
+                                                @click.stop="toggleDefaultTemplate(slotProps.option)"
+                                                v-tooltip.top="slotProps.option.is_default ? 'Quitar selección automática' : 'Marcar para auto-selección'"
+                                            />
+                                        </div>
                                     </div>
                                 </template>
                             </Listbox>
@@ -384,7 +395,6 @@ const getTemplateTypeSeverity = (type) => {
             </Fieldset>
 
 
-            <!-- REORDENADO: Fieldset Principal: Configuración de Impresora SEGUNDO -->
             <Fieldset legend="2. Selecciona impresora" :toggleable="false" :disabled="printJobs.length === 0">
                 <template #legend>
                     <div class="flex items-center gap-2">
@@ -415,17 +425,13 @@ const getTemplateTypeSeverity = (type) => {
                                 class="w-full mt-1" :loading="isLoadingPluginPrinters"
                                 :disabled="pluginPrinters.length === 0 || isLoadingPluginPrinters" />
                             
-                            <!-- NUEVO: Checkbox para Abrir Cajón -->
-                            <div class="flex items-center mt-3 ml-1">
-                                <Checkbox v-model="openDrawer" binary inputId="open-drawer" />
-                                <label for="open-drawer" class="ml-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
-                                    Abrir cajón de dinero al imprimir
-                                </label>
+                            <div class="mt-3 ml-1 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-100 dark:border-blue-800 flex items-start gap-2">
+                                <i class="pi pi-info-circle text-blue-500 mt-0.5"></i>
+                                <p class="text-xs text-blue-700 dark:text-blue-300 m-0">
+                                    Se enviará automáticamente la instrucción para abrir el cajón de dinero. Si tu equipo no cuenta con uno de apertura automática, no hay problema, tu ticket se imprimirá con normalidad.
+                                </p>
                             </div>
                         </div>
-                        <!-- <div v-else-if="printJobs.length > 0" class="text-sm text-gray-500 italic">
-                            No se han añadido trabajos de ticket.
-                        </div> -->
 
                         <div v-if="hasLabelJobs">
                             <InputLabel for="label-printer" value="Impresora de Etiquetas" class="text-sm" />
@@ -434,14 +440,9 @@ const getTemplateTypeSeverity = (type) => {
                                 class="w-full mt-1" :loading="isLoadingPluginPrinters"
                                 :disabled="pluginPrinters.length === 0 || isLoadingPluginPrinters" />
                         </div>
-                        <!-- <div v-else-if="printJobs.length > 0" class="text-sm text-gray-500 italic">
-                            No se han añadido trabajos de etiqueta.
-                        </div> -->
                     </div>
                     <InlineMessage v-if="pluginError" severity="error" class="mt-3 text-sm">
                         {{ pluginError }}
-                        <!-- Si no tienes el plugin instalado, descárgalo desde
-                        <a href="@/../../ezy_plugin_v1.0.0.exe" target="_blank" class="underline font-medium">aquí (v1.0.0 Windows x64)</a>. -->
                         Si no tienes el plugin, envíanos un whatsapp al +52 33 2170 5650 o un correo a notificaciones@ezyventas.com para compartirtelo.
                     </InlineMessage>
                     <Message
@@ -479,38 +480,9 @@ const getTemplateTypeSeverity = (type) => {
                 </div>
             </Fieldset>
 
-
-            <!-- Fieldset: Calibración (Comentado) -->
-            <!-- <Fieldset v-if="hasLabelJobs" legend="Ajuste de Impresión (Etiquetas)" :toggleable="false" class="mt-6">
-                 <div class="flex items-center space-x-2 mb-3">
-                     <p class="text-sm font-medium text-gray-800 dark:text-gray-200 m-0">
-                         Desfase (mm)
-                         <span v-if="printMode === 'plugin' && selectedLabelPrinter"> para: <strong class="font-mono text-xs">{{ selectedLabelPrinter }}</strong></span>
-                     </p>
-                    <i class="pi pi-info-circle text-gray-400 cursor-pointer"
-                        v-tooltip.top="'Si la impresión está desfasada, corrígela aquí. Se guarda por impresora (plugin) o general (BT).'">
-                    </i>
-                </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <InputLabel for="offset-x" value="Horizontal (X)" class="text-xs mb-1"/>
-                        <InputNumber id="offset-x" v-model="labelOffsetX" class="w-full" fluid
-                            inputId="horizontal-offset" mode="decimal" :minFractionDigits="1"
-                            :maxFractionDigits="2" showButtons :step="0.5" suffix=" mm" />
-                    </div>
-                    <div>
-                        <InputLabel for="offset-y" value="Vertical (Y)" class="text-xs mb-1"/>
-                        <InputNumber id="offset-y" v-model="labelOffsetY" class="w-full" fluid inputId="vertical-offset"
-                            mode="decimal" :minFractionDigits="1" :maxFractionDigits="2" showButtons :step="0.5" suffix=" mm"/>
-                    </div>
-                </div>
-                <small class="text-gray-500 dark:text-gray-400 mt-2 block">Positivo = derecha/abajo, Negativo = izquierda/arriba.</small>
-             </Fieldset> -->
-
-            <!-- Mensaje de Error General -->
-            <Message v-if="generalError && !pluginError && !bluetoothError" severity="error" :closable="false"
-                class="mt-4">{{
-                    generalError }}</Message>
+            <Message v-if="generalError && !pluginError && !bluetoothError" severity="error" :closable="false" class="mt-4">
+                {{ generalError }}
+            </Message>
 
         </div>
 

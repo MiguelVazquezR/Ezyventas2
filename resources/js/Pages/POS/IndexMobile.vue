@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, computed } from 'vue'; // <-- Asegurar computed
+import { ref, watch, computed, onMounted } from 'vue'; 
 import { Head, useForm, router, usePage } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -10,6 +10,7 @@ import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import CloseSessionModal from '@/Components/CloseSessionModal.vue';
 import SessionHistoryModal from '@/Components/SessionHistoryModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
+import OrderFormModal from './Partials/OrderFormModal.vue'; 
 import { v4 as uuidv4 } from 'uuid';
 
 const props = defineProps({
@@ -24,6 +25,7 @@ const props = defineProps({
     availableTemplates: Array,
     joinableSessions: Array,
     userBankAccounts: Array,
+    hasOnlineStore: Boolean,
 });
 
 const page = usePage();
@@ -32,18 +34,23 @@ const toast = useToast();
 const cartItems = ref([]);
 const selectedClient = ref(null);
 const isPaymentModalVisible = ref(false);
+const isOrderModalVisible = ref(false);
 
-// --- Lógica para Drawer del Carrito ---
 const isCartDrawerVisible = ref(false);
 const cartItemCount = computed(() => cartItems.value.reduce((acc, item) => acc + item.quantity, 0));
 
-// --- Lógica para Modales ---
 const isStartSessionModalVisible = ref(false);
 const isJoinSessionModalVisible = ref(false);
 const isCloseSessionModalVisible = ref(false);
 const isHistoryModalVisible = ref(false);
 const isPrintModalVisible = ref(false);
 const printDataSource = ref(null);
+
+// --- Lógica de Modo POS (Retail vs Comandas) ---
+const posMode = ref(localStorage.getItem('pos_mode') || 'retail');
+watch(posMode, (newVal) => {
+    localStorage.setItem('pos_mode', newVal);
+});
 
 watch(() => page.props.flash.print_data, (newPrintData) => {
     if (newPrintData) {
@@ -53,39 +60,62 @@ watch(() => page.props.flash.print_data, (newPrintData) => {
     }
 }, { immediate: true });
 
-// --- Helper CORREGIDO para calcular precio por volumen ---
-const getPriceForQuantity = (productData, quantity) => {
-    // Precio base ANTES de promos directas (precio original de 1 pieza)
-    // Usamos selling_price que viene del backend y representa el precio base original
-    const absoluteOriginalPrice = parseFloat(productData.selling_price);
+// --- PERSISTENCIA (LOCALSTORAGE) ---
+const userBranchKey = computed(() => {
+    const u = page.props.auth.user;
+    return `pos_data_${u.id}_${u.branch_id}`;
+});
 
-    // Precio base DESPUÉS de promos directas (precio de 1 pieza con promo si aplica)
-    // Usamos productData.price que ya calculó el backend (considerando promos ITEM_DISCOUNT)
+onMounted(() => {
+    const savedCart = localStorage.getItem(`${userBranchKey.value}_cart`);
+    const savedClient = localStorage.getItem(`${userBranchKey.value}_client`);
+    const savedPending = localStorage.getItem(`${userBranchKey.value}_pending`);
+
+    if (savedCart) {
+        try { cartItems.value = JSON.parse(savedCart); } catch (e) { console.error('Error restaurando carrito', e); }
+    }
+    if (savedClient) {
+        try { selectedClient.value = JSON.parse(savedClient); } catch (e) { console.error('Error restaurando cliente', e); }
+    }
+    if (savedPending) {
+        try { pendingCarts.value = JSON.parse(savedPending); } catch (e) { console.error('Error restaurando carritos pendientes', e); }
+    }
+});
+
+watch(cartItems, (newVal) => {
+    localStorage.setItem(`${userBranchKey.value}_cart`, JSON.stringify(newVal));
+}, { deep: true });
+
+watch(selectedClient, (newVal) => {
+    if (newVal) localStorage.setItem(`${userBranchKey.value}_client`, JSON.stringify(newVal));
+    else localStorage.removeItem(`${userBranchKey.value}_client`);
+});
+
+const pendingCarts = ref([]);
+watch(pendingCarts, (newVal) => {
+    localStorage.setItem(`${userBranchKey.value}_pending`, JSON.stringify(newVal));
+}, { deep: true });
+// -----------------------------------
+
+const getPriceForQuantity = (productData, quantity) => {
+    const absoluteOriginalPrice = parseFloat(productData.selling_price);
     const basePriceAfterDirectPromo = parseFloat(productData.price);
 
-    // Si no hay tiers, la cantidad es 1, o los tiers están vacíos
     if (!productData.price_tiers || productData.price_tiers.length === 0 || quantity <= 1) {
-        // Devolver el precio base (con promo directa si aplica) y el original puro
         return {
             price: basePriceAfterDirectPromo,
-            original_price_base: absoluteOriginalPrice, // El precio original sin promos ni tiers
+            original_price_base: absoluteOriginalPrice, 
             isTierPrice: false
         };
     }
 
-    // Ordenar tiers por cantidad mínima DESCENDENTE para encontrar el mejor aplicable
-    // Asegurarse de que min_quantity sea numérico
     const sortedTiers = [...productData.price_tiers]
-        .map(t => ({ ...t, min_quantity: parseInt(t.min_quantity, 10) })) // Convertir a número
+        .map(t => ({ ...t, min_quantity: parseInt(t.min_quantity, 10) })) 
         .sort((a, b) => b.min_quantity - a.min_quantity);
 
-    // Buscar el primer tier (el más alto) cuya cantidad mínima sea <= a la cantidad actual
     for (const tier of sortedTiers) {
-        // Asegurarse de que min_quantity es un número válido antes de comparar
         if (!isNaN(tier.min_quantity) && quantity >= tier.min_quantity) {
-            // Precio del tier encontrado
             const tierPrice = parseFloat(tier.price);
-            // Devolver el precio del tier y el precio original puro
             return {
                 price: tierPrice,
                 original_price_base: absoluteOriginalPrice,
@@ -94,15 +124,12 @@ const getPriceForQuantity = (productData, quantity) => {
         }
     }
 
-    // Si la cantidad es > 1 pero NO alcanzó ningún tier, DEBE volver al precio base (con promo directa)
     return {
-        price: basePriceAfterDirectPromo, // <- ESTA ES LA CLAVE DE LA CORRECCIÓN
+        price: basePriceAfterDirectPromo,
         original_price_base: absoluteOriginalPrice,
         isTierPrice: false
     };
 };
-// --- FIN: Helper CORREGIDO ---
-
 
 const addToCart = (data) => {
     const { product, variant } = data;
@@ -112,10 +139,9 @@ const addToCart = (data) => {
     const quantityToAdd = 1;
     const targetQuantity = existingItem ? existingItem.quantity + quantityToAdd : 1;
 
-    // Usar datos del producto base para calcular el precio inicial
     const productBaseDataForCalc = {
-        selling_price: product.selling_price, // Precio original base
-        price: product.price,               // Precio base con promo directa (para qty 1)
+        selling_price: product.selling_price, 
+        price: product.price,               
         price_tiers: product.price_tiers
     };
     const { price: calculatedPrice, original_price_base: baseOriginalPrice, isTierPrice } = getPriceForQuantity(productBaseDataForCalc, targetQuantity);
@@ -123,60 +149,53 @@ const addToCart = (data) => {
     if (existingItem) {
         if (targetQuantity <= stock || stock < 0) {
             existingItem.quantity = targetQuantity;
-            // Recalcular solo si no es manual
             if (!existingItem.isManualPrice) {
-                // Usar los datos base guardados en el item existente para recalcular
                 const itemBaseDataForCalc = {
-                    selling_price: existingItem.selling_price, // Original base guardado
-                    price: existingItem.price_qty_1_promo, // Precio qty 1 con promo guardado
+                    selling_price: existingItem.selling_price, 
+                    price: existingItem.price_qty_1_promo, 
                     price_tiers: existingItem.price_tiers
                 };
-                const { price: updatedPrice, original_price_base: updatedOriginalBase, isTierPrice: updatedIsTier } = getPriceForQuantity(itemBaseDataForCalc, existingItem.quantity);
+                const { price: updatedPrice, isTierPrice: updatedIsTier } = getPriceForQuantity(itemBaseDataForCalc, existingItem.quantity);
 
-                // Calcular modificador de variante basado en los originales guardados
                 let variantModifier = 0;
                 if (existingItem.product_attribute_id) {
                     variantModifier = (existingItem.original_price ?? existingItem.selling_price) - existingItem.selling_price;
                 }
 
-                existingItem.price = updatedPrice + variantModifier; // Aplicar modificador DESPUÉS
-                // original_price_base no cambia, ya lo tenemos en existingItem.selling_price
+                existingItem.price = updatedPrice + variantModifier; 
                 existingItem.isTierPrice = updatedIsTier;
             }
         } else {
-            toast.add({ severity: 'warn', summary: 'Stock Insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
+            toast.add({ severity: 'warn', summary: 'Stock insuficiente', detail: `No puedes agregar más de ${stock} unidades.`, life: 3000 });
         }
     } else {
-        // Guardar los precios base importantes en el nuevo item
         const newItem = {
-            ...product, // Copia datos del producto (incluye price_tiers)
+            ...product, 
             cartItemId: cartItemId,
             quantity: quantityToAdd,
-            selling_price: baseOriginalPrice, // Guardar original base (sin promo, sin tier)
-            price_qty_1_promo: product.price, // Guardar precio qty 1 (con promo directa si aplica)
-            price: calculatedPrice, // Precio calculado inicial (tier o promo directa)
-            original_price: baseOriginalPrice, // Usado para calcular subtotal bruto y descuentos
+            selling_price: baseOriginalPrice, 
+            price_qty_1_promo: product.price, 
+            price: calculatedPrice, 
+            original_price: baseOriginalPrice, 
             isTierPrice: isTierPrice,
             isManualPrice: false,
             ...(variant && {
-                price: calculatedPrice + variant.price_modifier, // Aplicar modificador
-                original_price: baseOriginalPrice + variant.price_modifier, // Base + modificador
+                price: calculatedPrice + variant.price_modifier, 
+                original_price: baseOriginalPrice + variant.price_modifier, 
                 sku: `${product.sku}-${variant.sku_suffix}`,
                 stock: variant.stock,
                 selectedVariant: variant.attributes,
                 product_attribute_id: variant.id,
                 image: variant.image_url || product.image,
-                // selling_price y price_qty_1_promo se mantienen del producto base
             })
         };
-        // CORRECCIÓN: Asegurarse de que original_price en variante también sume el modificador
         if (variant) {
             newItem.original_price = baseOriginalPrice + variant.price_modifier;
         }
 
         cartItems.value.push(newItem);
         if (stock <= 0) {
-            toast.add({ severity: 'warn', summary: 'Sin Stock', detail: `El producto se agregó al carrito pero no tiene stock disponible.`, life: 6000 });
+            toast.add({ severity: 'warn', summary: 'Sin stock', detail: `El producto se agregó al carrito pero no tiene stock disponible.`, life: 6000 });
         }
     }
 };
@@ -185,53 +204,45 @@ const updateCartQuantity = ({ itemId, quantity }) => {
     const item = cartItems.value.find(i => i.cartItemId === itemId);
     if (item) {
         const validQuantity = Math.max(1, quantity || 1);
-        const oldQuantity = item.quantity; // Guardar cantidad anterior por si hay error
-        item.quantity = validQuantity; // Actualizar cantidad primero
+        const oldQuantity = item.quantity;
+        item.quantity = validQuantity; 
 
-        // Recalcular precio basado en la nueva cantidad, *solo si no es manual*
         if (!item.isManualPrice) {
-            // Usar los datos base guardados en el item para recalcular
             const itemBaseDataForCalc = {
-                selling_price: item.selling_price,         // Original base guardado
-                price: item.price_qty_1_promo, // Precio qty 1 con promo guardado
-                price_tiers: item.price_tiers            // Tiers guardados
+                selling_price: item.selling_price,         
+                price: item.price_qty_1_promo, 
+                price_tiers: item.price_tiers            
             };
 
-            // Verificar que los datos base existen antes de calcular
             if (typeof itemBaseDataForCalc.selling_price !== 'undefined' &&
                 typeof itemBaseDataForCalc.price !== 'undefined') {
 
                 const { price: updatedPrice, isTierPrice: updatedIsTier } = getPriceForQuantity(itemBaseDataForCalc, validQuantity);
 
-                // Calcular modificador de variante basado en los originales guardados
                 let variantModifier = 0;
                 if (item.product_attribute_id) {
-                    // Usar original_price (base + modif) y selling_price (base) para obtener modificador
                     variantModifier = (item.original_price ?? item.selling_price) - item.selling_price;
                 }
 
-                item.price = updatedPrice + variantModifier; // Aplicar modificador DESPUÉS
-                item.isTierPrice = updatedIsTier; // Actualizar flag
+                item.price = updatedPrice + variantModifier; 
+                item.isTierPrice = updatedIsTier; 
             } else {
                 console.error("Faltan datos base en el item para recalcular precio:", item);
-                item.quantity = oldQuantity; // Revertir cantidad si hubo error
+                item.quantity = oldQuantity; 
                 toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo recalcular el precio.', life: 3000 });
             }
         }
-        // Si es precio manual, solo se actualiza la cantidad, el precio no cambia
     }
 };
-
 
 const updateCartPrice = ({ itemId, price }) => {
     const item = cartItems.value.find(i => i.cartItemId === itemId);
     if (item) {
         item.price = Math.max(0, price || 0);
         item.isManualPrice = true;
-        item.isTierPrice = false; // Precio manual anula tier
+        item.isTierPrice = false; 
     }
 };
-
 
 const removeCartItem = (itemId) => {
     cartItems.value = cartItems.value.filter(i => i.cartItemId !== itemId);
@@ -243,16 +254,15 @@ const clearCart = () => {
     isPaymentModalVisible.value = false;
 };
 
-// --- Clientes y Carritos Pendientes ---
 const localCustomers = ref([...props.customers]);
 const handleSelectCustomer = (customer) => selectedClient.value = customer;
 watch(() => props.customers, (newCustomers) => { localCustomers.value = [...newCustomers]; });
 const handleCustomerCreated = (newCustomer) => {
     localCustomers.value.push(newCustomer);
     selectedClient.value = newCustomer;
-    toast.add({ severity: 'success', summary: 'Cliente Creado', detail: 'El nuevo cliente ha sido seleccionado.', life: 3000 });
+    toast.add({ severity: 'success', summary: 'Cliente creado', detail: 'El nuevo cliente ha sido seleccionado.', life: 3000 });
 };
-const pendingCarts = ref([]);
+
 const saveCartToPending = (payload) => {
     if (cartItems.value.length === 0) return;
     pendingCarts.value.push({
@@ -264,12 +274,21 @@ const saveCartToPending = (payload) => {
     });
     clearCart();
     isCartDrawerVisible.value = false;
-    toast.add({ severity: 'success', summary: 'Carrito Guardado', detail: 'El carrito actual se movió a la lista de espera.', life: 3000 });
+    toast.add({ severity: 'success', summary: 'Carrito guardado', detail: 'El carrito actual se movió a la lista de espera.', life: 3000 });
 };
 const resumePendingCart = (cartId) => {
     const cartToResume = pendingCarts.value.find(c => c.id === cartId);
     if (!cartToResume) return;
-    if (cartItems.value.length > 0) saveCartToPending({ total: cartItems.value.reduce((acc, item) => acc + item.price * item.quantity, 0) });
+    if (cartItems.value.length > 0) {
+        pendingCarts.value.push({
+            id: uuidv4(),
+            client: selectedClient.value || props.defaultCustomer,
+            items: JSON.parse(JSON.stringify(cartItems.value)),
+            time: new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }),
+            total: cartItems.value.reduce((acc, item) => acc + item.price * item.quantity, 0),
+        });
+    }
+    
     cartItems.value = cartToResume.items;
     selectedClient.value = cartToResume.client.id === props.defaultCustomer.id ? null : cartToResume.client;
     pendingCarts.value = pendingCarts.value.filter(c => c.id !== cartId);
@@ -277,10 +296,9 @@ const resumePendingCart = (cartId) => {
 };
 const deletePendingCart = (cartId) => {
     pendingCarts.value = pendingCarts.value.filter(c => c.id !== cartId);
-    toast.add({ severity: 'warn', summary: 'Carrito Descartado', detail: 'Se ha eliminado un carrito de la lista de espera.', life: 3000 });
+    toast.add({ severity: 'warn', summary: 'Carrito descartado', detail: 'Se ha eliminado un carrito de la lista de espera.', life: 3000 });
 };
 
-// --- Sesión de Caja ---
 const handleRefreshSessionData = () => {
     router.reload({
         preserveState: true,
@@ -288,20 +306,19 @@ const handleRefreshSessionData = () => {
     });
 };
 
-// --- Creación Rápida de Producto ---
 const handleProductCreatedAndAddToCart = (newProduct) => {
     const formattedProduct = {
         id: newProduct.id,
         name: newProduct.name,
-        selling_price: parseFloat(newProduct.selling_price), // Precio base original
-        price: parseFloat(newProduct.selling_price),        // Precio para qty 1 (sin promo directa al crear)
-        original_price: parseFloat(newProduct.selling_price),// Original base para cálculos
+        selling_price: parseFloat(newProduct.selling_price), 
+        price: parseFloat(newProduct.selling_price),        
+        original_price: parseFloat(newProduct.selling_price),
         stock: newProduct.current_stock || 0,
         category: 'Sin categoría',
         image: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' + encodeURIComponent(newProduct.name),
         description: newProduct.description || '',
         sku: newProduct.sku || '',
-        price_tiers: newProduct.price_tiers || [], // Asegurar que price_tiers se pasa
+        price_tiers: newProduct.price_tiers || [], 
         variants: {},
         variant_combinations: [],
         promotions: [],
@@ -310,23 +327,23 @@ const handleProductCreatedAndAddToCart = (newProduct) => {
     router.reload({ preserveState: true, only: ['products'] });
 };
 
-// --- Checkout ---
 const form = useForm({
     cartItems: [], customerId: null,
     subtotal: 0, total_discount: 0, total: 0,
     payments: [], use_balance: false,
     cash_register_session_id: null,
     layaway_expiration_date: null,
+    is_order: false,
+    contact_info: null,
+    delivery_date: null,
+    shipping_address: null,
+    shipping_cost: 0,
+    notes: null,
+    guest_name: null
 });
 
-const handleCheckout = (checkoutData) => {
-    if (!props.activeSession) {
-        toast.add({ severity: 'error', summary: 'Caja Cerrada', detail: 'Debes tener una sesión de caja activa para registrar una venta.', life: 5000 });
-        return;
-    }
-
-    // 1. Mapear datos base (sin cambios)
-    form.cartItems = cartItems.value.map(item => ({
+const mapCartItems = () => {
+    return cartItems.value.map(item => ({
         id: item.id,
         product_attribute_id: item.product_attribute_id || null,
         quantity: item.quantity,
@@ -344,83 +361,149 @@ const handleCheckout = (checkoutData) => {
             if (item.price < originalPrice) {
                 return 'Promoción de producto';
             }
-            return null; // Sin descuento o motivo específico
+            return null; 
         })()
     }));
+};
+
+const handleOrderSubmit = (orderData) => {
+    if (!props.activeSession) {
+        toast.add({ severity: 'error', summary: 'Caja cerrada', detail: 'Debes tener una sesión de caja activa para registrar pedidos.', life: 5000 });
+        return;
+    }
+
+    const currentSubtotal = cartItems.value.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const itemsDiscountTotal = cartItems.value.reduce((acc, item) => {
+        const base = item.original_price ?? item.price;
+        return acc + ((base - item.price) * item.quantity);
+    }, 0);
+
+    form.reset();
+    form.cartItems = mapCartItems();
+    form.customerId = selectedClient.value ? selectedClient.value.id : null;
+    form.subtotal = currentSubtotal;
+    form.total_discount = itemsDiscountTotal; 
+    
+    form.is_order = true;
+    form.contact_info = { 
+        name: orderData.contact_name, 
+        phone: orderData.contact_phone 
+    };
+    form.delivery_date = orderData.delivery_date;
+    form.shipping_address = orderData.shipping_address;
+    form.shipping_cost = orderData.shipping_cost;
+    form.notes = orderData.notes;
+    form.cash_register_session_id = props.activeSession.id;
+    form.total = currentSubtotal + parseFloat(orderData.shipping_cost);
+
+    form.post(route('pos.store-order'), { 
+        onSuccess: () => {
+            clearCart();
+            isOrderModalVisible.value = false;
+            toast.add({ severity: 'success', summary: 'Pedido creado', detail: 'El pedido ha sido registrado correctamente.', life: 3000 });
+            router.reload({ only: ['products'], preserveState: true });
+        },
+        onError: (errors) => {
+            console.error(errors);
+            toast.add({ severity: 'error', summary: 'Error', detail: 'Revisa los datos del pedido.', life: 5000 });
+        }
+    });
+};
+
+const handleCheckout = (checkoutData) => {
+    if (!props.activeSession) {
+        toast.add({ severity: 'error', summary: 'Caja cerrada', detail: 'Debes tener una sesión de caja activa para registrar una venta.', life: 5000 });
+        return;
+    }
+
+    form.reset();
+    form.is_order = false;
+    form.cartItems = mapCartItems();
     form.customerId = selectedClient.value ? selectedClient.value.id : null;
     form.subtotal = checkoutData.subtotal;
     form.total_discount = checkoutData.total_discount;
     form.total = checkoutData.total;
     form.cash_register_session_id = props.activeSession.id;
-
-    // 2. Mapear nuevos datos de pago (del MultiPaymentProcessor)
     form.payments = checkoutData.payments;
     form.use_balance = checkoutData.use_balance;
-    form.layaway_expiration_date = checkoutData.layaway_expiration_date; // fecha de vencimiento
+    form.layaway_expiration_date = checkoutData.layaway_expiration_date;
+    form.guest_name = checkoutData.guest_name || null;
 
-    // 3. Determinar la ruta basada en el tipo de transacción
     let routeName;
     const transactionType = checkoutData.transactionType;
 
     switch (transactionType) {
         case 'contado':
         case 'credito':
-            routeName = 'pos.checkout'; // El backend (checkout) ya maneja la lógica de crédito
+            routeName = 'pos.checkout';
             break;
         case 'apartado':
-            // Esta es la ruta que crearemos en el backend
             routeName = 'pos.layaway';
             break;
         default:
-            toast.add({ severity: 'error', summary: 'Error', detail: 'Tipo de transacción desconocido.', life: 5000 });
             return;
     }
 
-    // 4. Enviar el formulario a la ruta correcta
     form.post(route(routeName), {
         onSuccess: () => {
             clearCart();
-            page.props.flash.success = null; // Limpiar flash de Inertia
-            router.reload({ only: ['products'], preserveState: true }); // Recargar productos (stock)
+            page.props.flash.success = null;
+            router.reload({ only: ['products'], preserveState: true });
         },
         onError: (errors) => {
-            console.error("Error de validación:", errors);
             const errorMessage = errors.default || errors.message || Object.values(errors).flat().join(' ');
-            toast.add({ severity: 'error', summary: 'Error al Procesar', detail: errorMessage || 'Ocurrió un error inesperado.', life: 7000 });
+            toast.add({ severity: 'error', summary: 'Error al procesar', detail: errorMessage, life: 7000 });
         }
     });
 };
+
+const currentCartTotal = computed(() => {
+    return cartItems.value.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+});
 </script>
 
 <template>
-
-    <Head title="Punto de Venta" />
+    <Head title="Punto de venta" />
     <AppLayout>
         <div class="relative h-[calc(100vh-100px)]">
-            <!-- Vista principal del POS (si hay sesión activa) -->
             <template v-if="activeSession">
+                
+                <!-- PANEL IZQUIERDO DE PRODUCTOS (Ocupa toda la pantalla en móvil) -->
                 <PosLeftPanel :products="products" :categories="categories" :pending-carts="pendingCarts"
-                    :filters="filters" :active-session="activeSession" @add-to-cart="addToCart"
+                    :filters="filters" :active-session="activeSession" :cart-items="cartItems"
+                    :pos-mode="posMode" :has-online-store="hasOnlineStore" @add-to-cart="addToCart"
                     @resume-cart="resumePendingCart" @delete-cart="deletePendingCart"
                     @product-created-and-add-to-cart="handleProductCreatedAndAddToCart"
                     @refresh-session-data="handleRefreshSessionData" @open-history-modal="isHistoryModalVisible = true"
-                    @open-close-session-modal="isCloseSessionModalVisible = true" class="h-full" />
+                    @open-close-session-modal="isCloseSessionModalVisible = true" 
+                    @update:posMode="posMode = $event" class="h-full" />
 
-                <!-- Botón Flotante del Carrito -->
-                <div class="fixed bottom-6 right-6 z-50">
-                    <Button @click="isCartDrawerVisible = true" rounded
-                        class="!size-16 shadow-lg !bg-white dark:!bg-gray-700 !border !border-[#D9D9D9] dark:!border-gray-600">
-                        <i class="pi pi-shopping-cart !text-2xl text-black dark:text-white"></i>
-                        <Badge v-if="cartItemCount > 0" :value="cartItemCount" severity="contrast"
-                            class="absolute top-1 right-3"></Badge>
-                    </Button>
+                <!-- BOTÓN FLOTANTE DEL CARRITO (FAB) -->
+                <div class="fixed bottom-6 right-6 z-40">
+                    <button @click="isCartDrawerVisible = true" 
+                        class="w-16 h-16 rounded-full bg-gray-900 dark:bg-[#232323] text-white flex items-center justify-center shadow-2xl border border-gray-700 dark:border-[#3a3a3a] transition-transform active:scale-95 group relative">
+                        <i class="pi pi-shopping-cart text-2xl group-hover:text-primary-500 transition-colors"></i>
+                        
+                        <!-- Badge de cantidad -->
+                        <span v-if="cartItemCount > 0" 
+                            class="absolute top-0 right-0 -mt-1 -mr-1 bg-primary-500 text-white text-[10px] font-bold w-6 h-6 flex items-center justify-center rounded-full border-2 border-gray-900 dark:border-[#232323] shadow-sm animate-in zoom-in">
+                            {{ cartItemCount }}
+                        </span>
+                    </button>
                 </div>
 
-                <!-- Drawer del Carrito -->
-                <Drawer v-model:visible="isCartDrawerVisible" position="right" class="!w-full md:!w-[450px]">
+                <!-- PANEL LATERAL DEL CARRITO (DRAWER) -->
+                <Drawer v-model:visible="isCartDrawerVisible" position="right" class="!w-full md:!w-[450px]"
+                    :pt="{
+                        root: { class: 'dark:bg-[#232323] border-none shadow-2xl' },
+                        header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 py-4' },
+                        title: { class: 'text-xl font-light tracking-tight text-gray-900 dark:text-white m-0' },
+                        content: { class: 'dark:bg-[#232323] p-0' } // Eliminado el padding nativo para que el ShoppingCart llene el espacio
+                    }">
                     <template #header>
-                        <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200 m-0">Resumen de venta</h2>
+                        <h2 class="text-xl font-light tracking-tight text-gray-900 dark:text-white m-0">Resumen de venta</h2>
                     </template>
+                    
                     <ShoppingCart 
                         :items="cartItems" 
                         :client="selectedClient" 
@@ -429,6 +512,7 @@ const handleCheckout = (checkoutData) => {
                         :active-promotions="activePromotions"
                         :loading="form.processing"
                         :payment-modal-visible="isPaymentModalVisible"
+                        :pos-mode="posMode"
                         @update-quantity="updateCartQuantity" 
                         @update-price="updateCartPrice"
                         @remove-item="removeCartItem" 
@@ -439,33 +523,63 @@ const handleCheckout = (checkoutData) => {
                         @checkout="handleCheckout" 
                         @open-payment-modal="isPaymentModalVisible = true"
                         @close-payment-modal="isPaymentModalVisible = false"
+                        @open-order-modal="isOrderModalVisible = true"
                         class="h-full" 
                     />
                 </Drawer>
 
             </template>
-            <!-- Lobby cuando no hay sesión activa -->
+            
             <template v-else>
-                <div class="flex items-center justify-center h-full dark:bg-gray-900 rounded-lg">
-                    <div class="text-center p-8">
-                        <div
-                            class="bg-blue-100 dark:bg-blue-900/50 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-6">
-                            <i class="pi pi-inbox !text-4xl text-blue-500"></i>
-                        </div>
-                        <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Punto de Venta</h2>
-                        <p class="text-gray-600 dark:text-gray-400 mt-2 max-w-md">
-                            No tienes una sesión de caja activa. Únete a una existente o abre una nueva para empezar.
-                        </p>
-                        <Button v-if="joinableSessions && joinableSessions.length > 0"
-                            @click="isJoinSessionModalVisible = true" label="Unirse a una sesión activa"
-                            icon="pi pi-users" class="w-full max-w-xs mt-8" />
-                        <Button v-else-if="availableCashRegisters && availableCashRegisters.length > 0"
-                            @click="isStartSessionModalVisible = true" label="Abrir una Caja" icon="pi pi-lock-open"
-                            class="w-full max-w-xs mt-8" />
-                        <div v-else class="text-sm text-gray-500 pt-4 mt-8">
-                            <p>No hay cajas disponibles para unirse o abrir en esta sucursal.</p>
-                            <Button @click="$inertia.visit(route('cash-registers.create'))" label="Crear una caja"
-                                icon="pi pi-inbox" />
+                <!-- ESTADO VACÍO (ESTILO PANTALLA DE SISTEMA / TELEMETRÍA) -->
+                <div class="flex items-center justify-center min-h-[80vh] px-4">
+                    <div class="bg-white dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] rounded-3xl p-8 max-w-md w-full text-center shadow-2xl relative overflow-hidden group">
+                        
+                        <!-- Glow effect interactivo -->
+                        <div class="absolute -top-32 -left-32 w-72 h-72 bg-primary-500/10 rounded-full blur-3xl group-hover:bg-primary-500/20 transition-all duration-700 pointer-events-none"></div>
+
+                        <div class="relative z-10">
+                            <div class="w-16 h-16 bg-gray-50 dark:bg-[#1a1a1a] rounded-full flex items-center justify-center mx-auto mb-6 border border-gray-100 dark:border-[#3a3a3a] shadow-inner">
+                                <i class="pi" :class="(joinableSessions?.length || availableCashRegisters?.length) ? 'pi-desktop text-primary-500' : 'pi-lock text-gray-400'" style="font-size: 1.5rem;"></i>
+                            </div>
+
+                            <h2 class="text-2xl font-light text-gray-900 dark:text-white tracking-tight mb-3 m-0">
+                                {{ (joinableSessions?.length || availableCashRegisters?.length) ? 'Terminal en espera' : 'Terminal bloqueada' }}
+                            </h2>
+
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mb-8 mx-auto leading-relaxed m-0">
+                                <span v-if="joinableSessions?.length || availableCashRegisters?.length">
+                                    El sistema requiere inicializar una sesión de caja para comenzar a procesar transacciones.
+                                </span>
+                                <span v-else>
+                                    No hay cajas disponibles para operar en esta sucursal. Contacta al administrador de la red.
+                                </span>
+                            </p>
+
+                            <div class="flex flex-col gap-3 justify-center">
+                                <Button v-if="joinableSessions?.length"
+                                    @click="isJoinSessionModalVisible = true" 
+                                    label="Vincular a sesión" 
+                                    icon="pi pi-link"
+                                    class="w-full !rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold py-3" />
+
+                                <Button v-if="availableCashRegisters?.length"
+                                    @click="isStartSessionModalVisible = true" 
+                                    label="Inicializar caja"
+                                    icon="pi pi-power-off" 
+                                    severity="contrast"
+                                    class="w-full !rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold py-3" />
+                            </div>
+
+                            <div v-if="!joinableSessions?.length && !availableCashRegisters?.length"
+                                class="mt-6 pt-5 border-t border-gray-100 dark:border-[#3a3a3a]">
+                                <Button @click="$inertia.visit(route('cash-registers.create'))" 
+                                    label="Configurar caja"
+                                    icon="pi pi-cog" 
+                                    text 
+                                    severity="secondary"
+                                    class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold" />
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -483,5 +597,13 @@ const handleCheckout = (checkoutData) => {
             @update:visible="isHistoryModalVisible = $event" />
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
             :available-templates="availableTemplates" />
+        
+        <OrderFormModal 
+            v-model:visible="isOrderModalVisible"
+            :cart-total="currentCartTotal"
+            :client="selectedClient"
+            :loading="form.processing"
+            @submit="handleOrderSubmit"
+        />
     </AppLayout>
 </template>

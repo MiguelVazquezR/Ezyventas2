@@ -5,14 +5,28 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
 import { useToast } from 'primevue/usetoast';
+
+// Importación de Componentes
+import Button from 'primevue/button';
+import Menu from 'primevue/menu';
+import Tag from 'primevue/tag';
+import Dialog from 'primevue/dialog';
+import SelectButton from 'primevue/selectbutton';
+import InputNumber from 'primevue/inputnumber';
+import Textarea from 'primevue/textarea';
+import DataTable from 'primevue/datatable';
+import Column from 'primevue/column';
+
+// Modales Externos
 import StartSessionModal from '@/Components/StartSessionModal.vue';
 import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
-import InputLabel from '@/Components/InputLabel.vue';
-import InputError from '@/Components/InputError.vue';
 
-// --- PROPS CORREGIDAS (Sintaxis Simplificada) ---
+// Parciales extraídos
+import CustomerInfoCard from './Partials/CustomerInfoCard.vue';
+import CustomerFinancialCard from './Partials/CustomerFinancialCard.vue';
+
 const props = defineProps({
     customer: Object,
     historicalMovements: Array,
@@ -46,14 +60,14 @@ const openPrintModal = () => {
     isPrintModalVisible.value = true;
 };
 
-// --- Lógica para modal de ajuste (MEJORADA) ---
+// --- Lógica para modal de ajuste ---
 const isAdjustModalVisible = ref(false);
 
 const adjustForm = useForm({
-    adjustment_type: 'add', // 'add' o 'set_total'
+    adjustment_type: 'add',
     amount: null,
     notes: '',
-    direction: 'credit', // 'credit' (positivo/a favor) o 'debit' (negativo/deuda)
+    direction: 'credit', 
 });
 
 const adjustmentTypeOptions = ref([
@@ -61,37 +75,32 @@ const adjustmentTypeOptions = ref([
     { label: 'Definir saldo final', value: 'set_total' },
 ]);
 
-// Opciones dinámicas para la dirección (Acción)
 const adjustmentDirectionOptions = computed(() => {
     if (adjustForm.adjustment_type === 'add') {
         return [
-            { label: 'Sumar saldo (+)', value: 'credit', icon: 'pi pi-plus' },
-            { label: 'Restar saldo (-)', value: 'debit', icon: 'pi pi-minus' }
+            { label: 'Sumar (+)', value: 'credit', icon: 'pi pi-plus' },
+            { label: 'Restar (-)', value: 'debit', icon: 'pi pi-minus' }
         ];
     } else {
         return [
-            { label: 'Saldo a favor (Positivo)', value: 'credit', icon: 'pi pi-arrow-up' },
-            { label: 'Saldo deudor (Negativo)', value: 'debit', icon: 'pi pi-arrow-down' }
+            { label: 'A favor (Positivo)', value: 'credit', icon: 'pi pi-arrow-up' },
+            { label: 'Deudor (Negativo)', value: 'debit', icon: 'pi pi-arrow-down' }
         ];
     }
 });
 
 const openAdjustModal = () => {
     adjustForm.reset();
-    adjustForm.direction = 'credit'; // Default a positivo
+    adjustForm.direction = 'credit'; 
     isAdjustModalVisible.value = true;
 };
 
 const submitAdjustment = () => {
     adjustForm.transform((data) => {
-        // Aseguramos que el monto base sea positivo (magnitud)
         let finalAmount = Math.abs(Number(data.amount));
-
-        // Aplicamos el signo según la dirección seleccionada
         if (data.direction === 'debit') {
             finalAmount = -finalAmount;
         }
-
         return {
             ...data,
             amount: finalAmount,
@@ -141,7 +150,6 @@ const handleBalancePaymentSubmit = (paymentData) => {
     router.post(route('customers.payments.store', props.customer.id), payload, {
         onSuccess: () => {
             isPaymentModalVisible.value = false;
-            toast.add({ severity: 'success', summary: 'Abono registrado', detail: 'El saldo ha sido actualizado.', life: 3000 });
             openPrintModal();
         },
         onFinish: () => { 
@@ -151,18 +159,14 @@ const handleBalancePaymentSubmit = (paymentData) => {
     });
 };
 
-const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
-const breadcrumbItems = ref([
-    { label: 'Clientes', url: route('customers.index') },
-    { label: props.customer.name }
-]);
-
 const deleteCustomer = () => {
     confirm.require({
         message: `¿Estás seguro de que quieres eliminar a ${props.customer.name}? Esta acción no se puede deshacer.`,
         header: 'Confirmar eliminación',
         icon: 'pi pi-info-circle',
         acceptClass: 'p-button-danger',
+        acceptLabel: 'Sí, eliminar',
+        rejectLabel: 'Cancelar',
         accept: () => {
             router.delete(route('customers.destroy', props.customer.id));
         }
@@ -179,7 +183,6 @@ const actionItems = computed(() => [
     { label: 'Ajuste de saldo manual', icon: 'pi pi-sliders-h', command: openAdjustModal, visible: hasPermission('customers.edit') },
     { separator: true },
     { label: 'Imprimir Ficha / Ticket', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('customers.see_details') },
-    { label: 'Crear nuevo cliente', icon: 'pi pi-plus', command: () => router.get(route('customers.create')), visible: hasPermission('customers.create') },
     { label: 'Editar cliente', icon: 'pi pi-pencil', command: () => router.get(route('customers.edit', props.customer.id)), visible: hasPermission('customers.edit') },
     {
         label: 'Estado de cuenta (PDF)',
@@ -236,279 +239,392 @@ const getTransactionStatusSeverity = (status) => {
     return map[status] || 'secondary';
 };
 
-const sanitizePhone = (phone) => {
-    if (!phone) return '';
-    return phone.replace(/\D/g, ''); 
+// --- Estado para filas expandidas en las tablas ---
+const expandedLayawayRows = ref({});
+const expandedTransactionRows = ref({});
+
+// --- TESLA UI PASS-THROUGH (PT) ---
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl !p-2 !shadow-2xl mt-1' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' }
 };
 
+const dataTablePt = {
+    root: { class: 'border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden' },
+    headerRow: { class: 'bg-gray-50 dark:bg-[#1a1a1a]' },
+    headerCell: { class: 'bg-transparent text-[10px] uppercase tracking-widest text-gray-500 font-bold py-4 px-4 border-b border-gray-100 dark:border-[#3a3a3a]' },
+    bodyRow: { class: 'dark:bg-[#232323] hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors text-sm text-gray-700 dark:text-gray-300 group' },
+    bodyCell: { class: 'py-4 px-4 border-b border-gray-50 dark:border-[#2a2a2a]' },
+    paginator: { root: { class: 'dark:bg-[#1a1a1a] border-t border-gray-100 dark:border-[#3a3a3a] p-3' } }
+};
+
+const subDataTablePt = {
+    root: { class: 'border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden' },
+    headerRow: { class: 'bg-gray-100 dark:bg-[#111111]' },
+    headerCell: { class: 'bg-transparent text-[9px] uppercase tracking-widest text-gray-500 font-bold py-3 px-3 border-b border-gray-200 dark:border-[#3a3a3a]' },
+    bodyRow: { class: 'dark:bg-[#1a1a1a] hover:bg-gray-100 dark:hover:bg-[#232323] transition-colors text-xs text-gray-600 dark:text-gray-400 group' },
+    bodyCell: { class: 'py-3 px-3 border-b border-gray-100 dark:border-[#2a2a2a]' },
+};
+
+const tagPt = {
+    root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' }
+};
+
+const dialogPt = {
+    root: { class: 'dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] rounded-3xl shadow-2xl overflow-hidden' },
+    header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 py-5' },
+    title: { class: 'text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0' },
+    content: { class: 'dark:bg-[#232323] p-6 lg:p-8' },
+    closeButton: { class: 'hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors rounded-full w-8 h-8 flex items-center justify-center' },
+    closeButtonIcon: { class: 'dark:text-gray-400 !text-sm' },
+    mask: { class: 'bg-gray-900/60 dark:bg-black/80' } 
+};
+
+const selectButtonPt = {
+    root: { class: 'flex rounded-xl overflow-hidden border border-gray-200 dark:border-[#3a3a3a]' },
+    button: { class: 'flex-1 py-2 text-[10px] uppercase tracking-widest font-bold dark:bg-[#1a1a1a] dark:text-gray-400 hover:dark:bg-[#2a2a2a] transition-colors border-none' }
+};
+
+const inputPt = {
+    root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2.5 !text-sm w-full font-mono' }
+};
+
+const textareaPt = {
+    root: { class: '!rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-3 !text-sm w-full' }
+};
 </script>
 
 <template>
-
     <Head :title="`Cliente: ${customer.name}`" />
     <AppLayout>
-        <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
-
-        <!-- Header -->
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
-            <div>
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{{ customer.name }}</h1>
-                <p v-if="customer.company_name" class="text-gray-500 dark:text-gray-400 mt-1">{{ customer.company_name
-                }}</p>
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+            
+            <!-- Breadcrumb / Botón de regreso -->
+            <div class="flex items-center">
+                <Link :href="route('customers.index')" class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
+                    <i class="pi pi-arrow-left !text-[10px]"></i> Volver al directorio
+                </Link>
             </div>
-            <div>
-                <Button @click="toggleMenu" label="Acciones" icon="pi pi-chevron-down" iconPos="right"
-                    severity="secondary" outlined class="mt-4 sm:mt-0" />
-                <Menu ref="menu" :model="actionItems" :popup="true" />
-            </div>
-        </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Columna Izquierda: Información -->
-            <div class="lg:col-span-1 space-y-6">
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
-                        Información de contacto</h2>
-                    <ul class="space-y-4 text-sm">
-                        <!-- Teléfono con acciones -->
-                        <li v-if="customer.phone" class="flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                                <i class="pi pi-phone text-gray-500"></i>
-                                <span class="font-medium">{{ customer.phone }}</span>
-                            </div>
-                            <div class="flex gap-2">
-                                <a :href="`https://wa.me/${sanitizePhone(customer.phone)}`" target="_blank" rel="noopener noreferrer">
-                                    <Button icon="pi pi-whatsapp" rounded severity="success" size="small" class="!w-8 !h-8" v-tooltip.top="'Enviar WhatsApp'" />
-                                </a>
-                                <a :href="`tel:${sanitizePhone(customer.phone)}`">
-                                    <Button icon="pi pi-phone" rounded severity="info" size="small" class="!w-8 !h-8" v-tooltip.top="'Llamar'" />
-                                </a>
-                            </div>
-                        </li>
-                        
-                        <li v-if="customer.email" class="flex items-center"><i
-                                class="pi pi-envelope w-6 text-gray-500"></i> <span class="font-medium">{{
-                                    customer.email }}</span></li>
-                        <li v-if="customer.tax_id" class="flex items-center"><i
-                                class="pi pi-id-card w-6 text-gray-500"></i> <span class="font-medium">{{
-                                    customer.tax_id }}</span></li>
-                    </ul>
+            <!-- Header -->
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+                <div class="flex items-center gap-4">
+                    <div class="w-14 h-14 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-800/50 font-bold text-2xl">
+                        {{ customer.name.substring(0, 1).toUpperCase() }}
+                    </div>
+                    <div>
+                        <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0 leading-tight">
+                            {{ customer.name }}
+                        </h1>
+                        <p v-if="customer.company_name" class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-1.5">
+                            <i class="pi pi-building !text-[10px]"></i> {{ customer.company_name }}
+                        </p>
+                    </div>
                 </div>
                 
-                <div v-if="hasPermission('customers.see_financial_info')"
-                    class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
-                        Información financiera</h2>
-                    <ul class="space-y-3 text-sm">
-                        <li class="flex justify-between items-center">
-                            <span class="text-gray-500">Saldo actual</span>
-                            <span :class="getBalanceClass(customer.balance)" class="font-mono font-semibold text-lg">
-                                {{ formatCurrency(customer.balance) }}
-                            </span>
-                        </li>
-                         <!-- Crédito Disponible -->
-                         <li class="flex justify-between items-center">
-                            <span class="text-gray-500">Crédito disponible</span>
-                            <span class="font-mono font-medium text-blue-600 dark:text-blue-400">
-                                {{ formatCurrency(customer.available_credit) }}
-                            </span>
-                        </li>
-                        <li class="flex justify-between items-center">
-                            <span class="text-gray-500">Límite de crédito</span>
-                            <span class="font-mono font-medium">
-                                {{ formatCurrency(customer.credit_limit) }}
-                            </span>
-                        </li>
-                    </ul>
+                <div class="w-full sm:w-auto shrink-0 flex gap-2">
+                    <Button type="button" label="Opciones" icon="pi pi-chevron-down" iconPos="right" @click="toggleMenu" severity="secondary" outlined class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto" />
+                    <Menu ref="menu" :model="actionItems" :popup="true" :pt="menuPt" />
                 </div>
             </div>
 
-            <!-- Columna Derecha: Historial -->
-            <div class="lg:col-span-2 space-y-6">
-                <div v-if="activeLayaways && activeLayaways.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
-                        Apartados activos
-                    </h2>
-                    <DataTable :value="activeLayaways" class="p-datatable-sm" responsiveLayout="scroll"
-                        :paginator="activeLayaways.length > 3" :rows="3" sortField="created_at" :sortOrder="-1">
-                        <Column field="folio" header="Folio">
-                            <template #body="{ data }">
-                                <Link :href="route('transactions.show', data.id)" class="text-blue-500 hover:underline">
-                                #{{ data.folio }}
-                                </Link>
-                            </template>
-                        </Column>
-                        <Column field="created_at" header="Fecha apartado" sortable>
-                            <template #body="{ data }"> {{ formatDate(data.created_at) }}</template>
-                        </Column>
-                        
-                        <Column field="layaway_expiration_date" header="Vencimiento" sortable>
-                            <template #body="{ data }">
-                                <span :class="{'text-red-500 font-bold': isExpired(data.layaway_expiration_date), 'text-gray-700 dark:text-gray-300': !isExpired(data.layaway_expiration_date)}">
-                                    {{ formatDateOnly(data.layaway_expiration_date) }}
-                                </span>
-                            </template>
-                        </Column>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+                <!-- Columna Izquierda: Información -->
+                <div class="lg:col-span-1 space-y-6 lg:space-y-8 flex flex-col">
+                    <CustomerInfoCard :customer="customer" />
+                    <CustomerFinancialCard v-if="hasPermission('customers.see_financial_info')" :customer="customer" />
+                </div>
 
-                        <Column field="total_items_quantity" header="Unidades" headerClass="text-center" bodyClass="text-center"></Column>
-                        <Column field="total_amount" header="Total">
-                            <template #body="{ data }">
-                                {{ formatCurrency(data.total_amount) }}
-                            </template>
-                        </Column>
-                         <Column field="pending_amount" header="Pendiente">
-                            <template #body="{ data }">
-                                <span class="font-semibold text-red-500">
-                                    {{ formatCurrency(data.pending_amount) }}
-                                </span>
-                            </template>
-                        </Column>
-                        <template #empty>
-                            <div class="text-center text-gray-500 py-4">
-                                No hay apartados activos.
+                <!-- Columna Derecha: Historial -->
+                <div class="lg:col-span-2 space-y-6 lg:space-y-8 flex flex-col">
+                    
+                    <!-- Tabla de Apartados -->
+                    <div v-if="activeLayaways && activeLayaways.length > 0" class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col">
+                        <div class="mb-6 flex justify-between items-start">
+                            <div>
+                                <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Apartados activos</h2>
+                                <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Mercancía reservada por liquidar</p>
                             </div>
-                        </template>
-                    </DataTable>
-                </div>
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
-                        Ventas
-                    </h2>
-                    <DataTable :value="customer.transactions" class="p-datatable-sm" responsiveLayout="scroll"
-                        :paginator="customer.transactions?.length > 5" :rows="5">
-                        <Column field="folio" header="Folio">
-                            <template #body="{ data }">
-                                <Link :href="route('transactions.show', data.id)" class="text-blue-500 hover:underline">
-                                #{{ data.folio }}
-                                </Link>
-                            </template>
-                        </Column>
-                        <Column field="created_at" header="Fecha" sortable>
-                            <template #body="{ data }"> {{ formatDate(data.created_at) }}</template>
-                        </Column>
-                        <Column field="total" header="Total">
-                            <template #body="{ data }">
-                                {{ formatCurrency(data.total) }}
-                            </template>
-                        </Column>
-                        <Column field="status" header="Estatus">
-                            <template #body="{ data }">
-                                <Tag :value="data.status" :severity="getTransactionStatusSeverity(data.status)"
-                                    class="capitalize" />
-                            </template>
-                        </Column>
-                        <template #empty>
-                            <div class="text-center text-gray-500 py-4">
-                                No hay ventas registradas.
+                            <div class="w-10 h-10 rounded-full bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0 border border-purple-100 dark:border-purple-900/30">
+                                <i class="pi pi-bookmark !text-sm text-purple-500"></i>
                             </div>
-                        </template>
-                    </DataTable>
-                </div>
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4">
-                        Historial de movimientos
-                    </h2>
-                    <DataTable :value="historicalMovements" class="p-datatable-sm" responsiveLayout="scroll"
-                        :paginator="historicalMovements?.length > 5" :rows="5" sortField="date" :sortOrder="-1">
-                        <Column field="date" header="Fecha" sortable>
-                            <template #body="{ data }"> {{ formatDate(data.date) }}</template>
-                        </Column>
-                        <Column field="type" header="Tipo">
-                            <template #body="{ data }">
-                                <span class="capitalize">{{ data.type }}</span>
+                        </div>
+
+                        <DataTable v-model:expandedRows="expandedLayawayRows" :value="activeLayaways" dataKey="id" responsiveLayout="scroll" :paginator="activeLayaways.length > 5" :rows="5" sortField="created_at" :sortOrder="-1" :pt="dataTablePt">
+                            <Column expander style="width: 3rem" />
+                            <Column field="folio" header="Folio">
+                                <template #body="{ data }">
+                                    <Link :href="route('transactions.show', data.id)" class="text-primary-600 dark:text-primary-400 font-medium hover:underline">
+                                        #{{ data.folio }}
+                                    </Link>
+                                </template>
+                            </Column>
+                            <Column field="created_at" header="Fecha registro" sortable>
+                                <template #body="{ data }"><span class="text-xs">{{ formatDateOnly(data.created_at) }}</span></template>
+                            </Column>
+                            <Column field="layaway_expiration_date" header="Vencimiento" sortable>
+                                <template #body="{ data }">
+                                    <span class="text-xs font-bold" :class="isExpired(data.layaway_expiration_date) ? 'text-red-500' : 'text-gray-700 dark:text-gray-300'">
+                                        {{ formatDateOnly(data.layaway_expiration_date) }}
+                                    </span>
+                                </template>
+                            </Column>
+                            <Column field="total_amount" header="Total">
+                                <template #body="{ data }"><span class="font-mono text-gray-900 dark:text-white">{{ formatCurrency(data.total_amount) }}</span></template>
+                            </Column>
+                            <Column field="pending_amount" header="Deuda">
+                                <template #body="{ data }">
+                                    <span class="font-mono font-bold text-red-500">
+                                        {{ formatCurrency(data.pending_amount) }}
+                                    </span>
+                                </template>
+                            </Column>
+                            
+                            <template #expansion="slotProps">
+                                <div class="p-4 mx-4 my-2 bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#2a2a2a]">
+                                    <h4 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-3">Artículos apartados</h4>
+                                    <DataTable :value="slotProps.data.items" :pt="subDataTablePt">
+                                        <Column field="quantity" header="Cant." style="width: 5rem">
+                                            <template #body="{ data: item }"><span class="font-mono">{{ item.quantity }}</span></template>
+                                        </Column>
+                                        <Column field="description" header="Descripción">
+                                            <template #body="{ data: item }"><span class="font-medium text-gray-900 dark:text-gray-100">{{ item.description }}</span></template>
+                                        </Column>
+                                        <Column field="line_total" header="Subtotal" class="text-right">
+                                            <template #body="{ data: item }"><span class="font-mono text-gray-900 dark:text-white">{{ formatCurrency(item.line_total) }}</span></template>
+                                        </Column>
+                                    </DataTable>
+                                </div>
                             </template>
-                        </Column>
-                        <Column field="description" header="Descripción">
-                            <template #body="{ data }">
-                                {{ data.description }}
-                            </template>
-                        </Column>
-                        <Column field="amount" header="Monto">
-                            <template #body="{ data }">
-                                <span
-                                    :class="{ 'text-green-600': data.type.toLowerCase().includes('abono'), 'dark:text-green-400': data.type.toLowerCase().includes('abono') }">
-                                    {{ formatCurrency(data.amount) }}
-                                </span>
-                            </template>
-                        </Column>
-                        <Column field="resulting_balance" header="Saldo Resultante">
-                            <template #body="{ data }">
-                                <span :class="getBalanceClass(data.resulting_balance)" class="font-mono font-semibold">
-                                    {{ formatCurrency(data.resulting_balance) }}
-                                </span>
-                            </template>
-                        </Column>
-                        <template #empty>
-                            <div class="text-center text-gray-500 py-4">
-                                No hay movimientos registrados.
+                        </DataTable>
+                    </div>
+
+                    <!-- Tabla de Ventas / Órdenes -->
+                    <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col">
+                        <div class="mb-6 flex justify-between items-start">
+                            <div>
+                                <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Historial de Ventas y Órdenes</h2>
+                                <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Registro histórico del cliente</p>
                             </div>
-                        </template>
-                    </DataTable>
+                            <div class="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
+                                <i class="pi pi-shopping-bag !text-sm text-blue-500"></i>
+                            </div>
+                        </div>
+
+                        <DataTable v-model:expandedRows="expandedTransactionRows" :value="customer.transactions" dataKey="id" responsiveLayout="scroll" :paginator="customer.transactions?.length > 5" :rows="5" :pt="dataTablePt">
+                            <Column expander style="width: 3rem" />
+                            <Column field="folio" header="Folio">
+                                <template #body="{ data }">
+                                    <div class="flex flex-col gap-1 items-start">
+                                        <Link :href="route('transactions.show', data.id)" class="text-primary-600 dark:text-primary-400 font-medium hover:underline">
+                                        #{{ data.folio }}
+                                        </Link>
+                                        <span v-if="data.channel === 'pos'" class="text-[9px] uppercase tracking-widest font-bold bg-gray-100 dark:bg-[#3a3a3a] text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded">POS</span>
+                                        <span v-if="data.channel === 'orden_de_servicio'" class="text-[9px] uppercase tracking-widest font-bold bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-800">Orden de S.</span>
+                                    </div>
+                                </template>
+                            </Column>
+                            <Column field="created_at" header="Fecha" sortable>
+                                <template #body="{ data }"> <span class="text-xs">{{ formatDate(data.created_at) }}</span></template>
+                            </Column>
+                            <Column field="total" header="Total">
+                                <template #body="{ data }">
+                                    <span class="font-mono text-gray-900 dark:text-white">{{ formatCurrency(data.total) }}</span>
+                                </template>
+                            </Column>
+                            <Column field="status" header="Estatus">
+                                <template #body="{ data }">
+                                    <Tag :value="data.status.replace('_', ' ')" :severity="getTransactionStatusSeverity(data.status)" class="capitalize" :pt="tagPt" />
+                                </template>
+                            </Column>
+                            
+                            <template #expansion="slotProps">
+                                <div class="p-4 mx-4 my-2 bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#2a2a2a]">
+                                    <div class="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-[#3a3a3a] pb-3">
+                                        <h4 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
+                                            {{ slotProps.data.channel === 'orden_de_servicio' ? 'Detalles de la orden de servicio' : 'Artículos de la venta' }}
+                                        </h4>
+                                        <div class="text-[10px] uppercase tracking-widest text-gray-500">
+                                            <i class="pi pi-user !text-[9px] mr-1"></i> {{ slotProps.data.user?.name || 'Sistema' }}
+                                        </div>
+                                    </div>
+                                    
+                                    <div v-if="slotProps.data.channel === 'orden_de_servicio' && slotProps.data.transactionable" class="mb-4 p-4 bg-white dark:bg-[#232323] rounded-xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col gap-2">
+                                        <div class="flex items-start gap-2">
+                                            <i class="pi pi-box mt-0.5 text-gray-400 !text-sm"></i>
+                                            <div>
+                                                <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 block m-0">Equipo / artículo</span>
+                                                <span class="text-sm font-medium text-gray-900 dark:text-white m-0">{{ slotProps.data.transactionable.item_description || 'No especificado' }}</span>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-start gap-2 mt-1">
+                                            <i class="pi pi-exclamation-circle mt-0.5 text-orange-400 !text-sm"></i>
+                                            <div>
+                                                <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 block m-0">Problema reportado</span>
+                                                <span class="text-sm text-gray-700 dark:text-gray-300 italic m-0">{{ slotProps.data.transactionable.reported_problems || 'No especificado' }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <DataTable :value="slotProps.data.channel === 'orden_de_servicio' ? (slotProps.data.transactionable?.items || []) : slotProps.data.items" :pt="subDataTablePt">
+                                        <Column field="quantity" header="Cant." style="width: 4rem">
+                                            <template #body="{ data: item }"><span class="font-mono text-xs">{{ item.quantity }}</span></template>
+                                        </Column>
+                                        <Column field="description" header="Descripción">
+                                            <template #body="{ data: item }">
+                                                <span class="font-medium text-gray-900 dark:text-gray-100">{{ item.description }}</span>
+                                                <div v-if="item.discount_reason && slotProps.data.channel !== 'orden_de_servicio'" class="text-[10px] text-orange-500 mt-1 flex items-center gap-1">
+                                                    <i class="pi pi-tag !text-[8px]"></i> {{ item.discount_reason }}
+                                                </div>
+                                            </template>
+                                        </Column>
+                                        <Column field="unit_price" header="P. Unit" class="text-right">
+                                            <template #body="{ data: item }"><span class="font-mono">{{ formatCurrency(item.unit_price) }}</span></template>
+                                        </Column>
+                                        <Column v-if="slotProps.data.channel !== 'orden_de_servicio'" field="discount_amount" header="Desc." class="text-right">
+                                            <template #body="{ data: item }">
+                                                <span class="font-mono text-red-500">{{ item.discount_amount > 0 ? '-' + formatCurrency(item.discount_amount) : '--' }}</span>
+                                            </template>
+                                        </Column>
+                                        <Column field="line_total" header="Subtotal" class="text-right">
+                                            <template #body="{ data: item }"><span class="font-mono font-medium text-gray-900 dark:text-white">{{ formatCurrency(item.line_total) }}</span></template>
+                                        </Column>
+                                        <template #empty>
+                                            <div class="text-center text-gray-500 py-3 text-xs italic">No hay conceptos registrados para esta transacción.</div>
+                                        </template>
+                                    </DataTable>
+                                </div>
+                            </template>
+                            <template #empty>
+                                <div class="flex flex-col items-center justify-center text-center py-8 opacity-60">
+                                    <i class="pi pi-shopping-bag !text-3xl text-gray-400 mb-3"></i>
+                                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin ventas</p>
+                                    <p class="text-xs text-gray-400 mt-1">Este cliente no ha realizado compras.</p>
+                                </div>
+                            </template>
+                        </DataTable>
+                    </div>
+
+                    <!-- Historial de Movimientos de Saldo -->
+                    <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col">
+                        <div class="mb-6 flex justify-between items-start">
+                            <div>
+                                <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Historial de movimientos de saldo</h2>
+                                <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Abonos, compras a crédito y ajustes</p>
+                            </div>
+                            <div class="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center flex-shrink-0 border border-emerald-100 dark:border-emerald-900/30">
+                                <i class="pi pi-sort-alt !text-sm text-emerald-500"></i>
+                            </div>
+                        </div>
+                        
+                        <DataTable :value="historicalMovements" responsiveLayout="scroll" :paginator="historicalMovements?.length > 5" :rows="5" sortField="date" :sortOrder="-1" :pt="dataTablePt">
+                            <Column field="date" header="Fecha" sortable>
+                                <template #body="{ data }"><span class="text-xs">{{ formatDate(data.date) }}</span></template>
+                            </Column>
+                            <Column field="type" header="Tipo">
+                                <template #body="{ data }">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold" :class="data.type.toLowerCase().includes('abono') ? 'text-green-500' : 'text-gray-500'">{{ data.type }}</span>
+                                </template>
+                            </Column>
+                            <Column field="description" header="Descripción">
+                                <template #body="{ data }">
+                                    <span class="text-sm font-medium text-gray-900 dark:text-gray-100 leading-tight m-0">{{ data.description }}</span>
+                                </template>
+                            </Column>
+                            <Column field="amount" header="Monto">
+                                <template #body="{ data }">
+                                    <span class="font-mono text-sm" :class="{ 'text-green-600 dark:text-green-400': data.type.toLowerCase().includes('abono'), 'text-gray-900 dark:text-white': !data.type.toLowerCase().includes('abono') }">
+                                        {{ data.type.toLowerCase().includes('abono') ? '+' : '' }}{{ formatCurrency(data.amount) }}
+                                    </span>
+                                </template>
+                            </Column>
+                            <Column field="resulting_balance" header="Saldo Resultante">
+                                <template #body="{ data }">
+                                    <span :class="getBalanceClass(data.resulting_balance)" class="font-mono font-bold text-sm">
+                                        {{ formatCurrency(data.resulting_balance) }}
+                                    </span>
+                                </template>
+                            </Column>
+                            <template #empty>
+                                <div class="flex flex-col items-center justify-center text-center py-8 opacity-60">
+                                    <i class="pi pi-sort-alt !text-3xl text-gray-400 mb-3"></i>
+                                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin movimientos</p>
+                                    <p class="text-xs text-gray-400 mt-1">El saldo del cliente no ha tenido actividad.</p>
+                                </div>
+                            </template>
+                        </DataTable>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Modales -->
-        <StartSessionModal v-model:visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
-            :user-bank-accounts="userBankAccounts" />
+        <StartSessionModal v-model:visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters" :user-bank-accounts="userBankAccounts" />
         <JoinSessionModal v-model:visible="isJoinSessionModalVisible" :sessions="joinableSessions" />
-        <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="0"
-            :client="customer" :loading="isPaymentProcessing" payment-mode="balance" @submit="handleBalancePaymentSubmit" />
+        <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="0" :client="customer" :loading="isPaymentProcessing" payment-mode="balance" @submit="handleBalancePaymentSubmit" />
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource" :available-templates="availableTemplates" />
         
-        <!-- Modal de Impresión -->
-        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
-            :available-templates="availableTemplates" />
-        
-        <!-- MODAL DE AJUSTE MANUAL MEJORADO -->
-        <Dialog v-model:visible="isAdjustModalVisible" header="Ajuste Manual de Saldo" modal
-            class="w-full max-w-lg mx-4">
-            <form @submit.prevent="submitAdjustment" class="space-y-6">
-                <!-- 1. Tipo de Acción -->
-                <div>
-                    <InputLabel value="¿Qué deseas hacer?" class="mb-2" />
-                    <SelectButton v-model="adjustForm.adjustment_type" :options="adjustmentTypeOptions" optionLabel="label"
-                        optionValue="value" class="w-full" />
+        <!-- Modal de Ajuste Manual -->
+        <Dialog v-model:visible="isAdjustModalVisible" modal class="w-full max-w-md mx-4" :pt="dialogPt">
+            
+            <template #header>
+                <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-full bg-orange-50 dark:bg-orange-900/20 text-orange-500 flex items-center justify-center flex-shrink-0 border border-orange-100 dark:border-orange-900/30">
+                        <i class="pi pi-sliders-h !text-sm"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-light tracking-tight text-gray-900 dark:text-white m-0 leading-tight">Ajuste manual</h2>
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1">
+                            Modificar saldo del cliente
+                        </p>
+                    </div>
+                </div>
+            </template>
+
+            <form @submit.prevent="submitAdjustment" class="flex flex-col gap-5 pt-2">
+                <!-- Tipo de Acción -->
+                <div class="flex flex-col">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 mb-2">¿Qué deseas hacer?</label>
+                    <SelectButton v-model="adjustForm.adjustment_type" :options="adjustmentTypeOptions" optionLabel="label" optionValue="value" class="w-full" :pt="selectButtonPt" />
                 </div>
 
-                <!-- 2. Dirección / Signo -->
-                <div>
-                    <InputLabel value="Tipo de movimiento" class="mb-2" />
-                    <SelectButton v-model="adjustForm.direction" :options="adjustmentDirectionOptions" optionLabel="label"
-                        optionValue="value" class="w-full" :allowEmpty="false">
+                <!-- Dirección / Signo -->
+                <div class="flex flex-col">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 mb-2">Tipo de movimiento</label>
+                    <SelectButton v-model="adjustForm.direction" :options="adjustmentDirectionOptions" optionLabel="label" optionValue="value" class="w-full" :allowEmpty="false" :pt="selectButtonPt">
                         <template #option="slotProps">
-                            <div class="flex items-center gap-2" :class="{
-                                'text-green-600': slotProps.option.value === 'credit',
-                                'text-red-600': slotProps.option.value === 'debit'
-                            }">
-                                <i :class="slotProps.option.icon"></i>
+                            <div class="flex items-center justify-center gap-1.5 w-full h-full text-[10px] uppercase tracking-widest font-bold transition-colors" :class="{ 'text-green-600 dark:text-green-400': slotProps.option.value === 'credit', 'text-red-600 dark:text-red-400': slotProps.option.value === 'debit' }">
+                                <i :class="slotProps.option.icon" class="!text-[9px]"></i>
                                 <span>{{ slotProps.option.label }}</span>
                             </div>
                         </template>
                     </SelectButton>
                 </div>
 
-                <!-- 3. Monto (Siempre positivo en UI) -->
-                <div>
-                    <InputLabel for="adjust-amount" :value="adjustForm.adjustment_type === 'add' ? 'Monto del movimiento' : 'Nuevo saldo total'" />
-                    <InputNumber id="adjust-amount" v-model="adjustForm.amount" mode="currency" currency="MXN"
-                        locale="es-MX" class="w-full mt-1" :min="0" :minFractionDigits="2" :maxFractionDigits="2" 
-                        placeholder="$0.00" />
-                    <small class="text-gray-500">Ingresa el monto en positivo.</small>
-                    <InputError :message="adjustForm.errors.amount" />
+                <!-- Monto -->
+                <div class="flex flex-col">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 mb-2">{{ adjustForm.adjustment_type === 'add' ? 'Monto del movimiento *' : 'Nuevo saldo total *' }}</label>
+                    <InputNumber v-model="adjustForm.amount" mode="currency" currency="MXN" locale="es-MX" :min="0" :minFractionDigits="2" :maxFractionDigits="2" placeholder="$0.00" :pt="{ input: inputPt }" />
+                    <span v-if="adjustForm.errors.amount" class="text-xs text-red-500 font-medium mt-1.5">{{ adjustForm.errors.amount }}</span>
+                    <span v-else class="text-[10px] text-gray-500 mt-1 italic block">El monto siempre se ingresa en positivo.</span>
                 </div>
 
-                <div>
-                    <InputLabel for="adjust-notes" value="Razón del ajuste (Obligatorio)" />
-                    <Textarea id="adjust-notes" v-model="adjustForm.notes" class="w-full mt-1" rows="3" placeholder="Ej: Error en cobro anterior, bonificación, etc." />
-                    <InputError :message="adjustForm.errors.notes" />
-                </div>
-
-                <div class="flex justify-end gap-2">
-                    <Button type="button" label="Cancelar" @click="isAdjustModalVisible = false" text
-                        severity="secondary" />
-                    <Button type="submit" label="Aplicar ajuste" :loading="adjustForm.processing" severity="warning" />
+                <!-- Notas -->
+                <div class="flex flex-col">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 mb-2">Razón del ajuste (Obligatorio) *</label>
+                    <Textarea v-model="adjustForm.notes" rows="3" placeholder="Ej: Error en cobro anterior, bonificación, etc." :pt="textareaPt" />
+                    <span v-if="adjustForm.errors.notes" class="text-xs text-red-500 font-medium mt-1.5">{{ adjustForm.errors.notes }}</span>
                 </div>
             </form>
+
+            <template #footer>
+                <div class="flex justify-end items-center gap-3 mt-4 pt-6 border-t border-gray-100 dark:border-[#3a3a3a] w-full">
+                    <Button label="Cancelar" text @click="isAdjustModalVisible = false" class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold" />
+                    <Button label="Aplicar ajuste" @click="submitAdjustment" :loading="adjustForm.processing" severity="warning" class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-6 shadow-sm" />
+                </div>
+            </template>
         </Dialog>
     </AppLayout>
 </template>

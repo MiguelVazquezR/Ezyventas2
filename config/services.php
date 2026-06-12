@@ -40,4 +40,13 @@ return [
         'redirect' => env('GOOGLE_REDIRECT_URI'),
     ],
 
+    'mercadopago' => [
+        'client_id'         => env('MP_CLIENT_ID'),
+        'client_secret'     => env('MP_CLIENT_SECRET'),
+        'redirect_uri'      => env('MP_REDIRECT_URI'),
+        'platform_token'    => env('MP_PLATFORM_ACCESS_TOKEN'),
+        'test_access_token' => env('MP_TEST_ACCESS_TOKEN'),
+        'env'               => env('MP_ENV', 'sandbox'),
+    ],
+
 ];

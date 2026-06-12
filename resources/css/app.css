@@ -5,3 +5,44 @@
 [x-cloak] {
     display: none;
 }
+
+@layer base {
+    /* Estándar para Firefox */
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: #9ca3af transparent; /* gray-400 y transparente */
+    }
+
+    /* Estilos para navegadores WebKit (Chrome, Edge, Safari) */
+    ::-webkit-scrollbar {
+        width: 6px;  /* Scroll vertical muy delgado */
+        height: 6px; /* Scroll horizontal muy delgado */
+    }
+
+    ::-webkit-scrollbar-track {
+        background: transparent; /* Fondo invisible para que no rompa el diseño */
+        border-radius: 10px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background-color: #d1d5db; /* gray-300 en modo claro */
+        border-radius: 10px;       /* Totalmente redondeado */
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background-color: #9ca3af; /* gray-400 al pasar el ratón */
+    }
+
+    /* Adaptación automática para el Modo Oscuro */
+    .dark * {
+        scrollbar-color: #3f3f46 transparent; /* zinc-700 y transparente */
+    }
+
+    .dark ::-webkit-scrollbar-thumb {
+        background-color: #3f3f46; /* zinc-700 - combina perfecto con tu #232323 */
+    }
+
+    .dark ::-webkit-scrollbar-thumb:hover {
+        background-color: #52525b; /* zinc-600 */
+    }
+}

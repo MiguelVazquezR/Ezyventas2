@@ -7,4 +7,5 @@ enum TemplateType: string
     case SALE_TICKET = 'ticket_venta';
     case LABEL = 'etiqueta';
     case QUOTE = 'cotizacion';
+    case SERVICE_RECEIPT = 'recibo_servicio';
 }

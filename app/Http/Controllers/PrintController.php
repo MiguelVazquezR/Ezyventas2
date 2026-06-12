@@ -18,7 +18,7 @@ class PrintController extends Controller
         $validated = $request->validate([
             'template_id' => 'required|exists:print_templates,id',
             // Agregamos 'customer' a la validación
-            'data_source_type' => 'required|in:transaction,product,service_order,customer', 
+            'data_source_type' => 'required', 
             'data_source_id' => 'required|integer',
             'offset_x' => 'nullable|numeric',
             'offset_y' => 'nullable|numeric',
@@ -46,7 +46,7 @@ class PrintController extends Controller
             if (!$dataSource) abort(404);
         }
         // ---------------------------
-        elseif ($validated['data_source_type'] === 'transaction') {
+        elseif ($validated['data_source_type'] === 'transaction' || $validated['data_source_type'] === 'pos' || $validated['data_source_type'] === 'general') {
             $dataSource = Transaction::with(['customer', 'items.itemable'])->find($validated['data_source_id']);
             if (!$dataSource || $dataSource->branch->subscription_id !== $user->branch->subscription_id) {
                 abort(404);

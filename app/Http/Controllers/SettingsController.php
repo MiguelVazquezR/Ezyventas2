@@ -18,7 +18,8 @@ class SettingsController extends Controller implements HasMiddleware
     {
         return [
             new Middleware('can:settings.generals.access', only: ['index']),
-            new Middleware('can:settings.generals.update', only: ['update']),
+            // ELIMINADO: new Middleware('can:settings.generals.update', only: ['update']),
+            // Ahora la validación se hace a nivel granular dentro del método update
         ];
     }
 
@@ -30,49 +31,54 @@ class SettingsController extends Controller implements HasMiddleware
 
         $definitions = SettingDefinition::orderBy('name')->get();
 
+        // --- NUEVO: Obtener los módulos disponibles de la suscripción ---
+        $availableModules = $subscription->getAvailableModuleNames();
+        // Agregamos módulos base que siempre deben existir para configuraciones generales
+        $availableModules[] = 'Sistema';
+        $availableModules[] = 'Configuraciones Generales';
+        $availableModules = array_unique($availableModules);
+        sort($availableModules); // Ordenarlos alfabéticamente
+
         $userValues = $user->settings()->pluck('value', 'setting_definition_id');
         $branchValues = $branch->settings()->pluck('value', 'setting_definition_id');
         $subscriptionValues = $subscription->settings()->pluck('value', 'setting_definition_id');
 
-        $settings = $definitions->map(function ($definition) use ($userValues, $branchValues, $subscriptionValues) {
-            $value = null;
-            switch ($definition->level) {
-                case 'user':
-                    $value = $userValues[$definition->id] ?? null;
-                    break;
-                case 'branch':
-                    $value = $branchValues[$definition->id] ?? null;
-                    break;
-                case 'subscription':
-                    $value = $subscriptionValues[$definition->id] ?? null;
-                    break;
-            }
+        $settings = [];
+
+        foreach ($definitions as $definition) {
+            $value = match ($definition->level) {
+                'user' => $userValues->get($definition->id),
+                'branch' => $branchValues->get($definition->id),
+                'subscription' => $subscriptionValues->get($definition->id),
+                default => null,
+            };
 
             if ($value === null) {
-                if ($definition->type === 'list' || $definition->type === 'select') {
-                    $value = '[]';
-                } else {
-                    $value = $definition->default_value;
+                $value = $definition->default_value;
+            }
+
+            if (in_array($definition->type, ['select', 'list']) && is_string($value)) {
+                $decoded = json_decode($value, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $value = $decoded;
                 }
             }
 
-            $definition->value = $value;
-
-            if ($definition->type === 'boolean') {
-                $definition->value = filter_var($definition->value, FILTER_VALIDATE_BOOLEAN);
-            } elseif ($definition->type === 'list') {
-                $decoded = json_decode($definition->value, true);
-                $definition->value = is_array($decoded) ? $decoded : [];
-            } elseif ($definition->type === 'select') {
-                $options = json_decode($definition->default_value, true);
-                $definition->options = is_array($options) ? $options : [];
-            }
-
-            return $definition;
-        })->groupBy('module');
+            $settings[$definition->module][] = [
+                'id' => $definition->id,
+                'name' => $definition->name,
+                'key' => $definition->key,
+                'description' => $definition->description,
+                'type' => $definition->type,
+                'level' => $definition->level,
+                'value' => $value,
+                'default_value' => in_array($definition->type, ['select', 'list']) && is_string($definition->default_value) ? json_decode($definition->default_value, true) : $definition->default_value,
+            ];
+        }
 
         return Inertia::render('Setting/Index', [
             'settings' => $settings,
+            'availableModules' => array_values($availableModules),
         ]);
     }
 
@@ -82,62 +88,53 @@ class SettingsController extends Controller implements HasMiddleware
         $branch = $user->branch;
         $subscription = $branch->subscription;
 
-        $inputs = $request->input('settings', []);
-        $files = $request->file('settings', []);
-        $settings = array_merge($inputs, $files);
+        $validated = $request->validate([
+            'settings' => 'required|array',
+        ]);
 
-        foreach ($settings as $key => $value) {
+        foreach ($validated['settings'] as $key => $value) {
             $definition = SettingDefinition::where('key', $key)->first();
+            if (!$definition) continue;
 
-            if ($definition) {
-                $entity = null;
-                switch ($definition->level) {
-                    case 'user':
-                        $entity = $user;
-                        break;
-                    case 'branch':
-                        $entity = $branch;
-                        break;
-                    case 'subscription':
-                        $entity = $subscription;
-                        break;
-                }
-
-                if (!$entity) continue;
-
-                $finalValue = $value;
-
-                if ($definition->type === 'file' && $value instanceof \Illuminate\Http\UploadedFile) {
-                    // AÑADIDO: Lógica para eliminar el archivo anterior si existe.
-                    $existingSetting = $entity->settings()->where('setting_definition_id', $definition->id)->first();
-                    if ($existingSetting && $existingSetting->value) {
-                        $oldPath = str_replace(Storage::url(''), '', $existingSetting->value);
-                        Storage::disk('public')->delete($oldPath);
-                    }
-
-                    $path = $value->store('settings_files', 'public');
-                    $finalValue = Storage::url($path);
-                } elseif ($definition->type === 'boolean') {
-                    $finalValue = filter_var($value, FILTER_VALIDATE_BOOLEAN) ? 'true' : 'false';
-                } elseif ($definition->type === 'list' && is_array($value)) {
-                    $finalValue = json_encode($value);
-                }
-
-                $entity->settings()->updateOrCreate(
-                    ['setting_definition_id' => $definition->id],
-                    ['value' => $finalValue]
-                );
+            // --- NUEVA VALIDACIÓN DE PERMISOS POR NIVEL ---
+            if ($definition->level === 'subscription' && !$user->can('settings.generals.update_subscription')) {
+                continue; // Omite guardar si no tiene permiso para la suscripción
             }
+            if ($definition->level === 'branch' && !$user->can('settings.generals.update_branch')) {
+                continue; // Omite guardar si no tiene permiso para la sucursal
+            }
+            // El nivel 'user' siempre está permitido y pasará de largo estas validaciones
+
+            if ($definition->type === 'file' && $request->hasFile("settings.{$key}")) {
+                $file = $request->file("settings.{$key}");
+                $path = $file->store('settings', 'public');
+                $value = Storage::url($path);
+            } elseif ($definition->type === 'file' && is_string($value)) {
+                // Si es un archivo y llega como string, significa que no se subió uno nuevo.
+                // Mantenemos la URL que ya existía.
+                continue;
+            }
+
+            $model = match ($definition->level) {
+                'subscription' => $subscription,
+                'branch' => $branch,
+                'user' => $user,
+            };
+
+            $model->settings()->updateOrCreate(
+                ['setting_definition_id' => $definition->id],
+                ['value' => is_array($value) ? json_encode($value) : $value]
+            );
         }
 
-        return redirect()->back()->with('success', 'Configuraciones guardadas con éxito.');
+        return redirect()->back()->with('success', 'Configuraciones actualizadas con éxito.');
     }
 
-    public function store(Request $request)
+    public function storeDefinition(Request $request)
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'key' => 'required|string|max:255|unique:setting_definitions,key',
+            'key' => 'required|string|max:255|unique:setting_definitions',
             'description' => 'nullable|string',
             'module' => 'required|string|max:255',
             'level' => ['required', Rule::in(['subscription', 'branch', 'user'])],
@@ -167,9 +164,21 @@ class SettingsController extends Controller implements HasMiddleware
         return redirect()->back()->with('success', 'Configuración actualizada con éxito.');
     }
 
+    public function destroyDefinition(SettingDefinition $setting)
+    {
+        // Validación extra de seguridad en backend para el ID 1
+        if (Auth::id() !== 1) {
+            abort(403, 'Acción no autorizada.');
+        }
+
+        $setting->delete();
+
+        return redirect()->back()->with('success', 'Configuración eliminada con éxito.');
+    }
+
     private function handleDefinitionRequestData(array $data): array
     {
-        if (in_array($data['type'], ['select', 'list']) && is_array($data['default_value'])) {
+        if (in_array($data['type'], ['select', 'list']) && isset($data['default_value']) && is_array($data['default_value'])) {
             $data['default_value'] = json_encode($data['default_value']);
         } elseif (!isset($data['default_value'])) {
             $data['default_value'] = null;

@@ -4,20 +4,18 @@ namespace App\Services;
 
 use App\Enums\CustomerBalanceMovementType;
 use App\Enums\PaymentMethod;
-use App\Enums\SessionCashMovementType;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductAttribute;
 use App\Models\Transaction;
-use App\Models\TransactionItem;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Exception;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * Servicio para orquestar operaciones de pago complejas que
@@ -25,22 +23,8 @@ use Illuminate\Database\Eloquent\Relations\Relation;
  */
 class TransactionPaymentService
 {
-    /**
-     * @param PaymentService $paymentService El servicio de bajo nivel para registrar pagos.
-     */
     public function __construct(protected PaymentService $paymentService) {}
 
-    /**
-     * Procesa una nueva venta (Contado, Crédito o Apartado) desde el POS.
-     * Encapsula la lógica de checkout() y createLayaway() de PointOfSaleController.
-     *
-     * @param array $validatedData Datos validados del request.
-     * @param User $user El usuario que realiza la operación.
-     * @param Customer|null $customer El cliente asociado (si existe).
-     * @param TransactionStatus $initialStatus El estado inicial (PENDING, ON_LAYAWAY).
-     * @param CustomerBalanceMovementType|null $debtType El tipo de movimiento si se genera deuda (CREDIT_SALE, LAYAWAY_DEBT).
-     * @return Transaction La transacción creada y procesada.
-     */
     public function handleNewSale(
         array $validatedData,
         User $user,
@@ -49,17 +33,17 @@ class TransactionPaymentService
         ?CustomerBalanceMovementType $debtType
     ): Transaction {
         return DB::transaction(function () use ($validatedData, $user, $customer, $initialStatus, $debtType) {
-
             $now = now();
             $totalSale = (float) $validatedData['total'];
             $paymentsFromRequest = $validatedData['payments'] ?? [];
             $sessionId = $validatedData['cash_register_session_id'];
 
-            // 1. Crear la Transacción
+            // 1. Crear la Transacción (Folio generado desde el modelo)
             $transaction = Transaction::create([
                 'cash_register_session_id' => $sessionId,
-                'folio' => self::generateFolio($user->branch_id),
+                'folio' => Transaction::generateFolio($user->branch_id),
                 'customer_id' => $customer?->id,
+                'contact_info' => !empty($validatedData['guest_name']) ? ['name' => $validatedData['guest_name']] : null,
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
                 'status' => $initialStatus,
@@ -69,27 +53,19 @@ class TransactionPaymentService
                 'total_tax' => 0,
                 'currency' => 'MXN',
                 'status_changed_at' => $now,
-                // GUARDAR FECHA DE VENCIMIENTO (Solo si viene en los datos)
                 'layaway_expiration_date' => $validatedData['layaway_expiration_date'] ?? null,
             ]);
 
-            // 2. Crear Items y manejar Stock
+            // 2. Crear Items y manejar Stock delegando a los Modelos
             $this->createTransactionItems($transaction, $validatedData['cartItems'], $initialStatus);
 
             $balanceToUse = 0;
 
-            // 3. Aplicar Saldo a Favor (si se usa)
-            if ($validatedData['use_balance'] && $customer && $customer->balance > 0) {
+            // 3. Aplicar Saldo a Favor (si el usuario explícitamente marcó usar saldo)
+            if (!empty($validatedData['use_balance']) && $customer && $customer->balance > 0) {
                 $balanceToUse = min($totalSale, (float) $customer->balance);
                 if ($balanceToUse > 0) {
-                    $this->applyBalanceAsPayment(
-                        $transaction,
-                        $customer,
-                        $balanceToUse,
-                        $sessionId,
-                        "Uso de saldo en venta POS #{$transaction->folio}",
-                        $now
-                    );
+                    $this->applyBalanceAsPayment($transaction, $customer, $balanceToUse, $sessionId, "Uso de saldo en venta POS #{$transaction->folio}", clone $now);
                 }
             }
 
@@ -97,38 +73,44 @@ class TransactionPaymentService
             $totalDue = $totalSale - $balanceToUse;
             if (!empty($paymentsFromRequest)) {
                 $paymentsToProcess = $this->capPaymentsToAmount($paymentsFromRequest, $totalDue);
-                $this->applyDirectPayments(
-                    $transaction,
-                    $paymentsToProcess,
-                    $sessionId
-                );
+                $this->applyDirectPayments($transaction, $paymentsToProcess, $sessionId);
             }
 
             // 5. Calcular estado final y gestionar deuda
-            $totalPaid = $transaction->fresh()->payments()->sum('amount');
-            $remainingDue = $totalSale - $totalPaid;
+            $transaction->refresh();
+            $remainingDue = $transaction->remaining_due;
 
             if ($remainingDue > 0.01) {
-                // Venta a Crédito o Apartado con deuda
-                if (!$customer || ($debtType === CustomerBalanceMovementType::CREDIT_SALE && $remainingDue > $customer->available_credit)) {
+                if (!$customer) {
                     throw new Exception("Pago insuficiente y el cliente no tiene crédito disponible.");
                 }
 
-                $this->applyDebtToCustomer(
-                    $transaction,
-                    $customer,
-                    $remainingDue,
-                    $debtType,
-                    "Cargo a saldo por venta #{$transaction->folio}",
-                    $now->copy()->addSecond()
-                );
-            } else {
-                // Venta Pagada por Completo
-                $transaction->update(['status' => TransactionStatus::COMPLETED]);
+                // --- FIX: COBRO AUTOMÁTICO DE SALDO ---
+                // Si aún hay deuda y el cliente tiene saldo a favor, el sistema fuerza
+                // el uso de ese saldo como PAGO antes de generar una deuda real.
+                // Esto genera el registro de "Payment" tipo BALANCE y cuadra la transacción.
+                if ($customer->balance > 0) {
+                    $forcedBalanceToUse = min($remainingDue, (float) $customer->balance);
+                    $this->applyBalanceAsPayment($transaction, $customer, $forcedBalanceToUse, $sessionId, "Cobro automático de saldo a favor por venta #{$transaction->folio}", clone $now);
+                    
+                    $transaction->refresh();
+                    $remainingDue = $transaction->remaining_due;
+                }
 
-                // Si era un apartado que se pagó completo de inicio, mover stock
+                // Si aún queda deuda después de agotar el saldo a favor, aplicamos la deuda.
+                if ($remainingDue > 0.01) {
+                    if ($debtType === CustomerBalanceMovementType::CREDIT_SALE && $remainingDue > $customer->available_credit) {
+                        throw new Exception("Pago insuficiente y el cliente no tiene crédito disponible.");
+                    }
+                    $customer->addDebt($remainingDue, $debtType, $transaction->id, "Cargo a saldo por venta #{$transaction->folio}", $now->copy()->addSecond());
+                }
+            } 
+            
+            // 6. Evaluación final: ¿Se pagó completa? (Con pagos, saldo automático, etc.)
+            if ($transaction->fresh()->isFullyPaid()) {
+                $transaction->update(['status' => TransactionStatus::COMPLETED]);
                 if ($initialStatus === TransactionStatus::ON_LAYAWAY) {
-                    $this->finalizeLayawayStock($transaction);
+                    $this->finalizeTransactionStock($transaction, clone $now);
                 }
             }
 
@@ -136,592 +118,229 @@ class TransactionPaymentService
         });
     }
 
-    /**
-     * Procesa un CAMBIO de producto (Exchange).
-     * Devuelve items al inventario, saca nuevos items y ajusta la diferencia monetaria.
-     */
-    public function handleProductExchange(
-        User $user,
-        Transaction $originalTransaction,
-        array $data
-    ): Transaction {
-        return DB::transaction(function () use ($user, $originalTransaction, $data) {
+    public function handleNewOrder(User $user, array $data): Transaction
+    {
+        return DB::transaction(function () use ($user, $data) {
             $now = now();
             $sessionId = $data['cash_register_session_id'];
-            $returnedItems = $data['returned_items']; 
-            $newCartItems = $data['new_items'];       
-            $payments = $data['payments'] ?? [];
-            
-            // Determinar Cliente
-            $customerId = $data['new_customer_id'] ?? $originalTransaction->customer_id;
-            $customer = $customerId ? Customer::find($customerId) : null;
 
-            // guardar nuevo cliente a transaccion original si no tenia
-            if ($customerId && !$originalTransaction->customer_id) {
-                $originalTransaction->update(['customer_id' => $customerId]);
-            }
-
-            // ... (1. Procesar Devoluciones - Igual que antes) ...
-            $totalRefundAmount = 0;
-            foreach ($returnedItems as $returnItem) {
-                // ... lógica de devolución ...
-                $originalItem = TransactionItem::where('transaction_id', $originalTransaction->id)->where('id', $returnItem['item_id'])->firstOrFail();
-                $refundAmount = $originalItem->unit_price * $returnItem['quantity'];
-                $totalRefundAmount += $refundAmount;
-                // ... restock ...
-                $itemModel = $originalItem->itemable;
-                if (!$itemModel && class_exists($originalItem->itemable_type)) {
-                    $itemModel = $originalItem->itemable_type::find($originalItem->itemable_id);
-                }
-                if ($itemModel) $this->restockSingleItem($itemModel, $returnItem['quantity']);
-            }
-
-            // ... (2. Crear Nueva Transacción - Igual que antes) ...
-            // Importante: Si es a crédito, el estado inicial podría ser PENDING o COMPLETED dependiendo de tu lógica. 
-            // Si hay deuda, suele ser PENDING o COMPLETED con saldo pendiente. Usaremos COMPLETED pero generamos deuda.
-            $newTransaction = Transaction::create([
+            $transaction = Transaction::create([
                 'cash_register_session_id' => $sessionId,
-                'folio' => self::generateFolio($user->branch_id),
-                'customer_id' => $customerId,
+                'folio' => Transaction::generateFolio($user->branch_id),
+                'customer_id' => $data['customer_id'] ?? null,
+                'contact_info' => $data['contact_info'] ?? null,
                 'branch_id' => $user->branch_id,
                 'user_id' => $user->id,
-                'status' => TransactionStatus::COMPLETED, 
+                'status' => TransactionStatus::TO_DELIVER,
+                'delivery_status' => 'pending',
                 'channel' => TransactionChannel::POS,
                 'subtotal' => $data['subtotal'],
+                'shipping_cost' => $data['shipping_cost'] ?? 0,
                 'total_discount' => $data['total_discount'] ?? 0,
                 'total_tax' => 0,
                 'currency' => 'MXN',
-                'notes' => "Cambio de producto ref. Venta #{$originalTransaction->folio}. " . ($data['notes'] ?? ''),
+                'notes' => $data['notes'] ?? null,
+                'delivery_date' => $data['delivery_date'] ?? null,
+                'shipping_address' => $data['shipping_address'] ?? null,
                 'status_changed_at' => $now,
             ]);
 
-            // ... (3. Crear Items - Igual que antes) ...
-            $this->createTransactionItems($newTransaction, $newCartItems, TransactionStatus::COMPLETED);
+            $this->createTransactionItems($transaction, $data['cartItems'], TransactionStatus::TO_DELIVER);
 
-            // 4. Calcular Diferencias
-            $newTotalSale = (float) $newTransaction->total;
-            $difference = $newTotalSale - $totalRefundAmount;
-
-            // Pago "virtual" por intercambio
-            $exchangePaymentAmount = min($newTotalSale, $totalRefundAmount);
-            $this->paymentService->processPayments($newTransaction, [[
-                'amount' => $exchangePaymentAmount,
-                'method' => 'intercambio', 
-                'notes' => 'Valor de productos devueltos',
-                'bank_account_id' => null,
-            ]], $sessionId);
-
-            // 5. Manejar Diferencia (MODIFICADO)
-            if ($difference > 0.01) {
-                // Hay deuda. ¿Se paga ahora o se deja a crédito?
-                $useCredit = $data['use_credit_for_shortage'] ?? false;
-
-                if ($useCredit) {
-                    // CASO: Dejar a Crédito
-                    if (!$customer) {
-                        throw new Exception("No se puede dejar deuda a público general.");
-                    }
-                    if ($difference > $customer->available_credit) {
-                        throw new Exception("El cliente no tiene suficiente crédito disponible para cubrir la diferencia.");
-                    }
-
-                    // Registrar deuda en el cliente
-                    $this->applyDebtToCustomer(
-                        $newTransaction,
-                        $customer,
-                        $difference,
-                        CustomerBalanceMovementType::CREDIT_SALE, // Tipo de movimiento
-                        "Diferencia por cambio a crédito. Venta #{$newTransaction->folio}",
-                        $now
-                    );
-
-                    // Si se deja a crédito, la transacción queda con saldo pendiente
-                    $newTransaction->update(['status' => TransactionStatus::PENDING]);
-                    
-                } else {
-                    // CASO: Pago Inmediato (Efectivo/Tarjeta/Transfer)
-                    $this->applyDirectPayments($newTransaction, $payments, $sessionId);
-                }
-
-            } elseif ($difference < -0.01) {
-                // ... (Lógica de devolución de saldo/efectivo igual que antes) ...
-                $surplusAmount = abs($difference);
-                $refundType = $data['exchange_refund_type'] ?? 'balance';
-
-                if ($refundType === 'balance') {
-                    if (!$customer) throw new Exception("Error lógico: Se intentó abonar a saldo sin un cliente asignado.");
-                    $customer->increment('balance', $surplusAmount);
-                    $customer->balanceMovements()->create([
-                        'transaction_id' => $newTransaction->id,
-                        'type' => CustomerBalanceMovementType::REFUND_CREDIT,
-                        'amount' => $surplusAmount,
-                        'balance_after' => $customer->balance,
-                        'notes' => "Saldo a favor por cambio. Venta #{$newTransaction->folio}",
-                        'created_at' => $now,
-                    ]);
-                } else {
-                    $session = $user->cashRegisterSessions()->find($sessionId);
-                    if ($session) {
-                        $session->cashMovements()->create([
-                            'user_id' => $user->id,
-                            'type' => SessionCashMovementType::OUTFLOW,
-                            'amount' => $surplusAmount,
-                            'description' => "Devolución cambio #{$newTransaction->folio}",
-                            'notes' => "Diferencia en efectivo entregada al cliente.",
-                        ]);
-                    }
-                }
-            }
-
-            return $newTransaction;
+            return $transaction;
         });
     }
 
-    /**
-     * Aplica un pago a una transacción existente (ej. Orden de Servicio).
-     * Encapsula la lógica de PaymentController@store.
-     *
-     * @param Transaction $transaction La transacción (Orden de Servicio) a la que se abona.
-     * @param array $validatedData Datos validados del request.
-     * @param int $sessionId ID de la sesión de caja.
-     * @return void
-     */
     public function applyPaymentToTransaction(Transaction $transaction, array $validatedData, int $sessionId): void
     {
         DB::transaction(function () use ($transaction, $validatedData, $sessionId) {
             $customer = $transaction->customer;
             $now = now();
+            $remainingDue = $transaction->remaining_due;
 
-            // 1. Calcular deuda
-            $totalPaidOnTransaction = $transaction->payments()->sum('amount');
-            $remainingDue = $transaction->total - $totalPaidOnTransaction;
+            $originalStatus = $transaction->status;
 
-            if ($remainingDue <= 0.01) {
-                throw new Exception('Esta transacción ya está completamente pagada.');
+            if ($remainingDue <= 0.01) throw new Exception('Esta transacción ya está completamente pagada.');
+
+            $balanceToUse = (!empty($validatedData['use_balance']) && $customer) ? min($customer->balance, $remainingDue) : 0;
+            $totalFromPayments = !empty($validatedData['payments']) ? array_sum(array_column($validatedData['payments'], 'amount')) : 0;
+
+            if (($balanceToUse + $totalFromPayments) > $remainingDue + 0.01) {
+                throw new Exception('El monto total del pago excede el saldo pendiente.');
             }
 
-            $balanceToUse = 0;
-            $totalFromPayments = 0;
-
-            // 2. Calcular abono con Saldo a Favor
-            if (!empty($validatedData['use_balance']) && $customer && $customer->balance > 0) {
-                $balanceToUse = min($customer->balance, $remainingDue);
-            }
-
-            // 3. Calcular abono con Pagos Directos
-            if (!empty($validatedData['payments'])) {
-                $totalFromPayments = array_sum(array_column($validatedData['payments'], 'amount'));
-            }
-
-            $totalAmountToPay = $balanceToUse + $totalFromPayments;
-
-            // 4. Validar sobrepago
-            if ($totalAmountToPay > $remainingDue + 0.01) {
-                throw new Exception('El monto total del pago excede el saldo pendiente de la transacción.');
-            }
-
-            // 5. Aplicar pago con Saldo a Favor
             if ($balanceToUse > 0) {
-                $this->applyBalanceAsPayment(
-                    $transaction,
-                    $customer,
-                    $balanceToUse,
-                    $sessionId,
-                    "Uso de saldo a favor en abono a O.S. #{$transaction->folio}",
-                    $now
-                );
+                $this->applyBalanceAsPayment($transaction, $customer, $balanceToUse, $sessionId, "Uso de saldo a favor en abono #{$transaction->folio}", clone $now);
             }
 
-            // 6. Aplicar Pagos Directos (y reducir deuda del cliente)
             if ($totalFromPayments > 0) {
-                $paymentsFromRequest = $validatedData['payments'];
-
-                // Registra los pagos
-                $this->applyDirectPayments($transaction, $paymentsFromRequest, $sessionId);
-
-                // Si hay cliente, se reduce su deuda (incrementa balance)
+                $this->applyDirectPayments($transaction, $validatedData['payments'], $sessionId);
                 if ($customer) {
-                    $customer->increment('balance', $totalFromPayments);
-                    $customer->balanceMovements()->create([
-                        'transaction_id' => $transaction->id,
-                        'type' => CustomerBalanceMovementType::PAYMENT,
-                        'amount' => $totalFromPayments, // Positivo (abono)
-                        'balance_after' => $customer->balance,
-                        'notes' => "Abono a O.S. #{$transaction->folio}",
-                        'created_at' => $now->copy()->addSecond(),
-                        'updated_at' => $now->copy()->addSecond(),
-                    ]);
+                    $customer->payDebt($totalFromPayments, $transaction->id, "Abono a O.S. / Apartado #{$transaction->folio}", $now->copy()->addSecond());
                 }
             }
 
-            // 7. Actualizar estado de la transacción (movido de PaymentService)
-            $totalPaid = $transaction->fresh()->payments()->sum('amount');
-            if ($totalPaid >= $transaction->total - 0.01) {
+            if ($transaction->fresh()->isFullyPaid()) {
                 $transaction->update(['status' => TransactionStatus::COMPLETED]);
+
+                if ($originalStatus === TransactionStatus::ON_LAYAWAY) {
+                    $this->finalizeTransactionStock($transaction, clone $now);
+                }
             }
         });
     }
 
-    /**
-     * Aplica un pago general al saldo de un cliente, cubriendo deudas (FIFO).
-     * Encapsula la lógica de CustomerPaymentController@store.
-     *
-     * @param Customer $customer El cliente que paga.
-     * @param array $validatedData Datos validados del request.
-     * @param int $sessionId ID de la sesión de caja.
-     * @param User $user El usuario que registra el pago.
-     * @return void
-     */
     public function applyPaymentToCustomerBalance(Customer $customer, array $validatedData, int $sessionId, User $user): void
     {
         DB::transaction(function () use ($customer, $validatedData, $sessionId, $user) {
             $now = now();
-            $balanceMovementsToCreate = [];
+            $pendingTransactions = $customer->transactions()->whereIn('status', [TransactionStatus::PENDING, TransactionStatus::ON_LAYAWAY])->orderBy('created_at', 'asc')->get();
 
-            // 1. Buscar *TODAS* las deudas
-            $pendingTransactions = $customer->transactions()
-                ->whereIn('status', [TransactionStatus::PENDING, TransactionStatus::ON_LAYAWAY])
-                ->orderBy('created_at', 'asc') // FIFO
-                ->get();
+            $baseTimestamp = $now->copy();
+            $delayCounter = 0;
 
             foreach ($validatedData['payments'] as $paymentData) {
                 $amountToApply = (float) $paymentData['amount'];
 
-                // 2. Aplicar a deudas pendientes (FIFO)
                 foreach ($pendingTransactions as $transaction) {
                     if ($amountToApply <= 0.001) break;
 
                     $originalStatus = $transaction->status;
-                    $totalPaidOnTransaction = $transaction->payments()->sum('amount');
-                    $pendingAmountOnTransaction = $transaction->total - $totalPaidOnTransaction;
+                    $pendingAmount = $transaction->remaining_due;
+                    if ($pendingAmount <= 0.001) continue;
 
-                    if ($pendingAmountOnTransaction <= 0.001) continue;
+                    $amountForThisTransaction = min($amountToApply, $pendingAmount);
 
-                    $amountForThisTransaction = min($amountToApply, $pendingAmountOnTransaction);
+                    $this->paymentService->processPayments($transaction, [[
+                        'amount' => $amountForThisTransaction,
+                        'method' => $paymentData['method'],
+                        'notes' => 'Abono a deuda. ' . ($validatedData['notes'] ?? ''),
+                        'bank_account_id' => $paymentData['bank_account_id'] ?? null,
+                    ]], $sessionId);
 
-                    $this->paymentService->processPayments(
-                        $transaction, // <-- DEBE SER $transaction
-                        [[
-                            'amount' => $amountForThisTransaction, // <-- DEBE SER $amountForThisTransaction
-                            'method' => $paymentData['method'],
-                            'notes' => 'Abono a deuda. ' . ($validatedData['notes'] ?? ''), // Nota corregida
-                            'bank_account_id' => $paymentData['bank_account_id'] ?? null,
-                        ]],
-                        $sessionId
-                    );
-
-                    // 3. Comprobar si se liquidó
-                    $newTotalPaid = $totalPaidOnTransaction + $amountForThisTransaction;
-                    if ($newTotalPaid >= $transaction->total - 0.01) {
+                    if ($transaction->fresh()->isFullyPaid()) {
                         $transaction->update(['status' => TransactionStatus::COMPLETED]);
-                        if ($originalStatus === TransactionStatus::ON_LAYAWAY) {
-                            $this->finalizeLayawayStock($transaction);
-                        }
+                        if ($originalStatus === TransactionStatus::ON_LAYAWAY) $this->finalizeTransactionStock($transaction, clone $now);
                     }
 
-                    $customer->increment('balance', $amountForThisTransaction);
-
-                    // Guardar movimiento de saldo para creación posterior
-                    $balanceMovementsToCreate[] = [
-                        'transaction_id' => $transaction->id,
-                        'type' => CustomerBalanceMovementType::PAYMENT,
-                        'amount' => $amountForThisTransaction,
-                        'balance_after' => $customer->balance,
-                        'notes' => "Abono a la venta #{$transaction->folio} (" . $paymentData['method'] . "). " . ($validatedData['notes'] ?? ''),
-                        'timestamp' => $now,
-                    ];
-
+                    $customer->payDebt($amountForThisTransaction, $transaction->id, "Abono a la venta #{$transaction->folio} (" . $paymentData['method'] . "). " . ($validatedData['notes'] ?? ''), $baseTimestamp->copy()->addSeconds($delayCounter++));
                     $amountToApply -= $amountForThisTransaction;
                 }
 
-                // 3. Aplicar restante como Saldo a Favor
                 if ($amountToApply > 0.001) {
-                    $balanceTransaction = $this->createBalancePaymentTransaction($customer, $user, $sessionId, $amountToApply, $now);
+                    $balanceTransaction = $customer->transactions()->create([
+                        'folio' => Transaction::generateBalancePaymentFolio($user->branch_id),
+                        'branch_id' => $user->branch_id,
+                        'user_id' => $user->id,
+                        'cash_register_session_id' => $sessionId,
+                        'subtotal' => $amountToApply,
+                        'channel' => TransactionChannel::BALANCE_PAYMENT,
+                        'status' => TransactionStatus::COMPLETED,
+                        'notes' => 'Transacción generada para registrar abono a saldo a favor.',
+                        'created_at' => clone $now,
+                    ]);
 
-                    // Esta llamada (que estaba copiada arriba) SÍ es correcta aquí
-                    $this->paymentService->processPayments(
-                        $balanceTransaction,
-                        [[
-                            'amount' => $amountToApply,
-                            'method' => $paymentData['method'],
-                            'notes' => 'Abono directo a saldo. ' . ($validatedData['notes'] ?? ''),
-                            'bank_account_id' => $paymentData['bank_account_id'] ?? null,
-                        ]],
-                        $sessionId
-                    );
-
-                    $customer->increment('balance', $amountToApply);
-
-                    $balanceMovementsToCreate[] = [
-                        'transaction_id' => $balanceTransaction->id,
-                        'type' => CustomerBalanceMovementType::PAYMENT,
+                    $this->paymentService->processPayments($balanceTransaction, [[
                         'amount' => $amountToApply,
-                        'balance_after' => $customer->balance,
-                        'notes' => 'Abono a saldo a favor. ' . ($validatedData['notes'] ?? ''),
-                        'timestamp' => $now,
-                    ];
+                        'method' => $paymentData['method'],
+                        'notes' => 'Abono directo a saldo. ' . ($validatedData['notes'] ?? ''),
+                        'bank_account_id' => $paymentData['bank_account_id'] ?? null,
+                    ]], $sessionId);
+
+                    $customer->addRefund($amountToApply, $balanceTransaction->id, "Abono a saldo a favor. " . ($validatedData['notes'] ?? ''), $baseTimestamp->copy()->addSeconds($delayCounter++));
                 }
             }
-
-            // 4. Crear movimientos de saldo
-            $this->createStaggeredBalanceMovements($customer, $balanceMovementsToCreate, $now);
         });
     }
 
-    // --- MÉTODOS PRIVADOS DE AYUDA (El núcleo de la centralización) ---
+    // --- MÉTODOS PRIVADOS DE AYUDA EXTREMADAMENTE REDUCIDOS ---
 
-    /**
-     * Aplica el Saldo a Favor del cliente como un pago a la transacción.
-     */
-    private function applyBalanceAsPayment(
-        Transaction $transaction,
-        Customer $customer,
-        float $amountToUse,
-        int $sessionId,
-        string $notes,
-        Carbon $timestamp
-    ): void {
-        $balancePaymentData = [[
+    public function applyBalanceAsPayment(Transaction $transaction, Customer $customer, float $amountToUse, int $sessionId, string $notes, Carbon $timestamp): void
+    {
+        $this->paymentService->processPayments($transaction, [[
             'amount' => $amountToUse,
             'method' => PaymentMethod::BALANCE->value,
             'notes' => $notes,
             'bank_account_id' => null,
-        ]];
-
-        $this->paymentService->processPayments($transaction, $balancePaymentData, $sessionId);
-
-        $customer->decrement('balance', $amountToUse);
-
-        $customer->balanceMovements()->create([
-            'transaction_id' => $transaction->id,
-            'type' => CustomerBalanceMovementType::CREDIT_USAGE,
-            'amount' => -$amountToUse, // Negativo (uso de saldo)
-            'balance_after' => $customer->balance,
-            'notes' => $notes,
-            'created_at' => $timestamp,
-            'updated_at' => $timestamp,
-        ]);
+        ]], $sessionId);
+        $customer->useBalance($amountToUse, $transaction->id, $notes, $timestamp);
     }
 
-    /**
-     * Aplica los pagos directos (efectivo, tarjeta) a la transacción.
-     */
-    private function applyDirectPayments(Transaction $transaction, array $payments, int $sessionId): void
+    public function applyDirectPayments(Transaction $transaction, array $payments, int $sessionId): void
     {
-        if (!empty($payments)) {
-            $this->paymentService->processPayments($transaction, $payments, $sessionId);
-        }
+        if (!empty($payments)) $this->paymentService->processPayments($transaction, $payments, $sessionId);
     }
 
-    /**
-     * Aplica una deuda (saldo negativo) al cliente.
-     */
-    private function applyDebtToCustomer(
-        Transaction $transaction,
-        Customer $customer,
-        float $debtAmount,
-        CustomerBalanceMovementType $debtType,
-        string $notes,
-        Carbon $timestamp
-    ): void {
-        $customer->decrement('balance', $debtAmount);
+    public function createTransactionItems(Transaction $transaction, array $cartItems, TransactionStatus $status): void {
+        $branchId = $transaction->branch_id;
+        $user = Auth::user() ?? $transaction->user;
 
-        $customer->balanceMovements()->create([
-            'transaction_id' => $transaction->id,
-            'type' => $debtType,
-            'amount' => -$debtAmount, // Negativo (deuda)
-            'balance_after' => $customer->balance,
-            'notes' => $notes,
-            'created_at' => $timestamp,
-            'updated_at' => $timestamp,
-        ]);
-    }
-
-    /**
-     * Crea los items de la transacción y afecta el stock según el tipo de venta.
-     */
-    private function createTransactionItems(Transaction $transaction, array $cartItems, TransactionStatus $status): void
-    {
         foreach ($cartItems as $item) {
-            $itemableId = $item['id'];
-            $itemableType = Product::class;
-            $itemModel = Product::find($item['id']);
+            $itemableId = $item['product_attribute_id'] ?? $item['id'];
+            $itemableType = !empty($item['product_attribute_id']) ? ProductAttribute::class : Product::class;
+            $itemModel = $itemableType::find($itemableId);
 
-            if (!empty($item['product_attribute_id'])) {
-                $itemableId = $item['product_attribute_id'];
-                $itemableType = ProductAttribute::class;
-                $itemModel = ProductAttribute::find($item['product_attribute_id']);
+            $itemDescription = $item['description'] ?? 'Artículo'; 
+            if ($itemModel) {
+                if ($itemModel instanceof ProductAttribute) {
+                    $parentName = $itemModel->product ? $itemModel->product->name : 'Producto';
+                    $itemDescription = $parentName . ' - ' . implode(' ', array_values($itemModel->attributes ?? []));
+                } elseif ($itemModel instanceof Product) {
+                    $itemDescription = $itemModel->name;
+                }
             }
 
             $transaction->items()->create([
                 'itemable_id' => $itemableId,
                 'itemable_type' => $itemableType,
-                'description' => $item['description'],
+                'description' => $itemDescription,
                 'quantity' => $item['quantity'],
                 'unit_price' => $item['unit_price'],
-                'discount_amount' => $item['discount'],
+                'discount_amount' => $item['discount'] ?? 0,
                 'discount_reason' => $item['discount_reason'] ?? null,
                 'line_total' => $item['quantity'] * $item['unit_price'],
             ]);
 
-            // Lógica de Stock
-            if ($status === TransactionStatus::ON_LAYAWAY) {
-                // Apartado: Mover de 'disponible' a 'reservado'
-                $itemModel->increment('reserved_stock', $item['quantity']);
-                if ($itemModel instanceof ProductAttribute) {
-                    Product::find($item['id'])->increment('reserved_stock', $item['quantity']);
-                }
-            } else {
-                // Venta de Contado/Crédito: Descontar de 'disponible'
-                $itemModel->decrement('current_stock', $item['quantity']);
-                if ($itemModel instanceof ProductAttribute) {
-                    Product::find($item['id'])->decrement('current_stock', $item['quantity']);
-                }
-            }
-        }
-    }
+            if ($itemModel) {
+                $isReservation = in_array($status, [TransactionStatus::ON_LAYAWAY, TransactionStatus::TO_DELIVER]);
+                $description = "Actualización de stock por " . ($isReservation ? 'reserva/apartado' : 'venta') . " {$transaction->folio}";
 
-    /**
-     * Helper para reponer stock de un item específico (usado en cambios).
-     */
-    private function restockSingleItem($itemModel, $quantity): void
-    {
-        if ($itemModel instanceof Product || $itemModel instanceof ProductAttribute) {
-            $itemModel->increment('current_stock', $quantity);
-            // Si es variante, incrementar también al padre si aplica lógica de stock compartido
-            if ($itemModel instanceof ProductAttribute) {
-                Product::find($itemModel->product_id)->increment('current_stock', $quantity);
-            }
-        }
-    }
-
-    /**
-     * Mueve el stock de 'reservado' a 'vendido' cuando un apartado se liquida.
-     */
-    private function finalizeLayawayStock(Transaction $transaction): void
-    {
-        foreach ($transaction->items as $txnItem) {
-            $itemModel = $txnItem->itemable; // Esto es Product o ProductAttribute
-
-            // 1. Si el itemable (producto o variante) ya no existe,
-            //    no podemos hacer nada. Simplemente saltamos.
-            if (!$itemModel) {
-                Log::warning("No se pudo finalizar el stock para el item {$txnItem->id} de la transacción {$transaction->id}: El producto/variante ya no existe.");
-                continue;
-            }
-
-            // 2. Decrementar el stock del itemable (sea Producto o Atributo)
-            //    Esto mueve de 'reservado' a 0 y de 'físico' a -1.
-            $itemModel->decrement('reserved_stock', $txnItem->quantity);
-            $itemModel->decrement('current_stock', $txnItem->quantity);
-
-            // 3. Si el itemable era una VARIANTE (ProductAttribute)...
-            if ($itemModel instanceof \App\Models\ProductAttribute) {
-                // ...también debemos actualizar las cantidades del PRODUCTO PADRE.
-                $product = $itemModel->product; // Asumiendo que tienes esta relación
-                
-                if ($product) {
-                    $product->decrement('reserved_stock', $txnItem->quantity);
-                    $product->decrement('current_stock', $txnItem->quantity);
+                if ($isReservation) {
+                    $itemModel->reserveStock($branchId, $item['quantity'], $user, $description);
                 } else {
-                    Log::warning("La variante {$itemModel->id} no tiene un producto padre asociado.");
+                    $itemModel->deductStock($branchId, $item['quantity'], $user, $description);
                 }
             }
-            // 4. Si era un Producto simple, no se necesita hacer nada más,
-            //    ya que el paso 2 descontó el stock del producto principal.
         }
     }
 
-    /**
-     * Limita un array de pagos a un monto máximo total.
-     */
+    private function finalizeTransactionStock(Transaction $transaction, Carbon $timestamp): void
+    {
+        $branchId = $transaction->branch_id;
+        $user = Auth::user() ?? $transaction->user;
+
+        foreach ($transaction->items as $txnItem) {
+            if ($itemModel = $txnItem->itemable) {
+                $itemModel->finalizeLayawayStock($branchId, $txnItem->quantity, $user, "Baja de reserva por liquidación {$transaction->folio}");
+            }
+        }
+    }
+
     private function capPaymentsToAmount(array $payments, float $maxAmount): array
     {
         $totalPaid = collect($payments)->sum('amount');
-        if ($totalPaid <= $maxAmount) {
-            return $payments;
-        }
+        if ($totalPaid <= $maxAmount) return $payments;
 
         $cappedPayments = [];
         $runningTotal = 0;
         foreach ($payments as $payment) {
-            $paymentAmount = (float) $payment['amount'];
             $amountToCap = $maxAmount - $runningTotal;
-
             if ($amountToCap <= 0) break;
 
-            $amountToRecord = min($paymentAmount, $amountToCap);
+            $amountToRecord = min((float) $payment['amount'], $amountToCap);
             $cappedPayments[] = array_merge($payment, ['amount' => $amountToRecord]);
             $runningTotal += $amountToRecord;
         }
         return $cappedPayments;
-    }
-
-    /**
-     * Crea una transacción de "Abono a Saldo" para registrar ingresos que no van a deudas.
-     */
-    private function createBalancePaymentTransaction(Customer $customer, User $user, int $sessionId, float $amount, Carbon $timestamp): Transaction
-    {
-        return $customer->transactions()->create([
-            'folio' => self::generateBalancePaymentFolio($user->branch_id),
-            'branch_id' => $user->branch_id,
-            'user_id' => $user->id,
-            'cash_register_session_id' => $sessionId,
-            'subtotal' => $amount,
-            'total_discount' => 0,
-            'total_tax' => 0,
-            'channel' => TransactionChannel::BALANCE_PAYMENT,
-            'status' => TransactionStatus::COMPLETED,
-            'notes' => 'Transacción generada para registrar abono a saldo a favor.',
-            'created_at' => $timestamp, // Asegurar consistencia
-            'updated_at' => $timestamp,
-        ]);
-    }
-
-    /**
-     * Crea múltiples movimientos de saldo asegurando que tengan timestamps únicos para ordenamiento.
-     */
-    private function createStaggeredBalanceMovements(Customer $customer, array $movements, Carbon $baseTimestamp): void
-    {
-        $movementsCount = count($movements);
-        if ($movementsCount === 0) return;
-
-        for ($i = 0; $i < $movementsCount; $i++) {
-            $timestamp = ($movementsCount > 1) ? $baseTimestamp->copy()->addSeconds($i) : $baseTimestamp;
-
-            $customer->balanceMovements()->create([
-                'transaction_id' => $movements[$i]['transaction_id'],
-                'type' => $movements[$i]['type'],
-                'amount' => $movements[$i]['amount'],
-                'balance_after' => $movements[$i]['balance_after'], // El balance ya está calculado secuencialmente
-                'notes' => $movements[$i]['notes'],
-                'created_at' => $timestamp,
-                'updated_at' => $timestamp,
-            ]);
-        }
-    }
-
-    // --- GENERADORES DE FOLIO (Centralizados) ---
-
-    public static function generateFolio(int $branchId): string
-    {
-        $lastTransaction = Transaction::where('branch_id', $branchId)
-            ->where('folio', 'LIKE', 'V-%')
-            ->orderBy('id', 'desc')
-            ->first();
-
-        $sequence = $lastTransaction ? ((int) substr($lastTransaction->folio, 2)) + 1 : 1;
-        return 'V-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
-    }
-
-    public static function generateBalancePaymentFolio(int $branchId): string
-    {
-        $lastTransaction = Transaction::where('branch_id', $branchId)
-            ->where('folio', 'like', 'ABONO-%')
-            ->orderByRaw('CAST(SUBSTRING(folio, 7) AS UNSIGNED) DESC')
-            ->first();
-
-        $sequence = $lastTransaction ? ((int) substr($lastTransaction->folio, 6)) + 1 : 1;
-        return 'ABONO-' . str_pad($sequence, 3, '0', STR_PAD_LEFT);
     }
 }

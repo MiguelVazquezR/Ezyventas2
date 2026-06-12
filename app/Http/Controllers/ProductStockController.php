@@ -2,91 +2,72 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Product\AdjustProductStockAction;
 use App\Models\Product;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class ProductStockController extends Controller
 {
     /**
-     * Store a newly created resource in storage.
+     * Store a newly created resource in storage (Single Product Mode).
      */
-    public function store(Request $request, Product $product)
+    public function store(Request $request, Product $product, AdjustProductStockAction $action)
     {
         $validated = $request->validate([
             'type' => 'required|in:simple,variant',
-            'quantity' => 'required_if:type,simple|integer|min:1',
-            'variants' => 'required_if:type,variant|array',
-            'variants.*.id' => 'required|exists:product_attributes,id',
-            'variants.*.quantity' => 'required|integer|min:0',
+            'operation' => 'required|in:entry,exit',
+            'reason' => 'required|string',
+            'quantity' => 'nullable|required_if:type,simple|numeric|min:1',
+            'variants' => 'nullable|required_if:type,variant|array',
+            'variants.*.id' => 'required_with:variants|exists:product_attributes,id',
+            'variants.*.quantity' => 'nullable|numeric|min:0',
+            
+            // --- NUEVOS CAMPOS PARA GASTOS ---
+            'register_expense' => 'boolean',
+            'expense_amount_type' => 'nullable|in:calculated,manual',
+            'expense_amount' => 'required_if:expense_amount_type,manual|nullable|numeric|min:0',
+            'payment_method' => 'required_if:register_expense,true|nullable|string',
+            'take_from_cash_register' => 'boolean',
+            'bank_account_id' => 'required_if:payment_method,tarjeta|required_if:payment_method,transferencia|nullable|exists:bank_accounts,id',
+            'cash_register_session_id' => 'nullable|exists:cash_register_sessions,id',
         ]);
 
-        DB::transaction(function () use ($validated, $product) {
-            if ($validated['type'] === 'simple') {
-                $product->increment('current_stock', $validated['quantity']);
-                activity()
-                    ->event('updated')
-                    ->performedOn($product)
-                    ->causedBy(auth()->user())
-                    ->log("Se dio entrada de {$validated['quantity']} unidades al inventario.");
-            } else {
-                $totalAdded = 0;
-                $changes = [];
+        // Inyectamos el ID del producto para que el Action lo normalice
+        $validated['product_id'] = $product->id;
 
-                foreach ($validated['variants'] as $variantData) {
-                    if ($variantData['quantity'] > 0) {
-                        $attribute = $product->productAttributes()->find($variantData['id']);
-                        if ($attribute) {
-                            $attribute->increment('current_stock', $variantData['quantity']);
-                            $totalAdded += $variantData['quantity'];
-                            $variantName = implode(' / ', $attribute->attributes);
-                            $changes[$variantName] = "+{$variantData['quantity']}";
-                        }
-                    }
-                }
+        $action->execute($validated, auth()->user());
 
-                if ($totalAdded > 0) {
-                    $product->increment('current_stock', $totalAdded);
-                    activity()
-                        ->event('updated')
-                        ->performedOn($product)
-                        ->causedBy(auth()->user())
-                        ->withProperties(['attributes' => $changes])
-                        ->log("Se dio entrada de {$totalAdded} unidades al inventario de variantes.");
-                }
-            }
-        });
-
-        return redirect()->route('products.show', $product->id)->with('success', 'Stock actualizado con éxito.');
+        return redirect()->route('products.index')->with('success', 'Stock actualizado con éxito en la sucursal.');
     }
 
     /**
-     * Da entrada de stock a múltiples productos.
+     * Store resources in storage (Batch Mode).
      */
-    public function batchStore(Request $request)
+    public function batchStore(Request $request, AdjustProductStockAction $action)
     {
         $validated = $request->validate([
+            'operation' => 'required|in:entry,exit',
+            'reason' => 'required|string',
             'products' => 'required|array',
             'products.*.id' => 'required|exists:products,id',
-            'products.*.quantity' => 'required|integer|min:0',
+            'products.*.type' => 'required|in:simple,variant',
+            'products.*.quantity' => 'nullable|numeric|min:0',
+            'products.*.variants' => 'nullable|array',
+            'products.*.variants.*.id' => 'required_with:products.*.variants|exists:product_attributes,id',
+            'products.*.variants.*.quantity' => 'nullable|numeric|min:0',
+            
+            // --- NUEVOS CAMPOS PARA GASTOS ---
+            'register_expense' => 'boolean',
+            'expense_amount_type' => 'nullable|in:calculated,manual',
+            'expense_amount' => 'required_if:expense_amount_type,manual|nullable|numeric|min:0',
+            'payment_method' => 'required_if:register_expense,true|nullable|string',
+            'take_from_cash_register' => 'boolean',
+            'bank_account_id' => 'required_if:payment_method,tarjeta|required_if:payment_method,transferencia|nullable|exists:bank_accounts,id',
+            'cash_register_session_id' => 'nullable|exists:cash_register_sessions,id',
         ]);
 
-        DB::transaction(function () use ($validated) {
-            foreach ($validated['products'] as $productData) {
-                if ($productData['quantity'] > 0) {
-                    $product = Product::find($productData['id']);
-                    // Aquí se puede añadir una autorización para asegurar que el producto pertenece al usuario
+        $action->execute($validated, auth()->user());
 
-                    $product->increment('current_stock', $productData['quantity']);
-
-                    activity()
-                        ->performedOn($product)
-                        ->causedBy(auth()->user())
-                        ->log("Se dio entrada masiva de {$productData['quantity']} unidades.");
-                }
-            }
-        });
-
-        return redirect()->route('products.index')->with('success', 'Stock actualizado con éxito.');
+        return redirect()->route('products.index')->with('success', 'Stock actualizado con éxito en la sucursal para los productos seleccionados.');
     }
 }

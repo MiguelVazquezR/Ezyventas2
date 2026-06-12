@@ -16,7 +16,8 @@ class SwitchBranchController extends Controller
         $user = Auth::user();
 
         // Verificación de seguridad: el usuario solo puede cambiar a sucursales de su propia suscripción.
-        if ($user->branch->subscription_id !== $branch->subscription_id) {
+        // EXCEPCIÓN: Si el usuario es el Super Admin (ID 1), permitimos el cambio entre suscripciones.
+        if ($user->id !== 1 && $user->branch->subscription_id !== $branch->subscription_id) {
             abort(403, 'No tienes permiso para cambiar a esta sucursal.');
         }
 

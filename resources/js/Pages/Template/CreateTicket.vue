@@ -17,6 +17,7 @@ const props = defineProps([
     'templateLimit',
     'templateUsage',
     'customFieldDefinitions',
+    'contextTypes', // Nueva prop con las opciones de contexto
     'printTemplate' // Si existe, estamos en modo edición
 ]);
 
@@ -55,6 +56,8 @@ const lastPinchDistance = ref(null); // Para zoom con dos dedos
 const form = useForm({
     name: '',
     type: 'ticket_venta',
+    context_type: 'pos',
+    is_default: false, // NUEVO: Inicializamos el campo auto-selección
     branch_ids: [],
     content: {
         config: { 
@@ -72,6 +75,8 @@ onMounted(() => {
         // Modo Edición: Cargar datos
         form.name = props.printTemplate.name;
         form.type = props.printTemplate.type;
+        form.context_type = props.printTemplate.context_type || 'pos'; 
+        form.is_default = props.printTemplate.is_default ? true : false; // Cargar valor existente
         form.branch_ids = props.printTemplate.branches ? props.printTemplate.branches.map(b => b.id) : [];
         
         if (props.printTemplate.content) {
@@ -386,6 +391,11 @@ const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
                             <InputError :message="form.errors.name" class="mt-1" />
                         </div>
                         <div>
+                            <InputLabel value="Contexto de uso *" />
+                            <Select v-model="form.context_type" :options="props.contextTypes" optionLabel="label" optionValue="value" class="w-full" :invalid="!!form.errors.context_type" placeholder="Seleccionar contexto" />
+                            <InputError :message="form.errors.context_type" class="mt-1" />
+                        </div>
+                        <div>
                             <InputLabel value="Sucursales *" />
                             <MultiSelect v-model="form.branch_ids" :options="branches" optionLabel="name" optionValue="id" placeholder="Seleccionar" class="w-full" :maxSelectedLabels="1" :invalid="!!form.errors.branch_ids" />
                             <InputError :message="form.errors.branch_ids" class="mt-1" />
@@ -402,6 +412,14 @@ const barcodeTypeOptions = ['CODE128', 'CODE39', 'EAN13', 'UPC-A'];
                                     <label for="58mm" class="ml-2 text-sm">58mm</label>
                                 </div>
                             </div>
+                        </div>
+                        <!-- NUEVO TOGGLE DE SELECCION AUTOMATICA -->
+                        <div class="flex items-center justify-between pt-2">
+                            <div class="flex flex-col">
+                                <span class="font-bold text-sm text-gray-700 dark:text-gray-300">Selección automática</span>
+                                <span class="text-[10px] text-gray-500">Se seleccionará sola al imprimir.</span>
+                            </div>
+                            <InputSwitch v-model="form.is_default" />
                         </div>
                         <div>
                             <InputLabel value="Líneas finales (feed)" />

@@ -21,4 +21,8 @@ Route::middleware('auth')->prefix('pos')->as('pos.')->group(function () {
     Route::post('/layaway', [PointOfSaleController::class, 'createLayaway'])->name('layaway');
     Route::get('/pos/customers/search', [PointOfSaleController::class, 'searchCustomers'])->name('customers.search');
     Route::get('/check-entity', [PointOfSaleController::class, 'checkEntity'])->name('check-entity');
+
+    // Online store orders (modal from POS)
+    Route::get('/online-orders', [PointOfSaleController::class, 'getOnlineOrders'])->name('online-orders');
+    Route::put('/online-orders/{order}/status', [PointOfSaleController::class, 'updateOnlineOrderStatus'])->name('online-orders.update-status');
 });

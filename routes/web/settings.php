@@ -4,16 +4,18 @@ use App\Http\Controllers\SettingsController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->prefix('settings')->as('settings.')->group(function () {
+    // Ruta principal para ver la vista de configuraciones
     Route::get('/', [SettingsController::class, 'index'])->name('index');
 
-    // Ruta para CREAR una nueva definición (desde el modal)
-    Route::post('/', [SettingsController::class, 'store'])->name('store');
-
-    // CORRECCIÓN: Se crea una ruta POST única para ACTUALIZAR los valores, evitando el conflicto.
-    // El formulario principal de "Guardar Cambios" ahora apuntará aquí.
+    // Ruta para ACTUALIZAR los valores ingresados en los inputs
     Route::post('/values', [SettingsController::class, 'update'])->name('update');
 
-    // Ruta para ACTUALIZAR una definición existente (desde el modal)
-    Route::put('/{setting}', [SettingsController::class, 'updateDefinition'])->name('updateDefinition');
-});
+    // Ruta para CREAR una nueva definición (desde el modal de Superadmin)
+    Route::post('/definition', [SettingsController::class, 'storeDefinition'])->name('store-definition');
 
+    // Ruta para ACTUALIZAR una definición existente (desde el modal de Superadmin)
+    Route::put('/definition/{setting}', [SettingsController::class, 'updateDefinition'])->name('update-definition');
+
+    // Ruta para ELIMINAR una definición existente (solo Superadmin ID 1)
+    Route::delete('/definition/{setting}', [SettingsController::class, 'destroyDefinition'])->name('destroy-definition');
+});

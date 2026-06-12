@@ -14,8 +14,6 @@ use App\Models\Transaction;
 use App\Services\FinancialReportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
 use Carbon\Carbon;
@@ -31,13 +29,22 @@ class FinancialReportController extends Controller
         $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : Carbon::today()->startOfDay();
         $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : Carbon::today()->endOfDay();
 
-        // Calcular periodos para comparación
-        $diffInDays = $startDate->diffInDays($endDate);
-        $previousStartDate = $startDate->copy()->subDays($diffInDays + 1);
-        $previousEndDate = $startDate->copy()->subDay()->endOfDay();
+        // -------------------------------------------------------------
+        // CORRECCIÓN: Calcular periodos para comparación de forma exacta
+        // floatDiffInDays asegura que no haya saltos raros por TimeZones.
+        // -------------------------------------------------------------
+        $diffInDays = (int) round($startDate->floatDiffInDays($endDate->copy()->addSeconds(1)));
+        if ($diffInDays < 1) {
+            $diffInDays = 1;
+        }
+
+        $previousStartDate = $startDate->copy()->subDays($diffInDays);
+        $previousEndDate = $startDate->copy()->subSeconds(1); // 1 segundo antes del startDate
+        // -------------------------------------------------------------
 
         // 1. KPIs (Servicio de Reporte)
-        // Usamos cache corto (5 min) para KPIs si el rango es grande, opcional.
+        // NOTA: Si los totales generales (Ventas Totales, Ganancia Neta) siguen incorrectos,
+        // deberás aplicar este mismo filtro (excluir TransactionStatus::CHANGED) dentro de 'FinancialReportService'.
         $reportService = new FinancialReportService($branchId, $startDate, $endDate);
         $reportData = $reportService->generateReportData();
 
@@ -54,18 +61,35 @@ class FinancialReportController extends Controller
                 : ($netProfitCurrent != 0 ? 100 : 0),
         ];
 
+        // --- NUEVO CÁLCULO: Margen de Utilidad (%) ---
+        $salesCurrent = $reportData['kpis']['sales']['current'];
+        $salesPrevious = $reportData['kpis']['sales']['previous'];
+
+        $utilityMarginCurrent = $salesCurrent != 0 
+            ? round(($netProfitCurrent / $salesCurrent) * 100, 2) 
+            : 0;
+
+        $utilityMarginPrevious = $salesPrevious != 0 
+            ? round(($netProfitPrevious / $salesPrevious) * 100, 2) 
+            : 0;
+
+        $reportData['kpis']['utilityMargin'] = [
+            'current' => $utilityMarginCurrent,
+            'previous' => $utilityMarginPrevious,
+            'change' => round($utilityMarginCurrent - $utilityMarginPrevious, 2) // Cambio en puntos porcentuales
+        ];
+
         // 3. Ticket Promedio (Optimizado con índices)
-        // Usamos count() directo que es rápido gracias a los índices creados anteriormente
         $salesCountCurrent = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$startDate, $endDate])
-            ->where('status', '!=', TransactionStatus::CANCELLED)
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
             ->count();
 
         $averageTicketCurrent = $salesCountCurrent > 0 ? $reportData['kpis']['sales']['current'] / $salesCountCurrent : 0;
 
         $salesCountPrevious = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$previousStartDate, $previousEndDate])
-            ->where('status', '!=', TransactionStatus::CANCELLED)
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
             ->count();
 
         $averageTicketPrevious = $salesCountPrevious > 0 ? $reportData['kpis']['sales']['previous'] / $salesCountPrevious : 0;
@@ -81,8 +105,6 @@ class FinancialReportController extends Controller
 
 
         // --- OPTIMIZACIÓN CRÍTICA: DATOS DETALLADOS ---
-        // Limitamos a 500-1000 registros para la vista web y seleccionamos solo columnas necesarias.
-        // Esto reduce el tamaño del JSON de MBs a KBs.
         $limitWeb = 1000;
 
         // Gastos Detallados
@@ -98,8 +120,8 @@ class FinancialReportController extends Controller
         // Ventas Detalladas
         $reportData['detailedTransactions'] = Transaction::where('branch_id', $branchId)
             ->whereBetween('created_at', [$startDate, $endDate])
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
             ->select('id', 'branch_id', 'customer_id', 'created_at', 'folio', 'channel', 'status', 'subtotal', 'total_discount', 'total_tax')
-            // Calculamos el total al vuelo para la vista si no existe columna 'total'
             ->selectRaw('(subtotal - total_discount + total_tax) as total') 
             ->with(['customer:id,name'])
             ->orderBy('created_at', 'desc')
@@ -108,7 +130,7 @@ class FinancialReportController extends Controller
 
         // Pagos Detallados
         $reportData['detailedPayments'] = Payment::query()
-            ->join('transactions', 'payments.transaction_id', '=', 'transactions.id') // Join es más rápido que whereHas para filtros
+            ->join('transactions', 'payments.transaction_id', '=', 'transactions.id') 
             ->where('transactions.branch_id', $branchId)
             ->whereBetween('payments.payment_date', [$startDate, $endDate])
             ->where('payments.payment_method', '!=', PaymentMethod::BALANCE->value)
@@ -134,7 +156,7 @@ class FinancialReportController extends Controller
 
         $subscriptionId = $user->branch->subscription_id;
 
-        // Cuentas Bancarias (Optimizada selección)
+        // Cuentas Bancarias
         $reportData['bankAccounts'] = BankAccount::where('subscription_id', $subscriptionId)
             ->whereHas('branches', fn($q) => $q->where('branch_id', $branchId))
             ->get();
@@ -146,7 +168,6 @@ class FinancialReportController extends Controller
 
     public function export(Request $request)
     {
-        // La exportación usa su propia lógica de chunking/query, así que no necesita límites
         $validated = $request->validate([
             'start_date' => 'required|date_format:Y-m-d',
             'end_date' => 'required|date_format:Y-m-d',

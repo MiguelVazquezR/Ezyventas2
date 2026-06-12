@@ -2,9 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\CustomerBalanceMovementType;
-use App\Enums\TemplateContextType; // <-- Importado
-use App\Enums\TemplateType;        // <-- Importado
+use App\Enums\TemplateContextType;
+use App\Enums\TemplateType;
 use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
 use App\Models\CashRegister;
@@ -17,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class CustomerController extends Controller implements HasMiddleware
 {
@@ -34,12 +34,10 @@ class CustomerController extends Controller implements HasMiddleware
     public function index(Request $request): Response
     {
         $user = Auth::user();
-        $branchId = $user->branch_id;
-
+        
         $query = Customer::query()
-            ->where('branch_id', $branchId);
-
-        $query->withSum('layawayItems as layaway_items_quantity_sum', 'quantity');
+            ->where('branch_id', $user->branch_id)
+            ->withSum('layawayItems as layaway_items_quantity_sum', 'quantity');
 
         if ($request->has('search')) {
             $searchTerm = $request->input('search');
@@ -51,11 +49,14 @@ class CustomerController extends Controller implements HasMiddleware
             });
         }
 
-        $sortField = $request->input('sortField', 'created_at');
-        $sortOrder = $request->input('sortOrder', 'desc');
-        $query->orderBy($sortField, $sortOrder);
+        $query->orderBy($request->input('sortField', 'created_at'), $request->input('sortOrder', 'desc'));
 
         $customers = $query->paginate($request->input('rows', 20))->withQueryString();
+
+        $customers->getCollection()->transform(function ($customer) {
+            $customer->append('available_credit');
+            return $customer;
+        });
 
         return Inertia::render('Customer/Index', [
             'customers' => $customers,
@@ -74,72 +75,69 @@ class CustomerController extends Controller implements HasMiddleware
         $initialBalance = $validated['initial_balance'] ?? 0;
         unset($validated['initial_balance']);
 
-        DB::transaction(function () use ($validated, $initialBalance) {
+        DB::transaction(function () use ($validated, $initialBalance, $request) {
             $customer = Customer::create(array_merge($validated, [
                 'branch_id' => Auth::user()->branch_id,
-                'balance' => $initialBalance, 
+                'balance' => 0, 
+                'address' => $request->input('address', []),
             ]));
 
+            // Usamos el nuevo método delegado al modelo
             if ($initialBalance != 0) {
-                $customer->balanceMovements()->create([
-                    'type' => CustomerBalanceMovementType::MANUAL_ADJUSTMENT,
-                    'amount' => $initialBalance,
-                    'balance_after' => $initialBalance, 
-                    'notes' => 'Saldo Inicial registrado al crear cliente.',
-                ]);
+                $customer->manualBalanceAdjustment('add', $initialBalance, 'Saldo Inicial registrado al crear cliente.');
             }
         });
 
         return redirect()->route('customers.index')->with('success', 'Cliente creado con éxito.');
     }
 
-   public function show(Customer $customer): Response
+    public function show(Customer $customer): Response
     {
         $customer->load([
-            'transactions' => fn($query) => $query->orderBy('created_at', 'desc'),
+            'transactions' => function ($query) {
+                $query->with([
+                    'items', 
+                    'user', 
+                    'transactionable' => function (MorphTo $morphTo) {
+                        $morphTo->morphWith([
+                            \App\Models\ServiceOrder::class => ['items'],
+                        ]);
+                    }
+                ])->orderBy('created_at', 'desc');
+            },
             'layawayTransactions' => function ($query) {
-                $query->with(['payments', 'items'])
-                      ->orderBy('created_at', 'desc');
+                $query->with(['payments', 'items'])->orderBy('created_at', 'desc');
             },
         ]);
 
         $user = Auth::user();
         
-        // --- NUEVO: Obtener Plantillas Filtradas ---
-        // Obtenemos solo plantillas de TICKET o ETIQUETA que sean de contexto CLIENTE o GENERAL
         $availableTemplates = $user->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
             ->whereIn('context_type', [TemplateContextType::CUSTOMER, TemplateContextType::GENERAL])
             ->get();
-        // -------------------------------------------
 
         $availableCashRegisters = CashRegister::where('branch_id', $user->branch_id)
             ->where('is_active', true)
             ->where('in_use', false)
             ->get(['id', 'name']);
 
-        $isOwner = !$user->roles()->exists();
-        $userBankAccounts = null;
+        $userBankAccounts = (!$user->roles()->exists()) 
+            ? $user->branch->bankAccounts()->get() 
+            : $user->bankAccounts()->get();
 
-        if ($isOwner) {
-            $userBankAccounts = $user->branch->bankAccounts()->get();
-        } else {
-            $userBankAccounts = $user->bankAccounts()->get();
-        }
-
-        $formattedLayaways = $customer->layawayTransactions->map(function ($transaction) {
-            $totalPaid = $transaction->payments->sum('amount');
-            return [
-                'id' => $transaction->id,
-                'folio' => $transaction->folio,
-                'created_at' => $transaction->created_at->toDateTimeString(),
-                'total_amount' => (float) $transaction->total,
-                'total_paid' => (float) $totalPaid,
-                'pending_amount' => (float) $transaction->total - $totalPaid,
-                'total_items_quantity' => $transaction->items->sum('quantity'),
-                'layaway_expiration_date' => $transaction->layaway_expiration_date,
-            ];
-        });
+        // Aprovechamos que "Transaction" ya expone total_paid y remaining_due automáticamente
+        $formattedLayaways = $customer->layawayTransactions->map(fn ($transaction) => [
+            'id' => $transaction->id,
+            'folio' => $transaction->folio,
+            'created_at' => $transaction->created_at->toDateTimeString(),
+            'total_amount' => $transaction->total,
+            'total_paid' => $transaction->total_paid, // Reutilizado de Transaction.php
+            'pending_amount' => $transaction->remaining_due, // Reutilizado de Transaction.php
+            'total_items_quantity' => $transaction->items->sum('quantity'),
+            'layaway_expiration_date' => $transaction->layaway_expiration_date,
+            'items' => $transaction->items,
+        ]);
 
         return Inertia::render('Customer/Show', [
             'customer' => $customer,
@@ -147,7 +145,7 @@ class CustomerController extends Controller implements HasMiddleware
             'availableCashRegisters' => $availableCashRegisters,
             'userBankAccounts' => $userBankAccounts,
             'activeLayaways' => $formattedLayaways, 
-            'availableTemplates' => $availableTemplates, // <-- Pasamos las plantillas a la vista
+            'availableTemplates' => $availableTemplates,
         ]);
     }
 
@@ -160,7 +158,12 @@ class CustomerController extends Controller implements HasMiddleware
 
     public function update(UpdateCustomerRequest $request, Customer $customer)
     {
-        $customer->update($request->validated());
+        $data = $request->validated();
+        if ($request->has('address')) {
+            $data['address'] = $request->input('address');
+        }
+
+        $customer->update($data);
         return redirect()->route('customers.index')->with('success', 'Cliente actualizado con éxito.');
     }
 
@@ -172,33 +175,12 @@ class CustomerController extends Controller implements HasMiddleware
             'notes' => ['required', 'string', 'max:255'],
         ]);
 
-        DB::transaction(function () use ($customer, $validated) {
-            $currentBalance = $customer->balance;
-            $newBalance = 0;
-            $adjustmentAmount = 0;
-            $notes = "Ajuste manual: " . $validated['notes'];
-
-            if ($validated['adjustment_type'] === 'add') {
-                $adjustmentAmount = $validated['amount'];
-                $newBalance = $currentBalance + $adjustmentAmount;
-            } elseif ($validated['adjustment_type'] === 'set_total') {
-                $newBalance = $validated['amount'];
-                $adjustmentAmount = $newBalance - $currentBalance; 
-            }
-
-            if ($adjustmentAmount == 0) {
-                return;
-            }
-
-            $customer->update(['balance' => $newBalance]);
-
-            $customer->balanceMovements()->create([
-                'type' => CustomerBalanceMovementType::MANUAL_ADJUSTMENT,
-                'amount' => $adjustmentAmount, 
-                'balance_after' => $newBalance,
-                'notes' => $notes,
-            ]);
-        });
+        // Delegamos al modelo el cálculo matemático y el guardado en BD.
+        DB::transaction(fn () => $customer->manualBalanceAdjustment(
+            $validated['adjustment_type'],
+            $validated['amount'],
+            "Ajuste manual: " . $validated['notes']
+        ));
 
         return redirect()->back()->with('success', 'Saldo del cliente ajustado con éxito.');
     }

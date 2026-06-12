@@ -1,8 +1,5 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import Button from 'primevue/button';
-import Dialog from 'primevue/dialog';
-import Message from 'primevue/message';
 
 const props = defineProps({
     product: Object,
@@ -19,6 +16,8 @@ const currentSku = ref('');
 const currentImage = ref('');
 const originalPrice = ref(0);
 const carouselIndex = ref(0);
+
+const isComposite = computed(() => props.product && props.product.components && props.product.components.length > 0);
 
 // Watch for a new product to reset the state
 watch(() => props.product, (newProduct) => {
@@ -212,85 +211,177 @@ const formatCurrency = (value) => {
 </script>
 
 <template>
-    <Dialog :visible="visible" @update:visible="closeModal" modal header="Detalles del Producto"
-        :style="{ width: '450px' }">
+    <Dialog :visible="visible" @update:visible="closeModal" modal header="Detalles del producto"
+        class="w-full max-w-lg md:max-w-xl"
+        :breakpoints="{ '1199px': '75vw', '575px': '95vw' }"
+        :pt="{
+            root: { class: 'dark:bg-[#232323] border-none shadow-2xl rounded-3xl overflow-hidden' },
+            header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 md:px-8 py-5 md:py-6' },
+            title: { class: 'text-xl md:text-2xl font-light tracking-tight text-gray-900 dark:text-white m-0' },
+            content: { class: 'dark:bg-[#232323] px-6 md:px-8 py-5 md:py-6' },
+            footer: { class: 'dark:bg-[#232323] border-t border-gray-100 dark:border-[#3a3a3a] px-6 md:px-8 py-4 md:py-5' }
+        }">
+        
         <div v-if="product" class="text-gray-800 dark:text-gray-200">
-            <div class="relative mb-4 group">
-                <img :src="currentImage" :alt="product.name" class="w-full h-64 object-contain rounded-md">
+            
+            <!-- GALERÍA DE IMÁGENES -->
+            <div class="relative mb-6 group bg-gray-50 dark:bg-[#1a1a1a] rounded-3xl p-4 border border-gray-100 dark:border-[#3a3a3a] h-64 md:h-80 flex items-center justify-center">
+                <img :src="currentImage" :alt="product.name" class="w-full h-full object-contain drop-shadow-md transition-all duration-300">
+                
                 <template v-if="product.general_images && product.general_images.length > 1">
-                    <Button icon="pi pi-chevron-left" @click="prevImage" rounded text
-                        class="!absolute top-1/2 left-2 -translate-y-1/2 bg-white/50 dark:bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <Button icon="pi pi-chevron-right" @click="nextImage" rounded text
-                        class="!absolute top-1/2 right-2 -translate-y-1/2 bg-white/50 dark:bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <button @click="prevImage" class="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 dark:bg-[#232323]/80 backdrop-blur-sm border border-gray-200 dark:border-[#3a3a3a] text-gray-600 dark:text-gray-300 hover:text-primary-500 hover:scale-110 transition-all duration-300 flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100">
+                        <i class="pi pi-chevron-left !text-sm"></i>
+                    </button>
+                    <button @click="nextImage" class="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/80 dark:bg-[#232323]/80 backdrop-blur-sm border border-gray-200 dark:border-[#3a3a3a] text-gray-600 dark:text-gray-300 hover:text-primary-500 hover:scale-110 transition-all duration-300 flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100">
+                        <i class="pi pi-chevron-right !text-sm"></i>
+                    </button>
+                    
+                    <!-- Indicador de página del carrusel -->
+                    <div class="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <div v-for="(_, index) in product.general_images" :key="index" 
+                            class="w-2 h-2 rounded-full transition-colors"
+                            :class="carouselIndex === index ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-600'">
+                        </div>
+                    </div>
                 </template>
             </div>
 
-            <div>
-                <h2 class="text-2xl font-bold mb-1">{{ product.name }}</h2>
-                <p class="text-md text-gray-500 dark:text-gray-400 mb-4">{{ product.category }}</p>
+            <div class="space-y-6">
+                <!-- TÍTULO Y CATEGORÍA -->
+                <div>
+                    <h2 class="text-2xl md:text-3xl font-light tracking-tight text-gray-900 dark:text-white mb-1.5 m-0 leading-tight">
+                        {{ product.name }}
+                    </h2>
+                    <p class="text-[10px] text-gray-500 uppercase tracking-widest m-0 flex items-center gap-1.5">
+                        {{ product.category }}
+                    </p>
+                </div>
 
-                <div v-if="product.promotions && product.promotions.length > 0" class="mb-4 space-y-2">
+                <!-- PROMOCIONES ACTIVAS -->
+                <div v-if="product.promotions && product.promotions.length > 0" class="space-y-2">
                     <div v-for="promo in product.promotions" :key="promo.name"
-                        class="bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200 p-3 rounded-lg">
-                        <p class="font-bold text-sm"><i class="pi pi-tag mr-2"></i>{{ promo.name }}</p>
-                        <p class="text-xs mt-1">{{ getPromotionSummary(promo) }}</p>
+                        class="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 p-3 rounded-2xl flex items-start gap-3">
+                        <div class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/40 text-red-500 flex items-center justify-center flex-shrink-0">
+                            <i class="pi pi-tag !text-xs animate-pulse"></i>
+                        </div>
+                        <div>
+                            <p class="font-medium text-sm text-red-700 dark:text-red-400 m-0 mb-0.5">{{ promo.name }}</p>
+                            <p class="text-[11px] text-red-600 dark:text-red-300/80 m-0 leading-relaxed">{{ getPromotionSummary(promo) }}</p>
+                        </div>
                     </div>
                 </div>
 
-                <div v-if="product.variants && Object.keys(product.variants).length > 0" class="space-y-4 mb-4">
+                <!-- SELECTOR DE VARIANTES -->
+                <div v-if="product.variants && Object.keys(product.variants).length > 0" class="space-y-4 pt-2">
                     <div v-for="(options, variantName) in product.variants" :key="variantName">
-                        <p class="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-2 capitalize">{{ variantName
-                            }}</p>
+                        <p class="text-[10px] font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0 mb-2.5">
+                            Seleccionar {{ variantName }}
+                        </p>
                         <div class="flex flex-wrap gap-2">
-                            <Button v-for="option in options" :key="option.value" :label="option.value"
-                                :outlined="!isOptionSelected(variantName, option.value)" severity="contrast"
-                                size="small" @click="selectOption(variantName, option.value)"
+                            <button v-for="option in options" :key="option.value"
+                                @click="selectOption(variantName, option.value)"
                                 :disabled="isOptionDisabled(variantName, option.value)"
-                                v-tooltip.bottom="`Stock: ${option.stock}`" />
+                                class="text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-full border transition-all duration-300 select-none"
+                                :class="[
+                                    isOptionSelected(variantName, option.value)
+                                        ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white text-white dark:text-gray-900 scale-105 shadow-sm'
+                                        : 'bg-transparent border-gray-200 dark:border-[#3a3a3a] text-gray-600 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 disabled:opacity-30 disabled:cursor-not-allowed'
+                                ]"
+                                v-tooltip.bottom="`Stock: ${option.stock}`">
+                                {{ option.value }}
+                            </button>
                         </div>
                     </div>
-                    <Message v-if="isCombinationInvalid" severity="warn" :closable="false">Esta combinación de variantes
-                        no existe.</Message>
+                    
+                    <Message v-if="isCombinationInvalid" severity="warn" :closable="false" :pt="{ root: { class: 'dark:!bg-yellow-900/20 dark:!border-yellow-900/50 !rounded-2xl' } }">
+                        Esta combinación de opciones no está disponible.
+                    </Message>
                 </div>
 
-                <div class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg">
-                    <div v-if="currentPrice < originalPrice" class="flex justify-between items-baseline">
-                        <span class="text-gray-500">Oferta:</span>
-                        <div class="flex items-baseline gap-2">
-                            <p class="text-3xl font-bold text-red-600">${{ currentPrice.toFixed(2) }}</p>
-                            <del class="text-xl text-gray-500">${{ originalPrice.toFixed(2) }}</del>
+                <!-- PANEL DE PRECIOS Y STOCK (TELEMETRÍA) -->
+                <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <!-- Precios -->
+                    <div class="flex flex-col justify-center border-b md:border-b-0 md:border-r border-gray-200 dark:border-[#3a3a3a] pb-4 md:pb-0 md:pr-6">
+                        <span class="text-[10px] uppercase tracking-widest text-gray-500 mb-1">Valor Unitario</span>
+                        
+                        <div v-if="currentPrice < originalPrice" class="flex flex-col gap-1">
+                            <div class="flex items-center gap-2">
+                                <span class="text-3xl md:text-4xl font-light tracking-tight text-red-500 m-0 leading-none">
+                                    {{ formatCurrency(currentPrice) }}
+                                </span>
+                            </div>
+                            <del class="text-xs text-gray-400 m-0">{{ formatCurrency(originalPrice) }} precio regular</del>
+                        </div>
+                        
+                        <div v-else>
+                            <span class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0 leading-none">
+                                {{ formatCurrency(currentPrice) }}
+                            </span>
                         </div>
                     </div>
-                    <div v-else
-                        class="flex justify-between items-center text-3xl font-bold text-gray-900 dark:text-gray-100">
-                        <span>Precio:</span>
-                        <span>{{ formatCurrency(currentPrice) }}</span>
-                    </div>
-                    <div class="flex justify-between items-center text-sm mt-2"><span
-                            class="text-gray-500">SKU:</span><span class="font-medium font-mono">{{ currentSku }}</span>
-                    </div>
-                    <div class="flex justify-between items-center text-sm"><span
-                            class="text-gray-500">Stock disponible:</span><span class="font-bold"
-                            :class="currentStock > 0 ? 'text-green-600' : 'text-red-600'">{{ currentStock }}</span>
-                    </div>
-                    <div v-if="currentReservedStock > 0" class="flex justify-between items-center text-sm">
-                        <span class="text-gray-500">Apartados:</span>
-                        <span class="font-medium text-blue-600">{{ currentReservedStock }}</span>
+
+                    <!-- Detalles (Stock / SKU) -->
+                    <div class="flex flex-col justify-center space-y-3">
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] uppercase tracking-widest text-gray-500">Identificador</span>
+                            <span class="font-mono text-sm text-gray-900 dark:text-gray-100">{{ currentSku || '--' }}</span>
+                        </div>
+                        
+                        <div class="flex justify-between items-center">
+                            <span class="text-[10px] uppercase tracking-widest text-gray-500">Stock actual</span>
+                            <span v-if="isComposite" class="font-bold text-[10px] uppercase tracking-wider text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-purple-100 dark:border-purple-800">
+                                <i class="pi pi-link !text-[8px]"></i> Compuesto
+                            </span>
+                            <span v-else class="font-mono text-sm font-bold flex items-center gap-1.5" :class="currentStock > 0 ? 'text-green-500' : 'text-red-500'">
+                                <span class="w-1.5 h-1.5 rounded-full" :class="currentStock > 0 ? 'bg-green-500 animate-pulse' : 'bg-red-500'"></span>
+                                {{ currentStock }} uds.
+                            </span>
+                        </div>
+                        
+                        <div v-if="currentReservedStock > 0 && !isComposite" class="flex justify-between items-center">
+                            <span class="text-[10px] uppercase tracking-widest text-gray-500">Reservado</span>
+                            <span class="font-mono text-xs text-blue-500">- {{ currentReservedStock }} uds.</span>
+                        </div>
                     </div>
                 </div>
 
-                <div v-if="product.description" class="pt-4 mt-4 border-t border-gray-200 dark:border-gray-700">
-                    <p class="text-gray-500 dark:text-gray-400 mb-1">Descripción:</p>
-                    <div class="text-gray-600 dark:text-gray-300 list-disc list-inside prose-sm dark:prose-invert"
+                <!-- COMPONENTES (Para combos) -->
+                <div v-if="isComposite" class="pt-2">
+                    <p class="text-[10px] uppercase tracking-widest text-gray-500 mb-3 flex items-center gap-2 m-0">
+                        <i class="pi pi-list !text-[10px]"></i> Contenido del paquete
+                    </p>
+                    <ul class="space-y-2 m-0 p-0 list-none">
+                        <li v-for="component in product.components" :key="component.id" 
+                            class="flex justify-between items-center bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
+                            <div class="flex items-center gap-3">
+                                <div class="w-6 h-6 rounded-full bg-white dark:bg-[#232323] text-gray-400 flex items-center justify-center border border-gray-200 dark:border-[#3a3a3a]">
+                                    <i class="pi pi-box !text-[10px]"></i>
+                                </div>
+                                <span class="font-medium text-sm text-gray-900 dark:text-gray-100 m-0">{{ component.componentable?.name || 'Componente' }}</span>
+                            </div>
+                            <span class="text-xs font-bold text-gray-500 dark:text-gray-400 bg-white dark:bg-[#232323] px-2 py-1 rounded-lg border border-gray-200 dark:border-[#3a3a3a]">
+                                x{{ component.quantity }}
+                            </span>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- DESCRIPCIÓN -->
+                <div v-if="product.description" class="pt-2">
+                    <p class="text-[10px] uppercase tracking-widest text-gray-500 mb-2 m-0">Acerca del producto</p>
+                    <div class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed prose-sm dark:prose-invert max-w-none"
                         v-html="product.description"></div>
                 </div>
             </div>
         </div>
+        
         <template #footer>
-            <div v-if="product" class="flex items-center space-x-2">
-                <Button label="Cancelar" text severity="secondary" @click="closeModal" />
-                <Button label="Agregar al carrito" icon="pi pi-shopping-cart" @click="addProductToCart"
-                    :disabled="!canAddToCart" />
+            <div class="flex items-center justify-end gap-3 w-full">
+                <Button label="Cancelar" severity="secondary" text @click="closeModal" class="!rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold" />
+                <Button label="Añadir al carrito" icon="pi pi-shopping-cart" @click="addProductToCart"
+                    :disabled="!canAddToCart"
+                    class="!rounded-xl !uppercase !tracking-widest !text-[11px] !font-bold !py-3 px-6" />
             </div>
         </template>
     </Dialog>

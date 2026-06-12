@@ -1,20 +1,33 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { router, Link, usePage } from '@inertiajs/vue3'; // <-- Importado usePage
+import { Head, router, usePage, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
-import { useToast } from 'primevue/usetoast'; // Importamos toast
+import { useToast } from 'primevue/usetoast';
+import { usePermissions } from '@/Composables';
+
+// Importaciones de Modales / Componentes
 import PrintModal from '@/Components/PrintModal.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
 import JoinSessionModal from '@/Components/JoinSessionModal.vue';
-import { usePermissions } from '@/Composables';
 import ProductExchangeModal from './Partials/ProductExchangeModal.vue';
+import LayawayExchangeModal from './Partials/LayawayExchangeModal.vue';
+import TransactionCancellationModal from './Partials/TransactionCancellationModal.vue';
+import EditPaymentModal from './Partials/EditPaymentModal.vue';
+import ExtendLayawayModal from './Partials/ExtendLayawayModal.vue';
+import RescheduleOrderModal from './Partials/RescheduleOrderModal.vue';
+import EditTransactionDateModal from './Partials/EditTransactionDateModal.vue';
+
+// Importaciones de Componentes de Paneles
+import TransactionItemsPanel from './Partials/TransactionItemsPanel.vue';
+import TransactionFinancialPanel from './Partials/TransactionFinancialPanel.vue';
+import TransactionInfoPanel from './Partials/TransactionInfoPanel.vue';
+import TransactionPaymentsPanel from './Partials/TransactionPaymentsPanel.vue';
 
 const props = defineProps({
     transaction: Object,
     availableTemplates: Array,
-    // Props para gestión de sesión/pagos
     availableCashRegisters: Array,
     userBankAccounts: Array,
     joinableSessions: Array,
@@ -27,8 +40,6 @@ const confirm = useConfirm();
 
 // --- Lógica de Sesión Activa ---
 const activeSession = computed(() => page.props.activeSession);
-
-// --- Modales de Sesión ---
 const isStartSessionModalVisible = ref(false);
 const isJoinSessionModalVisible = ref(false);
 const sessionModalAwaitingPayment = ref(false);
@@ -48,21 +59,84 @@ const openPrintModal = () => {
     isPrintModalVisible.value = true;
 };
 
-// --- Modal de Reembolso ---
-const isRefundModalVisible = ref(false);
-const refundMethod = ref('cash');
-const refundProcessing = ref(false);
-
-// --- Modal de Pagos (Abonar) ---
+// --- Modales de Funcionalidades Específicas (Control de Visibilidad) ---
+const isCancellationModalVisible = ref(false);
 const isPaymentModalVisible = ref(false);
-const isPaymentProcessing = ref(false);
-
-// --- NUEVO: Modal de Información de Intercambio ---
+const isEditPaymentModalVisible = ref(false);
 const isProductExchangeModalVisible = ref(false);
+const isLayawayExchangeModalVisible = ref(false);
+const isExtendLayawayModalVisible = ref(false);
+const isRescheduleOrderModalVisible = ref(false);
+const isEditDateModalVisible = ref(false);
+
+const isPaymentProcessing = ref(false);
+const paymentToEdit = ref(null);
+
+const safeBankAccounts = computed(() => Array.isArray(props.userBankAccounts) ? props.userBankAccounts : []);
+
+// --- Acciones de Apertura de Modales ---
+const openEditPaymentModal = (payment) => {
+    paymentToEdit.value = payment;
+    isEditPaymentModalVisible.value = true;
+};
+
+const confirmDeletePayment = (payment) => {
+    confirm.require({
+        message: `¿Estás seguro de que quieres eliminar permanentemente este pago por ${formatCurrency(payment.amount)}?`,
+        header: 'Eliminar Pago',
+        icon: 'pi pi-exclamation-triangle',
+        acceptClass: 'p-button-danger',
+        accept: () => {
+            router.delete(route('transactions.destroyPayment', { transaction: localTransaction.value.id, payment: payment.id }), {
+                preserveScroll: true,
+                onSuccess: () => {
+                }
+            });
+        }
+    });
+};
 
 const openExchangeModal = () => {
-    isProductExchangeModalVisible.value = true;
+    if (localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway') {
+        isLayawayExchangeModalVisible.value = true;
+    } else {
+        isProductExchangeModalVisible.value = true;
+    }
 };
+
+const openExtendLayawayModal = () => isExtendLayawayModalVisible.value = true;
+const openRescheduleOrderModal = () => isRescheduleOrderModalVisible.value = true;
+const openEditDateModal = () => isEditDateModalVisible.value = true;
+
+// --- Menú de Teléfono ---
+const phoneMenu = ref();
+const targetPhone = ref('');
+
+const phoneMenuItems = computed(() => [
+    {
+        label: 'Llamar',
+        icon: 'pi pi-phone',
+        command: () => window.location.href = `tel:${targetPhone.value}`
+    },
+    {
+        label: 'Mandar WhatsApp',
+        icon: 'pi pi-whatsapp',
+        command: () => {
+            const cleanNumber = targetPhone.value.replace(/\D/g, ''); 
+            window.open(`https://wa.me/${cleanNumber}`, '_blank');
+        }
+    }
+]);
+
+const togglePhoneMenu = (event, phone) => {
+    if (!phone) return;
+    targetPhone.value = phone;
+    phoneMenu.value.toggle(event);
+};
+
+// --- Menú de Acciones ---
+const actionsMenu = ref();
+const toggleActionsMenu = (event) => actionsMenu.value.toggle(event);
 
 // --- Datos Computados de la Transacción ---
 const localTransaction = ref(props.transaction);
@@ -78,41 +152,33 @@ const pendingAmount = computed(() => {
     return diff < 0.01 ? 0 : diff;
 });
 
-// --- Acciones Permitidas ---
-const canCancel = computed(() => {
+// --- ACCIONES PERMITIDAS ---
+const canCancelOrRefund = computed(() => {
     if (!localTransaction.value?.status) return false;
-    return !['cancelado', 'reembolsado'].includes(localTransaction.value.status) && totalPaid.value === 0;
+    return !['cancelado', 'reembolsado'].includes(localTransaction.value.status);
 });
 
-const canRefund = computed(() => {
-    if (!localTransaction.value?.status) return false;
-    const isCompleted = localTransaction.value.status === 'completado';
-    const isPendingWithPayments = localTransaction.value.status === 'pendiente' && totalPaid.value > 0;
-    const isOnLayaway = localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway';
-    return isCompleted || isPendingWithPayments || isOnLayaway;
-});
-
-// Permitir abono si hay deuda y no está cancelada/reembolsada
 const canAddPayment = computed(() => {
     if (!localTransaction.value?.status) return false;
     const isCancelledOrRefunded = ['cancelado', 'reembolsado'].includes(localTransaction.value.status);
     return !isCancelledOrRefunded && pendingAmount.value > 0.01;
 });
 
-// NUEVO: Regla para permitir intercambio (mientras no esté cancelada o reembolsada)
 const canExchange = computed(() => {
     if (!localTransaction.value?.status) return false;
+    if (localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway') return true;
     return !['cancelado', 'reembolsado'].includes(localTransaction.value.status);
 });
 
-// --- Lógica de Acciones ---
+const canExtendExpiration = computed(() => ['apartado', 'on_layaway', 'pendiente'].includes(localTransaction.value.status));
+
+// --- Lógica de Pagos y Cancelación ---
 const openPaymentModal = () => {
-    // Verificar sesión activa
     if (!activeSession.value) {
-        if (props.joinableSessions && props.joinableSessions.length > 0) {
+        if (props.joinableSessions && props.joinableSessions?.length > 0) {
             sessionModalAwaitingPayment.value = true;
             isJoinSessionModalVisible.value = true;
-        } else if (props.availableCashRegisters && props.availableCashRegisters.length > 0) {
+        } else if (props.availableCashRegisters && props.availableCashRegisters?.length > 0) {
             sessionModalAwaitingPayment.value = true;
             isStartSessionModalVisible.value = true;
         } else {
@@ -125,21 +191,12 @@ const openPaymentModal = () => {
 
 const handlePaymentSubmit = (paymentData) => {
     if (!activeSession.value) return;
-
     isPaymentProcessing.value = true;
-
-    const payload = {
-        ...paymentData,
-        cash_register_session_id: activeSession.value.id
-    };
+    const payload = { ...paymentData, cash_register_session_id: activeSession.value.id };
 
     router.post(route('transactions.addPayment', props.transaction.id), payload, {
         onSuccess: () => {
-            // 1. Cerramos el modal de pago
             isPaymentModalVisible.value = false;
-
-            // 2. Abrimos automáticamente el modal de impresión
-            // Nota: Inertia ya habrá actualizado las props de la transacción aquí.
             openPrintModal();
         },
         onFinish: () => isPaymentProcessing.value = false,
@@ -147,257 +204,154 @@ const handlePaymentSubmit = (paymentData) => {
     });
 };
 
-const cancelSale = () => {
-    confirm.require({
-        message: `¿Estás seguro de que quieres cancelar la venta #${localTransaction.value.folio}?`,
-        header: 'Confirmar Cancelación',
-        accept: () => {
-            router.post(route('transactions.cancel', localTransaction.value.id), {}, {
-                preserveScroll: true,
-                onSuccess: () => { if (localTransaction.value) localTransaction.value.status = 'cancelado'; }
-            });
+const initiateCancellation = () => {
+    if (totalPaid.value <= 0.01) {
+        let message = `¿Seguro que quieres cancelar la venta #${localTransaction.value.folio}? Se liberará el inventario reservado.`;
+        if (localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway') {
+            message = `¿Seguro que quieres cancelar este APARTADO? No hay pagos registrados.`;
+        } else if (localTransaction.value.status === 'por_entregar') {
+            message = `¿Seguro que quieres cancelar este PEDIDO? Se liberará el inventario reservado.`;
+        } else if (localTransaction.value.status === 'pendiente') {
+            message = `¿Seguro que quieres cancelar esta venta a CRÉDITO (#${localTransaction.value.folio})? Se anulará la deuda del cliente y se liberará el stock.`;
         }
-    });
+        confirm.require({
+            message: message,
+            header: 'Confirmar cancelación',
+            icon: 'pi pi-exclamation-triangle',
+            acceptClass: 'p-button-danger',
+            accept: () => router.post(route('transactions.cancel', localTransaction.value.id), {}, { preserveScroll: true })
+        });
+        return;
+    }
+    isCancellationModalVisible.value = true;
 };
 
-const openRefundModal = () => {
-    refundMethod.value = props.transaction.customer_id ? 'cash' : 'cash';
-    isRefundModalVisible.value = true;
-};
-
-const confirmRefund = () => {
-    refundProcessing.value = true;
-    router.post(route('transactions.refund', props.transaction.id), { refund_method: refundMethod.value }, {
-        preserveScroll: true,
-        onSuccess: () => {
-            isRefundModalVisible.value = false;
-            if (localTransaction.value) localTransaction.value.status = 'reembolsado';
-        },
-        onFinish: () => refundProcessing.value = false
-    });
-};
-
-// --- Menú de Acciones ---
 const actionItems = computed(() => [
     { label: 'Abonar / Liquidar', icon: 'pi pi-dollar', command: openPaymentModal, disabled: !canAddPayment.value, visible: hasPermission('transactions.add_payment') },
-
-    // --- NUEVA OPCIÓN: INTERCAMBIO ---
-    { label: 'Intercambiar producto', icon: 'pi pi-sync', command: openExchangeModal, disabled: !canExchange.value, visible: hasPermission('transactions.exchange') },
-    // ---------------------------------
-
+    { label: (localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway') ? 'Modificar Apartado' : 'Intercambiar producto', icon: 'pi pi-sync', command: openExchangeModal, disabled: !canExchange.value, visible: hasPermission('transactions.exchange') },
+    { label: 'Extender Vencimiento', icon: 'pi pi-calendar-plus', command: openExtendLayawayModal, visible: canExtendExpiration.value },
     { separator: true },
     { label: 'Imprimir ticket', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
-    { label: 'Generar devolución', icon: 'pi pi-replay', command: openRefundModal, disabled: !canRefund.value, visible: hasPermission('transactions.refund') },
-    { label: 'Cancelar venta', icon: 'pi pi-times-circle', class: 'text-red-500', command: cancelSale, disabled: !canCancel.value, visible: hasPermission('transactions.cancel') },
+    { label: 'Cancelar / Devolver', icon: 'pi pi-times-circle', class: 'text-red-500', command: initiateCancellation, disabled: !canCancelOrRefund.value, visible: hasPermission('transactions.cancel') || hasPermission('transactions.refund') },
 ]);
 
-// Helpers visuales
-const getStatusSeverity = (status) => ({ completado: 'success', pendiente: 'warn', cancelado: 'danger', reembolsado: 'info', on_layaway: 'warn', apartado: 'warn' }[status] || 'secondary');
 const formatDate = (date) => date ? new Date(date).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : '';
-const formatDateOnly = (date) => date ? new Date(date).toLocaleDateString('es-MX', { dateStyle: 'long' }) : '';
 const formatCurrency = (val) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(val) || 0);
 
-// --- ACTUALIZADO: Iconos de métodos de pago (incluyendo intercambio) ---
-const paymentMethodIcons = {
-    efectivo: { icon: 'pi pi-money-bill', color: 'text-[#37672B]' },
-    tarjeta: { icon: 'pi pi-credit-card', color: 'text-[#063C53]' },
-    transferencia: { icon: 'pi pi-arrows-h', color: 'text-[#D2D880]' },
-    saldo: { icon: 'pi pi-wallet', color: 'text-purple-500' },
-    intercambio: { icon: 'pi pi-sync', color: 'text-orange-500' } // <--- NUEVO
+// --- TESLA UI PASS-THROUGH (PT) ---
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl !p-2 !shadow-2xl mt-1' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' }
 };
-
-const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
-const breadcrumbItems = ref([{ label: 'Historial de ventas', url: route('transactions.index') }, { label: `Venta #${props.transaction.folio}` }]);
 </script>
 
 <template>
-    <AppLayout :title="`Venta #${transaction.folio}`">
-        <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
+    <Head :title="`Venta #${transaction.folio}`" />
+    <AppLayout>
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+            
+            <!-- Breadcrumb / Botón de regreso -->
+            <div class="flex items-center">
+                <Link :href="route('transactions.index')" class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
+                    <i class="pi pi-arrow-left !text-[10px]"></i> Volver al historial
+                </Link>
+            </div>
 
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
-            <div>
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Venta #{{ transaction.folio }}</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Realizada el {{ formatDate(transaction.created_at) }}
-                </p>
-            </div>
-            <div class="flex items-center gap-2 mt-4 sm:mt-0">
-                <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined />
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Columna Principal -->
-            <div class="lg:col-span-2 space-y-6">
-                <Card>
-                    <template #title>Detalles de los conceptos</template>
-                    <template #content>
-                        <DataTable :value="transaction.items" class="p-datatable-sm">
-                            <Column field="description" header="Descripción"></Column>
-                            <Column field="quantity" header="Cantidad" class="text-center"></Column>
-                            <Column header="Precio unitario">
-                                <template #body="{ data }">
-                                    <div>
-                                        <del v-if="parseFloat(data.discount_amount || 0) !== 0"
-                                            class="text-gray-500 text-xs">
-                                            {{ formatCurrency(parseFloat(data.unit_price || 0) +
-                                                parseFloat(data.discount_amount || 0)) }}
-                                        </del>
-                                        <p class="font-semibold m-0">{{ formatCurrency(data.unit_price) }}</p>
-                                        <p v-if="parseFloat(data.discount_amount) > 0"
-                                            class="text-xs text-green-600 m-0">Ahorro: {{
-                                                formatCurrency(data.discount_amount) }}</p>
-                                    </div>
-                                </template>
-                            </Column>
-                            <Column field="line_total" header="Total" class="text-right">
-                                <template #body="{ data }">{{ formatCurrency(data.line_total) }}</template>
-                            </Column>
-                        </DataTable>
-                    </template>
-                </Card>
-            </div>
-            <!-- Columna Derecha -->
-            <div class="lg:col-span-1 space-y-6">
-                <Card>
-                    <template #title>Resumen financiero</template>
-                    <template #content>
-                        <ul class="space-y-3 text-sm">
-                            <li class="flex justify-between"><span>Subtotal:</span><span>{{
-                                formatCurrency(transaction.subtotal) }}</span></li>
-                            <li v-if="parseFloat(transaction.total_discount) > 0" class="flex justify-between">
-                                <span>Descuento:</span><span class="text-green-500">- {{
-                                    formatCurrency(transaction.total_discount) }}</span>
-                            </li>
-                            <li class="flex justify-between font-bold text-base border-t pt-2 mt-2">
-                                <span>Total:</span><span>{{ formatCurrency(totalAmount) }}</span>
-                            </li>
-                            <li class="flex justify-between"><span>Pagado:</span><span class="font-semibold">{{
-                                formatCurrency(totalPaid) }}</span></li>
-                            <li v-if="pendingAmount > 0"
-                                class="flex justify-between font-bold text-red-600 text-lg bg-red-50 dark:bg-red-900/20 p-2 rounded">
-                                <span>Pendiente:</span><span>{{ formatCurrency(pendingAmount) }}</span>
-                            </li>
-                        </ul>
-                        <div v-if="canAddPayment && hasPermission('transactions.add_payment')" class="mt-4">
-                            <Button label="Abonar a esta cuenta" icon="pi pi-dollar" class="w-full p-button-success"
-                                @click="openPaymentModal" />
+            <!-- Header de la página al estilo Tesla UI -->
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+                <div>
+                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0 flex items-center gap-4">
+                        {{ transaction.status === 'por_entregar' ? `Pedido #${transaction.folio}` : `Venta #${transaction.folio}` }}
+                    </h1>
+                    <div class="flex items-center gap-4 mt-3 flex-wrap">
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 flex items-center gap-2">
+                            <span class="w-1.5 h-1.5 rounded-full" :class="['cancelado', 'reembolsado'].includes(transaction.status) ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse' : 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse'"></span>
+                            <span class="capitalize">{{ (transaction.status || '').replace('_', ' ') }}</span>
+                        </p>
+                        
+                        <span class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
+                        
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0">Fecha:</span>
+                            <span class="text-xs font-medium text-gray-900 dark:text-gray-100 flex items-center gap-1.5">
+                                <i class="pi pi-calendar !text-[10px] text-gray-400"></i>
+                                {{ formatDate(transaction.created_at) }}
+                            </span>
+                            <Button 
+                                icon="pi pi-pencil" 
+                                text
+                                rounded 
+                                class="!w-6 !h-6 !p-0 text-gray-400 hover:text-primary-500"
+                                v-tooltip.bottom="'Editar fecha'"
+                                @click="openEditDateModal"
+                            />
                         </div>
-                    </template>
-                </Card>
-                <Card>
-                    <template #title>Información de la venta</template>
-                    <template #content>
-                        <ul class="space-y-3 text-sm">
-                            <li class="flex justify-between"><span>Estatus:</span>
-                                <Tag :value="localTransaction.status"
-                                    :severity="getStatusSeverity(localTransaction.status)" class="capitalize" />
-                            </li>
-                            <li v-if="transaction.layaway_expiration_date"
-                                class="flex justify-between items-center bg-purple-50 dark:bg-purple-900/20 p-2 rounded -mx-2">
-                                <span class="text-purple-800 dark:text-purple-300 font-medium">Vencimiento:</span>
-                                <span class="font-bold text-purple-700 dark:text-purple-200">{{
-                                    formatDateOnly(transaction.layaway_expiration_date) }}</span>
-                            </li>
-                            <li class="flex justify-between items-center">
-                                <span>Cliente:</span>
-                                <span class="font-medium">
-                                    <Link v-if="transaction.customer"
-                                        :href="route('customers.show', transaction.customer.id)"
-                                        class="text-blue-600 hover:underline flex items-center gap-2">{{
-                                            transaction.customer.name }} <i class="pi pi-external-link text-xs"></i></Link>
-                                    <span v-else>Público en general</span>
-                                </span>
-                            </li>
-                            <li class="flex justify-between"><span>Cajero:</span><span class="font-medium">{{
-                                transaction.user?.name || 'N/A' }}</span></li>
-
-                            <!-- NUEVO: Mostrar Notas (Crucial para ver referencia de intercambio) -->
-                            <li v-if="transaction.notes" class="flex flex-col border-t pt-2 mt-2">
-                                <span class="text-gray-500 dark:text-gray-400 mb-1 text-xs uppercase font-bold">Notas /
-                                    Referencia:</span>
-                                <p
-                                    class="text-sm bg-gray-50 dark:bg-gray-700/50 p-2 rounded italic text-gray-700 dark:text-gray-300">
-                                    {{ transaction.notes }}
-                                </p>
-                            </li>
-                            <!-- ----------------------------------------------------------------- -->
-                        </ul>
-                    </template>
-                </Card>
-                <Card>
-                    <template #title>Pagos realizados</template>
-                    <template #content>
-                        <div v-if="!localTransaction.payments?.length">
-                            <p class="text-center text-gray-500 text-sm py-4">No se han registrado pagos.</p>
-                        </div>
-                        <ul v-else class="space-y-3">
-                            <li v-for="payment in localTransaction.payments" :key="payment.id" class="text-sm">
-                                <div class="flex justify-between items-center">
-                                    <span class="flex items-center gap-2">
-                                        <!-- Manejo seguro de iconos por si llega un método nuevo -->
-                                        <i class="pi"
-                                            :class="(paymentMethodIcons[payment.payment_method]?.icon || 'pi-circle') + ' ' + (paymentMethodIcons[payment.payment_method]?.color || 'text-gray-500')"></i>
-                                        <span class="capitalize font-medium">
-                                            {{ payment.payment_method === 'intercambio' ? 'Intercambio de Producto' :
-                                                payment.payment_method }}
-                                        </span>
-                                    </span>
-                                    <span class="font-mono font-semibold">{{ formatCurrency(payment.amount) }}</span>
-                                </div>
-                                <p class="text-xs text-gray-500 ml-6">{{ formatDate(payment.payment_date ||
-                                    payment.created_at) }}</p>
-                            </li>
-                        </ul>
-                    </template>
-                </Card>
-            </div>
-        </div>
-
-        <!-- Modales -->
-        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
-            :available-templates="availableTemplates" />
-
-        <!-- Modal de Reembolso -->
-        <Dialog v-model:visible="isRefundModalVisible" modal header="Confirmar devolución" :style="{ width: '30rem' }">
-            <div class="p-fluid">
-                <p class="mb-4">Vas a generar una devolución para la venta <strong>#{{ props.transaction.folio
-                }}</strong> por
-                    <strong>{{ formatCurrency(totalPaid) }}</strong>.
-                </p>
-                <div class="flex flex-col gap-3">
-                    <div v-if="props.transaction.customer_id" class="flex items-center">
-                        <RadioButton v-model="refundMethod" inputId="refundBalance" value="balance" /><label
-                            for="refundBalance" class="ml-2">Abonar al saldo del cliente</label>
-                    </div>
-                    <div class="flex items-center">
-                        <RadioButton v-model="refundMethod" inputId="refundCash" value="cash"
-                            :disabled="!activeSession" />
-                        <label for="refundCash" class="ml-2">Retirar efectivo de caja</label><small
-                            v-if="!activeSession" class="ml-2 text-orange-500">(Sin sesión activa)</small>
                     </div>
                 </div>
+                
+                <div class="w-full sm:w-auto shrink-0 flex gap-2">
+                    <Button type="button" label="Opciones" icon="pi pi-chevron-down" iconPos="right" @click="toggleActionsMenu" severity="secondary" outlined class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto" />
+                    <Menu ref="actionsMenu" :model="actionItems" :popup="true" :pt="menuPt" />
+                </div>
             </div>
-            <template #footer>
-                <Button label="Cancelar" severity="secondary" @click="isRefundModalVisible = false" text />
-                <Button label="Confirmar" icon="pi pi-check" @click="confirmRefund" :loading="refundProcessing"
-                    :disabled="refundMethod === 'cash' && !activeSession" />
-            </template>
-        </Dialog>
 
-        <!-- Modal de Información de Intercambio (NUEVO) -->
-        <ProductExchangeModal v-if="transaction" v-model:visible="isProductExchangeModalVisible"
-            :transaction="transaction" :user-bank-accounts="userBankAccounts" @success="router.reload()" />
+            <!-- Contenedor Principal (Grid Layout) -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+                <!-- Columna Principal -->
+                <div class="lg:col-span-2 space-y-6 lg:space-y-8 flex flex-col">
+                    <TransactionItemsPanel :transaction="transaction" />
+                </div>
+                
+                <!-- Columna Derecha -->
+                <div class="lg:col-span-1 space-y-6 lg:space-y-8 flex flex-col">
+                    <TransactionFinancialPanel 
+                        :transaction="transaction" 
+                        :total-amount="totalAmount"
+                        :total-paid="totalPaid"
+                        :pending-amount="pendingAmount"
+                        :can-add-payment="canAddPayment"
+                        @open-payment-modal="openPaymentModal"
+                    />
 
-        <!-- Modal de Pagos (Para abonos) -->
-        <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="pendingAmount"
-            :client="transaction.customer" :loading="isPaymentProcessing" payment-mode="flexible"
-            @submit="handlePaymentSubmit" />
+                    <TransactionInfoPanel 
+                        :transaction="transaction"
+                        :local-transaction="localTransaction"
+                        :can-extend-expiration="canExtendExpiration"
+                        :pending-amount="pendingAmount"
+                        @open-reschedule-order-modal="openRescheduleOrderModal"
+                        @toggle-phone-menu="togglePhoneMenu"
+                        @open-extend-layaway-modal="openExtendLayawayModal"
+                    />
 
-        <!-- Modales de Sesión -->
-        <StartSessionModal v-model:visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters"
-            :user-bank-accounts="userBankAccounts" />
+                    <TransactionPaymentsPanel 
+                        :local-transaction="localTransaction"
+                        @open-edit-payment-modal="openEditPaymentModal"
+                        @confirm-delete-payment="confirmDeletePayment"
+                    />
+                </div>
+            </div>
+        </div>
+
+        <!-- Componentes Globales y Modales Externos -->
+        <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource" :available-templates="availableTemplates" />
+        <Menu ref="phoneMenu" :model="phoneMenuItems" :popup="true" :pt="menuPt" />
+        
+        <PaymentModal v-if="isPaymentModalVisible" v-model:visible="isPaymentModalVisible" :total-amount="pendingAmount" :client="transaction.customer" :loading="isPaymentProcessing" payment-mode="flexible" @submit="handlePaymentSubmit" />
+        <StartSessionModal v-model:visible="isStartSessionModalVisible" :cash-registers="availableCashRegisters" :user-bank-accounts="safeBankAccounts" />
         <JoinSessionModal v-model:visible="isJoinSessionModalVisible" :sessions="joinableSessions" />
+
+        <!-- MODALES DE LA TRANSACCIÓN (Parciales extraídos) -->
+        <ProductExchangeModal v-if="transaction" v-model:visible="isProductExchangeModalVisible" :transaction="transaction" :user-bank-accounts="safeBankAccounts" @success="router.reload()" />
+        <LayawayExchangeModal v-if="transaction" v-model:visible="isLayawayExchangeModalVisible" :transaction="transaction" :user-bank-accounts="safeBankAccounts" @success="router.reload()" />
+        <TransactionCancellationModal v-model:visible="isCancellationModalVisible" :transaction="localTransaction" :active-session="activeSession" :bank-accounts="safeBankAccounts" />
+        
+        <EditPaymentModal v-model:visible="isEditPaymentModalVisible" :transaction-id="transaction.id" :payment="paymentToEdit" :bank-accounts="safeBankAccounts" />
+        <ExtendLayawayModal v-model:visible="isExtendLayawayModalVisible" :transaction-id="transaction.id" :current-date="transaction.layaway_expiration_date" />
+        <RescheduleOrderModal v-model:visible="isRescheduleOrderModalVisible" :transaction-id="transaction.id" :current-date="transaction.delivery_date" />
+        <EditTransactionDateModal v-model:visible="isEditDateModalVisible" :transaction-id="transaction.id" :current-date="transaction.created_at" />
 
     </AppLayout>
 </template>

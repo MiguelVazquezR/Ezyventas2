@@ -61,63 +61,95 @@ export function useTemplateRenderer() {
         return null;
     };
 
-    const replaceVariables = (text, quote) => {
+    const replaceVariables = (text, dataSource, context = 'quote') => {
         if (!text) return '';
         return text.replace(/{{(.*?)}}/g, (match, p1) => {
             const key = p1.trim();
-            
-            const map = {
-                // --- VARIABLES GENERALES ---
-                'folio': quote.folio,
-                'fecha_creacion': formatDate(quote.created_at),
-                'fecha_vencimiento': formatDate(quote.expiry_date),
-                
-                // --- VARIABLES DE COTIZACIÓN ---
-                'cotizacion.folio': quote.folio,
-                'cotizacion.fecha_creacion': formatDate(quote.created_at),
-                'cotizacion.fecha_vencimiento': formatDate(quote.expiry_date),
-                'cotizacion.subtotal': formatCurrency(quote.subtotal),
-                'cotizacion.impuestos': formatCurrency(quote.total_tax),
-                'cotizacion.envio': formatCurrency(quote.shipping_cost),
-                'cotizacion.descuento': formatCurrency(quote.total_discount),
-                'cotizacion.total': formatCurrency(quote.total_amount),
-                'cotizacion.notas': quote.notes || '',
 
-                // --- DATOS CLIENTE ---
-                'cliente.nombre': quote.recipient_name,
-                'cliente.email': quote.recipient_email || 'N/A',
-                'cliente.telefono': quote.recipient_phone || 'N/A',
-                'cliente.direccion': quote.shipping_address || 'N/A',
-                'cliente.empresa': quote.customer?.company_name || '',
+            // --- MAPA COMÚN (negocio, sucursal, cliente) ---
+            const branch = dataSource?.branch;
+            const subscription = branch?.subscription;
+            const customer = dataSource?.customer;
 
-                // --- DATOS EMPRESA ---
-                'empresa.nombre': quote.branch?.subscription?.commercial_name || 'Mi Empresa',
-                'sucursal.nombre': quote.branch?.name || '',
-                'sucursal.direccion': quote.branch?.address ? Object.values(quote.branch.address).filter(Boolean).join(', ') : '',
-                'sucursal.telefono': quote.branch?.contact_phone || '',
-                'negocio.nombre': quote.branch?.subscription?.commercial_name || '',
-                'negocio.razon_social': quote.branch?.subscription?.business_name || '',
-                'negocio.direccion': quote.branch?.subscription?.address ? Object.values(quote.branch.subscription.address).filter(Boolean).join(', ') : '',
-                'negocio.telefono': quote.branch?.subscription?.contact_phone || '',
+            const commonMap = {
+                'negocio.nombre': subscription?.commercial_name || '',
+                'negocio.razon_social': subscription?.business_name || '',
+                'negocio.direccion': subscription?.address ? Object.values(subscription.address).filter(Boolean).join(', ') : '',
+                'negocio.telefono': subscription?.contact_phone || '',
+                'sucursal.nombre': branch?.name || '',
+                'sucursal.direccion': branch?.address ? Object.values(branch.address).filter(Boolean).join(', ') : '',
+                'sucursal.telefono': branch?.contact_phone || '',
+                'cliente.nombre': customer?.name || dataSource?.customer_name || dataSource?.recipient_name || '',
+                'cliente.email': customer?.email || dataSource?.customer_email || dataSource?.recipient_email || '',
+                'cliente.telefono': customer?.phone || dataSource?.customer_phone || dataSource?.recipient_phone || '',
+                'cliente.direccion': customer?.address ? Object.values(customer.address).filter(Boolean).join(', ') : (dataSource?.shipping_address || ''),
+                'cliente.empresa': customer?.company_name || '',
+                'cliente.rfc': customer?.tax_id || '',
+                'empresa.nombre': subscription?.commercial_name || '',
             };
-            
-            if (key.startsWith('cotizacion.custom.') && quote.custom_fields) {
-                const fieldKey = key.replace('cotizacion.custom.', '');
-                const val = quote.custom_fields[fieldKey];
-                if (val !== undefined && val !== null) {
-                    return Array.isArray(val) ? val.join(', ') : (val === true ? 'Sí' : (val === false ? 'No' : val));
+
+            if (context === 'service_order') {
+                const osMap = {
+                    'os.folio': dataSource?.folio || '',
+                    'os.fecha_recepcion': formatDate(dataSource?.received_at),
+                    'os.hora_recepcion': dataSource?.received_at ? new Date(dataSource.received_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '',
+                    'os.fecha_hora_recepcion': dataSource?.received_at ? formatDate(dataSource.received_at) + ' ' + new Date(dataSource.received_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '',
+                    'os.subtotal': formatCurrency(dataSource?.subtotal),
+                    'os.descuento': formatCurrency(dataSource?.discount_amount),
+                    'os.total': formatCurrency(dataSource?.final_total),
+                    'os.problemas_reportados': dataSource?.reported_problems || '',
+                    'os.item_description': dataSource?.item_description || '',
+                    'os.diagnostico': dataSource?.technician_diagnosis || '',
+                    'os.fecha_promesa': dataSource?.promised_at ? formatDate(dataSource.promised_at) : '',
+                };
+                // Check custom fields for service orders
+                if (key.startsWith('os.custom.') && dataSource?.custom_fields) {
+                    const fieldKey = key.replace('os.custom.', '');
+                    const val = dataSource.custom_fields[fieldKey];
+                    if (val !== undefined && val !== null) {
+                        return Array.isArray(val) ? val.join(', ') : (val === true ? 'Sí' : (val === false ? 'No' : val));
+                    }
                 }
+                if (osMap[key] !== undefined) return osMap[key];
+            } else {
+                // Quote context
+                const quoteMap = {
+                    'folio': dataSource?.folio,
+                    'fecha_creacion': formatDate(dataSource?.created_at),
+                    'fecha_vencimiento': formatDate(dataSource?.expiry_date),
+                    'cotizacion.folio': dataSource?.folio,
+                    'cotizacion.fecha_creacion': formatDate(dataSource?.created_at),
+                    'cotizacion.fecha_vencimiento': formatDate(dataSource?.expiry_date),
+                    'cotizacion.subtotal': formatCurrency(dataSource?.subtotal),
+                    'cotizacion.impuestos': formatCurrency(dataSource?.total_tax),
+                    'cotizacion.envio': formatCurrency(dataSource?.shipping_cost),
+                    'cotizacion.descuento': formatCurrency(dataSource?.total_discount),
+                    'cotizacion.total': formatCurrency(dataSource?.total_amount),
+                    'cotizacion.notas': dataSource?.notes || '',
+                };
+                if (key.startsWith('cotizacion.custom.') && dataSource?.custom_fields) {
+                    const fieldKey = key.replace('cotizacion.custom.', '');
+                    const val = dataSource.custom_fields[fieldKey];
+                    if (val !== undefined && val !== null) {
+                        return Array.isArray(val) ? val.join(', ') : (val === true ? 'Sí' : (val === false ? 'No' : val));
+                    }
+                }
+                if (quoteMap[key] !== undefined) return quoteMap[key];
             }
 
-            return map[key] !== undefined ? map[key] : ''; 
+            // Common map fallback
+            if (commonMap[key] !== undefined) return commonMap[key];
+
+            return '';
         });
     };
 
-    const renderQuoteTable = (element, quote) => {
-        const showImages = element.data.showImages === true;
-        
+    const renderQuoteTable = (elementData, dataSource, context = 'quote') => {
+        const showImages = elementData.showImages === true;
+        const items = dataSource?.items || [];
+
         let headers = `
-            <tr style="background-color: ${element.data.headerColor || '#f3f4f6'}; color: ${element.data.headerTextColor || '#111827'};">
+            <tr style="background-color: ${elementData.headerColor || '#f3f4f6'}; color: ${elementData.headerTextColor || '#111827'};">
                 ${showImages ? '<th style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: center; font-size: 12px; width: 60px;">Img</th>' : ''}
                 <th style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: center; font-size: 12px; width: 50px;">Cant.</th>
                 <th style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: left; font-size: 12px;">Descripción</th>
@@ -126,12 +158,17 @@ export function useTemplateRenderer() {
             </tr>
         `;
 
-        const rows = quote.items.map(item => {
+        const getItemTypeLabel = (item) => {
+            if (!item.itemable_type) return 'Servicio';
+            return item.itemable_type.includes('Product') ? 'Producto' : 'Servicio';
+        };
+
+        const rows = items.map(item => {
             const imageUrl = showImages ? getItemImage(item) : null;
-            const imageCell = showImages 
+            const imageCell = showImages
                 ? `<td style="padding: 8px; text-align: center; vertical-align: middle; border-bottom: 1px solid #e5e7eb;">
                     ${imageUrl ? `<img src="${imageUrl}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" />` : ''}
-                   </td>` 
+                   </td>`
                 : '';
 
             return `
@@ -139,7 +176,7 @@ export function useTemplateRenderer() {
                 ${imageCell}
                 <td style="padding: 8px; text-align: center; font-size: 12px; vertical-align: top;">${Number(item.quantity)}</td>
                 <td style="padding: 8px; font-size: 12px; vertical-align: top;">
-                    <div style="font-weight: 500;">${item.description}</div>
+                    <div style="font-weight: 500;">${getItemTypeLabel(item)}: ${item.description}</div>
                     ${item.variant_details ? `<div style="font-size: 10px; color: #6b7280;">(${Object.values(item.variant_details).join(', ')})</div>` : ''}
                 </td>
                 <td style="padding: 8px; text-align: right; font-size: 12px; vertical-align: top;">${formatCurrency(item.unit_price)}</td>
@@ -155,35 +192,61 @@ export function useTemplateRenderer() {
             </table>
         `;
 
-        if (element.data.showBreakdown !== false) { 
-            html += `
-                <div style="display: flex; justify-content: flex-end; margin-top: 0.5rem; font-size: 12px; page-break-inside: avoid;">
-                    <div style="width: 200px;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                            <span style="color: #6b7280;">Subtotal:</span>
-                            <span>${formatCurrency(quote.subtotal)}</span>
-                        </div>
-                        ${Number(quote.total_discount) > 0 ? `
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #ef4444;">
-                            <span>Descuento:</span>
-                            <span>- ${formatCurrency(quote.total_discount)}</span>
-                        </div>` : ''}
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                            <span>Impuestos:</span>
-                            <span>${formatCurrency(quote.total_tax)}</span>
-                        </div>
-                        ${Number(quote.shipping_cost) > 0 ? `
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                            <span>Envío:</span>
-                            <span>${formatCurrency(quote.shipping_cost)}</span>
-                        </div>` : ''}
-                        <div style="display: flex; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-weight: bold; font-size: 14px;">
-                            <span>Total:</span>
-                            <span>${formatCurrency(quote.total_amount)}</span>
+        if (elementData.showBreakdown !== false) {
+            if (context === 'service_order') {
+                html += `
+                    <div style="display: flex; justify-content: flex-end; margin-top: 0.5rem; font-size: 12px; page-break-inside: avoid;">
+                        <div style="width: 200px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                <span style="color: #6b7280;">Subtotal:</span>
+                                <span>${formatCurrency(dataSource.subtotal)}</span>
+                            </div>
+                            ${Number(dataSource.discount_amount) > 0 ? `
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #ef4444;">
+                                <span>Descuento:</span>
+                                <span>- ${formatCurrency(dataSource.discount_amount)}</span>
+                            </div>` : ''}
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                <span>Impuestos:</span>
+                                <span>${formatCurrency(dataSource.total_tax || 0)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-weight: bold; font-size: 14px;">
+                                <span>Total:</span>
+                                <span>${formatCurrency(dataSource.final_total)}</span>
+                            </div>
                         </div>
                     </div>
-                </div>
-            `;
+                `;
+            } else {
+                html += `
+                    <div style="display: flex; justify-content: flex-end; margin-top: 0.5rem; font-size: 12px; page-break-inside: avoid;">
+                        <div style="width: 200px;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                <span style="color: #6b7280;">Subtotal:</span>
+                                <span>${formatCurrency(dataSource.subtotal)}</span>
+                            </div>
+                            ${Number(dataSource.total_discount) > 0 ? `
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #ef4444;">
+                                <span>Descuento:</span>
+                                <span>- ${formatCurrency(dataSource.total_discount)}</span>
+                            </div>` : ''}
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                <span>Impuestos:</span>
+                                <span>${formatCurrency(dataSource.total_tax)}</span>
+                            </div>
+                            ${Number(dataSource.shipping_cost) > 0 ? `
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                <span>Envío:</span>
+                                <span>${formatCurrency(dataSource.shipping_cost)}</span>
+                            </div>` : ''}
+                            <div style="display: flex; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-weight: bold; font-size: 14px;">
+                                <span>Total:</span>
+                                <span>${formatCurrency(dataSource.total_amount)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
         }
 
         return html;

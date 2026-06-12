@@ -34,6 +34,25 @@ const model = ref([
             },
             { label: 'Cotizaciones', icon: 'pi pi-file-check', to: route('quotes.index'), routeName: 'quotes.*', permission: 'quotes.access' },
             {
+                label: 'Tienda en línea', icon: 'pi pi-globe',
+                items: [
+                    {
+                        label: 'Configuración',
+                        icon: 'pi pi-cog',
+                        to: route('online-store.config'),
+                        routeName: 'online-store.config',
+                        permission: 'online_store.config.access'
+                    },
+                    {
+                        label: 'Pedidos',
+                        icon: 'pi pi-shopping-cart',
+                        to: route('online-store.orders.index'),
+                        routeName: 'online-store.orders.*',
+                        permission: 'online_store.orders.access'
+                    },
+                ]
+            },
+            {
                 label: 'Cajas', icon: 'pi pi-dollar',
                 items: [
                     {
@@ -55,13 +74,13 @@ const model = ref([
             {
                 label: 'Configuraciones', icon: 'pi pi-cog',
                 items: [
-                    // {
-                    //     label: 'Generales',
-                    //     icon: 'pi pi-sliders-h',
-                    //     to: route('settings.index'),
-                    //     routeName: 'settings.*',
-                    //     permission: 'settings.generals.access'
-                    // },
+                    {
+                        label: 'Generales',
+                        icon: 'pi pi-sliders-h',
+                        to: route('settings.index'),
+                        routeName: 'settings.*',
+                        permission: 'settings.generals.access'
+                    },
                     {
                         label: 'Roles y permisos',
                         icon: 'pi pi-key',
@@ -129,13 +148,35 @@ const adminModel = ref([
         label: 'Administración',
         items: [
             {
-                label: 'Pagos Pendientes',
+                label: 'Reportes',
+                icon: 'pi pi-chart-line',
+                to: route('admin.reports.index'),
+                routeName: 'admin.reports.*'
+            },
+            {
+                label: 'Pagos pendientes',
                 icon: 'pi pi-clock',
                 to: route('admin.payments.index'),
                 routeName: 'admin.payments.*'
             },
-            // Aquí puedes añadir más submodulos de admin en el futuro
-            // { label: 'Planes', icon: 'pi pi-tags', to: route('admin.plans.index'), routeName: 'admin.plans.*' },
+            {
+                label: 'Suscriptores',
+                icon: 'pi pi-crown', 
+                to: route('admin.subscriptions.index'),
+                routeName: 'admin.subscriptions.*'
+            },
+            {
+                label: 'Ítems de planes',
+                icon: 'pi pi-box', 
+                to: route('admin.plan-items.index'),
+                routeName: 'admin.plan-items.*'
+            },
+            {
+                label: 'Novedades',
+                icon: 'pi pi-sparkles',
+                to: route('admin.release-notes.index'),
+                routeName: 'admin.release-notes.*'
+            },
         ]
     },
 ]);

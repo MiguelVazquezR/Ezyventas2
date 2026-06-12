@@ -6,6 +6,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import ManageExpenseCategoriesModal from '@/Components/ManageExpenseCategoriesModal.vue';
 import StartSessionModal from '@/Components/StartSessionModal.vue';
+import { usePermissions } from '@/Composables';
 
 const props = defineProps({
     expense: Object,
@@ -15,6 +16,7 @@ const props = defineProps({
 });
 
 const page = usePage();
+const { hasPermission } = usePermissions();
 const activeSession = computed(() => page.props.activeSession);
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
@@ -109,13 +111,13 @@ const submit = () => {
                     <InputText id="folio" v-model="form.folio" class="mt-1 w-full" />
                     <InputError :message="form.errors.folio" class="mt-2" />
                 </div>
-                <!-- <div>
-                    <InputLabel for="expense_date" value="Fecha del Gasto *" />
+                <div>
+                    <InputLabel for="expense_date" value="Fecha del gasto *" />
                     <DatePicker id="expense_date" v-model="form.expense_date" class="w-full mt-1"
                         dateFormat="dd/mm/yy" />
                     <InputError :message="form.errors.expense_date" class="mt-2" />
-                </div> -->
-                <div class="mt-0">
+                </div>
+                <div class="mt-0 lg:mt-3">
                     <InputLabel for="amount" value="Monto *" />
                     <InputNumber id="amount" v-model="form.amount" mode="currency" currency="MXN" locale="es-MX"
                         class="w-full mt-1" />
@@ -124,8 +126,8 @@ const submit = () => {
                 <div>
                     <div class="flex justify-between items-center mb-1">
                         <InputLabel for="category" value="Categoría *" />
-                        <Button @click="showCategoryModal = true" label="Gestionar" icon="pi pi-cog" text
-                            size="small" />
+                        <Button v-if="hasPermission('expenses.manage_categories')" @click="showCategoryModal = true"
+                            label="Gestionar" icon="pi pi-cog" text size="small" />
                     </div>
                     <Select size="large" id="category" v-model="form.expense_category_id" :options="localCategories"
                         optionLabel="name" optionValue="id" placeholder="Selecciona una categoría" filter
