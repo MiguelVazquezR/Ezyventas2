@@ -17,6 +17,7 @@ use App\Models\ProductAttribute;
 use App\Models\Provider;
 use App\Services\ActivityLogService;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -348,6 +349,8 @@ class ProductController extends Controller implements HasMiddleware
             'items.*.min_stock' => 'nullable|numeric|min:0',
             'items.*.max_stock' => 'nullable|numeric|min:0',
             'items.*.show_in_pos' => 'nullable|boolean',
+            'items.*.show_online' => 'nullable|boolean',
+            'items.*.is_featured' => 'nullable|boolean',
         ]);
 
         $branchId = Auth::user()->branch_id;
@@ -363,6 +366,8 @@ class ProductController extends Controller implements HasMiddleware
                             'selling_price' => $item['selling_price'] ?? $product->selling_price,
                             'cost_price' => $item['cost_price'] ?? $product->cost_price,
                             'show_in_pos' => $item['show_in_pos'] ?? $product->show_in_pos,
+                            'show_online' => $item['show_online'] ?? $product->show_online,
+                            'is_featured' => $item['is_featured'] ?? $product->is_featured,
                         ]);
 
                         if (array_key_exists('min_stock', $item) || array_key_exists('max_stock', $item)) {
@@ -421,5 +426,32 @@ class ProductController extends Controller implements HasMiddleware
         }
 
         return response()->json(['success' => true]);
+    }
+
+    public function toggleOnline(Product $product): RedirectResponse
+    {
+        $product->update(['show_online' => !$product->show_online]);
+
+        return back()->with('success', $product->show_online
+            ? 'El producto ahora es visible en tu tienda en línea.'
+            : 'El producto ahora está oculto de tu tienda en línea.');
+    }
+
+    public function toggleFeatured(Product $product): RedirectResponse
+    {
+        $product->update(['is_featured' => !$product->is_featured]);
+
+        return back()->with('success', $product->is_featured
+            ? 'El producto ahora es destacado en tu tienda en línea.'
+            : 'El producto ya no es destacado.');
+    }
+
+    public function togglePos(Product $product): RedirectResponse
+    {
+        $product->update(['show_in_pos' => !$product->show_in_pos]);
+
+        return back()->with('success', $product->show_in_pos
+            ? 'El producto ahora es visible en el punto de venta.'
+            : 'El producto ahora está oculto del punto de venta.');
     }
 }

@@ -10,13 +10,6 @@ import ActivityHistory from '@/Components/ActivityHistory.vue';
 import PaymentModal from '@/Components/PaymentModal.vue';
 import { usePermissions } from '@/Composables';
 
-import Button from 'primevue/button';
-import Menu from 'primevue/menu';
-import Dialog from 'primevue/dialog';
-import Textarea from 'primevue/textarea';
-import FileUpload from 'primevue/fileupload';
-import Tag from 'primevue/tag';
-
 // --- Partials Importados ---
 import OrderItemsPanel from './Partials/OrderItemsPanel.vue';
 import OrderFinancialPanel from './Partials/OrderFinancialPanel.vue';
@@ -28,6 +21,7 @@ const props = defineProps({
     serviceOrder: Object,
     activities: Array,
     availableTemplates: Array,
+    printTemplates: Array,
     customFieldDefinitions: Array,
     activeSession: Object,
 });
@@ -44,6 +38,28 @@ const isPaymentModalVisible = ref(false);
 const isInPostCreationFlow = ref(false);
 const isDiagnosisModalVisible = ref(false);
 const isPaymentProcessing = ref(false);
+
+// --- LÓGICA DE SELECCIÓN DE PLANTILLA DE IMPRESIÓN (PDF) ---
+const showTemplateDialog = ref(false);
+const selectedTemplate = ref(null);
+
+const handlePrintAction = () => {
+    if (props.printTemplates && props.printTemplates.length > 0) {
+        selectedTemplate.value = null;
+        showTemplateDialog.value = true;
+    } else {
+        openPrintWindow();
+    }
+};
+
+const openPrintWindow = () => {
+    const url = route('service-orders.print', {
+        serviceOrder: props.serviceOrder.id,
+        template_id: selectedTemplate.value,
+    });
+    window.open(url, '_blank');
+    showTemplateDialog.value = false;
+};
 
 const openPrintModal = () => isPrintModalVisible.value = true;
 const openPaymentModal = () => isPaymentModalVisible.value = true;
@@ -192,6 +208,7 @@ const actionItems = computed(() => [
     { label: 'Editar orden', icon: 'pi pi-pencil', command: () => router.get(route('service-orders.edit', props.serviceOrder.id)), visible: hasPermission('services.orders.edit') },
     { label: 'Registrar diagnóstico y evidencia', icon: 'pi pi-file-edit', command: openDiagnosisModal, visible: !isCancelled.value && hasPermission('services.orders.edit') },
     { label: 'Registrar pago', icon: 'pi pi-dollar', command: openPaymentModal, visible: amountDue.value > 0.01 && props.serviceOrder.final_total > 0 },
+    { label: 'Ver PDF / Imprimir', icon: 'pi pi-print', command: handlePrintAction },
     { label: 'Imprimir', icon: 'pi pi-print', command: openPrintModal },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteOrder, visible: hasPermission('services.orders.delete') },
@@ -244,10 +261,8 @@ const tagPt = {
 </script>
 
 <template>
-    <Head :title="`Orden #${serviceOrder.folio || serviceOrder.id}`" />
-    <AppLayout>
+    <AppLayout :title="`Orden #${serviceOrder.folio || serviceOrder.id}`">
         <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
-            
             <!-- Breadcrumb / Botón de regreso -->
             <div class="flex items-center">
                 <Link :href="route('service-orders.index')" class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
@@ -467,6 +482,61 @@ const tagPt = {
                 <div class="flex justify-end items-center gap-3 w-full mt-4 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
                     <Button label="Cancelar" text @click="isDiagnosisModalVisible = false" class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold" />
                     <Button label="Guardar diagnóstico" @click="handleDiagnosisSubmit" :loading="diagnosisForm.processing" class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-6 shadow-sm" severity="primary" />
+                </div>
+            </template>
+        </Dialog>
+
+        <!-- MODAL DE SELECCIÓN DE PLANTILLA PDF (Ver PDF / Imprimir) -->
+        <Dialog v-model:visible="showTemplateDialog" modal class="w-full max-w-md mx-4" :pt="dialogPt">
+            <template #header>
+                <div class="flex items-center gap-4">
+                    <div class="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-500 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
+                        <i class="pi pi-print !text-sm"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-light tracking-tight text-gray-900 dark:text-white m-0 leading-tight">Formato de impresión</h2>
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1">Selecciona la plantilla PDF</p>
+                    </div>
+                </div>
+            </template>
+
+            <div class="flex flex-col gap-3 pt-2">
+                <!-- Opción Default -->
+                <div @click="selectedTemplate = null"
+                    class="p-4 rounded-2xl border transition-colors cursor-pointer group"
+                    :class="selectedTemplate === null ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/10' : 'border-gray-100 dark:border-[#3a3a3a] bg-gray-50 dark:bg-[#1a1a1a] hover:border-gray-300 dark:hover:border-gray-600'">
+                    <div class="flex items-center mb-1">
+                        <RadioButton v-model="selectedTemplate" :value="null" class="pointer-events-none" />
+                        <label class="ml-3 font-medium text-sm text-gray-900 dark:text-white cursor-pointer m-0">Estándar del sistema</label>
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 ml-8 m-0">Formato limpio y simple generado por defecto.</p>
+                </div>
+
+                <!-- Plantillas Personalizadas -->
+                <div v-for="tpl in printTemplates" :key="tpl.id" @click="selectedTemplate = tpl.id"
+                    class="p-4 rounded-2xl border transition-colors cursor-pointer group"
+                    :class="selectedTemplate === tpl.id ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/10' : 'border-gray-100 dark:border-[#3a3a3a] bg-gray-50 dark:bg-[#1a1a1a] hover:border-gray-300 dark:hover:border-gray-600'">
+                    <div class="flex items-center mb-1">
+                        <RadioButton v-model="selectedTemplate" :value="tpl.id" class="pointer-events-none" />
+                        <label class="ml-3 font-medium text-sm text-gray-900 dark:text-white cursor-pointer m-0">{{ tpl.name }}</label>
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 ml-8 m-0">Plantilla personalizada para recibo de servicio.</p>
+                </div>
+
+                <div v-if="!printTemplates || printTemplates.length === 0" class="text-center py-4 text-gray-400 text-xs">
+                    No hay plantillas personalizadas registradas para recibos de servicio.
+                </div>
+            </div>
+
+            <template #footer>
+                <div class="flex flex-col sm:flex-row justify-between items-center gap-4 w-full mt-4 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
+                    <Link :href="route('print-templates.create', { type: 'recibo_servicio' })" class="text-[10px] text-primary-500 uppercase tracking-widest font-bold flex items-center gap-1 hover:underline order-2 sm:order-1">
+                        <i class="pi pi-plus !text-[9px]"></i> Crear diseño nuevo
+                    </Link>
+                    <div class="flex justify-end gap-3 order-1 sm:order-2 w-full sm:w-auto">
+                        <Button label="Cancelar" text @click="showTemplateDialog = false" class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold" />
+                        <Button label="Generar PDF" icon="pi pi-file-pdf" @click="openPrintWindow" class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-6 shadow-sm" severity="primary" />
+                    </div>
                 </div>
             </template>
         </Dialog>

@@ -34,6 +34,9 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     });
 });
 
+// Public store routes (no auth required)
+require __DIR__ . '/tienda.php';
+
 require __DIR__ . '/web/POS.php';
 require __DIR__ . '/web/products.php';
 require __DIR__ . '/web/products-stock.php';
@@ -71,6 +74,7 @@ require __DIR__ . '/web/providers.php';
 require __DIR__ . '/web/expense-categories.php';
 require __DIR__ . '/web/super-admin.php';
 require __DIR__ . '/web/release-notes.php';
+require __DIR__ . '/web/online-store.php';
 
 Route::get('/centro-ayuda', function () {
     return Inertia::render('HelpCenter');
@@ -85,16 +89,6 @@ Route::get('/clear-all', function () {
 Route::get('/storage-link', function () {
     Artisan::call('storage:link');
     return 'cleared.';
-});
-
-Route::get('/migrate', function () {
-    Artisan::call('migrate');
-    return 'migrated!.';
-});
-
-Route::get('/fix-so', function () {
-    Artisan::call('app:fix-service-order-folios');
-    return 'fixed!.';
 });
 
 Route::post('/unirse-lista', function (Request $request) {
@@ -141,32 +135,6 @@ Route::get('/cleanup-products-branch-7', function () {
     return "Limpieza completada: Se han eliminado {$count} productos de la sucursal {$targetBranchId} que no tenían stock ni historial de ventas en dicha sucursal.";
 });
 
-// --- RUTA PARA ESTABLECER VENCIMIENTOS (30 DÍAS) ---
-Route::get('/fix-layaway-expiration-dates', function () {
-    $count = 0;
-    
-    // Buscamos transacciones pendientes o en apartado (créditos no liquidados)
-    // Se procesa en chunks para evitar problemas de memoria con muchos registros
-    \App\Models\Transaction::query()
-        ->whereIn('status', [
-            \App\Enums\TransactionStatus::PENDING, 
-        ])
-        ->chunkById(200, function ($transactions) use (&$count) {
-            foreach ($transactions as $transaction) {
-                // Calcular fecha: Fecha de creación + 30 días
-                // Usamos copy() para no modificar la instancia original de created_at si fuera necesario
-                $newExpirationDate = \Carbon\Carbon::parse($transaction->created_at)->addDays(30);
-                
-                $transaction->update([
-                    'layaway_expiration_date' => $newExpirationDate
-                ]);
-                
-                $count++;
-            }
-        });
-
-    return "Proceso completado: Se actualizaron las fechas de vencimiento de {$count} ventas pendientes a 30 días posteriores de su creación.";
-});
 
 // --- NUEVA RUTA PARA IMPORTAR SERVICIOS DESDE CSV ---
 Route::get('/import-android-services-csv', function () {

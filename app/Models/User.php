@@ -242,11 +242,20 @@ class User extends Authenticatable implements MustVerifyEmail
         // Obtenemos la cantidad de novedades sin leer
         $unreadUpdates = $this->unreadReleaseNotesCount();
 
+        // Pedidos pendientes de la tienda en línea (solo si el módulo está activo)
+        $pendingOrders = 0;
+        if (in_array('Tienda en línea', $this->branch?->subscription?->getAvailableModuleNames() ?? [])) {
+            $pendingOrders = \App\Models\Order::whereHas('storeConfig', fn($q) => $q->where('subscription_id', $this->branch?->subscription_id))
+                ->whereIn('status', [\App\Enums\OrderStatus::Pending, \App\Enums\OrderStatus::Reviewed])
+                ->count();
+        }
+
         return [
             'expiring_debts' => $expiringDebts, 
             'upcoming_deliveries' => $upcomingDeliveries,
             'unread_updates' => $unreadUpdates,
-            'total' => $expiringDebts + $upcomingDeliveries + $unreadUpdates // Opcional, sumarlo todo
+            'pending_orders' => $pendingOrders,
+            'total' => $expiringDebts + $upcomingDeliveries + $unreadUpdates + $pendingOrders,
         ];
     }
 

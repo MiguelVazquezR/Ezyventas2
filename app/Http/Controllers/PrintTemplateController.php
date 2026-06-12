@@ -84,11 +84,23 @@ class PrintTemplateController extends Controller implements HasMiddleware
         $subscription = Auth::user()->branch->subscription;
 
         $limitData = $this->getTemplateLimitData();
-        $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscription->id)->get();
+
+        // Determinar el módulo de campos personalizados según el tipo de plantilla
+        $customFieldModule = match ($type) {
+            'cotizacion' => 'quotes',
+            'recibo_servicio' => 'service_orders',
+            default => null,
+        };
+
+        $customFieldDefinitions = $customFieldModule
+            ? CustomFieldDefinition::where('subscription_id', $subscription->id)
+                ->where('module', $customFieldModule)
+                ->get()
+            : collect();
 
         $view = match ($type) {
             'etiqueta' => 'Template/CreateLabel',
-            'cotizacion' => 'Template/CreateQuoteTemplate',
+            'cotizacion', 'recibo_servicio' => 'Template/CreateQuoteTemplate',
             default => 'Template/CreateTicket',
         };
 
@@ -99,6 +111,7 @@ class PrintTemplateController extends Controller implements HasMiddleware
             'templateUsage' => $limitData['usage'],
             'customFieldDefinitions' => $customFieldDefinitions,
             'contextTypes' => $this->getContextOptions(),
+            'templateType' => $type,
         ]);
     }
 
@@ -193,13 +206,25 @@ class PrintTemplateController extends Controller implements HasMiddleware
 
         $view = match ($printTemplate->type->value) {
             'etiqueta' => 'Template/CreateLabel',
-            'cotizacion' => 'Template/CreateQuoteTemplate',
+            'cotizacion', 'recibo_servicio' => 'Template/CreateQuoteTemplate',
             default => 'Template/CreateTicket',
         };
 
         $subscription = Auth::user()->branch->subscription;
         $printTemplate->load('branches:id,name');
-        $customFieldDefinitions = CustomFieldDefinition::where('subscription_id', $subscription->id)->get();
+
+        // Determinar el módulo de campos personalizados según el tipo de plantilla
+        $customFieldModule = match ($printTemplate->type->value) {
+            'cotizacion' => 'quotes',
+            'recibo_servicio' => 'service_orders',
+            default => null,
+        };
+
+        $customFieldDefinitions = $customFieldModule
+            ? CustomFieldDefinition::where('subscription_id', $subscription->id)
+                ->where('module', $customFieldModule)
+                ->get()
+            : collect();
 
         $templateImages = $subscription->getMedia('template-images')->map(fn($media) => [
             'id' => $media->id,
@@ -213,7 +238,8 @@ class PrintTemplateController extends Controller implements HasMiddleware
             'branches' => $subscription->branches()->get(['id', 'name']),
             'templateImages' => $templateImages,
             'customFieldDefinitions' => $customFieldDefinitions,
-            'contextTypes' => $this->getContextOptions(), 
+            'contextTypes' => $this->getContextOptions(),
+            'templateType' => $printTemplate->type->value,
         ]);
     }
 

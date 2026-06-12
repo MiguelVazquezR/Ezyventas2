@@ -118,6 +118,8 @@ export function useTemplateVariables(customFieldDefinitionsGetter, context = 'ge
         // Lógica actualizada:
         if (context === 'cotizacion') {
             activeGroups.push(allVars.negocio, allVars.sucursal, allVars.cliente, allVars.cotizacion);
+        } else if (context === 'service_orders' || context === 'recibo_servicio') {
+            activeGroups.push(allVars.negocio, allVars.sucursal, allVars.cliente, allVars.orden_servicio);
         } else {
             // Base para tickets, etiquetas y clientes
             activeGroups.push(allVars.negocio, allVars.sucursal, allVars.cliente);
@@ -153,6 +155,16 @@ export function useTemplateVariables(customFieldDefinitionsGetter, context = 'ge
                     items: customFieldsByModule['quotes'].map(field => ({
                         label: field.name,
                         value: `{{cotizacion.custom.${field.key}}}`
+                    }))
+                });
+            }
+        } else if (context === 'service_orders' || context === 'recibo_servicio') {
+            if (customFieldsByModule['service_orders']) {
+                activeGroups.push({
+                    group: 'Campos Personalizados (OS)',
+                    items: customFieldsByModule['service_orders'].map(field => ({
+                        label: field.name,
+                        value: `{{os.custom.${field.key}}}`
                     }))
                 });
             }

@@ -11,6 +11,7 @@ import BulkEditProductsModal from './Partials/BulkEditProductsModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
+import { useToast } from "primevue/usetoast";
 
 const props = defineProps({
     products: Object,
@@ -25,6 +26,7 @@ const props = defineProps({
 const page = usePage();
 
 const confirm = useConfirm();
+const toast = useToast();
 const { hasPermission } = usePermissions();
 
 const limitReached = computed(() => {
@@ -173,6 +175,30 @@ const deleteSingleProduct = () => {
                 onSuccess: () => selectedProducts.value = selectedProducts.value.filter(p => p.id !== selectedProductForMenu.value.id),
             });
         }
+    });
+};
+
+const toggleOnline = (product) => {
+    product.show_online = !product.show_online;
+    router.put(route('products.toggle-online', product.id), {}, {
+        preserveScroll: true,
+        onError: () => { product.show_online = !product.show_online; },
+    });
+};
+
+const toggleFeatured = (product) => {
+    product.is_featured = !product.is_featured;
+    router.put(route('products.toggle-featured', product.id), {}, {
+        preserveScroll: true,
+        onError: () => { product.is_featured = !product.is_featured; },
+    });
+};
+
+const togglePos = (product) => {
+    product.show_in_pos = !product.show_in_pos;
+    router.put(route('products.toggle-pos', product.id), {}, {
+        preserveScroll: true,
+        onError: () => { product.show_in_pos = !product.show_in_pos; },
     });
 };
 
@@ -369,11 +395,37 @@ const drawerPt = {
                         </template>
                     </Column>
 
-                    <Column field="show_in_pos" header="Visibilidad" sortable alignFrozen="right">
+                    <Column field="show_in_pos" header="Visibilidad" sortable>
                         <template #body="{ data }">
-                            <div class="flex justify-center items-center">
-                                <i v-if="data.show_in_pos" class="pi pi-shop text-green-500" v-tooltip.top="'Visible en Punto de Venta'"></i>
-                                <i v-else class="pi pi-eye-slash text-gray-400" v-tooltip.top="'Solo Insumo (Oculto en POS)'"></i>
+                            <div class="flex items-center gap-1.5">
+                                <!-- POS visibility -->
+                                <button @click.stop="togglePos(data)"
+                                    class="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider cursor-pointer transition-all border"
+                                    :class="data.show_in_pos
+                                        ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50 hover:bg-blue-100 dark:hover:bg-blue-900/40'
+                                        : 'bg-gray-50 dark:bg-[#1a1a1a] text-gray-400 dark:text-gray-500 border-gray-200 dark:border-[#3a3a3a] hover:bg-gray-100 dark:hover:bg-[#2a2a2a]'"
+                                    v-tooltip.top="data.show_in_pos ? 'Visible en Punto de Venta — clic para ocultar' : 'Oculto en Punto de Venta — clic para mostrar'">
+                                    <i :class="data.show_in_pos ? 'pi pi-shop !text-[10px]' : 'pi pi-eye-slash !text-[10px]'" />
+                                </button>
+                                <!-- Online visibility -->
+                                <button @click.stop="toggleOnline(data)"
+                                    class="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider cursor-pointer transition-all border"
+                                    :class="data.show_online
+                                        ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800/50 hover:bg-green-100 dark:hover:bg-green-900/40'
+                                        : 'bg-gray-50 dark:bg-[#1a1a1a] text-gray-400 dark:text-gray-500 border-gray-200 dark:border-[#3a3a3a] hover:bg-gray-100 dark:hover:bg-[#2a2a2a]'"
+                                    v-tooltip.top="data.show_online ? 'Visible en tienda en línea — clic para ocultar' : 'Oculto en tienda — clic para mostrar'">
+                                    <span class="w-1.5 h-1.5 rounded-full" :class="data.show_online ? 'bg-green-500' : 'bg-gray-400'" />
+                                    <i class="pi pi-globe !text-[10px]" />
+                                </button>
+                                <!-- Featured -->
+                                <button @click.stop="toggleFeatured(data)"
+                                    class="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider cursor-pointer transition-all border"
+                                    :class="data.is_featured
+                                        ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800/50 hover:bg-yellow-100 dark:hover:bg-yellow-900/40'
+                                        : 'bg-gray-50 dark:bg-[#1a1a1a] text-gray-400 dark:text-gray-500 border-gray-200 dark:border-[#3a3a3a] hover:bg-gray-100 dark:hover:bg-[#2a2a2a]'"
+                                    v-tooltip.top="data.is_featured ? 'Destacado en tienda — clic para quitar' : 'No destacado — clic para destacar'">
+                                    <i :class="data.is_featured ? 'pi pi-star-fill !text-[10px]' : 'pi pi-star !text-[10px]'" />
+                                </button>
                             </div>
                         </template>
                     </Column>

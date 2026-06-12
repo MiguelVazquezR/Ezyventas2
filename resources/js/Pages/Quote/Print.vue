@@ -53,7 +53,7 @@ const getFormattedCustomValue = (field, value) => {
 <template>
     <Head :title="`Cotización #${quote.folio}`" />
     
-    <div class="bg-gray-100 dark:bg-gray-900 min-h-screen p-4 sm:p-8 print:p-0 print:bg-white flex flex-col items-center print:block">
+    <div class="bg-gray-100 dark:bg-gray-900 min-h-screen p-4 sm:p-8 print:p-0 print:bg-white print:min-h-0 flex flex-col items-center print:block">
         
         <!-- Botón de acción -->
         <div class="w-full max-w-4xl mb-4 action-buttons flex justify-end print:hidden">
@@ -129,6 +129,9 @@ const getFormattedCustomValue = (field, value) => {
                                      margin: `${element.data.margin} 0` 
                                  }">
                             </div>
+
+                            <!-- Espaciado -->
+                            <div v-if="element.type === 'spacer'" :style="{ height: element.data.height + 'px' }"></div>
                             
                             <!-- Firma -->
                             <div v-if="element.type === 'signature'" 

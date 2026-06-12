@@ -2,21 +2,35 @@
 import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import EditVersionModal from './Partials/EditVersionModal.vue';
+import EditVersionItemsModal from './Partials/EditVersionItemsModal.vue';
+import RegisterPaymentModal from './Partials/RegisterPaymentModal.vue';
 import PaymentHistoryTable from './Partials/PaymentHistoryTable.vue';
+import SubscriptionSettings from './Partials/SubscriptionSettings.vue';
 
 const props = defineProps({
     subscription: Object,
     planItems: Array,
-    dynamicLimits: Array,   // Inyectado por el backend
-    dynamicModules: Array,  // Inyectado por el backend
+    dynamicLimits: Array,
+    dynamicModules: Array,
     subscriptionStatus: Object,
     fiscalDocumentUrl: String,
+    settingsData: Object,
 });
 
 // --- ESTADOS DE MODALES ---
-const showEditVersionModal = ref(false);
-const showPaymentApprovalModal = ref(false);
+const showEditVersionItemsModal = ref(false);
+const showRegisterPaymentModal = ref(false);
+const selectedVersion = ref(null);
+
+// --- HANDLERS ---
+const handleEditVersion = (version) => {
+    selectedVersion.value = version;
+    showEditVersionItemsModal.value = true;
+};
+
+const handleRegisterPayment = () => {
+    showRegisterPaymentModal.value = true;
+};
 
 // --- HELPER FUNCTIONS (ESTADOS REALES) ---
 const getComputedStatus = (subscription) => {
@@ -126,12 +140,7 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
                         </div>
                     </div>
                     
-                    <div class="flex gap-2">
-                        <!-- Botón Maestro (Acciones Superadmin) -->
-                        <Button label="Ajustar vigencia / recursos" icon="pi pi-sliders-h" severity="primary"
-                            class="!rounded-xl !text-xs !uppercase !tracking-wider" 
-                            @click="showEditVersionModal = true" />
-                    </div>
+
                 </div>
 
                 <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
@@ -226,22 +235,38 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
                             </div>
                         </div>
 
-                        <!-- Componente Extractor: Historial de Pagos -->
-                        <PaymentHistoryTable 
-                            :payments="subscription.versions.flatMap(v => v.payments)" 
-                            @review-payment="showPaymentApprovalModal = true" 
+                        <!-- Historial de Pagos por Versión -->
+                        <PaymentHistoryTable
+                            :versions="subscription.versions"
+                            @edit-version="handleEditVersion"
+                            @register-payment="handleRegisterPayment"
                         />
                     </div>
+                </div>
+
+                <!-- Sección de Configuraciones -->
+                <div class="mt-8">
+                    <SubscriptionSettings
+                        :settings-data="settingsData"
+                        :subscription-id="subscription.id"
+                    />
                 </div>
 
             </div>
         </div>
 
-        <!-- Componente Extractor: Modal de Ajustes -->
-        <EditVersionModal 
-            v-if="currentVersion"
-            v-model:visible="showEditVersionModal"
-            :current-version="currentVersion"
+        <!-- Modal: Editar items de una versión específica -->
+        <EditVersionItemsModal
+            v-if="selectedVersion"
+            v-model:visible="showEditVersionItemsModal"
+            :version="selectedVersion"
+            :plan-items="planItems"
+        />
+
+        <!-- Modal: Registrar pago con nueva versión -->
+        <RegisterPaymentModal
+            v-model:visible="showRegisterPaymentModal"
+            :subscription-id="subscription.id"
             :plan-items="planItems"
         />
 

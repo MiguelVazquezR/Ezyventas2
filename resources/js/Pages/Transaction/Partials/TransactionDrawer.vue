@@ -136,7 +136,7 @@ const drawerPt = {
                             {{ transaction.customer.name }}
                         </span>
                         <span v-else-if="transaction.contact_info && transaction.contact_info.name" class="font-medium text-sm text-gray-900 dark:text-white truncate max-w-[180px]" :title="transaction.contact_info.name">
-                            {{ transaction.contact_info.name }} <Tag severity="info" value="Comanda" class="!text-[9px] !px-1.5 !py-0.5 ml-1" />
+                            {{ transaction.contact_info.name }} <Tag v-if="transaction.channel !== 'tienda_en_linea'" severity="info" value="Comanda" class="!text-[9px] !px-1.5 !py-0.5 ml-1" />
                         </span>
                         <span v-else class="text-gray-500 italic text-sm truncate max-w-[180px]" title="Público en general">
                             Público general

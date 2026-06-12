@@ -6,9 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Models\Subscription;
 use App\Models\PlanItem;
 use App\Models\SubscriptionVersion;
+use App\Models\SettingDefinition;
 use App\Http\Requests\Admin\UpdateSubscriptionVersionRequest;
+use App\Http\Requests\Admin\UpdateVersionItemsRequest;
+use App\Http\Requests\Admin\StoreVersionWithPaymentRequest;
 use App\Actions\Admin\Subscriptions\UpdateSubscriptionVersionAction;
+use App\Actions\Admin\Subscriptions\UpdateVersionItemsAction;
+use App\Actions\Admin\Subscriptions\CreateVersionWithPaymentAction;
+use App\Actions\Admin\Subscriptions\UpdateEntitySettingsAction;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Carbon\Carbon;
 
@@ -139,7 +146,10 @@ class SubscriptionController extends Controller
             ];
         })->values();
 
-        // 8. Renderizar la vista pasando la información orquestada
+        // 8. Construir los datos de configuraciones (settings)
+        $settingsData = $this->buildSettingsData($subscription);
+
+        // 9. Renderizar la vista pasando la información orquestada
         return Inertia::render('Admin/Subscriptions/Show', [
             'subscription' => $subscription,
             'planItems' => $planItems, // Aún se pasa para el modal de edición
@@ -147,6 +157,7 @@ class SubscriptionController extends Controller
             'dynamicModules' => $dynamicModules,
             'subscriptionStatus' => $subscription->getStatusData(),
             'fiscalDocumentUrl' => $subscription->getFirstMediaUrl('fiscal-documents') ?: null,
+            'settingsData' => $settingsData,
         ]);
     }
 
@@ -159,5 +170,142 @@ class SubscriptionController extends Controller
         $action->execute($version, $request->validated());
 
         return redirect()->back()->with('success', 'La vigencia y los recursos del plan han sido actualizados exitosamente.');
+    }
+
+    /**
+     * Actualiza los items (módulos y límites) de una versión específica.
+     */
+    public function updateVersionItems(
+        SubscriptionVersion $version,
+        UpdateVersionItemsRequest $request,
+        UpdateVersionItemsAction $action,
+    ) {
+        $action->execute($version, $request->validated());
+
+        return redirect()->back()->with('success', 'Los items de la versión han sido actualizados exitosamente.');
+    }
+
+    /**
+     * Crea una nueva versión con su pago asociado para una suscripción.
+     */
+    public function storeVersion(
+        Subscription $subscription,
+        StoreVersionWithPaymentRequest $request,
+        CreateVersionWithPaymentAction $action,
+    ) {
+        $action->execute($subscription, $request->validated());
+
+        return redirect()->back()->with('success', 'La nueva versión y el pago han sido registrados exitosamente.');
+    }
+
+    /**
+     * Actualiza las configuraciones de una entidad específica (suscripción, sucursal o usuario).
+     */
+    public function updateSettings(Request $request, UpdateEntitySettingsAction $action)
+    {
+        $validated = $request->validate([
+            'entity_type' => ['required', 'string', 'in:subscription,branch,user'],
+            'entity_id'   => ['required', 'integer'],
+            'settings'    => ['required', 'array'],
+        ]);
+
+        $entity = match ($validated['entity_type']) {
+            'subscription' => Subscription::findOrFail($validated['entity_id']),
+            'branch'       => \App\Models\Branch::findOrFail($validated['entity_id']),
+            'user'         => \App\Models\User::findOrFail($validated['entity_id']),
+        };
+
+        $action->execute($entity, $validated['settings']);
+
+        return redirect()->back()->with('success', 'Configuraciones actualizadas exitosamente.');
+    }
+
+    /**
+     * Construye los datos de configuraciones para la vista de detalle.
+     */
+    private function buildSettingsData(Subscription $subscription): array
+    {
+        $definitions = SettingDefinition::orderBy('name')->get();
+
+        // Cargar sucursales con sus usuarios y settings (reutiliza la relación ya cargada)
+        $branches = $subscription->branches->load(['users' => fn($q) => $q->with('settings'), 'settings']);
+
+        $subscriptionSettings = $subscription->settings()->pluck('value', 'setting_definition_id');
+
+        // Construir la lista plana de entidades
+        $entities = [];
+
+        // 1. La suscripción misma
+        $entities[] = $this->formatSettingsEntity(
+            'subscription',
+            $subscription->id,
+            $subscription->commercial_name . ' (Suscripción)',
+            $subscriptionSettings
+        );
+
+        // 2. Cada sucursal
+        foreach ($branches as $branch) {
+            $branchSettings = $branch->settings->pluck('value', 'setting_definition_id');
+            $entities[] = $this->formatSettingsEntity(
+                'branch',
+                $branch->id,
+                $branch->name . ' (Sucursal)',
+                $branchSettings
+            );
+
+            // 3. Cada usuario de la sucursal
+            foreach ($branch->users as $user) {
+                $userSettings = $user->settings->pluck('value', 'setting_definition_id');
+                $entities[] = $this->formatSettingsEntity(
+                    'user',
+                    $user->id,
+                    $user->name . ' (Usuario)',
+                    $userSettings
+                );
+            }
+        }
+
+        // Agrupar definiciones por módulo con valores resueltos para cada entidad
+        $definitionsByModule = [];
+        foreach ($definitions as $definition) {
+            $resolvedValue = $subscriptionSettings->get($definition->id) ?? $definition->default_value;
+
+            if (in_array($definition->type, ['select', 'list']) && is_string($resolvedValue)) {
+                $decoded = json_decode($resolvedValue, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $resolvedValue = $decoded;
+                }
+            }
+
+            $definitionsByModule[$definition->module][] = [
+                'id'            => $definition->id,
+                'name'          => $definition->name,
+                'key'           => $definition->key,
+                'description'   => $definition->description,
+                'type'          => $definition->type,
+                'level'         => $definition->level,
+                'default_value' => in_array($definition->type, ['select', 'list']) && is_string($definition->default_value)
+                    ? json_decode($definition->default_value, true)
+                    : $definition->default_value,
+            ];
+        }
+
+        return [
+            'definitions_by_module' => $definitionsByModule,
+            'entities'              => $entities,
+        ];
+    }
+
+    /**
+     * Formatea una entidad para el frontend.
+     */
+    private function formatSettingsEntity(string $type, int $id, string $name, $values): array
+    {
+        return [
+            'type'   => $type,
+            'id'     => $id,
+            'name'   => $name,
+            'values' => $values,
+        ];
     }
 }

@@ -86,15 +86,15 @@ const getPromotionSummary = (promo) => {
 </script>
 
 <template>
-    <div class="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/60">
-        <h3 class="text-sm font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
+    <div class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4 m-0 flex items-center gap-2">
             <i class="pi pi-percentage text-yellow-500"></i> Promociones vinculadas
         </h3>
         
         <div v-if="localPromotions && localPromotions.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div v-for="promo in localPromotions" :key="promo.id" 
-                class="relative bg-white dark:bg-gray-900/30 rounded-xl border shadow-sm transition-all flex flex-col justify-between"
-                :class="promo.is_active ? 'border-l-4 border-l-yellow-400 border-gray-200 dark:border-gray-700' : 'border-l-4 border-l-gray-300 border-gray-200 dark:border-gray-700 opacity-70'">
+                class="relative bg-white dark:bg-[#1a1a1a] rounded-2xl border transition-all flex flex-col justify-between"
+                :class="promo.is_active ? 'border-l-4 border-l-yellow-400 border-gray-100 dark:border-[#3a3a3a]' : 'border-l-4 border-l-gray-300 border-gray-100 dark:border-[#3a3a3a] opacity-70'">
                 
                 <div class="p-4">
                     <div class="flex justify-between items-start mb-2">
@@ -122,7 +122,7 @@ const getPromotionSummary = (promo) => {
                 </div>
             </div>
         </div>
-        <div v-else class="text-center text-gray-400 dark:text-gray-500 py-6 border border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
+        <div v-else class="text-center text-gray-400 dark:text-gray-500 py-6 border border-dashed border-gray-200 dark:border-[#3a3a3a] rounded-2xl">
             <span class="text-sm">No hay promociones activas para este producto.</span>
         </div>
     </div>

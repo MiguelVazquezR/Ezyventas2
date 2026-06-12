@@ -36,6 +36,29 @@ class ReleaseNoteController extends Controller
 
         $notes = $query->paginate($request->input('rows', 20))->withQueryString();
 
+        // Eager load readers with their branch and subscription for the drawer
+        $notes->load('readers.branch.subscription');
+
+        // Transform each item: build a lightweight readers_list and unset the heavy relation
+        $notes->through(function ($note) {
+            $note->readers_list = $note->readers->map(function ($reader) {
+                return [
+                    'id'           => $reader->id,
+                    'name'         => $reader->name,
+                    'email'        => $reader->email,
+                    'read_at'      => $reader->pivot->read_at,
+                    'branch'       => $reader->branch?->name,
+                    'subscription' => $reader->branch?->subscription?->commercial_name
+                                      ?? $reader->branch?->subscription?->business_name,
+                ];
+            })->values()->toArray();
+
+            // Remove the full readers relation so it's not serialized in the response
+            $note->unsetRelation('readers');
+
+            return $note;
+        });
+
         return Inertia::render('Admin/ReleaseNotes/Index', [
             'notes' => $notes,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),

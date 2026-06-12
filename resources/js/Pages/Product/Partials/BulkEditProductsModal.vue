@@ -32,6 +32,8 @@ const buildFlatList = () => {
             min_stock: p.min_stock !== null ? Number(p.min_stock) : null,
             max_stock: p.max_stock !== null ? Number(p.max_stock) : null,
             show_in_pos: Boolean(p.show_in_pos),
+            show_online: Boolean(p.show_online),
+            is_featured: Boolean(p.is_featured),
             hasVariants: p.product_attributes && p.product_attributes.length > 0
         });
 
@@ -69,7 +71,13 @@ const closeModal = () => {
 };
 
 const submitBulkUpdate = () => {
-    form.post(route('products.bulkUpdate'), {
+    form.transform(data => ({
+        items: data.items.map(item => ({
+            ...item,
+            show_online: item.type === 'product' ? item.show_online : undefined,
+            is_featured: item.type === 'product' ? item.is_featured : undefined,
+        }))
+    })).post(route('products.bulkUpdate'), {
         preserveScroll: true,
         onSuccess: () => {
             closeModal();
@@ -84,16 +92,17 @@ const submitBulkUpdate = () => {
 
 <template>
     <Dialog :visible="visible" @update:visible="closeModal" modal header="Edición Masiva de Productos"
-        :style="{ width: '90vw', maxWidth: '1200px' }" :closable="!form.processing">
+        :style="{ width: '90vw', maxWidth: '1300px' }" :closable="!form.processing"
+        :pt="{ root: { class: '!rounded-3xl dark:!bg-[#232323] dark:!border-[#3a3a3a]' }, header: { class: 'dark:!bg-[#232323] dark:!text-white dark:!border-[#3a3a3a]' }, content: { class: 'dark:!bg-[#232323]' } }">
         
-        <div class="mb-4 text-sm text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md border border-blue-100 dark:border-blue-800">
+        <div class="mb-4 text-xs text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/10 p-3 rounded-2xl border border-blue-100 dark:border-blue-900/30">
             <i class="pi pi-info-circle mr-2 text-blue-500"></i>
-            Las variantes se muestran debajo de su producto principal. Los campos de <b>Costo</b> y <b>Mostrar en POS</b> para las variantes están bloqueados porque heredan la configuración del producto principal.
+            Las variantes se muestran debajo de su producto principal. Los campos bloqueados son heredados del producto base.
         </div>
 
         <div class="overflow-x-auto">
             <table class="w-full text-sm text-left text-gray-500 dark:text-gray-400 border-collapse">
-                <thead class="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400 sticky top-0 z-10 shadow-sm">
+                <thead class="text-[10px] uppercase tracking-widest text-gray-500 font-bold bg-gray-50 dark:bg-[#1a1a1a] dark:text-gray-400 sticky top-0 z-10">
                     <tr>
                         <th scope="col" class="px-4 py-3 min-w-[200px]">Nombre / Variante</th>
                         <th scope="col" class="px-4 py-3 min-w-[120px]">SKU</th>
@@ -102,13 +111,15 @@ const submitBulkUpdate = () => {
                         <th scope="col" class="px-4 py-3 min-w-[100px]">Stock Mín.</th>
                         <th scope="col" class="px-4 py-3 min-w-[100px]">Stock Máx.</th>
                         <th scope="col" class="px-4 py-3 text-center">En POS</th>
+                        <th scope="col" class="px-4 py-3 text-center">En línea</th>
+                        <th scope="col" class="px-4 py-3 text-center">Destacado</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr v-for="(item, index) in form.items" :key="`${item.type}-${item.id}`"
                         :class="[
-                            'border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50',
-                            item.type === 'variant' ? 'bg-gray-50/50 dark:bg-gray-800/30' : 'bg-white dark:bg-gray-800'
+                            'border-b dark:border-[#2a2a2a] hover:bg-gray-50 dark:hover:bg-[#1a1a1a]',
+                            item.type === 'variant' ? 'bg-gray-50/50 dark:bg-[#1a1a1a]/50' : 'bg-white dark:bg-[#232323]'
                         ]">
                         
                         <!-- Nombre -->
@@ -148,9 +159,25 @@ const submitBulkUpdate = () => {
 
                         <!-- Mostrar en POS -->
                         <td class="px-4 py-2 text-center">
-                            <InputSwitch v-if="item.type === 'product'" v-model="item.show_in_pos" />
+                            <ToggleSwitch v-if="item.type === 'product'" v-model="item.show_in_pos" />
                             <div v-else v-tooltip.top="'Heredado del producto base'">
-                                <InputSwitch disabled :modelValue="true" class="opacity-40" />
+                                <ToggleSwitch disabled :modelValue="true" class="opacity-40" />
+                            </div>
+                        </td>
+
+                        <!-- En línea -->
+                        <td class="px-4 py-2 text-center">
+                            <ToggleSwitch v-if="item.type === 'product'" v-model="item.show_online" />
+                            <div v-else v-tooltip.top="'Heredado del producto base'">
+                                <ToggleSwitch disabled :modelValue="false" class="opacity-40" />
+                            </div>
+                        </td>
+
+                        <!-- Destacado -->
+                        <td class="px-4 py-2 text-center">
+                            <ToggleSwitch v-if="item.type === 'product'" v-model="item.is_featured" />
+                            <div v-else v-tooltip.top="'Heredado del producto base'">
+                                <ToggleSwitch disabled :modelValue="false" class="opacity-40" />
                             </div>
                         </td>
                     </tr>
