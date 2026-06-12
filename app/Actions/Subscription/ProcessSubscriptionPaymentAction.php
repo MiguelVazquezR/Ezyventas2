@@ -2,6 +2,7 @@
 
 namespace App\Actions\Subscription;
 
+use App\Actions\Referral\ApplyReferralDiscountAction;
 use App\Enums\BillingPeriod;
 use App\Enums\ExpenseStatus;
 use App\Enums\InvoiceStatus;
@@ -9,6 +10,7 @@ use App\Enums\PaymentMethod;
 use App\Enums\SubscriptionPaymentStatus;
 use App\Mail\AdminNewPaymentNotification;
 use App\Models\Expense;
+use App\Models\ReferralUsage;
 use App\Models\Subscription;
 use App\Models\SubscriptionVersion;
 use App\Models\User;
@@ -96,7 +98,29 @@ class ProcessSubscriptionPaymentAction
             }
             DB::table('subscription_items')->insert($subscriptionItems);
 
-            // 5. Crear el Pago y adjuntar comprobante
+            // 5. Calcular monto con posible descuento por referido
+            $amount = (float) $validated['total_amount'];
+            $referralDiscountPct = null;
+            $referralDiscountAmount = null;
+            $referralData = null;
+
+            if (!empty($validated['referral_code'])) {
+                try {
+                    $applyReferral = app(ApplyReferralDiscountAction::class);
+                    $referralData = $applyReferral->execute(
+                        $validated['referral_code'],
+                        $subscription,
+                        $amount
+                    );
+                    $amount = $referralData['final_amount'];
+                    $referralDiscountPct = $referralData['discount_pct'];
+                    $referralDiscountAmount = $referralData['discount_amount'];
+                } catch (\Exception $e) {
+                    Log::warning("Código de referido no aplicado: " . $e->getMessage());
+                }
+            }
+
+            // 6. Crear el Pago y adjuntar comprobante
             $paymentDetails = [];
             if ($mode === 'upgrade') {
                 $paymentDetails['is_upgrade'] = true;
@@ -104,24 +128,47 @@ class ProcessSubscriptionPaymentAction
             }
 
             $payment = $newVersion->payments()->create([
-                'amount' => $validated['total_amount'],
+                'amount' => $amount,
                 'payment_method' => $validated['payment_method'],
                 'status' => SubscriptionPaymentStatus::PENDING,
                 'invoice_status' => InvoiceStatus::NOT_REQUESTED,
                 'payment_details' => $paymentDetails,
+                'referral_discount_pct' => $referralDiscountPct,
+                'referral_discount_amount' => $referralDiscountAmount,
             ]);
 
             if ($request->hasFile('proof_of_payment')) {
                 $payment->addMediaFromRequest('proof_of_payment')->toMediaCollection('proof_of_payment');
             }
 
-            // 6. Generar Gasto Opcional
+            // 6.5. Registrar ReferralUsage si se aplicó código de referido
+            if ($referralData) {
+                $settings = $referralData['settings'];
+                $referralCode = $referralData['referral_code'];
+
+                // Calcular mensualidad base (sin descuento) para el premio
+                $monthlyBase = $this->calculateMonthlyBase($subscriptionItems, $billingPeriod);
+
+                ReferralUsage::create([
+                    'referral_code_id' => $referralCode->id,
+                    'referred_subscription_id' => $subscription->id,
+                    'subscription_payment_id' => $payment->id,
+                    'reward_status' => 'pending',
+                    'referred_discount_pct' => $referralDiscountPct,
+                    'referrer_reward_pct' => $settings->referrer_reward_pct,
+                    'referrer_ongoing_discount_pct' => $settings->referrer_ongoing_discount_pct,
+                    'monthly_base_amount' => $monthlyBase,
+                    'reward_amount' => round($monthlyBase * ((float) $settings->referrer_reward_pct / 100), 2),
+                ]);
+            }
+
+            // 7. Generar Gasto Opcional
             if (!empty($validated['bank_account_id']) && !empty($validated['expense_category_id'])) {
                 Expense::create([
                     'folio' => $mode === 'upgrade' ? 'Pago de mejora de suscripción EzyVentas' : 'Pago de renovación de suscripción EzyVentas',
                     'user_id' => $user->id,
                     'branch_id' => $user->branch_id,
-                    'amount' => $validated['total_amount'],
+                    'amount' => $amount,
                     'expense_category_id' => $validated['expense_category_id'],
                     'expense_date' => now(),
                     'status' => ExpenseStatus::PENDING,
@@ -131,7 +178,7 @@ class ProcessSubscriptionPaymentAction
                 ]);
             }
 
-            // 7. Notificar al Admin
+            // 8. Notificar al Admin
             try {
                 $adminUser = User::whereHas('branch', fn($q) => $q->where('subscription_id', 1))->select('email')->first();
                 if ($adminUser && app()->environment('production')) {
@@ -145,6 +192,24 @@ class ProcessSubscriptionPaymentAction
                 Log::error("Fallo al enviar correo de notificación de pago: " . $e->getMessage());
             }
         });
+    }
+
+    /**
+     * Calcula la mensualidad base a partir de los items insertados.
+     * Si es anual, divide entre 12 para obtener el equivalente mensual.
+     */
+    private function calculateMonthlyBase(array $subscriptionItems, BillingPeriod $billingPeriod): float
+    {
+        $total = 0;
+        foreach ($subscriptionItems as $item) {
+            $total += (float) $item['unit_price'] * (int) $item['quantity'];
+        }
+
+        if ($billingPeriod === BillingPeriod::ANNUALLY) {
+            $total = $total / 12;
+        }
+
+        return round($total, 2);
     }
 
     /**
