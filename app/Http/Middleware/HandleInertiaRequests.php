@@ -63,6 +63,22 @@ class HandleInertiaRequests extends Middleware
             // Evaluamos notificaciones delegadas al modelo User de forma perezosa (lazy evaluation)
             'notifications' => fn() => $request->user() ? $request->user()->getGlobalNotifications() : null,
 
+            // Notificaciones del sistema de referidos (para badge en topbar)
+            'referralNotifications' => function () use ($request) {
+                $user = $request->user();
+                if (!$user) return null;
+
+                $subscription = $user->branch->subscription ?? null;
+                if (!$subscription) return null;
+
+                return [
+                    'pending_rewards_count' => $subscription->referralUsagesAsReferrer()
+                        ->where('reward_status', 'pending')
+                        ->count(),
+                    'unseen_referrals_count' => $subscription->getUnseenReferralsCount(),
+                ];
+            },
+
             'flash' => fn() => [
                 'success' => $request->session()->get('success'),
                 'error' => $request->session()->get('error'),

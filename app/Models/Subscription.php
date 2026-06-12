@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 use Spatie\MediaLibrary\HasMedia;
@@ -315,4 +316,44 @@ class Subscription extends Model implements HasMedia
 
     public function expenses(): HasManyThrough { return $this->hasManyThrough(Expense::class, Branch::class); }
     public function settings(): MorphMany { return $this->morphMany(SettingValue::class, 'configurable'); }
+
+    /*
+    |--------------------------------------------------------------------------
+    | REFERRAL SYSTEM RELATIONSHIPS
+    |--------------------------------------------------------------------------
+    */
+
+    public function referralCode(): HasOne
+    {
+        return $this->hasOne(ReferralCode::class);
+    }
+
+    public function referralUsagesAsReferrer(): HasManyThrough
+    {
+        return $this->hasManyThrough(ReferralUsage::class, ReferralCode::class);
+    }
+
+    public function referralUsageAsReferred(): HasOne
+    {
+        return $this->hasOne(ReferralUsage::class, 'referred_subscription_id');
+    }
+
+    public function referrerBankAccount(): HasOne
+    {
+        return $this->hasOne(ReferrerBankAccount::class);
+    }
+
+    public function hasPendingReferralRewards(): bool
+    {
+        return $this->referralUsagesAsReferrer()
+            ->where('reward_status', 'pending')
+            ->exists();
+    }
+
+    public function getUnseenReferralsCount(): int
+    {
+        return $this->referralUsagesAsReferrer()
+            ->whereNull('seen_at')
+            ->count();
+    }
 }
