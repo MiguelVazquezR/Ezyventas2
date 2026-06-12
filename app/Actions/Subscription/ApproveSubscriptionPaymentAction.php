@@ -2,6 +2,9 @@
 
 namespace App\Actions\Subscription;
 
+use App\Actions\Referral\GenerateReferralCodeAction;
+use App\Actions\Referral\ProcessReferralOnPaymentApprovedAction;
+use App\Actions\Referral\UpdateReferrerOngoingDiscountAction;
 use App\Enums\ExpenseStatus;
 use App\Enums\SubscriptionPaymentStatus;
 use App\Enums\SubscriptionStatus;
@@ -57,7 +60,30 @@ class ApproveSubscriptionPaymentAction
             }
         });
 
-        // 4. Notificar al cliente
+        // 4. Procesar sistema de referidos (descuentos y premios)
+        $subscription = $payment->subscriptionVersion->subscription;
+
+        try {
+            // Activar descuento continuo del referidor si este pago tiene referido
+            app(ProcessReferralOnPaymentApprovedAction::class)->execute($payment);
+
+            // Si este pago es una renovación de un referido, actualizar descuento del referidor
+            $referredUsage = $subscription->referralUsageAsReferred;
+            if ($referredUsage) {
+                app(UpdateReferrerOngoingDiscountAction::class)->execute($subscription);
+            }
+        } catch (\Exception $e) {
+            Log::error("Error procesando referidos en aprobación: " . $e->getMessage());
+        }
+
+        // 5. Generar código de referido para la suscripción activada
+        try {
+            app(GenerateReferralCodeAction::class)->execute($subscription);
+        } catch (\Exception $e) {
+            Log::error("Error generando código de referido: " . $e->getMessage());
+        }
+
+        // 6. Notificar al cliente
         try {
             $subscription = $payment->subscriptionVersion->subscription;
             $subscriptionEmail = $subscription->contact_email; 

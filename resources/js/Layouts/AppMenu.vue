@@ -177,6 +177,24 @@ const adminModel = ref([
                 to: route('admin.release-notes.index'),
                 routeName: 'admin.release-notes.*'
             },
+            {
+                label: 'Referidos',
+                icon: 'pi pi-users',
+                items: [
+                    {
+                        label: 'Historial',
+                        icon: 'pi pi-list',
+                        to: route('admin.referrals.index'),
+                        routeName: 'admin.referrals.index'
+                    },
+                    {
+                        label: 'Configuración',
+                        icon: 'pi pi-cog',
+                        to: route('admin.referrals.settings'),
+                        routeName: 'admin.referrals.settings'
+                    },
+                ]
+            },
         ]
     },
 ]);

@@ -151,6 +151,7 @@ class SubscriptionController extends Controller
             'currentVersion' => $versionToDisplay,
             'allPlanItems' => PlanItem::where('is_active', true)->get(),
             'hasPendingPayment' => (bool) $subscription->getPendingPayment(),
+            'isFirstPayment' => $subscription->versions()->count() <= 1,
             'ourBankAccounts' => BankAccount::whereHas('branches', fn($q) => $q->where('branch_id', 1)->where('is_favorite', true))->get(),
             'userBankAccounts' => $userBankAccounts,
             'expenseCategories' => ExpenseCategory::where('subscription_id', $subscription->id)->get(['id', 'name']),
@@ -189,6 +190,7 @@ class SubscriptionController extends Controller
             'proof_of_payment' => ['nullable', 'required_if:payment_method,transferencia', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:2048'],
             'bank_account_id' => 'nullable|numeric|exists:bank_accounts,id',
             'expense_category_id' => [Rule::requiredIf($request->bank_account_id != null)],
+            'referral_code' => ['nullable', 'string', 'max:12'],
         ]);
 
         $subscription = $user->branch->subscription;
