@@ -40,11 +40,6 @@ class SubscriptionPayment extends Model implements HasMedia // AÑADIDO HasMedia
         return $this->belongsTo(SubscriptionVersion::class, 'subscription_version_id');
     }
 
-    public function referralUsage(): HasOne
-    {
-        return $this->hasOne(ReferralUsage::class);
-    }
-
     // AÑADIDO: Colección de media para el comprobante
     public function registerMediaCollections(): void
     {
