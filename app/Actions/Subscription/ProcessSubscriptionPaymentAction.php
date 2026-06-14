@@ -61,8 +61,8 @@ class ProcessSubscriptionPaymentAction
             }
         }
 
-        // Aplicar descuento continuo por ser referidor (acumulativo: 10% por cada referido activo)
-        $referrerActivePct = $subscription->referrer_discount_active
+        // Aplicar descuento continuo por ser referidor (solo aplica a pagos mensuales)
+        $referrerActivePct = $validated['billing_period'] === 'mensual'
             ? $subscription->getReferrerActiveDiscountPct()
             : 0;
 

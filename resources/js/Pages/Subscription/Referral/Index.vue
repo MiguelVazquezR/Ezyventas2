@@ -10,6 +10,9 @@ const props = defineProps({
     totalEarned: Number,
     bankAccount: Object,
     settings: Object,
+    subscriptionCost: Number,
+    referrerActiveDiscountPct: Number,
+    activeReferralsCount: Number,
 });
 
 const activeTab = ref(0);
@@ -120,8 +123,44 @@ if (hasUnseen.value) {
                     <p class="text-3xl font-light tracking-tight text-amber-500 mt-2 m-0">${{ pendingRewards.toFixed(2) }}</p>
                 </div>
                 <div class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] p-6">
-                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Total referidos</p>
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Referidos</p>
                     <p class="text-3xl font-light tracking-tight text-gray-900 dark:text-white mt-2 m-0">{{ referrals.length }}</p>
+                    <p class="text-[10px] text-gray-500 m-0 mt-1">
+                        <span class="text-green-500 font-bold">{{ activeReferralsCount }}</span> activos
+                        <span class="text-gray-300 mx-1">•</span>
+                        <span class="text-gray-400">{{ referrals.length - activeReferralsCount }} inactivos</span>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Costo de suscripción y descuento activo -->
+            <div class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-10 h-10 rounded-full bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0 border border-purple-100 dark:border-purple-900/30">
+                        <i class="pi pi-wallet !text-sm text-purple-500"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Costo actual de tu suscripción</h3>
+                        <div v-if="referrerActiveDiscountPct > 0" class="flex items-baseline gap-2 mt-2">
+                            <span class="text-lg text-gray-400 line-through font-mono">${{ (subscriptionCost || 0).toFixed(2) }}</span>
+                            <span class="text-3xl font-light tracking-tight text-purple-600 dark:text-purple-400">${{ ((subscriptionCost || 0) * (1 - referrerActiveDiscountPct / 100)).toFixed(2) }}</span>
+                            <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400">/mes</span>
+                        </div>
+                        <div v-else class="flex items-baseline gap-2 mt-2">
+                            <span class="text-3xl font-light tracking-tight text-gray-900 dark:text-white">${{ (subscriptionCost || 0).toFixed(2) }}</span>
+                            <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400">/mes</span>
+                        </div>
+                        <div v-if="referrerActiveDiscountPct > 0" class="mt-3 bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-900/30 rounded-2xl p-3">
+                            <p class="text-sm text-purple-800 dark:text-purple-200 m-0 flex items-center gap-2">
+                                <i class="pi pi-check-circle !text-xs"></i>
+                                Tienes un <strong>{{ referrerActiveDiscountPct }}% de descuento</strong> por tus referidos activos
+                            </p>
+                            <p class="text-xs text-purple-600 dark:text-purple-400 m-0 mt-1">
+                                Aplicas descuento al pagar tu suscripción de forma mensual. Descuento estimado: <strong class="font-mono">${{ ((subscriptionCost || 0) * (referrerActiveDiscountPct / 100)).toFixed(2) }}</strong>
+                            </p>
+                        </div>
+                        <p v-else class="text-xs text-gray-500 m-0 mt-2">Refiere a otros negocios y obtén descuento en tu plan.</p>
+                    </div>
                 </div>
             </div>
 
@@ -219,6 +258,16 @@ if (hasUnseen.value) {
                     <Column header="Estado">
                         <template #body="{ data }">
                             <Tag :value="rewardLabel(data.reward_status)" :severity="rewardSeverity(data.reward_status)" rounded />
+                        </template>
+                    </Column>
+                    <Column header="Suscripción" style="width: 7rem">
+                        <template #body="{ data }">
+                            <div class="flex items-center gap-1.5">
+                                <span :class="['w-1.5 h-1.5 rounded-full', data.referred_subscription_active ? 'bg-green-500 animate-pulse' : 'bg-gray-400']"></span>
+                                <span class="text-xs" :class="data.referred_subscription_active ? 'text-green-600 dark:text-green-400 font-medium' : 'text-gray-400'">
+                                    {{ data.referred_subscription_active ? 'Activo' : 'Inactivo' }}
+                                </span>
+                            </div>
                         </template>
                     </Column>
                 </DataTable>

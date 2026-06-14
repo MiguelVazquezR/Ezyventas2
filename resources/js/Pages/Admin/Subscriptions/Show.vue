@@ -15,6 +15,9 @@ const props = defineProps({
     subscriptionStatus: Object,
     fiscalDocumentUrl: String,
     settingsData: Object,
+    planValue: Number,
+    referrerActiveDiscountPct: Number,
+    subscriptionCost: Number,
 });
 
 // --- ESTADOS DE MODALES ---
@@ -95,15 +98,6 @@ const currentVersion = computed(() => {
         const now = new Date();
         return start <= now && end >= new Date(now.setHours(0,0,0,0));
     }) || props.subscription.versions[0];
-});
-
-// El valor del plan ahora se toma directamente del monto ('amount') del pago más reciente de la versión
-const planValue = computed(() => {
-    if (!currentVersion.value || !currentVersion.value.payments || currentVersion.value.payments.length === 0) return 0;
-    
-    // Obtenemos el pago más reciente (ya vienen ordenados de forma descendente desde el backend)
-    const latestPayment = currentVersion.value.payments[0];
-    return Number(latestPayment.amount) || 0;
 });
 
 // --- TESLA UI PT ---
@@ -215,7 +209,14 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
                                 </div>
                                 <div class="text-right">
                                     <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-1">Valor del plan</p>
-                                    <span class="text-4xl font-light tracking-tight text-gray-900 dark:text-white">
+                                    <div v-if="referrerActiveDiscountPct > 0" class="flex flex-col items-end">
+                                        <span class="text-lg text-gray-400 line-through font-mono">{{ formatCurrency(subscriptionCost) }}</span>
+                                        <span class="text-4xl font-light tracking-tight text-purple-600 dark:text-purple-400">
+                                            {{ formatCurrency(subscriptionCost * (1 - referrerActiveDiscountPct / 100)) }}
+                                        </span>
+                                        <span class="text-[9px] text-purple-500 font-bold uppercase tracking-widest mt-0.5">-{{ referrerActiveDiscountPct }}% desc. ref.</span>
+                                    </div>
+                                    <span v-else class="text-4xl font-light tracking-tight text-gray-900 dark:text-white">
                                         {{ formatCurrency(planValue) }}
                                     </span>
                                 </div>

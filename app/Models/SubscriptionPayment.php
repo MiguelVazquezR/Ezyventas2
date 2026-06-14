@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\InvoiceStatus;
 use App\Enums\SubscriptionPaymentStatus;
+use App\Models\ReferralUsage;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -42,6 +43,11 @@ class SubscriptionPayment extends Model implements HasMedia // AÑADIDO HasMedia
     public function subscriptionVersion(): BelongsTo
     {
         return $this->belongsTo(SubscriptionVersion::class, 'subscription_version_id');
+    }
+
+    public function referralUsage(): HasOne
+    {
+        return $this->hasOne(ReferralUsage::class, 'subscription_payment_id');
     }
 
     // AÑADIDO: Colección de media para el comprobante

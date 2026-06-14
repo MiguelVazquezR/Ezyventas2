@@ -48,7 +48,7 @@ watch(() => props.visible, (newVal) => {
         editForm.limits = limitsObj;
         editForm.modules = modulesObj;
     }
-});
+}, { immediate: true });
 
 const submit = () => {
     editForm.put(route('admin.subscriptions.update-version-items', props.version.id), {
