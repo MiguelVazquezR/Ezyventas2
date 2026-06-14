@@ -140,9 +140,24 @@ const textareaPt = {
 
                                 <li class="flex justify-between items-center pt-2">
                                     <span class="text-[10px] uppercase tracking-widest font-bold text-gray-900 dark:text-gray-100 m-0 shrink-0">Monto a pagar</span>
-                                    <span class="font-light tracking-tight text-3xl leading-none text-gray-900 dark:text-white m-0">
-                                        {{ formatCurrency(payment.amount) }}
-                                    </span>
+                                    <div class="flex flex-col items-end gap-1">
+                                        <div v-if="payment.referral_discount_pct" class="flex items-center gap-2">
+                                            <span class="text-sm text-gray-400 line-through font-mono">{{ formatCurrency(parseFloat(payment.amount) + parseFloat(payment.referral_discount_amount || 0)) }}</span>
+                                            <span class="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-widest bg-green-100 dark:bg-green-900/20 px-2 py-0.5 rounded-full">-{{ payment.referral_discount_pct }}% ref.</span>
+                                        </div>
+                                        <span class="font-light tracking-tight text-3xl leading-none text-gray-900 dark:text-white m-0">
+                                            {{ formatCurrency(payment.amount) }}
+                                        </span>
+                                    </div>
+                                </li>
+
+                                <!-- Desglose de descuento por referido -->
+                                <li v-if="payment.referral_discount_pct" class="flex justify-between items-center border-t border-gray-200 dark:border-[#2a2a2a] pt-4 mt-2">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 shrink-0">Descuento aplicado</span>
+                                    <div class="flex flex-col items-end gap-0.5">
+                                        <span class="text-sm text-gray-600 dark:text-gray-400">{{ payment.referral_discount_pct }}% por código de referido</span>
+                                        <span class="text-sm font-medium text-green-600 dark:text-green-400">-{{ formatCurrency(payment.referral_discount_amount || 0) }}</span>
+                                    </div>
                                 </li>
                             </ul>
                         </div>

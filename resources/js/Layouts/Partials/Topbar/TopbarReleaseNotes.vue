@@ -1,9 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { router, Link, usePage } from '@inertiajs/vue3';
-import Drawer from 'primevue/drawer';
-import Skeleton from 'primevue/skeleton';
-import Button from 'primevue/button';
 import axios from 'axios';
 
 const page = usePage();

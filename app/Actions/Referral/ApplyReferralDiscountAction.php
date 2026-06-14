@@ -22,8 +22,8 @@ class ApplyReferralDiscountAction
             ->where('is_active', true)
             ->firstOrFail();
 
-        // No puede usar su propio código
-        if ($referral->subscription_id === $referredSubscription->id) {
+        // No puede usar su propio código (misma suscripción)
+        if ($referral->user->branch->subscription_id === $referredSubscription->id) {
             throw new \Exception('No puedes usar tu propio código de referido.');
         }
 

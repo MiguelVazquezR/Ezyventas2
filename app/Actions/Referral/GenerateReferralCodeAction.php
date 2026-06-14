@@ -3,15 +3,15 @@
 namespace App\Actions\Referral;
 
 use App\Models\ReferralCode;
-use App\Models\Subscription;
+use App\Models\User;
 use Illuminate\Support\Str;
 
 class GenerateReferralCodeAction
 {
-    public function execute(Subscription $subscription): ReferralCode
+    public function execute(User $user): ReferralCode
     {
-        if ($subscription->referralCode) {
-            return $subscription->referralCode;
+        if ($user->referralCode) {
+            return $user->referralCode;
         }
 
         do {
@@ -19,7 +19,7 @@ class GenerateReferralCodeAction
         } while (ReferralCode::where('code', $code)->exists());
 
         return ReferralCode::create([
-            'subscription_id' => $subscription->id,
+            'user_id' => $user->id,
             'code' => $code,
             'is_active' => true,
         ]);

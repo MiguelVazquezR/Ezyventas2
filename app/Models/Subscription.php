@@ -317,43 +317,31 @@ class Subscription extends Model implements HasMedia
     public function expenses(): HasManyThrough { return $this->hasManyThrough(Expense::class, Branch::class); }
     public function settings(): MorphMany { return $this->morphMany(SettingValue::class, 'configurable'); }
 
-    /*
-    |--------------------------------------------------------------------------
-    | REFERRAL SYSTEM RELATIONSHIPS
-    |--------------------------------------------------------------------------
-    */
-
-    public function referralCode(): HasOne
-    {
-        return $this->hasOne(ReferralCode::class);
-    }
-
-    public function referralUsagesAsReferrer(): HasManyThrough
-    {
-        return $this->hasManyThrough(ReferralUsage::class, ReferralCode::class);
-    }
-
     public function referralUsageAsReferred(): HasOne
     {
         return $this->hasOne(ReferralUsage::class, 'referred_subscription_id');
     }
 
-    public function referrerBankAccount(): HasOne
+    /**
+     * Calcula dinámicamente el % total de descuento continuo que esta suscripción
+     * recibe por todos sus referidos activos.
+     */
+    public function getReferrerActiveDiscountPct(): float
     {
-        return $this->hasOne(ReferrerBankAccount::class);
-    }
+        $totalPct = 0;
 
-    public function hasPendingReferralRewards(): bool
-    {
-        return $this->referralUsagesAsReferrer()
-            ->where('reward_status', 'pending')
-            ->exists();
-    }
+        foreach ($this->branches as $branch) {
+            foreach ($branch->users as $user) {
+                if ($user->referralUsagesAsReferrer()->exists()) {
+                    $totalPct += (float) $user->referralUsagesAsReferrer()
+                        ->whereHas('referredSubscription', fn($q) =>
+                            $q->whereHas('versions', fn($v) => $v->where('end_date', '>=', now()->startOfDay()))
+                        )
+                        ->sum('referrer_ongoing_discount_pct');
+                }
+            }
+        }
 
-    public function getUnseenReferralsCount(): int
-    {
-        return $this->referralUsagesAsReferrer()
-            ->whereNull('seen_at')
-            ->count();
+        return $totalPct;
     }
 }

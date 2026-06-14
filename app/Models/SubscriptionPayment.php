@@ -19,20 +19,24 @@ class SubscriptionPayment extends Model implements HasMedia // AÑADIDO HasMedia
 
     protected $fillable = [
         'subscription_version_id', 
-        'amount', 
+        'amount',
+        'referral_discount_pct',
+        'referral_discount_amount',
         'payment_method', 
         'invoiced', 
         'invoice_status',
-        'status', // AÑADIDO
-        'payment_details' // AÑADIDO
+        'status',
+        'payment_details'
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'referral_discount_pct' => 'decimal:2',
+        'referral_discount_amount' => 'decimal:2',
         'invoiced' => 'boolean',
         'invoice_status' => InvoiceStatus::class,
-        'status' => SubscriptionPaymentStatus::class, // AÑADIDO
-        'payment_details' => 'array', // AÑADIDO
+        'status' => SubscriptionPaymentStatus::class,
+        'payment_details' => 'array',
     ];
     
     public function subscriptionVersion(): BelongsTo

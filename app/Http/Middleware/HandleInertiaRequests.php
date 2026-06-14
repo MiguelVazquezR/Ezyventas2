@@ -68,14 +68,11 @@ class HandleInertiaRequests extends Middleware
                 $user = $request->user();
                 if (!$user) return null;
 
-                $subscription = $user->branch->subscription ?? null;
-                if (!$subscription) return null;
-
                 return [
-                    'pending_rewards_count' => $subscription->referralUsagesAsReferrer()
+                    'pending_rewards_count' => $user->referralUsagesAsReferrer()
                         ->where('reward_status', 'pending')
                         ->count(),
-                    'unseen_referrals_count' => $subscription->getUnseenReferralsCount(),
+                    'unseen_referrals_count' => $user->getUnseenReferralsCount(),
                 ];
             },
 
