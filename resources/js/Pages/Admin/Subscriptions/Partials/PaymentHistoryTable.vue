@@ -84,12 +84,18 @@ const tagPt = { root: { class: '!rounded-full !px-2 !py-0.5 !text-[9px] !font-bo
             <!-- Columna: Pagos asociados -->
             <Column header="Pagos" style="min-width: 14rem">
                 <template #body="{ data }">
-                    <div v-if="data.payments && data.payments.length > 0" class="space-y-1.5">
-                        <div v-for="payment in data.payments" :key="payment.id" class="flex items-center gap-2">
+                    <div v-if="data.payments && data.payments.length > 0" class="space-y-2">
+                        <div v-for="payment in data.payments" :key="payment.id" class="flex items-center gap-2 flex-wrap">
                             <i
                                 :class="[getPaymentStatusIcon(payment.status).icon, getPaymentStatusIcon(payment.status).class, '!text-[10px]']"
                             ></i>
-                            <span class="font-mono text-sm dark:text-white">{{ formatCurrency(payment.amount) }}</span>
+                            <div v-if="payment.referral_discount_pct" class="flex items-baseline gap-1">
+                                <span class="text-[10px] text-gray-400 line-through font-mono">{{ formatCurrency(parseFloat(payment.amount) + parseFloat(payment.referral_discount_amount || 0)) }}</span>
+                                <i class="pi pi-arrow-right !text-[8px] text-gray-500"></i>
+                                <span class="font-mono text-sm dark:text-white">{{ formatCurrency(payment.amount) }}</span>
+                                <span class="text-[9px] text-green-600 dark:text-green-400 font-bold">-{{ payment.referral_discount_pct }}% ref.</span>
+                            </div>
+                            <span v-else class="font-mono text-sm dark:text-white">{{ formatCurrency(payment.amount) }}</span>
                             <span class="text-[9px] uppercase tracking-widest text-gray-500">{{ payment.payment_method }}</span>
                             <Tag
                                 :value="payment.status"
@@ -145,11 +151,21 @@ const tagPt = { root: { class: '!rounded-full !px-2 !py-0.5 !text-[9px] !font-bo
                                 <span class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-widest">
                                     {{ item.billing_period || '--' }}
                                 </span>
-                                <span class="text-sm font-mono text-gray-900 dark:text-white">
+                                <span v-if="item.package_size > 1" class="text-xs text-gray-400 whitespace-nowrap" v-tooltip.top="`${(item.quantity / item.package_size)} paquetes × ${item.package_size} unds. c/u`">
+                                    {{ (item.quantity / item.package_size) }} paq. × {{ item.package_size }} und.
+                                </span>
+                                <span v-else class="text-sm font-mono text-gray-900 dark:text-white">
                                     Cant: {{ item.quantity }}
                                 </span>
                                 <span class="text-sm font-mono text-gray-500">
-                                    {{ formatCurrency(item.unit_price) }}
+                                    ${{ Number(item.unit_price).toFixed(2) }}<template v-if="item.package_size > 1">/paq.</template>
+                                </span>
+                                <span v-if="item.package_size > 1" class="text-[10px] text-gray-400">
+                                    (${{ Number(item.price_per_unit).toFixed(2) }}/und.)
+                                </span>
+                                <span class="text-xs text-gray-400">=</span>
+                                <span class="text-sm font-mono font-bold text-gray-900 dark:text-white">
+                                    {{ formatCurrency(((item.quantity || 0) / (item.package_size || 1)) * (item.unit_price || 0)) }}
                                 </span>
                             </div>
                         </div>

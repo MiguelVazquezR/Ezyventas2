@@ -140,6 +140,9 @@ class SubscriptionController extends Controller
         $subscription = $user->branch->subscription;
         $versionToDisplay = $subscription->versions()->with('items')->latest('id')->first();
 
+        // Descuento acumulado por referidos activos (calculado dinámicamente)
+        $referrerActiveDiscountPct = $subscription->getReferrerActiveDiscountPct();
+
         // Extraer lógica de configuración de versión y modo
         $managementData = $this->getManagementData($subscription, $versionToDisplay);
 
@@ -152,6 +155,7 @@ class SubscriptionController extends Controller
             'allPlanItems' => PlanItem::where('is_active', true)->get(),
             'hasPendingPayment' => (bool) $subscription->getPendingPayment(),
             'isFirstPayment' => $subscription->versions()->count() <= 1,
+            'referrerActiveDiscountPct' => (float) $referrerActiveDiscountPct,
             'ourBankAccounts' => BankAccount::whereHas('branches', fn($q) => $q->where('branch_id', 1)->where('is_favorite', true))->get(),
             'userBankAccounts' => $userBankAccounts,
             'expenseCategories' => ExpenseCategory::where('subscription_id', $subscription->id)->get(['id', 'name']),
