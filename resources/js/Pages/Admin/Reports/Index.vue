@@ -261,6 +261,49 @@ const datePickerPt = {
                         <p class="text-[9px] text-gray-400 uppercase tracking-widest m-0 truncate">Valor medio de las nuevas suscripciones</p>
                     </div>
 
+                    <!-- KPI 7: Descuentos por referidos -->
+                    <div class="bg-gray-50 dark:bg-[#1a1a1a] p-6 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
+                            <i class="pi pi-gift !text-6xl text-green-500"></i>
+                        </div>
+                        <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 flex items-center gap-2">
+                            Descuentos por referidos
+                        </h2>
+                        <div class="flex items-baseline gap-2 mt-4 mb-1">
+                            <span class="text-3xl font-light tracking-tight text-green-600 dark:text-green-400">
+                                {{ formatCurrency(metrics.referralDiscountsGiven) }}
+                            </span>
+                            <span class="text-[9px] text-gray-400 uppercase tracking-widest">descontado</span>
+                        </div>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="text-xs text-gray-500">Bruto: {{ formatCurrency(metrics.periodGrossRevenue) }}</span>
+                            <i class="pi pi-arrow-right !text-[10px] text-gray-400"></i>
+                            <span class="text-xs font-medium text-gray-900 dark:text-white">Neto: {{ formatCurrency(metrics.periodRevenue) }}</span>
+                        </div>
+                        <p class="text-[9px] text-gray-400 uppercase tracking-widest m-0 mt-1">Ingreso bruto vs neto del periodo</p>
+                    </div>
+
+                    <!-- KPI 8: Premios por referidos -->
+                    <div class="bg-gray-50 dark:bg-[#1a1a1a] p-6 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col relative overflow-hidden group">
+                        <div class="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
+                            <i class="pi pi-dollar !text-6xl text-amber-500"></i>
+                        </div>
+                        <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 flex items-center gap-2">
+                            Premios a referidores
+                        </h2>
+                        <div class="grid grid-cols-2 gap-4 mt-4">
+                            <div>
+                                <span class="text-2xl font-light tracking-tight text-amber-600 dark:text-amber-400">{{ formatCurrency(metrics.pendingReferralRewards) }}</span>
+                                <p class="text-[9px] text-gray-400 uppercase tracking-widest m-0">Pendientes</p>
+                            </div>
+                            <div>
+                                <span class="text-2xl font-light tracking-tight text-green-600 dark:text-green-400">{{ formatCurrency(metrics.totalReferralRewards) }}</span>
+                                <p class="text-[9px] text-gray-400 uppercase tracking-widest m-0">Pagados</p>
+                            </div>
+                        </div>
+                        <p class="text-[9px] text-gray-400 uppercase tracking-widest m-0 mt-2">{{ metrics.activeReferrals }} referidos activos</p>
+                    </div>
+
                 </div>
 
                 <!-- MÓDULO GRÁFICO (TELEMETRÍA) -->

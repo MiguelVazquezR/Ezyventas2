@@ -16,6 +16,7 @@ const props = defineProps({
     currentBillingPeriod: String,
     ourBankAccounts: Array,
     hasPendingPayment: Boolean,
+    isFirstPayment: Boolean,
     userBankAccounts: Array, // Cuentas del suscriptor
     expenseCategories: Array, // Categorías de gasto del suscriptor
 });
@@ -42,6 +43,7 @@ const form = useForm({
     proof_of_payment: null,
     bank_account_id: null,
     expense_category_id: null,
+    referral_code: '',
 });
 
 // --- Lógica de Versión de Comparación ---
@@ -242,12 +244,52 @@ const confirmRevert = () => {
 
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 
+// --- Cálculos de descuento por referido ---
+const referralDiscountAmount = computed(() => {
+    if (!codeValidation.value?.valid || !codeValidation.value?.discount_pct) return 0;
+    return form.total_amount * (codeValidation.value.discount_pct / 100);
+});
+
+const finalAmountWithReferral = computed(() => {
+    return form.total_amount - referralDiscountAmount.value;
+});
+
 const onFileSelect = (event) => {
     form.proof_of_payment = event.files[0];
 };
 const onFileRemove = () => {
     form.proof_of_payment = null;
 };
+
+// --- Validación de código de referido en tiempo real ---
+const validatingCode = ref(false);
+const codeValidation = ref(null); // { valid: bool, message: string, discount_pct: number }
+
+let validateTimer = null;
+watch(() => form.referral_code, (newCode) => {
+    clearTimeout(validateTimer);
+    codeValidation.value = null;
+
+    const trimmed = (newCode || '').trim();
+    if (trimmed.length < 6) {
+        return;
+    }
+
+    validatingCode.value = true;
+    validateTimer = setTimeout(() => {
+        fetch(route('referrals.validate', { code: trimmed }))
+            .then(r => r.json())
+            .then(data => {
+                codeValidation.value = data;
+            })
+            .catch(() => {
+                codeValidation.value = { valid: false, message: 'Error al validar el código.' };
+            })
+            .finally(() => {
+                validatingCode.value = false;
+            });
+    }, 500);
+});
 
 const submit = () => {
     form.post(route('subscription.manage.store'), {
@@ -388,7 +430,48 @@ const submit = () => {
                                 <Divider />
                                 <div class="flex justify-between items-center font-bold text-lg">
                                     <span>{{ mode === 'upgrade' ? 'Total a pagar hoy' : 'Total del periodo' }}:</span>
-                                    <span>{{ formatCurrency(form.total_amount) }}</span>
+                                    <span :class="{ 'line-through text-gray-400 text-base font-normal': codeValidation?.valid }">{{ formatCurrency(form.total_amount) }}</span>
+                                </div>
+
+                                <!-- Desglose de descuento por referido -->
+                                <div v-if="codeValidation?.valid && referralDiscountAmount > 0" class="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 rounded-2xl p-4 space-y-2">
+                                    <div class="flex justify-between items-center text-sm">
+                                        <span class="text-green-700 dark:text-green-300">Descuento por referido ({{ codeValidation.discount_pct }}%)</span>
+                                        <span class="text-green-700 dark:text-green-300 font-medium">-{{ formatCurrency(referralDiscountAmount) }}</span>
+                                    </div>
+                                    <Divider class="!my-2" />
+                                    <div class="flex justify-between items-center font-bold text-lg">
+                                        <span class="text-green-800 dark:text-green-200">Total con descuento</span>
+                                        <span class="text-green-800 dark:text-green-200">{{ formatCurrency(finalAmountWithReferral) }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- --- CAMPO DE CÓDIGO DE REFERIDO --- -->
+                                <div v-if="isFirstPayment" class="mt-4 space-y-2">
+                                    <Divider />
+                                    <div class="flex flex-col gap-1.5">
+                                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">¿Tienes un código de referido?</label>
+                                        <div class="relative">
+                                            <InputText
+                                                v-model="form.referral_code"
+                                                placeholder="EZY-XXXXXX"
+                                                maxlength="12"
+                                                class="w-full"
+                                                :disabled="hasPendingPayment"
+                                                :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a]' } }" />
+                                            <i v-if="validatingCode" class="pi pi-spin pi-spinner !text-sm text-gray-400 absolute right-3 top-1/2 -translate-y-1/2"></i>
+                                        </div>
+                                        <!-- Feedback de validación -->
+                                        <div v-if="validatingCode" class="flex items-center gap-2 text-xs text-gray-500">
+                                            <i class="pi pi-spin pi-spinner !text-xs"></i>
+                                            <span>Verificando código...</span>
+                                        </div>
+                                        <div v-else-if="codeValidation" class="flex items-center gap-2 text-xs" :class="codeValidation.valid ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'">
+                                            <i :class="codeValidation.valid ? 'pi pi-check-circle !text-xs' : 'pi pi-times-circle !text-xs'"></i>
+                                            <span>{{ codeValidation.message }}</span>
+                                        </div>
+                                        <InputError :message="form.errors.referral_code" />
+                                    </div>
                                 </div>
 
                                 <!-- --- INICIO SECCIÓN DE PAGO --- -->

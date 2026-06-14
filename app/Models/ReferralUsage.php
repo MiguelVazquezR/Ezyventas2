@@ -44,8 +44,8 @@ class ReferralUsage extends Model
         return $this->belongsTo(SubscriptionPayment::class, 'subscription_payment_id');
     }
 
-    public function getReferrerSubscription(): Subscription
+    public function getReferrerUser(): User
     {
-        return $this->referralCode->subscription;
+        return $this->referralCode->user;
     }
 }

@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -301,5 +303,40 @@ class User extends Authenticatable implements MustVerifyEmail
             ->where('is_active', true)
             ->where('in_use', false) 
             ->get(['id', 'name']);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | REFERRAL SYSTEM RELATIONSHIPS
+    |--------------------------------------------------------------------------
+    */
+
+    public function referralCode(): HasOne
+    {
+        return $this->hasOne(ReferralCode::class);
+    }
+
+    public function referralUsagesAsReferrer(): HasManyThrough
+    {
+        return $this->hasManyThrough(ReferralUsage::class, ReferralCode::class, 'user_id', 'referral_code_id');
+    }
+
+    public function referrerBankAccount(): HasOne
+    {
+        return $this->hasOne(ReferrerBankAccount::class);
+    }
+
+    public function hasPendingReferralRewards(): bool
+    {
+        return $this->referralUsagesAsReferrer()
+            ->where('reward_status', 'pending')
+            ->exists();
+    }
+
+    public function getUnseenReferralsCount(): int
+    {
+        return $this->referralUsagesAsReferrer()
+            ->whereNull('seen_at')
+            ->count();
     }
 }

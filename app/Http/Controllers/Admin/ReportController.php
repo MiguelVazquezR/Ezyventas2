@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Subscription;
 use App\Models\SubscriptionPayment;
 use App\Enums\SubscriptionPaymentStatus;
+use App\Models\ReferralUsage;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Carbon\Carbon;
@@ -42,6 +43,21 @@ class ReportController extends Controller
         })->count();
 
         $newSubscriptionsCount = Subscription::whereBetween('created_at', [$startDate, $endDate])->count();
+
+        // 2.5. Métricas de referidos
+        $referralDiscountsGiven = SubscriptionPayment::where('status', SubscriptionPaymentStatus::APPROVED)
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->whereNotNull('referral_discount_amount')
+            ->sum('referral_discount_amount');
+
+        $periodGrossRevenue = $periodRevenue + $referralDiscountsGiven;
+
+        $activeReferrals = ReferralUsage::where('reward_status', 'pending')
+            ->whereHas('referredSubscription', fn($q) => $q->whereHas('versions', fn($v) => $v->where('end_date', '>=', now()->startOfDay())))
+            ->count();
+
+        $totalReferralRewards = (float) ReferralUsage::where('reward_status', 'paid')->sum('reward_amount');
+        $pendingReferralRewards = (float) ReferralUsage::where('reward_status', 'pending')->sum('reward_amount');
 
         // 3. Preparación de datos para la Telemetría Gráfica (Evolución diaria)
         $periodDays = [];
@@ -87,6 +103,11 @@ class ReportController extends Controller
             'metrics' => [
                 'totalRevenue' => (float) $totalRevenue,
                 'periodRevenue' => (float) $periodRevenue,
+                'periodGrossRevenue' => (float) $periodGrossRevenue,
+                'referralDiscountsGiven' => (float) $referralDiscountsGiven,
+                'activeReferrals' => $activeReferrals,
+                'totalReferralRewards' => $totalReferralRewards,
+                'pendingReferralRewards' => $pendingReferralRewards,
                 'activeSubscriptions' => $activeSubscriptionsCount,
                 'newSubscriptions' => $newSubscriptionsCount,
             ],

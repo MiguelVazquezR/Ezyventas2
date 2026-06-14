@@ -37,7 +37,49 @@ class ProcessSubscriptionPaymentAction
 
     private function handleTransferPayment(Request $request, Subscription $subscription, array $validated, $allPlanItems): void
     {
-        DB::transaction(function () use ($request, $subscription, $validated, $allPlanItems) {
+        // --- Calcular descuento por referido ANTES de crear la versión nueva ---
+        // (ApplyReferralDiscountAction verifica versions()->count() <= 1,
+        //  así que debe ejecutarse antes de que se cree la nueva versión)
+        $amount = (float) $validated['total_amount'];
+        $referralDiscountPct = null;
+        $referralDiscountAmount = null;
+        $referralData = null;
+
+        if (!empty($validated['referral_code'])) {
+            try {
+                $applyReferral = app(ApplyReferralDiscountAction::class);
+                $referralData = $applyReferral->execute(
+                    $validated['referral_code'],
+                    $subscription,
+                    $amount
+                );
+                $amount = $referralData['final_amount'];
+                $referralDiscountPct = $referralData['discount_pct'];
+                $referralDiscountAmount = $referralData['discount_amount'];
+            } catch (\Exception $e) {
+                Log::warning("Código de referido no aplicado: " . $e->getMessage());
+            }
+        }
+
+        // Aplicar descuento continuo por ser referidor (acumulativo: 10% por cada referido activo)
+        $referrerActivePct = $subscription->referrer_discount_active
+            ? $subscription->getReferrerActiveDiscountPct()
+            : 0;
+
+        if ($referrerActivePct > 0) {
+            $discountFromReferrer = round($amount * ($referrerActivePct / 100), 2);
+            $amount -= $discountFromReferrer;
+            // Agregamos el descuento de referidor al referral_discount si ya existía
+            if ($referralDiscountPct) {
+                $referralDiscountPct = $referralDiscountPct + $referrerActivePct;
+                $referralDiscountAmount = round($referralDiscountAmount + $discountFromReferrer, 2);
+            } else {
+                $referralDiscountPct = $referrerActivePct;
+                $referralDiscountAmount = $discountFromReferrer;
+            }
+        }
+
+        DB::transaction(function () use ($request, $subscription, $validated, $allPlanItems, $amount, $referralDiscountPct, $referralDiscountAmount, $referralData) {
             $billingPeriod = BillingPeriod::from($validated['billing_period']);
             $mode = $validated['mode'];
             $user = $request->user();
@@ -98,28 +140,6 @@ class ProcessSubscriptionPaymentAction
             }
             DB::table('subscription_items')->insert($subscriptionItems);
 
-            // 5. Calcular monto con posible descuento por referido
-            $amount = (float) $validated['total_amount'];
-            $referralDiscountPct = null;
-            $referralDiscountAmount = null;
-            $referralData = null;
-
-            if (!empty($validated['referral_code'])) {
-                try {
-                    $applyReferral = app(ApplyReferralDiscountAction::class);
-                    $referralData = $applyReferral->execute(
-                        $validated['referral_code'],
-                        $subscription,
-                        $amount
-                    );
-                    $amount = $referralData['final_amount'];
-                    $referralDiscountPct = $referralData['discount_pct'];
-                    $referralDiscountAmount = $referralData['discount_amount'];
-                } catch (\Exception $e) {
-                    Log::warning("Código de referido no aplicado: " . $e->getMessage());
-                }
-            }
-
             // 6. Crear el Pago y adjuntar comprobante
             $paymentDetails = [];
             if ($mode === 'upgrade') {
@@ -147,7 +167,8 @@ class ProcessSubscriptionPaymentAction
                 $referralCode = $referralData['referral_code'];
 
                 // Calcular mensualidad base (sin descuento) para el premio
-                $monthlyBase = $this->calculateMonthlyBase($subscriptionItems, $billingPeriod);
+                // Se calcula desde los monthly_price de los plan items, sin ajuste por periodo
+                $monthlyBase = $this->calculateMonthlyBase($validated['items'], $allPlanItems);
 
                 ReferralUsage::create([
                     'referral_code_id' => $referralCode->id,
@@ -195,18 +216,22 @@ class ProcessSubscriptionPaymentAction
     }
 
     /**
-     * Calcula la mensualidad base a partir de los items insertados.
-     * Si es anual, divide entre 12 para obtener el equivalente mensual.
+     * Calcula la mensualidad base a partir de los validated items usando
+     * los monthly_price de los plan items, sin ajuste por billing_period.
+     * Respeta el meta->quantity de cada item (precio por paquete de X unidades).
+     * Esta es la "mensualidad normal" sobre la cual se calcula el premio al referidor.
      */
-    private function calculateMonthlyBase(array $subscriptionItems, BillingPeriod $billingPeriod): float
+    private function calculateMonthlyBase(array $validatedItems, $allPlanItems): float
     {
         $total = 0;
-        foreach ($subscriptionItems as $item) {
-            $total += (float) $item['unit_price'] * (int) $item['quantity'];
-        }
+        foreach ($validatedItems as $item) {
+            $planItem = $allPlanItems->get($item['key']);
+            if (!$planItem) continue;
 
-        if ($billingPeriod === BillingPeriod::ANNUALLY) {
-            $total = $total / 12;
+            $packageSize = (int) (($planItem->meta['quantity'] ?? 1));
+            $pricePerUnit = (float) $planItem->monthly_price / max($packageSize, 1);
+
+            $total += $pricePerUnit * (int) $item['quantity'];
         }
 
         return round($total, 2);

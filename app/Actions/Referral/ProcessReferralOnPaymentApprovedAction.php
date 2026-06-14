@@ -18,12 +18,12 @@ class ProcessReferralOnPaymentApprovedAction
             return;
         }
 
-        $referrerSubscription = $usage->getReferrerSubscription();
+        $referrerUser = $usage->getReferrerUser();
+        $referrerSubscription = $referrerUser->branch->subscription;
 
-        // Activar el descuento continuo en la suscripción del referidor
+        // Activar el descuento continuo (el % se calcula dinámicamente desde getReferrerActiveDiscountPct)
         $referrerSubscription->update([
             'referrer_discount_active' => true,
-            'referrer_ongoing_discount_pct' => $usage->referrer_ongoing_discount_pct,
         ]);
 
         // TODO: Notificar al referidor (Notification::send)

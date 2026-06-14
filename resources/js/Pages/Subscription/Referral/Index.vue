@@ -13,6 +13,7 @@ const props = defineProps({
 });
 
 const activeTab = ref(0);
+const loadingCode = ref(false);
 
 const bankForm = useForm({
     clabe: props.bankAccount?.clabe || '',
@@ -22,15 +23,20 @@ const bankForm = useForm({
 
 function saveBankAccount() {
     bankForm.post(route('referrals.bank-account'), {
-        onSuccess: () => bankForm.reset(),
+        preserveScroll: true,
     });
 }
 
 function generateCode() {
+    if (loadingCode.value) return;
+    loadingCode.value = true;
     fetch(route('referrals.code'))
         .then(r => r.json())
         .then(data => {
             window.location.reload();
+        })
+        .catch(() => {
+            loadingCode.value = false;
         });
 }
 
@@ -53,10 +59,10 @@ const rewardSeverity = (status) => {
     return map[status] || 'info';
 };
 
-// Marcar referidos como vistos al cargar
+// Marcar referidos como vistos al cargar la página
 const hasUnseen = computed(() => props.referrals.some(r => !r.seen_at));
 if (hasUnseen.value) {
-    // Se marcan al navegar a la página (el simple GET ya los carga)
+    fetch(route('referrals.mark-seen'), { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') } });
 }
 </script>
 
@@ -137,7 +143,7 @@ if (hasUnseen.value) {
 
                 <div v-else class="text-center py-6">
                     <p class="text-sm text-gray-500 dark:text-gray-400 m-0 mb-4">Aún no tienes un código de referido.</p>
-                    <Button label="Generar mi código" icon="pi pi-ticket" severity="primary" @click="generateCode" class="!rounded-full" />
+                    <Button label="Generar mi código" icon="pi pi-ticket" severity="primary" @click="generateCode" class="!rounded-full" :loading="loadingCode" :disabled="loadingCode" />
                 </div>
             </div>
 
@@ -174,7 +180,14 @@ if (hasUnseen.value) {
 
             <!-- Lista de referidos -->
             <div class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] p-6">
-                <h3 class="text-sm font-medium text-gray-900 dark:text-white m-0 mb-4">Historial de referidos</h3>
+                <h3 class="text-sm font-medium text-gray-900 dark:text-white m-0 mb-1">Historial de referidos</h3>
+                <div v-if="pendingRewards > 0" class="bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30 rounded-2xl p-4 mb-4">
+                    <p class="text-sm text-amber-800 dark:text-amber-200 m-0">
+                        <i class="pi pi-info-circle mr-1.5"></i>
+                        Estamos revisando el pago de tu referido. 
+                        Tu premio será transferido a la cuenta bancaria registrada una vez aprobado. Te notificaremos cuando el pago esté realizado.
+                    </p>
+                </div>
 
                 <div v-if="referrals.length === 0" class="text-center py-8">
                     <i class="pi pi-users !text-4xl text-gray-300 dark:text-gray-600 mb-3"></i>

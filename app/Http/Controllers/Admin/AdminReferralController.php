@@ -15,7 +15,8 @@ class AdminReferralController extends Controller
     public function index(): Response
     {
         $usages = ReferralUsage::with([
-            'referralCode.subscription:id,commercial_name',
+            'referralCode.user:id,name,branch_id',
+            'referralCode.user.branch.subscription:id,commercial_name',
             'referredSubscription:id,commercial_name',
             'payment:id,amount,payment_method,created_at',
         ])->latest()->paginate(20);

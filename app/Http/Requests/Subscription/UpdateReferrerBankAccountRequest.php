@@ -8,7 +8,7 @@ class UpdateReferrerBankAccountRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return !$this->user()->roles()->exists();
+        return true;
     }
 
     public function rules(): array

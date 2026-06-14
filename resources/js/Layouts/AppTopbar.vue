@@ -8,6 +8,7 @@ import { usePermissions } from '@/Composables';
 // Importamos los nuevos submódulos
 import TopbarReleaseNotes from './Partials/Topbar/TopbarReleaseNotes.vue';
 import TopbarNotifications from './Partials/Topbar/TopbarNotifications.vue';
+import TopbarReferrals from './Partials/Topbar/TopbarReferrals.vue';
 import SupportModal from './Partials/Topbar/SupportModal.vue';
 
 const { toggleMenu: toggleSidebar, toggleDarkMode, isDarkTheme } = useLayout();
@@ -37,14 +38,6 @@ const userMenuItems = computed(() => {
         { label: 'Cerrar sesión', icon: 'pi pi-sign-out', command: () => router.post(route('logout')) },
     );
     return items;
-});
-
-// --- REFERRAL NOTIFICATIONS ---
-const referralNotifications = computed(() => page.props.referralNotifications);
-const referralBadgeCount = computed(() => {
-    if (!referralNotifications.value) return 0;
-    return (referralNotifications.value.pending_rewards_count ?? 0) +
-           (referralNotifications.value.unseen_referrals_count ?? 0);
 });
 
 const branchMenuItems = computed(() => {
@@ -141,24 +134,7 @@ const drawerPt = {
             <!-- COMPONENTES MODULARES AISLADOS -->
             <TopbarReleaseNotes />
             <TopbarNotifications />
-
-            <!-- Botón de Referidos (solo dueño) -->
-            <Button
-                v-if="isOwner"
-                icon="pi pi-users"
-                text
-                severity="secondary"
-                class="relative w-10 h-10 !rounded-full hover:!bg-gray-100 dark:hover:!bg-[#1a1a1a] !transition-colors"
-                v-tooltip.bottom="'Mis referidos'"
-                @click="$inertia.visit(route('referrals.index'))"
-            >
-                <Badge
-                    v-if="referralBadgeCount > 0"
-                    :value="referralBadgeCount"
-                    severity="danger"
-                    class="absolute -top-1 -right-1"
-                />
-            </Button>
+            <TopbarReferrals v-if="isOwner" />
 
             <!-- Menú Usuario (Mobile) -->
             <button type="button" class="relative flex items-center justify-center w-10 h-10 rounded-full hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors lg:hidden" @click="mobileUserMenuVisible = true">

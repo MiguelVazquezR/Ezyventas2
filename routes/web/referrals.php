@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth', 'verified'])->prefix('referrals')->name('referrals.')->group(function () {
     Route::get('/', [ReferralController::class, 'index'])->name('index');
     Route::get('/code', [ReferralController::class, 'getCode'])->name('code');
+    Route::get('/validate', [ReferralController::class, 'validateCode'])->name('validate');
+    Route::post('/mark-seen', [ReferralController::class, 'markSeen'])->name('mark-seen');
     Route::post('/bank-account', [ReferralController::class, 'saveBankAccount'])->name('bank-account');
 });
 
