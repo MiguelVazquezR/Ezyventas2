@@ -51,7 +51,7 @@ function markPaid(usage) {
                 }">
                 <Column header="Referidor">
                     <template #body="{ data }">
-                        {{ data.referral_code?.subscription?.commercial_name || '—' }}
+                        {{ data.referral_code?.user?.name || '—' }}
                     </template>
                 </Column>
                 <Column header="Referido">

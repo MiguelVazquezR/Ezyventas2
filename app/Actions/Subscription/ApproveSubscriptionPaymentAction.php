@@ -76,9 +76,12 @@ class ApproveSubscriptionPaymentAction
             Log::error("Error procesando referidos en aprobación: " . $e->getMessage());
         }
 
-        // 5. Generar código de referido para la suscripción activada
+        // 5. Generar código de referido para el dueño de la suscripción activada
         try {
-            app(GenerateReferralCodeAction::class)->execute($subscription);
+            $owner = $subscription->users()->whereDoesntHave('roles')->first();
+            if ($owner) {
+                app(GenerateReferralCodeAction::class)->execute($owner);
+            }
         } catch (\Exception $e) {
             Log::error("Error generando código de referido: " . $e->getMessage());
         }

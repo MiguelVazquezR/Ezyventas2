@@ -10,10 +10,10 @@ class ReferrerBankAccount extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['subscription_id', 'clabe', 'bank_name', 'account_holder_name'];
+    protected $fillable = ['user_id', 'clabe', 'bank_name', 'account_holder_name'];
 
-    public function subscription(): BelongsTo
+    public function user(): BelongsTo
     {
-        return $this->belongsTo(Subscription::class);
+        return $this->belongsTo(User::class);
     }
 }

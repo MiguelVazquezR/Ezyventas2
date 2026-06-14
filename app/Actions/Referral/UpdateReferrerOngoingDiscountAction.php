@@ -18,11 +18,14 @@ class UpdateReferrerOngoingDiscountAction
             return;
         }
 
-        $referrerSubscription = $usage->getReferrerSubscription();
-        $isReferredActive = $referredSubscription->computed_status === 'activo';
+        $referrerUser = $usage->getReferrerUser();
+        $referrerSubscription = $referrerUser->branch->subscription;
+
+        // Recalcular si tiene descuento activo basado en los referidos aún vigentes
+        $activePct = $referrerSubscription->getReferrerActiveDiscountPct();
 
         $referrerSubscription->update([
-            'referrer_discount_active' => $isReferredActive,
+            'referrer_discount_active' => $activePct > 0,
         ]);
     }
 }

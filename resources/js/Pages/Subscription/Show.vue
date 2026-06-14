@@ -81,7 +81,15 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                 </div>
                 <div>
                     <p class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest m-0 mb-1">Pago en revisión</p>
-                    <p class="text-sm text-blue-900 dark:text-blue-200 m-0 leading-relaxed tracking-tight">
+                    <div v-if="pendingPayment.referral_discount_pct" class="space-y-1">
+                        <p class="text-sm text-blue-800 dark:text-blue-200 m-0 leading-relaxed tracking-tight">
+                            Tu pago de <strong class="font-bold font-mono line-through text-blue-500">{{ formatCurrency(parseFloat(pendingPayment.amount) + parseFloat(pendingPayment.referral_discount_amount || 0)) }}</strong> con un descuento del <strong class="font-bold">{{ pendingPayment.referral_discount_pct }}%</strong> por referido quedó en <strong class="font-bold font-mono">{{ formatCurrency(pendingPayment.amount) }}</strong> por transferencia.
+                        </p>
+                        <span class="inline-flex items-center gap-1 text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-widest bg-green-100 dark:bg-green-900/20 px-2 py-0.5 rounded-full">
+                            <i class="pi pi-check-circle !text-[10px]"></i> descuento por referido aplicado
+                        </span>
+                    </div>
+                    <p v-else class="text-sm text-blue-900 dark:text-blue-200 m-0 leading-relaxed tracking-tight">
                         Tu pago de <strong class="font-bold font-mono">{{ formatCurrency(pendingPayment.amount) }}</strong> por transferencia está en revisión. 
                         Tu plan se activará automáticamente una vez aprobado por nuestro equipo.
                     </p>
