@@ -111,7 +111,7 @@ class FinancialReportController extends Controller
         $reportData['detailedExpenses'] = Expense::where('branch_id', $branchId)
             ->where('status', ExpenseStatus::PAID->value)
             ->whereBetween('expense_date', [$startDate, $endDate])
-            ->select('id', 'branch_id', 'expense_date', 'expense_category_id', 'description', 'amount', 'payment_method', 'bank_account_id', 'folio')
+            ->select('id', 'branch_id', 'expense_date', 'expense_category_id', 'description', 'amount', 'payment_method', 'bank_account_id', 'folio', 'is_external')
             ->with(['category:id,name', 'bankAccount:id,account_name,bank_name'])
             ->orderBy('expense_date', 'desc')
             ->limit($limitWeb)

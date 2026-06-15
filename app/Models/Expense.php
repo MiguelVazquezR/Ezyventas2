@@ -27,7 +27,8 @@ class Expense extends Model
         'description',
         'payment_method',
         'bank_account_id',
-        'session_cash_movement_id', // <-- AÑADIR
+        'session_cash_movement_id',
+        'is_external',
         'created_at',
         'updated_at',
     ];
@@ -39,6 +40,7 @@ class Expense extends Model
             'amount' => 'decimal:2',
             'expense_date' => 'date',
             'payment_method' => PaymentMethod::class,
+            'is_external' => 'boolean',
         ];
     }
     

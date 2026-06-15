@@ -76,6 +76,7 @@ require __DIR__ . '/web/super-admin.php';
 require __DIR__ . '/web/release-notes.php';
 require __DIR__ . '/web/online-store.php';
 require __DIR__ . '/web/referrals.php';
+require __DIR__ . '/web/invoices.php';
 
 Route::get('/centro-ayuda', function () {
     return Inertia::render('HelpCenter');

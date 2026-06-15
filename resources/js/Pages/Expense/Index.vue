@@ -120,6 +120,19 @@ const getPaymentMethodIcon = (method) => {
     return icons[method] || 'pi pi-question-circle';
 };
 
+const getOriginLabel = (expense) => {
+    if (expense.is_external) {
+        return { label: 'Dinero externo', icon: 'pi pi-wallet', severity: 'info', tooltip: 'Gasto con dinero externo. No afecta tu flujo de dinero.' };
+    }
+    if (expense.payment_method === 'efectivo') {
+        return { label: 'Caja del negocio', icon: 'pi pi-inbox', severity: 'success', tooltip: 'Gasto con efectivo de la caja del negocio.' };
+    }
+    if (expense.bank_account) {
+        return { label: 'Cuenta del negocio', icon: 'pi pi-building', severity: 'success', tooltip: 'Gasto con cuenta bancaria del negocio.' };
+    }
+    return { label: 'Cuenta del negocio', icon: 'pi pi-building', severity: 'success', tooltip: 'Gasto con cuenta bancaria del negocio.' };
+};
+
 const onRowClick = (event) => {
     const target = event.originalEvent.target;
     if (target.closest('button') || target.closest('.p-button') || target.closest('.p-checkbox')) {
@@ -234,11 +247,19 @@ const tagPt = {
                         </template>
                     </Column>
                     
-                    <Column field="description" header="Descripción">
+                    <Column field="description" header="Descripción" style="max-width: 120px">
                         <template #body="{ data }">
-                            <span class="text-gray-500 dark:text-gray-400 truncate max-w-[200px] block" :title="data.description">
+                            <span class="text-gray-500 dark:text-gray-400 truncate max-w-[120px] block" :title="data.description">
                                 {{ data.description || '--' }}
                             </span>
+                        </template>
+                    </Column>
+
+                    <Column field="is_external" header="Origen" sortable>
+                        <template #body="{ data }">
+                            <Tag :value="getOriginLabel(data).label" :severity="getOriginLabel(data).severity" :pt="tagPt" class="capitalize" v-tooltip.top="getOriginLabel(data).tooltip">
+                                <i :class="getOriginLabel(data).icon" class="mr-1"></i>
+                            </Tag>
                         </template>
                     </Column>
                     
