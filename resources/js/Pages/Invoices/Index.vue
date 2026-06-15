@@ -7,6 +7,7 @@ import { usePermissions } from '@/Composables';
 const props = defineProps({
     invoices: Object,
     filters: Object,
+    hasBillingSettings: Boolean,
 });
 
 const { hasPermission } = usePermissions();
@@ -115,12 +116,19 @@ const rowClass = (data) => {
 };
 
 // ──────────────────────────────────────
+// Row click → navigate to detail
+// ──────────────────────────────────────
+const onRowClick = (event) => {
+    router.get(route('invoices.show', event.data.id));
+};
+
+// ──────────────────────────────────────
 // Tesla UI Pass-Through configurations
 // ──────────────────────────────────────
 const dataTablePt = {
     root: { class: 'border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden' },
     headerRow: { class: 'bg-gray-50 dark:bg-[#1a1a1a]' },
-    headerCell: { class: 'bg-transparent text-[10px] uppercase tracking-widest text-gray-500 font-bold py-4 px-4 border-b border-gray-100 dark:border-[#3a3a3a]' },
+    headerCell: { class: 'bg-transparent !text-[10px] !uppercase !tracking-widest !font-bold !text-gray-400 py-4 px-4 border-b border-gray-100 dark:border-[#3a3a3a]' },
     bodyRow: { class: 'dark:bg-[#232323] hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors text-sm text-gray-700 dark:text-gray-300' },
     bodyCell: { class: 'py-4 px-4 border-b border-gray-50 dark:border-[#2a2a2a]' },
     paginator: { root: { class: 'dark:bg-[#1a1a1a] border-t border-gray-100 dark:border-[#3a3a3a] p-3' } },
@@ -151,14 +159,35 @@ const tagPt = {
             <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
 
                 <!-- Header -->
-                <div class="mb-8">
-                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">
-                        Facturación
-                    </h1>
-                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
-                        <span class="w-1.5 h-1.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse"></span>
-                        CFDI 4.0 &middot; Historial de comprobantes fiscales
-                    </p>
+                <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-8">
+                    <div>
+                        <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">
+                            Facturación
+                        </h1>
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
+                            <span class="w-1.5 h-1.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse"></span>
+                            CFDI 4.0 &middot; Historial de comprobantes fiscales
+                        </p>
+                    </div>
+
+                    <!-- Header actions -->
+                    <div class="flex items-center gap-3 shrink-0">
+                        <Button
+                            label="Configuración fiscal"
+                            icon="pi pi-cog"
+                            outlined
+                            severity="secondary"
+                            @click="router.get(route('invoices.settings'))"
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider !bg-transparent !border-gray-300 dark:!border-[#3a3a3a] !text-gray-500 dark:!text-gray-400 hover:!bg-gray-50 dark:hover:!bg-[#1a1a1a]"
+                        />
+                        <Button
+                            v-if="hasPermission('create invoices')"
+                            label="Emitir factura"
+                            icon="pi pi-plus"
+                            @click="router.get(route('invoices.create'))"
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider"
+                        />
+                    </div>
                 </div>
 
                 <!-- Filter bar -->
@@ -185,15 +214,6 @@ const tagPt = {
                             class="w-full md:w-48"
                             :pt="selectPt"
                         />
-
-                        <!-- New invoice button -->
-                        <Button
-                            v-if="hasPermission('create invoices')"
-                            label="Nueva factura"
-                            icon="pi pi-plus"
-                            @click="router.get(route('invoices.create'))"
-                            class="!rounded-xl !text-xs !uppercase !tracking-wider shrink-0"
-                        />
                     </div>
                 </div>
 
@@ -210,6 +230,7 @@ const tagPt = {
                     dataKey="id"
                     @page="onPage"
                     @sort="onSort"
+                    @row-click="onRowClick"
                     removableSort
                     tableStyle="min-width: 60rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
@@ -218,6 +239,15 @@ const tagPt = {
                     :rowClass="rowClass"
                     :pt="dataTablePt"
                 >
+                    <!-- Empty state -->
+                    <template #empty>
+                        <div class="flex flex-col items-center justify-center py-16 px-4 text-center">
+                            <i class="pi pi-receipt !text-4xl text-gray-300 dark:text-gray-600 mb-4"></i>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 max-w-md leading-relaxed">
+                                No se encontraron facturas emitidas. Asegúrate de tener configurada tu información fiscal antes de generar un nuevo comprobante.
+                            </p>
+                        </div>
+                    </template>
                     <!-- Folio + Series -->
                     <Column field="folio" header="Folio" sortable>
                         <template #body="{ data }">

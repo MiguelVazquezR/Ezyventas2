@@ -24,13 +24,15 @@ class StoreExpenseAction
                 'branch_id' => $user->branch_id,
             ]));
 
-            // 1. Descontar del banco si aplica
-            if ($expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
+            $isExternal = $data['is_external'] ?? false;
+
+            // 1. Descontar del banco si aplica (solo gastos internos)
+            if (! $isExternal && $expense->status === ExpenseStatus::PAID && $expense->bank_account_id) {
                 BankAccount::find($expense->bank_account_id)?->withdraw($expense->amount);
             }
 
-            // 2. Registrar salida de caja si aplica
-            if ($expense->payment_method === PaymentMethod::CASH && $expense->status === ExpenseStatus::PAID && $takeFromCashRegister) {
+            // 2. Registrar salida de caja si aplica (solo gastos internos)
+            if (! $isExternal && $expense->payment_method === PaymentMethod::CASH && $expense->status === ExpenseStatus::PAID && $takeFromCashRegister) {
                 $activeSession = CashRegisterSession::where('status', CashRegisterSessionStatus::OPEN)
                     ->whereHas('cashRegister', fn($q) => $q->where('branch_id', $user->branch_id))
                     ->latest('opened_at')

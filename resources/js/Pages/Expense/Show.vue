@@ -2,7 +2,6 @@
 import { ref, computed } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import DiffViewer from '@/Components/DiffViewer.vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { usePermissions } from '@/Composables';
 
@@ -13,6 +12,11 @@ const props = defineProps({
 
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
+
+const menu = ref();
+const toggleMenu = (event) => {
+    menu.value.toggle(event);
+};
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -71,122 +75,150 @@ const getPaymentMethodIcon = (method) => {
     };
     return icons[method] || 'pi pi-question-circle';
 };
+
+const getOriginLabel = (expense) => {
+    if (expense.is_external) {
+        return { label: 'Dinero propio / Externo', icon: 'pi pi-wallet', severity: 'info' };
+    }
+    if (expense.payment_method === 'efectivo') {
+        return { label: 'Caja del negocio', icon: 'pi pi-inbox', severity: 'success' };
+    }
+    if (expense.bank_account) {
+        return { label: 'Cuenta del negocio', icon: 'pi pi-building', severity: 'success' };
+    }
+    return { label: 'Cuenta del negocio', icon: 'pi pi-building', severity: 'success' };
+};
+
+// --- TESLA UI PASS-THROUGH (PT) CONFIGURATIONS ---
+const tagPt = {
+    root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' }
+};
+
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl !p-2 !shadow-2xl mt-1' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' }
+};
 </script>
 
 <template>
-
     <Head :title="`Gasto: ${expense.folio || expense.id}`" />
     <AppLayout>
-        <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
 
-        <!-- Header -->
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-4 mb-6">
-            <div>
-                <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Detalle del Gasto</h1>
-                <p class="text-gray-500 dark:text-gray-400 mt-1">Concepto: {{ expense.folio || 'N/A' }}</p>
-            </div>
-            <SplitButton label="Acciones" :model="actionItems" severity="secondary" outlined class="mt-4 sm:mt-0">
-            </SplitButton>
-        </div>
+            <!-- Breadcrumb -->
+            <Breadcrumb :home="home" :model="breadcrumbItems" class="!bg-transparent !p-0" />
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Columna Principal: Detalles -->
-            <div class="lg:col-span-2 space-y-6">
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-6">
-                        <div>
-                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información Principal</h2>
-                            <ul class="space-y-3 text-sm">
-                                <li class="flex justify-between"><span class="text-gray-500">Monto</span> <span
-                                        class="font-medium text-lg">{{ new Intl.NumberFormat('es-MX', {
-                                            style:
-                                                'currency', currency: 'MXN' }).format(expense.amount) }}</span></li>
-                                <li class="flex justify-between"><span class="text-gray-500">Fecha del Gasto</span>
-                                    <span class="font-medium">{{ formatDate(expense.expense_date) }}</span></li>
-                                <li class="flex justify-between"><span class="text-gray-500">Categoría</span> <span
-                                        class="font-medium">{{ expense.category.name }}</span></li>
-                            </ul>
-                        </div>
-                        <div>
-                            <h2 class="text-lg font-semibold border-b pb-3 mb-4">Detalles Adicionales</h2>
-                            <ul class="space-y-3 text-sm">
-                                <li class="flex justify-between"><span class="text-gray-500">Estatus</span>
-                                    <Tag :value="expense.status" :severity="getStatusSeverity(expense.status)" class="capitalize" />
-                                </li>
-                                <li class="flex justify-between"><span class="text-gray-500">Registrado por</span> <span
-                                        class="font-medium">{{ expense.user.name }}</span></li>
-                                <li class="flex justify-between"><span class="text-gray-500">Sucursal</span> <span
-                                        class="font-medium">{{ expense.branch.name }}</span></li>
-                            </ul>
-                        </div>
+            <!-- Header Tesla UI -->
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div>
+                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">Detalle del gasto</h1>
+                    <div class="flex items-center gap-4 mt-3 flex-wrap">
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 flex items-center gap-2">
+                            <span class="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse"></span>
+                            Egreso operativo
+                        </p>
+                        <span class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
+                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0">Concepto: {{ expense.folio || 'N/A' }}</span>
                     </div>
                 </div>
-
-                <!-- INICIA SECCIÓN DE PAGO -->
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-4">Información de Pago</h2>
-                    <ul class="space-y-3 text-sm">
-                        <li class="flex justify-between items-center">
-                            <span class="text-gray-500">Método de Pago</span>
-                             <Tag class="capitalize">
-                                <i :class="getPaymentMethodIcon(expense.payment_method)" class="mr-2"></i>
-                                {{ expense.payment_method }}
-                            </Tag>
-                        </li>
-                        <li v-if="expense.bank_account" class="flex justify-between">
-                            <span class="text-gray-500">Cuenta de Origen</span>
-                            <div class="text-right font-medium">
-                                <div>{{ expense.bank_account.account_name }} ({{ expense.bank_account.bank_name }})</div>
-                                <div class="text-xs text-gray-400">{{ expense.bank_account.account_number }}</div>
-                            </div>
-                        </li>
-                    </ul>
-                </div>
-                <!-- TERMINA SECCIÓN DE PAGO -->
-
-                <div v-if="expense.description" class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h3 class="font-semibold mb-2 text-lg border-b pb-3">Descripción</h3>
-                    <p class="text-sm text-gray-600 dark:text-gray-400 mt-4">{{ expense.description }}</p>
+                <div class="w-full md:w-auto shrink-0 flex gap-2">
+                    <Button type="button" label="Opciones" icon="pi pi-chevron-down" iconPos="right" @click="toggleMenu" severity="secondary" outlined class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto" />
+                    <Menu ref="menu" :model="actionItems" :popup="true" :pt="menuPt" />
                 </div>
             </div>
 
-            <!-- Columna Derecha: Historial -->
-            <div class="lg:col-span-1">
-                <!-- <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                    <h2 class="text-lg font-semibold border-b pb-3 mb-6">Historial de Actividad</h2>
-                    <div v-if="activities && activities.length > 0" class="relative max-h-[600px] overflow-y-auto pr-2">
-                        <div class="relative pl-6">
-                            <div class="absolute left-10 top-0 h-full border-l-2 border-gray-200 dark:border-gray-700">
+            <!-- Grid Principal -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                <!-- Columna Principal -->
+                <div class="lg:col-span-2 space-y-6">
+
+                    <!-- Card: Información Principal -->
+                    <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                        <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0 mb-6">Información principal</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] space-y-4">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Monto</span>
+                                    <span class="text-2xl font-light tracking-tight text-gray-900 dark:text-white m-0">{{ new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(expense.amount) }}</span>
+                                </div>
+                                <div class="pt-2 border-t border-gray-200 dark:border-[#2a2a2a] flex justify-between items-center">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Fecha del gasto</span>
+                                    <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ formatDate(expense.expense_date) }}</span>
+                                </div>
+                                <div class="pt-2 border-t border-gray-200 dark:border-[#2a2a2a] flex justify-between items-center">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Categoría</span>
+                                    <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ expense.category.name }}</span>
+                                </div>
                             </div>
-                            <div class="space-y-8">
-                                <div v-for="activity in activities" :key="activity.id" class="relative">
-                                    <div class="absolute left-0 top-1.5 -translate-x-1/2">
-                                        <span
-                                            class="flex w-8 h-8 items-center justify-center text-white rounded-full z-10 shadow-md"
-                                            :class="{ 'bg-blue-500': activity.event === 'created', 'bg-orange-500': activity.event === 'updated', 'bg-red-500': activity.event === 'deleted' }">
-                                            <i
-                                                :class="{ 'pi pi-plus': activity.event === 'created', 'pi pi-pencil': activity.event === 'updated', 'pi pi-trash': activity.event === 'deleted' }"></i>
-                                        </span>
-                                    </div>
-                                    <div class="ml-10">
-                                        <h3 class="font-semibold">{{ activity.description }}</h3>
-                                        <p class="text-xs text-gray-500">Por {{ activity.causer }} - {{
-                                            activity.timestamp }}</p>
-                                        <div v-if="activity.event === 'updated' && Object.keys(activity.changes.after).length > 0"
-                                            class="mt-3 text-sm space-y-2">
-                                            <div v-for="(value, key) in activity.changes.after" :key="key">
-                                                <p class="font-medium">{{ key }}</p>
-                                                <DiffViewer :oldValue="String(activity.changes.before[key] || '')"
-                                                    :newValue="String(value || '')" />
-                                            </div>
-                                        </div>
-                                    </div>
+                            <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] space-y-4">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Estatus</span>
+                                    <Tag :value="expense.status" :severity="getStatusSeverity(expense.status)" :pt="tagPt" class="capitalize" />
+                                </div>
+                                <div class="pt-2 border-t border-gray-200 dark:border-[#2a2a2a] flex justify-between items-center">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Registrado por</span>
+                                    <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ expense.user.name }}</span>
+                                </div>
+                                <div class="pt-2 border-t border-gray-200 dark:border-[#2a2a2a] flex justify-between items-center">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sucursal</span>
+                                    <span class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ expense.branch.name }}</span>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div v-else class="text-center text-gray-500 py-8"> No hay actividades registradas. </div>
-                </div> -->
+
+                    <!-- Card: Información de Pago -->
+                    <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                        <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0 mb-6">Información de pago</h2>
+                        <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] space-y-4">
+                            <div class="flex justify-between items-center">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Método de pago</span>
+                                <Tag class="capitalize" :pt="tagPt">
+                                    <i :class="getPaymentMethodIcon(expense.payment_method)" class="mr-1.5"></i>
+                                    {{ expense.payment_method }}
+                                </Tag>
+                            </div>
+                            <div class="pt-2 border-t border-gray-200 dark:border-[#2a2a2a] flex justify-between items-center">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Origen del dinero</span>
+                                <Tag :severity="getOriginLabel(expense).severity" :pt="tagPt" class="capitalize" v-tooltip.top="getOriginLabel(expense).tooltip">
+                                    <i :class="getOriginLabel(expense).icon" class="mr-1.5"></i>
+                                    {{ getOriginLabel(expense).label }}
+                                </Tag>
+                            </div>
+                            <div v-if="expense.bank_account" class="pt-2 border-t border-gray-200 dark:border-[#2a2a2a] flex justify-between items-center">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Cuenta de origen</span>
+                                <div class="text-right">
+                                    <span class="text-sm font-medium text-gray-900 dark:text-gray-100 block">{{ expense.bank_account.account_name }} ({{ expense.bank_account.bank_name }})</span>
+                                    <span class="text-[10px] uppercase tracking-widest text-gray-400 block mt-0.5">{{ expense.bank_account.account_number }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Card: Descripción -->
+                    <div v-if="expense.description" class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                        <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0 mb-6">Descripción</h2>
+                        <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
+                            <p class="text-sm text-gray-600 dark:text-gray-400 m-0 leading-relaxed">{{ expense.description }}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Columna Derecha -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                        <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0 mb-6">Historial de actividad</h2>
+                        <!-- El historial está comentado en la versión actual -->
+                        <div class="flex flex-col items-center justify-center text-center py-10 opacity-60">
+                            <i class="pi pi-history !text-2xl text-gray-400 mb-3"></i>
+                            <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin actividad</p>
+                            <p class="text-xs text-gray-400 mt-1">No hay cambios registrados en este gasto.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </AppLayout>

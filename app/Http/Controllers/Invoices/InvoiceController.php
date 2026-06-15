@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Invoices;
 
 use App\Actions\Invoices\CancelInvoiceAction;
 use App\Actions\Invoices\CreateInvoiceAction;
+use App\Actions\Invoices\SaveBillingSettingsAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Invoices\CancelInvoiceRequest;
+use App\Http\Requests\Invoices\SaveBillingSettingsRequest;
 use App\Http\Requests\Invoices\StoreInvoiceRequest;
+use App\Models\BillingSetting;
 use App\Models\Invoice;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -27,6 +30,7 @@ class InvoiceController extends Controller implements HasMiddleware
             new Middleware('can:invoices.edit', only: ['edit', 'update']),
             new Middleware('can:invoices.delete', only: ['destroy']),
             new Middleware('can:cancel invoices', only: ['cancel']),
+            new Middleware('can:invoices.settings.access', only: ['settings', 'updateSettings']),
         ];
     }
 
@@ -63,8 +67,9 @@ class InvoiceController extends Controller implements HasMiddleware
         );
 
         return Inertia::render('Invoices/Index', [
-            'invoices' => $query->paginate($request->input('rows', 20))->withQueryString(),
-            'filters'  => $request->only(['search', 'status', 'sortField', 'sortOrder']),
+            'invoices'           => $query->paginate($request->input('rows', 20))->withQueryString(),
+            'filters'            => $request->only(['search', 'status', 'sortField', 'sortOrder']),
+            'hasBillingSettings' => BillingSetting::where('branch_id', $user->branch_id)->exists(),
         ]);
     }
 
@@ -77,8 +82,9 @@ class InvoiceController extends Controller implements HasMiddleware
         $billingSetting = $user->branch->billingSetting ?? null;
 
         return Inertia::render('Invoices/Create', [
-            'customers'      => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'address']),
-            'billingSetting' => $billingSetting,
+            'customers'          => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'address']),
+            'billingSetting'     => $billingSetting,
+            'hasBillingSettings' => $billingSetting !== null,
         ]);
     }
 
@@ -106,6 +112,35 @@ class InvoiceController extends Controller implements HasMiddleware
         return Inertia::render('Invoices/Show', [
             'invoice' => $invoice,
         ]);
+    }
+
+    /**
+     * Show the fiscal billing settings form.
+     */
+    public function settings(): Response
+    {
+        $user = Auth::user();
+        $billingSetting = BillingSetting::where('branch_id', $user->branch_id)->first();
+
+        return Inertia::render('Invoices/Settings', [
+            'billingSettings' => $billingSetting,
+        ]);
+    }
+
+    /**
+     * Save or update the fiscal billing settings for the current branch.
+     */
+    public function updateSettings(
+        SaveBillingSettingsRequest $request,
+        SaveBillingSettingsAction $action,
+    ): RedirectResponse {
+        $action->execute(
+            $request->validated(),
+            Auth::user()->branch_id,
+        );
+
+        return redirect()->route('invoices.settings')
+            ->with('success', 'Configuración fiscal guardada correctamente.');
     }
 
     /**

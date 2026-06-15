@@ -6,6 +6,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 const props = defineProps({
     customers: Array,
     billingSetting: Object,   // nullable — branch billing config
+    hasBillingSettings: Boolean,
 });
 
 // ──────────────────────────────────────
@@ -197,7 +198,33 @@ const submit = () => {
             </div>
         </div>
 
-        <form @submit.prevent="submit" class="max-w-5xl mx-auto space-y-6">
+        <!-- ════════════════════════════════════════
+             Onboarding guard — no billing settings yet
+             ════════════════════════════════════════ -->
+        <div
+            v-if="!props.hasBillingSettings"
+            class="max-w-lg mx-auto bg-gray-50 border border-gray-200 rounded-2xl p-8 text-center mt-10"
+        >
+            <i class="pi pi-exclamation-triangle !text-4xl text-amber-400 mb-4 block"></i>
+            <h2 class="text-lg font-semibold text-gray-800 m-0 mb-2">
+                Configuración fiscal requerida
+            </h2>
+            <p class="text-sm text-gray-500 m-0 mb-6 leading-relaxed">
+                Aún no has configurado tu información fiscal. Para poder emitir facturas legales, es obligatorio registrar primero tus datos de emisor.
+            </p>
+            <a
+                :href="route('invoices.settings')"
+                class="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white rounded-full text-sm font-medium transition-colors no-underline"
+            >
+                <i class="pi pi-external-link !text-sm"></i>
+                Ir a configuración fiscal
+            </a>
+        </div>
+
+        <!-- ════════════════════════════════════════
+             Full CFDI form (visible when billing is configured)
+             ════════════════════════════════════════ -->
+        <form v-else @submit.prevent="submit" class="max-w-5xl mx-auto space-y-6">
 
             <!-- ════════════════════════════════════════
                  SECTION: Receiver data (Receptor)

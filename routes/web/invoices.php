@@ -3,10 +3,12 @@
 use App\Http\Controllers\Invoices\InvoiceController;
 use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('/invoices', [InvoiceController::class, 'index'])->name('invoices.index');
-    Route::get('/invoices/create', [InvoiceController::class, 'create'])->name('invoices.create');
-    Route::post('/invoices', [InvoiceController::class, 'store'])->name('invoices.store');
-    Route::get('/invoices/{invoice}', [InvoiceController::class, 'show'])->name('invoices.show');
-    Route::post('/invoices/{invoice}/cancel', [InvoiceController::class, 'cancel'])->name('invoices.cancel');
+Route::middleware(['auth', 'verified'])->prefix('invoices')->name('invoices.')->group(function () {
+    Route::get('/', [InvoiceController::class, 'index'])->name('index');
+    Route::get('/create', [InvoiceController::class, 'create'])->name('create');
+    Route::post('/', [InvoiceController::class, 'store'])->name('store');
+    Route::get('/settings', [InvoiceController::class, 'settings'])->name('settings');
+    Route::put('/settings', [InvoiceController::class, 'updateSettings'])->name('updateSettings');
+    Route::get('/{invoice}', [InvoiceController::class, 'show'])->name('show');
+    Route::post('/{invoice}/cancel', [InvoiceController::class, 'cancel'])->name('cancel');
 });
