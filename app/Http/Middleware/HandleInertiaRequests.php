@@ -34,7 +34,11 @@ class HandleInertiaRequests extends Middleware
                         ->whereIn('module', $availableModuleNames)
                         ->orWhere('module', 'Sistema')
                         ->pluck('name')
-                    : ($isSubscriptionActive ? $user->getAllPermissions()->pluck('name') : collect([]));
+                    : ($isSubscriptionActive
+                        ? $user->getAllPermissions()
+                            ->filter(fn($p) => in_array($p->module, $availableModuleNames) || $p->module === 'Sistema')
+                            ->pluck('name')
+                        : collect([]));
 
                 return [
                     'user' => $user,
@@ -44,6 +48,7 @@ class HandleInertiaRequests extends Middleware
                     'subscriptionWarning' => $subscription->getWarningData(),
                     'current_branch' => $user->branch,
                     'preferences' => $user->getPreferences(),
+                    'active_modules' => $subscription->getActiveModuleKeys(),
                     'available_branches' => function () use ($user, $subscription) {
                         if ($user->id === 1) {
                             return Subscription::query()
@@ -73,6 +78,7 @@ class HandleInertiaRequests extends Middleware
                         ->where('reward_status', 'pending')
                         ->count(),
                     'unseen_referrals_count' => $user->getUnseenReferralsCount(),
+                    'has_referral_code' => (bool) $user->referralCode,
                 ];
             },
 

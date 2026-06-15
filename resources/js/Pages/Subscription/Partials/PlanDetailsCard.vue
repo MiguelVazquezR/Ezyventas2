@@ -1,8 +1,6 @@
 <script setup>
 import { computed } from 'vue';
 import { Link } from '@inertiajs/vue3';
-import Button from 'primevue/button';
-import ProgressBar from 'primevue/progressbar';
 
 const props = defineProps({
     currentVersion: Object,

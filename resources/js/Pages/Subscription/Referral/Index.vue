@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import ReferralHeroBanner from '@/Components/Referral/ReferralHeroBanner.vue';
 
 const props = defineProps({
     referralCode: Object,
@@ -16,7 +17,6 @@ const props = defineProps({
 });
 
 const activeTab = ref(0);
-const loadingCode = ref(false);
 
 const bankForm = useForm({
     clabe: props.bankAccount?.clabe || '',
@@ -29,28 +29,6 @@ function saveBankAccount() {
         preserveScroll: true,
     });
 }
-
-function generateCode() {
-    if (loadingCode.value) return;
-    loadingCode.value = true;
-    fetch(route('referrals.code'))
-        .then(r => r.json())
-        .then(data => {
-            window.location.reload();
-        })
-        .catch(() => {
-            loadingCode.value = false;
-        });
-}
-
-function copyCode() {
-    if (!props.referralCode?.code) return;
-    navigator.clipboard.writeText(props.referralCode.code);
-}
-
-const shareMessage = computed(() =>
-    `Regístrate en EzyVentas con mi código ${props.referralCode?.code || ''} y obtén ${props.settings?.referred_discount_pct || 15}% de descuento en tu primer pago.`
-);
 
 const rewardLabel = (status) => {
     const map = { pending: 'Pendiente', paid: 'Pagado', cancelled: 'Cancelado' };
@@ -71,48 +49,29 @@ if (hasUnseen.value) {
 
 <template>
     <AppLayout title="Mis referidos">
-        <div class="max-w-4xl mx-auto py-8 px-4 space-y-8">
-            <!-- Header -->
+        <!-- Header -->
+        <div class="max-w-4xl mx-auto pt-8 pb-4 px-4">
             <div>
                 <h2 class="text-2xl font-light text-gray-900 dark:text-white tracking-tight m-0">Mis referidos</h2>
                 <p class="text-sm text-gray-500 dark:text-gray-400 mt-1 m-0">Comparte EzyVentas y gana premios por cada amigo que se suscriba.</p>
             </div>
+        </div>
 
-             <!-- Instrucciones -->
-            <div class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] p-6">
-                <h3 class="text-sm font-medium text-gray-900 dark:text-white m-0 mb-4">¿Cómo funciona?</h3>
-                <div class="space-y-4">
-                    <div class="flex gap-3">
-                        <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
-                            <span class="text-xs font-bold text-blue-500">1</span>
-                        </div>
-                        <div>
-                            <p class="text-sm font-medium text-gray-900 dark:text-white m-0">Comparte tu código</p>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 m-0 mt-1">Envía tu código único a otros negocios que quieran usar EzyVentas.</p>
-                        </div>
-                    </div>
-                    <div class="flex gap-3">
-                        <div class="w-8 h-8 rounded-full bg-green-50 dark:bg-green-900/20 flex items-center justify-center flex-shrink-0 border border-green-100 dark:border-green-900/30">
-                            <span class="text-xs font-bold text-green-500">2</span>
-                        </div>
-                        <div>
-                            <p class="text-sm font-medium text-gray-900 dark:text-white m-0">Beneficio para tu amigo</p>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 m-0 mt-1">Obtiene {{ settings?.referred_discount_pct || 15 }}% de descuento en su primer pago.</p>
-                        </div>
-                    </div>
-                    <div class="flex gap-3">
-                        <div class="w-8 h-8 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0 border border-amber-100 dark:border-amber-900/30">
-                            <span class="text-xs font-bold text-amber-500">3</span>
-                        </div>
-                        <div>
-                            <p class="text-sm font-medium text-gray-900 dark:text-white m-0">Tu recompensa</p>
-                            <p class="text-xs text-gray-500 dark:text-gray-400 m-0 mt-1">Recibes {{ settings?.referrer_reward_pct || 50 }}% de una mensualidad como premio único + {{ settings?.referrer_ongoing_discount_pct || 10 }}% de descuento en tu plan mientras tu referido esté activo.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <!-- Banner principal del sistema de referidos - full width -->
+        <div class="px-4 md:px-8 lg:px-12 mb-8 max-w-7xl mx-auto">
+            <ReferralHeroBanner
+                :referral-code="referralCode"
+                :active-referrals-count="activeReferralsCount"
+                :subscription-cost="subscriptionCost"
+                :referrer-active-discount-pct="referrerActiveDiscountPct"
+                :settings="settings"
+            />
+        </div>
 
-            <!-- Métricas -->
+        <!-- Contenido principal -->
+        <div class="max-w-4xl mx-auto pb-8 px-4 space-y-8">
+
+            <!-- Metricas -->
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] p-6">
                     <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Total ganado</p>
@@ -130,59 +89,6 @@ if (hasUnseen.value) {
                         <span class="text-gray-300 mx-1">•</span>
                         <span class="text-gray-400">{{ referrals.length - activeReferralsCount }} inactivos</span>
                     </p>
-                </div>
-            </div>
-
-            <!-- Costo de suscripción y descuento activo -->
-            <div class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] p-6">
-                <div class="flex items-start gap-4">
-                    <div class="w-10 h-10 rounded-full bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0 border border-purple-100 dark:border-purple-900/30">
-                        <i class="pi pi-wallet !text-sm text-purple-500"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Costo actual de tu suscripción</h3>
-                        <div v-if="referrerActiveDiscountPct > 0" class="flex items-baseline gap-2 mt-2">
-                            <span class="text-lg text-gray-400 line-through font-mono">${{ (subscriptionCost || 0).toFixed(2) }}</span>
-                            <span class="text-3xl font-light tracking-tight text-purple-600 dark:text-purple-400">${{ ((subscriptionCost || 0) * (1 - referrerActiveDiscountPct / 100)).toFixed(2) }}</span>
-                            <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400">/mes</span>
-                        </div>
-                        <div v-else class="flex items-baseline gap-2 mt-2">
-                            <span class="text-3xl font-light tracking-tight text-gray-900 dark:text-white">${{ (subscriptionCost || 0).toFixed(2) }}</span>
-                            <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400">/mes</span>
-                        </div>
-                        <div v-if="referrerActiveDiscountPct > 0" class="mt-3 bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-900/30 rounded-2xl p-3">
-                            <p class="text-sm text-purple-800 dark:text-purple-200 m-0 flex items-center gap-2">
-                                <i class="pi pi-check-circle !text-xs"></i>
-                                Tienes un <strong>{{ referrerActiveDiscountPct }}% de descuento</strong> por tus referidos activos
-                            </p>
-                            <p class="text-xs text-purple-600 dark:text-purple-400 m-0 mt-1">
-                                Aplicas descuento al pagar tu suscripción de forma mensual. Descuento estimado: <strong class="font-mono">${{ ((subscriptionCost || 0) * (referrerActiveDiscountPct / 100)).toFixed(2) }}</strong>
-                            </p>
-                        </div>
-                        <p v-else class="text-xs text-gray-500 m-0 mt-2">Refiere a otros negocios y obtén descuento en tu plan.</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Mi código -->
-            <div class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] p-6">
-                <h3 class="text-sm font-medium text-gray-900 dark:text-white m-0 mb-4">Mi código de referido</h3>
-
-                <div v-if="referralCode" class="space-y-4">
-                    <div class="flex items-center gap-3">
-                        <div class="flex-1 bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] rounded-2xl px-4 py-3">
-                            <p class="text-2xl font-mono font-bold text-gray-900 dark:text-white tracking-widest m-0">{{ referralCode.code }}</p>
-                        </div>
-                        <Button icon="pi pi-copy" severity="secondary" text rounded class="!w-10 !h-10" @click="copyCode" v-tooltip.top="'Copiar código'" />
-                    </div>
-                    <div class="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl p-4">
-                        <p class="text-sm text-blue-700 dark:text-blue-300 m-0">{{ shareMessage }}</p>
-                    </div>
-                </div>
-
-                <div v-else class="text-center py-6">
-                    <p class="text-sm text-gray-500 dark:text-gray-400 m-0 mb-4">Aún no tienes un código de referido.</p>
-                    <Button label="Generar mi código" icon="pi pi-ticket" severity="primary" @click="generateCode" class="!rounded-full" :loading="loadingCode" :disabled="loadingCode" />
                 </div>
             </div>
 

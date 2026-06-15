@@ -88,11 +88,35 @@ class Subscription extends Model implements HasMedia
 
     public function getAvailableModuleNames(): array
     {
-        $currentVersion = $this->currentVersion();
-        if (!$currentVersion) return [];
+        $subscribedModuleKeys = $this->getActiveModuleKeys();
 
-        $subscribedModuleKeys = $currentVersion->items()->where('item_type', 'module')->pluck('item_key')->all();
-        return PlanItem::whereIn('key', $subscribedModuleKeys)->where('type', PlanItemType::MODULE)->pluck('name')->all();
+        return PlanItem::whereIn('key', $subscribedModuleKeys)
+            ->where('type', PlanItemType::MODULE)
+            ->pluck('name')
+            ->all();
+    }
+
+    /**
+     * Obtiene las claves de los módulos activos desde la última versión
+     * que tenga items (contratada en la renovación/mejora más reciente).
+     */
+    public function getActiveModuleKeys(): array
+    {
+        $latestVersion = $this->versions()
+            ->whereHas('items')
+            ->latest('id')
+            ->first();
+
+        if (!$latestVersion) {
+            $currentVersion = $this->currentVersion();
+            if (!$currentVersion) return [];
+            $latestVersion = $currentVersion;
+        }
+
+        return $latestVersion->items()
+            ->where('item_type', 'module')
+            ->pluck('item_key')
+            ->all();
     }
 
     public function hasReachedProductLimit(int $additionalItems = 0): bool
