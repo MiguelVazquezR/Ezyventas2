@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasSubscription;
 use App\Enums\CashRegisterSessionStatus;
 use App\Enums\ExpenseStatus;
 use App\Enums\PaymentMethod;
@@ -16,7 +17,7 @@ use Illuminate\Support\Facades\DB;
 
 class CashRegisterSession extends Model
 {
-    use HasFactory;
+    use HasFactory, HasSubscription;
 
     protected $table = 'cash_register_sessions';
 
@@ -46,6 +47,26 @@ class CashRegisterSession extends Model
             'calculated_cash_total' => 'decimal:2',
             'cash_difference' => 'decimal:2',
         ];
+    }
+
+    /**
+     * Returns the subscription ID via cashRegister -> branch -> subscription.
+     */
+    public function getSubscriptionId(): ?int
+    {
+        $cashRegister = $this->relationLoaded('cashRegister')
+            ? $this->cashRegister
+            : $this->cashRegister()->first();
+
+        if (!$cashRegister) {
+            return null;
+        }
+
+        $branch = $cashRegister->relationLoaded('branch')
+            ? $cashRegister->branch
+            : $cashRegister->branch()->first();
+
+        return $branch?->subscription_id;
     }
 
     /*

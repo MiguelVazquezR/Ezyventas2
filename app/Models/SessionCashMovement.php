@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasSubscription;
 use App\Enums\SessionCashMovementType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class SessionCashMovement extends Model
 {
-    use HasFactory;
+    use HasFactory, HasSubscription;
 
     protected $table = 'session_cash_movements';
 
@@ -40,5 +41,21 @@ class SessionCashMovement extends Model
     public function expense(): HasOne
     {
         return $this->hasOne(Expense::class);
+    }
+
+    /**
+     * Returns the subscription ID via cashRegisterSession -> cashRegister -> branch -> subscription.
+     */
+    public function getSubscriptionId(): ?int
+    {
+        $session = $this->relationLoaded('cashRegisterSession')
+            ? $this->cashRegisterSession
+            : $this->cashRegisterSession()->first();
+
+        if (!$session) {
+            return null;
+        }
+
+        return $session->getSubscriptionId();
     }
 }

@@ -119,7 +119,7 @@ class SubscriptionController extends Controller
     public function storeDocument(Request $request)
     {
         $request->validate([
-            'fiscal_document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:2048'],
+            'fiscal_document' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:2048'],
         ]);
 
         $user = Auth::user();
@@ -191,7 +191,7 @@ class SubscriptionController extends Controller
             'total_amount' => 'required|numeric|min:0',
             'mode' => 'required|string|in:upgrade,renew',
             'payment_method' => ['required', Rule::in(['transferencia', 'stripe', 'card_mock', 'tarjeta'])],
-            'proof_of_payment' => ['nullable', 'required_if:payment_method,transferencia', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:2048'],
+            'proof_of_payment' => ['nullable', 'required_if:payment_method,transferencia', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:2048'],
             'bank_account_id' => 'nullable|numeric|exists:bank_accounts,id',
             'expense_category_id' => [Rule::requiredIf($request->bank_account_id != null)],
             'referral_code' => ['nullable', 'string', 'max:12'],

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasSubscription;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -16,7 +17,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class Transaction extends Model
 {
-    use HasFactory, LogsActivity;
+    use HasFactory, LogsActivity, HasSubscription;
 
     protected $fillable = [
         'folio', 'customer_id', 'contact_info', 'branch_id', 'user_id',

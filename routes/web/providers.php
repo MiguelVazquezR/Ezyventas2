@@ -17,5 +17,7 @@ use App\Http\Controllers\ProviderController;
 // index -> GET /providers (para listar)
 // update -> PUT/PATCH /providers/{provider} (para actualizar)
 // destroy -> DELETE /providers/{provider} (para eliminar)
-Route::resource('providers', ProviderController::class)
-    ->only(['index', 'update', 'destroy']);
+Route::middleware('auth')->group(function () {
+    Route::resource('providers', ProviderController::class)
+        ->only(['index', 'update', 'destroy']);
+});
