@@ -19,21 +19,43 @@ class ReferralController extends Controller
     public function index(): Response
     {
         $user = Auth::user();
+        $subscription = $user->branch->subscription;
+
+        // Calcular costo mensual actual de la suscripción
+        $subscriptionCost = $subscription->getCurrentMonthlyCost();
+        $referrerActiveDiscountPct = $subscription->getReferrerActiveDiscountPct();
+
+        $referrals = $user->referralUsagesAsReferrer()
+                            ->with([
+                                'referredSubscription' => fn($q) => $q->select('id', 'commercial_name')
+                                    ->withCount(['versions as active_versions_count' => fn($v) =>
+                                        $v->where('end_date', '>=', now()->startOfDay())
+                                    ]),
+                                'payment',
+                            ])
+                            ->latest()
+                            ->get()
+                            ->map(fn($r) => [
+                                ...$r->toArray(),
+                                'referred_subscription_active' => $r->referredSubscription && $r->referredSubscription->active_versions_count > 0,
+                            ]);
+
+        $activeReferralsCount = $referrals->where('referred_subscription_active', true)->count();
 
         return Inertia::render('Subscription/Referral/Index', [
-            'referralCode'   => $user->referralCode,
-            'referrals'      => $user->referralUsagesAsReferrer()
-                                    ->with(['referredSubscription:id,commercial_name', 'payment'])
-                                    ->latest()
-                                    ->get(),
-            'pendingRewards' => (float) $user->referralUsagesAsReferrer()
-                                    ->where('reward_status', 'pending')
-                                    ->sum('reward_amount'),
-            'totalEarned'    => (float) $user->referralUsagesAsReferrer()
-                                    ->where('reward_status', 'paid')
-                                    ->sum('reward_amount'),
-            'bankAccount'    => $user->referrerBankAccount,
-            'settings'       => ReferralSettings::first(),
+            'referralCode'              => $user->referralCode,
+            'referrals'                 => $referrals,
+            'pendingRewards'            => (float) $user->referralUsagesAsReferrer()
+                                            ->where('reward_status', 'pending')
+                                            ->sum('reward_amount'),
+            'totalEarned'               => (float) $user->referralUsagesAsReferrer()
+                                            ->where('reward_status', 'paid')
+                                            ->sum('reward_amount'),
+            'bankAccount'               => $user->referrerBankAccount,
+            'settings'                  => ReferralSettings::first(),
+            'activeReferralsCount'      => $activeReferralsCount,
+            'subscriptionCost'          => (float) round($subscriptionCost, 2),
+            'referrerActiveDiscountPct' => (float) $referrerActiveDiscountPct,
         ]);
     }
 

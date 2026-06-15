@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasSubscription;
 use App\Enums\TemplateType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,7 +13,7 @@ use Spatie\MediaLibrary\InteractsWithMedia;
 
 class PrintTemplate extends Model implements HasMedia
 {
-    use HasFactory, InteractsWithMedia;
+    use HasFactory, InteractsWithMedia, HasSubscription;
 
     protected $fillable = [
         'subscription_id',

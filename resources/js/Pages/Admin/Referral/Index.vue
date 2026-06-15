@@ -1,6 +1,5 @@
 <script setup>
-import { ref } from 'vue';
-import { Head, useForm } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
@@ -26,8 +25,6 @@ function markPaid(usage) {
 
 <template>
     <AppLayout title="Referidos">
-        <Head title="Gestión de referidos" />
-
         <div class="max-w-6xl mx-auto py-8 px-4 space-y-6">
             <div class="flex items-center justify-between">
                 <div>

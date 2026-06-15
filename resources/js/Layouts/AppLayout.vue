@@ -212,7 +212,7 @@ watch(activeSession, (newSession, oldSession) => {
                             </p>
                         </div>
                     </div>
-                    <Link v-if="isOwner" :href="route('subscription.show')" class="ml-4 flex-shrink-0">
+                    <Link v-if="isOwner" :href="route('subscription.manage')" class="ml-4 flex-shrink-0">
                         <Button label="Renovar ahora" :severity="bannerButtonSeverity" size="small" />
                     </Link>
                 </div>

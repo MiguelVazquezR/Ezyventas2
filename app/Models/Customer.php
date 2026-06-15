@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\CustomerBalanceMovementType;
 use App\Enums\TransactionStatus;
 use Carbon\Carbon;
+use App\Traits\HasSubscription;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -14,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class Customer extends Model
 {
-    use HasFactory;
+    use HasFactory, HasSubscription;
 
     protected $fillable = [
         'branch_id', 'company_name', 'name', 'email', 'phone',

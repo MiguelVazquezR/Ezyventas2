@@ -149,15 +149,21 @@ class SubscriptionController extends Controller
         // 8. Construir los datos de configuraciones (settings)
         $settingsData = $this->buildSettingsData($subscription);
 
-        // 9. Renderizar la vista pasando la información orquestada
+        // 9. Calcular valor del plan y descuento por referidos activos
+        $planValue = $subscription->getCurrentMonthlyCost();
+        $referrerActiveDiscountPct = $subscription->getReferrerActiveDiscountPct();
+
         return Inertia::render('Admin/Subscriptions/Show', [
             'subscription' => $subscription,
-            'planItems' => $planItems, // Aún se pasa para el modal de edición
+            'planItems' => $planItems,
             'dynamicLimits' => $dynamicLimits,
             'dynamicModules' => $dynamicModules,
             'subscriptionStatus' => $subscription->getStatusData(),
             'fiscalDocumentUrl' => $subscription->getFirstMediaUrl('fiscal-documents') ?: null,
             'settingsData' => $settingsData,
+            'planValue' => $planValue,
+            'referrerActiveDiscountPct' => (float) $referrerActiveDiscountPct,
+            'subscriptionCost' => (float) $planValue,
         ]);
     }
 

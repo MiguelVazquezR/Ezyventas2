@@ -14,4 +14,10 @@ class ReferralSettings extends Model
         'referrer_reward_pct',
         'referrer_ongoing_discount_pct',
     ];
+
+    protected $casts = [
+        'referred_discount_pct' => 'decimal:2',
+        'referrer_reward_pct' => 'decimal:2',
+        'referrer_ongoing_discount_pct' => 'decimal:2',
+    ];
 }

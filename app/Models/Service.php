@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasSubscription;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,7 +16,7 @@ use Illuminate\Support\Str;
 
 class Service extends Model implements HasMedia
 {
-    use HasFactory, InteractsWithMedia, LogsActivity;
+    use HasFactory, InteractsWithMedia, LogsActivity, HasSubscription;
 
     protected $fillable = [
         'category_id',
