@@ -44,8 +44,23 @@ const form = useForm({
     payment_method: 'efectivo',
     bank_account_id: null,
     take_from_cash_register: false,
+    is_external: false,
     cash_register_session_id: null,
 });
+
+// Opciones para el origen del dinero según el método de pago
+const cashOriginOptions = ref([
+    { label: 'De la caja activa del día', value: 'register', icon: 'pi pi-inbox' },
+    { label: 'De mi propio dinero / Efectivo externo', value: 'external', icon: 'pi pi-wallet' },
+]);
+
+const bankOriginOptions = ref([
+    { label: 'Cuenta / Tarjeta del negocio', value: 'business', icon: 'pi pi-building' },
+    { label: 'Mi propia cuenta / Tarjeta externa', value: 'external', icon: 'pi pi-credit-card' },
+]);
+
+// Origen seleccionado: 'register' | 'external' (para efectivo) o 'business' | 'external' (para tarjeta/transferencia)
+const selectedOrigin = ref('register');
 
 const statusOptions = ref([
     { label: 'Pagado', value: 'pagado' },
@@ -61,12 +76,40 @@ const paymentMethodOptions = ref([
 watch(() => form.payment_method, (newMethod) => {
     if (newMethod === 'efectivo') {
         form.bank_account_id = null;
+        form.is_external = false;
+        form.take_from_cash_register = true;
+        selectedOrigin.value = 'register';
     } else {
         form.take_from_cash_register = false;
+        form.is_external = false;
+        selectedOrigin.value = 'business';
         const favoriteAccount = props.userBankAccounts.find(account =>
             account.branches?.[0]?.pivot?.is_favorite
         );
         form.bank_account_id = favoriteAccount ? favoriteAccount.id : null;
+    }
+});
+
+watch(selectedOrigin, (origin) => {
+    if (form.payment_method === 'efectivo') {
+        if (origin === 'register') {
+            form.take_from_cash_register = true;
+            form.is_external = false;
+        } else {
+            form.take_from_cash_register = false;
+            form.is_external = true;
+        }
+    } else {
+        if (origin === 'business') {
+            form.is_external = false;
+            const favoriteAccount = props.userBankAccounts.find(account =>
+                account.branches?.[0]?.pivot?.is_favorite
+            );
+            form.bank_account_id = favoriteAccount ? favoriteAccount.id : null;
+        } else {
+            form.is_external = true;
+            form.bank_account_id = null;
+        }
     }
 });
 
@@ -176,30 +219,45 @@ watch(activeSession, (newSession) => {
                         <InputError :message="form.errors.payment_method" class="mt-2" />
                     </div>
 
+                    <!-- Origen del dinero: Efectivo -->
                     <div v-if="form.payment_method === 'efectivo'">
-                        <div class="flex items-center gap-3">
-                            <ToggleSwitch v-model="form.take_from_cash_register" inputId="take_from_cash_register" />
-                            <InputLabel for="take_from_cash_register">
-                                ¿Tomar efectivo de la caja activa?
-                            </InputLabel>
-                        </div>
+                        <InputLabel for="cash_origin" value="Origen del dinero *" />
+                        <SelectButton id="cash_origin" v-model="selectedOrigin" :options="cashOriginOptions"
+                            optionLabel="label" optionValue="value" class="mt-1 w-full">
+                            <template #option="slotProps">
+                                <i :class="[slotProps.option.icon, 'mr-2']"></i>
+                                <span>{{ slotProps.option.label }}</span>
+                            </template>
+                        </SelectButton>
                         <InputError :message="form.errors.take_from_cash_register" class="mt-2" />
                         <InputError :message="form.errors.cash_register_session_id" class="mt-2" />
                     </div>
 
+                    <!-- Origen del dinero: Tarjeta / Transferencia -->
                     <div v-if="form.payment_method === 'tarjeta' || form.payment_method === 'transferencia'">
-                        <InputLabel for="bank_account_id" value="Cuenta de Origen *" />
-                        <Select size="large" id="bank_account_id" v-model="form.bank_account_id"
-                            :options="userBankAccounts" optionLabel="account_name" optionValue="id"
-                            placeholder="Selecciona una cuenta" class="w-full mt-1">
+                        <InputLabel for="bank_origin" value="Origen del dinero *" />
+                        <SelectButton id="bank_origin" v-model="selectedOrigin" :options="bankOriginOptions"
+                            optionLabel="label" optionValue="value" class="mt-1 w-full">
                             <template #option="slotProps">
-                                <div class="flex flex-col">
-                                    <span>{{ slotProps.option.account_name }} ({{ slotProps.option.bank_name }})</span>
-                                    <span class="text-xs text-gray-500">{{ slotProps.option.account_number }}</span>
-                                </div>
+                                <i :class="[slotProps.option.icon, 'mr-2']"></i>
+                                <span>{{ slotProps.option.label }}</span>
                             </template>
-                        </Select>
-                        <InputError :message="form.errors.bank_account_id" class="mt-2" />
+                        </SelectButton>
+
+                        <div v-if="selectedOrigin === 'business'" class="mt-4">
+                            <InputLabel for="bank_account_id" value="Cuenta de origen *" />
+                            <Select size="large" id="bank_account_id" v-model="form.bank_account_id"
+                                :options="userBankAccounts" optionLabel="account_name" optionValue="id"
+                                placeholder="Selecciona una cuenta" class="w-full mt-1">
+                                <template #option="slotProps">
+                                    <div class="flex flex-col">
+                                        <span>{{ slotProps.option.account_name }} ({{ slotProps.option.bank_name }})</span>
+                                        <span class="text-xs text-gray-500">{{ slotProps.option.account_number }}</span>
+                                    </div>
+                                </template>
+                            </Select>
+                            <InputError :message="form.errors.bank_account_id" class="mt-2" />
+                        </div>
                     </div>
                 </div>
 

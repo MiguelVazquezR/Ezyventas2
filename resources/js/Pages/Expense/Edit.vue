@@ -1,11 +1,10 @@
 <script setup>
-import { ref, watch, computed } from 'vue';
-import { useForm, usePage } from '@inertiajs/vue3';
+import { ref, watch } from 'vue';
+import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import ManageExpenseCategoriesModal from '@/Components/ManageExpenseCategoriesModal.vue';
-import StartSessionModal from '@/Components/StartSessionModal.vue';
 import { usePermissions } from '@/Composables';
 
 const props = defineProps({
@@ -15,9 +14,7 @@ const props = defineProps({
     availableCashRegisters: Array,
 });
 
-const page = usePage();
 const { hasPermission } = usePermissions();
-const activeSession = computed(() => page.props.activeSession);
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
@@ -36,7 +33,26 @@ const form = useForm({
     payment_method: props.expense.payment_method,
     bank_account_id: props.expense.bank_account_id,
     take_from_cash_register: !!props.expense.session_cash_movement,
+    is_external: !!props.expense.is_external,
 });
+
+// Opciones para el origen del dinero según el método de pago
+const cashOriginOptions = ref([
+    { label: 'De la caja activa del día', value: 'register', icon: 'pi pi-inbox' },
+    { label: 'De mi propio dinero / Efectivo externo', value: 'external', icon: 'pi pi-wallet' },
+]);
+
+const bankOriginOptions = ref([
+    { label: 'Cuenta / Tarjeta del negocio', value: 'business', icon: 'pi pi-building' },
+    { label: 'Mi propia cuenta / Tarjeta externa', value: 'external', icon: 'pi pi-credit-card' },
+]);
+
+// Origen inicial según los datos del gasto
+const selectedOrigin = ref(
+    props.expense.payment_method === 'efectivo'
+        ? (!!props.expense.session_cash_movement ? 'register' : 'external')
+        : (props.expense.is_external ? 'external' : 'business')
+);
 
 const statusOptions = ref([
     { label: 'Pagado', value: 'pagado' },
@@ -52,17 +68,43 @@ const paymentMethodOptions = ref([
 watch(() => form.payment_method, (newMethod, oldMethod) => {
     if (newMethod === 'efectivo') {
         form.bank_account_id = null;
+        form.is_external = false;
+        form.take_from_cash_register = true;
+        selectedOrigin.value = 'register';
     } else {
         form.take_from_cash_register = false;
+        form.is_external = false;
+        selectedOrigin.value = 'business';
 
-        // Solo auto-seleccionar si el usuario está cambiando a este método,
-        // no si la página se carga con este método ya seleccionado (oldMethod es null al inicio).
+        // Solo auto-seleccionar si el usuario está cambiando a este método
         if (newMethod !== oldMethod && oldMethod !== undefined) {
             const favoriteAccount = props.bankAccounts.find(account =>
                 account.branches?.[0]?.pivot?.is_favorite
             );
-
             form.bank_account_id = favoriteAccount ? favoriteAccount.id : null;
+        }
+    }
+});
+
+watch(selectedOrigin, (origin) => {
+    if (form.payment_method === 'efectivo') {
+        if (origin === 'register') {
+            form.take_from_cash_register = true;
+            form.is_external = false;
+        } else {
+            form.take_from_cash_register = false;
+            form.is_external = true;
+        }
+    } else {
+        if (origin === 'business') {
+            form.is_external = false;
+            const favoriteAccount = props.bankAccounts.find(account =>
+                account.branches?.[0]?.pivot?.is_favorite
+            );
+            form.bank_account_id = favoriteAccount ? favoriteAccount.id : null;
+        } else {
+            form.is_external = true;
+            form.bank_account_id = null;
         }
     }
 });
@@ -87,8 +129,6 @@ const handleCategoryDelete = (deletedCategoryId) => {
         form.expense_category_id = null;
     }
 };
-
-const showStartSessionModal = ref(false);
 
 const submit = () => {
     form.put(route('expenses.update', props.expense.id));
@@ -138,7 +178,7 @@ const submit = () => {
                 <div class="md:col-span-2 space-y-4 p-4 border rounded-lg bg-gray-50 dark:bg-gray-900/50">
                     <h5 class="font-semibold text-gray-700 dark:text-gray-300">Detalles del pago</h5>
                     <div>
-                        <InputLabel for="payment_method" value="Método de Pago *" />
+                        <InputLabel for="payment_method" value="Método de pago *" />
                         <SelectButton id="payment_method" v-model="form.payment_method" :options="paymentMethodOptions"
                             optionLabel="label" optionValue="value" class="mt-1 w-full">
                             <template #option="slotProps">
@@ -149,40 +189,44 @@ const submit = () => {
                         <InputError :message="form.errors.payment_method" class="mt-2" />
                     </div>
 
+                    <!-- Origen del dinero: Efectivo -->
                     <div v-if="form.payment_method === 'efectivo'">
-                        <div v-if="activeSession || true" class="flex items-center gap-3">
-                            <ToggleSwitch v-model="form.take_from_cash_register" inputId="take_from_cash_register" />
-                            <InputLabel for="take_from_cash_register">
-                                ¿Tomar efectivo de la caja activa cuando se creó este gasto?
-                            </InputLabel>
-                        </div>
-                        <div v-else
-                            class="flex items-start justify-between p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                            <div class="flex items-start gap-3 w-[70%]">
-                                <i class="pi pi-info-circle text-yellow-500 !text-xl"></i>
-                                <span class="text-sm text-yellow-700 dark:text-yellow-300">
-                                    Se requiere una sesión de caja activa para indicar que el dinero se toma de ahí.
-                                </span>
-                            </div>
-                            <Button label="Abrir Caja" icon="pi pi-inbox" size="small"
-                                @click="showStartSessionModal = true" />
-                        </div>
+                        <InputLabel for="cash_origin" value="Origen del dinero *" />
+                        <SelectButton id="cash_origin" v-model="selectedOrigin" :options="cashOriginOptions"
+                            optionLabel="label" optionValue="value" class="mt-1 w-full">
+                            <template #option="slotProps">
+                                <i :class="[slotProps.option.icon, 'mr-2']"></i>
+                                <span>{{ slotProps.option.label }}</span>
+                            </template>
+                        </SelectButton>
                         <InputError :message="form.errors.take_from_cash_register" class="mt-2" />
                     </div>
 
+                    <!-- Origen del dinero: Tarjeta / Transferencia -->
                     <div v-if="form.payment_method === 'tarjeta' || form.payment_method === 'transferencia'">
-                        <InputLabel for="bank_account_id" value="Cuenta de origen *" />
-                        <Select size="large" id="bank_account_id" v-model="form.bank_account_id" :options="bankAccounts"
-                            optionLabel="account_name" optionValue="id" placeholder="Selecciona una cuenta"
-                            class="w-full mt-1">
+                        <InputLabel for="bank_origin" value="Origen del dinero *" />
+                        <SelectButton id="bank_origin" v-model="selectedOrigin" :options="bankOriginOptions"
+                            optionLabel="label" optionValue="value" class="mt-1 w-full">
                             <template #option="slotProps">
-                                <div class="flex flex-col">
-                                    <span>{{ slotProps.option.account_name }} ({{ slotProps.option.bank_name }})</span>
-                                    <span class="text-xs text-gray-500">{{ slotProps.option.account_number }}</span>
-                                </div>
+                                <i :class="[slotProps.option.icon, 'mr-2']"></i>
+                                <span>{{ slotProps.option.label }}</span>
                             </template>
-                        </Select>
-                        <InputError :message="form.errors.bank_account_id" class="mt-2" />
+                        </SelectButton>
+
+                        <div v-if="selectedOrigin === 'business'" class="mt-4">
+                            <InputLabel for="bank_account_id" value="Cuenta de origen *" />
+                            <Select size="large" id="bank_account_id" v-model="form.bank_account_id" :options="bankAccounts"
+                                optionLabel="account_name" optionValue="id" placeholder="Selecciona una cuenta"
+                                class="w-full mt-1">
+                                <template #option="slotProps">
+                                    <div class="flex flex-col">
+                                        <span>{{ slotProps.option.account_name }} ({{ slotProps.option.bank_name }})</span>
+                                        <span class="text-xs text-gray-500">{{ slotProps.option.account_number }}</span>
+                                    </div>
+                                </template>
+                            </Select>
+                            <InputError :message="form.errors.bank_account_id" class="mt-2" />
+                        </div>
                     </div>
                 </div>
 
@@ -205,7 +249,5 @@ const submit = () => {
 
         <ManageExpenseCategoriesModal v-model:visible="showCategoryModal" @created="handleNewCategory"
             @updated="handleCategoryUpdate" @deleted="handleCategoryDelete" />
-
-        <StartSessionModal v-model:visible="showStartSessionModal" :cash-registers="availableCashRegisters" />
     </AppLayout>
 </template>

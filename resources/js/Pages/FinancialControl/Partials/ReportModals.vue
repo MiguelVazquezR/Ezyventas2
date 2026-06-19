@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue';
 import { format } from 'date-fns';
 
 const props = defineProps({
@@ -15,6 +16,32 @@ const isHelpVisible = defineModel('isHelpVisible', { type: Boolean });
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 const formatDate = (dateString) => format(new Date(dateString), 'dd/MM/yyyy');
 const formatDateTime = (dateString) => format(new Date(dateString), 'dd/MM/yyyy HH:mm');
+
+// Totales por origen para el modal de gastos
+const internalExpensesTotal = computed(() => {
+    return props.detailedExpenses
+        .filter(e => !e.is_external)
+        .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+});
+
+const externalExpensesTotal = computed(() => {
+    return props.detailedExpenses
+        .filter(e => e.is_external)
+        .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+});
+
+const getOriginLabel = (expense) => {
+    if (expense.is_external) {
+        return { label: 'Dinero externo', icon: 'pi pi-wallet', severity: 'info', tooltip: 'Gasto con dinero externo. No afecta tu flujo de dinero.' };
+    }
+    if (expense.payment_method === 'efectivo') {
+        return { label: 'Caja del negocio', icon: 'pi pi-inbox', severity: 'success', tooltip: 'Gasto con efectivo de la caja del negocio.' };
+    }
+    if (expense.bank_account) {
+        return { label: 'Cuenta del negocio', icon: 'pi pi-building', severity: 'success', tooltip: 'Gasto con cuenta bancaria del negocio.' };
+    }
+    return { label: 'Cuenta del negocio', icon: 'pi pi-building', severity: 'success', tooltip: 'Gasto con cuenta bancaria del negocio.' };
+};
 
 const getPaymentMethodDetails = (method) => {
     const details = {
@@ -162,6 +189,24 @@ const tagPt = {
 
     <!-- MODAL: Detalle de Gastos Totales -->
     <Dialog v-model:visible="isExpensesVisible" header="Detalle de gastos totales" modal class="w-full max-w-5xl mx-4" :pt="dialogPt">
+        <!-- Resumen por origen del dinero -->
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <div class="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 rounded-2xl p-5 flex flex-col gap-2">
+                <div class="flex items-center gap-2">
+                    <i class="pi pi-building !text-sm text-green-600 dark:text-green-400"></i>
+                    <span class="text-[10px] uppercase tracking-widest font-bold text-green-700 dark:text-green-400 m-0">Gastos de dinero del negocio</span>
+                </div>
+                <p class="text-3xl font-light tracking-tight text-green-700 dark:text-green-300 m-0">{{ formatCurrency(internalExpensesTotal) }}</p>
+            </div>
+            <div class="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl p-5 flex flex-col gap-2">
+                <div class="flex items-center gap-2">
+                    <i class="pi pi-wallet !text-sm text-blue-600 dark:text-blue-400"></i>
+                    <span class="text-[10px] uppercase tracking-widest font-bold text-blue-700 dark:text-blue-400 m-0">Gastos de dinero externo</span>
+                </div>
+                <p class="text-3xl font-light tracking-tight text-blue-700 dark:text-blue-300 m-0">{{ formatCurrency(externalExpensesTotal) }}</p>
+            </div>
+        </div>
+
         <DataTable :value="detailedExpenses" paginator :rows="10" sortMode="multiple"
             :multiSortMeta="[{ field: 'expense_date', order: -1 }]" responsiveLayout="scroll" :pt="dataTablePt">
             <Column field="folio" header="Folio" sortable>
@@ -173,8 +218,8 @@ const tagPt = {
             <Column field="category.name" header="Categoría" sortable>
                 <template #body="{ data }"> <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">{{ data.category?.name }}</span> </template>
             </Column>
-            <Column field="description" header="Descripción">
-                <template #body="{ data }"> <span class="text-base dark:text-gray-300">{{ data.description }}</span> </template>
+            <Column field="description" header="Descripción" style="max-width: 120px">
+                <template #body="{ data }"> <span class="text-base dark:text-gray-300 truncate block max-w-[120px]" :title="data.description">{{ data.description }}</span> </template>
             </Column>
             <Column field="payment_method" header="Método de pago" sortable>
                 <template #body="{ data }">
@@ -188,6 +233,13 @@ const tagPt = {
                             <i class="pi pi-building !text-[9px]"></i> {{ data.bank_account.account_name }} 
                         </div>
                     </div>
+                </template>
+            </Column>
+            <Column field="is_external" header="Origen de dinero" sortable>
+                <template #body="{ data }">
+                    <Tag :value="getOriginLabel(data).label" :severity="getOriginLabel(data).severity" :pt="tagPt" class="capitalize" v-tooltip.top="getOriginLabel(data).tooltip">
+                        <i :class="getOriginLabel(data).icon" class="mr-1"></i>
+                    </Tag>
                 </template>
             </Column>
             <Column field="amount" header="Monto" sortable> 

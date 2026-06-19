@@ -7,12 +7,13 @@ const model = ref([
     {
         items: [
             { label: 'Inicio', icon: 'pi pi-home', to: route('dashboard'), routeName: 'dashboard' },
-            { label: 'Punto de venta', icon: 'pi pi-shop', to: route('pos.index'), routeName: 'pos.*', permission: 'pos.access', module: 'module_pos' },
-            { label: 'Reporte financiero', icon: 'pi pi-chart-bar', to: route('financial-control.index'), routeName: 'financial-control.*', permission: 'financial_reports.access', module: 'module_financial_reports' },
-            { label: 'Historial de ventas', icon: 'pi pi-history', to: route('transactions.index'), routeName: 'transactions.*', permission: 'transactions.access', module: 'module_transactions' },
-            { label: 'Productos', icon: 'pi pi-barcode', to: route('products.index'), routeName: 'products.*', permission: 'products.access', module: 'module_products' },
-            { label: 'Gastos', icon: 'pi pi-arrow-up-right', to: route('expenses.index'), routeName: 'expenses.*', permission: 'expenses.access', module: 'module_expenses' },
-            { label: 'Clientes', icon: 'pi pi-users', to: route('customers.index'), routeName: 'customers.*', permission: 'customers.access', module: 'module_customers' },
+            { label: 'Punto de venta', icon: 'pi pi-shop', to: route('pos.index'), routeName: 'pos.*', permission: 'pos.access' },
+            { label: 'Reporte financiero', icon: 'pi pi-chart-bar', to: route('financial-control.index'), routeName: 'financial-control.*', permission: 'financial_reports.access' },
+            { label: 'Historial de ventas', icon: 'pi pi-history', to: route('transactions.index'), routeName: 'transactions.*', permission: 'transactions.access' },
+            { label: 'Productos', icon: 'pi pi-barcode', to: route('products.index'), routeName: 'products.*', permission: 'products.access' },
+            { label: 'Gastos', icon: 'pi pi-arrow-up-right', to: route('expenses.index'), routeName: 'expenses.*', permission: 'expenses.access' },
+            { label: 'Clientes', icon: 'pi pi-users', to: route('customers.index'), routeName: 'customers.*', permission: 'customers.access' },
+            { label: 'Facturación', icon: 'pi pi-file', to: route('invoices.index'), routeName: 'invoices.*', permission: 'invoices.access' },
             {
                 label: 'Servicios', icon: 'pi pi-wrench', module: 'module_services',
                 items: [
