@@ -35,6 +35,15 @@ const handleRegisterPayment = () => {
     showRegisterPaymentModal.value = true;
 };
 
+const handleDeleteVersion = (version) => {
+    router.delete(route('admin.subscriptions.destroy-version', version.id), {
+        preserveScroll: true,
+        onError: (errors) => {
+            console.error('Error al eliminar la versión:', errors);
+        }
+    });
+};
+
 // --- HELPER FUNCTIONS (ESTADOS REALES) ---
 const getComputedStatus = (subscription) => {
     // Usamos la propiedad dinámica enviada por el modelo
@@ -241,6 +250,7 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
                             :versions="subscription.versions"
                             @edit-version="handleEditVersion"
                             @register-payment="handleRegisterPayment"
+                            @delete-version="handleDeleteVersion"
                         />
                     </div>
                 </div>

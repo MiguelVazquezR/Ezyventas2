@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Subscription\ApproveSubscriptionPaymentAction;
 use App\Actions\Subscription\ProcessSubscriptionPaymentAction;
 use App\Actions\Subscription\RevertFailedSubscriptionAction;
 use App\Enums\BillingPeriod;
@@ -12,6 +13,8 @@ use App\Models\ExpenseCategory;
 use App\Models\PlanItem;
 use App\Models\Subscription;
 use App\Models\SubscriptionPayment;
+use App\Services\PlatformMercadoPagoService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -190,7 +193,7 @@ class SubscriptionController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
             'total_amount' => 'required|numeric|min:0',
             'mode' => 'required|string|in:upgrade,renew',
-            'payment_method' => ['required', Rule::in(['transferencia', 'stripe', 'card_mock', 'tarjeta'])],
+            'payment_method' => ['required', Rule::in(['transferencia', 'mercadopago'])],
             'proof_of_payment' => ['nullable', 'required_if:payment_method,transferencia', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:2048'],
             'bank_account_id' => 'nullable|numeric|exists:bank_accounts,id',
             'expense_category_id' => [Rule::requiredIf($request->bank_account_id != null)],
@@ -205,18 +208,123 @@ class SubscriptionController extends Controller
 
         try {
             // REFACTOR: El Controller delega todo el trabajo pesado al Action
-            $action->execute($request, $subscription, $validated, PlanItem::where('is_active', true)->get()->keyBy('key'));
+            $payment = $action->execute($request, $subscription, $validated, PlanItem::where('is_active', true)->get()->keyBy('key'));
             
         } catch (\Exception $e) {
             Log::error("Error al procesar la suscripción: " . $e->getMessage());
             return redirect()->back()->with('error', 'Hubo un error al procesar tu pago. Por favor, intenta de nuevo.');
         }
 
-        $message = $validated['payment_method'] === 'transferencia' 
-            ? '¡Tu pago ha sido enviado! Está en revisión y se activará pronto.' 
-            : '¡Tu suscripción ha sido actualizada con éxito!';
+        if ($validated['payment_method'] === 'mercadopago') {
+            return redirect()->route('subscription.pay', ['payment' => $payment->id]);
+        }
+
+        $message = '¡Tu pago ha sido enviado! Está en revisión y se activará pronto.';
 
         return redirect()->route('subscription.show')->with('success', $message);
+    }
+
+    /**
+     * Redirige al suscriptor al checkout de Mercado Pago para completar el pago.
+     */
+    public function pay(SubscriptionPayment $payment, PlatformMercadoPagoService $mpService): RedirectResponse
+    {
+        $user = Auth::user();
+        if ($user->roles()->exists()) abort(403);
+
+        if ($payment->subscriptionVersion->subscription_id !== $user->branch->subscription_id) {
+            abort(403);
+        }
+
+        if ($payment->payment_method !== 'mercadopago' || $payment->status !== SubscriptionPaymentStatus::PENDING) {
+            return redirect()->route('subscription.show')
+                ->with('error', 'Este pago no se puede procesar con Mercado Pago.');
+        }
+
+        $subscription = $user->branch->subscription;
+        $version = $payment->subscriptionVersion;
+        $firstItem = $version->items->first();
+        $billingPeriodLabel = $firstItem?->billing_period === BillingPeriod::ANNUALLY ? 'Plan anual' : 'Plan mensual';
+
+        try {
+            $preference = $mpService->createPreference([
+                'items' => [[
+                    'id'          => "sub-{$payment->id}",
+                    'title'       => "Suscripción {$subscription->commercial_name}",
+                    'description' => "{$billingPeriodLabel} EzyVentas",
+                    'quantity'    => 1,
+                    'unit_price'  => (float) $payment->amount,
+                ]],
+                'payer_email'             => $subscription->contact_email ?? $user->email,
+                'subscription_payment_id' => $payment->id,
+                'description'             => "Suscripción {$subscription->commercial_name}",
+                'success_url'             => route('subscription.payment.return', ['payment' => $payment->id, 'status' => 'success']),
+                'failure_url'             => route('subscription.payment.return', ['payment' => $payment->id, 'status' => 'failure']),
+                'pending_url'             => route('subscription.payment.return', ['payment' => $payment->id, 'status' => 'pending']),
+            ]);
+
+            return redirect()->away($preference['init_point']);
+        } catch (\Exception $e) {
+            Log::error('MP subscription preference failed', ['payment_id' => $payment->id, 'error' => $e->getMessage()]);
+            return redirect()->route('subscription.show')
+                ->with('error', 'No se pudo iniciar el pago con Mercado Pago. Intenta con transferencia bancaria.');
+        }
+    }
+
+    /**
+     * Recibe el retorno de Mercado Pago después del intento de pago.
+     */
+    public function paymentReturn(SubscriptionPayment $payment, Request $request, PlatformMercadoPagoService $mpService, ApproveSubscriptionPaymentAction $approveAction): RedirectResponse
+    {
+        $user = Auth::user();
+        if ($user->roles()->exists()) abort(403);
+
+        if ($payment->subscriptionVersion->subscription_id !== $user->branch->subscription_id) {
+            abort(403);
+        }
+
+        // Si ya está aprobado, no hacer nada
+        if ($payment->status === SubscriptionPaymentStatus::APPROVED) {
+            return redirect()->route('subscription.show')
+                ->with('success', '¡Tu pago ya fue aprobado! Tu suscripción está activa.');
+        }
+
+        $status = $request->query('status');
+        $mpPaymentId = $request->query('payment_id');
+
+        // Si Mercado Pago reporta éxito, verificamos contra su API
+        if ($status === 'success' && $mpPaymentId) {
+            try {
+                $mpPayment = $mpService->getPayment($mpPaymentId);
+
+                if (($mpPayment['status'] ?? '') === 'approved') {
+                    $approveAction->execute($payment);
+
+                    return redirect()->route('subscription.show')
+                        ->with('success', '¡Pago aprobado! Tu suscripción ha sido activada.');
+                }
+
+                Log::warning('MP payment return not approved', [
+                    'payment_id'     => $payment->id,
+                    'mp_payment_id'  => $mpPaymentId,
+                    'mp_status'      => $mpPayment['status'] ?? 'unknown',
+                ]);
+            } catch (\Exception $e) {
+                Log::error('MP payment verification failed', [
+                    'payment_id'    => $payment->id,
+                    'mp_payment_id' => $mpPaymentId,
+                    'error'         => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if ($status === 'failure' || $status === 'pending') {
+            return redirect()->route('subscription.show')
+                ->with('warning', 'El pago no se completó. Puedes intentarlo de nuevo desde tu panel de suscripción.');
+        }
+
+        return redirect()->route('subscription.show')
+            ->with('warning', 'No se pudo verificar tu pago. Si realizaste el pago, contáctanos para verificarlo manualmente.');
     }
 
     /**

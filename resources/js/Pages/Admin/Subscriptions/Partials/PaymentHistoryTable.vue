@@ -1,13 +1,31 @@
 <script setup>
 import { ref } from 'vue';
+import { useConfirm } from 'primevue/useconfirm';
 
 const props = defineProps({
     versions: Array,
 });
 
-const emit = defineEmits(['editVersion', 'registerPayment']);
+const emit = defineEmits(['editVersion', 'registerPayment', 'deleteVersion']);
+
+const confirm = useConfirm();
 
 const expandedVersions = ref([]);
+
+// --- CONFIRM DELETE VERSION ---
+const confirmDeleteVersion = (version) => {
+    confirm.require({
+        message: `¿Estás seguro de que deseas eliminar esta versión (${formatDate(version.start_date)} → ${formatDate(version.end_date)}) y todos sus pagos asociados? Esta acción no se puede deshacer.`,
+        header: 'Eliminar versión',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Sí, eliminar',
+        rejectLabel: 'Cancelar',
+        acceptClass: 'p-button-danger',
+        accept: () => {
+            emit('deleteVersion', version);
+        }
+    });
+};
 
 // --- HELPER FUNCTIONS ---
 const formatDate = (dateString) => {
@@ -113,7 +131,7 @@ const tagPt = { root: { class: '!rounded-full !px-2 !py-0.5 !text-[9px] !font-bo
             </Column>
 
             <!-- Columna: Acciones -->
-            <Column headerStyle="width: 8rem; text-align: center">
+            <Column headerStyle="width: 10rem; text-align: center">
                 <template #body="{ data }">
                     <div class="flex items-center gap-1 justify-center">
                         <Button
@@ -124,6 +142,16 @@ const tagPt = { root: { class: '!rounded-full !px-2 !py-0.5 !text-[9px] !font-bo
                             v-tooltip.top="'Editar items de esta versión'"
                             class="!w-8 !h-8 !text-gray-500 hover:!text-primary-500 hover:!bg-primary-500/10 !transition-colors"
                             @click="emit('editVersion', data)"
+                        />
+                        <Button
+                            icon="pi pi-trash"
+                            text
+                            rounded
+                            size="small"
+                            severity="danger"
+                            v-tooltip.top="'Eliminar esta versión y sus pagos'"
+                            class="!w-8 !h-8 !text-gray-500 hover:!text-red-500 hover:!bg-red-500/10 !transition-colors"
+                            @click="confirmDeleteVersion(data)"
                         />
                     </div>
                 </template>

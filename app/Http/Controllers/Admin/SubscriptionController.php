@@ -13,6 +13,7 @@ use App\Http\Requests\Admin\StoreVersionWithPaymentRequest;
 use App\Actions\Admin\Subscriptions\UpdateSubscriptionVersionAction;
 use App\Actions\Admin\Subscriptions\UpdateVersionItemsAction;
 use App\Actions\Admin\Subscriptions\CreateVersionWithPaymentAction;
+use App\Actions\Admin\Subscriptions\DeleteVersionAction;
 use App\Actions\Admin\Subscriptions\UpdateEntitySettingsAction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -202,6 +203,18 @@ class SubscriptionController extends Controller
         $action->execute($subscription, $request->validated());
 
         return redirect()->back()->with('success', 'La nueva versión y el pago han sido registrados exitosamente.');
+    }
+
+    /**
+     * Elimina una versión junto con sus pagos e items asociados.
+     */
+    public function destroyVersion(
+        SubscriptionVersion $version,
+        DeleteVersionAction $action,
+    ) {
+        $action->execute($version);
+
+        return redirect()->back()->with('success', 'La versión y sus pagos asociados han sido eliminados correctamente.');
     }
 
     /**
