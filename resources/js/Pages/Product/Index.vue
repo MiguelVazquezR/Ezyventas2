@@ -29,6 +29,8 @@ const confirm = useConfirm();
 const toast = useToast();
 const { hasPermission } = usePermissions();
 
+const hasOnlineStore = computed(() => usePage().props.auth.active_modules?.includes('module_online_store'));
+
 const limitReached = computed(() => {
     if (props.productLimit === -1) return false;
     return props.productUsage >= props.productLimit;
@@ -408,7 +410,7 @@ const drawerPt = {
                                     <i :class="data.show_in_pos ? 'pi pi-shop !text-[10px]' : 'pi pi-eye-slash !text-[10px]'" />
                                 </button>
                                 <!-- Online visibility -->
-                                <button @click.stop="toggleOnline(data)"
+                                <button v-if="hasOnlineStore" @click.stop="toggleOnline(data)"
                                     class="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider cursor-pointer transition-all border"
                                     :class="data.show_online
                                         ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800/50 hover:bg-green-100 dark:hover:bg-green-900/40'
@@ -418,7 +420,7 @@ const drawerPt = {
                                     <i class="pi pi-globe !text-[10px]" />
                                 </button>
                                 <!-- Featured -->
-                                <button @click.stop="toggleFeatured(data)"
+                                <button v-if="hasOnlineStore" @click.stop="toggleFeatured(data)"
                                     class="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider cursor-pointer transition-all border"
                                     :class="data.is_featured
                                         ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800/50 hover:bg-yellow-100 dark:hover:bg-yellow-900/40'

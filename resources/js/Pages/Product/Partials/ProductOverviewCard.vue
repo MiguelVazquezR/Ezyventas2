@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import { useToast } from "primevue/usetoast";
 
 const props = defineProps({
@@ -12,6 +13,8 @@ const props = defineProps({
 
 const emit = defineEmits(['print']);
 const toast = useToast();
+
+const hasOnlineStore = computed(() => usePage().props.auth.active_modules?.includes('module_online_store'));
 
 const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -150,7 +153,7 @@ const priceTiers = computed(() => {
             </div>
 
             <!-- Online price -->
-            <div v-if="product.show_online && product.online_price" class="flex justify-between items-center py-2 border-t border-gray-100 dark:border-[#3a3a3a] mt-1">
+            <div v-if="hasOnlineStore && product.show_online && product.online_price" class="flex justify-between items-center py-2 border-t border-gray-100 dark:border-[#3a3a3a] mt-1">
                 <span class="text-sm text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                     <i class="pi pi-globe !text-xs" /> Precio en línea
                 </span>
