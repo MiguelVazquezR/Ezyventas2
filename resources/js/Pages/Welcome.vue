@@ -402,7 +402,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
         >
             <div class="max-w-8xl w-full flex justify-between items-center">
                 <div class="flex items-center gap-2"> 
-                    <img src="/imagesLanding/ezy-logo-color.webp" alt="Ezy Ventas Logo" class="h-9 w-auto" />
+                    <img src="/images/black_logo.png" alt="Ezy Ventas Logo" class="h-14 w-auto" />
                 </div>
                 <div class="hidden lg:flex items-center space-x-10 text-gray-500 font-medium text-[0.95rem] tracking-wide">
                     <button @click="scrollToElement('features')" class="hover:text-[#F68C0F] transition duration-200">Funcionalidades</button>
