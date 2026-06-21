@@ -9,6 +9,7 @@ import InventorySummaryModal from './Partials/InventorySummaryModal.vue';
 import ProductDrawerDetails from './Partials/ProductDrawerDetails.vue';
 import BulkEditProductsModal from './Partials/BulkEditProductsModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
+import ReportsModal from './Partials/ReportsModal.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
 import { useToast } from "primevue/usetoast";
@@ -21,6 +22,7 @@ const props = defineProps({
     availableTemplates: Array,
     stockByCategory: Array,
     userBankAccounts: Array,
+    reportCategories: Array,
 });
 
 const page = usePage();
@@ -50,6 +52,7 @@ const showManageStockModal = ref(false);
 const productsForStockModal = ref([]);
 const showImportModal = ref(false);
 const showBulkEditModal = ref(false); 
+const showReportsModal = ref(false);
 const searchTerm = ref(props.filters.search || '');
 
 const isPrintModalVisible = ref(false);
@@ -327,6 +330,9 @@ const drawerPt = {
                         
                         <Button icon="pi pi-chart-pie" @click="showInventorySummary = true"
                             severity="primary" v-tooltip.top="'Ver resumen de inventario'" class="!rounded-xl !size-9 !p-0 shrink-0" />
+
+                        <Button icon="pi pi-file" @click="showReportsModal = true"
+                            severity="primary" v-tooltip.top="'Reportes de inventario'" class="!rounded-xl !size-9 !p-0 shrink-0" />
                         
                         <Button v-if="hasPermission('products.import_export')" icon="pi pi-chevron-down"
                             @click="toggleHeaderMenu" severity="warning" class="!rounded-xl !size-9 !p-0 shrink-0" />
@@ -544,6 +550,8 @@ const drawerPt = {
         <BulkEditProductsModal v-model:visible="showBulkEditModal" :products="selectedProducts" @success="selectedProducts = []" />
 
         <ImportProductsModal :visible="showImportModal" @update:visible="showImportModal = false" />
+
+        <ReportsModal v-model:visible="showReportsModal" :categories="reportCategories" />
 
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
             :available-templates="availableTemplates" />
