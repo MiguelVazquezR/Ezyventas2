@@ -9,6 +9,7 @@ import InventorySummaryModal from './Partials/InventorySummaryModal.vue';
 import ProductDrawerDetails from './Partials/ProductDrawerDetails.vue';
 import BulkEditProductsModal from './Partials/BulkEditProductsModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
+import ReportsModal from './Partials/ReportsModal.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { usePermissions } from '@/Composables';
 import { useToast } from "primevue/usetoast";
@@ -21,6 +22,7 @@ const props = defineProps({
     availableTemplates: Array,
     stockByCategory: Array,
     userBankAccounts: Array,
+    reportCategories: Array,
 });
 
 const page = usePage();
@@ -28,6 +30,8 @@ const page = usePage();
 const confirm = useConfirm();
 const toast = useToast();
 const { hasPermission } = usePermissions();
+
+const hasOnlineStore = computed(() => usePage().props.auth.active_modules?.includes('module_online_store'));
 
 const limitReached = computed(() => {
     if (props.productLimit === -1) return false;
@@ -48,6 +52,7 @@ const showManageStockModal = ref(false);
 const productsForStockModal = ref([]);
 const showImportModal = ref(false);
 const showBulkEditModal = ref(false); 
+const showReportsModal = ref(false);
 const searchTerm = ref(props.filters.search || '');
 
 const isPrintModalVisible = ref(false);
@@ -325,6 +330,9 @@ const drawerPt = {
                         
                         <Button icon="pi pi-chart-pie" @click="showInventorySummary = true"
                             severity="primary" v-tooltip.top="'Ver resumen de inventario'" class="!rounded-xl !size-9 !p-0 shrink-0" />
+
+                        <Button icon="pi pi-file" @click="showReportsModal = true"
+                            severity="primary" v-tooltip.top="'Reportes de inventario'" class="!rounded-xl !size-9 !p-0 shrink-0" />
                         
                         <Button v-if="hasPermission('products.import_export')" icon="pi pi-chevron-down"
                             @click="toggleHeaderMenu" severity="warning" class="!rounded-xl !size-9 !p-0 shrink-0" />
@@ -408,7 +416,7 @@ const drawerPt = {
                                     <i :class="data.show_in_pos ? 'pi pi-shop !text-[10px]' : 'pi pi-eye-slash !text-[10px]'" />
                                 </button>
                                 <!-- Online visibility -->
-                                <button @click.stop="toggleOnline(data)"
+                                <button v-if="hasOnlineStore" @click.stop="toggleOnline(data)"
                                     class="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider cursor-pointer transition-all border"
                                     :class="data.show_online
                                         ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800/50 hover:bg-green-100 dark:hover:bg-green-900/40'
@@ -418,7 +426,7 @@ const drawerPt = {
                                     <i class="pi pi-globe !text-[10px]" />
                                 </button>
                                 <!-- Featured -->
-                                <button @click.stop="toggleFeatured(data)"
+                                <button v-if="hasOnlineStore" @click.stop="toggleFeatured(data)"
                                     class="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider cursor-pointer transition-all border"
                                     :class="data.is_featured
                                         ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800/50 hover:bg-yellow-100 dark:hover:bg-yellow-900/40'
@@ -542,6 +550,8 @@ const drawerPt = {
         <BulkEditProductsModal v-model:visible="showBulkEditModal" :products="selectedProducts" @success="selectedProducts = []" />
 
         <ImportProductsModal :visible="showImportModal" @update:visible="showImportModal = false" />
+
+        <ReportsModal v-model:visible="showReportsModal" :categories="reportCategories" />
 
         <PrintModal v-if="printDataSource" v-model:visible="isPrintModalVisible" :data-source="printDataSource"
             :available-templates="availableTemplates" />

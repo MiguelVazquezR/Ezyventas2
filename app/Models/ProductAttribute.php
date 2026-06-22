@@ -49,6 +49,19 @@ class ProductAttribute extends Model
     {
         $variantQuery = DB::table('branch_product_attribute')->where('product_attribute_id', $this->id)->where('branch_id', $branchId);
         $parentQuery = DB::table('branch_product')->where('product_id', $this->product_id)->where('branch_id', $branchId);
+
+        // Determine which stock field is being modified
+        $stockField = match ($action) {
+            'reserve', 'release_reserve' => 'reserved_stock',
+            default => 'current_stock',
+        };
+
+        // Capture "before" value from variant's pivot
+        $beforeRecord = DB::table('branch_product_attribute')
+            ->where('product_attribute_id', $this->id)
+            ->where('branch_id', $branchId)
+            ->first();
+        $stockBefore = $beforeRecord ? (float) $beforeRecord->{$stockField} : 0;
         
         $qtyChangedLog = 0;
 
@@ -82,6 +95,13 @@ class ProductAttribute extends Model
                 break;
         }
 
+        // Capture "after" value from variant's pivot
+        $afterRecord = DB::table('branch_product_attribute')
+            ->where('product_attribute_id', $this->id)
+            ->where('branch_id', $branchId)
+            ->first();
+        $stockAfter = $afterRecord ? (float) $afterRecord->{$stockField} : 0;
+
         if ($qtyChangedLog != 0) {
             // El log lo guardamos en el padre para que sea visible en la vista Show.vue
             $parentProduct = $this->product ?? Product::find($this->product_id);
@@ -89,7 +109,12 @@ class ProductAttribute extends Model
                 activity()->performedOn($parentProduct)
                     ->causedBy($user)
                     ->event('stock_update')
-                    ->withProperties(['quantity_changed' => $qtyChangedLog])
+                    ->withProperties([
+                        'quantity_changed' => $qtyChangedLog,
+                        'stock_before' => $stockBefore,
+                        'stock_after' => $stockAfter,
+                        'stock_field' => $stockField,
+                    ])
                     ->log($logNote . " [Variante: " . implode(' ', $this->attributes ?? []) . "]");
             }
         }

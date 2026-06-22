@@ -45,7 +45,7 @@ class HandleInertiaRequests extends Middleware
                     'permissions' => $permissions,
                     'is_subscription_owner' => $isOwner,
                     'subscription' => ['commercial_name' => $subscription->commercial_name],
-                    'subscriptionWarning' => $subscription->getWarningData(),
+                    'subscriptionWarning' => $user->id === 1 ? null : $subscription->getWarningData(),
                     'current_branch' => $user->branch,
                     'preferences' => $user->getPreferences(),
                     'active_modules' => $subscription->getActiveModuleKeys(),

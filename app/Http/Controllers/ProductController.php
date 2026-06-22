@@ -139,6 +139,10 @@ class ProductController extends Controller implements HasMiddleware
         $isOwner = !$user->roles()->exists();
         $userBankAccounts = $isOwner ? $user->branch->bankAccounts()->get() : $user->bankAccounts()->get();
 
+        $reportCategories = Category::where('subscription_id', $subscription->id)
+            ->where('type', 'product')
+            ->get(['id', 'name']);
+
         return Inertia::render('Product/Index', [
             'products' => $products,
             'filters' => $request->only(['search', 'sortField', 'sortOrder']),
@@ -148,6 +152,7 @@ class ProductController extends Controller implements HasMiddleware
             'availableTemplates' => $availableTemplates,
             'stockByCategory' => $stockByCategory,
             'userBankAccounts' => $userBankAccounts,
+            'reportCategories' => $reportCategories,
         ]);
     }
 

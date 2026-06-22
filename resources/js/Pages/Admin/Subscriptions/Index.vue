@@ -163,6 +163,17 @@ const clearFilters = () => {
                         </template>
                     </Column>
 
+                    <Column field="latest_version_end_date" header="Expiración" sortable>
+                        <template #body="{ data }">
+                            <span v-if="data.latest_version_end_date" class="text-sm dark:text-gray-400">
+                                {{ formatDate(data.latest_version_end_date) }}
+                            </span>
+                            <span v-else class="text-xs text-gray-400 dark:text-gray-600">
+                                Sin versiones
+                            </span>
+                        </template>
+                    </Column>
+
                     <Column header="Contacto">
                         <template #body="{ data }">
                             <div class="flex flex-col gap-1">

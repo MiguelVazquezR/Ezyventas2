@@ -372,8 +372,21 @@ const getActivityColor = (activity) => {
                                 <span>{{ getMovementLabel(activity.properties) }}</span>
                             </div>
 
-                            <!-- Cantidad Modificada -->
-                            <div v-if="activity.properties?.quantity_changed !== undefined" 
+                            <!-- Stock: Antes → Después (con delta) cuando hay before/after -->
+                            <div v-if="activity.properties?.quantity_changed !== undefined && activity.properties?.stock_before !== undefined && activity.properties?.stock_after !== undefined"
+                                class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs border bg-gray-50 dark:bg-gray-900/30 border-gray-100 dark:border-gray-700">
+                                <span class="text-gray-500 dark:text-gray-400 font-mono tabular-nums">{{ activity.properties.stock_before }}</span>
+                                <i class="pi pi-arrow-right text-gray-400 !text-[9px]"></i>
+                                <span class="font-semibold text-gray-900 dark:text-white font-mono tabular-nums">{{ activity.properties.stock_after }}</span>
+                                <span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                                    :class="activity.properties.quantity_changed > 0 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'">
+                                    {{ activity.properties.quantity_changed > 0 ? '+' : '' }}{{ activity.properties.quantity_changed }}
+                                </span>
+                                <span class="text-[9px] uppercase tracking-wider text-gray-400 font-medium">Uds</span>
+                            </div>
+
+                            <!-- Fallback: Solo delta para registros antiguos sin before/after -->
+                            <div v-else-if="activity.properties?.quantity_changed !== undefined" 
                                 class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold border"
                                 :class="activity.properties.quantity_changed > 0 ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800'">
                                 <i :class="activity.properties.quantity_changed > 0 ? 'pi pi-arrow-up' : 'pi pi-arrow-down'" class="!text-[10px]"></i>

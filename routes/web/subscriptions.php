@@ -32,6 +32,16 @@ Route::middleware(['auth'])->prefix('subscription')->name('subscription.')->grou
     Route::post('/manage', [SubscriptionController::class, 'processManagement'])->name('manage.store');
 
     /**
+     * Pago con Mercado Pago: redirige al checkout de MP.
+     */
+    Route::get('/payment/{payment}/pay', [SubscriptionController::class, 'pay'])->name('pay');
+
+    /**
+     * Retorno de Mercado Pago después del intento de pago.
+     */
+    Route::get('/payment/{payment}/return', [SubscriptionController::class, 'paymentReturn'])->name('payment.return');
+
+    /**
      * Revierte una versión rechazada.
      * El cliente puede cancelar la actualización y volver a su plan anterior.
      */

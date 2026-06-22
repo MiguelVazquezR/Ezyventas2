@@ -73,6 +73,9 @@ const formatCurrency = (value) => {
             </div>
             <div>
                 <p class="text-4xl lg:text-5xl font-light tracking-tight text-gray-900 dark:text-white m-0">{{ formatCurrency(kpis.expenses.current) }}</p>
+                <p v-if="kpis.externalExpenses?.current > 0" class="text-[11px] text-gray-500 dark:text-gray-400 mt-1 m-0">
+                    + {{ formatCurrency(kpis.externalExpenses.current) }} <span class="text-[10px] uppercase tracking-widest text-gray-400">externos</span>
+                </p>
                 <div class="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100 dark:border-[#3a3a3a]"> 
                     <div class="flex items-center gap-1" :class="kpis.expenses.percentage_change <= 0 ? 'text-green-500' : 'text-red-500'">
                         <span class="w-1.5 h-1.5 rounded-full" :class="kpis.expenses.percentage_change <= 0 ? 'bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.5)]' : 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]'"></span>
@@ -89,7 +92,7 @@ const formatCurrency = (value) => {
             <div class="flex items-start justify-between mb-6">
                 <div>
                     <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Ganancia neta</h2>
-                    <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Ventas totales - gastos</p>
+                    <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Ventas totales - gastos del negocio</p>
                 </div>
                 <div class="w-10 h-10 rounded-full bg-teal-50 dark:bg-teal-900/20 flex items-center justify-center flex-shrink-0 border border-teal-100 dark:border-teal-900/30">
                     <i class="pi pi-chart-line !text-sm text-teal-500"></i>
@@ -98,6 +101,9 @@ const formatCurrency = (value) => {
             <div>
                 <p class="text-4xl lg:text-5xl font-light tracking-tight m-0" :class="kpis.netProfit.current >= 0 ? 'text-gray-900 dark:text-white' : 'text-red-500'">
                     {{ formatCurrency(kpis.netProfit.current) }} 
+                </p>
+                <p v-if="kpis.netProfitAll?.current !== undefined" class="text-[11px] text-gray-500 dark:text-gray-400 mt-1 m-0">
+                    {{ formatCurrency(kpis.netProfitAll.current) }} <span class="text-[10px] uppercase tracking-widest text-gray-400">total (incluye gastos externos)</span>
                 </p>
                 <div class="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100 dark:border-[#3a3a3a]"> 
                     <div class="flex items-center gap-1" :class="kpis.netProfit.percentage_change >= 0 ? 'text-green-500' : 'text-red-500'">
@@ -115,7 +121,7 @@ const formatCurrency = (value) => {
             <div class="flex items-start justify-between mb-6">
                 <div>
                     <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Flujo de dinero neto</h2>
-                    <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Total de pagos - gastos</p>
+                    <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Total de pagos - gastos del negocio</p>
                 </div>
                 <div class="w-10 h-10 rounded-full bg-green-50 dark:bg-green-900/20 flex items-center justify-center flex-shrink-0 border border-green-100 dark:border-green-900/30">
                     <i class="pi pi-wallet !text-sm text-green-500"></i>
@@ -124,6 +130,9 @@ const formatCurrency = (value) => {
             <div>
                 <p class="text-4xl lg:text-5xl font-light tracking-tight m-0" :class="kpis.profit.current >= 0 ? 'text-gray-900 dark:text-white' : 'text-red-500'">
                     {{ formatCurrency(kpis.profit.current) }}
+                </p>
+                <p v-if="kpis.profitAll?.current !== undefined" class="text-[11px] text-gray-500 dark:text-gray-400 mt-1 m-0">
+                    {{ formatCurrency(kpis.profitAll.current) }} <span class="text-[10px] uppercase tracking-widest text-gray-400">total (incluye gastos externos)</span>
                 </p>
                 <div class="flex items-center gap-2 mt-4 pt-4 border-t border-gray-100 dark:border-[#3a3a3a]"> 
                     <div class="flex items-center gap-1" :class="kpis.profit.percentage_change >= 0 ? 'text-green-500' : 'text-red-500'">

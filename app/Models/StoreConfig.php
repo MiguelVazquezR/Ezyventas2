@@ -117,7 +117,8 @@ class StoreConfig extends Model implements HasMedia
 
     public function isMpConnected(): bool
     {
-        if (app()->environment('local')) {
+        $isSandbox = $this->isMpTestMode();
+        if ($isSandbox) {
             return !empty(config('services.mercadopago.test_access_token')) || !empty($this->mp_access_token);
         }
         return !empty($this->mp_access_token);
@@ -125,23 +126,23 @@ class StoreConfig extends Model implements HasMedia
 
     public function isMpTestMode(): bool
     {
-        return app()->environment('local');
+        return config('services.mercadopago.env', 'sandbox') === 'sandbox';
     }
 
     public function mpAccountInfo(): ?array
     {
-        $isLocal = app()->environment('local');
+        $isSandbox = $this->isMpTestMode();
 
         // Real OAuth connection (production or local with real tokens)
         if ($this->isMpConnected() && !empty($this->mp_user_id)) {
             return [
                 'user_id'   => $this->mp_user_id,
-                'test_mode' => $isLocal,
+                'test_mode' => $isSandbox,
             ];
         }
 
-        // Local dev with test access token — show test account
-        if ($isLocal && config('services.mercadopago.test_access_token')) {
+        // Sandbox with test access token — show test account
+        if ($isSandbox && config('services.mercadopago.test_access_token')) {
             return [
                 'user_id'   => '3442108157',
                 'name'      => 'Seller Test User',

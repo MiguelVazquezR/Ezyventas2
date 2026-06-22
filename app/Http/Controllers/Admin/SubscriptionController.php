@@ -13,8 +13,10 @@ use App\Http\Requests\Admin\StoreVersionWithPaymentRequest;
 use App\Actions\Admin\Subscriptions\UpdateSubscriptionVersionAction;
 use App\Actions\Admin\Subscriptions\UpdateVersionItemsAction;
 use App\Actions\Admin\Subscriptions\CreateVersionWithPaymentAction;
+use App\Actions\Admin\Subscriptions\DeleteVersionAction;
 use App\Actions\Admin\Subscriptions\UpdateEntitySettingsAction;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Carbon\Carbon;
@@ -29,6 +31,14 @@ class SubscriptionController extends Controller
         $filters = $request->only(['search', 'sortField', 'sortOrder', 'status']);
 
         $subscriptions = Subscription::query()
+            ->select('subscriptions.*')
+            ->selectSub(
+                \App\Models\SubscriptionVersion::select('end_date')
+                    ->whereColumn('subscription_id', 'subscriptions.id')
+                    ->latest('id')
+                    ->limit(1),
+                'latest_version_end_date'
+            )
             ->when($filters['search'] ?? null, function ($query, $search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('commercial_name', 'like', "%{$search}%")
@@ -72,6 +82,7 @@ class SubscriptionController extends Controller
         // 1. Cargar relaciones vitales y contadores de uso
         $subscription->load([
             'branches',
+            'users' => fn($query) => $query->with('roles')->orderBy('name'),
             'versions' => fn($query) => $query->with(['items', 'payments'])->latest('id'),
             'media'
         ])->loadCount([
@@ -83,6 +94,23 @@ class SubscriptionController extends Controller
             'printTemplates',
             'services',
         ]);
+
+        // 1.1. Obtener último ingreso de cada usuario desde la tabla sessions (Jetstream)
+        $userIds = $subscription->users->pluck('id')->filter()->toArray();
+        if (! empty($userIds)) {
+            $latestSessions = DB::table('sessions')
+                ->whereIn('user_id', $userIds)
+                ->select('user_id', DB::raw('MAX(last_activity) as last_activity'))
+                ->groupBy('user_id')
+                ->get()
+                ->mapWithKeys(fn ($row) => [
+                    $row->user_id => Carbon::createFromTimestamp($row->last_activity)->toISOString(),
+                ]);
+
+            $subscription->users->each(function ($user) use ($latestSessions) {
+                $user->last_login_at = $latestSessions->get($user->id);
+            });
+        }
 
         // 2. Procesar versiones usando el helper existente en el modelo
         $subscription->versions = $subscription->getVersionsWithComparison();
@@ -202,6 +230,18 @@ class SubscriptionController extends Controller
         $action->execute($subscription, $request->validated());
 
         return redirect()->back()->with('success', 'La nueva versión y el pago han sido registrados exitosamente.');
+    }
+
+    /**
+     * Elimina una versión junto con sus pagos e items asociados.
+     */
+    public function destroyVersion(
+        SubscriptionVersion $version,
+        DeleteVersionAction $action,
+    ) {
+        $action->execute($version);
+
+        return redirect()->back()->with('success', 'La versión y sus pagos asociados han sido eliminados correctamente.');
     }
 
     /**

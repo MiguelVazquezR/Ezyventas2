@@ -55,15 +55,27 @@ class FinancialReportService
         $previousExpenses = $this->queryTotal(Expense::class, 'expense_date', $periods['previous']);
         $previousInternalExpenses = $this->queryTotal(Expense::class, 'expense_date', $periods['previous'], ['is_external' => false]);
 
-        // Flujo de Dinero Neto: solo resta gastos internos (no afecta liquidez del negocio)
+        // Flujo de Dinero Neto (negocio): pagos - gastos internos
         $currentProfit = $currentPayments - $currentInternalExpenses;
         $previousProfit = $previousPayments - $previousInternalExpenses;
+
+        // Flujo de Dinero Neto (total): pagos - todos los gastos (incluyendo externos)
+        $currentProfitAll = $currentPayments - $currentExpenses;
+        $previousProfitAll = $previousPayments - $previousExpenses;
 
         return [
             'sales' => $this->calculateKpiMetric($currentSales, $previousSales),
             'payments' => $this->calculateKpiMetric($currentPayments, $previousPayments),
-            'expenses' => $this->calculateKpiMetric($currentExpenses, $previousExpenses),
+            'expenses' => $this->calculateKpiMetric($currentInternalExpenses, $previousInternalExpenses),
+            'externalExpenses' => [
+                'current' => $currentExpenses - $currentInternalExpenses,
+                'previous' => $previousExpenses - $previousInternalExpenses,
+            ],
             'profit' => $this->calculateKpiMetric($currentProfit, $previousProfit),
+            'profitAll' => [
+                'current' => $currentProfitAll,
+                'previous' => $previousProfitAll,
+            ],
         ];
     }
 

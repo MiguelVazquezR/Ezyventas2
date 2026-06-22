@@ -60,8 +60,8 @@ class MercadoPagoService
     {
         $accessToken = $storeConfig->mp_access_token;
 
-        // In local dev, fall back to test access token from env
-        if (!$accessToken && app()->environment('local')) {
+        // In sandbox mode, fall back to test access token from env
+        if (!$accessToken && config('services.mercadopago.env', 'sandbox') === 'sandbox') {
             $accessToken = config('services.mercadopago.test_access_token');
         }
 

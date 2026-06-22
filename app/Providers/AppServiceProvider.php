@@ -22,6 +22,12 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::before(function ($user, $ability) {
+            // Superadmin (ID 1) tiene acceso irrestricto para fines de soporte
+            // sin comprometer la lógica de protección de otras suscripciones.
+            if ($user && $user->id === 1) {
+                return true;
+            }
+
             // Si el usuario es propietario (sin roles), verifica si tiene acceso
             // al permiso según los módulos de su suscripción.
             if ($user && !$user->roles()->exists()) {

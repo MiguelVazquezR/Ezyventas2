@@ -35,6 +35,15 @@ const handleRegisterPayment = () => {
     showRegisterPaymentModal.value = true;
 };
 
+const handleDeleteVersion = (version) => {
+    router.delete(route('admin.subscriptions.destroy-version', version.id), {
+        preserveScroll: true,
+        onError: (errors) => {
+            console.error('Error al eliminar la versión:', errors);
+        }
+    });
+};
+
 // --- HELPER FUNCTIONS (ESTADOS REALES) ---
 const getComputedStatus = (subscription) => {
     // Usamos la propiedad dinámica enviada por el modelo
@@ -83,6 +92,15 @@ const getStatusColor = (data) => {
 const formatDate = (dateString) => {
     if (!dateString) return '--';
     return new Intl.DateTimeFormat('es-MX', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(dateString));
+};
+
+const formatDateTime = (dateString) => {
+    if (!dateString) return null;
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('es-MX', {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+    }).format(date);
 };
 
 const formatCurrency = (value) => {
@@ -139,7 +157,7 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
 
                 <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
                     
-                    <!-- COLUMNA IZQUIERDA: Info General y Límites -->
+                    <!-- COLUMNA IZQUIERDA: Info General, Usuarios y Límites -->
                     <div class="space-y-6">
                         
                         <!-- Tarjeta de Contacto -->
@@ -157,6 +175,40 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
                                     <span class="leading-tight">{{ subscription.address?.text || 'No especificado' }}</span>
                                 </li>
                             </ul>
+                        </div>
+
+                        <!-- Tarjeta de Usuarios -->
+                        <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
+                            <h2 class="text-xs uppercase tracking-widest font-bold text-gray-500 m-0 mb-4 flex justify-between items-center">
+                                Usuarios del sistema
+                                <span class="font-mono text-gray-400">{{ subscription.users?.length || 0 }}</span>
+                            </h2>
+                            <div v-if="subscription.users && subscription.users.length > 0" class="space-y-3">
+                                <div v-for="user in subscription.users" :key="user.id" class="flex items-center justify-between p-3 bg-white dark:bg-[#232323] rounded-xl border border-gray-100 dark:border-[#3a3a3a] transition-colors hover:border-gray-200 dark:hover:border-[#4a4a4a]">
+                                    <div class="flex items-center gap-3 min-w-0">
+                                        <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-[#1a1a1a] flex items-center justify-center shrink-0">
+                                            <span class="text-[10px] font-bold text-gray-500 uppercase">{{ user.name?.charAt(0) }}</span>
+                                        </div>
+                                        <div class="min-w-0">
+                                            <p class="text-sm font-medium text-gray-900 dark:text-gray-100 m-0 truncate">{{ user.name }}</p>
+                                            <p class="text-[10px] text-gray-500 m-0 truncate">{{ user.email }}</p>
+                                        </div>
+                                    </div>
+                                    <div class="text-right shrink-0 ml-3">
+                                        <p class="text-[9px] uppercase tracking-widest font-bold text-gray-400 m-0 mb-0.5">Último ingreso</p>
+                                        <p v-if="user.last_login_at" class="text-[10px] font-mono text-gray-500 dark:text-gray-400 m-0">
+                                            {{ formatDateTime(user.last_login_at) }}
+                                        </p>
+                                        <p v-else class="text-[10px] text-gray-400 dark:text-gray-600 m-0 italic">
+                                            Nunca
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-else class="flex flex-col items-center justify-center py-6 text-center">
+                                <i class="pi pi-users !text-2xl text-gray-300 dark:text-gray-600 mb-2"></i>
+                                <p class="text-xs text-gray-400 m-0">Sin usuarios registrados</p>
+                            </div>
                         </div>
 
                         <!-- Tarjeta de Telemetría: Uso de Límites Dinámicos -->
@@ -241,6 +293,7 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
                             :versions="subscription.versions"
                             @edit-version="handleEditVersion"
                             @register-payment="handleRegisterPayment"
+                            @delete-version="handleDeleteVersion"
                         />
                     </div>
                 </div>
