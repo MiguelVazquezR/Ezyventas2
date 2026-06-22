@@ -29,10 +29,12 @@ class ApproveSubscriptionPaymentAction
             $version = $payment->subscriptionVersion;
             $subscription = $version->subscription;
 
-            // 1. Actualizar el estado del pago y limpiar detalles temporales
+            // 1. Actualizar el estado del pago (preservar datos de MP en payment_details)
+            $currentDetails = $payment->payment_details ?? [];
+            $currentDetails['approved_at'] = now()->toIso8601String();
             $payment->update([
-                'status' => SubscriptionPaymentStatus::APPROVED,
-                'payment_details' => null,
+                'status'          => SubscriptionPaymentStatus::APPROVED,
+                'payment_details' => $currentDetails,
             ]);
 
             // 2. Activar la suscripción a nivel global

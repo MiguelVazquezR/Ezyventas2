@@ -16,6 +16,7 @@ use App\Models\SubscriptionPayment;
 use App\Services\PlatformMercadoPagoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -227,7 +228,7 @@ class SubscriptionController extends Controller
     /**
      * Redirige al suscriptor al checkout de Mercado Pago para completar el pago.
      */
-    public function pay(SubscriptionPayment $payment, PlatformMercadoPagoService $mpService): RedirectResponse
+    public function pay(SubscriptionPayment $payment, PlatformMercadoPagoService $mpService): RedirectResponse|HttpResponse
     {
         $user = Auth::user();
         if ($user->roles()->exists()) abort(403);
@@ -261,9 +262,18 @@ class SubscriptionController extends Controller
                 'success_url'             => route('subscription.payment.return', ['payment' => $payment->id, 'status' => 'success']),
                 'failure_url'             => route('subscription.payment.return', ['payment' => $payment->id, 'status' => 'failure']),
                 'pending_url'             => route('subscription.payment.return', ['payment' => $payment->id, 'status' => 'pending']),
+                'webhook_url'             => route('webhooks.mercadopago'),
             ]);
 
-            return redirect()->away($preference['init_point']);
+            // Guardar datos de la preferencia de MP en el pago
+            $payment->update([
+                'payment_details' => [
+                    'mp_preference_id' => $preference['id'],
+                    'mp_init_point'    => $preference['init_point'],
+                ],
+            ]);
+
+            return Inertia::location($preference['init_point']);
         } catch (\Exception $e) {
             Log::error('MP subscription preference failed', ['payment_id' => $payment->id, 'error' => $e->getMessage()]);
             return redirect()->route('subscription.show')
@@ -298,6 +308,12 @@ class SubscriptionController extends Controller
                 $mpPayment = $mpService->getPayment($mpPaymentId);
 
                 if (($mpPayment['status'] ?? '') === 'approved') {
+                    // Guardar datos del pago de MP antes de aprobar
+                    $currentDetails = $payment->payment_details ?? [];
+                    $currentDetails['mp_payment_id'] = $mpPaymentId;
+                    $currentDetails['mp_status'] = $mpPayment['status'];
+                    $payment->update(['payment_details' => $currentDetails]);
+
                     $approveAction->execute($payment);
 
                     return redirect()->route('subscription.show')

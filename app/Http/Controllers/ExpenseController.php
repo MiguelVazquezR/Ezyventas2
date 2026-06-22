@@ -59,7 +59,7 @@ class ExpenseController extends Controller implements HasMiddleware
             });
         }
 
-        $sortField = $request->input('sortField', 'created_at');
+        $sortField = $request->input('sortField', 'expense_date');
         $sortOrder = $request->input('sortOrder', 'desc');
         $query->orderBy($sortField === 'user.name' ? 'users.name' : ($sortField === 'category.name' ? 'expense_categories.name' : 'expenses.' . $sortField), $sortOrder);
 
