@@ -251,7 +251,13 @@ class Subscription extends Model implements HasMedia
 
     public function getPendingPayment()
     {
-        return $this->payments()->where('status', SubscriptionPaymentStatus::PENDING)->latest('created_at')->first();
+        // Solo pagos por transferencia requieren revisión manual.
+        // Los de MercadoPago se aprueban automáticamente vía webhook o paymentReturn.
+        return $this->payments()
+            ->where('status', SubscriptionPaymentStatus::PENDING)
+            ->where('payment_method', '!=', 'mercadopago')
+            ->latest('created_at')
+            ->first();
     }
 
     public function getLastRejectedPayment()

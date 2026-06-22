@@ -46,6 +46,7 @@ return [
         'redirect_uri'      => env('MP_REDIRECT_URI'),
         'platform_token'    => env('MP_PLATFORM_ACCESS_TOKEN'),
         'test_access_token' => env('MP_TEST_ACCESS_TOKEN'),
+        'webhook_secret'    => env('MP_WEBHOOK_SECRET'),
         'env'               => env('MP_ENV', 'sandbox'),
     ],
 

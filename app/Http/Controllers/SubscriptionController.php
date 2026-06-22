@@ -302,8 +302,14 @@ class SubscriptionController extends Controller
         $status = $request->query('status');
         $mpPaymentId = $request->query('payment_id');
 
+        // MP envía status=approved/rejected/pending en el query string.
+        // Nuestros back_urls también incluyen status=success/failure/pending como respaldo.
+        // PHP toma el último valor cuando hay duplicados, por eso comparamos ambos.
+        $isApproved = in_array($status, ['success', 'approved']);
+        $isRejected = in_array($status, ['failure', 'rejected']);
+
         // Si Mercado Pago reporta éxito, verificamos contra su API
-        if ($status === 'success' && $mpPaymentId) {
+        if ($isApproved && $mpPaymentId) {
             try {
                 $mpPayment = $mpService->getPayment($mpPaymentId);
 
@@ -334,9 +340,14 @@ class SubscriptionController extends Controller
             }
         }
 
-        if ($status === 'failure' || $status === 'pending') {
+        if ($status === 'pending') {
             return redirect()->route('subscription.show')
-                ->with('warning', 'El pago no se completó. Puedes intentarlo de nuevo desde tu panel de suscripción.');
+                ->with('info', 'Tu pago está pendiente. Completa el pago en el establecimiento que seleccionaste y tu suscripción se activará automáticamente.');
+        }
+
+        if ($isRejected) {
+            return redirect()->route('subscription.show')
+                ->with('warning', 'El pago fue rechazado. Puedes intentarlo de nuevo desde tu panel de suscripción.');
         }
 
         return redirect()->route('subscription.show')
