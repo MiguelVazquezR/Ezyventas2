@@ -110,6 +110,19 @@ class Product extends Model implements HasMedia
             ->where('product_id', $this->id)
             ->where('branch_id', $branchId);
 
+        // Determine which stock field is being modified
+        $stockField = match ($action) {
+            'reserve', 'release_reserve' => 'reserved_stock',
+            default => 'current_stock',
+        };
+
+        // Capture "before" value
+        $beforeRecord = DB::table('branch_product')
+            ->where('product_id', $this->id)
+            ->where('branch_id', $branchId)
+            ->first();
+        $stockBefore = $beforeRecord ? (float) $beforeRecord->{$stockField} : 0;
+
         $qtyChangedLog = 0;
 
         switch ($action) {
@@ -136,11 +149,23 @@ class Product extends Model implements HasMedia
                 break;
         }
 
+        // Capture "after" value
+        $afterRecord = DB::table('branch_product')
+            ->where('product_id', $this->id)
+            ->where('branch_id', $branchId)
+            ->first();
+        $stockAfter = $afterRecord ? (float) $afterRecord->{$stockField} : 0;
+
         if ($qtyChangedLog != 0) {
             activity()->performedOn($this)
                 ->causedBy($user)
                 ->event('stock_update')
-                ->withProperties(['quantity_changed' => $qtyChangedLog])
+                ->withProperties([
+                    'quantity_changed' => $qtyChangedLog,
+                    'stock_before' => $stockBefore,
+                    'stock_after' => $stockAfter,
+                    'stock_field' => $stockField,
+                ])
                 ->log($logNote);
         }
     }

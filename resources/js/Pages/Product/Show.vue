@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { Head, router, Link } from '@inertiajs/vue3';
+import { Head, router, Link, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ManageStockModal from './Partials/ManageStockModal.vue';
@@ -23,6 +23,8 @@ const props = defineProps({
 
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
+
+const hasOnlineStore = computed(() => usePage().props.auth.active_modules?.includes('module_online_store'));
 
 const showManageStockModal = ref(false);
 
@@ -108,7 +110,7 @@ const deleteProduct = () => {
 
                         <span class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
 
-                        <div v-if="product.show_online" class="flex items-center gap-2">
+                        <div v-if="hasOnlineStore && product.show_online" class="flex items-center gap-2">
                             <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0">Tienda en línea:</span>
                             <span class="text-xs font-medium text-green-600 dark:text-green-400 flex items-center gap-1">
                                 <span class="w-1.5 h-1.5 rounded-full bg-green-500" />
@@ -116,9 +118,9 @@ const deleteProduct = () => {
                             </span>
                         </div>
 
-                        <span v-if="product.show_online" class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
+                        <span v-if="hasOnlineStore && product.show_online" class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
 
-                        <div v-if="product.is_featured" class="flex items-center gap-2">
+                        <div v-if="hasOnlineStore && product.is_featured" class="flex items-center gap-2">
                             <i class="pi pi-star-fill text-yellow-500 !text-xs" />
                             <span class="text-xs font-medium text-yellow-600 dark:text-yellow-400">Destacado</span>
                         </div>
@@ -157,7 +159,7 @@ const deleteProduct = () => {
                 </div>
 
                 <!-- Online store info (if applicable) -->
-                <div v-if="product.show_online" class="bg-emerald-50 dark:bg-emerald-900/10 p-6 rounded-3xl border border-emerald-100 dark:border-emerald-900/30">
+                <div v-if="hasOnlineStore && product.show_online" class="bg-emerald-50 dark:bg-emerald-900/10 p-6 rounded-3xl border border-emerald-100 dark:border-emerald-900/30">
                     <h3 class="text-sm font-semibold text-emerald-800 dark:text-emerald-300 mb-4 m-0 flex items-center gap-2">
                         <i class="pi pi-globe"></i> Información en tienda en línea
                     </h3>

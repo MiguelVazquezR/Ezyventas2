@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import { useConfirm } from 'primevue/useconfirm';
@@ -9,6 +10,8 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+
+const hasOnlineStore = computed(() => usePage().props.auth.active_modules?.includes('module_online_store'));
 
 // --- LÓGICA DE UTILIDAD (PROFIT MARGIN) ---
 const profitData = computed(() => {
@@ -86,40 +89,42 @@ const confirmRemovePriceTier = (event, index) => {
             </div>
         </div>
 
-        <!-- Online store visibility toggle -->
-        <div class="mb-6 bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 flex items-center justify-between">
-            <div>
-                <h3 class="font-bold text-emerald-800 dark:text-emerald-300 m-0 text-sm flex items-center gap-2">
-                    <i class="pi pi-globe !text-sm" />
-                    ¿Mostrar en tienda en línea?
-                </h3>
-                <p class="text-xs text-emerald-600 dark:text-emerald-400 mt-1 mb-0">
-                    Activa esta opción para que el producto aparezca en tu tienda en línea. Puedes establecer un precio diferente al de venta en POS.
-                </p>
-            </div>
-            <div class="ml-4 flex-shrink-0 flex items-center">
-                <ToggleSwitch v-model="form.show_online" />
-            </div>
-        </div>
-
-        <!-- Online price and featured (only when show_online is enabled) -->
-        <div v-if="form.show_online" class="mb-6 bg-emerald-50/50 dark:bg-emerald-900/5 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/30">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Precio en línea</label>
-                    <InputNumber v-model="form.online_price" mode="currency" currency="MXN" locale="es-MX" class="w-full" placeholder="Igual que precio de venta" :pt="{ input: { root: { class: 'w-full !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] !text-sm' } } }" />
-                    <p class="text-[11px] text-gray-400 m-0">Deja en blanco para usar el precio de venta normal.</p>
-                    <InputError :message="form.errors.online_price" class="mt-1" />
+        <!-- Online store section (only when subscription has module_online_store) -->
+        <template v-if="hasOnlineStore">
+            <div class="mb-6 bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-emerald-800 dark:text-emerald-300 m-0 text-sm flex items-center gap-2">
+                        <i class="pi pi-globe !text-sm" />
+                        ¿Mostrar en tienda en línea?
+                    </h3>
+                    <p class="text-xs text-emerald-600 dark:text-emerald-400 mt-1 mb-0">
+                        Activa esta opción para que el producto aparezca en tu tienda en línea. Puedes establecer un precio diferente al de venta en POS.
+                    </p>
                 </div>
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Destacar en tienda</label>
-                    <div class="flex items-center gap-3 mt-2">
-                        <ToggleSwitch v-model="form.is_featured" />
-                        <span class="text-xs text-gray-500 dark:text-gray-400">Aparecerá en la sección de destacados de tu tienda.</span>
+                <div class="ml-4 flex-shrink-0 flex items-center">
+                    <ToggleSwitch v-model="form.show_online" />
+                </div>
+            </div>
+
+            <!-- Online price and featured (only when show_online is enabled) -->
+            <div v-if="form.show_online" class="mb-6 bg-emerald-50/50 dark:bg-emerald-900/5 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/30">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Precio en línea</label>
+                        <InputNumber v-model="form.online_price" mode="currency" currency="MXN" locale="es-MX" class="w-full" placeholder="Igual que precio de venta" :pt="{ input: { root: { class: 'w-full !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] !text-sm' } } }" />
+                        <p class="text-[11px] text-gray-400 m-0">Deja en blanco para usar el precio de venta normal.</p>
+                        <InputError :message="form.errors.online_price" class="mt-1" />
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Destacar en tienda</label>
+                        <div class="flex items-center gap-3 mt-2">
+                            <ToggleSwitch v-model="form.is_featured" />
+                            <span class="text-xs text-gray-500 dark:text-gray-400">Aparecerá en la sección de destacados de tu tienda.</span>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
+        </template>
 
         <!-- GUÍA CONTEXTUAL PARA VENTA A GRANEL -->
         <div v-if="form.product_type === 'bulk'"

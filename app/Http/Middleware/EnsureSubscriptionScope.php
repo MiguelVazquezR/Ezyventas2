@@ -30,6 +30,11 @@ class EnsureSubscriptionScope
             return $next($request);
         }
 
+        // Superadmin (ID 1) tiene acceso irrestricto para soporte
+        if ($user->id === 1) {
+            return $next($request);
+        }
+
         $userSubscriptionId = (int) $user->branch->subscription_id;
 
         foreach ($request->route()->parameters() as $parameterName => $value) {

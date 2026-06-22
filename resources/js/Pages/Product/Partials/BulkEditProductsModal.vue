@@ -1,6 +1,6 @@
 <script setup>
-import { ref, watch } from 'vue';
-import { useForm } from '@inertiajs/vue3';
+import { ref, watch, computed } from 'vue';
+import { useForm, usePage } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 
 const props = defineProps({
@@ -10,6 +10,8 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'success']);
 const toast = useToast();
+
+const hasOnlineStore = computed(() => usePage().props.auth.active_modules?.includes('module_online_store'));
 
 const form = useForm({
     items: []
@@ -111,8 +113,8 @@ const submitBulkUpdate = () => {
                         <th scope="col" class="px-4 py-3 min-w-[100px]">Stock Mín.</th>
                         <th scope="col" class="px-4 py-3 min-w-[100px]">Stock Máx.</th>
                         <th scope="col" class="px-4 py-3 text-center">En POS</th>
-                        <th scope="col" class="px-4 py-3 text-center">En línea</th>
-                        <th scope="col" class="px-4 py-3 text-center">Destacado</th>
+                        <th v-if="hasOnlineStore" scope="col" class="px-4 py-3 text-center">En línea</th>
+                        <th v-if="hasOnlineStore" scope="col" class="px-4 py-3 text-center">Destacado</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -166,7 +168,7 @@ const submitBulkUpdate = () => {
                         </td>
 
                         <!-- En línea -->
-                        <td class="px-4 py-2 text-center">
+                        <td v-if="hasOnlineStore" class="px-4 py-2 text-center">
                             <ToggleSwitch v-if="item.type === 'product'" v-model="item.show_online" />
                             <div v-else v-tooltip.top="'Heredado del producto base'">
                                 <ToggleSwitch disabled :modelValue="false" class="opacity-40" />
@@ -174,7 +176,7 @@ const submitBulkUpdate = () => {
                         </td>
 
                         <!-- Destacado -->
-                        <td class="px-4 py-2 text-center">
+                        <td v-if="hasOnlineStore" class="px-4 py-2 text-center">
                             <ToggleSwitch v-if="item.type === 'product'" v-model="item.is_featured" />
                             <div v-else v-tooltip.top="'Heredado del producto base'">
                                 <ToggleSwitch disabled :modelValue="false" class="opacity-40" />

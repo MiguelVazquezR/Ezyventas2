@@ -573,9 +573,25 @@ const submit = () => {
                                 <h5 class="font-semibold text-gray-800 dark:text-gray-200 pt-2">Método de pago</h5>
 
                                 <SelectButton v-model="form.payment_method"
-                                    :options="[{ label: 'Transferencia Bancaria', value: 'transferencia' }, { label: 'Tarjeta (Próximamente)', value: 'card' }]"
+                                    :options="[
+                                        { label: 'Mercado Pago', value: 'mercadopago' },
+                                        { label: 'Transferencia Bancaria', value: 'transferencia' },
+                                    ]"
                                     optionLabel="label" optionValue="value" aria-labelledby="payment-method"
-                                    class="w-full" :disabled="true" />
+                                    class="w-full" />
+
+                                <!-- Detalles para Mercado Pago -->
+                                <div v-if="form.payment_method === 'mercadopago'" class="mt-4">
+                                    <Message severity="info" :closable="false">
+                                        <div class="flex items-center gap-3">
+                                            <img src="/images/Mercado_Pago_logo.webp" alt="Mercado Pago" class="h-14 w-auto">
+                                            <span>Serás redirigido a Mercado Pago para completar tu pago de forma segura con tarjeta de crédito, débito o efectivo en tiendas de conveniencia.</span>
+                                        </div>
+                                    </Message>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                                        Tu suscripción se activará automáticamente una vez que el pago sea confirmado por Mercado Pago.
+                                    </p>
+                                </div>
 
                                 <!-- Detalles para Transferencia -->
                                 <div v-if="form.payment_method === 'transferencia'" class="mt-4 space-y-4">
@@ -662,22 +678,22 @@ const submit = () => {
                                 </div>
                                 <!-- --- FIN SECCIÓN DE PAGO --- -->
 
-                                <div v-if="form.payment_method === 'card'" class="mt-4">
-                                    <Message severity="warn" :closable="false">
-                                        El pago con tarjeta estará disponible próximamente.
-                                    </Message>
-                                </div>
-
                                 <Button v-if="isRetry && !hasPendingPayment" @click="confirmRevert" label="Cancelar y volver al plan anterior"
                                     severity="danger" outlined class="w-full mt-2" />
 
                                 <Button @click="submit"
-                                    :disabled="form.items.length === 0 || form.processing || form.total_amount <= 0 || (form.payment_method === 'transferencia' && !form.proof_of_payment) || form.payment_method === 'card' || hasPendingPayment || (form.bank_account_id && !form.expense_category_id)"
+                                    :disabled="form.items.length === 0 || form.processing || form.total_amount <= 0 || (form.payment_method === 'transferencia' && !form.proof_of_payment) || hasPendingPayment || (form.bank_account_id && !form.expense_category_id)"
                                     :loading="form.processing"
-                                    :label="isRetry ? 'Reintentar pago' : (mode === 'renew' ? 'Confirmar y pagar' : 'Enviar comprobante')"
                                     class="w-full mt-2"
                                     v-tooltip.bottom="(form.bank_account_id && !form.expense_category_id) ? 'Debes seleccionar una categoría de gasto si seleccionaste una cuenta' : ''"
-                                    />
+                                    >
+                                    <template v-if="form.payment_method === 'mercadopago'">
+                                        <span class="ml-2">Pagar con Mercado Pago</span>
+                                    </template>
+                                    <template v-else>
+                                        {{ isRetry ? 'Reintentar pago' : (mode === 'renew' ? 'Confirmar y pagar' : 'Enviar comprobante') }}
+                                    </template>
+                                </Button>
                             </div>
                         </template>
                     </Card>

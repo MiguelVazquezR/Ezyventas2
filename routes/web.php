@@ -40,6 +40,7 @@ require __DIR__ . '/tienda.php';
 require __DIR__ . '/web/POS.php';
 require __DIR__ . '/web/products.php';
 require __DIR__ . '/web/products-stock.php';
+require __DIR__ . '/web/products-reports.php';
 require __DIR__ . '/web/import-export.php';
 require __DIR__ . '/web/quick-create.php';
 require __DIR__ . '/web/promotions.php';

@@ -12,6 +12,7 @@ use App\Mail\AdminNewPaymentNotification;
 use App\Models\Expense;
 use App\Models\ReferralUsage;
 use App\Models\Subscription;
+use App\Models\SubscriptionPayment;
 use App\Models\SubscriptionVersion;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -24,22 +25,27 @@ class ProcessSubscriptionPaymentAction
 {
     /**
      * Orquesta el proceso de pago, actualización de versión y generación de gastos.
+     * Devuelve el SubscriptionPayment creado para que el controller pueda redirigir a MP si es necesario.
      */
-    public function execute(Request $request, Subscription $subscription, array $validated, $allPlanItems): void
+    public function execute(Request $request, Subscription $subscription, array $validated, $allPlanItems): SubscriptionPayment
     {
         if ($validated['payment_method'] === 'transferencia') {
-            $this->handleTransferPayment($request, $subscription, $validated, $allPlanItems);
-        } else {
-            // Lógica futura para Stripe, tarjeta de crédito, etc.
-            // Aquí podrás reutilizar $this->calculateSubscriptionDates()
+            return $this->handleTransferPayment($request, $subscription, $validated, $allPlanItems);
         }
+
+        if ($validated['payment_method'] === 'mercadopago') {
+            return $this->handleMercadoPagoPayment($request, $subscription, $validated, $allPlanItems);
+        }
+
+        throw new \InvalidArgumentException('Método de pago no soportado.');
     }
 
-    private function handleTransferPayment(Request $request, Subscription $subscription, array $validated, $allPlanItems): void
+    /**
+     * Calcula descuentos de referido y referidor.
+     * Devuelve el monto final, los porcentajes y los datos de referido.
+     */
+    private function calculateDiscounts(Subscription $subscription, array $validated): array
     {
-        // --- Calcular descuento por referido ANTES de crear la versión nueva ---
-        // (ApplyReferralDiscountAction verifica versions()->count() <= 1,
-        //  así que debe ejecutarse antes de que se cree la nueva versión)
         $amount = (float) $validated['total_amount'];
         $referralDiscountPct = null;
         $referralDiscountAmount = null;
@@ -61,7 +67,6 @@ class ProcessSubscriptionPaymentAction
             }
         }
 
-        // Aplicar descuento continuo por ser referidor (solo aplica a pagos mensuales)
         $referrerActivePct = $validated['billing_period'] === 'mensual'
             ? $subscription->getReferrerActiveDiscountPct()
             : 0;
@@ -69,7 +74,6 @@ class ProcessSubscriptionPaymentAction
         if ($referrerActivePct > 0) {
             $discountFromReferrer = round($amount * ($referrerActivePct / 100), 2);
             $amount -= $discountFromReferrer;
-            // Agregamos el descuento de referidor al referral_discount si ya existía
             if ($referralDiscountPct) {
                 $referralDiscountPct = $referralDiscountPct + $referrerActivePct;
                 $referralDiscountAmount = round($referralDiscountAmount + $discountFromReferrer, 2);
@@ -79,140 +83,228 @@ class ProcessSubscriptionPaymentAction
             }
         }
 
-        DB::transaction(function () use ($request, $subscription, $validated, $allPlanItems, $amount, $referralDiscountPct, $referralDiscountAmount, $referralData) {
+        return [
+            'amount'                  => $amount,
+            'referralDiscountPct'     => $referralDiscountPct,
+            'referralDiscountAmount'  => $referralDiscountAmount,
+            'referralData'            => $referralData,
+        ];
+    }
+
+    /**
+     * Crea (o reutiliza) la SubscriptionVersion, inserta los items y registra ReferralUsage.
+     * Devuelve [newVersion, startDate, endDate].
+     */
+    private function createVersionWithItems(
+        Subscription $subscription,
+        array $validated,
+        $allPlanItems,
+        BillingPeriod $billingPeriod
+    ): array {
+        $mode = $validated['mode'];
+
+        // 1. Resolver Versión Base
+        $latestVersion = $subscription->versions()->latest('id')->first();
+        $baseVersion = $latestVersion;
+
+        if ($latestVersion) {
+            $lastPayment = $latestVersion->payments()->latest('id')->first();
+            if ($lastPayment && $lastPayment->status === SubscriptionPaymentStatus::REJECTED) {
+                $baseVersion = $subscription->versions()->where('id', '!=', $latestVersion->id)->latest('id')->first();
+            }
+        }
+
+        // 2. Calcular Fechas
+        [$startDate, $endDate] = $this->calculateSubscriptionDates($baseVersion, $mode, $billingPeriod);
+
+        // 3. Crear o Reutilizar Versión Nueva
+        $newVersion = $subscription->versions()
+            ->whereHas('payments', fn($q) => $q->where('status', SubscriptionPaymentStatus::REJECTED))
+            ->whereDoesntHave('payments', fn($q) => $q->whereIn('status', [SubscriptionPaymentStatus::APPROVED, SubscriptionPaymentStatus::PENDING]))
+            ->latest('id')
+            ->first();
+
+        if (!$newVersion) {
+            $newVersion = $subscription->versions()->create(['start_date' => $startDate, 'end_date' => $endDate]);
+        } else {
+            $newVersion->update(['start_date' => $startDate, 'end_date' => $endDate]);
+            $newVersion->items()->delete();
+        }
+
+        // 3.5 Finalizar versión anterior si es upgrade
+        if ($mode === 'upgrade' && $baseVersion && $baseVersion->id !== $newVersion->id) {
+            if (Carbon::parse($baseVersion->end_date)->isFuture()) {
+                $baseVersion->update(['end_date' => clone $startDate]);
+            }
+        }
+
+        // 4. Insertar Items
+        $subscriptionItems = [];
+        foreach ($validated['items'] as $item) {
+            $planItem = $allPlanItems->get($item['key']);
+            if (!$planItem) continue;
+
+            $subscriptionItems[] = [
+                'subscription_version_id' => $newVersion->id,
+                'item_key'               => $planItem->key,
+                'item_type'              => $planItem->type,
+                'name'                   => $planItem->name,
+                'quantity'               => $item['quantity'],
+                'unit_price'             => $billingPeriod === BillingPeriod::ANNUALLY ? $planItem->monthly_price * 10 : $planItem->monthly_price,
+                'billing_period'         => $billingPeriod,
+                'created_at'             => now(),
+                'updated_at'             => now(),
+            ];
+        }
+        DB::table('subscription_items')->insert($subscriptionItems);
+
+        return [$newVersion, $startDate, $endDate];
+    }
+
+    /**
+     * Crea el pago y registra ReferralUsage si aplica.
+     */
+    private function createPaymentAndReferral(
+        SubscriptionVersion $newVersion,
+        Subscription $subscription,
+        array $validated,
+        $allPlanItems,
+        float $amount,
+        ?float $referralDiscountPct,
+        ?float $referralDiscountAmount,
+        ?array $referralData,
+        string $paymentMethod,
+        Carbon $endDate
+    ): SubscriptionPayment {
+        $mode = $validated['mode'];
+
+        $paymentDetails = [];
+        if ($mode === 'upgrade') {
+            $paymentDetails['is_upgrade'] = true;
+            $paymentDetails['original_end_date'] = $endDate->toIso8601String();
+        }
+
+        $payment = $newVersion->payments()->create([
+            'amount'                  => $amount,
+            'payment_method'          => $paymentMethod,
+            'status'                  => SubscriptionPaymentStatus::PENDING,
+            'invoice_status'          => InvoiceStatus::NOT_REQUESTED,
+            'payment_details'         => $paymentDetails,
+            'referral_discount_pct'   => $referralDiscountPct,
+            'referral_discount_amount'=> $referralDiscountAmount,
+        ]);
+
+        // Registrar ReferralUsage
+        if ($referralData) {
+            $settings = $referralData['settings'];
+            $referralCode = $referralData['referral_code'];
+            $monthlyBase = $this->calculateMonthlyBase($validated['items'], $allPlanItems);
+
+            ReferralUsage::create([
+                'referral_code_id'            => $referralCode->id,
+                'referred_subscription_id'     => $subscription->id,
+                'subscription_payment_id'       => $payment->id,
+                'reward_status'                 => 'pending',
+                'referred_discount_pct'         => $referralDiscountPct,
+                'referrer_reward_pct'           => $settings->referrer_reward_pct,
+                'referrer_ongoing_discount_pct' => $settings->referrer_ongoing_discount_pct,
+                'monthly_base_amount'           => $monthlyBase,
+                'reward_amount'                 => round($monthlyBase * ((float) $settings->referrer_reward_pct / 100), 2),
+            ]);
+        }
+
+        return $payment;
+    }
+
+    private function handleTransferPayment(Request $request, Subscription $subscription, array $validated, $allPlanItems): SubscriptionPayment
+    {
+        $discounts = $this->calculateDiscounts($subscription, $validated);
+        $amount = $discounts['amount'];
+        $referralDiscountPct = $discounts['referralDiscountPct'];
+        $referralDiscountAmount = $discounts['referralDiscountAmount'];
+        $referralData = $discounts['referralData'];
+
+        $payment = DB::transaction(function () use ($request, $subscription, $validated, $allPlanItems, $amount, $referralDiscountPct, $referralDiscountAmount, $referralData) {
             $billingPeriod = BillingPeriod::from($validated['billing_period']);
-            $mode = $validated['mode'];
             $user = $request->user();
 
-            // 1. Resolver Versión Base (detectar reintentos)
-            $latestVersion = $subscription->versions()->latest('id')->first();
-            $baseVersion = $latestVersion;
+            [$newVersion, $startDate, $endDate] = $this->createVersionWithItems($subscription, $validated, $allPlanItems, $billingPeriod);
 
-            if ($latestVersion) {
-                $lastPayment = $latestVersion->payments()->latest('id')->first();
-                if ($lastPayment && $lastPayment->status === SubscriptionPaymentStatus::REJECTED) {
-                    $baseVersion = $subscription->versions()->where('id', '!=', $latestVersion->id)->latest('id')->first();
-                }
-            }
+            $payment = $this->createPaymentAndReferral(
+                $newVersion, $subscription, $validated, $allPlanItems,
+                $amount, $referralDiscountPct, $referralDiscountAmount, $referralData,
+                'transferencia', $endDate
+            );
 
-            // 2. Calcular Fechas Estimadas (Aplicando la regla estricta de días y prorrateos)
-            [$startDate, $endDate] = $this->calculateSubscriptionDates($baseVersion, $mode, $billingPeriod);
-
-            // 3. Crear o Reutilizar Versión Nueva
-            $newVersion = $subscription->versions()
-                ->whereHas('payments', fn($q) => $q->where('status', SubscriptionPaymentStatus::REJECTED))
-                ->whereDoesntHave('payments', fn($q) => $q->whereIn('status', [SubscriptionPaymentStatus::APPROVED, SubscriptionPaymentStatus::PENDING]))
-                ->latest('id')
-                ->first();
-
-            if (!$newVersion) {
-                $newVersion = $subscription->versions()->create(['start_date' => $startDate, 'end_date' => $endDate]);
-            } else {
-                $newVersion->update(['start_date' => $startDate, 'end_date' => $endDate]);
-                $newVersion->items()->delete();
-            }
-
-            // NUEVO: 3.5. Finalizar anticipadamente la versión anterior si es una mejora (Upgrade)
-            // Cortamos su fecha de finalización al día de hoy para que la nueva versión tome el control.
-            if ($mode === 'upgrade' && $baseVersion && $baseVersion->id !== $newVersion->id) {
-                if (Carbon::parse($baseVersion->end_date)->isFuture()) {
-                    $baseVersion->update(['end_date' => clone $startDate]);
-                }
-            }
-
-            // 4. Insertar Items
-            $subscriptionItems = [];
-            foreach ($validated['items'] as $item) {
-                $planItem = $allPlanItems->get($item['key']);
-                if (!$planItem) continue;
-
-                $subscriptionItems[] = [
-                    'subscription_version_id' => $newVersion->id,
-                    'item_key' => $planItem->key,
-                    'item_type' => $planItem->type,
-                    'name' => $planItem->name,
-                    'quantity' => $item['quantity'],
-                    'unit_price' => $billingPeriod === BillingPeriod::ANNUALLY ? $planItem->monthly_price * 10 : $planItem->monthly_price,
-                    'billing_period' => $billingPeriod,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-            DB::table('subscription_items')->insert($subscriptionItems);
-
-            // 6. Crear el Pago y adjuntar comprobante
-            $paymentDetails = [];
-            if ($mode === 'upgrade') {
-                $paymentDetails['is_upgrade'] = true;
-                $paymentDetails['original_end_date'] = $endDate->toIso8601String();
-            }
-
-            $payment = $newVersion->payments()->create([
-                'amount' => $amount,
-                'payment_method' => $validated['payment_method'],
-                'status' => SubscriptionPaymentStatus::PENDING,
-                'invoice_status' => InvoiceStatus::NOT_REQUESTED,
-                'payment_details' => $paymentDetails,
-                'referral_discount_pct' => $referralDiscountPct,
-                'referral_discount_amount' => $referralDiscountAmount,
-            ]);
-
+            // Adjuntar comprobante
             if ($request->hasFile('proof_of_payment')) {
                 $payment->addMediaFromRequest('proof_of_payment')->toMediaCollection('proof_of_payment');
             }
 
-            // 6.5. Registrar ReferralUsage si se aplicó código de referido
-            if ($referralData) {
-                $settings = $referralData['settings'];
-                $referralCode = $referralData['referral_code'];
-
-                // Calcular mensualidad base (sin descuento) para el premio
-                // Se calcula desde los monthly_price de los plan items, sin ajuste por periodo
-                $monthlyBase = $this->calculateMonthlyBase($validated['items'], $allPlanItems);
-
-                ReferralUsage::create([
-                    'referral_code_id' => $referralCode->id,
-                    'referred_subscription_id' => $subscription->id,
-                    'subscription_payment_id' => $payment->id,
-                    'reward_status' => 'pending',
-                    'referred_discount_pct' => $referralDiscountPct,
-                    'referrer_reward_pct' => $settings->referrer_reward_pct,
-                    'referrer_ongoing_discount_pct' => $settings->referrer_ongoing_discount_pct,
-                    'monthly_base_amount' => $monthlyBase,
-                    'reward_amount' => round($monthlyBase * ((float) $settings->referrer_reward_pct / 100), 2),
-                ]);
-            }
-
-            // 7. Generar Gasto Opcional
+            // Generar Gasto Opcional
             if (!empty($validated['bank_account_id']) && !empty($validated['expense_category_id'])) {
                 Expense::create([
-                    'folio' => $mode === 'upgrade' ? 'Pago de mejora de suscripción EzyVentas' : 'Pago de renovación de suscripción EzyVentas',
-                    'user_id' => $user->id,
-                    'branch_id' => $user->branch_id,
-                    'amount' => $amount,
-                    'expense_category_id' => $validated['expense_category_id'],
-                    'expense_date' => now(),
-                    'status' => ExpenseStatus::PENDING,
-                    'description' => 'Pago de suscripción ' . config('app.name'),
-                    'payment_method' => PaymentMethod::TRANSFER,
-                    'bank_account_id' => $validated['bank_account_id'],
+                    'folio'              => $validated['mode'] === 'upgrade' ? 'Pago de mejora de suscripción EzyVentas' : 'Pago de renovación de suscripción EzyVentas',
+                    'user_id'            => $user->id,
+                    'branch_id'          => $user->branch_id,
+                    'amount'             => $amount,
+                    'expense_category_id'=> $validated['expense_category_id'],
+                    'expense_date'       => now(),
+                    'status'             => ExpenseStatus::PENDING,
+                    'description'        => 'Pago de suscripción ' . config('app.name'),
+                    'payment_method'     => PaymentMethod::TRANSFER,
+                    'bank_account_id'    => $validated['bank_account_id'],
                 ]);
             }
 
-            // 8. Notificar al Admin
-            try {
-                $adminUser = User::whereHas('branch', fn($q) => $q->where('subscription_id', 1))->select('email')->first();
-                if ($adminUser && app()->environment('production')) {
-                    Mail::to($adminUser->email)->send(new AdminNewPaymentNotification(
-                        $subscription->commercial_name, 
-                        (float) $payment->amount, 
-                        route('admin.payments.show', $payment->id)
-                    ));
-                }
-            } catch (\Exception $e) {
-                Log::error("Fallo al enviar correo de notificación de pago: " . $e->getMessage());
-            }
+            // Notificar al Admin
+            $this->notifyAdmin($subscription, $payment);
+
+            return $payment;
         });
+
+        return $payment;
+    }
+
+    private function handleMercadoPagoPayment(Request $request, Subscription $subscription, array $validated, $allPlanItems): SubscriptionPayment
+    {
+        $discounts = $this->calculateDiscounts($subscription, $validated);
+        $amount = $discounts['amount'];
+        $referralDiscountPct = $discounts['referralDiscountPct'];
+        $referralDiscountAmount = $discounts['referralDiscountAmount'];
+        $referralData = $discounts['referralData'];
+
+        $payment = DB::transaction(function () use ($subscription, $validated, $allPlanItems, $amount, $referralDiscountPct, $referralDiscountAmount, $referralData) {
+            $billingPeriod = BillingPeriod::from($validated['billing_period']);
+
+            [$newVersion, $startDate, $endDate] = $this->createVersionWithItems($subscription, $validated, $allPlanItems, $billingPeriod);
+
+            $payment = $this->createPaymentAndReferral(
+                $newVersion, $subscription, $validated, $allPlanItems,
+                $amount, $referralDiscountPct, $referralDiscountAmount, $referralData,
+                'mercadopago', $endDate
+            );
+
+            return $payment;
+        });
+
+        return $payment;
+    }
+
+    private function notifyAdmin(Subscription $subscription, SubscriptionPayment $payment): void
+    {
+        try {
+            $adminUser = User::whereHas('branch', fn($q) => $q->where('subscription_id', 1))->select('email')->first();
+            if ($adminUser && app()->environment('production')) {
+                Mail::to($adminUser->email)->send(new AdminNewPaymentNotification(
+                    $subscription->commercial_name,
+                    (float) $payment->amount,
+                    route('admin.payments.show', $payment->id)
+                ));
+            }
+        } catch (\Exception $e) {
+            Log::error("Fallo al enviar correo de notificación de pago: " . $e->getMessage());
+        }
     }
 
     /**
