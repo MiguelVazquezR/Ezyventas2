@@ -27,6 +27,11 @@ const formatCurrency = (value) =>
         parseFloat(value) || 0,
     );
 
+// ──────────────────────────────────────
+// Safe external URL opener
+// ──────────────────────────────────────
+const openUrl = (url) => { if (url) window.open(url, '_blank'); };
+
 const formatDate = (dateString) => {
     if (!dateString) return '—';
     return new Date(dateString).toLocaleDateString('es-MX', {
@@ -176,7 +181,7 @@ const tagPt = {
                     severity="secondary"
                     text
                     class="!rounded-full"
-                    @click="window.open(invoice.xml_url, '_blank')"
+                    @click="openUrl(invoice.xml_url)"
                 />
                 <Button
                     v-if="invoice.pdf_url"
@@ -185,7 +190,7 @@ const tagPt = {
                     severity="secondary"
                     text
                     class="!rounded-full"
-                    @click="window.open(invoice.pdf_url, '_blank')"
+                    @click="openUrl(invoice.pdf_url)"
                 />
                 <Button
                     v-if="invoice.status === 'certificada' && hasPermission('cancel invoices')"

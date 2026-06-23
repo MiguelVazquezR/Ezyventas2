@@ -116,6 +116,11 @@ const rowClass = (data) => {
 };
 
 // ──────────────────────────────────────
+// Safe external URL opener
+// ──────────────────────────────────────
+const openUrl = (url) => { if (url) window.open(url, '_blank'); };
+
+// ──────────────────────────────────────
 // Row click → navigate to detail
 // ──────────────────────────────────────
 const onRowClick = (event) => {
@@ -329,17 +334,37 @@ const tagPt = {
                     </Column>
 
                     <!-- Actions -->
-                    <Column headerStyle="width: 5rem; text-align: center">
+                    <Column headerStyle="width: 10rem; text-align: center">
                         <template #body="{ data }">
-                            <Button
-                                v-if="hasPermission('invoices.see_details')"
-                                icon="pi pi-arrow-right"
-                                text
-                                rounded
-                                @click="router.get(route('invoices.show', data.id))"
-                                class="!w-8 !h-8 !text-gray-400 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors"
-                                v-tooltip.top="'Ver detalle'"
-                            />
+                            <div class="flex items-center gap-1 justify-center" @click.stop>
+                                <Button
+                                    v-if="data.xml_url"
+                                    icon="pi pi-file-excel"
+                                    text
+                                    rounded
+                                    @click="openUrl(data.xml_url)"
+                                    class="!w-8 !h-8 !text-green-600 hover:!bg-green-50 dark:hover:!bg-green-900/20 !transition-colors"
+                                    v-tooltip.top="'Descargar XML'"
+                                />
+                                <Button
+                                    v-if="data.pdf_url"
+                                    icon="pi pi-file-pdf"
+                                    text
+                                    rounded
+                                    @click="openUrl(data.pdf_url)"
+                                    class="!w-8 !h-8 !text-red-600 hover:!bg-red-50 dark:hover:!bg-red-900/20 !transition-colors"
+                                    v-tooltip.top="'Ver PDF'"
+                                />
+                                <Button
+                                    v-if="hasPermission('invoices.see_details')"
+                                    icon="pi pi-arrow-right"
+                                    text
+                                    rounded
+                                    @click="router.get(route('invoices.show', data.id))"
+                                    class="!w-8 !h-8 !text-gray-400 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors"
+                                    v-tooltip.top="'Ver detalle'"
+                                />
+                            </div>
                         </template>
                     </Column>
                 </DataTable>

@@ -18,13 +18,12 @@ class BillingSetting extends Model
         'emitter_legal_name',
         'emitter_tax_regime',
         'emitter_postal_code',
-        'api_key',
+        'logo_path',
     ];
 
     protected function casts(): array
     {
         return [
-            'api_key' => 'encrypted',
         ];
     }
 
@@ -46,10 +45,13 @@ class BillingSetting extends Model
     */
 
     /**
-     * Whether the branch has a configured API key ready for CFDI stamping.
+     * Whether the branch has its fiscal settings configured for CFDI stamping.
      */
-    public function hasApiKey(): bool
+    public function isConfigured(): bool
     {
-        return ! empty($this->api_key);
+        return ! empty($this->emitter_rfc)
+            && ! empty($this->emitter_legal_name)
+            && ! empty($this->emitter_tax_regime)
+            && ! empty($this->emitter_postal_code);
     }
 }

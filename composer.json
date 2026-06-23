@@ -13,6 +13,7 @@
         "laravel/sanctum": "^4.0",
         "laravel/socialite": "^5.23",
         "laravel/tinker": "^2.10.1",
+        "lunasoft/sw-sdk-php": "1.1.4.1",
         "maatwebsite/excel": "^3.1",
         "mercadopago/dx-php": "^3.10",
         "pusher/pusher-php-server": "^7.2",

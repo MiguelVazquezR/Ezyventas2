@@ -17,7 +17,6 @@ const form = useForm({
     emitter_legal_name: props.billingSettings?.emitter_legal_name || '',
     emitter_tax_regime: props.billingSettings?.emitter_tax_regime || '',
     emitter_postal_code: props.billingSettings?.emitter_postal_code || '',
-    api_key: props.billingSettings?.api_key || '',
 });
 
 // ──────────────────────────────────────
@@ -188,33 +187,17 @@ const submit = () => {
                         </Message>
                     </div>
 
-                    <!-- Clave de API -->
+                    <!-- Token SW configurado a nivel global en .env -->
                     <div class="flex flex-col gap-1.5">
                         <label class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0">
-                            Clave de API provisional
+                            Proveedor de timbrado
                         </label>
-                        <InputText
-                            v-model="form.api_key"
-                            placeholder="Clave de API del PAC (opcional)"
-                            class="w-full"
-                            :class="{ '!border-red-400': form.errors.api_key }"
-                            :pt="{
-                                root: {
-                                    class: '!rounded-2xl !bg-gray-50 !border-gray-200 focus:!border-primary-500 !transition-colors !py-2.5 !text-sm',
-                                },
-                            }"
-                            type="password"
-                        />
-                        <Message
-                            v-if="form.errors.api_key"
-                            severity="error"
-                            variant="simple"
-                            size="small"
-                        >
-                            {{ form.errors.api_key }}
-                        </Message>
+                        <p class="text-sm text-gray-600 m-0">
+                            <i class="pi pi-check-circle !text-green-500 mr-1.5"></i>
+                            SW Smarter Web — Token Infinito configurado
+                        </p>
                         <p class="text-[10px] text-gray-400 m-0 mt-0.5">
-                            La clave se almacena cifrada. Déjala en blanco si aún no cuentas con un proveedor de timbrado.
+                            El token de acceso al PAC se gestiona desde el archivo .env del servidor.
                         </p>
                     </div>
 

@@ -161,7 +161,7 @@ const formatCurrency = (value) =>
     new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 
 // ──────────────────────────────────────
-// Customer auto-fill
+// Customer auto-fill — fills missing receiver data from customer record
 // ──────────────────────────────────────
 watch(() => form.customer_id, (newId) => {
     if (!newId) return;
@@ -169,9 +169,10 @@ watch(() => form.customer_id, (newId) => {
     if (!customer) return;
     if (!form.receiver_rfc) form.receiver_rfc = customer.tax_id || '';
     if (!form.receiver_legal_name) form.receiver_legal_name = customer.company_name || customer.name || '';
+    if (!form.receiver_tax_regime) form.receiver_tax_regime = customer.tax_regime || '';
     if (customer.address) {
         const addr = typeof customer.address === 'object' ? customer.address : {};
-        if (!form.receiver_postal_code) form.receiver_postal_code = addr.postal_code || addr.zip || '';
+        if (!form.receiver_postal_code) form.receiver_postal_code = addr.zip_code || addr.postal_code || '';
     }
 });
 

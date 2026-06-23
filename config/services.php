@@ -50,4 +50,9 @@ return [
         'env'               => env('MP_ENV', 'sandbox'),
     ],
 
+    'swsapien' => [
+        'endpoint' => env('SW_SAPIEN_ENDPOINT', 'https://sandbox.sw.com.mx'),
+        'token'    => env('SW_SAPIEN_TOKEN'),
+    ],
+
 ];

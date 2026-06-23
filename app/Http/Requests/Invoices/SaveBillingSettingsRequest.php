@@ -35,11 +35,6 @@ class SaveBillingSettingsRequest extends FormRequest
                 'string',
                 'size:5',
             ],
-            'api_key' => [
-                'nullable',
-                'string',
-                'max:255',
-            ],
         ];
     }
 

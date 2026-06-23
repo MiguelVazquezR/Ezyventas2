@@ -23,7 +23,6 @@ class SaveBillingSettingsAction
                 'emitter_legal_name'   => $data['emitter_legal_name'],
                 'emitter_tax_regime'   => $data['emitter_tax_regime'],
                 'emitter_postal_code'  => $data['emitter_postal_code'],
-                'api_key'              => $data['api_key'] ?? null,
             ],
         );
     }
