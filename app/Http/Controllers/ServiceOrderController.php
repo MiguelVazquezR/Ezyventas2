@@ -66,7 +66,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
 
         $availableTemplates = $user->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
-            ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER, TemplateContextType::GENERAL])
+            ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER])
             ->get();
 
         return Inertia::render('ServiceOrder/Index', [
@@ -93,11 +93,11 @@ class ServiceOrderController extends Controller implements HasMiddleware
             'activities' => $activityLogService->getFormattedActivities($serviceOrder, $request, 'ServiceOrder'),
             'availableTemplates' => Auth::user()->branch->printTemplates()
                 ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
-                ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER, TemplateContextType::GENERAL])
+                ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER])
                 ->get(),
             'printTemplates' => Auth::user()->branch->subscription->printTemplates()
                 ->where('type', TemplateType::SERVICE_RECEIPT)
-                ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER, TemplateContextType::GENERAL])
+                ->whereIn('context_type', [TemplateContextType::SERVICE_ORDER])
                 ->get(),
             'customFieldDefinitions' => CustomFieldDefinition::where('subscription_id', $subscriptionId)
                 ->where('module', 'service_orders')
