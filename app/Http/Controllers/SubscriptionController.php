@@ -233,19 +233,27 @@ class SubscriptionController extends Controller
         $user = Auth::user();
         if ($user->roles()->exists()) abort(403);
 
-        if ($payment->subscriptionVersion->subscription_id !== $user->branch->subscription_id) {
-            abort(403);
-        }
-
         if ($payment->payment_method !== 'mercadopago' || $payment->status !== SubscriptionPaymentStatus::PENDING) {
             return redirect()->route('subscription.show')
                 ->with('error', 'Este pago no se puede procesar con Mercado Pago.');
         }
 
+        // Validar ownership: el pago puede no tener versión aún (se crea al aprobar)
+        if ($payment->subscriptionVersion && $payment->subscriptionVersion->subscription_id !== $user->branch->subscription_id) {
+            abort(403);
+        }
+
         $subscription = $user->branch->subscription;
         $version = $payment->subscriptionVersion;
-        $firstItem = $version->items->first();
-        $billingPeriodLabel = $firstItem?->billing_period === BillingPeriod::ANNUALLY ? 'Plan anual' : 'Plan mensual';
+
+        // Si la versión aún no existe (MercadoPago diferido), obtener el periodo de payment_details
+        if ($version) {
+            $firstItem = $version->items->first();
+            $billingPeriodLabel = $firstItem?->billing_period === BillingPeriod::ANNUALLY ? 'Plan anual' : 'Plan mensual';
+        } else {
+            $storedPeriod = $payment->payment_details['billing_period'] ?? 'anual';
+            $billingPeriodLabel = $storedPeriod === BillingPeriod::ANNUALLY->value ? 'Plan anual' : 'Plan mensual';
+        }
 
         try {
             $preference = $mpService->createPreference([
@@ -265,13 +273,11 @@ class SubscriptionController extends Controller
                 'webhook_url'             => route('webhooks.mercadopago'),
             ]);
 
-            // Guardar datos de la preferencia de MP en el pago
-            $payment->update([
-                'payment_details' => [
-                    'mp_preference_id' => $preference['id'],
-                    'mp_init_point'    => $preference['init_point'],
-                ],
-            ]);
+            // Guardar datos de la preferencia de MP en el pago (merge, no sobrescribir)
+            $currentDetails = $payment->payment_details ?? [];
+            $currentDetails['mp_preference_id'] = $preference['id'];
+            $currentDetails['mp_init_point'] = $preference['init_point'];
+            $payment->update(['payment_details' => $currentDetails]);
 
             return Inertia::location($preference['init_point']);
         } catch (\Exception $e) {
@@ -289,7 +295,7 @@ class SubscriptionController extends Controller
         $user = Auth::user();
         if ($user->roles()->exists()) abort(403);
 
-        if ($payment->subscriptionVersion->subscription_id !== $user->branch->subscription_id) {
+        if ($payment->subscriptionVersion && $payment->subscriptionVersion->subscription_id !== $user->branch->subscription_id) {
             abort(403);
         }
 
@@ -302,8 +308,14 @@ class SubscriptionController extends Controller
         $status = $request->query('status');
         $mpPaymentId = $request->query('payment_id');
 
+        // MP envía status=approved/rejected/pending en el query string.
+        // Nuestros back_urls también incluyen status=success/failure/pending como respaldo.
+        // PHP toma el último valor cuando hay duplicados, por eso comparamos ambos.
+        $isApproved = in_array($status, ['success', 'approved']);
+        $isRejected = in_array($status, ['failure', 'rejected']);
+
         // Si Mercado Pago reporta éxito, verificamos contra su API
-        if ($status === 'success' && $mpPaymentId) {
+        if ($isApproved && $mpPaymentId) {
             try {
                 $mpPayment = $mpService->getPayment($mpPaymentId);
 
@@ -334,9 +346,14 @@ class SubscriptionController extends Controller
             }
         }
 
-        if ($status === 'failure' || $status === 'pending') {
+        if ($status === 'pending') {
             return redirect()->route('subscription.show')
-                ->with('warning', 'El pago no se completó. Puedes intentarlo de nuevo desde tu panel de suscripción.');
+                ->with('info', 'Tu pago está pendiente. Completa el pago en el establecimiento que seleccionaste y tu suscripción se activará automáticamente.');
+        }
+
+        if ($isRejected) {
+            return redirect()->route('subscription.show')
+                ->with('warning', 'El pago fue rechazado. Puedes intentarlo de nuevo desde tu panel de suscripción.');
         }
 
         return redirect()->route('subscription.show')

@@ -94,6 +94,12 @@ Route::get('/storage-link', function () {
     return 'cleared.';
 });
 
+Route::get('/clear-routes', function () {
+    Artisan::call('route:clear');
+    Artisan::call('route:cache');
+    return 'cleared.';
+});
+
 Route::post('/unirse-lista', function (Request $request) {
     // 1. Validar que es un correo y que no esté repetido
     $request->validate([

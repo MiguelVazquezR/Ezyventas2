@@ -274,21 +274,63 @@ class ProcessSubscriptionPaymentAction
         $referralDiscountAmount = $discounts['referralDiscountAmount'];
         $referralData = $discounts['referralData'];
 
-        $payment = DB::transaction(function () use ($subscription, $validated, $allPlanItems, $amount, $referralDiscountPct, $referralDiscountAmount, $referralData) {
-            $billingPeriod = BillingPeriod::from($validated['billing_period']);
+        // Calcular fechas pero NO crear versión aún — se crea al aprobarse el pago en MP.
+        $billingPeriod = BillingPeriod::from($validated['billing_period']);
+        $mode = $validated['mode'];
+        $baseVersion = $this->resolveBaseVersion($subscription);
+        [$startDate, $endDate] = $this->calculateSubscriptionDates($baseVersion, $mode, $billingPeriod);
 
-            [$newVersion, $startDate, $endDate] = $this->createVersionWithItems($subscription, $validated, $allPlanItems, $billingPeriod);
+        $payment = DB::transaction(function () use ($subscription, $validated, $allPlanItems, $amount, $referralDiscountPct, $referralDiscountAmount, $referralData, $billingPeriod, $mode, $startDate, $endDate, $baseVersion) {
+            // Crear solo el registro de pago (sin versión).
+            // La versión y sus items se crearán en ApproveSubscriptionPaymentAction al confirmar MP.
+            $paymentDetails = [
+                'mode'               => $mode,
+                'billing_period'     => $billingPeriod->value,
+                'items'              => $validated['items'],
+                'referral_code'      => $validated['referral_code'] ?? null,
+                'referral_data'      => $referralData,
+                'start_date'         => $startDate->toIso8601String(),
+                'end_date'           => $endDate->toIso8601String(),
+                'original_amount'    => (float) $validated['total_amount'],
+                'base_version_id'    => $baseVersion?->id,
+            ];
 
-            $payment = $this->createPaymentAndReferral(
-                $newVersion, $subscription, $validated, $allPlanItems,
-                $amount, $referralDiscountPct, $referralDiscountAmount, $referralData,
-                'mercadopago', $endDate
-            );
+            if ($mode === 'upgrade') {
+                $paymentDetails['is_upgrade'] = true;
+            }
+
+            $payment = SubscriptionPayment::create([
+                'subscription_version_id'   => null, // Se asigna al aprobar
+                'amount'                    => $amount,
+                'payment_method'            => 'mercadopago',
+                'status'                    => SubscriptionPaymentStatus::PENDING,
+                'invoice_status'            => InvoiceStatus::NOT_REQUESTED,
+                'payment_details'           => $paymentDetails,
+                'referral_discount_pct'     => $referralDiscountPct,
+                'referral_discount_amount'  => $referralDiscountAmount,
+            ]);
 
             return $payment;
         });
 
         return $payment;
+    }
+
+    /**
+     * Resuelve la versión base para calcular fechas, sin crearla.
+     */
+    private function resolveBaseVersion(Subscription $subscription): ?\App\Models\SubscriptionVersion
+    {
+        $latestVersion = $subscription->versions()->latest('id')->first();
+
+        if ($latestVersion) {
+            $lastPayment = $latestVersion->payments()->latest('id')->first();
+            if ($lastPayment && $lastPayment->status === SubscriptionPaymentStatus::REJECTED) {
+                return $subscription->versions()->where('id', '!=', $latestVersion->id)->latest('id')->first();
+            }
+        }
+
+        return $latestVersion;
     }
 
     private function notifyAdmin(Subscription $subscription, SubscriptionPayment $payment): void
