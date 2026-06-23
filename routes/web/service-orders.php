@@ -5,7 +5,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->group(function () {
     Route::post('service-orders/batch-destroy', [ServiceOrderController::class, 'batchDestroy'])->name('service-orders.batchDestroy');
-    Route::patch('service-orders/{serviceOrder}/status', [ServiceOrderController::class, 'updateStatus'])->name('service-orders.updateStatus'); // <-- Nueva ruta
+    Route::patch('service-orders/{serviceOrder}/status', [ServiceOrderController::class, 'updateStatus'])->name('service-orders.updateStatus');
+    Route::get('service-orders/{serviceOrder}/print', [ServiceOrderController::class, 'print'])->name('service-orders.print');
     Route::resource('service-orders', ServiceOrderController::class);
      Route::post('/service-orders/{serviceOrder}/save-diagnosis', [ServiceOrderController::class, 'saveDiagnosisAndEvidence'])->name('service-orders.saveDiagnosis');
 });

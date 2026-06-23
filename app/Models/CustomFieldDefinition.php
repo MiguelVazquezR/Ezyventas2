@@ -2,12 +2,13 @@
 
 namespace App\Models;
 
+use App\Traits\HasSubscription;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class CustomFieldDefinition extends Model
 {
-    use HasFactory;
+    use HasFactory, HasSubscription;
     protected $guarded = [];
 
     protected $casts = [

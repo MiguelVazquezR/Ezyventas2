@@ -23,15 +23,16 @@ class StoreExpenseRequest extends FormRequest
             'expense_date' => ['required', 'date'],
             'status' => ['required', Rule::enum(ExpenseStatus::class)],
             'take_from_cash_register' => 'boolean',
+            'is_external' => ['boolean'],
             'description' => ['nullable', 'string'],
             'payment_method' => ['required', Rule::enum(PaymentMethod::class)],
             'bank_account_id' => [
                 'nullable',
-                // La cuenta es requerida si el método es tarjeta o transferencia.
+                // La cuenta es requerida si el método es tarjeta o transferencia y NO es externo.
                 Rule::requiredIf(function () {
-                    return in_array($this->payment_method, [PaymentMethod::CARD->value, PaymentMethod::TRANSFER->value]);
+                    return in_array($this->payment_method, [PaymentMethod::CARD->value, PaymentMethod::TRANSFER->value])
+                        && ! $this->boolean('is_external');
                 }),
-                // Valida que el ID de la cuenta exista en la base de datos.
                 'exists:bank_accounts,id',
             ],
         ];

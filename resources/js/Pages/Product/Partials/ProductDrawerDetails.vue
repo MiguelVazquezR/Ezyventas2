@@ -1,4 +1,6 @@
 <script setup>
+import { computed } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import Image from 'primevue/image';
@@ -15,6 +17,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['goToDetails']);
+
+const hasOnlineStore = computed(() => usePage().props.auth.active_modules?.includes('module_online_store'));
 
 // --- FORMATTERS ---
 const formatCurrency = (value) => {
@@ -109,8 +113,12 @@ const tagPt = {
                             </h3>
                             
                             <div class="flex flex-wrap gap-1 items-center">
-                                <Tag v-if="product.show_in_pos" severity="success" value="Venta POS" icon="pi pi-shop" :pt="tagPt" />
+                                <Tag v-if="product.show_in_pos" severity="success" value="POS" icon="pi pi-shop" :pt="tagPt" v-tooltip.top="'Visible en Punto de Venta'" />
                                 <Tag v-else severity="secondary" value="Insumo" icon="pi pi-eye-slash" v-tooltip.top="'No visible en punto de venta'" :pt="tagPt" />
+                                
+                                <Tag v-if="hasOnlineStore && product.show_online" severity="success" value="En línea" icon="pi pi-globe" :pt="tagPt" v-tooltip.top="'Visible en tienda en línea'" />
+                                
+                                <Tag v-if="hasOnlineStore && product.is_featured" severity="warn" value="Destacado" icon="pi pi-star-fill" :pt="tagPt" v-tooltip.top="'Destacado en tienda en línea'" />
                                 
                                 <Tag v-if="isComposite(product)" severity="contrast" value="Kit/Combo" icon="pi pi-link" :pt="tagPt" />
                                 <Tag v-else-if="isBulk(product)" severity="warning" value="Venta a granel" :pt="tagPt" />
@@ -139,6 +147,20 @@ const tagPt = {
                     </div>
                     <span class="font-light tracking-tight text-3xl leading-none m-0 text-primary-600 dark:text-primary-400">
                         {{ formatCurrency(product.selling_price) }}
+                    </span>
+                </div>
+
+                <!-- Precio en línea (si es diferente) -->
+                <div v-if="hasOnlineStore && product.show_online && product.online_price && Number(product.online_price) !== Number(product.selling_price)"
+                    class="mt-3 pt-3 border-t border-dashed border-gray-200 dark:border-[#2a2a2a] flex justify-between items-end">
+                    <div>
+                        <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 block mb-1">Precio en línea</span>
+                        <span class="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                            <i class="pi pi-globe !text-[10px]" /> Tienda en línea
+                        </span>
+                    </div>
+                    <span class="font-light tracking-tight text-2xl leading-none m-0 text-emerald-600 dark:text-emerald-400">
+                        {{ formatCurrency(product.online_price) }}
                     </span>
                 </div>
             </div>

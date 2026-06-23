@@ -1,0 +1,379 @@
+<script setup>
+import { ref, computed, onMounted } from 'vue';
+import { Head, router, usePage, Link } from '@inertiajs/vue3';
+import StoreLayout from '@/Layouts/StoreLayout.vue';
+import { useToast } from 'primevue/usetoast';
+
+const page = usePage();
+const store = computed(() => page.props.store || {});
+const isDarkTheme = computed(() => store.value.theme_mode === 'dark');
+const toast = useToast();
+
+const slug = computed(() => {
+    const parts = window.location.pathname.split('/');
+    return parts[2] || '';
+});
+
+const formatCurrency = (num) => {
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(num || 0);
+};
+
+const cartItems = ref([]);
+
+onMounted(() => {
+    const stored = sessionStorage.getItem('store_cart');
+    cartItems.value = stored ? JSON.parse(stored) : [];
+});
+
+const removeItem = (index) => {
+    cartItems.value.splice(index, 1);
+    sessionStorage.setItem('store_cart', JSON.stringify(cartItems.value));
+};
+
+const updateQuantity = (index, qty) => {
+    cartItems.value[index].quantity = qty;
+    sessionStorage.setItem('store_cart', JSON.stringify(cartItems.value));
+};
+
+const subtotal = computed(() => cartItems.value.reduce((sum, i) => sum + Number(i.price) * Number(i.quantity), 0));
+
+const freeShippingMin = computed(() => Number(store.value.free_shipping_minimum) || 0);
+const freeShippingReached = computed(() => freeShippingMin.value > 0 && subtotal.value >= freeShippingMin.value);
+const freeShippingRemaining = computed(() => {
+    if (freeShippingReached.value || freeShippingMin.value <= 0) return 0;
+    return freeShippingMin.value - subtotal.value;
+});
+
+const deliveryTypes = computed(() => {
+    const types = [];
+    if (store.value.accepts_pickup) types.push({ label: 'Recoger en tienda', value: 'pickup' });
+    if (store.value.accepts_delivery) types.push({ label: 'Envío a domicilio', value: 'delivery' });
+    return types;
+});
+
+const deliveryType = ref('pickup');
+const deliveryFee = computed(() => {
+    if (deliveryType.value !== 'delivery') return 0;
+    if (freeShippingReached.value) return 0;
+    return Number(store.value.delivery_fee) || 0;
+});
+const total = computed(() => Number(subtotal.value) + Number(deliveryFee.value));
+
+const getStep = (item) => item.is_bulk ? 0.1 : 1;
+const getMin = (item) => item.is_bulk ? 0.1 : 1;
+
+const form = ref({
+    customer_name: '',
+    customer_phone: '',
+    customer_email: '',
+    delivery_address: '',
+    customer_notes: '',
+});
+
+const errors = ref({});
+const submitting = ref(false);
+const paymentMethod = ref('cash'); // 'cash' or 'mercadopago'
+
+const mpEnabled = computed(() => store.value.payment_mp_enabled ?? false);
+const mpTestMode = computed(() => store.value.mp_test_mode ?? false);
+const cashEnabled = computed(() => store.value.payment_cash_enabled ?? true);
+const cashInstructions = computed(() => store.value.cash_instructions || 'Pagar en efectivo al recibir tu pedido.');
+
+const placeOrder = () => {
+    errors.value = {};
+
+    if (cartItems.value.length === 0) {
+        toast.add({ severity: 'error', summary: 'Error', detail: 'Tu carrito está vacío.', life: 3000 });
+        return;
+    }
+    if (!form.value.customer_name.trim()) {
+        errors.value.customer_name = 'Este campo es obligatorio.';
+        return;
+    }
+    if (!form.value.customer_phone.trim()) {
+        errors.value.customer_phone = 'Este campo es obligatorio.';
+        return;
+    }
+    if (deliveryType.value === 'delivery' && !form.value.delivery_address.trim()) {
+        errors.value.delivery_address = 'La dirección es obligatoria para envío.';
+        return;
+    }
+
+    submitting.value = true;
+
+    router.post(route('store.order.place', { slug: slug.value }), {
+        items: cartItems.value.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+        customer_name: form.value.customer_name,
+        customer_phone: form.value.customer_phone,
+        customer_email: form.value.customer_email || undefined,
+        delivery_type: deliveryType.value,
+        delivery_address: form.value.delivery_address || undefined,
+        customer_notes: form.value.customer_notes || undefined,
+        payment_method: paymentMethod.value,
+    }, {
+        onError: (err) => {
+            errors.value = err;
+            toast.add({ severity: 'error', summary: 'Error', detail: 'Revisa el formulario e intenta de nuevo.', life: 5000 });
+        },
+        onFinish: () => {
+            submitting.value = false;
+            sessionStorage.removeItem('store_cart');
+        },
+    });
+};
+
+const inputPt = computed(() => ({
+    root: {
+        class: [
+            '!rounded-xl !border-gray-100 focus:!border-gray-300 transition-colors',
+            isDarkTheme.value
+                ? '!bg-[#1a1a1a] !border-[#3a3a3a] focus:!border-gray-600 !text-white'
+                : '!bg-white !border-gray-100 !text-gray-900'
+        ].join(' ')
+    }
+}));
+
+const isEmpty = computed(() => cartItems.value.length === 0);
+</script>
+
+<template>
+    <Head :title="'Carrito — ' + (store.name || 'Tienda')" />
+    <StoreLayout>
+        <div class="max-w-5xl mx-auto px-4 md:px-6 py-8">
+            <!-- Back link -->
+            <Link :href="route('store.home', { slug: slug })"
+                :class="[
+                    'inline-flex items-center gap-1.5 text-xs font-medium transition-colors mb-6',
+                    isDarkTheme ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
+                ]">
+                <i class="pi pi-arrow-left !text-[10px]" />
+                Volver a la tienda
+            </Link>
+
+            <h1 class="text-3xl md:text-4xl font-light tracking-tight mb-8 m-0"
+                :class="isDarkTheme ? 'text-white' : 'text-gray-900'">Tu pedido</h1>
+
+            <!-- Empty cart -->
+            <div v-if="isEmpty" :class="[
+                'rounded-3xl border p-16 text-center',
+                isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100'
+            ]">
+                <div :class="[
+                    'w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center',
+                    isDarkTheme ? 'bg-[#1a1a1a]' : 'bg-gray-50'
+                ]">
+                    <i class="pi pi-shopping-cart !text-2xl"
+                        :class="isDarkTheme ? 'text-gray-600' : 'text-gray-300'" />
+                </div>
+                <p class="text-lg mb-4 m-0"
+                    :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">Tu carrito está vacío.</p>
+                <Link :href="route('store.home', { slug: slug })"
+                    class="inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-medium text-white transition-all"
+                    :style="{ background: 'var(--store-primary)' }">
+                    <i class="pi pi-arrow-left !text-xs" />
+                    Ver productos
+                </Link>
+            </div>
+
+            <div v-else class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                <!-- Cart items -->
+                <div class="lg:col-span-3 space-y-3">
+                    <p class="text-[10px] uppercase tracking-widest font-bold m-0 mb-2"
+                        :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
+                        {{ cartItems.length }} {{ cartItems.length === 1 ? 'producto' : 'productos' }}
+                    </p>
+                    <div v-for="(item, index) in cartItems" :key="index"
+                        :class="[
+                            'rounded-2xl border p-4 flex gap-4 items-center group',
+                            isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100'
+                        ]">
+                        <div :class="[
+                            'w-16 h-16 rounded-xl flex items-center justify-center shrink-0',
+                            isDarkTheme ? 'bg-[#1a1a1a]' : 'bg-gray-50'
+                        ]">
+                            <img v-if="item.image_url" :src="item.image_url" class="max-h-full max-w-full object-contain" />
+                            <i v-else class="pi pi-image"
+                                :class="isDarkTheme ? 'text-gray-600' : 'text-gray-300'" />
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-medium text-sm m-0 truncate"
+                                :class="isDarkTheme ? 'text-white' : 'text-gray-900'">{{ item.name }}</h3>
+                            <p class="text-sm font-light tracking-tight mt-0.5 m-0" :style="{ color: 'var(--store-primary)' }">
+                                {{ formatCurrency(item.price) }}
+                                <span v-if="item.is_bulk" class="text-[10px]"
+                                    :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">/ {{ item.measure_unit || 'unidad' }}</span>
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <InputNumber fluid v-model="item.quantity" :min="getMin(item)" :max="999" :step="getStep(item)" showButtons class="!w-[108px]"
+                                @update:modelValue="updateQuantity(index, $event)"
+                                :pt="{
+                                    input: {
+                                        root: {
+                                            class: [
+                                                '!rounded-xl !text-center !text-sm',
+                                                isDarkTheme
+                                                    ? '!bg-[#1a1a1a] !border-[#3a3a3a] !text-white'
+                                                    : '!bg-white !border-gray-100 !text-gray-900'
+                                            ].join(' ')
+                                        }
+                                    }
+                                }" />
+                            <Button icon="pi pi-trash" text rounded severity="danger" size="small" @click="removeItem(index)"
+                                :pt="{
+                                    root: {
+                                        class: [
+                                            '!text-gray-400 hover:!text-red-500 transition-colors',
+                                            isDarkTheme ? 'hover:!text-red-400' : ''
+                                        ].filter(Boolean).join(' ')
+                                    }
+                                }" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Order form -->
+                <div class="lg:col-span-2 space-y-4">
+                    <!-- Delivery type -->
+                    <div :class="[
+                        'rounded-2xl border p-4',
+                        isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100'
+                    ]">
+                        <label class="text-[10px] uppercase tracking-widest font-bold m-0 mb-3 block"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Tipo de entrega</label>
+                        <SelectButton v-model="deliveryType" :options="deliveryTypes" optionLabel="label" optionValue="value" class="w-full"
+                            :pt="{
+                                root: { class: '!bg-transparent !border-0 !p-0' },
+                                button: {
+                                    class: [
+                                        '!text-xs !rounded-xl flex-1 !border-gray-100 !text-gray-600',
+                                        isDarkTheme ? '!bg-[#1a1a1a] !border-[#3a3a3a] !text-gray-400' : '!bg-white'
+                                    ].join(' ')
+                                }
+                            }" />
+                    </div>
+
+                    <!-- Customer info -->
+                    <div :class="[
+                        'rounded-2xl border p-4 space-y-3',
+                        isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100'
+                    ]">
+                        <label class="text-[10px] uppercase tracking-widest font-bold m-0 block"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Tu información</label>
+                        <div>
+                            <InputText v-model="form.customer_name" placeholder="Nombre completo *" :pt="inputPt" class="w-full" />
+                            <Message v-if="errors.customer_name" severity="error" variant="simple" size="small" class="mt-1">{{ errors.customer_name }}</Message>
+                        </div>
+                        <div>
+                            <InputText v-model="form.customer_phone" placeholder="Teléfono *" :pt="inputPt" class="w-full" />
+                            <Message v-if="errors.customer_phone" severity="error" variant="simple" size="small" class="mt-1">{{ errors.customer_phone }}</Message>
+                        </div>
+                        <InputText v-model="form.customer_email" placeholder="Correo electrónico (opcional)" :pt="inputPt" class="w-full" />
+                        <div v-if="deliveryType === 'delivery'">
+                            <Textarea v-model="form.delivery_address" placeholder="Dirección de entrega *" :pt="inputPt" rows="2" class="w-full" />
+                            <Message v-if="errors.delivery_address" severity="error" variant="simple" size="small" class="mt-1">{{ errors.delivery_address }}</Message>
+                        </div>
+                        <Textarea v-model="form.customer_notes" placeholder="Notas adicionales (opcional)" :pt="inputPt" rows="2" class="w-full" />
+                    </div>
+
+                    <!-- Totals -->
+                    <div :class="[
+                        'rounded-2xl border p-4 space-y-2',
+                        isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100'
+                    ]">
+                        <div class="flex justify-between text-sm">
+                            <span :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">Subtotal</span>
+                            <span class="font-medium"
+                                :class="isDarkTheme ? 'text-white' : 'text-gray-900'">{{ formatCurrency(subtotal) }}</span>
+                        </div>
+                        <!-- Free shipping progress -->
+                        <div v-if="freeShippingMin > 0 && !freeShippingReached" class="text-xs flex items-center gap-1.5 py-1"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">
+                            <i class="pi pi-truck !text-xs" />
+                            Agrega {{ formatCurrency(freeShippingRemaining) }} más para envío gratis
+                        </div>
+                        <!-- Free shipping reached -->
+                        <div v-if="freeShippingReached" class="text-xs flex items-center gap-1.5 py-1"
+                            :class="isDarkTheme ? 'text-green-400' : 'text-green-600'">
+                            <i class="pi pi-check-circle !text-xs" />
+                            ¡Envío gratis!
+                        </div>
+                        <div v-if="deliveryFee > 0" class="flex justify-between text-sm">
+                            <span :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">Costo de envío</span>
+                            <span :class="isDarkTheme ? 'text-white' : 'text-gray-900'">{{ formatCurrency(deliveryFee) }}</span>
+                        </div>
+                        <div v-else-if="deliveryType === 'delivery' && freeShippingReached" class="flex justify-between text-sm">
+                            <span :class="isDarkTheme ? 'text-gray-400' : 'text-gray-500'">Costo de envío</span>
+                            <span :class="isDarkTheme ? 'text-green-400' : 'text-green-600'" class="line-through">{{ formatCurrency(store.delivery_fee) }}</span>
+                        </div>
+                        <div :class="[
+                            'flex justify-between pt-2 border-t',
+                            isDarkTheme ? 'border-[#3a3a3a]' : 'border-gray-100'
+                        ]">
+                            <span class="text-base font-semibold"
+                                :class="isDarkTheme ? 'text-white' : 'text-gray-900'">Total</span>
+                            <span class="text-xl font-light tracking-tight" :style="{ color: 'var(--store-primary)' }">
+                                {{ formatCurrency(total) }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Payment method -->
+                    <div v-if="mpEnabled || cashEnabled" :class="[
+                        'rounded-2xl border p-4 space-y-3',
+                        isDarkTheme ? 'bg-[#232323] border-[#3a3a3a]' : 'bg-white border-gray-100'
+                    ]">
+                        <label class="text-[10px] uppercase tracking-widest font-bold m-0 block"
+                            :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Método de pago</label>
+
+                        <div v-if="mpEnabled" class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all"
+                            :class="[
+                                paymentMethod === 'mercadopago'
+                                    ? (isDarkTheme ? 'bg-[#1a1a1a] border-gray-600' : 'bg-blue-50 border-blue-300')
+                                    : (isDarkTheme ? 'bg-[#1a1a1a] border-[#2a2a2a] hover:border-gray-600' : 'bg-gray-50 border-gray-200 hover:border-gray-300')
+                            ]"
+                            @click="paymentMethod = 'mercadopago'">
+                            <img src="/images/Mercado_Pago_logo.webp" alt="Mercado Pago" class="h-10 object-contain" />
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2">
+                                    <p class="text-sm font-medium m-0"
+                                        :class="isDarkTheme ? 'text-white' : 'text-gray-900'">Mercado Pago</p>
+                                    <span v-if="mpTestMode" class="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                        Modo prueba
+                                    </span>
+                                </div>
+                                <p class="text-[11px] m-0"
+                                    :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">Tarjeta de crédito, débito o saldo de MP.</p>
+                            </div>
+                            <i v-if="paymentMethod === 'mercadopago'" class="pi pi-check-circle !text-sm text-blue-500" />
+                        </div>
+
+                        <div v-if="cashEnabled" class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all"
+                            :class="[
+                                paymentMethod === 'cash'
+                                    ? (isDarkTheme ? 'bg-[#1a1a1a] border-gray-600' : 'bg-green-50 border-green-300')
+                                    : (isDarkTheme ? 'bg-[#1a1a1a] border-[#2a2a2a] hover:border-gray-600' : 'bg-gray-50 border-gray-200 hover:border-gray-300')
+                            ]"
+                            @click="paymentMethod = 'cash'">
+                            <i class="pi pi-money-bill !text-lg"
+                                :class="paymentMethod === 'cash' ? 'text-green-500' : (isDarkTheme ? 'text-gray-500' : 'text-gray-400')" />
+                            <div class="flex-1">
+                                <p class="text-sm font-medium m-0"
+                                    :class="isDarkTheme ? 'text-white' : 'text-gray-900'">Pago en efectivo</p>
+                                <p class="text-[11px] m-0"
+                                    :class="isDarkTheme ? 'text-gray-500' : 'text-gray-400'">{{ cashInstructions }}</p>
+                            </div>
+                            <i v-if="paymentMethod === 'cash'" class="pi pi-check-circle !text-sm text-green-500" />
+                        </div>
+                    </div>
+
+                    <Button :label="paymentMethod === 'mercadopago' ? 'Pagar con Mercado Pago' : 'Hacer pedido'" 
+                        :icon="paymentMethod === 'mercadopago' ? 'pi pi-credit-card' : 'pi pi-check'" 
+                        :loading="submitting" @click="placeOrder"
+                        class="w-full !rounded-xl !py-3"
+                        :pt="{ root: { style: `background: var(--store-primary); border-color: var(--store-primary);` } }" />
+                </div>
+            </div>
+        </div>
+    </StoreLayout>
+</template>

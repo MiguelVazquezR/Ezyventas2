@@ -49,8 +49,16 @@ class FinancialReportController extends Controller
         $reportData = $reportService->generateReportData();
 
         // 2. Cálculos de Variación (Ganancia Neta)
+        // Ganancia neta del negocio: ventas - gastos internos (número GRANDE en la tarjeta)
         $netProfitCurrent = $reportData['kpis']['sales']['current'] - $reportData['kpis']['expenses']['current'];
         $netProfitPrevious = $reportData['kpis']['sales']['previous'] - $reportData['kpis']['expenses']['previous'];
+
+        // Ganancia neta total: ventas - todos los gastos (texto CHIQUITO abajo)
+        $allExpensesCurrent = $reportData['kpis']['expenses']['current'] + ($reportData['kpis']['externalExpenses']['current'] ?? 0);
+        $allExpensesPrevious = $reportData['kpis']['expenses']['previous'] + ($reportData['kpis']['externalExpenses']['previous'] ?? 0);
+
+        $netProfitAllCurrent = $reportData['kpis']['sales']['current'] - $allExpensesCurrent;
+        $netProfitAllPrevious = $reportData['kpis']['sales']['previous'] - $allExpensesPrevious;
         
         $reportData['kpis']['netProfit'] = [
             'current' => $netProfitCurrent,
@@ -61,16 +69,22 @@ class FinancialReportController extends Controller
                 : ($netProfitCurrent != 0 ? 100 : 0),
         ];
 
+        $reportData['kpis']['netProfitAll'] = [
+            'current' => $netProfitAllCurrent,
+            'previous' => $netProfitAllPrevious,
+        ];
+
         // --- NUEVO CÁLCULO: Margen de Utilidad (%) ---
+        // Basado en el total real (incluyendo gastos externos) para precisión
         $salesCurrent = $reportData['kpis']['sales']['current'];
         $salesPrevious = $reportData['kpis']['sales']['previous'];
 
         $utilityMarginCurrent = $salesCurrent != 0 
-            ? round(($netProfitCurrent / $salesCurrent) * 100, 2) 
+            ? round(($netProfitAllCurrent / $salesCurrent) * 100, 2) 
             : 0;
 
         $utilityMarginPrevious = $salesPrevious != 0 
-            ? round(($netProfitPrevious / $salesPrevious) * 100, 2) 
+            ? round(($netProfitAllPrevious / $salesPrevious) * 100, 2) 
             : 0;
 
         $reportData['kpis']['utilityMargin'] = [
@@ -111,7 +125,7 @@ class FinancialReportController extends Controller
         $reportData['detailedExpenses'] = Expense::where('branch_id', $branchId)
             ->where('status', ExpenseStatus::PAID->value)
             ->whereBetween('expense_date', [$startDate, $endDate])
-            ->select('id', 'branch_id', 'expense_date', 'expense_category_id', 'description', 'amount', 'payment_method', 'bank_account_id', 'folio')
+            ->select('id', 'branch_id', 'expense_date', 'expense_category_id', 'description', 'amount', 'payment_method', 'bank_account_id', 'folio', 'is_external')
             ->with(['category:id,name', 'bankAccount:id,account_name,bank_name'])
             ->orderBy('expense_date', 'desc')
             ->limit($limitWeb)

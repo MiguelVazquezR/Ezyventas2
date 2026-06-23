@@ -171,7 +171,12 @@ const dialogPt = {
                                 </Column>
                                 <Column field="amount" header="Monto" class="text-right">
                                     <template #body="{ data }">
-                                        <span class="font-mono font-medium text-gray-900 dark:text-white">{{ formatCurrency(data.amount) }}</span>
+                                        <div v-if="data.referral_discount_pct" class="flex flex-col items-end gap-0.5">
+                                            <span class="text-xs text-gray-400 line-through font-mono">{{ formatCurrency(parseFloat(data.amount) + parseFloat(data.referral_discount_amount || 0)) }}</span>
+                                            <span class="text-[10px] text-green-600 dark:text-green-400">-{{ data.referral_discount_pct }}% ref.</span>
+                                            <span class="font-mono font-medium text-gray-900 dark:text-white">{{ formatCurrency(data.amount) }}</span>
+                                        </div>
+                                        <span v-else class="font-mono font-medium text-gray-900 dark:text-white">{{ formatCurrency(data.amount) }}</span>
                                     </template>
                                 </Column>
                                 <Column field="status" header="Estado">

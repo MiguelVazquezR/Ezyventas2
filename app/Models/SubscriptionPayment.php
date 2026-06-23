@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\InvoiceStatus;
 use App\Enums\SubscriptionPaymentStatus;
+use App\Models\ReferralUsage;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -19,20 +20,24 @@ class SubscriptionPayment extends Model implements HasMedia // AÑADIDO HasMedia
 
     protected $fillable = [
         'subscription_version_id', 
-        'amount', 
+        'amount',
+        'referral_discount_pct',
+        'referral_discount_amount',
         'payment_method', 
         'invoiced', 
         'invoice_status',
-        'status', // AÑADIDO
-        'payment_details' // AÑADIDO
+        'status',
+        'payment_details'
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'referral_discount_pct' => 'decimal:2',
+        'referral_discount_amount' => 'decimal:2',
         'invoiced' => 'boolean',
         'invoice_status' => InvoiceStatus::class,
-        'status' => SubscriptionPaymentStatus::class, // AÑADIDO
-        'payment_details' => 'array', // AÑADIDO
+        'status' => SubscriptionPaymentStatus::class,
+        'payment_details' => 'array',
     ];
     
     public function subscriptionVersion(): BelongsTo
@@ -42,7 +47,7 @@ class SubscriptionPayment extends Model implements HasMedia // AÑADIDO HasMedia
 
     public function referralUsage(): HasOne
     {
-        return $this->hasOne(ReferralUsage::class);
+        return $this->hasOne(ReferralUsage::class, 'subscription_payment_id');
     }
 
     // AÑADIDO: Colección de media para el comprobante

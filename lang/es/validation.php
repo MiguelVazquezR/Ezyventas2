@@ -238,5 +238,6 @@ return [
         'customer_id' => 'cliente',
         'items' => 'conceptos',
         'content' => 'contenido',
+        'proof_of_payment' => 'comprobante de pago',
     ],
 ];

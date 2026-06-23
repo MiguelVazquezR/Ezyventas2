@@ -25,10 +25,12 @@ class UpdateExpenseRequest extends FormRequest
             'description' => ['nullable', 'string'],
             'payment_method' => ['required', Rule::enum(PaymentMethod::class)],
             'take_from_cash_register' => 'boolean',
+            'is_external' => ['boolean'],
             'bank_account_id' => [
                 'nullable',
                 Rule::requiredIf(function () {
-                    return in_array($this->payment_method, [PaymentMethod::CARD->value, PaymentMethod::TRANSFER->value]);
+                    return in_array($this->payment_method, [PaymentMethod::CARD->value, PaymentMethod::TRANSFER->value])
+                        && ! $this->boolean('is_external');
                 }),
                 'exists:bank_accounts,id',
             ],

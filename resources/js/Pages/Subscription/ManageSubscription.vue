@@ -16,6 +16,8 @@ const props = defineProps({
     currentBillingPeriod: String,
     ourBankAccounts: Array,
     hasPendingPayment: Boolean,
+    isFirstPayment: Boolean,
+    referrerActiveDiscountPct: Number,
     userBankAccounts: Array, // Cuentas del suscriptor
     expenseCategories: Array, // Categorías de gasto del suscriptor
 });
@@ -42,6 +44,7 @@ const form = useForm({
     proof_of_payment: null,
     bank_account_id: null,
     expense_category_id: null,
+    referral_code: '',
 });
 
 // --- Lógica de Versión de Comparación ---
@@ -58,6 +61,15 @@ const availableModules = computed(() =>
 );
 const allLimitItems = computed(() =>
     props.allPlanItems.filter(item => item.type === 'limit')
+);
+
+// Separar módulos incluidos (module_pos + precio $0) de los de pago
+const includedModules = computed(() =>
+    availableModules.value.filter(m => m.key === 'module_pos' || parseFloat(m.monthly_price) === 0)
+);
+
+const paidModules = computed(() =>
+    availableModules.value.filter(m => m.key !== 'module_pos' && parseFloat(m.monthly_price) > 0)
 );
 
 // --- Lógica de Límites Mínimos Inteligente ---
@@ -138,6 +150,15 @@ const totalDaysInPeriod = computed(() => {
 // --- Sincronización de Formulario y UI ---
 watch([selectedModules, limitValues, billingPeriod], () => {
     form.billing_period = billingPeriod.value;
+
+    // Asegurar que los módulos incluidos siempre estén seleccionados
+    const includedKeys = includedModules.value.map(m => m.key);
+    includedKeys.forEach(key => {
+        if (!selectedModules.value.includes(key)) {
+            selectedModules.value.push(key);
+        }
+    });
+
     const newItems = [];
     let totalCost = 0;
 
@@ -161,6 +182,12 @@ watch([selectedModules, limitValues, billingPeriod], () => {
 
     // 2. Calcular Límites
     allLimitItems.value.forEach(limitItem => {
+        // Saltar límites que dependen de un módulo que no está activo
+        if (limitItem.key === 'limit_services' && !selectedModules.value.includes('module_services')) {
+            limitValues.value[limitItem.key] = getMinLimit(limitItem.key);
+            return;
+        }
+
         const newQuantity = limitValues.value[limitItem.key] || 0;
         if (newQuantity <= 0) return;
 
@@ -196,10 +223,11 @@ watch(() => form.bank_account_id, (newVal) => {
     }
 });
 
-// Resumen de items
+// Resumen de items con subtotales
 const itemsForSummary = computed(() => {
     const summary = [];
     const currentItemsMap = new Map(versionToCompare.value?.items.map(i => [i.item_key, i.quantity]) || []);
+    const isUpgrade = props.mode === 'upgrade';
 
     form.items.forEach(item => {
         const planItem = props.allPlanItems.find(i => i.key === item.key);
@@ -207,19 +235,28 @@ const itemsForSummary = computed(() => {
 
         const currentQuantity = currentItemsMap.get(item.key) || 0;
         const newQuantity = item.quantity;
+        const displayQuantity = isUpgrade ? newQuantity - currentQuantity : newQuantity;
 
-        if (props.mode === 'upgrade') {
-            if (planItem.type === 'module' && currentQuantity === 0 && newQuantity > 0) {
-                summary.push({ key: item.key, name: planItem.name, quantity: 1 });
-            } else if (planItem.type === 'limit') {
-                const addedQuantity = newQuantity - currentQuantity;
-                if (addedQuantity > 0) {
-                    summary.push({ key: item.key, name: planItem.name, quantity: addedQuantity });
-                }
-            }
+        if (displayQuantity <= 0) return;
+
+        let subtotal = 0;
+
+        if (planItem.type === 'module') {
+            if (isUpgrade && currentQuantity > 0) return;
+            subtotal = getPrice(planItem);
         } else {
-            summary.push({ key: item.key, name: planItem.name, quantity: item.quantity });
+            const unitPricePerPackage = getPrice(planItem);
+            const pricePerUnit = unitPricePerPackage / (planItem.meta?.quantity || 1);
+            subtotal = pricePerUnit * displayQuantity;
         }
+
+        summary.push({
+            key: item.key,
+            name: planItem.name,
+            quantity: displayQuantity,
+            subtotal,
+            planItem,
+        });
     });
     return summary;
 });
@@ -242,12 +279,61 @@ const confirmRevert = () => {
 
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 
+// --- Cálculos de descuento por referido ---
+const referrerDiscountAmount = computed(() => {
+    if (!props.referrerActiveDiscountPct || props.referrerActiveDiscountPct <= 0) return 0;
+    return form.total_amount * (props.referrerActiveDiscountPct / 100);
+});
+
+const totalAfterReferrerDiscount = computed(() => {
+    return form.total_amount - referrerDiscountAmount.value;
+});
+
+const referralDiscountAmount = computed(() => {
+    if (!codeValidation.value?.valid || !codeValidation.value?.discount_pct) return 0;
+    return form.total_amount * (codeValidation.value.discount_pct / 100);
+});
+
+const finalAmountWithReferral = computed(() => {
+    return form.total_amount - referralDiscountAmount.value - referrerDiscountAmount.value;
+});
+
 const onFileSelect = (event) => {
     form.proof_of_payment = event.files[0];
 };
 const onFileRemove = () => {
     form.proof_of_payment = null;
 };
+
+// --- Validación de código de referido en tiempo real ---
+const validatingCode = ref(false);
+const codeValidation = ref(null); // { valid: bool, message: string, discount_pct: number }
+
+let validateTimer = null;
+watch(() => form.referral_code, (newCode) => {
+    clearTimeout(validateTimer);
+    codeValidation.value = null;
+
+    const trimmed = (newCode || '').trim();
+    if (trimmed.length < 6) {
+        return;
+    }
+
+    validatingCode.value = true;
+    validateTimer = setTimeout(() => {
+        fetch(route('referrals.validate', { code: trimmed }))
+            .then(r => r.json())
+            .then(data => {
+                codeValidation.value = data;
+            })
+            .catch(() => {
+                codeValidation.value = { valid: false, message: 'Error al validar el código.' };
+            })
+            .finally(() => {
+                validatingCode.value = false;
+            });
+    }, 500);
+});
 
 const submit = () => {
     form.post(route('subscription.manage.store'), {
@@ -304,20 +390,41 @@ const submit = () => {
                     <Card>
                         <template #title>Módulos</template>
                         <template #content>
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                <div v-for="module in availableModules" :key="module.key"
-                                    class="border dark:border-gray-700 rounded-lg p-4 flex items-center gap-4 transition-all"
-                                    :class="{ 'bg-gray-50 dark:bg-gray-700/30': selectedModules.includes(module.key) }">
-                                    <Checkbox v-model="selectedModules" :inputId="module.key" :value="module.key"
-                                        :disabled="(mode === 'upgrade' && activeItemKeys.has(module.key)) || hasPendingPayment" />
-                                    <label :for="module.key" class="flex-grow cursor-pointer">
-                                        <div class="flex items-center gap-2">
-                                            <i :class="module.meta?.icon" class="text-orange-500"></i>
-                                            <span class="font-semibold">{{ module.name }}</span>
+                            <!-- Módulos incluidos (siempre activos, sin checkbox) -->
+                            <div v-if="includedModules.length > 0" class="mb-6">
+                                <h4 class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-3">Incluidos en plan básico</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    <div v-for="module in includedModules" :key="module.key"
+                                        class="bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] rounded-xl p-3 flex items-center gap-3 opacity-70">
+                                        <div class="w-8 h-8 rounded-full bg-green-50 dark:bg-green-900/20 flex items-center justify-center flex-shrink-0 border border-green-100 dark:border-green-900/30">
+                                            <i :class="module.meta?.icon" class="!text-sm text-green-600"></i>
                                         </div>
-                                        <p class="text-xs text-gray-500">{{ formatCurrency(getPrice(module)) }}/{{
-                                            billingPeriod === 'anual' ? 'año' : 'mes' }}</p>
-                                    </label>
+                                        <div>
+                                            <p class="text-sm font-medium text-gray-900 dark:text-white m-0">{{ module.name }}</p>
+                                            <p class="text-[9px] font-bold text-green-600 uppercase tracking-widest m-0 mt-0.5">Incluido</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Módulos adicionales (con checkbox para contratar) -->
+                            <div v-if="paidModules.length > 0">
+                                <h4 class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-3">Módulos adicionales</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    <div v-for="module in paidModules" :key="module.key"
+                                        class="border dark:border-gray-700 rounded-lg p-4 flex items-center gap-4 transition-all"
+                                        :class="{ 'bg-gray-50 dark:bg-gray-700/30': selectedModules.includes(module.key) }">
+                                        <Checkbox v-model="selectedModules" :inputId="module.key" :value="module.key"
+                                            :disabled="(mode === 'upgrade' && activeItemKeys.has(module.key)) || hasPendingPayment" />
+                                        <label :for="module.key" class="flex-grow cursor-pointer">
+                                            <div class="flex items-center gap-2">
+                                                <i :class="module.meta?.icon" class="text-orange-500"></i>
+                                                <span class="font-semibold">{{ module.name }}</span>
+                                            </div>
+                                            <p class="text-xs text-gray-500">{{ formatCurrency(getPrice(module)) }}/{{
+                                                billingPeriod === 'anual' ? 'año' : 'mes' }}</p>
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                         </template>
@@ -371,14 +478,17 @@ const submit = () => {
 
                                 <div v-if="itemsForSummary.length > 0"
                                     class="space-y-2 text-sm max-h-48 overflow-y-auto p-1">
-                                    <div v-for="item in itemsForSummary" :key="item.key" class="flex justify-between">
-                                        <span>
-                                            {{ item.name }}
-                                            <span
-                                                v-if="item.quantity > 1 && allLimitItems.some(l => l.key === item.key)">
-                                                (x{{ item.quantity }})
+                                    <div v-for="item in itemsForSummary" :key="item.key" class="flex justify-between items-center">
+                                        <div class="flex flex-col min-w-0">
+                                            <span class="truncate font-medium text-gray-900 dark:text-white">
+                                                {{ item.name }}
+                                                <span v-if="item.quantity > 1 && allLimitItems.some(l => l.key === item.key)" class="text-gray-500 font-normal">
+                                                    (x{{ item.quantity }})
+                                                </span>
                                             </span>
-                                        </span>
+                                            <span v-if="parseFloat(item.planItem.monthly_price) === 0" class="text-[10px] text-green-600 font-medium">Incluido</span>
+                                        </div>
+                                        <span class="font-mono text-xs text-gray-600 dark:text-gray-400 ml-2 shrink-0">{{ formatCurrency(item.subtotal) }}</span>
                                     </div>
                                 </div>
                                 <p v-else class="text-sm text-center text-gray-500 py-4">
@@ -388,7 +498,74 @@ const submit = () => {
                                 <Divider />
                                 <div class="flex justify-between items-center font-bold text-lg">
                                     <span>{{ mode === 'upgrade' ? 'Total a pagar hoy' : 'Total del periodo' }}:</span>
-                                    <span>{{ formatCurrency(form.total_amount) }}</span>
+                                    <span :class="{ 'line-through text-gray-400 text-base font-normal': (billingPeriod === 'mensual' && referrerDiscountAmount > 0) || codeValidation?.valid }">{{ formatCurrency(form.total_amount) }}</span>
+                                </div>
+
+                                <!-- Desglose de descuento continuo por ser referidor -->
+                                <div v-if="billingPeriod === 'mensual' && referrerDiscountAmount > 0" class="bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-900/30 rounded-2xl p-4 space-y-2">
+                                    <div class="flex justify-between items-center text-sm">
+                                        <span class="text-purple-700 dark:text-purple-300">Descuento por referidos activos ({{ referrerActiveDiscountPct }}%)</span>
+                                        <span class="text-purple-700 dark:text-purple-300 font-medium">-{{ formatCurrency(referrerDiscountAmount) }}</span>
+                                    </div>
+                                    <Divider class="!my-2" v-if="!codeValidation?.valid" />
+                                    <div v-if="!codeValidation?.valid" class="flex justify-between items-center font-bold text-lg">
+                                        <span class="text-purple-800 dark:text-purple-200">Total con descuento</span>
+                                        <span class="text-purple-800 dark:text-purple-200">{{ formatCurrency(totalAfterReferrerDiscount) }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- Mensaje informativo: descuento solo en mensual -->
+                                <div v-if="billingPeriod === 'anual' && referrerActiveDiscountPct > 0" class="bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-900/30 rounded-2xl p-4">
+                                    <div class="flex items-start gap-3">
+                                        <i class="pi pi-info-circle mt-0.5 !text-sm text-purple-500"></i>
+                                        <div>
+                                            <p class="text-xs font-medium text-purple-800 dark:text-purple-200 m-0">Descuento por referido no aplica en pago anual</p>
+                                            <p class="text-[11px] text-purple-600 dark:text-purple-400 m-0 mt-1 leading-relaxed">
+                                                Tienes un {{ referrerActiveDiscountPct }}% de descuento por tus referidos activos, pero solo está disponible en pagos mensuales, ya que tus referidos podrían no renovar mes con mes y perderías el beneficio. Cambia a pago mensual para aprovecharlo.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Desglose de descuento por referido -->
+                                <div v-if="codeValidation?.valid && referralDiscountAmount > 0" class="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 rounded-2xl p-4 space-y-2">
+                                    <div class="flex justify-between items-center text-sm">
+                                        <span class="text-green-700 dark:text-green-300">Descuento por referido ({{ codeValidation.discount_pct }}%)</span>
+                                        <span class="text-green-700 dark:text-green-300 font-medium">-{{ formatCurrency(referralDiscountAmount) }}</span>
+                                    </div>
+                                    <Divider class="!my-2" />
+                                    <div class="flex justify-between items-center font-bold text-lg">
+                                        <span class="text-green-800 dark:text-green-200">Total con descuento</span>
+                                        <span class="text-green-800 dark:text-green-200">{{ formatCurrency(finalAmountWithReferral) }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- --- CAMPO DE CÓDIGO DE REFERIDO --- -->
+                                <div v-if="isFirstPayment" class="mt-4 space-y-2">
+                                    <Divider />
+                                    <div class="flex flex-col gap-1.5">
+                                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">¿Tienes un código de referido?</label>
+                                        <div class="relative">
+                                            <InputText
+                                                v-model="form.referral_code"
+                                                placeholder="EZY-XXXXXX"
+                                                maxlength="12"
+                                                class="w-full"
+                                                :disabled="hasPendingPayment"
+                                                :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a]' } }" />
+                                            <i v-if="validatingCode" class="pi pi-spin pi-spinner !text-sm text-gray-400 absolute right-3 top-1/2 -translate-y-1/2"></i>
+                                        </div>
+                                        <!-- Feedback de validación -->
+                                        <div v-if="validatingCode" class="flex items-center gap-2 text-xs text-gray-500">
+                                            <i class="pi pi-spin pi-spinner !text-xs"></i>
+                                            <span>Verificando código...</span>
+                                        </div>
+                                        <div v-else-if="codeValidation" class="flex items-center gap-2 text-xs" :class="codeValidation.valid ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'">
+                                            <i :class="codeValidation.valid ? 'pi pi-check-circle !text-xs' : 'pi pi-times-circle !text-xs'"></i>
+                                            <span>{{ codeValidation.message }}</span>
+                                        </div>
+                                        <InputError :message="form.errors.referral_code" />
+                                    </div>
                                 </div>
 
                                 <!-- --- INICIO SECCIÓN DE PAGO --- -->
@@ -396,9 +573,25 @@ const submit = () => {
                                 <h5 class="font-semibold text-gray-800 dark:text-gray-200 pt-2">Método de pago</h5>
 
                                 <SelectButton v-model="form.payment_method"
-                                    :options="[{ label: 'Transferencia Bancaria', value: 'transferencia' }, { label: 'Tarjeta (Próximamente)', value: 'card' }]"
+                                    :options="[
+                                        { label: 'Mercado Pago', value: 'mercadopago' },
+                                        { label: 'Transferencia Bancaria', value: 'transferencia' },
+                                    ]"
                                     optionLabel="label" optionValue="value" aria-labelledby="payment-method"
-                                    class="w-full" :disabled="true" />
+                                    class="w-full" />
+
+                                <!-- Detalles para Mercado Pago -->
+                                <div v-if="form.payment_method === 'mercadopago'" class="mt-4">
+                                    <Message severity="info" :closable="false">
+                                        <div class="flex items-center gap-3">
+                                            <img src="/images/Mercado_Pago_logo.webp" alt="Mercado Pago" class="h-14 w-auto">
+                                            <span>Serás redirigido a Mercado Pago para completar tu pago de forma segura con tarjeta de crédito, débito o efectivo en tiendas de conveniencia.</span>
+                                        </div>
+                                    </Message>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                                        Tu suscripción se activará automáticamente una vez que el pago sea confirmado por Mercado Pago.
+                                    </p>
+                                </div>
 
                                 <!-- Detalles para Transferencia -->
                                 <div v-if="form.payment_method === 'transferencia'" class="mt-4 space-y-4">
@@ -485,22 +678,22 @@ const submit = () => {
                                 </div>
                                 <!-- --- FIN SECCIÓN DE PAGO --- -->
 
-                                <div v-if="form.payment_method === 'card'" class="mt-4">
-                                    <Message severity="warn" :closable="false">
-                                        El pago con tarjeta estará disponible próximamente.
-                                    </Message>
-                                </div>
-
                                 <Button v-if="isRetry && !hasPendingPayment" @click="confirmRevert" label="Cancelar y volver al plan anterior"
                                     severity="danger" outlined class="w-full mt-2" />
 
                                 <Button @click="submit"
-                                    :disabled="form.items.length === 0 || form.processing || form.total_amount <= 0 || (form.payment_method === 'transferencia' && !form.proof_of_payment) || form.payment_method === 'card' || hasPendingPayment || (form.bank_account_id && !form.expense_category_id)"
+                                    :disabled="form.items.length === 0 || form.processing || form.total_amount <= 0 || (form.payment_method === 'transferencia' && !form.proof_of_payment) || hasPendingPayment || (form.bank_account_id && !form.expense_category_id)"
                                     :loading="form.processing"
-                                    :label="isRetry ? 'Reintentar pago' : (mode === 'renew' ? 'Confirmar y pagar' : 'Enviar comprobante')"
                                     class="w-full mt-2"
                                     v-tooltip.bottom="(form.bank_account_id && !form.expense_category_id) ? 'Debes seleccionar una categoría de gasto si seleccionaste una cuenta' : ''"
-                                    />
+                                    >
+                                    <template v-if="form.payment_method === 'mercadopago'">
+                                        <span class="ml-2">Pagar con Mercado Pago</span>
+                                    </template>
+                                    <template v-else>
+                                        {{ isRetry ? 'Reintentar pago' : (mode === 'renew' ? 'Confirmar y pagar' : 'Enviar comprobante') }}
+                                    </template>
+                                </Button>
                             </div>
                         </template>
                     </Card>

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasSubscription;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class Branch extends Model
 {
-    use HasFactory;
+    use HasFactory, HasSubscription;
 
     protected $fillable = [
         'subscription_id',
@@ -97,5 +98,21 @@ class Branch extends Model
         // CAMBIO: Se actualiza el nombre de la relación a 'configurable' para que
         // coincida con el nuevo nombre del método en el modelo SettingValue.
         return $this->morphMany(SettingValue::class, 'configurable');
+    }
+
+    /**
+     * Get the customers for the branch.
+     */
+    public function customers(): HasMany
+    {
+        return $this->hasMany(Customer::class);
+    }
+
+    /**
+     * Get the billing (CFDI) settings for the branch.
+     */
+    public function billingSetting(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(BillingSetting::class);
     }
 }

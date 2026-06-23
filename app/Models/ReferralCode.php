@@ -10,23 +10,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class ReferralCode extends Model
 {
     use HasFactory;
-    
-    protected $table = 'referral_codes';
 
-    protected $fillable = [
-        'affiliate_id', 'code', 'description', 'discount_type', 'discount_value',
-        'commission_type', 'commission_value', 'is_active',
-    ];
+    protected $fillable = ['user_id', 'code', 'is_active'];
 
     protected $casts = [
-        'discount_value' => 'decimal:2',
-        'commission_value' => 'decimal:2',
         'is_active' => 'boolean',
     ];
 
-    public function affiliate(): BelongsTo
+    public function user(): BelongsTo
     {
-        return $this->belongsTo(Affiliate::class);
+        return $this->belongsTo(User::class);
     }
 
     public function usages(): HasMany

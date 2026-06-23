@@ -59,6 +59,9 @@ const form = useForm({
     provider_id: props.product.provider_id,
     cost_price: props.product.cost_price ? parseFloat(props.product.cost_price) : null,
     show_in_pos: props.product.show_in_pos ?? true,
+    show_online: props.product.show_online ?? false,
+    online_price: props.product.online_price ? parseFloat(props.product.online_price) : null,
+    is_featured: props.product.is_featured ?? false,
     selling_price: props.product.selling_price ? parseFloat(props.product.selling_price) : null,
     price_tiers: props.product.price_tiers || [],
     

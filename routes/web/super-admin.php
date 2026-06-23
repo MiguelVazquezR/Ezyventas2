@@ -37,6 +37,10 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
         'index', 'show'
     ]);
     Route::put('subscriptions/versions/{version}', [SubscriptionController::class, 'updateVersion'])->name('subscriptions.update-version');
+    Route::put('subscriptions/versions/{version}/items', [SubscriptionController::class, 'updateVersionItems'])->name('subscriptions.update-version-items');
+    Route::post('subscriptions/{subscription:id}/versions', [SubscriptionController::class, 'storeVersion'])->name('subscriptions.store-version');
+    Route::delete('subscriptions/versions/{version}', [SubscriptionController::class, 'destroyVersion'])->name('subscriptions.destroy-version');
+    Route::post('subscriptions/{subscription:id}/settings', [SubscriptionController::class, 'updateSettings'])->name('subscriptions.update-settings');
 
     // --- Novedades (Release Notes) ---
     Route::prefix('release-notes')->name('release-notes.')->group(function () {

@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import { useConfirm } from 'primevue/useconfirm';
@@ -9,6 +10,8 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+
+const hasOnlineStore = computed(() => usePage().props.auth.active_modules?.includes('module_online_store'));
 
 // --- LÓGICA DE UTILIDAD (PROFIT MARGIN) ---
 const profitData = computed(() => {
@@ -67,17 +70,16 @@ const confirmRemovePriceTier = (event, index) => {
 </script>
 
 <template>
-    <div id="pricing" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md scroll-mt-24">
-        <h2
-            class="text-lg font-semibold border-b border-gray-200 dark:border-gray-700 pb-3 mb-4 text-gray-800 dark:text-gray-200">
+    <div id="pricing" class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] scroll-mt-24">
+        <h2 class="text-lg font-semibold mb-6 text-gray-900 dark:text-white m-0">
             Precios y visibilidad
         </h2>
 
-        <div
-            class="mb-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800 flex items-center justify-between">
+        <!-- POS visibility toggle -->
+        <div class="mb-6 bg-blue-50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/30 flex items-center justify-between">
             <div>
-                <h3 class="font-bold text-blue-800 dark:text-blue-200 m-0 text-base">¿Mostrar en punto de venta?</h3>
-                <p class="text-sm text-blue-600 dark:text-blue-300 mt-1 mb-0">
+                <h3 class="font-bold text-blue-800 dark:text-blue-300 m-0 text-sm">¿Mostrar en punto de venta?</h3>
+                <p class="text-xs text-blue-600 dark:text-blue-400 mt-1 mb-0">
                     Si desactivas esta opción, este artículo será tratado como un <strong>insumo interno</strong>.
                     Podrás controlar su stock, pero no aparecerá en la pantalla de caja para venderse.
                 </p>
@@ -87,13 +89,50 @@ const confirmRemovePriceTier = (event, index) => {
             </div>
         </div>
 
+        <!-- Online store section (only when subscription has module_online_store) -->
+        <template v-if="hasOnlineStore">
+            <div class="mb-6 bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-emerald-800 dark:text-emerald-300 m-0 text-sm flex items-center gap-2">
+                        <i class="pi pi-globe !text-sm" />
+                        ¿Mostrar en tienda en línea?
+                    </h3>
+                    <p class="text-xs text-emerald-600 dark:text-emerald-400 mt-1 mb-0">
+                        Activa esta opción para que el producto aparezca en tu tienda en línea. Puedes establecer un precio diferente al de venta en POS.
+                    </p>
+                </div>
+                <div class="ml-4 flex-shrink-0 flex items-center">
+                    <ToggleSwitch v-model="form.show_online" />
+                </div>
+            </div>
+
+            <!-- Online price and featured (only when show_online is enabled) -->
+            <div v-if="form.show_online" class="mb-6 bg-emerald-50/50 dark:bg-emerald-900/5 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/30">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Precio en línea</label>
+                        <InputNumber v-model="form.online_price" mode="currency" currency="MXN" locale="es-MX" class="w-full" placeholder="Igual que precio de venta" :pt="{ input: { root: { class: 'w-full !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] !text-sm' } } }" />
+                        <p class="text-[11px] text-gray-400 m-0">Deja en blanco para usar el precio de venta normal.</p>
+                        <InputError :message="form.errors.online_price" class="mt-1" />
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Destacar en tienda</label>
+                        <div class="flex items-center gap-3 mt-2">
+                            <ToggleSwitch v-model="form.is_featured" />
+                            <span class="text-xs text-gray-500 dark:text-gray-400">Aparecerá en la sección de destacados de tu tienda.</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+
         <!-- GUÍA CONTEXTUAL PARA VENTA A GRANEL -->
         <div v-if="form.product_type === 'bulk'"
-            class="mb-6 bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg border border-orange-100 dark:border-orange-800">
-            <h3 class="font-bold text-orange-800 dark:text-orange-200 m-0 text-sm flex items-center gap-2">
+            class="mb-6 bg-orange-50 dark:bg-orange-900/10 p-4 rounded-2xl border border-orange-100 dark:border-orange-900/30">
+            <h3 class="font-bold text-orange-800 dark:text-orange-300 m-0 text-sm flex items-center gap-2">
                 <i class="pi pi-info-circle"></i> Guía para precio a granel
             </h3>
-            <p class="text-sm text-orange-700 dark:text-orange-300 mt-2 mb-0 leading-relaxed">
+            <p class="text-xs text-orange-700 dark:text-orange-300 mt-2 mb-0 leading-relaxed">
                 Ingresa el costo y el precio de venta que equivalga a <strong>1 {{ form.measure_unit || 'unidad entera'
                 }} completa</strong>. <br>
                 El sistema calculará automáticamente el cobro correcto cuando vendas fracciones (Ej. Si vendes 0.250 {{
@@ -142,26 +181,26 @@ const confirmRemovePriceTier = (event, index) => {
             </div>
 
             <!-- Precios de Mayoreo (Price Tiers) -->
-            <div class="col-span-full mt-2 pt-6 border-t border-gray-100 dark:border-gray-700">
+            <div class="col-span-full mt-2 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-2">
                     <div>
                         <InputLabel value="Precios de mayoreo (Opcional)"
-                            class="!font-bold text-gray-800 dark:text-gray-200" />
+                            class="!font-bold text-gray-900 dark:text-white" />
                         <p class="text-sm text-gray-500 mt-1">
                             Ejemplo: Si compran 5 o más, el precio baja a $90. Si compran 10 o más, baja a $80.
                         </p>
                     </div>
-                    <Button @click="addPriceTier" label="Añadir nivel" icon="pi pi-plus" size="small" outlined />
+                    <Button @click="addPriceTier" label="Añadir nivel" icon="pi pi-plus" size="small" outlined class="!rounded-xl" />
                 </div>
 
                 <div v-if="!form.price_tiers || form.price_tiers.length === 0"
-                    class="text-sm text-gray-500 italic bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg text-center border border-dashed border-gray-300 dark:border-gray-600">
+                    class="text-sm text-gray-500 italic bg-gray-50 dark:bg-[#1a1a1a] p-4 rounded-2xl text-center border border-dashed border-gray-200 dark:border-[#3a3a3a]">
                     No has configurado precios especiales por volumen para este producto.
                 </div>
 
                 <div v-else class="space-y-3">
                     <div v-for="(tier, index) in form.price_tiers" :key="index"
-                        class="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-200 dark:border-gray-600 transition-all hover:border-gray-300 dark:hover:border-gray-500">
+                        class="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] transition-all hover:border-gray-300 dark:hover:border-gray-500">
                         <div class="flex-1 w-full">
                             <!-- Dinámico si es a granel -->
                             <InputLabel

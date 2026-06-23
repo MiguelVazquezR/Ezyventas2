@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed } from 'vue'; // Se importa computed
-import { usePage } from '@inertiajs/vue3'; // Se importa usePage para acceder a los permisos
+import { ref, computed } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import AppMenuItem from './AppMenuItem.vue';
 
 const model = ref([
@@ -13,75 +13,103 @@ const model = ref([
             { label: 'Productos', icon: 'pi pi-barcode', to: route('products.index'), routeName: 'products.*', permission: 'products.access' },
             { label: 'Gastos', icon: 'pi pi-arrow-up-right', to: route('expenses.index'), routeName: 'expenses.*', permission: 'expenses.access' },
             { label: 'Clientes', icon: 'pi pi-users', to: route('customers.index'), routeName: 'customers.*', permission: 'customers.access' },
+            { label: 'Facturación', icon: 'pi pi-file', to: route('invoices.index'), routeName: 'invoices.*', permission: 'invoices.access' },
             {
-                label: 'Servicios', icon: 'pi pi-wrench',
+                label: 'Servicios', icon: 'pi pi-wrench', module: 'module_services',
                 items: [
                     {
                         label: 'Catálogo de servicios',
                         icon: 'pi pi-list',
                         to: route('services.index'),
                         routeName: 'services.*',
-                        permission: 'services.catalog.access'
+                        permission: 'services.catalog.access',
+                        module: 'module_services',
                     },
                     {
                         label: 'Órdenes de servico',
                         icon: 'pi pi-clipboard',
                         to: route('service-orders.index'),
                         routeName: 'service-orders.*',
-                        permission: 'services.orders.access'
+                        permission: 'services.orders.access',
+                        module: 'module_services',
                     },
                 ]
             },
-            { label: 'Cotizaciones', icon: 'pi pi-file-check', to: route('quotes.index'), routeName: 'quotes.*', permission: 'quotes.access' },
+            { label: 'Cotizaciones', icon: 'pi pi-file-check', to: route('quotes.index'), routeName: 'quotes.*', permission: 'quotes.access', module: 'module_quotes' },
             {
-                label: 'Cajas', icon: 'pi pi-dollar',
+                label: 'Tienda en línea', icon: 'pi pi-globe',
+                items: [
+                    {
+                        label: 'Configuración',
+                        icon: 'pi pi-cog',
+                        to: route('online-store.config'),
+                        routeName: 'online-store.config',
+                        permission: 'online_store.config.access'
+                    },
+                    {
+                        label: 'Pedidos',
+                        icon: 'pi pi-shopping-cart',
+                        to: route('online-store.orders.index'),
+                        routeName: 'online-store.orders.*',
+                        permission: 'online_store.orders.access'
+                    },
+                ]
+            },
+            {
+                label: 'Cajas', icon: 'pi pi-dollar', module: 'module_cash_registers',
                 items: [
                     {
                         label: 'Cajas registradoras',
                         icon: 'pi pi-inbox',
                         to: route('cash-registers.index'),
                         routeName: 'cash-registers.*',
-                        permission: 'cash_registers.access'
+                        permission: 'cash_registers.access',
+                        module: 'module_cash_registers',
                     },
                     {
                         label: 'Historial de cortes',
                         icon: 'pi pi-calendar-plus',
                         to: route('cash-register-sessions.index'),
                         routeName: 'cash-register-sessions.*',
-                        permission: 'cash_registers.sessions.access'
+                        permission: 'cash_registers.sessions.access',
+                        module: 'module_cash_registers',
                     },
                 ]
             },
             {
-                label: 'Configuraciones', icon: 'pi pi-cog',
+                label: 'Configuraciones', icon: 'pi pi-cog', module: 'module_settings',
                 items: [
                     {
                         label: 'Generales',
                         icon: 'pi pi-sliders-h',
                         to: route('settings.index'),
                         routeName: 'settings.*',
-                        permission: 'settings.generals.access'
+                        permission: 'settings.generals.access',
+                        module: 'module_settings',
                     },
                     {
                         label: 'Roles y permisos',
                         icon: 'pi pi-key',
                         to: route('roles.index'),
                         routeName: 'roles.*',
-                        permission: 'settings.roles_permissions.access'
+                        permission: 'settings.roles_permissions.access',
+                        module: 'module_settings',
                     },
                     {
                         label: 'Usuarios',
                         icon: 'pi pi-user',
                         to: route('users.index'),
                         routeName: 'users.*',
-                        permission: 'settings.users.access'
+                        permission: 'settings.users.access',
+                        module: 'module_settings',
                     },
                     {
                         label: 'Plantillas personalizadas',
                         icon: 'pi pi-palette',
                         to: route('print-templates.index'),
                         routeName: 'print-templates.*',
-                        permission: 'settings.templates.access'
+                        permission: 'settings.templates.access',
+                        module: 'module_settings',
                     },
                 ]
             },
@@ -89,24 +117,29 @@ const model = ref([
     },
 ]);
 
-// Se crea una propiedad computada que filtra el menú.
+// Permisos del usuario (filtrado por módulos activos en el backend para el dueño)
 const userPermissions = computed(() => usePage().props.auth.permissions || []);
 
+// Módulos activos según la suscripción (ej. ['module_pos', 'module_products', ...])
+const activeModules = computed(() => usePage().props.auth.active_modules || []);
+
+// Filtra el menú por permisos Y módulos activos
 const filterMenu = (items) => {
     return items.reduce((acc, item) => {
-        // 1. Comprobar si el usuario tiene permiso para ver el elemento.
+        // 1. Comprobar permiso
         const hasPermission = !item.permission || userPermissions.value.includes(item.permission);
 
-        if (hasPermission) {
-            // 2. Si el elemento tiene sub-elementos, filtrarlos recursivamente.
+        // 2. Comprobar módulo activo
+        const moduleKey = item.module;
+        const hasModule = !moduleKey || activeModules.value.includes(moduleKey);
+
+        if (hasPermission && hasModule) {
             if (item.items) {
                 const filteredChildren = filterMenu(item.items);
-                // Solo se añade el elemento padre si tiene al menos un hijo visible.
                 if (filteredChildren.length > 0) {
                     acc.push({ ...item, items: filteredChildren });
                 }
             } else {
-                // Si es un enlace directo y tiene permiso, se añade.
                 acc.push(item);
             }
         }
@@ -114,7 +147,6 @@ const filterMenu = (items) => {
     }, []);
 };
 
-// El menú que se renderizará en el template será este, ya filtrado.
 const filteredModel = computed(() => filterMenu(model.value));
 
 // Obtener el usuario autenticado
@@ -157,6 +189,24 @@ const adminModel = ref([
                 icon: 'pi pi-sparkles',
                 to: route('admin.release-notes.index'),
                 routeName: 'admin.release-notes.*'
+            },
+            {
+                label: 'Referidos',
+                icon: 'pi pi-users',
+                items: [
+                    {
+                        label: 'Historial',
+                        icon: 'pi pi-list',
+                        to: route('admin.referrals.index'),
+                        routeName: 'admin.referrals.index'
+                    },
+                    {
+                        label: 'Configuración',
+                        icon: 'pi pi-cog',
+                        to: route('admin.referrals.settings'),
+                        routeName: 'admin.referrals.settings'
+                    },
+                ]
             },
         ]
     },

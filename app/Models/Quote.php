@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasSubscription;
 use App\Enums\QuoteStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,7 +13,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 
 class Quote extends Model
 {
-    use HasFactory, LogsActivity;
+    use HasFactory, LogsActivity, HasSubscription;
 
     protected $fillable = [
         'folio',

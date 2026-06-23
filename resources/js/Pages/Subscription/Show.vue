@@ -74,14 +74,22 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
                 </div>
             </div>
 
-            <!-- Alerta: Pago Pendiente -->
+            <!-- Alerta: Pago Pendiente (solo transferencia — MercadoPago se auto-aprueba) -->
             <div v-if="pendingPayment" class="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-2xl flex items-start gap-4 border border-blue-100 dark:border-blue-900/30">
                 <div class="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
                     <i class="pi pi-info-circle !text-lg text-blue-600 dark:text-blue-400"></i>
                 </div>
                 <div>
                     <p class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest m-0 mb-1">Pago en revisión</p>
-                    <p class="text-sm text-blue-900 dark:text-blue-200 m-0 leading-relaxed tracking-tight">
+                    <div v-if="pendingPayment.referral_discount_pct" class="space-y-1">
+                        <p class="text-sm text-blue-800 dark:text-blue-200 m-0 leading-relaxed tracking-tight">
+                            Tu pago de <strong class="font-bold font-mono line-through text-blue-500">{{ formatCurrency(parseFloat(pendingPayment.amount) + parseFloat(pendingPayment.referral_discount_amount || 0)) }}</strong> con un descuento del <strong class="font-bold">{{ pendingPayment.referral_discount_pct }}%</strong> por referido quedó en <strong class="font-bold font-mono">{{ formatCurrency(pendingPayment.amount) }}</strong> por {{ pendingPayment.payment_method === 'mercadopago' ? 'Mercado Pago' : 'transferencia' }}.
+                        </p>
+                        <span class="inline-flex items-center gap-1 text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-widest bg-green-100 dark:bg-green-900/20 px-2 py-0.5 rounded-full">
+                            <i class="pi pi-check-circle !text-[10px]"></i> descuento por referido aplicado
+                        </span>
+                    </div>
+                    <p v-else class="text-sm text-blue-900 dark:text-blue-200 m-0 leading-relaxed tracking-tight">
                         Tu pago de <strong class="font-bold font-mono">{{ formatCurrency(pendingPayment.amount) }}</strong> por transferencia está en revisión. 
                         Tu plan se activará automáticamente una vez aprobado por nuestro equipo.
                     </p>

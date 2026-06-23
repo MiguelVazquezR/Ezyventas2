@@ -34,16 +34,21 @@ class HandleInertiaRequests extends Middleware
                         ->whereIn('module', $availableModuleNames)
                         ->orWhere('module', 'Sistema')
                         ->pluck('name')
-                    : ($isSubscriptionActive ? $user->getAllPermissions()->pluck('name') : collect([]));
+                    : ($isSubscriptionActive
+                        ? $user->getAllPermissions()
+                            ->filter(fn($p) => in_array($p->module, $availableModuleNames) || $p->module === 'Sistema')
+                            ->pluck('name')
+                        : collect([]));
 
                 return [
                     'user' => $user,
                     'permissions' => $permissions,
                     'is_subscription_owner' => $isOwner,
                     'subscription' => ['commercial_name' => $subscription->commercial_name],
-                    'subscriptionWarning' => $subscription->getWarningData(),
+                    'subscriptionWarning' => $user->id === 1 ? null : $subscription->getWarningData(),
                     'current_branch' => $user->branch,
                     'preferences' => $user->getPreferences(),
+                    'active_modules' => $subscription->getActiveModuleKeys(),
                     'available_branches' => function () use ($user, $subscription) {
                         if ($user->id === 1) {
                             return Subscription::query()
@@ -62,6 +67,20 @@ class HandleInertiaRequests extends Middleware
             
             // Evaluamos notificaciones delegadas al modelo User de forma perezosa (lazy evaluation)
             'notifications' => fn() => $request->user() ? $request->user()->getGlobalNotifications() : null,
+
+            // Notificaciones del sistema de referidos (para badge en topbar)
+            'referralNotifications' => function () use ($request) {
+                $user = $request->user();
+                if (!$user) return null;
+
+                return [
+                    'pending_rewards_count' => $user->referralUsagesAsReferrer()
+                        ->where('reward_status', 'pending')
+                        ->count(),
+                    'unseen_referrals_count' => $user->getUnseenReferralsCount(),
+                    'has_referral_code' => (bool) $user->referralCode,
+                ];
+            },
 
             'flash' => fn() => [
                 'success' => $request->session()->get('success'),

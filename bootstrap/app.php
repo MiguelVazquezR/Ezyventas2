@@ -22,9 +22,12 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
             \App\Http\Middleware\CheckOnboardingStatus::class,
             \App\Http\Middleware\CheckSubscriptionStatus::class,
+            \App\Http\Middleware\EnsureSubscriptionScope::class,
         ]);
 
-        //
+        $middleware->alias([
+            'resolve.store' => \App\Http\Middleware\ResolveStore::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         

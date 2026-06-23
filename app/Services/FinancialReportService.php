@@ -47,20 +47,35 @@ class FinancialReportService
         $currentSales = $this->queryTotal(Transaction::class, 'created_at', $periods['current']);
         $currentPayments = $this->queryTotal(Payment::class, 'payment_date', $periods['current']);
         $currentExpenses = $this->queryTotal(Expense::class, 'expense_date', $periods['current']);
+        $currentInternalExpenses = $this->queryTotal(Expense::class, 'expense_date', $periods['current'], ['is_external' => false]);
 
         // Totales del periodo anterior
         $previousSales = $this->queryTotal(Transaction::class, 'created_at', $periods['previous']);
         $previousPayments = $this->queryTotal(Payment::class, 'payment_date', $periods['previous']);
         $previousExpenses = $this->queryTotal(Expense::class, 'expense_date', $periods['previous']);
+        $previousInternalExpenses = $this->queryTotal(Expense::class, 'expense_date', $periods['previous'], ['is_external' => false]);
 
-        $currentProfit = $currentPayments - $currentExpenses;
-        $previousProfit = $previousPayments - $previousExpenses;
+        // Flujo de Dinero Neto (negocio): pagos - gastos internos
+        $currentProfit = $currentPayments - $currentInternalExpenses;
+        $previousProfit = $previousPayments - $previousInternalExpenses;
+
+        // Flujo de Dinero Neto (total): pagos - todos los gastos (incluyendo externos)
+        $currentProfitAll = $currentPayments - $currentExpenses;
+        $previousProfitAll = $previousPayments - $previousExpenses;
 
         return [
             'sales' => $this->calculateKpiMetric($currentSales, $previousSales),
             'payments' => $this->calculateKpiMetric($currentPayments, $previousPayments),
-            'expenses' => $this->calculateKpiMetric($currentExpenses, $previousExpenses),
+            'expenses' => $this->calculateKpiMetric($currentInternalExpenses, $previousInternalExpenses),
+            'externalExpenses' => [
+                'current' => $currentExpenses - $currentInternalExpenses,
+                'previous' => $previousExpenses - $previousInternalExpenses,
+            ],
             'profit' => $this->calculateKpiMetric($currentProfit, $previousProfit),
+            'profitAll' => [
+                'current' => $currentProfitAll,
+                'previous' => $previousProfitAll,
+            ],
         ];
     }
 
@@ -190,7 +205,7 @@ class FinancialReportService
         ];
     }
 
-    private function queryTotal(string $model, string $dateColumn, array $period): float
+    private function queryTotal(string $model, string $dateColumn, array $period, array $extraConditions = []): float
     {
         $query = $model::query();
 
@@ -215,6 +230,11 @@ class FinancialReportService
                     ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED]));
         } elseif ($model === Expense::class) {
             $query->where('branch_id', $this->branchId)->where('status', ExpenseStatus::PAID);
+        }
+
+        // Aplicar condiciones extra (ej. filtrar gastos internos/externos)
+        foreach ($extraConditions as $column => $value) {
+            $query->where($column, $value);
         }
 
         return $query->whereBetween($dateColumn, [$period['start'], $period['end']])->sum($sumField);

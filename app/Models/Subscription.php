@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 use Spatie\MediaLibrary\HasMedia;
@@ -30,11 +31,13 @@ class Subscription extends Model implements HasMedia
         'address',
         'slug',
         'onboarding_completed_at',
+        'referrer_discount_active',
     ];
 
     protected $casts = [
         'address' => 'array',
         'onboarding_completed_at' => 'datetime',
+        'referrer_discount_active' => 'boolean',
         'status' => SubscriptionStatus::class,
     ];
     
@@ -85,11 +88,35 @@ class Subscription extends Model implements HasMedia
 
     public function getAvailableModuleNames(): array
     {
-        $currentVersion = $this->currentVersion();
-        if (!$currentVersion) return [];
+        $subscribedModuleKeys = $this->getActiveModuleKeys();
 
-        $subscribedModuleKeys = $currentVersion->items()->where('item_type', 'module')->pluck('item_key')->all();
-        return PlanItem::whereIn('key', $subscribedModuleKeys)->where('type', PlanItemType::MODULE)->pluck('name')->all();
+        return PlanItem::whereIn('key', $subscribedModuleKeys)
+            ->where('type', PlanItemType::MODULE)
+            ->pluck('name')
+            ->all();
+    }
+
+    /**
+     * Obtiene las claves de los módulos activos desde la última versión
+     * que tenga items (contratada en la renovación/mejora más reciente).
+     */
+    public function getActiveModuleKeys(): array
+    {
+        $latestVersion = $this->versions()
+            ->whereHas('items')
+            ->latest('id')
+            ->first();
+
+        if (!$latestVersion) {
+            $currentVersion = $this->currentVersion();
+            if (!$currentVersion) return [];
+            $latestVersion = $currentVersion;
+        }
+
+        return $latestVersion->items()
+            ->where('item_type', 'module')
+            ->pluck('item_key')
+            ->all();
     }
 
     public function hasReachedProductLimit(int $additionalItems = 0): bool
@@ -224,7 +251,13 @@ class Subscription extends Model implements HasMedia
 
     public function getPendingPayment()
     {
-        return $this->payments()->where('status', SubscriptionPaymentStatus::PENDING)->latest('created_at')->first();
+        // Solo pagos por transferencia requieren revisión manual.
+        // Los de MercadoPago se aprueban automáticamente vía webhook o paymentReturn.
+        return $this->payments()
+            ->where('status', SubscriptionPaymentStatus::PENDING)
+            ->where('payment_method', '!=', 'mercadopago')
+            ->latest('created_at')
+            ->first();
     }
 
     public function getLastRejectedPayment()
@@ -234,17 +267,54 @@ class Subscription extends Model implements HasMedia
     }
 
     /**
+     * Calcula el costo mensual actual de la suscripción basado en la versión vigente.
+     * Respeta el meta->quantity de cada plan item (precio por paquete de X unidades).
+     */
+    public function getCurrentMonthlyCost(): float
+    {
+        $currentVersion = $this->currentVersion();
+        if (!$currentVersion) return 0;
+
+        // Cargar items relacionados con sus plan items para obtener meta->quantity
+        $items = $currentVersion->items;
+        $planItems = PlanItem::whereIn('key', $items->pluck('item_key'))->get()->keyBy('key');
+
+        $total = 0;
+        foreach ($items as $item) {
+            $planItem = $planItems->get($item->item_key);
+            $packageSize = (int) (($planItem->meta['quantity'] ?? 1));
+
+            // unit_price está en el período facturado (mensual o anual)
+            $unitPrice = $item->billing_period?->value === BillingPeriod::ANNUALLY->value
+                ? (float) $item->unit_price / 12
+                : (float) $item->unit_price;
+
+            // Para items por paquete, calcular precio por unidad
+            $pricePerUnit = $unitPrice / max($packageSize, 1);
+
+            $total += $pricePerUnit * (int) $item->quantity;
+        }
+
+        return round($total, 2);
+    }
+
+    /**
      * Compara los items de todas las versiones para determinar si hubo upgrades/downgrades.
      */
     public function getVersionsWithComparison()
     {
         $versions = $this->versions;
 
-        return $versions->map(function ($version, $index) use ($versions) {
+        // Cargar todos los PlanItem para obtener el meta (package size, etc.)
+        $planItems = PlanItem::whereIn('key', $versions->flatMap(fn($v) => $v->items->pluck('item_key'))->unique())
+            ->get()
+            ->keyBy('key');
+
+        return $versions->map(function ($version, $index) use ($versions, $planItems) {
             $previousVersion = $versions->get($index + 1);
             $previousItemsMap = $previousVersion ? $previousVersion->items->keyBy('item_key') : collect();
 
-            $version->processed_items = $version->items->map(function ($newItem) use ($previousItemsMap) {
+            $version->processed_items = $version->items->map(function ($newItem) use ($previousItemsMap, $planItems) {
                 $previousItem = $previousItemsMap->get($newItem->item_key);
                 $previousQuantity = $previousItem ? $previousItem->quantity : 0;
                 $newQuantity = $newItem->quantity;
@@ -253,6 +323,13 @@ class Subscription extends Model implements HasMedia
                 if (!$previousItem) $status = 'new';
                 elseif ($newQuantity > $previousQuantity) $status = 'upgraded';
                 elseif ($newQuantity < $previousQuantity) $status = 'downgraded';
+
+                $planItem = $planItems->get($newItem->item_key);
+                $meta = $planItem ? $planItem->meta : [];
+                $packageSize = (int) ($meta['quantity'] ?? 1);
+
+                // unit_price es por paquete. Si meta.quantity > 1, calculamos precio por unidad individual
+                $pricePerUnit = $newItem->unit_price / max($packageSize, 1);
 
                 return [
                     'name' => $newItem->name,
@@ -263,6 +340,9 @@ class Subscription extends Model implements HasMedia
                     'previous_quantity' => $previousQuantity,
                     'item_key' => $newItem->item_key,
                     'item_type' => $newItem->item_type,
+                    'meta' => $meta,
+                    'package_size' => $packageSize,
+                    'price_per_unit' => round($pricePerUnit, 4),
                 ];
             });
 
@@ -305,6 +385,7 @@ class Subscription extends Model implements HasMedia
     }
 
     public function branches(): HasMany { return $this->hasMany(Branch::class, 'subscription_id'); }
+    public function storeConfig(): \Illuminate\Database\Eloquent\Relations\HasOne { return $this->hasOne(StoreConfig::class, 'subscription_id'); }
     public function versions(): HasMany { return $this->hasMany(SubscriptionVersion::class, 'subscription_id'); }
     
     public function payments(): HasManyThrough
@@ -314,4 +395,32 @@ class Subscription extends Model implements HasMedia
 
     public function expenses(): HasManyThrough { return $this->hasManyThrough(Expense::class, Branch::class); }
     public function settings(): MorphMany { return $this->morphMany(SettingValue::class, 'configurable'); }
+
+    public function referralUsageAsReferred(): HasOne
+    {
+        return $this->hasOne(ReferralUsage::class, 'referred_subscription_id');
+    }
+
+    /**
+     * Calcula dinámicamente el % total de descuento continuo que esta suscripción
+     * recibe por todos sus referidos activos. Acumula el % de cada referido activo.
+     */
+    public function getReferrerActiveDiscountPct(): float
+    {
+        $userIds = $this->users()->pluck('users.id');
+
+        if ($userIds->isEmpty()) {
+            return 0;
+        }
+
+        return (float) ReferralUsage::whereIn('referral_code_id', function ($query) use ($userIds) {
+                $query->select('id')
+                    ->from('referral_codes')
+                    ->whereIn('user_id', $userIds);
+            })
+            ->whereHas('referredSubscription', fn($q) =>
+                $q->whereHas('versions', fn($v) => $v->where('end_date', '>=', now()->startOfDay()))
+            )
+            ->sum('referrer_ongoing_discount_pct');
+    }
 }

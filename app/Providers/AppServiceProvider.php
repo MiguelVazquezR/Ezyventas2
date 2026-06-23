@@ -22,6 +22,12 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::before(function ($user, $ability) {
+            // Superadmin (ID 1) tiene acceso irrestricto para fines de soporte
+            // sin comprometer la lógica de protección de otras suscripciones.
+            if ($user && $user->id === 1) {
+                return true;
+            }
+
             // Si el usuario es propietario (sin roles), verifica si tiene acceso
             // al permiso según los módulos de su suscripción.
             if ($user && !$user->roles()->exists()) {
@@ -39,8 +45,21 @@ class AppServiceProvider extends ServiceProvider
                     ->exists() ? true : null;
             }
             
-            // Si no es propietario, devuelve null para que el gate continúe 
-            // con las verificaciones de roles/permisos normales.
+            // Si no es propietario, también verificar que el permiso pertenezca
+            // a un módulo activo de la suscripción.
+            if ($user && $user->roles()->exists()) {
+                $subscription = $user->subscription;
+                $availableModuleNames = $subscription->getAvailableModuleNames();
+
+                $permission = Permission::query()
+                    ->where('name', $ability)
+                    ->first();
+
+                if ($permission && !in_array($permission->module, $availableModuleNames) && $permission->module !== 'Sistema') {
+                    return false;
+                }
+            }
+
             return null;
         });
     }

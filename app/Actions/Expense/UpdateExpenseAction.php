@@ -29,9 +29,11 @@ class UpdateExpenseAction
             $newPaymentMethod = PaymentMethod::from($data['payment_method']);
             $newBankAccountId = $data['bank_account_id'] ?? null;
             $takeFromCashRegister = $data['take_from_cash_register'] ?? false;
+            $isExternal = $data['is_external'] ?? false;
+            $wasExternal = $expense->is_external;
 
-            // 1. REVERTIR SALDO BANCARIO (si aplica)
-            if ($originalStatus === ExpenseStatus::PAID && $originalBankAccountId) {
+            // 1. REVERTIR SALDO BANCARIO (solo si era un gasto interno)
+            if (! $wasExternal && $originalStatus === ExpenseStatus::PAID && $originalBankAccountId) {
                 BankAccount::find($originalBankAccountId)?->deposit($originalAmount);
             }
 
@@ -39,13 +41,13 @@ class UpdateExpenseAction
             $data['session_cash_movement_id'] = null;
             $expense->update($data);
 
-            // 3. APLICAR NUEVO SALDO BANCARIO (si aplica)
-            if ($newStatus === ExpenseStatus::PAID && $newBankAccountId) {
+            // 3. APLICAR NUEVO SALDO BANCARIO (solo gastos internos)
+            if (! $isExternal && $newStatus === ExpenseStatus::PAID && $newBankAccountId) {
                 BankAccount::find($newBankAccountId)?->withdraw($newAmount);
             }
 
-            // 4. LÓGICA DE MOVIMIENTO DE CAJA
-            $isCashWithdrawal = $newPaymentMethod === PaymentMethod::CASH && $newStatus === ExpenseStatus::PAID && $takeFromCashRegister;
+            // 4. LÓGICA DE MOVIMIENTO DE CAJA (solo gastos internos)
+            $isCashWithdrawal = ! $isExternal && $newPaymentMethod === PaymentMethod::CASH && $newStatus === ExpenseStatus::PAID && $takeFromCashRegister;
 
             if ($isCashWithdrawal) {
                 if ($originalMovement) {

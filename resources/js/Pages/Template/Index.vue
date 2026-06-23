@@ -4,11 +4,6 @@ import { Head, Link, router } from '@inertiajs/vue3';
 import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermissions } from '@/Composables';
-import Button from 'primevue/button';
-import Tag from 'primevue/tag';
-import Menu from 'primevue/menu';
-import DataTable from 'primevue/datatable';
-import Column from 'primevue/column';
 
 const props = defineProps({
     templates: Array,
@@ -67,6 +62,14 @@ const newTemplateOptions = computed(() => {
         });
     }
 
+    if (hasPermission('services.orders.access')) {
+        options.push({
+            label: 'Nuevo recibo de servicio (Carta/A4)',
+            icon: 'pi pi-wrench',
+            command: () => router.get(route('print-templates.create', { type: 'recibo_servicio' }))
+        });
+    }
+
     return options;
 });
 
@@ -106,6 +109,11 @@ const getTypeConfig = (type) => {
             label: 'Cotización', 
             severity: 'danger',
             icon: 'pi pi-file-pdf' 
+        },
+        'recibo_servicio': {
+            label: 'Recibo Servicio',
+            severity: 'success',
+            icon: 'pi pi-wrench'
         }
     };
 
@@ -123,7 +131,8 @@ const getContextLabel = (type) => {
         'product': 'Productos',
         'service_order': 'Órdenes de servicio',
         'quote': 'Cotizaciones',
-        'customer': 'Clientes'
+        'customer': 'Clientes',
+        'general': 'General',
     };
     return labels[type] || 'General';
 };

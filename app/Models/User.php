@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasOneThrough;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -242,11 +244,20 @@ class User extends Authenticatable implements MustVerifyEmail
         // Obtenemos la cantidad de novedades sin leer
         $unreadUpdates = $this->unreadReleaseNotesCount();
 
+        // Pedidos pendientes de la tienda en línea (solo si el módulo está activo)
+        $pendingOrders = 0;
+        if (in_array('Tienda en línea', $this->branch?->subscription?->getAvailableModuleNames() ?? [])) {
+            $pendingOrders = \App\Models\Order::whereHas('storeConfig', fn($q) => $q->where('subscription_id', $this->branch?->subscription_id))
+                ->whereIn('status', [\App\Enums\OrderStatus::Pending, \App\Enums\OrderStatus::Reviewed])
+                ->count();
+        }
+
         return [
             'expiring_debts' => $expiringDebts, 
             'upcoming_deliveries' => $upcomingDeliveries,
             'unread_updates' => $unreadUpdates,
-            'total' => $expiringDebts + $upcomingDeliveries + $unreadUpdates // Opcional, sumarlo todo
+            'pending_orders' => $pendingOrders,
+            'total' => $expiringDebts + $upcomingDeliveries + $unreadUpdates + $pendingOrders,
         ];
     }
 
@@ -292,5 +303,40 @@ class User extends Authenticatable implements MustVerifyEmail
             ->where('is_active', true)
             ->where('in_use', false) 
             ->get(['id', 'name']);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | REFERRAL SYSTEM RELATIONSHIPS
+    |--------------------------------------------------------------------------
+    */
+
+    public function referralCode(): HasOne
+    {
+        return $this->hasOne(ReferralCode::class);
+    }
+
+    public function referralUsagesAsReferrer(): HasManyThrough
+    {
+        return $this->hasManyThrough(ReferralUsage::class, ReferralCode::class, 'user_id', 'referral_code_id');
+    }
+
+    public function referrerBankAccount(): HasOne
+    {
+        return $this->hasOne(ReferrerBankAccount::class);
+    }
+
+    public function hasPendingReferralRewards(): bool
+    {
+        return $this->referralUsagesAsReferrer()
+            ->where('reward_status', 'pending')
+            ->exists();
+    }
+
+    public function getUnseenReferralsCount(): int
+    {
+        return $this->referralUsagesAsReferrer()
+            ->whereNull('seen_at')
+            ->count();
     }
 }

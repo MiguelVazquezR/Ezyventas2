@@ -79,7 +79,8 @@ class PointOfSaleControllerTest extends TestCase
         // 6. Crear cliente
         $this->customer = Customer::factory()->create([
             'branch_id' => $this->branch->id,
-            'balance' => 0.00
+            'balance' => 0.00,
+            'credit_limit' => 1000.00,
         ]);
 
         // 7. Crear cuenta bancaria

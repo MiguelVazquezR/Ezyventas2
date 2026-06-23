@@ -25,7 +25,7 @@ const scrollToElement = (id) => {
                     <!-- Logo -->
                     <div class="mb-4">
                         <img 
-                            src="/imagesLanding/white_logo.png" 
+                            src="/images/white_logo.png" 
                             alt="Logo Ezy Ventas" 
                             class="h-16 md:h-12 w-auto object-contain opacity-100 hover:opacity-100 transition-opacity" 
                         />

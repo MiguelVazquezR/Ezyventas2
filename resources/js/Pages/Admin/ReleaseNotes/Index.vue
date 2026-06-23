@@ -3,14 +3,6 @@ import { ref, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
-import Button from 'primevue/button';
-import Tag from 'primevue/tag';
-import Menu from 'primevue/menu';
-import DataTable from 'primevue/datatable';
-import Column from 'primevue/column';
-import IconField from 'primevue/iconfield';
-import InputIcon from 'primevue/inputicon';
-import InputText from 'primevue/inputtext';
 
 const props = defineProps({
     notes: Object, // Las novedades paginadas que vendrán del backend
@@ -22,6 +14,15 @@ const searchTerm = ref(props.filters?.search || '');
 
 const menu = ref();
 const selectedNoteForMenu = ref(null);
+
+// Drawer state for readers
+const isReadersDrawerVisible = ref(false);
+const selectedNote = ref(null);
+
+const openReadersDrawer = (data) => {
+    selectedNote.value = data;
+    isReadersDrawerVisible.value = true;
+};
 
 // --- Lógica para Data Table ---
 const fetchData = (options = {}) => {
@@ -110,6 +111,16 @@ const inputPt = {
 const tagPt = {
     root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' }
 };
+
+const drawerPt = {
+    root: { class: 'dark:!bg-[#232323] !border-l-gray-100 dark:!border-l-[#3a3a3a]' },
+    header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 py-5' },
+    title: { class: 'text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0' },
+    content: { class: 'dark:bg-[#232323] p-6' },
+    closeButton: { class: 'hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors rounded-full w-8 h-8 flex items-center justify-center' },
+    closeButtonIcon: { class: 'dark:text-gray-400 !text-sm' },
+    mask: { class: 'backdrop-blur-sm bg-gray-900/40 dark:bg-black/60' }
+};
 </script>
 
 <template>
@@ -149,7 +160,8 @@ const tagPt = {
                     dataKey="id" @page="onPage" @sort="onSort" removableSort tableStyle="min-width: 60rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
                     currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} novedades"
-                    class="cursor-pointer" rowHover :pt="dataTablePt">
+                    class="cursor-pointer" rowHover :pt="dataTablePt"
+                    @row-click="(event) => openReadersDrawer(event.data)">
 
                     <Column field="version" header="Versión" style="width: 8rem" sortable>
                         <template #body="{ data }">
@@ -203,6 +215,77 @@ const tagPt = {
                 </DataTable>
 
                 <Menu ref="menu" id="overlay_menu" :model="menuItems" :popup="true" :pt="menuPt" />
+
+                <!-- Drawer: Lectores de la novedad -->
+                <Drawer v-model:visible="isReadersDrawerVisible" position="right" class="w-full sm:!w-[32rem]" :pt="drawerPt">
+                    <template #header>
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0 border border-purple-100 dark:border-purple-900/30">
+                                <i class="pi pi-users text-purple-500 !text-sm"></i>
+                            </div>
+                            <div class="flex flex-col gap-0.5">
+                                <h2 class="text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0">Lectores de la novedad</h2>
+                                <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 truncate max-w-[250px]">{{ selectedNote?.title }}</p>
+                            </div>
+                        </div>
+                    </template>
+
+                    <div v-if="selectedNote" class="space-y-4">
+                        <!-- Resumen -->
+                        <div class="flex items-center gap-4 p-4 bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
+                            <div class="flex flex-col gap-0.5 flex-1">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Total de lectores</span>
+                                <span class="text-2xl font-light tracking-tight text-gray-900 dark:text-white">{{ selectedNote.readers_list?.length || 0 }}</span>
+                            </div>
+                            <div class="flex flex-col gap-0.5 flex-1">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Versión</span>
+                                <span class="text-sm font-medium text-gray-900 dark:text-white">{{ selectedNote.version || '--' }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Lista de lectores -->
+                        <div v-if="selectedNote.readers_list && selectedNote.readers_list.length > 0" class="space-y-2">
+                            <div
+                                v-for="reader in selectedNote.readers_list"
+                                :key="reader.id"
+                                class="p-4 bg-white dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] hover:bg-gray-50 dark:hover:bg-[#232323] transition-colors"
+                            >
+                                <div class="flex items-start gap-3">
+                                    <!-- Avatar -->
+                                    <div class="w-9 h-9 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0 border border-purple-200 dark:border-purple-800/50">
+                                        <span class="text-xs font-bold text-purple-600 dark:text-purple-400">{{ reader.name?.charAt(0)?.toUpperCase() }}</span>
+                                    </div>
+                                    <!-- Info -->
+                                    <div class="flex flex-col gap-0.5 flex-1 min-w-0">
+                                        <span class="text-sm font-medium text-gray-900 dark:text-white m-0">{{ reader.name }}</span>
+                                        <span class="text-xs text-gray-500 dark:text-gray-400 m-0">{{ reader.email }}</span>
+                                        <div class="flex items-center gap-2 mt-1.5 flex-wrap">
+                                            <span v-if="reader.branch" class="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest font-bold text-gray-500 bg-gray-100 dark:bg-[#232323] px-2 py-0.5 rounded-full">
+                                                <i class="pi pi-building !text-[8px]"></i>
+                                                {{ reader.branch }}
+                                            </span>
+                                            <span v-if="reader.subscription" class="inline-flex items-center gap-1 text-[10px] uppercase tracking-widest font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded-full">
+                                                <i class="pi pi-briefcase !text-[8px]"></i>
+                                                {{ reader.subscription }}
+                                            </span>
+                                        </div>
+                                        <span class="text-[10px] text-gray-400 dark:text-gray-500 mt-1 m-0">
+                                            <i class="pi pi-clock !text-[8px] mr-1"></i>
+                                            {{ formatDate(reader.read_at) }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Empty state -->
+                        <div v-else class="flex flex-col items-center justify-center text-center py-12 opacity-60">
+                            <i class="pi pi-users !text-3xl text-gray-400 mb-3"></i>
+                            <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin lectores</p>
+                            <p class="text-xs text-gray-400 mt-1">Ningún usuario ha leído esta novedad aún.</p>
+                        </div>
+                    </div>
+                </Drawer>
             </div>
         </div>
     </AppLayout>

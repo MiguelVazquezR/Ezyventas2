@@ -8,6 +8,8 @@ import { usePermissions } from '@/Composables';
 // Importamos los nuevos submódulos
 import TopbarReleaseNotes from './Partials/Topbar/TopbarReleaseNotes.vue';
 import TopbarNotifications from './Partials/Topbar/TopbarNotifications.vue';
+import TopbarReferrals from './Partials/Topbar/TopbarReferrals.vue';
+import SupportModal from './Partials/Topbar/SupportModal.vue';
 
 const { toggleMenu: toggleSidebar, toggleDarkMode, isDarkTheme } = useLayout();
 const page = usePage();
@@ -22,6 +24,7 @@ const availableBranches = computed(() => page.props.auth.available_branches);
 const userMenu = ref();
 const branchMenu = ref();
 const mobileUserMenuVisible = ref(false);
+const supportModalVisible = ref(false);
 
 const userMenuItems = computed(() => {
     const items = [
@@ -30,7 +33,10 @@ const userMenuItems = computed(() => {
     if (isOwner.value) {
         items.push({ label: 'Suscripción', icon: 'pi pi-star', command: () => router.get(route('subscription.show')) });
     }
-    items.push({ label: 'Cerrar sesión', icon: 'pi pi-sign-out', command: () => router.post(route('logout')) });
+    items.push(
+        { label: 'Soporte', icon: 'pi pi-headphones', command: () => { supportModalVisible.value = true; } },
+        { label: 'Cerrar sesión', icon: 'pi pi-sign-out', command: () => router.post(route('logout')) },
+    );
     return items;
 });
 
@@ -128,6 +134,7 @@ const drawerPt = {
             <!-- COMPONENTES MODULARES AISLADOS -->
             <TopbarReleaseNotes />
             <TopbarNotifications />
+            <TopbarReferrals v-if="isOwner" />
 
             <!-- Menú Usuario (Mobile) -->
             <button type="button" class="relative flex items-center justify-center w-10 h-10 rounded-full hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors lg:hidden" @click="mobileUserMenuVisible = true">
@@ -231,4 +238,7 @@ const drawerPt = {
         </div>
 
     </Drawer>
+
+    <!-- Modal de Soporte -->
+    <SupportModal v-model:visible="supportModalVisible" />
 </template>
