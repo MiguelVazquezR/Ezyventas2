@@ -3,9 +3,9 @@
 namespace App\Services\Invoices;
 
 use App\Enums\InvoiceStatus;
-use App\Models\BillingSetting;
 use App\Models\Customer;
-use App\Models\Invoice;
+use App\Models\Invoices\FiscalProfile;
+use App\Models\Invoices\Invoice;
 use App\Models\InvoiceItem;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -24,8 +24,9 @@ class SWSapienService
         $grandTotal = 0;
 
         $invoice = Invoice::create([
-            'branch_id'            => $branchId,
-            'customer_id'          => $data['customer_id'] ?? null,
+            'branch_id'          => $branchId,
+            'fiscal_profile_id'  => $data['fiscal_profile_id'] ?? null,
+            'customer_id'        => $data['customer_id'] ?? null,
             'series'               => $data['series'] ?? null,
             'folio'                => $this->generateFolio($branchId),
             'status'               => InvoiceStatus::DRAFT,
@@ -86,13 +87,22 @@ class SWSapienService
     /**
      * Build the SW Sapien CFDI 4.0 JSON payload.
      *
+     * Emitter data (RFC, razon social, regimen fiscal, lugar de expedicion)
+     * is sourced from the invoice's FiscalProfile — enabling multi-RFC
+     * billing from a single subscription.
+     *
      * "Sello", "Certificado" and "NoCertificado" are left empty —
      * SW Sapien stamps them automatically.
      */
     public function buildPayload(Invoice $invoice): array
     {
-        $invoice->load('items');
-        $billingSetting = BillingSetting::where('branch_id', $invoice->branch_id)->first();
+        $invoice->load(['items', 'fiscalProfile']);
+
+        if (! $invoice->fiscalProfile) {
+            throw new \RuntimeException(
+                'La factura no tiene un perfil fiscal asociado. Asigna un RFC emisor antes de timbrar.'
+            );
+        }
 
         $conceptos = $invoice->items->map(function (InvoiceItem $item) {
             $concepto = [
@@ -123,7 +133,7 @@ class SWSapienService
 
         $payload = [
             'TipoDeComprobante' => 'I',
-            'LugarExpedicion'   => $billingSetting?->emitter_postal_code ?? '',
+            'LugarExpedicion'   => $invoice->fiscalProfile->postal_code ?? '',
             'Exportacion'       => '01',
             'FormaPago'         => $invoice->payment_form,
             'MetodoPago'        => $invoice->payment_method,
@@ -135,9 +145,9 @@ class SWSapienService
             'Certificado'       => '',
             'NoCertificado'     => '',
             'Emisor' => [
-                'Rfc'           => $billingSetting?->emitter_rfc ?? '',
-                'Nombre'        => $billingSetting?->emitter_legal_name ?? '',
-                'RegimenFiscal' => $billingSetting?->emitter_tax_regime ?? '',
+                'Rfc'           => $invoice->fiscalProfile->rfc,
+                'Nombre'        => $invoice->fiscalProfile->razon_social,
+                'RegimenFiscal' => $invoice->fiscalProfile->regimen_fiscal,
             ],
             'Receptor' => [
                 'Rfc'                     => $invoice->receiver_rfc,
@@ -308,6 +318,77 @@ class SWSapienService
         }
     }
 
+    /**
+     * Upload CSD certificates (.cer and .key) for a fiscal profile's
+     * sub-user account in SW Sapien.
+     *
+     * @param FiscalProfile $profile   The fiscal profile with sw_user_id already set.
+     * @param string        $cerPath   Absolute path to the .cer file on disk.
+     * @param string        $keyPath   Absolute path to the .key file on disk.
+     * @param string        $password  CSD private key password.
+     *
+     * @throws \RuntimeException When config is missing or PAC rejects.
+     *
+     * @return array Mock CSD validation data while PAC sandbox access is pending.
+     */
+    public function uploadCsd(FiscalProfile $profile, string $cerPath, string $keyPath, string $password): array
+    {
+        $endpoint = config('services.swsapien.endpoint');
+        $token    = config('services.swsapien.token');
+
+        if (! $endpoint || ! $token) {
+            throw new \RuntimeException('SW Sapien no está configurado.');
+        }
+
+        if (! $profile->sw_user_id) {
+            throw new \RuntimeException('El perfil fiscal no tiene un sw_user_id. Aprovisiona la subcuenta primero.');
+        }
+
+        /*
+        // ── Real HTTP call (commented until PAC enables reseller token) ──
+        $response = Http::withToken($token)
+            ->attach('cer', file_get_contents($cerPath), basename($cerPath))
+            ->attach('key', file_get_contents($keyPath), basename($keyPath))
+            ->post($endpoint . '/v2/csd/upload', [
+                'userId'   => $profile->sw_user_id,
+                'rfc'      => $profile->rfc,
+                'password' => $password,
+            ]);
+
+        if ($response->failed()) {
+            Log::error('SW Sapien CSD upload rejected', [
+                'fiscal_profile_id' => $profile->id,
+                'rfc'               => $profile->rfc,
+                'sw_user_id'        => $profile->sw_user_id,
+                'http_status'       => $response->status(),
+                'body'              => $response->body(),
+            ]);
+
+            throw new \RuntimeException(
+                'El PAC rechazó la carga del CSD: '
+                . ($response->json('message') ?? $response->body())
+            );
+        }
+        */
+
+        // ── MOCK: Simulate successful CSD validation ──
+        $mockResult = [
+            'status'             => 'success',
+            'message'            => 'Certificado cargado y validado con éxito en el PAC.',
+            'certificate_number' => '00001000000504455667',
+            'valid_from'         => now()->toDateTimeString(),
+            'valid_to'           => now()->addYears(4)->toDateTimeString(),
+        ];
+
+        Log::info('SW Sapien CSD uploaded successfully (MOCK)', [
+            'fiscal_profile_id'  => $profile->id,
+            'rfc'                => $profile->rfc,
+            'sw_user_id'         => $profile->sw_user_id,
+            'certificate_number' => $mockResult['certificate_number'],
+        ]);
+
+        return $mockResult;
+    }
     /**
      * Generate the next consecutive folio for a branch.
      */

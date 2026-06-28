@@ -8,7 +8,9 @@ Route::middleware(['auth', 'verified'])->prefix('invoices')->name('invoices.')->
     Route::get('/create', [InvoiceController::class, 'create'])->name('create');
     Route::post('/', [InvoiceController::class, 'store'])->name('store');
     Route::get('/settings', [InvoiceController::class, 'settings'])->name('settings');
-    Route::put('/settings', [InvoiceController::class, 'updateSettings'])->name('updateSettings');
+    Route::post('/fiscal-profiles', [InvoiceController::class, 'storeFiscalProfile'])->name('storeFiscalProfile');
+    Route::post('/fiscal-profiles/upload-csd', [InvoiceController::class, 'uploadCsd'])->name('uploadCsd');
+    Route::delete('/fiscal-profiles/{fiscalProfile}', [InvoiceController::class, 'destroy'])->name('destroyFiscalProfile');
     Route::get('/{invoice}', [InvoiceController::class, 'show'])->name('show');
     Route::post('/{invoice}/cancel', [InvoiceController::class, 'cancel'])->name('cancel');
 });

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Models;
+namespace App\Models\Invoices;
 
 use App\Enums\InvoiceStatus;
 use Illuminate\Database\Eloquent\Builder;
@@ -19,6 +19,7 @@ class Invoice extends Model
 
     protected $fillable = [
         'branch_id',
+        'fiscal_profile_id',
         'customer_id',
         'series',
         'folio',
@@ -46,13 +47,13 @@ class Invoice extends Model
     protected function casts(): array
     {
         return [
-            'status'       => InvoiceStatus::class,
-            'issued_at'    => 'datetime',
-            'canceled_at'  => 'datetime',
-            'subtotal'      => 'decimal:2',
+            'status'         => InvoiceStatus::class,
+            'issued_at'      => 'datetime',
+            'canceled_at'    => 'datetime',
+            'subtotal'       => 'decimal:2',
             'discount_total' => 'decimal:2',
-            'taxes_total'   => 'decimal:2',
-            'total'         => 'decimal:2',
+            'taxes_total'    => 'decimal:2',
+            'total'          => 'decimal:2',
         ];
     }
 
@@ -82,17 +83,22 @@ class Invoice extends Model
 
     public function branch(): BelongsTo
     {
-        return $this->belongsTo(Branch::class);
+        return $this->belongsTo(\App\Models\Branch::class);
+    }
+
+    public function fiscalProfile(): BelongsTo
+    {
+        return $this->belongsTo(FiscalProfile::class);
     }
 
     public function customer(): BelongsTo
     {
-        return $this->belongsTo(Customer::class);
+        return $this->belongsTo(\App\Models\Customer::class);
     }
 
     public function items(): HasMany
     {
-        return $this->hasMany(InvoiceItem::class);
+        return $this->hasMany(\App\Models\InvoiceItem::class);
     }
 
     /*
@@ -129,6 +135,11 @@ class Invoice extends Model
     public function scopeForCustomer(Builder $query, int $customerId): Builder
     {
         return $query->where('customer_id', $customerId);
+    }
+
+    public function scopeForFiscalProfile(Builder $query, int $fiscalProfileId): Builder
+    {
+        return $query->where('fiscal_profile_id', $fiscalProfileId);
     }
 
     /*

@@ -2,7 +2,7 @@
 
 namespace App\Actions\Invoices;
 
-use App\Models\Invoice;
+use App\Models\Invoices\Invoice;
 use App\Models\User;
 use App\Services\Invoices\SWSapienService;
 use Illuminate\Support\Facades\DB;

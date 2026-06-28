@@ -2,8 +2,7 @@
 
 namespace App\Actions\Invoices;
 
-use App\Models\BillingSetting;
-use App\Models\Invoice;
+use App\Models\Invoices\Invoice;
 use App\Services\Invoices\SWSapienService;
 
 class CancelInvoiceAction
@@ -21,13 +20,18 @@ class CancelInvoiceAction
             abort(422, 'Solo las facturas certificadas pueden ser canceladas.');
         }
 
-        $billingSetting = BillingSetting::where('branch_id', $invoice->branch_id)->first();
+        $invoice->load('fiscalProfile');
 
-        if (! $billingSetting?->emitter_rfc) {
-            abort(422, 'No se encontró la configuración fiscal de la sucursal.');
+        if (! $invoice->fiscalProfile?->rfc) {
+            abort(422, 'No se encontró el perfil fiscal asociado a esta factura.');
         }
 
-        $this->swService->cancel($invoice, $billingSetting->emitter_rfc, $cancellationReason, $substitutionUuid);
+        $this->swService->cancel(
+            $invoice,
+            $invoice->fiscalProfile->rfc,
+            $cancellationReason,
+            $substitutionUuid,
+        );
 
         return $invoice->fresh();
     }

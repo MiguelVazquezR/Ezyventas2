@@ -51,8 +51,9 @@ return [
     ],
 
     'swsapien' => [
-        'endpoint' => env('SW_SAPIEN_ENDPOINT', 'https://sandbox.sw.com.mx'),
-        'token'    => env('SW_SAPIEN_TOKEN'),
+        'endpoint'               => env('SW_SAPIEN_ENDPOINT', 'https://services.test.sw.com.mx'),
+        'token'                  => env('SW_SAPIEN_TOKEN'),
+        'resellers_users_path'   => env('SW_SAPIEN_RESELLERS_USERS_PATH', '/v3/resellers/users'),
     ],
 
 ];
