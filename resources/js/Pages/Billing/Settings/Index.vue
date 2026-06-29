@@ -87,7 +87,7 @@ const openNewDialog = () => {
 };
 
 const submit = () => {
-    form.post(route('invoices.storeFiscalProfile'), {
+    form.post(route('billing.settings.storeFiscalProfile'), {
         onSuccess: () => {
             isDialogVisible.value = false;
             form.reset();
@@ -107,7 +107,7 @@ const openCsdDialog = (profile) => {
 const confirm = useConfirm();
 
 const submitCsd = () => {
-    csdForm.post(route('invoices.uploadCsd'), {
+    csdForm.post(route('billing.settings.uploadCsd'), {
         onSuccess: () => {
             isCsdDialogVisible.value = false;
             csdForm.reset();
@@ -124,7 +124,7 @@ const confirmDeleteProfile = (profile) => {
         acceptLabel: 'Dar de baja',
         acceptClass: 'p-button-danger',
         accept: () => {
-            router.delete(route('invoices.destroyFiscalProfile', profile.id));
+            router.delete(route('billing.settings.destroyFiscalProfile', profile.id));
         },
     });
 };
@@ -172,7 +172,7 @@ const tagPt = {
                 </div>
                 <div class="flex gap-2 w-full md:w-auto">
                     <Link
-                        :href="route('invoices.index')"
+                        :href="route('billing.invoices.index')"
                         class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors no-underline"
                     >
                         <i class="pi pi-arrow-left !text-[10px]"></i>

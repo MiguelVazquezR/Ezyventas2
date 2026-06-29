@@ -108,7 +108,7 @@ watch(selectedFiscalProfile, (profile) => {
 // ──────────────────────────────────────
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([
-    { label: 'Facturación', url: route('invoices.index') },
+    { label: 'Facturación', url: route('billing.invoices.index') },
     { label: 'Nueva factura' },
 ]);
 
@@ -294,7 +294,7 @@ watch(() => form.customer_id, (newId) => {
 // Submit
 // ──────────────────────────────────────
 const submit = () => {
-    form.post(route('invoices.store'));
+    form.post(route('billing.invoices.store'));
 };
 </script>
 
@@ -322,7 +322,7 @@ const submit = () => {
                 No tienes perfiles fiscales registrados. Para emitir facturas, primero debes agregar al menos un RFC emisor.
             </p>
             <a
-                :href="route('invoices.settings')"
+                :href="route('billing.settings.index')"
                 class="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white rounded-full text-sm font-medium transition-colors no-underline"
             >
                 <i class="pi pi-external-link !text-sm"></i>
@@ -612,7 +612,7 @@ const submit = () => {
                         />
 
                         <div class="flex justify-end gap-3">
-                            <Button type="button" label="Cancelar" severity="secondary" text class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold" @click="$inertia.visit(route('invoices.index'))" />
+                            <Button type="button" label="Cancelar" severity="secondary" text class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold" @click="$inertia.visit(route('billing.invoices.index'))" />
                             <Button type="submit" label="Crear factura" icon="pi pi-file" :loading="form.processing" class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold" />
                         </div>
                     </div>

@@ -1,8 +1,8 @@
 <?php
 
-namespace App\Actions\Invoices;
+namespace App\Actions\Billing;
 
-use App\Models\Invoices\FiscalProfile;
+use App\Models\Billing\FiscalProfile;
 use App\Services\SW\SWUserService;
 use Illuminate\Http\Client\ConnectionException;
 

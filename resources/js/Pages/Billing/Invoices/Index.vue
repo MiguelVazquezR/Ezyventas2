@@ -30,7 +30,7 @@ let searchTimeout = null;
 watch(searchTerm, (val) => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-        router.get(route('invoices.index'), { search: val || null, status: statusFilter.value }, {
+        router.get(route('billing.invoices.index'), { search: val || null, status: statusFilter.value }, {
             preserveState: true,
             replace: true,
         });
@@ -38,7 +38,7 @@ watch(searchTerm, (val) => {
 });
 
 watch(statusFilter, (val) => {
-    router.get(route('invoices.index'), { search: searchTerm.value || null, status: val }, {
+    router.get(route('billing.invoices.index'), { search: searchTerm.value || null, status: val }, {
         preserveState: true,
         replace: true,
     });
@@ -48,7 +48,7 @@ watch(statusFilter, (val) => {
 // Pagination & sorting
 // ──────────────────────────────────────
 const onPage = (event) => {
-    router.get(route('invoices.index'), {
+    router.get(route('billing.invoices.index'), {
         page: event.page + 1,
         rows: event.rows,
         search: searchTerm.value || null,
@@ -59,7 +59,7 @@ const onPage = (event) => {
 };
 
 const onSort = (event) => {
-    router.get(route('invoices.index'), {
+    router.get(route('billing.invoices.index'), {
         sortField: event.sortField,
         sortOrder: event.sortOrder === 1 ? 'asc' : 'desc',
         search: searchTerm.value || null,
@@ -124,7 +124,7 @@ const openUrl = (url) => { if (url) window.open(url, '_blank'); };
 // Row click → navigate to detail
 // ──────────────────────────────────────
 const onRowClick = (event) => {
-    router.get(route('invoices.show', event.data.id));
+    router.get(route('billing.invoices.show', event.data.id));
 };
 
 // ──────────────────────────────────────
@@ -167,7 +167,7 @@ const tagPt = {
                 <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-8">
                     <div>
                         <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">
-                            Facturación
+                            Lista de facturas
                         </h1>
                         <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
                             <span class="w-1.5 h-1.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse"></span>
@@ -182,14 +182,14 @@ const tagPt = {
                             icon="pi pi-cog"
                             outlined
                             severity="secondary"
-                            @click="router.get(route('invoices.settings'))"
+                            @click="router.get(route('billing.settings.index'))"
                             class="!rounded-xl !text-xs !uppercase !tracking-wider !bg-transparent !border-gray-300 dark:!border-[#3a3a3a] !text-gray-500 dark:!text-gray-400 hover:!bg-gray-50 dark:hover:!bg-[#1a1a1a]"
                         />
                         <Button
                             v-if="hasPermission('create invoices')"
                             label="Emitir factura"
                             icon="pi pi-plus"
-                            @click="router.get(route('invoices.create'))"
+                            @click="router.get(route('billing.invoices.create'))"
                             class="!rounded-xl !text-xs !uppercase !tracking-wider"
                         />
                     </div>
@@ -360,7 +360,7 @@ const tagPt = {
                                     icon="pi pi-arrow-right"
                                     text
                                     rounded
-                                    @click="router.get(route('invoices.show', data.id))"
+                                    @click="router.get(route('billing.invoices.show', data.id))"
                                     class="!w-8 !h-8 !text-gray-400 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors"
                                     v-tooltip.top="'Ver detalle'"
                                 />

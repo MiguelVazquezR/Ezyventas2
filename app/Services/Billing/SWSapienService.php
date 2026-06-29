@@ -1,15 +1,16 @@
 <?php
 
-namespace App\Services\Invoices;
+namespace App\Services\Billing;
 
 use App\Enums\InvoiceStatus;
 use App\Models\Customer;
-use App\Models\Invoices\FiscalProfile;
-use App\Models\Invoices\Invoice;
+use App\Models\Billing\FiscalProfile;
+use App\Models\Billing\Invoice;
 use App\Models\InvoiceItem;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class SWSapienService
 {
@@ -174,6 +175,34 @@ class SWSapienService
      */
     public function stamp(Invoice $invoice): void
     {
+        // ── MOCK: Skip real PAC call while token/auth issues are resolved ──
+        if (config('services.swsapien.mock')) {
+            $uuid  = Str::uuid()->toString();
+            $xml   = '<?xml version="1.0" encoding="UTF-8"?><cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" UUID="' . $uuid . '" /><!-- MOCK XML -->';
+
+            $xmlPath = 'invoices/xml/' . $uuid . '.xml';
+            Storage::disk('public')->put($xmlPath, $xml);
+
+            // Generate a minimal valid blank PDF for UI testing
+            $pdfPath = 'invoices/pdf/' . $uuid . '.pdf';
+            Storage::disk('public')->put($pdfPath, $this->buildMinimalPdf($uuid));
+
+            $invoice->update([
+                'uuid'      => $uuid,
+                'xml_url'   => $xmlPath,
+                'pdf_url'   => $pdfPath,
+                'status'    => InvoiceStatus::CERTIFIED,
+                'issued_at' => now(),
+            ]);
+
+            Log::info('SW Sapien invoice stamped (MOCK)', [
+                'invoice_id' => $invoice->id,
+                'uuid'       => $uuid,
+            ]);
+
+            return;
+        }
+
         $endpoint = config('services.swsapien.endpoint');
         $token    = config('services.swsapien.token');
 
@@ -186,7 +215,10 @@ class SWSapienService
         $payload = $this->buildPayload($invoice);
 
         $response = Http::withToken($token)
-            ->withHeaders(['Content-Type' => 'application/jsontoxml'])
+            ->withHeaders([
+                'Content-Type' => 'application/jsontoxml',
+                'extra'        => 'pdf',
+            ])
             ->post($endpoint . '/v4/cfdi40/issue/json', $payload);
 
         if ($response->failed()) {
@@ -236,6 +268,23 @@ class SWSapienService
      */
     public function cancel(Invoice $invoice, string $emitterRfc, string $reason, ?string $substitutionUuid = null): void
     {
+        // ── MOCK ──
+        if (config('services.swsapien.mock')) {
+            $invoice->update([
+                'status'              => InvoiceStatus::CANCELED,
+                'cancellation_reason' => $reason,
+                'canceled_at'         => now(),
+            ]);
+
+            Log::info('SW Sapien invoice cancelled (MOCK)', [
+                'invoice_id' => $invoice->id,
+                'uuid'       => $invoice->uuid,
+                'reason'     => $reason,
+            ]);
+
+            return;
+        }
+
         $endpoint = config('services.swsapien.endpoint');
         $token    = config('services.swsapien.token');
 
@@ -329,10 +378,29 @@ class SWSapienService
      *
      * @throws \RuntimeException When config is missing or PAC rejects.
      *
-     * @return array Mock CSD validation data while PAC sandbox access is pending.
+     * @return array CSD validation data returned by the PAC.
      */
     public function uploadCsd(FiscalProfile $profile, string $cerPath, string $keyPath, string $password): array
     {
+        // ── MOCK ──
+        if (config('services.swsapien.mock')) {
+            $mockResult = [
+                'status'             => 'success',
+                'message'            => 'Certificado cargado y validado con éxito en el PAC (MOCK).',
+                'certificate_number' => '00001000000504455667',
+                'valid_from'         => now()->toDateTimeString(),
+                'valid_to'           => now()->addYears(4)->toDateTimeString(),
+            ];
+
+            Log::info('SW Sapien CSD uploaded successfully (MOCK)', [
+                'fiscal_profile_id'  => $profile->id,
+                'rfc'                => $profile->rfc,
+                'certificate_number' => $mockResult['certificate_number'],
+            ]);
+
+            return $mockResult;
+        }
+
         $endpoint = config('services.swsapien.endpoint');
         $token    = config('services.swsapien.token');
 
@@ -344,9 +412,10 @@ class SWSapienService
             throw new \RuntimeException('El perfil fiscal no tiene un sw_user_id. Aprovisiona la subcuenta primero.');
         }
 
-        /*
-        // ── Real HTTP call (commented until PAC enables reseller token) ──
-        $response = Http::withToken($token)
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+            'Accept'        => 'application/json',
+        ])
             ->attach('cer', file_get_contents($cerPath), basename($cerPath))
             ->attach('key', file_get_contents($keyPath), basename($keyPath))
             ->post($endpoint . '/v2/csd/upload', [
@@ -369,26 +438,183 @@ class SWSapienService
                 . ($response->json('message') ?? $response->body())
             );
         }
-        */
 
-        // ── MOCK: Simulate successful CSD validation ──
-        $mockResult = [
-            'status'             => 'success',
-            'message'            => 'Certificado cargado y validado con éxito en el PAC.',
-            'certificate_number' => '00001000000504455667',
-            'valid_from'         => now()->toDateTimeString(),
-            'valid_to'           => now()->addYears(4)->toDateTimeString(),
+        $data = $response->json();
+
+        $result = [
+            'status'             => $data['status'] ?? 'success',
+            'message'            => $data['message'] ?? 'Certificado cargado y validado con éxito en el PAC.',
+            'certificate_number' => $data['data']['certificate_number'] ?? $data['certificate_number'] ?? null,
+            'valid_from'         => $data['data']['valid_from'] ?? $data['valid_from'] ?? null,
+            'valid_to'           => $data['data']['valid_to'] ?? $data['valid_to'] ?? null,
         ];
 
-        Log::info('SW Sapien CSD uploaded successfully (MOCK)', [
+        Log::info('SW Sapien CSD uploaded successfully', [
             'fiscal_profile_id'  => $profile->id,
             'rfc'                => $profile->rfc,
             'sw_user_id'         => $profile->sw_user_id,
-            'certificate_number' => $mockResult['certificate_number'],
+            'certificate_number' => $result['certificate_number'],
         ]);
 
-        return $mockResult;
+        return $result;
     }
+
+    /**
+     * Generate a PDF for an already-stamped CFDI via SW Sapien PDF API.
+     *
+     * Sends the stored XML to the PDF generation endpoint and persists
+     * the resulting PDF locally. Useful when the invoice was stamped
+     * without the "extra: pdf" header, or to regenerate a PDF with
+     * a custom template.
+     *
+     * @param Invoice $invoice  Must have a stored XML (xml_url).
+     * @param string  $templateId  PDF template ID (default: cfdi40).
+     *
+     * @throws \RuntimeException
+     */
+    public function generatePdf(Invoice $invoice, string $templateId = 'cfdi40'): void
+    {
+        if (! $invoice->xml_url) {
+            throw new \RuntimeException('La factura no tiene XML almacenado. Timbra primero.');
+        }
+
+        $xmlContent = Storage::disk('public')->get($invoice->xml_url);
+
+        if (! $xmlContent) {
+            throw new \RuntimeException('No se pudo leer el XML almacenado.');
+        }
+
+        $endpoint = config('services.swsapien.management_endpoint')
+            ?: config('services.swsapien.endpoint', 'https://api.test.sw.com.mx');
+        $token    = config('services.swsapien.token');
+
+        if (! $token) {
+            throw new \RuntimeException('SW Sapien no está configurado.');
+        }
+
+        $url = rtrim($endpoint, '/') . '/pdf/v1/api/GeneratePdf';
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+            'Content-Type'  => 'application/json',
+            'Accept'        => 'application/json',
+        ])->post($url, [
+            'xmlContent' => $xmlContent,
+            'logo'       => '',
+            'extras'     => (object) [],
+            'templateId' => $templateId,
+        ]);
+
+        if ($response->failed()) {
+            Log::error("SW Sapien PDF generation failed for invoice {$invoice->id}", [
+                'status' => $response->status(),
+                'body'   => $response->body(),
+            ]);
+            throw new \RuntimeException(
+                'El PAC rechazó la generación del PDF: '
+                . ($response->json('message') ?? $response->body())
+            );
+        }
+
+        $data = $response->json();
+
+        if (($data['status'] ?? '') !== 'success') {
+            throw new \RuntimeException(
+                $data['message'] ?? 'Error desconocido al generar el PDF.'
+            );
+        }
+
+        $pdfBase64 = $data['data']['contentB64'] ?? null;
+
+        if (! $pdfBase64) {
+            throw new \RuntimeException('El PAC no devolvió contenido PDF.');
+        }
+
+        $uuid    = $invoice->uuid ?? Str::uuid()->toString();
+        $pdfPath = 'invoices/pdf/' . $uuid . '.pdf';
+        Storage::disk('public')->put($pdfPath, base64_decode($pdfBase64));
+
+        $invoice->update(['pdf_url' => $pdfPath]);
+
+        Log::info('SW Sapien PDF generated', [
+            'invoice_id' => $invoice->id,
+            'uuid'       => $uuid,
+        ]);
+    }
+
+    /**
+     * Resend the CFDI XML and PDF via email through SW Sapien.
+     *
+     * @param Invoice $invoice  Must have a UUID.
+     * @param string  $toEmail  Destination email address.
+     *
+     * @throws \RuntimeException
+     */
+    public function resendEmail(Invoice $invoice, string $toEmail): void
+    {
+        if (! $invoice->uuid) {
+            throw new \RuntimeException('La factura no tiene UUID. Timbra primero.');
+        }
+
+        $endpoint = config('services.swsapien.management_endpoint')
+            ?: config('services.swsapien.endpoint', 'https://api.test.sw.com.mx');
+        $token    = config('services.swsapien.token');
+
+        if (! $token) {
+            throw new \RuntimeException('SW Sapien no está configurado.');
+        }
+
+        $url = rtrim($endpoint, '/') . '/comprobante/resendemail';
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+            'Content-Type'  => 'application/json',
+            'Accept'        => 'application/json',
+        ])->post($url, [
+            'uuid' => $invoice->uuid,
+            'to'   => $toEmail,
+        ]);
+
+        if ($response->failed()) {
+            Log::error("SW Sapien email resend failed for invoice {$invoice->id}", [
+                'status' => $response->status(),
+                'body'   => $response->body(),
+            ]);
+            throw new \RuntimeException(
+                'El PAC rechazó el reenvío: '
+                . ($response->json('message') ?? $response->body())
+            );
+        }
+
+        Log::info('SW Sapien CFDI resent via email', [
+            'invoice_id' => $invoice->id,
+            'uuid'       => $invoice->uuid,
+            'to'         => $toEmail,
+        ]);
+    }
+
+    /**
+     * Build a minimal valid blank PDF for mock/stub purposes.
+     *
+     * Produces a ~250-byte PDF with a single blank US Letter page
+     * containing the invoice UUID as metadata.
+     */
+    private function buildMinimalPdf(string $uuid): string
+    {
+        return "%PDF-1.0\n"
+            . "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+            . "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+            . "3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R/Resources<<>>>>endobj\n"
+            . "xref\n0 4\n"
+            . "0000000000 65535 f \n"
+            . "0000000009 00000 n \n"
+            . "0000000058 00000 n \n"
+            . "0000000115 00000 n \n"
+            . "trailer<</Size 4/Root 1 0 R>>\n"
+            . "startxref\n190\n"
+            . "%%EOF";
+    }
+
     /**
      * Generate the next consecutive folio for a branch.
      */

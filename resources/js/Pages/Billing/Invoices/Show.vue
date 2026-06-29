@@ -101,7 +101,7 @@ const cancelReasons = [
 const needsSubstitutionUuid = computed(() => cancelForm.cancellation_reason === '01');
 
 const submitCancel = () => {
-    cancelForm.post(route('invoices.cancel', props.invoice.id), {
+    cancelForm.post(route('billing.invoices.cancel', props.invoice.id), {
         onSuccess: () => {
             showCancelDialog.value = false;
         },
@@ -148,7 +148,7 @@ const tagPt = {
         <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
             <!-- Breadcrumb / Back link -->
             <div class="flex items-center">
-                <Link :href="route('invoices.index')" class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
+                <Link :href="route('billing.invoices.index')" class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
                     <i class="pi pi-arrow-left !text-[10px]"></i> Volver a facturación
                 </Link>
             </div>
@@ -158,6 +158,7 @@ const tagPt = {
                 <div>
                     <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0 flex items-center gap-4">
                         Factura {{ invoice.series ? invoice.series + ' ' : '' }}{{ invoice.folio }}
+                        <span v-if="invoice.series && !invoice.uuid" class="text-[10px] uppercase tracking-widest font-bold text-gray-400 bg-gray-100 dark:bg-[#1a1a1a] px-3 py-1 rounded-full">Serie {{ invoice.series }}</span>
                     </h1>
                     <div class="flex items-center gap-4 mt-3 flex-wrap">
                         <Tag :value="statusLabel" :severity="statusSeverity" :pt="tagPt" />
@@ -166,7 +167,7 @@ const tagPt = {
 
                         <span
                             v-if="invoice.uuid"
-                            class="font-mono text-xs text-gray-400 dark:text-gray-500 tracking-wide"
+                            class="text-xs text-gray-400 dark:text-gray-500 tracking-wide"
                         >
                             {{ invoice.uuid }}
                         </span>
@@ -209,6 +210,38 @@ const tagPt = {
             <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8">
                 <!-- ─── LEFT: Metadata ─── -->
                 <div class="lg:col-span-2 space-y-6">
+
+                    <!-- Emitter info -->
+                    <div v-if="invoice.fiscal_profile" class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col">
+                        <div class="mb-6 flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center flex-shrink-0 border border-primary-100 dark:border-primary-900/30">
+                                <i class="pi pi-building !text-sm text-primary-500"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Emisor</h2>
+                                <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Perfil fiscal del emisor</p>
+                            </div>
+                        </div>
+                        <div class="space-y-4">
+                            <div class="flex flex-col gap-1">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">RFC</span>
+                                <span class="text-sm text-gray-900 dark:text-gray-200">{{ invoice.fiscal_profile.rfc }}</span>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Razón social</span>
+                                <span class="text-sm text-gray-900 dark:text-gray-200">{{ invoice.fiscal_profile.razon_social }}</span>
+                            </div>
+                            <div v-if="invoice.fiscal_profile.regimen_fiscal" class="flex flex-col gap-1">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Régimen fiscal</span>
+                                <span class="text-sm text-gray-900 dark:text-gray-200">{{ invoice.fiscal_profile.regimen_fiscal }}</span>
+                            </div>
+                            <div v-if="invoice.fiscal_profile.postal_code" class="flex flex-col gap-1">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Lugar de expedición</span>
+                                <span class="text-sm text-gray-900 dark:text-gray-200">{{ invoice.fiscal_profile.postal_code }}</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Receiver info -->
                     <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col">
                         <div class="mb-6 flex items-center gap-3">
@@ -223,7 +256,7 @@ const tagPt = {
                         <div class="space-y-4">
                             <div class="flex flex-col gap-1">
                                 <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">RFC</span>
-                                <span class="text-sm font-mono text-gray-900 dark:text-gray-200">{{ invoice.receiver_rfc }}</span>
+                                <span class="text-sm text-gray-900 dark:text-gray-200">{{ invoice.receiver_rfc }}</span>
                             </div>
                             <div class="flex flex-col gap-1">
                                 <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Razón social</span>
@@ -258,7 +291,7 @@ const tagPt = {
                                 <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">UUID</span>
                                 <span
                                     v-if="invoice.uuid"
-                                    class="text-sm font-mono text-gray-900 dark:text-gray-200 break-all"
+                                    class="text-sm text-gray-900 dark:text-gray-200 break-all"
                                 >{{ invoice.uuid }}</span>
                                 <span v-else class="text-sm text-gray-400 dark:text-gray-600 italic">Pendiente de timbrado</span>
                             </div>
@@ -403,6 +436,14 @@ const tagPt = {
                             <span class="text-sm text-gray-500 dark:text-gray-400">IVA trasladado</span>
                             <span class="text-xl font-light tracking-tight text-gray-900 dark:text-white">
                                 {{ formatCurrency(invoice.taxes_total) }}
+                            </span>
+                        </div>
+
+                        <!-- Currency -->
+                        <div class="flex items-center justify-between py-3 border-b border-gray-100 dark:border-[#3a3a3a]">
+                            <span class="text-sm text-gray-500 dark:text-gray-400">Moneda</span>
+                            <span class="text-xl font-light tracking-tight text-gray-900 dark:text-white">
+                                {{ invoice.currency || 'MXN' }}
                             </span>
                         </div>
 

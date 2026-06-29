@@ -1,16 +1,12 @@
 <?php
 
-namespace App\Http\Controllers\Invoices;
+namespace App\Http\Controllers\Billing;
 
-use App\Actions\Invoices\CancelInvoiceAction;
-use App\Actions\Invoices\CreateInvoiceAction;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Invoices\CancelInvoiceRequest;
-use App\Http\Requests\Invoices\StoreFiscalProfileRequest;
-use App\Http\Requests\Invoices\StoreInvoiceRequest;
-use App\Models\Invoices\FiscalProfile;
-use App\Models\Invoices\Invoice;
-use App\Services\Invoices\SWSapienService;
+use App\Http\Requests\Billing\StoreFiscalProfileRequest;
+use App\Models\Billing\FiscalProfile;
+use App\Models\Billing\Invoice;
+use App\Services\Billing\SWSapienService;
 use App\Services\SW\SWUserService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
@@ -21,120 +17,14 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Inertia\Inertia;
-use Inertia\Response;
 
-class InvoiceController extends Controller implements HasMiddleware
+class FiscalProfileController extends Controller implements HasMiddleware
 {
     public static function middleware(): array
     {
         return [
-            new Middleware('can:invoices.access', only: ['index']),
-            new Middleware('can:create invoices', only: ['create', 'store']),
-            new Middleware('can:invoices.see_details', only: ['show']),
-            new Middleware('can:invoices.edit', only: ['edit', 'update']),
-            new Middleware('can:invoices.delete', only: ['destroy']),
-            new Middleware('can:cancel invoices', only: ['cancel']),
-            new Middleware('can:invoices.settings.access', only: ['settings', 'storeFiscalProfile', 'uploadCsd', 'destroy']),
+            new Middleware('can:invoices.settings.access'),
         ];
-    }
-
-    /**
-     * List all invoices for the current branch.
-     */
-    public function index(Request $request): Response
-    {
-        $user = Auth::user();
-        $subscription = $user->branch?->subscription;
-
-        $query = Invoice::query()
-            ->where('branch_id', $user->branch_id)
-            ->with('customer:id,name,company_name');
-
-        // Search across folio, receiver name, receiver RFC, and UUID
-        if ($request->has('search')) {
-            $searchTerm = $request->input('search');
-            $query->where(function ($q) use ($searchTerm) {
-                $q->where('folio', 'LIKE', "%{$searchTerm}%")
-                  ->orWhere('receiver_legal_name', 'LIKE', "%{$searchTerm}%")
-                  ->orWhere('receiver_rfc', 'LIKE', "%{$searchTerm}%")
-                  ->orWhere('uuid', 'LIKE', "%{$searchTerm}%");
-            });
-        }
-
-        // Filter by status if provided
-        if ($request->filled('status')) {
-            $query->where('status', $request->input('status'));
-        }
-
-        $query->orderBy(
-            $request->input('sortField', 'created_at'),
-            $request->input('sortOrder', 'desc'),
-        );
-
-        return Inertia::render('Invoices/Index', [
-            'invoices'           => $query->paginate($request->input('rows', 20))->withQueryString(),
-            'filters'            => $request->only(['search', 'status', 'sortField', 'sortOrder']),
-            'hasFiscalProfiles'  => $subscription?->fiscalProfiles()->active()->exists() ?? false,
-        ]);
-    }
-
-    /**
-     * Show the invoice creation form.
-     */
-    public function create(): Response
-    {
-        $user = Auth::user();
-        $subscription = $user->branch?->subscription;
-
-        return Inertia::render('Invoices/Create', [
-            'customers'        => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
-            'fiscalProfiles'   => $subscription?->fiscalProfiles()->active()->whereNotNull('sw_user_id')->get(['id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code']) ?? [],
-            'hasFiscalProfiles' => $subscription?->fiscalProfiles()->active()->whereNotNull('sw_user_id')->exists() ?? false,
-        ]);
-    }
-
-    /**
-     * Store a newly created CFDI invoice.
-     */
-    public function store(StoreInvoiceRequest $request, CreateInvoiceAction $action): RedirectResponse
-    {
-        $invoice = $action->execute(
-            $request->validated(),
-            Auth::user(),
-        );
-
-        return redirect()->route('invoices.show', $invoice->id)
-            ->with('success', 'Factura creada correctamente.');
-    }
-
-    /**
-     * Display a single invoice with its items and customer.
-     */
-    public function show(Invoice $invoice): Response
-    {
-        $invoice->load(['items', 'customer', 'branch']);
-
-        return Inertia::render('Invoices/Show', [
-            'invoice' => $invoice,
-        ]);
-    }
-
-    /**
-     * Display all fiscal profiles for the user's subscription.
-     */
-    public function settings(): Response
-    {
-        $user = Auth::user();
-        $subscription = $user->branch?->subscription;
-
-        $fiscalProfiles = $subscription
-            ? $subscription->fiscalProfiles()->orderBy('created_at', 'desc')->get()
-            : collect();
-
-        return Inertia::render('Invoices/Settings', [
-            'fiscalProfiles' => $fiscalProfiles,
-        ]);
     }
 
     /**
@@ -149,7 +39,7 @@ class InvoiceController extends Controller implements HasMiddleware
         $subscription = $user->branch?->subscription;
 
         if (! $subscription) {
-            return redirect()->route('invoices.settings')
+            return redirect()->route('billing.settings.index')
                 ->with('error', 'No se encontró una suscripción activa asociada a tu cuenta.');
         }
 
@@ -184,7 +74,7 @@ class InvoiceController extends Controller implements HasMiddleware
                 'subscription_id'   => $subscription->id,
             ]);
 
-            return redirect()->route('invoices.settings')
+            return redirect()->route('billing.settings.index')
                 ->with('success', 'Perfil fiscal creado y vinculado al PAC exitosamente.');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -197,7 +87,8 @@ class InvoiceController extends Controller implements HasMiddleware
                 'trace'             => $e->getTraceAsString(),
             ]);
 
-            dd($e->getMessage());
+            return redirect()->route('billing.settings.index')
+                ->with('error', 'El PAC rechazó la creación de la subcuenta: ' . $e->getMessage());
         }
     }
 
@@ -259,7 +150,7 @@ class InvoiceController extends Controller implements HasMiddleware
                 'llave.key',
             );
 
-            // Update the fiscal profile with mock CSD data and file paths
+            // Update the fiscal profile with CSD data and file paths
             $profile->update([
                 'certificate_number' => $csdResult['certificate_number'] ?? null,
                 'valid_from'         => $csdResult['valid_from'] ?? null,
@@ -306,14 +197,11 @@ class InvoiceController extends Controller implements HasMiddleware
     {
         $hasInvoices = Invoice::where('fiscal_profile_id', $fiscalProfile->id)->exists();
 
-        /*
         // ── Deactivate subaccount in SW Sapien PAC ──
-        // Uncomment once the reseller token is enabled.
         if ($fiscalProfile->sw_user_id) {
-            $swUserService = app(\App\Services\SW\SWUserService::class);
+            $swUserService = app(SWUserService::class);
             $swUserService->deactivateSubaccount($fiscalProfile);
         }
-        */
 
         if (! $hasInvoices) {
             $fiscalProfile->delete();
@@ -331,22 +219,7 @@ class InvoiceController extends Controller implements HasMiddleware
             ]);
         }
 
-        return redirect()->route('invoices.settings')
+        return redirect()->route('billing.settings.index')
             ->with('success', 'Perfil fiscal dado de baja correctamente.');
-    }
-
-    /**
-     * Cancel a CFDI invoice (fiscal cancellation).
-     */
-    public function cancel(Invoice $invoice, CancelInvoiceRequest $request, CancelInvoiceAction $action): RedirectResponse
-    {
-        $action->execute(
-            $invoice,
-            $request->validated('cancellation_reason'),
-            $request->validated('substitution_uuid'),
-        );
-
-        return redirect()->route('invoices.show', $invoice->id)
-            ->with('success', 'Factura cancelada correctamente.');
     }
 }

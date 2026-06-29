@@ -13,7 +13,29 @@ const model = ref([
             { label: 'Productos', icon: 'pi pi-barcode', to: route('products.index'), routeName: 'products.*', permission: 'products.access' },
             { label: 'Gastos', icon: 'pi pi-arrow-up-right', to: route('expenses.index'), routeName: 'expenses.*', permission: 'expenses.access' },
             { label: 'Clientes', icon: 'pi pi-users', to: route('customers.index'), routeName: 'customers.*', permission: 'customers.access' },
-            { label: 'Facturación', icon: 'pi pi-file', to: route('invoices.index'), routeName: 'invoices.*', permission: 'invoices.access' },
+            {
+                label: 'Facturación', icon: 'pi pi-file', routeName: 'billing.*', permission: 'invoices.access',
+                items: [
+                    {
+                        label: 'Resumen',
+                        icon: 'pi pi-chart-bar',
+                        to: route('billing.dashboard'),
+                        routeName: 'billing.dashboard',
+                    },
+                    {
+                        label: 'Comprobantes',
+                        icon: 'pi pi-receipt',
+                        to: route('billing.invoices.index'),
+                        routeName: 'billing.invoices.*',
+                    },
+                    {
+                        label: 'Configuración',
+                        icon: 'pi pi-cog',
+                        to: route('billing.settings.index'),
+                        routeName: 'billing.settings.*',
+                    },
+                ],
+            },
             {
                 label: 'Servicios', icon: 'pi pi-wrench', module: 'module_services',
                 items: [

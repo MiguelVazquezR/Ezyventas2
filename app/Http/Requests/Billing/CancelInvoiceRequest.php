@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Requests\Invoices;
+namespace App\Http\Requests\Billing;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;

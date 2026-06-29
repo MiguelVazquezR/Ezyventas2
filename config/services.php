@@ -53,7 +53,10 @@ return [
     'swsapien' => [
         'endpoint'               => env('SW_SAPIEN_ENDPOINT', 'https://services.test.sw.com.mx'),
         'token'                  => env('SW_SAPIEN_TOKEN'),
-        'resellers_users_path'   => env('SW_SAPIEN_RESELLERS_USERS_PATH', '/v3/resellers/users'),
+        'management_endpoint'    => env('SW_SAPIEN_MANAGEMENT_ENDPOINT'),
+        'management_users_path'  => env('SW_SAPIEN_MANAGEMENT_USERS_PATH', '/management/v2/api/dealers/users'),
+        'default_stamps'         => env('SW_SAPIEN_DEFAULT_STAMPS', 10),
+        'mock'                   => env('SW_SAPIEN_MOCK', false),
     ],
 
 ];

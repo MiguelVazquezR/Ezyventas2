@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Actions\Invoices;
+namespace App\Actions\Billing;
 
-use App\Models\Invoices\Invoice;
-use App\Services\Invoices\SWSapienService;
+use App\Models\Billing\Invoice;
+use App\Services\Billing\SWSapienService;
 
 class CancelInvoiceAction
 {

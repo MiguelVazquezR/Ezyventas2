@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Models\Invoices;
+namespace App\Models\Billing;
 
 use App\Enums\InvoiceStatus;
 use Illuminate\Database\Eloquent\Builder;

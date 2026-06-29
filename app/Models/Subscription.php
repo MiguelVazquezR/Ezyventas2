@@ -6,7 +6,7 @@ use App\Enums\BillingPeriod;
 use App\Enums\PlanItemType;
 use App\Enums\SubscriptionPaymentStatus;
 use App\Enums\SubscriptionStatus;
-use App\Models\Invoices\FiscalProfile;
+use App\Models\Billing\FiscalProfile;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Actions\Invoices;
+namespace App\Actions\Billing;
 
 use App\Models\BillingSetting;
 

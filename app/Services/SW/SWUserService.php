@@ -2,24 +2,26 @@
 
 namespace App\Services\SW;
 
-use App\Models\Invoices\FiscalProfile;
+use App\Models\Billing\FiscalProfile;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * SWUserService
  *
- * Manages sub-user accounts in SW Sapien PAC.
+ * Manages sub-user accounts in SW Sapien PAC (Management V2).
  *
  * Each RFC (FiscalProfile) that issues CFDI invoices must exist as a
  * sub-user in the PAC. This service handles:
- *  - Creating sub-users via POST /v2/users
+ *  - Creating sub-users via POST /management/v2/api/dealers/users
  *  - Mapping local FiscalProfile data to SW Sapien payloads
  *  - Storing the returned sw_user_id and account email on the profile
+ *  - Deactivating subaccounts when a profile is removed
  *
- * The permanent token is injected from services.swsapien.token config.
+ * The permanent dealer token is injected from services.swsapien.token config.
  */
 class SWUserService
 {
@@ -43,34 +45,47 @@ class SWUserService
         string $email,
         string $password,
     ): void {
-        $endpoint = config('services.swsapien.endpoint');
+        // ── MOCK: Skip real HTTP call while token/auth issues are resolved ──
+        if (config('services.swsapien.mock')) {
+            $swUserId = 'sw_mock_' . Str::random(12);
+
+            $profile->update([
+                'sw_user_id'       => $swUserId,
+                'sw_account_email' => $email,
+            ]);
+
+            Log::info('SW Sapien sub-user created (MOCK)', [
+                'fiscal_profile_id' => $profile->id,
+                'rfc'               => $profile->rfc,
+                'sw_user_id'        => $swUserId,
+            ]);
+
+            return;
+        }
+
+        $endpoint = $this->resolveManagementEndpoint();
         $token    = config('services.swsapien.token');
 
         if (! $endpoint || ! $token) {
             throw new \RuntimeException(
-                'SW Sapien no está configurado. Define SW_SAPIEN_ENDPOINT y SW_SAPIEN_TOKEN en .env.'
+                'SW Sapien Management no está configurado. Define SW_SAPIEN_MANAGEMENT_ENDPOINT y SW_SAPIEN_TOKEN en .env.'
             );
         }
 
-        $resellersPath = config('services.swsapien.resellers_users_path', '/v3/resellers/users');
-        $url           = rtrim($endpoint, '/') . '/' . ltrim($resellersPath, '/');
+        $managementPath = config('services.swsapien.management_users_path', '/management/v2/api/dealers/users');
+        $url            = rtrim($endpoint, '/') . '/' . ltrim($managementPath, '/');
 
         $payload = [
-            'rfc'          => $profile->rfc,
-            'razon_social' => $profile->razon_social,
-            'email'        => $email,
-            'password'     => $password,
+            'taxId'            => $profile->rfc,
+            'name'             => $profile->razon_social,
+            'email'            => $email,
+            'password'         => $password,
+            'stamps'           => config('services.swsapien.default_stamps', 10),
+            'isUnlimited'      => false,
+            'notificationEmail' => $email,
+            'phone'            => $profile->phone ?? '',
         ];
 
-        // ────────────────────────────────────────────
-        // MOCK: SW Sandbox reseller endpoint returns
-        // 404 until support enables the token. Mock a
-        // successful subaccount creation to unblock
-        // local development.
-        // ────────────────────────────────────────────
-        $swUserId = 'sw_mock_user_998877';
-
-        /*
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . $token,
             'Content-Type'  => 'application/json',
@@ -90,6 +105,7 @@ class SWUserService
             Log::error('SW Sapien sub-user creation rejected', [
                 'fiscal_profile_id' => $profile->id,
                 'rfc'               => $profile->rfc,
+                'endpoint'          => $url,
                 'payload_sent'      => $payload,
                 'http_status'       => $status,
                 'response_json'     => $json,
@@ -105,7 +121,7 @@ class SWUserService
 
         $data = $response->json();
 
-        // SW Sapien returns different shapes depending on version.
+        // Management V2 returns user identifiers in different shapes.
         // Common keys: data.idUser, data.id, idUser, id
         $swUserId = $data['data']['idUser']
             ?? $data['data']['id']
@@ -123,7 +139,6 @@ class SWUserService
                 'El PAC no devolvió un identificador de usuario válido.'
             );
         }
-        */
 
         $profile->update([
             'sw_user_id'       => (string) $swUserId,
@@ -147,19 +162,32 @@ class SWUserService
      */
     public function listSubaccounts(): array
     {
-        $endpoint = config('services.swsapien.endpoint');
+        // ── MOCK ──
+        if (config('services.swsapien.mock')) {
+            return [
+                'data' => [],
+                'status' => 'success',
+            ];
+        }
+
+        $endpoint = $this->resolveManagementEndpoint();
         $token    = config('services.swsapien.token');
 
         if (! $endpoint || ! $token) {
-            throw new \RuntimeException('SW Sapien no está configurado.');
+            throw new \RuntimeException('SW Sapien Management no está configurado.');
         }
 
-        $response = Http::withToken($token)
-            ->withHeaders(['Accept' => 'application/json'])
-            ->get($endpoint . '/v2/users');
+        $managementPath = config('services.swsapien.management_users_path', '/management/v2/api/dealers/users');
+        $url            = rtrim($endpoint, '/') . '/' . ltrim($managementPath, '/');
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+            'Accept'        => 'application/json',
+        ])->get($url);
 
         if ($response->failed()) {
             Log::error('SW Sapien list users failed', [
+                'endpoint'    => $url,
                 'http_status' => $response->status(),
                 'body'        => $response->body(),
             ]);
@@ -171,5 +199,85 @@ class SWUserService
         }
 
         return $response->json();
+    }
+
+    /**
+     * Deactivate a sub-user account in SW Sapien when a fiscal profile
+     * is removed or soft-deactivated locally.
+     *
+     * Uses PATCH /management/v2/api/dealers/users/{userId} with
+     * {"isActive": false} per the official API. DELETE would
+     * permanently remove the account.
+     *
+     * @throws \RuntimeException When the PAC endpoint is unreachable or rejects.
+     */
+    public function deactivateSubaccount(FiscalProfile $profile): void
+    {
+        // ── MOCK ──
+        if (config('services.swsapien.mock')) {
+            Log::info('SW Sapien subaccount deactivated (MOCK)', [
+                'fiscal_profile_id' => $profile->id,
+                'sw_user_id'        => $profile->sw_user_id,
+            ]);
+            return;
+        }
+
+        $endpoint = $this->resolveManagementEndpoint();
+        $token    = config('services.swsapien.token');
+
+        if (! $endpoint || ! $token) {
+            throw new \RuntimeException('SW Sapien Management no está configurado.');
+        }
+
+        if (! $profile->sw_user_id) {
+            return;
+        }
+
+        $managementPath = config('services.swsapien.management_users_path', '/management/v2/api/dealers/users');
+        $url            = rtrim($endpoint, '/') . '/' . ltrim($managementPath, '/') . '/' . $profile->sw_user_id;
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+            'Content-Type'  => 'application/json',
+            'Accept'        => 'application/json',
+        ])->patch($url, [
+            'isActive' => false,
+        ]);
+
+        if ($response->failed()) {
+            Log::error('SW Sapien subaccount deactivation failed', [
+                'fiscal_profile_id' => $profile->id,
+                'sw_user_id'        => $profile->sw_user_id,
+                'endpoint'          => $url,
+                'http_status'       => $response->status(),
+                'body'              => $response->body(),
+            ]);
+
+            throw new \RuntimeException(
+                'El PAC rechazó la desactivación de la subcuenta: '
+                . ($response->json('message') ?? $response->body())
+            );
+        }
+
+        Log::info('SW Sapien subaccount deactivated', [
+            'fiscal_profile_id' => $profile->id,
+            'sw_user_id'        => $profile->sw_user_id,
+        ]);
+    }
+
+    /**
+     * Resolve the correct base URL for Management V2 (dealer) operations.
+     *
+     * SW Sapien uses separate hosts for different API surfaces:
+     *  - services.test.sw.com.mx  → timbrado, cancelación, CSD
+     *  - api.test.sw.com.mx       → administración de subcuentas (Usuarios V2)
+     *
+     * Falls back to the main endpoint if no dedicated management host
+     * is configured, preserving backward compatibility.
+     */
+    private function resolveManagementEndpoint(): string
+    {
+        return config('services.swsapien.management_endpoint')
+            ?: config('services.swsapien.endpoint', 'https://services.test.sw.com.mx');
     }
 }
