@@ -27,6 +27,9 @@ const showAnimation = ref(true);
 const animationFading = ref(false);
 
 onMounted(() => {
+    // Clear the cart now that the order is confirmed (successful payment)
+    sessionStorage.removeItem('store_cart');
+
     // Start fading the green overlay after checkmark appears
     setTimeout(() => { animationFading.value = true; }, 1200);
     // Show content underneath
