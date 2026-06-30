@@ -117,7 +117,8 @@ const placeOrder = () => {
         },
         onFinish: () => {
             submitting.value = false;
-            sessionStorage.removeItem('store_cart');
+            // Cart is NOT cleared here — it stays in sessionStorage until payment is confirmed.
+            // Confirmed.vue clears it on successful order completion.
         },
     });
 };
