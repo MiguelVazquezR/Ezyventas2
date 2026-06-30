@@ -15,6 +15,7 @@ use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 class Product extends Model implements HasMedia
 {
@@ -69,6 +70,18 @@ class Product extends Model implements HasMedia
             'deleted' => 'eliminado',
             default => $eventName,
         };
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | MEDIA COLLECTIONS
+    |--------------------------------------------------------------------------
+    */
+
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('product-general-images');
+        $this->addMediaCollection('product-variant-images');
     }
 
     /*

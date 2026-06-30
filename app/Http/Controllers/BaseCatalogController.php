@@ -131,15 +131,14 @@ class BaseCatalogController extends Controller
                     'location' => null,
                 ]);
 
-                // 4. Copiar Imágenes (Usando Spatie Media Library)
-                // Copiamos de la colección 'global-product-images' a 'product-general-images'
-                $mediaItems = $globalProduct->getMedia('global-product-images');
+                // 4. Copiar imágenes del producto global al producto local
+                $mediaItems = $globalProduct->getMedia('product-general-images');
+
                 foreach ($mediaItems as $media) {
                     try {
                         $media->copy($newProduct, 'product-general-images');
                     } catch (\Exception $e) {
-                        // Silenciamos error de imagen para no detener la transacción si falla una foto
-                        // Log::error("Error copiando imagen producto {$globalProduct->id}: " . $e->getMessage());
+                        \Log::warning("Error copying image for global product {$globalProduct->id}: " . $e->getMessage());
                     }
                 }
 

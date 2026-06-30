@@ -14,6 +14,18 @@ class GlobalProduct extends Model implements HasMedia
 
     protected $guarded = [];
 
+    /*
+    |--------------------------------------------------------------------------
+    | MEDIA COLLECTIONS
+    |--------------------------------------------------------------------------
+    */
+
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('product-general-images')
+            ->singleFile();
+    }
+
     protected function casts(): array
     {
         return [
