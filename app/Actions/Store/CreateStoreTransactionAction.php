@@ -75,15 +75,19 @@ class CreateStoreTransactionAction
                 'line_total'     => $orderItem->subtotal,
             ]);
 
-            // Deduct stock from the branch for this online store sale
-            $product = Product::find($orderItem->product_id);
-            if ($product) {
-                $product->deductStock(
-                    $branch->id,
-                    $orderItem->quantity,
-                    null,
-                    "Venta por tienda en línea — pedido #{$order->formatted_order_number}"
-                );
+            // Deduct stock from the branch for this online store sale.
+            // For MercadoPago orders, stock is deducted only when payment is confirmed.
+            // For cash orders, stock is deducted immediately (paid on delivery).
+            if (! $isMercadoPago) {
+                $product = Product::find($orderItem->product_id);
+                if ($product) {
+                    $product->deductStock(
+                        $branch->id,
+                        $orderItem->quantity,
+                        null,
+                        "Venta por tienda en línea — pedido #{$order->formatted_order_number}"
+                    );
+                }
             }
         }
 

@@ -401,25 +401,45 @@ class PublicStoreController extends Controller
 
         // Success: our URL says success AND MP confirms with payment_id
         if ($mpResult === 'success' && $paymentId) {
-            // Update the pending payment to completed
-            $transaction = $order->transaction;
-            if ($transaction) {
-                $payment = $transaction->payments()
-                    ->where('payment_method', 'card')
-                    ->where('status', 'procesando')
-                    ->first();
+            DB::transaction(function () use ($order, $paymentId, $slug) {
+                $order->load('items');
 
-                if ($payment) {
-                    $payment->update([
-                        'status' => 'completado',
-                        'notes'  => "Pago con Mercado Pago #{$paymentId} — pedido en línea #{$order->formatted_order_number}",
-                    ]);
+                // Deduct stock now that payment is confirmed (was skipped during order creation for MP orders)
+                $branch = \App\Models\Branch::where('subscription_id', $order->subscription_id)->first();
+                if ($branch) {
+                    foreach ($order->items as $orderItem) {
+                        $product = Product::find($orderItem->product_id);
+                        if ($product) {
+                            $product->deductStock(
+                                $branch->id,
+                                $orderItem->quantity,
+                                null,
+                                "Venta por tienda en línea — pedido #{$order->formatted_order_number}"
+                            );
+                        }
+                    }
                 }
 
-                if ($transaction->refresh()->isFullyPaid()) {
-                    $transaction->update(['status' => TransactionStatus::COMPLETED]);
+                // Update the pending payment to completed
+                $transaction = $order->transaction;
+                if ($transaction) {
+                    $payment = $transaction->payments()
+                        ->where('payment_method', 'card')
+                        ->where('status', 'procesando')
+                        ->first();
+
+                    if ($payment) {
+                        $payment->update([
+                            'status' => 'completado',
+                            'notes'  => "Pago con Mercado Pago #{$paymentId} — pedido en línea #{$order->formatted_order_number}",
+                        ]);
+                    }
+
+                    if ($transaction->refresh()->isFullyPaid()) {
+                        $transaction->update(['status' => TransactionStatus::COMPLETED]);
+                    }
                 }
-            }
+            });
 
             return redirect()->route('store.order.confirmed', ['slug' => $slug, 'order' => $order->id]);
         }
