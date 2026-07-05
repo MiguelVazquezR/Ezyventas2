@@ -2,6 +2,8 @@
 import { ref, computed, watch } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
+import { useVirtualNumpad } from '@/Composables/useVirtualNumpad';
+import VirtualNumpad from '@/Components/VirtualNumpad.vue';
 
 const props = defineProps({
     visible: Boolean,
@@ -12,6 +14,12 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible', 'submit']);
 const toast = useToast();
+const { isEnabled: numpadEnabled, open: openNumpad, close: closeNumpad } = useVirtualNumpad();
+
+const numpadInputProps = computed(() => {
+    if (!numpadEnabled.value) return {};
+    return { readonly: true, inputmode: 'none' };
+});
 
 // --- Estado del Formulario ---
 const form = useForm({
@@ -151,7 +159,9 @@ const formatCurrency = (value) => {
                         <label class="text-[10px] font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Cargo por envío</label>
                         <InputNumber v-model="form.shipping_cost" mode="currency" currency="MXN" locale="es-MX" placeholder="$0.00" 
                             class="w-full"
-                            :pt="{ input: { root: { class: 'w-full !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-3' } } }" />
+                            :pt="{ input: { root: { class: 'w-full !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-3', ...numpadInputProps } } }"
+                            @focus="openNumpad({ get: () => form.shipping_cost, set: (v) => form.shipping_cost = v, mode: 'currency', label: 'Cargo por envío', element: $event.target })"
+                            @blur="closeNumpad()" />
                     </div>
                 </div>
 
@@ -202,5 +212,7 @@ const formatCurrency = (value) => {
                 />
             </div>
         </template>
+
+        <VirtualNumpad />
     </Dialog>
 </template>

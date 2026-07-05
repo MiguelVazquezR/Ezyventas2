@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->as('import-export.')->group(function () {
     // Rutas de Productos
+    Route::get('export/products/info', [ImportExportController::class, 'productsExportInfo'])->name('products.export-info');
     Route::get('export/products', [ImportExportController::class, 'exportProducts'])->name('products.export');
     Route::post('import/products', [ImportExportController::class, 'importProducts'])->name('products.import');
     
