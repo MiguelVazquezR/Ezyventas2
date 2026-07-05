@@ -26,6 +26,7 @@ Route::middleware(['auth', 'verified'])->prefix('billing')->name('billing.')->gr
         Route::get('/', [InvoiceController::class, 'index'])->name('index');
         Route::get('/create', [InvoiceController::class, 'create'])->name('create');
         Route::post('/', [InvoiceController::class, 'store'])->name('store');
+        Route::get('/{invoice}/pdf', [InvoiceController::class, 'pdf'])->name('pdf');
         Route::get('/{invoice}', [InvoiceController::class, 'show'])->name('show');
         Route::post('/{invoice}/cancel', [InvoiceController::class, 'cancel'])->name('cancel');
     });

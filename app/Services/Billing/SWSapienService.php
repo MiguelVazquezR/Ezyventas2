@@ -16,70 +16,121 @@ class SWSapienService
 {
     /**
      * Persist a new invoice and its line items in the database.
+     *
+     * Accepts the full validated form payload — including exportacion,
+     * unit_name, no_identificacion, and per-item retentions — and computes
+     * all monetary totals server-side with 6-decimal rate precision.
      */
     public function createInvoice(array $data, int $branchId): Invoice
     {
-        $subtotal = 0;
+        $subtotal      = 0;
         $discountTotal = 0;
-        $taxesTotal = 0;
-        $grandTotal = 0;
+        $taxesTotal    = 0;
+        $retainedTotal = 0;
+        $grandTotal    = 0;
 
         $invoice = Invoice::create([
-            'branch_id'          => $branchId,
-            'fiscal_profile_id'  => $data['fiscal_profile_id'] ?? null,
-            'customer_id'        => $data['customer_id'] ?? null,
-            'series'               => $data['series'] ?? null,
-            'folio'                => $this->generateFolio($branchId),
-            'status'               => InvoiceStatus::DRAFT,
-            'receiver_rfc'         => $data['receiver_rfc'],
-            'receiver_legal_name'   => $data['receiver_legal_name'],
-            'receiver_tax_regime'   => $data['receiver_tax_regime'],
-            'receiver_postal_code'  => $data['receiver_postal_code'],
-            'cfdi_use'              => $data['cfdi_use'],
-            'payment_form'          => $data['payment_form'],
-            'payment_method'        => $data['payment_method'],
-            'currency'              => $data['currency'] ?? 'MXN',
-            'subtotal'              => 0,
-            'discount_total'        => 0,
-            'taxes_total'           => 0,
-            'total'                 => 0,
+            'branch_id'           => $branchId,
+            'fiscal_profile_id'   => $data['fiscal_profile_id'] ?? null,
+            'customer_id'         => $data['customer_id'] ?? null,
+            'series'              => $data['series'] ?? null,
+            'folio'               => $this->generateFolio($branchId),
+            'status'              => InvoiceStatus::DRAFT,
+            'receiver_rfc'        => $data['receiver_rfc'],
+            'receiver_legal_name'  => $data['receiver_legal_name'],
+            'receiver_tax_regime'  => $data['receiver_tax_regime'],
+            'receiver_postal_code' => $data['receiver_postal_code'],
+            'cfdi_use'             => $data['cfdi_use'],
+            'exportacion'          => $data['exportacion'] ?? '01',
+            'payment_form'         => $data['payment_form'],
+            'payment_method'       => $data['payment_method'],
+            'currency'             => $data['currency'] ?? 'MXN',
+            'exchange_rate'        => ($data['currency'] ?? 'MXN') !== 'MXN' ? ($data['exchange_rate'] ?? null) : null,
+            'subtotal'             => 0,
+            'discount_total'       => 0,
+            'taxes_total'          => 0,
+            'retained_taxes_total' => 0,
+            'total'                => 0,
         ]);
 
         foreach ($data['items'] as $itemData) {
-            $taxRate = $itemData['tax_rate'] ?? 0.16;
-            $lineDiscount = $itemData['discount_amount'] ?? 0;
-            $lineSubtotal = round($itemData['quantity'] * $itemData['unit_price'], 2);
-            $lineSubtotalAfterDiscount = $lineSubtotal - $lineDiscount;
-            $lineTaxAmount = round($lineSubtotalAfterDiscount * $taxRate, 2);
-            $lineTotal = round($lineSubtotalAfterDiscount + $lineTaxAmount, 2);
+            // ── Transfer (traslado) ──
+            $taxRate       = (float) ($itemData['tax_rate'] ?? 0.16);
+            $lineDiscount  = (float) ($itemData['discount_amount'] ?? 0);
+            $lineSubtotal  = round((float) $itemData['quantity'] * (float) $itemData['unit_price'], 2);
+            $baseAfterDisc = $lineSubtotal - $lineDiscount;
+            $hasTransfer   = ($itemData['objeto_imp'] ?? '02') === '02';
+            $lineTaxAmount = $hasTransfer ? round($baseAfterDisc * $taxRate, 2) : 0;
+
+            // ── Retention (retención) — from retentions array or legacy single fields ──
+            $retentions = $itemData['retentions'] ?? [];
+
+            // Backward compatibility: if no retentions array but legacy single fields exist, normalize
+            if (empty($retentions) && ! empty($itemData['retained_tax_type'])) {
+                $retentions[] = [
+                    'type'   => $itemData['retained_tax_type'],
+                    'rate'   => (float) ($itemData['retained_tax_rate'] ?? 0),
+                    'amount' => (float) ($itemData['retained_tax_amount'] ?? 0),
+                ];
+            }
+
+            $lineRetainedTotal = 0;
+            $normalizedRetentions = [];
+            foreach ($retentions as $ret) {
+                $retType   = $ret['type'] ?? $ret['retained_tax_type'] ?? null;
+                $retRate   = (float) ($ret['rate'] ?? $ret['retained_tax_rate'] ?? 0);
+                $retAmount = (float) ($ret['amount'] ?? $ret['retained_tax_amount'] ?? 0);
+
+                if (! $retType || $retAmount <= 0) {
+                    continue;
+                }
+
+                $normalizedRetentions[] = [
+                    'type'   => $retType,
+                    'rate'   => $retRate,
+                    'amount' => $retAmount,
+                ];
+                $lineRetainedTotal += $retAmount;
+            }
+
+            $lineTotal = round($baseAfterDisc + $lineTaxAmount - $lineRetainedTotal, 2);
 
             InvoiceItem::create([
-                'invoice_id'       => $invoice->id,
-                'product_id'       => $itemData['product_id'] ?? null,
-                'description'      => $itemData['description'],
-                'quantity'         => $itemData['quantity'],
-                'sat_unit_code'    => $itemData['sat_unit_code'],
-                'unit_price'       => $itemData['unit_price'],
-                'subtotal'         => $lineSubtotal,
-                'discount_amount'  => $lineDiscount,
-                'tax_amount'       => $lineTaxAmount,
-                'total'            => $lineTotal,
-                'sat_product_code' => $itemData['sat_product_code'],
-                'tax_type'         => $itemData['tax_type'] ?? '002',
-                'tax_rate'         => $taxRate,
+                'invoice_id'          => $invoice->id,
+                'product_id'          => $itemData['product_id'] ?? null,
+                'description'         => $itemData['description'],
+                'quantity'            => (float) $itemData['quantity'],
+                'sat_unit_code'       => $itemData['sat_unit_code'],
+                'unit_name'           => $itemData['unit_name'] ?? null,
+                'unit_price'          => (float) $itemData['unit_price'],
+                'subtotal'            => $lineSubtotal,
+                'discount_amount'     => $lineDiscount,
+                'tax_amount'          => $lineTaxAmount,
+                'total'               => $lineTotal,
+                'sat_product_code'    => $itemData['sat_product_code'],
+                'no_identificacion'   => $itemData['no_identificacion'] ?? null,
+                'objeto_imp'          => $itemData['objeto_imp'] ?? '02',
+                'tax_type'            => $itemData['tax_type'] ?? '002',
+                'tax_rate'            => $taxRate,
+                'retained_tax_type'   => $normalizedRetentions[0]['type'] ?? null,
+                'retained_tax_rate'   => $normalizedRetentions[0]['rate'] ?? null,
+                'retained_tax_amount' => $normalizedRetentions[0]['amount'] ?? 0,
+                'retentions'          => ! empty($normalizedRetentions) ? $normalizedRetentions : null,
             ]);
 
-            $subtotal += $lineSubtotal;
+            $subtotal      += $lineSubtotal;
             $discountTotal += $lineDiscount;
-            $taxesTotal += $lineTaxAmount;
-            $grandTotal += $lineTotal;
+            $taxesTotal    += $lineTaxAmount;
+            $retainedTotal += $lineRetainedTotal;
+            $grandTotal    += $lineTotal;
         }
 
         $invoice->update([
-            'subtotal'       => round($subtotal, 2),
-            'discount_total' => round($discountTotal, 2),
-            'taxes_total'    => round($taxesTotal, 2),
-            'total'          => round($grandTotal, 2),
+            'subtotal'             => round($subtotal, 2),
+            'discount_total'       => round($discountTotal, 2),
+            'taxes_total'          => round($taxesTotal, 2),
+            'retained_taxes_total' => round($retainedTotal, 2),
+            'total'                => round($grandTotal, 2),
         ]);
 
         return $invoice;
@@ -88,12 +139,20 @@ class SWSapienService
     /**
      * Build the SW Sapien CFDI 4.0 JSON payload.
      *
-     * Emitter data (RFC, razon social, regimen fiscal, lugar de expedicion)
-     * is sourced from the invoice's FiscalProfile — enabling multi-RFC
-     * billing from a single subscription.
+     * ── PAC formatting rules ──
+     * All numeric values MUST be sent as strings with explicit decimal
+     * formatting. Native PHP floats break SW Sapien validation.
+     *  • Monetary amounts → 2 decimals: number_format($val, 2, '.', '')
+     *  • Rates → 6 decimals: number_format($val, 6, '.', '')
+     *  • Quantities → 4 decimals: number_format($val, 4, '.', '')
+     *  • TipoCambio → "1" when MXN
      *
-     * "Sello", "Certificado" and "NoCertificado" are left empty —
-     * SW Sapien stamps them automatically.
+     * ── Root fields ──
+     * Version, Serie, Folio, Fecha are mandatory per SAT Anexo 20.
+     * Exportacion is dynamic from the invoice record.
+     *
+     * Global Impuestos node aggregates traslados and retenciones by
+     * (Impuesto, TipoFactor, TasaOCuota) per SAT Anexo 20 grouping rules.
      */
     public function buildPayload(Invoice $invoice): array
     {
@@ -105,43 +164,145 @@ class SWSapienService
             );
         }
 
-        $conceptos = $invoice->items->map(function (InvoiceItem $item) {
+        $fmt  = fn (float $v, int $d = 2) => number_format($v, $d, '.', '');
+        $fmt6 = fn (float $v) => $fmt($v, 6);
+        $fmt4 = fn (float $v) => $fmt($v, 4);
+
+        // ── Aggregators for global Impuestos node ──
+        $globalTraslados   = [];
+        $globalRetenciones = [];
+        $totalTrasladados  = 0.0;
+        $totalRetenidos    = 0.0;
+
+        $conceptos = $invoice->items->map(function (InvoiceItem $item) use (
+            &$globalTraslados, &$globalRetenciones, &$totalTrasladados, &$totalRetenidos, $fmt, $fmt6, $fmt4
+        ) {
+            $base = round((float) $item->subtotal - (float) $item->discount_amount, 2);
+
             $concepto = [
-                'ClaveProdServ' => $item->sat_product_code,
-                'ClaveUnidad'   => $item->sat_unit_code,
-                'Cantidad'      => (float) $item->quantity,
-                'Descripcion'   => $item->description,
-                'ValorUnitario' => (float) $item->unit_price,
-                'Importe'       => (float) $item->subtotal,
-                'Descuento'     => (float) $item->discount_amount,
-                'ObjetoImp'     => ($item->tax_amount > 0) ? '02' : '01',
+                'ClaveProdServ'   => $item->sat_product_code,
+                'NoIdentificacion' => $item->no_identificacion ?: null,
+                'ClaveUnidad'     => $item->sat_unit_code,
+                'Unidad'          => $item->unit_name ?: null,
+                'Cantidad'        => $fmt4((float) $item->quantity),
+                'Descripcion'     => $item->description,
+                'ValorUnitario'   => $fmt4((float) $item->unit_price),
+                'Importe'         => $fmt((float) $item->subtotal),
+                'ObjetoImp'       => $item->objeto_imp ?: '02',
             ];
 
-            if ($item->tax_amount > 0) {
-                $concepto['Impuestos'] = [
-                    'Traslados' => [[
-                        'Base'       => round((float) $item->subtotal - (float) $item->discount_amount, 2),
-                        'Impuesto'   => $item->tax_type ?? '002',
-                        'TipoFactor' => 'Tasa',
-                        'TasaOCuota' => (float) $item->tax_rate,
-                        'Importe'    => (float) $item->tax_amount,
-                    ]],
+            // SAT Anexo 20: Descuento is forbidden when zero — omit entirely
+            if ((float) $item->discount_amount > 0) {
+                $concepto['Descuento'] = $fmt((float) $item->discount_amount);
+            }
+
+            // Remove null optional keys per SAT strictness
+            if ($concepto['NoIdentificacion'] === null) unset($concepto['NoIdentificacion']);
+            if ($concepto['Unidad'] === null)           unset($concepto['Unidad']);
+
+            // ── Per-item Impuestos sub-node ──
+            $traslados   = [];
+            $retenciones = [];
+
+            // Transfer (traslado) — SAT requires the node whenever ObjetoImp = 02,
+            // even when the rate is 0 % (tax_amount = 0). Use tax_type/tax_rate
+            // defaults as supplied by the CFDI 4.0 catalogs.
+            if ($item->objeto_imp === '02') {
+                $effTaxRate   = (float) ($item->tax_rate ?? 0.16);
+                $effTaxAmount = (float) $item->tax_amount;
+
+                $traslado = [
+                    'Base'       => $fmt($base),
+                    'Impuesto'   => $item->tax_type ?: '002',
+                    'TipoFactor' => 'Tasa',
+                    'TasaOCuota' => $fmt6($effTaxRate),
+                    'Importe'    => $fmt($effTaxAmount),
                 ];
+
+                $traslados[] = $traslado;
+
+                $key = implode('|', [$traslado['Impuesto'], $traslado['TipoFactor'], $traslado['TasaOCuota']]);
+                if (! isset($globalTraslados[$key])) {
+                    $globalTraslados[$key] = [
+                        'Base'       => 0.0,
+                        'Impuesto'   => $traslado['Impuesto'],
+                        'TipoFactor' => $traslado['TipoFactor'],
+                        'TasaOCuota' => (float) $traslado['TasaOCuota'],
+                        'Importe'    => 0.0,
+                    ];
+                }
+                $globalTraslados[$key]['Base']    = round($globalTraslados[$key]['Base'] + (float) $traslado['Base'], 2);
+                $globalTraslados[$key]['Importe'] = round($globalTraslados[$key]['Importe'] + (float) $traslado['Importe'], 2);
+                $totalTrasladados = round($totalTrasladados + (float) $traslado['Importe'], 2);
+            }
+
+            // Retention (retención) — from retentions JSON array or legacy single fields
+            $retentions = $item->retentions ?? [];
+
+            // Backward compatibility: normalize legacy single retention fields
+            if (empty($retentions) && $item->retained_tax_type && (float) $item->retained_tax_amount > 0) {
+                $retentions = [[
+                    'type'   => $item->retained_tax_type,
+                    'rate'   => (float) ($item->retained_tax_rate ?: 0),
+                    'amount' => (float) $item->retained_tax_amount,
+                ]];
+            }
+
+            foreach ($retentions as $ret) {
+                $retType   = $ret['type'] ?? null;
+                $retRate   = (float) ($ret['rate'] ?? 0);
+                $retAmount = (float) ($ret['amount'] ?? 0);
+
+                if (! $retType || $retAmount <= 0) {
+                    continue;
+                }
+
+                $retencion = [
+                    'Base'       => $fmt($base),
+                    'Impuesto'   => $retType,
+                    'TipoFactor' => 'Tasa',
+                    'TasaOCuota' => $fmt6($retRate),
+                    'Importe'    => $fmt($retAmount),
+                ];
+
+                $retenciones[] = $retencion;
+
+                // Global retenciones: aggregate by Impuesto only (SAT groups
+                // retentions by tax type, not by rate — per Anexo 20).
+                $key = $retencion['Impuesto'];
+                if (! isset($globalRetenciones[$key])) {
+                    $globalRetenciones[$key] = [
+                        'Impuesto' => $retencion['Impuesto'],
+                        'Importe'  => 0.0,
+                    ];
+                }
+                $globalRetenciones[$key]['Importe'] = round($globalRetenciones[$key]['Importe'] + (float) $retencion['Importe'], 2);
+                $totalRetenidos = round($totalRetenidos + (float) $retencion['Importe'], 2);
+            }
+
+            if (count($traslados) || count($retenciones)) {
+                $concepto['Impuestos'] = [];
+                if (count($traslados))   $concepto['Impuestos']['Traslados']   = $traslados;
+                if (count($retenciones)) $concepto['Impuestos']['Retenciones'] = $retenciones;
             }
 
             return $concepto;
         })->values()->toArray();
 
+        // ── Root payload with all mandatory SAT fields ──
         $payload = [
+            'Version'           => '4.0',
+            'Serie'             => $invoice->series ?: '',
+            'Folio'             => $invoice->folio,
+            'Fecha'             => $invoice->fecha ?: now()->format('Y-m-d\TH:i:s'),
             'TipoDeComprobante' => 'I',
             'LugarExpedicion'   => $invoice->fiscalProfile->postal_code ?? '',
-            'Exportacion'       => '01',
+            'Exportacion'       => $invoice->exportacion ?: '01',
             'FormaPago'         => $invoice->payment_form,
             'MetodoPago'        => $invoice->payment_method,
             'Moneda'            => $invoice->currency,
-            'SubTotal'          => (float) $invoice->subtotal,
-            'Descuento'         => (float) $invoice->discount_total,
-            'Total'             => (float) $invoice->total,
+            'SubTotal'          => $fmt((float) $invoice->subtotal),
+            'Total'             => $fmt((float) $invoice->total),
             'Sello'             => '',
             'Certificado'       => '',
             'NoCertificado'     => '',
@@ -160,7 +321,55 @@ class SWSapienService
             'Conceptos' => $conceptos,
         ];
 
-        // Remove optional null values
+        // SAT Anexo 20: Descuento at root level only when > 0
+        if ((float) $invoice->discount_total > 0) {
+            $payload['Descuento'] = $fmt((float) $invoice->discount_total);
+        }
+
+        // TipoCambio: required for non-MXN currencies per SAT Anexo 20.
+        // Uses the exchange rate captured from the invoice form, formatted to 6 decimals.
+        if (($invoice->currency ?? 'MXN') !== 'MXN') {
+            $exchangeRate = (float) ($invoice->exchange_rate ?? 1);
+
+            if ($exchangeRate <= 0) {
+                throw new \RuntimeException(
+                    'El tipo de cambio es obligatorio cuando la moneda no es MXN. Captura el TipoCambio en el formulario.'
+                );
+            }
+
+            $payload['TipoCambio'] = $fmt6($exchangeRate);
+        }
+
+        // ── Global Impuestos node (only when totals > 0) ──
+        if (count($globalTraslados) || count($globalRetenciones)) {
+            $payload['Impuestos'] = [];
+
+            if (count($globalTraslados)) {
+                $formatted = array_map(fn (array $t) => [
+                    'Base'       => $fmt($t['Base']),
+                    'Impuesto'   => $t['Impuesto'],
+                    'TipoFactor' => $t['TipoFactor'],
+                    'TasaOCuota' => $fmt6($t['TasaOCuota']),
+                    'Importe'    => $fmt($t['Importe']),
+                ], array_values($globalTraslados));
+
+                $payload['Impuestos']['TotalImpuestosTrasladados'] = $fmt($totalTrasladados);
+                $payload['Impuestos']['Traslados'] = $formatted;
+            }
+
+            if (count($globalRetenciones)) {
+                // Global retenciones only expose Impuesto + Importe per SW Sapien spec
+                $formatted = array_map(fn (array $r) => [
+                    'Impuesto' => $r['Impuesto'],
+                    'Importe'  => $fmt($r['Importe']),
+                ], array_values($globalRetenciones));
+
+                $payload['Impuestos']['TotalImpuestosRetenidos'] = $fmt($totalRetenidos);
+                $payload['Impuestos']['Retenciones'] = $formatted;
+            }
+        }
+
+        // PUE with payment form 99 → CondicionesDePago = "Contado"
         if (($invoice->payment_form ?? '') === '99') {
             $payload['CondicionesDePago'] = 'Contado';
         }
@@ -175,34 +384,6 @@ class SWSapienService
      */
     public function stamp(Invoice $invoice): void
     {
-        // ── MOCK: Skip real PAC call while token/auth issues are resolved ──
-        if (config('services.swsapien.mock')) {
-            $uuid  = Str::uuid()->toString();
-            $xml   = '<?xml version="1.0" encoding="UTF-8"?><cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" UUID="' . $uuid . '" /><!-- MOCK XML -->';
-
-            $xmlPath = 'invoices/xml/' . $uuid . '.xml';
-            Storage::disk('public')->put($xmlPath, $xml);
-
-            // Generate a minimal valid blank PDF for UI testing
-            $pdfPath = 'invoices/pdf/' . $uuid . '.pdf';
-            Storage::disk('public')->put($pdfPath, $this->buildMinimalPdf($uuid));
-
-            $invoice->update([
-                'uuid'      => $uuid,
-                'xml_url'   => $xmlPath,
-                'pdf_url'   => $pdfPath,
-                'status'    => InvoiceStatus::CERTIFIED,
-                'issued_at' => now(),
-            ]);
-
-            Log::info('SW Sapien invoice stamped (MOCK)', [
-                'invoice_id' => $invoice->id,
-                'uuid'       => $uuid,
-            ]);
-
-            return;
-        }
-
         $endpoint = config('services.swsapien.endpoint');
         $token    = config('services.swsapien.token');
 
@@ -214,20 +395,30 @@ class SWSapienService
 
         $payload = $this->buildPayload($invoice);
 
+        // ── Build headers: inject User-Id when stamping under a subaccount ──
+        $headers = [
+            'Content-Type' => 'application/jsontoxml',
+        ];
+
+        if ($invoice->fiscalProfile?->sw_user_id) {
+            $headers['User-Id'] = $invoice->fiscalProfile->sw_user_id;
+        }
+
         $response = Http::withToken($token)
-            ->withHeaders([
-                'Content-Type' => 'application/jsontoxml',
-                'extra'        => 'pdf',
-            ])
-            ->post($endpoint . '/v4/cfdi40/issue/json', $payload);
+            ->withHeaders($headers)
+            ->post($endpoint . '/v3/cfdi33/issue/json/v4', $payload);
 
         if ($response->failed()) {
+            $errorMsg = $response->json('message')
+                ?? $response->json('messageDetail')
+                ?? $response->body();
+
             Log::error("SW Sapien stamping failed for invoice {$invoice->id}", [
                 'status' => $response->status(),
                 'body'   => $response->body(),
             ]);
             throw new \RuntimeException(
-                'El PAC rechazó el timbrado: ' . ($response->json('message') ?? $response->body())
+                'El PAC rechazó el timbrado (HTTP ' . $response->status() . '): ' . $errorMsg
             );
         }
 
@@ -268,23 +459,6 @@ class SWSapienService
      */
     public function cancel(Invoice $invoice, string $emitterRfc, string $reason, ?string $substitutionUuid = null): void
     {
-        // ── MOCK ──
-        if (config('services.swsapien.mock')) {
-            $invoice->update([
-                'status'              => InvoiceStatus::CANCELED,
-                'cancellation_reason' => $reason,
-                'canceled_at'         => now(),
-            ]);
-
-            Log::info('SW Sapien invoice cancelled (MOCK)', [
-                'invoice_id' => $invoice->id,
-                'uuid'       => $invoice->uuid,
-                'reason'     => $reason,
-            ]);
-
-            return;
-        }
-
         $endpoint = config('services.swsapien.endpoint');
         $token    = config('services.swsapien.token');
 
@@ -292,7 +466,7 @@ class SWSapienService
             throw new \RuntimeException('SW Sapien no está configurado.');
         }
 
-        $url = $endpoint . '/v4/cfdi40/cancel/'
+        $url = $endpoint . '/cfdi33/cancel/'
             . $emitterRfc . '/'
             . $invoice->uuid . '/'
             . $reason . '/'
@@ -382,25 +556,6 @@ class SWSapienService
      */
     public function uploadCsd(FiscalProfile $profile, string $cerPath, string $keyPath, string $password): array
     {
-        // ── MOCK ──
-        if (config('services.swsapien.mock')) {
-            $mockResult = [
-                'status'             => 'success',
-                'message'            => 'Certificado cargado y validado con éxito en el PAC (MOCK).',
-                'certificate_number' => '00001000000504455667',
-                'valid_from'         => now()->toDateTimeString(),
-                'valid_to'           => now()->addYears(4)->toDateTimeString(),
-            ];
-
-            Log::info('SW Sapien CSD uploaded successfully (MOCK)', [
-                'fiscal_profile_id'  => $profile->id,
-                'rfc'                => $profile->rfc,
-                'certificate_number' => $mockResult['certificate_number'],
-            ]);
-
-            return $mockResult;
-        }
-
         $endpoint = config('services.swsapien.endpoint');
         $token    = config('services.swsapien.token');
 
@@ -412,34 +567,64 @@ class SWSapienService
             throw new \RuntimeException('El perfil fiscal no tiene un sw_user_id. Aprovisiona la subcuenta primero.');
         }
 
-        $response = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $token,
-            'Accept'        => 'application/json',
-        ])
-            ->attach('cer', file_get_contents($cerPath), basename($cerPath))
-            ->attach('key', file_get_contents($keyPath), basename($keyPath))
-            ->post($endpoint . '/v2/csd/upload', [
-                'userId'   => $profile->sw_user_id,
-                'rfc'      => $profile->rfc,
-                'password' => $password,
-            ]);
+        $cerContent = file_get_contents($cerPath);
+        $keyContent = file_get_contents($keyPath);
 
-        if ($response->failed()) {
-            Log::error('SW Sapien CSD upload rejected', [
-                'fiscal_profile_id' => $profile->id,
-                'rfc'               => $profile->rfc,
-                'sw_user_id'        => $profile->sw_user_id,
-                'http_status'       => $response->status(),
-                'body'              => $response->body(),
-            ]);
-
-            throw new \RuntimeException(
-                'El PAC rechazó la carga del CSD: '
-                . ($response->json('message') ?? $response->body())
-            );
+        if (! $cerContent || ! $keyContent) {
+            throw new \RuntimeException('No se pudieron leer los archivos del CSD.');
         }
 
-        $data = $response->json();
+        // ── Convert PEM → raw DER binary before base64-encoding ──
+        // SW Sapien expects the pure DER binary, not the PEM-armored
+        // version with -----BEGIN/END headers and line breaks.
+        $cerDer = $this->extractDerFromPem($cerContent, 'CERTIFICATE');
+        $keyDer = $this->extractDerFromPem($keyContent, 'PRIVATE KEY');
+
+        $payload = [
+            'b64Key'   => base64_encode($keyDer),
+            'b64Cer'   => base64_encode($cerDer),
+            'password' => $password,
+            'type'     => 'stamp',
+        ];
+
+        try {
+            $response = Http::withToken($token)
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                    'Accept'       => 'application/json',
+                    'User-Id'      => $profile->sw_user_id,
+                ])
+                ->post($endpoint . '/certificates/save', $payload);
+
+            if ($response->failed()) {
+                dd([
+                    'payload_enviado' => $payload,
+                    'http_status'     => $response->status(),
+                    'error_pac_json'  => $response->json(),
+                    'error_pac_raw'   => $response->body(),
+                ]);
+            }
+
+            $data = $response->json();
+
+            if (($data['status'] ?? '') !== 'success') {
+                dd([
+                    'payload_enviado' => $payload,
+                    'http_status'     => $response->status(),
+                    'error_pac_json'  => $data,
+                    'error_pac_raw'   => $response->body(),
+                ]);
+            }
+        } catch (\Exception $e) {
+            dd([
+                'payload_enviado'  => $payload,
+                'exception_class'  => get_class($e),
+                'exception_message' => $e->getMessage(),
+                'http_status'      => isset($response) ? $response->status() : 'N/A (exception before response)',
+                'error_pac_json'   => isset($response) ? $response->json() : null,
+                'error_pac_raw'    => isset($response) ? $response->body() : $e->getTraceAsString(),
+            ]);
+        }
 
         $result = [
             'status'             => $data['status'] ?? 'success',
@@ -457,6 +642,43 @@ class SWSapienService
         ]);
 
         return $result;
+    }
+
+    /**
+     * Strip PEM armor and return raw DER binary content.
+     *
+     * CSD files from the SAT may arrive in two formats:
+     *  - Raw DER binary (already fine — returned as-is).
+     *  - PEM-armored (base64 between -----BEGIN/END----- headers).
+     *
+     * SW Sapien requires pure DER, so PEM must be decoded first.
+     *
+     * @param  string $content Raw file bytes.
+     * @param  string $label   PEM label (CERTIFICATE or PRIVATE KEY).
+     * @return string          Raw DER binary.
+     */
+    private function extractDerFromPem(string $content, string $label): string
+    {
+        // Detect PEM armor by looking for the BEGIN header
+        if (str_contains($content, '-----BEGIN ' . $label . '-----')) {
+            // Strip headers, footers, and all whitespace / line breaks
+            $content = preg_replace('/-----BEGIN ' . $label . '-----/', '', $content);
+            $content = preg_replace('/-----END ' . $label . '-----/', '', $content);
+        }
+
+        // Remove any remaining whitespace, newlines, or carriage returns
+        $cleaned = preg_replace('/\s+/', '', $content);
+
+        // If the result looks like base64, decode to DER; otherwise it's already DER
+        if (preg_match('/^[a-zA-Z0-9+\/=]+$/', $cleaned) && strlen($cleaned) > 64) {
+            $decoded = base64_decode($cleaned, true);
+            if ($decoded !== false) {
+                return $decoded;
+            }
+        }
+
+        // Already raw binary DER — return as-is
+        return $content;
     }
 
     /**
@@ -591,28 +813,6 @@ class SWSapienService
             'uuid'       => $invoice->uuid,
             'to'         => $toEmail,
         ]);
-    }
-
-    /**
-     * Build a minimal valid blank PDF for mock/stub purposes.
-     *
-     * Produces a ~250-byte PDF with a single blank US Letter page
-     * containing the invoice UUID as metadata.
-     */
-    private function buildMinimalPdf(string $uuid): string
-    {
-        return "%PDF-1.0\n"
-            . "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
-            . "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
-            . "3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R/Resources<<>>>>endobj\n"
-            . "xref\n0 4\n"
-            . "0000000000 65535 f \n"
-            . "0000000009 00000 n \n"
-            . "0000000058 00000 n \n"
-            . "0000000115 00000 n \n"
-            . "trailer<</Size 4/Root 1 0 R>>\n"
-            . "startxref\n190\n"
-            . "%%EOF";
     }
 
     /**

@@ -195,13 +195,12 @@ const tagPt = {
                         @click="openUrl(invoice.xml_url)"
                     />
                     <Button
-                        v-if="invoice.pdf_url"
                         icon="pi pi-file-pdf !text-sm"
                         label="PDF"
                         severity="secondary"
                         outlined
                         class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold"
-                        @click="openUrl(invoice.pdf_url)"
+                        @click="window.open(route('billing.invoices.pdf', invoice.id), '_blank')"
                     />
                 </div>
             </div>

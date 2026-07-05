@@ -14,6 +14,12 @@ class StoreInvoiceRequest extends FormRequest
     public function rules(): array
     {
         return [
+            // --- Emitter (emisor) ---
+            'fiscal_profile_id'     => ['required', 'integer', 'exists:fiscal_profiles,id'],
+
+            // --- Global CFDI 4.0 attributes ---
+            'exportacion'           => ['required', 'string', 'max:5', 'in:01,02,03,04'],
+
             // --- Receiver (receptor) ---
             'receiver_rfc'          => ['required', 'string', 'size:13'],
             'receiver_legal_name'   => ['required', 'string', 'max:255'],
@@ -25,6 +31,7 @@ class StoreInvoiceRequest extends FormRequest
             'payment_form'          => ['required', 'string', 'max:5'],
             'payment_method'        => ['required', 'string', 'max:5'],
             'currency'              => ['nullable', 'string', 'max:5'],
+            'exchange_rate'         => ['nullable', 'numeric', 'min:0.000001'],
 
             // --- Items ---
             'items'                 => ['required', 'array', 'min:1'],
@@ -33,9 +40,22 @@ class StoreInvoiceRequest extends FormRequest
             'items.*.unit_price'    => ['required', 'numeric', 'min:0'],
             'items.*.sat_product_code' => ['required', 'string', 'max:15'],
             'items.*.sat_unit_code' => ['required', 'string', 'max:10'],
+            'items.*.unit_name'     => ['nullable', 'string', 'max:50'],
+            'items.*.no_identificacion' => ['nullable', 'string', 'max:100'],
+            'items.*.objeto_imp'    => ['required', 'string', 'max:5', 'in:01,02,03'],
+            'items.*.concepto_tipo' => ['nullable', 'string', 'max:30'],
             'items.*.tax_type'      => ['nullable', 'string', 'max:5'],
             'items.*.tax_rate'      => ['nullable', 'numeric', 'min:0', 'max:1'],
             'items.*.discount_amount' => ['nullable', 'numeric', 'min:0'],
+            'items.*.retained_tax_type'   => ['nullable', 'string', 'max:5'],
+            'items.*.retained_tax_rate'   => ['nullable', 'numeric', 'min:0', 'max:1'],
+            'items.*.retained_tax_amount' => ['nullable', 'numeric', 'min:0'],
+
+            // --- Multi-retention array (replaces single retained_tax_* fields) ---
+            'items.*.retentions'                => ['nullable', 'array'],
+            'items.*.retentions.*.type'         => ['required_with:items.*.retentions', 'string', 'max:5', 'in:001,002'],
+            'items.*.retentions.*.rate'         => ['required_with:items.*.retentions', 'numeric', 'min:0', 'max:1'],
+            'items.*.retentions.*.amount'       => ['required_with:items.*.retentions', 'numeric', 'min:0'],
 
             // --- Optional relations ---
             'customer_id'           => ['nullable', 'integer', 'exists:customers,id'],
@@ -46,6 +66,10 @@ class StoreInvoiceRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'fiscal_profile_id.required'     => 'Selecciona un perfil fiscal emisor.',
+            'fiscal_profile_id.exists'       => 'El perfil fiscal seleccionado no existe.',
+            'exportacion.required'           => 'El campo exportación es obligatorio.',
+            'exportacion.in'                 => 'El valor de exportación no es válido.',
             'receiver_rfc.required'          => 'El campo RFC es obligatorio.',
             'receiver_rfc.size'              => 'El RFC debe tener exactamente 13 caracteres.',
             'receiver_legal_name.required'   => 'La razón social es obligatoria.',
@@ -64,9 +88,21 @@ class StoreInvoiceRequest extends FormRequest
             'items.*.unit_price.min'         => 'El precio unitario no puede ser negativo.',
             'items.*.sat_product_code.required' => 'La clave de producto SAT es obligatoria.',
             'items.*.sat_unit_code.required' => 'La clave de unidad SAT es obligatoria.',
+            'items.*.objeto_imp.required'    => 'El objeto de impuesto es obligatorio.',
+            'items.*.objeto_imp.in'          => 'El objeto de impuesto no es válido (01, 02 o 03).',
             'items.*.tax_rate.min'           => 'La tasa de impuesto no puede ser negativa.',
             'items.*.tax_rate.max'           => 'La tasa de impuesto no puede exceder 1 (100 %).',
             'items.*.discount_amount.min'    => 'El descuento no puede ser negativo.',
+            'items.*.retained_tax_rate.min'  => 'La tasa de retención no puede ser negativa.',
+            'items.*.retained_tax_rate.max'  => 'La tasa de retención no puede exceder 1 (100 %).',
+            'items.*.retained_tax_amount.min'=> 'El importe de retención no puede ser negativo.',
+            'items.*.retentions.*.type.required_with' => 'El tipo de retención es obligatorio.',
+            'items.*.retentions.*.type.in'           => 'El tipo de retención debe ser 001 (ISR) o 002 (IVA).',
+            'items.*.retentions.*.rate.required_with' => 'La tasa de retención es obligatoria.',
+            'items.*.retentions.*.rate.min'          => 'La tasa de retención no puede ser negativa.',
+            'items.*.retentions.*.rate.max'          => 'La tasa de retención no puede exceder 1 (100 %).',
+            'items.*.retentions.*.amount.required_with' => 'El importe de retención es obligatorio.',
+            'items.*.retentions.*.amount.min'        => 'El importe de retención no puede ser negativo.',
         ];
     }
 }

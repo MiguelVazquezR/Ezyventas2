@@ -128,6 +128,7 @@ const form = useForm({
     payment_form: '',
     payment_method: '',
     currency: 'MXN',
+    exchange_rate: null,
     exportacion: '01',
 
     // Relation
@@ -177,6 +178,11 @@ const paymentFormOptions = [
 const paymentMethodOptions = [
     { label: 'PUE — Pago en una sola exhibición', value: 'PUE' },
     { label: 'PPD — Pago en parcialidades o diferido', value: 'PPD' },
+];
+
+const currencyOptions = [
+    { label: 'MXN — Peso mexicano', value: 'MXN' },
+    { label: 'USD — Dólar estadounidense', value: 'USD' },
 ];
 
 const taxRegimeOptions = [
@@ -246,11 +252,16 @@ const blankItem = () => ({
     unit_price: 0,
     sat_product_code: '',
     sat_unit_code: 'H87',
+    unit_name: '',
+    no_identificacion: '',
     objeto_imp: '02',
     concepto_tipo: null,
     tax_type: '002',
     tax_rate: 0.16,
     discount_amount: 0,
+    retained_tax_type: null,
+    retained_tax_rate: null,
+    retained_tax_amount: 0,
 });
 
 const addItem = () => {
@@ -272,6 +283,7 @@ const {
     granTotal,
     retentionApplies,
     isResico,
+    breakdown,
     formatCurrency,
 } = useInvoiceTaxes(form, fiscalProfiles, customers);
 
@@ -291,9 +303,51 @@ watch(() => form.customer_id, (newId) => {
 });
 
 // ──────────────────────────────────────
-// Submit
+// Submit — inject computed retention data from breakdown into each item
+// Retentions are sent as an array (same structure as Traslados), allowing
+// ISR (001) and IVA (002) to coexist on the same concept per SAT rules.
 // ──────────────────────────────────────
 const submit = () => {
+    const items = form.items;
+    const bd = breakdown.value;
+
+    for (let i = 0; i < items.length; i++) {
+        const entry = bd[i];
+        if (!entry) continue;
+
+        // Build retentions array — both ISR and IVA can coexist
+        const retentions = [];
+
+        if (entry.isrRetention > 0) {
+            retentions.push({
+                type: '001',
+                rate: entry.rates.isrRate,
+                amount: entry.isrRetention,
+            });
+        }
+
+        if (entry.ivaRetention > 0) {
+            retentions.push({
+                type: '002',
+                rate: entry.rates.ivaRetentionRate,
+                amount: entry.ivaRetention,
+            });
+        }
+
+        items[i].retentions = retentions.length > 0 ? retentions : null;
+
+        // Backward compatibility: also set legacy single fields (first retention, if any)
+        if (retentions.length > 0) {
+            items[i].retained_tax_type  = retentions[0].type;
+            items[i].retained_tax_rate  = retentions[0].rate;
+            items[i].retained_tax_amount = retentions[0].amount;
+        } else {
+            items[i].retained_tax_type  = null;
+            items[i].retained_tax_rate  = null;
+            items[i].retained_tax_amount = 0;
+        }
+    }
+
     form.post(route('billing.invoices.store'));
 };
 </script>
@@ -497,6 +551,20 @@ const submit = () => {
                                 <Message v-if="form.errors.payment_method" severity="error" variant="simple" size="small">{{ form.errors.payment_method }}</Message>
                             </div>
                         </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mt-5">
+                            <div class="flex flex-col gap-1.5">
+                                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Moneda</label>
+                                <Select v-model="form.currency" :options="currencyOptions" optionLabel="label" optionValue="value" placeholder="MXN" class="w-full" :pt="selectPt" />
+                                <Message v-if="form.errors.currency" severity="error" variant="simple" size="small">{{ form.errors.currency }}</Message>
+                            </div>
+                            <div v-if="form.currency !== 'MXN'" class="flex flex-col gap-1.5">
+                                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Tipo de cambio *</label>
+                                <InputNumber v-model="form.exchange_rate" :minFractionDigits="6" :maxFractionDigits="6" :min="0.000001" placeholder="1.000000" class="w-full" :pt="inputNumberPt" />
+                                <Message v-if="form.errors.exchange_rate" severity="error" variant="simple" size="small">{{ form.errors.exchange_rate }}</Message>
+                                <p v-else class="text-[9px] text-gray-400 dark:text-gray-500 m-0">Requerido por el SAT cuando la moneda no es MXN (Anexo 20).</p>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- ── SECTION: Conceptos ── -->
@@ -557,6 +625,20 @@ const submit = () => {
                                         <label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Precio unitario</label>
                                         <InputNumber v-model="item.unit_price" mode="currency" currency="MXN" :minFractionDigits="2" :min="0" class="w-full" :pt="inputNumberPt" />
                                         <Message v-if="form.errors[`items.${index}.unit_price`]" severity="error" variant="simple" size="small">{{ form.errors[`items.${index}.unit_price`] }}</Message>
+                                    </div>
+                                </div>
+
+                                <!-- Row 2b: Unit name + SKU -->
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                                    <div class="flex flex-col gap-1.5">
+                                        <label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Unidad (nombre comercial)</label>
+                                        <InputText v-model="item.unit_name" placeholder="Pieza, Servicio, Horas..." maxlength="50" class="w-full" :pt="inputPt" />
+                                        <Message v-if="form.errors[`items.${index}.unit_name`]" severity="error" variant="simple" size="small">{{ form.errors[`items.${index}.unit_name`] }}</Message>
+                                    </div>
+                                    <div class="flex flex-col gap-1.5">
+                                        <label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">SKU / No. identificación</label>
+                                        <InputText v-model="item.no_identificacion" placeholder="SKU-001" maxlength="100" class="w-full" :pt="inputPt" />
+                                        <Message v-if="form.errors[`items.${index}.no_identificacion`]" severity="error" variant="simple" size="small">{{ form.errors[`items.${index}.no_identificacion`] }}</Message>
                                     </div>
                                 </div>
 

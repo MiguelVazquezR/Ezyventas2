@@ -347,11 +347,10 @@ const tagPt = {
                                     v-tooltip.top="'Descargar XML'"
                                 />
                                 <Button
-                                    v-if="data.pdf_url"
                                     icon="pi pi-file-pdf"
                                     text
                                     rounded
-                                    @click="openUrl(data.pdf_url)"
+                                    @click="window.open(route('billing.invoices.pdf', data.id), '_blank')"
                                     class="!w-8 !h-8 !text-red-600 hover:!bg-red-50 dark:hover:!bg-red-900/20 !transition-colors"
                                     v-tooltip.top="'Ver PDF'"
                                 />

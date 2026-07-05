@@ -7,7 +7,6 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 /**
  * SWUserService
@@ -45,24 +44,6 @@ class SWUserService
         string $email,
         string $password,
     ): void {
-        // ── MOCK: Skip real HTTP call while token/auth issues are resolved ──
-        if (config('services.swsapien.mock')) {
-            $swUserId = 'sw_mock_' . Str::random(12);
-
-            $profile->update([
-                'sw_user_id'       => $swUserId,
-                'sw_account_email' => $email,
-            ]);
-
-            Log::info('SW Sapien sub-user created (MOCK)', [
-                'fiscal_profile_id' => $profile->id,
-                'rfc'               => $profile->rfc,
-                'sw_user_id'        => $swUserId,
-            ]);
-
-            return;
-        }
-
         $endpoint = $this->resolveManagementEndpoint();
         $token    = config('services.swsapien.token');
 
@@ -162,14 +143,6 @@ class SWUserService
      */
     public function listSubaccounts(): array
     {
-        // ── MOCK ──
-        if (config('services.swsapien.mock')) {
-            return [
-                'data' => [],
-                'status' => 'success',
-            ];
-        }
-
         $endpoint = $this->resolveManagementEndpoint();
         $token    = config('services.swsapien.token');
 
@@ -213,15 +186,6 @@ class SWUserService
      */
     public function deactivateSubaccount(FiscalProfile $profile): void
     {
-        // ── MOCK ──
-        if (config('services.swsapien.mock')) {
-            Log::info('SW Sapien subaccount deactivated (MOCK)', [
-                'fiscal_profile_id' => $profile->id,
-                'sw_user_id'        => $profile->sw_user_id,
-            ]);
-            return;
-        }
-
         $endpoint = $this->resolveManagementEndpoint();
         $token    = config('services.swsapien.token');
 

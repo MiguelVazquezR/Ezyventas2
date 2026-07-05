@@ -34,27 +34,41 @@ class Invoice extends Model
         'receiver_tax_regime',
         'receiver_postal_code',
         'cfdi_use',
+        'exportacion',
         'payment_form',
         'payment_method',
         'currency',
         'subtotal',
         'discount_total',
         'taxes_total',
+        'retained_taxes_total',
         'total',
+        'exchange_rate',
         'cancellation_reason',
     ];
 
     protected function casts(): array
     {
         return [
-            'status'         => InvoiceStatus::class,
-            'issued_at'      => 'datetime',
-            'canceled_at'    => 'datetime',
-            'subtotal'       => 'decimal:2',
-            'discount_total' => 'decimal:2',
-            'taxes_total'    => 'decimal:2',
-            'total'          => 'decimal:2',
+            'status'               => InvoiceStatus::class,
+            'issued_at'            => 'datetime',
+            'canceled_at'          => 'datetime',
+            'created_at'           => 'datetime',
+            'subtotal'             => 'decimal:2',
+            'discount_total'       => 'decimal:2',
+            'taxes_total'          => 'decimal:2',
+            'retained_taxes_total' => 'decimal:2',
+            'total'                => 'decimal:2',
+            'exchange_rate'        => 'decimal:6',
         ];
+    }
+
+    /**
+     * SAT-compliant ISO 8601 timestamp (Y-m-d\TH:i:s).
+     */
+    public function getFechaAttribute(): string
+    {
+        return $this->created_at->format('Y-m-d\TH:i:s');
     }
 
     public function getActivitylogOptions(): LogOptions
