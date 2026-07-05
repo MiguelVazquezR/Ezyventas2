@@ -186,6 +186,20 @@ class CashRegisterSession extends Model
         $this->cashRegister->update(['in_use' => false]);
     }
 
+    /**
+     * Actualiza únicamente el monto de "contado físico" (closing_cash_balance)
+     * y recalcula la diferencia de caja sin alterar el resto de campos.
+     */
+    public function updateClosingCashBalance(float $newClosingCashBalance): void
+    {
+        $difference = $newClosingCashBalance - $this->calculated_cash_total;
+
+        $this->update([
+            'closing_cash_balance' => $newClosingCashBalance,
+            'cash_difference' => $difference,
+        ]);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | RELACIONES

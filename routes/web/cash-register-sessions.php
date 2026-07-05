@@ -11,6 +11,8 @@ Route::middleware('auth')->group(function () {
         // Debe ir ANTES de 'resource' para que sea reconocida correctamente
     Route::post('cash-register-sessions/rejoin-or-start', [CashRegisterSessionController::class, 'rejoinOrStart'])
         ->name('cash-register-sessions.rejoinOrStart');
+    Route::patch('cash-register-sessions/{cashRegisterSession}/update-closing-cash', [CashRegisterSessionController::class, 'updateClosingCashBalance'])
+        ->name('cash-register-sessions.update-closing-cash');
         
     Route::resource('cash-register-sessions', CashRegisterSessionController::class);
 });

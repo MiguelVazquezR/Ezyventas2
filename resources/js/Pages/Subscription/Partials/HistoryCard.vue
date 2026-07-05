@@ -115,52 +115,55 @@ const dialogPt = {
                         <!-- Tabla Conceptos -->
                         <div class="mb-6">
                             <h4 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-3">Conceptos del plan</h4>
-                            <DataTable :value="version.processed_items" responsiveLayout="scroll" :pt="subDataTablePt">
-                                <Column field="name" header="Concepto">
-                                    <template #body="{ data }"><span class="font-medium text-gray-900 dark:text-white m-0">{{ data.name }}</span></template>
-                                </Column>
-                                <Column header="Cantidad">
-                                    <template #body="{ data }">
-                                        <div v-if="data.status === 'upgraded'" class="flex items-center gap-1.5 font-mono text-sm">
-                                            <span class="text-gray-400 line-through">{{ data.previous_quantity }}</span>
-                                            <i class="pi pi-arrow-right !text-[10px] text-primary-500"></i>
-                                            <span class="font-bold text-primary-600 dark:text-primary-400">{{ data.quantity }}</span>
-                                        </div>
-                                        <div v-else-if="data.status === 'downgraded'" class="flex items-center gap-1.5 font-mono text-sm">
-                                            <span class="text-gray-400 line-through">{{ data.previous_quantity }}</span>
-                                            <i class="pi pi-arrow-right !text-[10px] text-orange-500"></i>
-                                            <span class="font-bold text-orange-600 dark:text-orange-400">{{ data.quantity }}</span>
-                                        </div>
-                                        <span v-else class="font-mono text-sm dark:text-gray-300">
-                                            {{ data.quantity }}
-                                        </span>
-                                    </template>
-                                </Column>
-                                <Column header="Estado">
-                                    <template #body="{ data }">
-                                        <Tag v-if="data.status === 'new'" value="Nuevo" severity="success" :pt="tagPt" />
-                                        <Tag v-else-if="data.status === 'upgraded'" value="Mejora" severity="info" :pt="tagPt" />
-                                        <Tag v-else-if="data.status === 'unchanged'" value="Sin cambio" severity="secondary" :pt="tagPt" />
-                                        <Tag v-else-if="data.status === 'downgraded'" value="Reducción" severity="warning" :pt="tagPt" />
-                                    </template>
-                                </Column>
-                                <Column field="billing_period" header="Periodo">
-                                    <template #body="{ data }">
-                                        <span class="capitalize text-xs">{{ data.billing_period }}</span>
-                                    </template>
-                                </Column>
-                                <Column header="P. Unitario" class="text-right">
-                                    <template #body="{ data }">
-                                        <span class="font-mono">{{ formatCurrency(data.unit_price) }}</span>
-                                    </template>
-                                </Column>
-                            </DataTable>
+                            <div class="overflow-x-auto w-full min-w-0 rounded-2xl">
+                                <DataTable :value="version.processed_items" responsiveLayout="scroll" :pt="subDataTablePt" class="min-w-[500px]">
+                                    <Column field="name" header="Concepto">
+                                        <template #body="{ data }"><span class="font-medium text-gray-900 dark:text-white m-0">{{ data.name }}</span></template>
+                                    </Column>
+                                    <Column header="Cantidad">
+                                        <template #body="{ data }">
+                                            <div v-if="data.status === 'upgraded'" class="flex items-center gap-1.5 font-mono text-sm">
+                                                <span class="text-gray-400 line-through">{{ data.previous_quantity }}</span>
+                                                <i class="pi pi-arrow-right !text-[10px] text-primary-500"></i>
+                                                <span class="font-bold text-primary-600 dark:text-primary-400">{{ data.quantity }}</span>
+                                            </div>
+                                            <div v-else-if="data.status === 'downgraded'" class="flex items-center gap-1.5 font-mono text-sm">
+                                                <span class="text-gray-400 line-through">{{ data.previous_quantity }}</span>
+                                                <i class="pi pi-arrow-right !text-[10px] text-orange-500"></i>
+                                                <span class="font-bold text-orange-600 dark:text-orange-400">{{ data.quantity }}</span>
+                                            </div>
+                                            <span v-else class="font-mono text-sm dark:text-gray-300">
+                                                {{ data.quantity }}
+                                            </span>
+                                        </template>
+                                    </Column>
+                                    <Column header="Estado">
+                                        <template #body="{ data }">
+                                            <Tag v-if="data.status === 'new'" value="Nuevo" severity="success" :pt="tagPt" />
+                                            <Tag v-else-if="data.status === 'upgraded'" value="Mejora" severity="info" :pt="tagPt" />
+                                            <Tag v-else-if="data.status === 'unchanged'" value="Sin cambio" severity="secondary" :pt="tagPt" />
+                                            <Tag v-else-if="data.status === 'downgraded'" value="Reducción" severity="warning" :pt="tagPt" />
+                                        </template>
+                                    </Column>
+                                    <Column field="billing_period" header="Periodo">
+                                        <template #body="{ data }">
+                                            <span class="capitalize text-xs">{{ data.billing_period }}</span>
+                                        </template>
+                                    </Column>
+                                    <Column header="P. Unitario" class="text-right">
+                                        <template #body="{ data }">
+                                            <span class="font-mono">{{ formatCurrency(data.unit_price) }}</span>
+                                        </template>
+                                    </Column>
+                                </DataTable>
+                            </div>
                         </div>
                         
                         <!-- Tabla Pagos -->
                         <div>
                             <h4 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-3">Pagos realizados</h4>
-                            <DataTable :value="version.payments" responsiveLayout="scroll" :pt="subDataTablePt">
+                            <div class="overflow-x-auto w-full min-w-0 rounded-2xl">
+                                <DataTable :value="version.payments" responsiveLayout="scroll" :pt="subDataTablePt" class="min-w-[500px]">
                                 <Column field="created_at" header="Fecha de Pago">
                                     <template #body="{ data }">
                                         <span class="text-xs text-gray-500 dark:text-gray-400">{{ formatDate(data.created_at) }}</span>
@@ -208,6 +211,7 @@ const dialogPt = {
                                     </div>
                                 </template>
                             </DataTable>
+                            </div>
                         </div>
 
                     </div>

@@ -21,6 +21,12 @@ class MercadoPagoController extends Controller
      */
     public function connect(): RedirectResponse
     {
+        // In sandbox/test mode, OAuth is not needed — use test credentials instead
+        if (config('services.mercadopago.env', 'sandbox') === 'sandbox') {
+            return redirect()->route('online-store.config')
+                ->with('warning', 'En modo de prueba no es necesario conectar una cuenta real. Se usan credenciales de prueba automáticamente.');
+        }
+
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
 
@@ -34,6 +40,12 @@ class MercadoPagoController extends Controller
      */
     public function callback(Request $request): RedirectResponse
     {
+        // In sandbox/test mode, OAuth callbacks are not expected
+        if (config('services.mercadopago.env', 'sandbox') === 'sandbox') {
+            return redirect()->route('online-store.config')
+                ->with('warning', 'El flujo OAuth no está disponible en modo de prueba.');
+        }
+
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
 
@@ -76,6 +88,12 @@ class MercadoPagoController extends Controller
      */
     public function disconnect(): RedirectResponse
     {
+        // In sandbox/test mode, disconnecting is not meaningful — test credentials are from env
+        if (config('services.mercadopago.env', 'sandbox') === 'sandbox') {
+            return redirect()->route('online-store.config')
+                ->with('warning', 'No se puede desconectar Mercado Pago en modo de prueba.');
+        }
+
         $user = Auth::user();
         $subscriptionId = $user->branch->subscription_id;
 

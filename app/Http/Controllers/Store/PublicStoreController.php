@@ -4,12 +4,14 @@ namespace App\Http\Controllers\Store;
 
 use App\Actions\Store\CreateStoreTransactionAction;
 use App\Enums\OrderStatus;
+use App\Enums\TransactionStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Product;
 use App\Services\MercadoPagoService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as HttpResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
@@ -204,7 +206,7 @@ class PublicStoreController extends Controller
     /**
      * Place a new order.
      */
-    public function placeOrder(Request $request): RedirectResponse
+    public function placeOrder(Request $request): RedirectResponse|HttpResponse
     {
         $storeConfig = app('resolvedStore');
 
@@ -304,12 +306,33 @@ class PublicStoreController extends Controller
                 ->send(new \App\Mail\NewStoreOrderNotification($order));
         }
 
-        // If Mercado Pago, redirect to create the preference
+        // If Mercado Pago, create the preference now and redirect the browser (full page nav)
         if ($validated['payment_method'] === 'mercadopago') {
-            return redirect()->route('store.order.pay', [
-                'slug'  => $storeConfig->slug,
-                'order' => $order->id,
-            ]);
+            $order->load('items');
+
+            try {
+                $preference = $this->mpService->createPreference($storeConfig, [
+                    'items'         => $order->items->map(fn($i) => [
+                        'product_id'   => $i->product_id,
+                        'product_name' => $i->product_name,
+                        'quantity'     => $i->quantity,
+                        'unit_price'   => $i->unit_price,
+                    ])->toArray(),
+                    'shipping_cost' => $order->delivery_fee ?? 0,
+                    'order_id'      => $order->id,
+                    'success_url'   => route('store.order.payment.return', ['slug' => $storeConfig->slug, 'order' => $order->id, 'mp_result' => 'success']),
+                    'failure_url'   => route('store.order.payment.return', ['slug' => $storeConfig->slug, 'order' => $order->id, 'mp_result' => 'failure']),
+                    'pending_url'   => route('store.order.payment.return', ['slug' => $storeConfig->slug, 'order' => $order->id, 'mp_result' => 'pending']),
+                ]);
+
+                return Inertia::location($preference['init_point']);
+            } catch (\Exception $e) {
+                Log::error('MP preference creation failed', ['order' => $order->id, 'error' => $e->getMessage()]);
+                return redirect()->route('store.order.confirmed', [
+                    'slug'  => $storeConfig->slug,
+                    'order' => $order->id,
+                ])->with('error', 'No se pudo iniciar el pago con Mercado Pago. Intenta de nuevo.');
+            }
         }
 
         // Cash payment — go straight to confirmation
@@ -346,9 +369,9 @@ class PublicStoreController extends Controller
                 ])->toArray(),
                 'shipping_cost' => $order->delivery_fee ?? 0,
                 'order_id'      => $order->id,
-                'success_url'   => route('store.order.payment.return', ['slug' => $slug, 'order' => $order->id, 'status' => 'success']),
-                'failure_url'   => route('store.order.payment.return', ['slug' => $slug, 'order' => $order->id, 'status' => 'failure']),
-                'pending_url'   => route('store.order.payment.return', ['slug' => $slug, 'order' => $order->id, 'status' => 'pending']),
+                'success_url'   => route('store.order.payment.return', ['slug' => $slug, 'order' => $order->id, 'mp_result' => 'success']),
+                'failure_url'   => route('store.order.payment.return', ['slug' => $slug, 'order' => $order->id, 'mp_result' => 'failure']),
+                'pending_url'   => route('store.order.payment.return', ['slug' => $slug, 'order' => $order->id, 'mp_result' => 'pending']),
             ]);
 
             return redirect()->away($preference['init_point']);
@@ -370,38 +393,82 @@ class PublicStoreController extends Controller
             abort(404);
         }
 
-        $status = $request->query('status');
+        // mp_result is our custom param (does NOT conflict with MP's own 'status' param)
+        $mpResult = $request->query('mp_result');
+        // payment_id and collection_status are sent by MercadoPago on redirect
         $paymentId = $request->query('payment_id');
+        $collectionStatus = $request->query('collection_status');
 
-        if ($status === 'success' && $paymentId) {
-            // Update the pending payment to completed
-            $transaction = $order->transaction;
-            if ($transaction) {
-                $payment = $transaction->payments()
-                    ->where('payment_method', 'card')
-                    ->where('status', 'procesando')
-                    ->first();
+        // Success: our URL says success AND MP confirms with payment_id
+        if ($mpResult === 'success' && $paymentId) {
+            DB::transaction(function () use ($order, $paymentId, $slug) {
+                $order->load('items');
 
-                if ($payment) {
-                    $payment->update([
-                        'status' => 'completado',
-                        'notes'  => "Pago con Mercado Pago #{$paymentId} — pedido en línea #{$order->formatted_order_number}",
-                    ]);
+                // Deduct stock now that payment is confirmed (was skipped during order creation for MP orders)
+                $branch = \App\Models\Branch::where('subscription_id', $order->subscription_id)->first();
+                if ($branch) {
+                    foreach ($order->items as $orderItem) {
+                        $product = Product::find($orderItem->product_id);
+                        if ($product) {
+                            $product->deductStock(
+                                $branch->id,
+                                $orderItem->quantity,
+                                null,
+                                "Venta por tienda en línea — pedido #{$order->formatted_order_number}"
+                            );
+                        }
+                    }
                 }
 
-                if ($transaction->fresh()->isFullyPaid()) {
-                    $transaction->update(['status' => \App\Enums\TransactionStatus::COMPLETED]);
+                // Update the pending payment to completed
+                $transaction = $order->transaction;
+                if ($transaction) {
+                    $payment = $transaction->payments()
+                        ->where('payment_method', 'card')
+                        ->where('status', 'procesando')
+                        ->first();
+
+                    if ($payment) {
+                        $payment->update([
+                            'status' => 'completado',
+                            'notes'  => "Pago con Mercado Pago #{$paymentId} — pedido en línea #{$order->formatted_order_number}",
+                        ]);
+                    }
+
+                    if ($transaction->refresh()->isFullyPaid()) {
+                        $transaction->update(['status' => TransactionStatus::COMPLETED]);
+                    }
                 }
-            }
+            });
+
+            return redirect()->route('store.order.confirmed', ['slug' => $slug, 'order' => $order->id]);
         }
 
-        return redirect()->route('store.order.confirmed', ['slug' => $slug, 'order' => $order->id]);
+        if ($mpResult === 'failure') {
+            $this->deleteUnpaidOrder($order);
+
+            return redirect()->route('store.cart', ['slug' => $slug])
+                ->with('error', 'El pago fue rechazado o cancelado. Intenta de nuevo.');
+        }
+
+        if ($mpResult === 'pending') {
+            $this->deleteUnpaidOrder($order);
+
+            return redirect()->route('store.cart', ['slug' => $slug])
+                ->with('warning', 'Tu pago está pendiente. Intenta de nuevo si lo deseas.');
+        }
+
+        // Unknown status or direct access — delete the unpaid order
+        $this->deleteUnpaidOrder($order);
+
+        return redirect()->route('store.cart', ['slug' => $slug])
+            ->with('error', 'No se pudo procesar tu pago. Intenta de nuevo.');
     }
 
     /**
      * Order confirmation page.
      */
-    public function confirmed($slug, Order $order): Response
+    public function confirmed($slug, Order $order): Response|RedirectResponse
     {
         $storeConfig = app('resolvedStore');
 
@@ -409,10 +476,41 @@ class PublicStoreController extends Controller
             abort(404);
         }
 
+        // For MercadoPago orders, only show confirmation if payment was completed
+        if ($order->payment_method === 'mercadopago') {
+            $transaction = $order->transaction;
+
+            if (!$transaction || $transaction->status !== TransactionStatus::COMPLETED) {
+                return redirect()->route('store.cart', ['slug' => $slug])
+                    ->with('warning', 'Tu pago aún no ha sido confirmado. Intenta de nuevo si lo deseas.');
+            }
+        }
+
         $order->load('items');
 
         return Inertia::render('Store/Confirmed', [
             'order' => $order,
         ]);
+    }
+
+    /**
+     * Delete an unpaid MercadoPago order and all its related records.
+     * Called when the user abandons or fails the MP checkout.
+     */
+    private function deleteUnpaidOrder(Order $order): void
+    {
+        DB::transaction(function () use ($order) {
+            // Delete transaction payments and items first
+            if ($transaction = $order->transaction) {
+                $transaction->payments()->delete();
+                $transaction->items()->delete();
+                $transaction->customerBalanceMovements()->delete();
+                $transaction->delete();
+            }
+            // Delete order items and status logs
+            $order->items()->delete();
+            $order->statusLogs()->delete();
+            $order->delete();
+        });
     }
 }

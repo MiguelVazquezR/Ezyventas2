@@ -1,5 +1,12 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
+import Button from 'primevue/button';
+import InputNumber from 'primevue/inputnumber';
+import Select from 'primevue/select';
+import DatePicker from 'primevue/datepicker';
+import InputSwitch from 'primevue/inputswitch';
+import { useVirtualNumpad } from '@/Composables/useVirtualNumpad';
+import VirtualNumpad from '@/Components/VirtualNumpad.vue';
 
 // --- Props ---
 const props = defineProps({
@@ -13,6 +20,13 @@ const props = defineProps({
 
 // --- Emits ---
 const emit = defineEmits(['submit', 'add-account', 'cancel']);
+
+const { isEnabled: numpadEnabled, open: openNumpad, close: closeNumpad } = useVirtualNumpad();
+
+const numpadInputProps = computed(() => {
+    if (!numpadEnabled.value) return {};
+    return { readonly: true, inputmode: 'none' };
+});
 
 // --- Formateador ---
 const formatCurrency = (value) => {
@@ -348,7 +362,10 @@ const dateSectionStyle = computed(() => {
                     <div>
                         <label class="text-xs font-medium text-gray-500 dark:text-gray-400">Monto</label>
                         <InputNumber fluid v-model="payment.amount" mode="currency" currency="MXN" locale="es-MX"
-                            class="w-full mt-1" :min="0" />
+                            class="w-full mt-1" :min="0"
+                            :pt="{ input: { root: numpadInputProps } }"
+                            @focus="openNumpad({ get: () => payment.amount, set: (v) => payment.amount = v, mode: 'currency', label: 'Monto del pago', element: $event.target })"
+                            @blur="closeNumpad()" />
                     </div>
                     <div v-if="['tarjeta', 'transferencia'].includes(payment.method)">
                         <label class="text-xs font-medium text-gray-500 dark:text-gray-400">Cuenta destino</label>
@@ -409,5 +426,7 @@ const dateSectionStyle = computed(() => {
                 @click="emit('cancel')"
                 class="w-full mt-2" />
         </div>
+
+        <VirtualNumpad />
     </div>
 </template>
