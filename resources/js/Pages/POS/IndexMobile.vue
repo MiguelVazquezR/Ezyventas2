@@ -10,7 +10,8 @@ import JoinSessionModal from '@/Components/JoinSessionModal.vue';
 import CloseSessionModal from '@/Components/CloseSessionModal.vue';
 import SessionHistoryModal from '@/Components/SessionHistoryModal.vue';
 import PrintModal from '@/Components/PrintModal.vue';
-import OrderFormModal from './Partials/OrderFormModal.vue'; 
+import OrderFormModal from './Partials/OrderFormModal.vue';
+import VirtualNumpad from '@/Components/VirtualNumpad.vue';
 import { v4 as uuidv4 } from 'uuid';
 
 const props = defineProps({
@@ -605,5 +606,7 @@ const currentCartTotal = computed(() => {
             :loading="form.processing"
             @submit="handleOrderSubmit"
         />
+
+        <VirtualNumpad />
     </AppLayout>
 </template>

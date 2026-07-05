@@ -12,7 +12,9 @@ use App\Imports\ExpensesImport;
 use App\Imports\ProductsImport;
 use App\Imports\ServiceOrdersImport;
 use App\Imports\ServicesImport;
+use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Maatwebsite\Excel\Facades\Excel;
 
 class ImportExportController extends Controller
@@ -21,6 +23,28 @@ class ImportExportController extends Controller
     public function exportProducts()
     {
         return Excel::download(new ProductsExport, 'productos.xlsx');
+    }
+
+    public function productsExportInfo()
+    {
+        $subscriptionId = Auth::user()->branch->subscription_id;
+
+        $ownProductsCount = Product::whereHas('branch.subscription', function ($query) use ($subscriptionId) {
+            $query->where('id', $subscriptionId);
+        })
+            ->whereNull('global_product_id')
+            ->count();
+
+        $catalogProductsCount = Product::whereHas('branch.subscription', function ($query) use ($subscriptionId) {
+            $query->where('id', $subscriptionId);
+        })
+            ->whereNotNull('global_product_id')
+            ->count();
+
+        return response()->json([
+            'own_products'     => $ownProductsCount,
+            'catalog_products' => $catalogProductsCount,
+        ]);
     }
 
     public function importProducts(Request $request)
