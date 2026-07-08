@@ -6,7 +6,11 @@ const props = defineProps({
     note: {
         type: Object,
         default: () => null
-    }
+    },
+    gallery: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const isEditing = !!props.note;
@@ -18,33 +22,52 @@ const form = useForm({
     excerpt: props.note?.excerpt || '',
     content: props.note?.content || '',
     is_published: props.note ? !!props.note.is_published : false,
-    media: [], // Nuevos archivos
-    deleted_media: [] // IDs de archivos existentes a eliminar
+    is_banner: props.note ? !!props.note.is_banner : false,
+    banner_title: props.note?.banner_title || '',
+    media: [], // Nuevos archivos de galería
+    deleted_media: [], // IDs de archivos existentes a eliminar
+    banner_image: null, // Nueva imagen de banner
+    deleted_banner: false, // Si se debe eliminar el banner existente
 });
 
-// Medios existentes (cargados por Spatie en el backend)
-const existingMedia = ref(props.note?.media || []);
+// Medios existentes de la galería (cargados por separado del banner)
+const existingMedia = ref(props.gallery || []);
+const existingBannerUrl = ref(props.note?.banner_image_url || null);
+const bannerPreviewUrl = ref(null);
 
 const onFileSelect = (event) => {
-    // PrimeVue FileUpload manda los archivos seleccionados en el evento
     form.media = event.files;
 };
 
 const onFileRemove = (event) => {
-    // Se ejecuta al quitar un archivo nuevo que apenas se iba a subir
     form.media = form.media.filter(f => f.name !== event.file.name);
 };
 
+const onBannerSelect = (event) => {
+    form.banner_image = event.files[0];
+    form.deleted_banner = false;
+    // Generar preview
+    const reader = new FileReader();
+    reader.onload = (e) => { bannerPreviewUrl.value = e.target.result; };
+    reader.readAsDataURL(event.files[0]);
+};
+
+const onBannerRemove = () => {
+    form.banner_image = null;
+    bannerPreviewUrl.value = null;
+    if (existingBannerUrl.value) {
+        form.deleted_banner = true;
+        existingBannerUrl.value = null;
+    }
+};
+
 const removeExistingMedia = (mediaId) => {
-    // Agregamos el ID al array de eliminados para que el Controller lo borre
     form.deleted_media.push(mediaId);
-    // Lo quitamos visualmente de la lista
     existingMedia.value = existingMedia.value.filter(m => m.id !== mediaId);
 };
 
 const submit = () => {
     if (isEditing) {
-        // Inertia requiere enviar archivos por POST simulando un PUT
         form.transform((data) => ({
             ...data,
             _method: 'PUT',
@@ -105,7 +128,6 @@ const submit = () => {
                     <p class="text-sm text-gray-500 mb-2">Archivos ya subidos:</p>
                     <div class="flex flex-wrap gap-4">
                         <div v-for="media in existingMedia" :key="media.id" class="relative group">
-                            <!-- Nota: Usamos original_url porque es la que entrega Spatie por defecto al cargar el modelo -->
                             <img v-if="media.mime_type.startsWith('image/')" :src="media.original_url" class="w-32 h-32 object-cover rounded-lg shadow-sm border border-gray-300 dark:border-gray-600" />
                             <video v-else-if="media.mime_type.startsWith('video/')" :src="media.original_url" class="w-32 h-32 object-cover rounded-lg shadow-sm border border-gray-300 dark:border-gray-600" />
                             <div v-else class="w-32 h-32 flex items-center justify-center bg-gray-200 dark:bg-gray-700 rounded-lg shadow-sm border border-gray-300 dark:border-gray-600">
@@ -128,6 +150,57 @@ const submit = () => {
                     <small class="text-gray-500 mt-1 block">Puedes seleccionar múltiples archivos. Máx 20MB por archivo.</small>
                     <small v-if="form.errors.media" class="text-red-500 block mt-1">{{ form.errors.media }}</small>
                 </div>
+            </div>
+
+            <!-- Banner Invasivo -->
+            <div class="flex flex-col gap-4 md:col-span-2 bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-100 dark:border-purple-800">
+                <div class="flex items-center gap-3">
+                    <ToggleSwitch inputId="is_banner" v-model="form.is_banner" />
+                    <div>
+                        <label for="is_banner" class="font-bold text-gray-800 dark:text-gray-200 block cursor-pointer">Mostrar como banner invasivo</label>
+                        <small class="text-gray-600 dark:text-gray-400">Al activar, se mostrará un banner a pantalla completa en el dashboard de los usuarios, bloqueando la interacción hasta que lo cierren.</small>
+                    </div>
+                </div>
+
+                <template v-if="form.is_banner">
+                    <!-- Título del banner (opcional) -->
+                    <div class="flex flex-col gap-2">
+                        <label for="banner_title" class="font-bold text-gray-700 dark:text-gray-200">Título del banner (opcional)</label>
+                        <InputText id="banner_title" v-model="form.banner_title" placeholder="Dejar vacío para usar el título de la novedad" :class="{'p-invalid': form.errors.banner_title}" />
+                        <small v-if="form.errors.banner_title" class="text-red-500">{{ form.errors.banner_title }}</small>
+                    </div>
+
+                    <!-- Imagen del banner -->
+                    <div class="flex flex-col gap-2">
+                        <label class="font-bold text-gray-700 dark:text-gray-200">Imagen del banner</label>
+                        <small class="text-gray-500">Esta imagen se mostrará a pantalla completa. Recomendado: 1200×800px o proporción similar.</small>
+
+                        <!-- Imagen existente (edición) -->
+                        <div v-if="existingBannerUrl && !form.deleted_banner" class="relative group w-max">
+                            <img :src="existingBannerUrl" class="w-64 h-40 object-cover rounded-lg shadow-sm border border-gray-300 dark:border-gray-600" />
+                            <button type="button" @click="onBannerRemove" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600 shadow-md" v-tooltip.top="'Eliminar banner'">
+                                <i class="pi pi-times text-xs"></i>
+                            </button>
+                        </div>
+
+                        <!-- Preview de nueva imagen -->
+                        <div v-if="bannerPreviewUrl" class="relative group w-max">
+                            <img :src="bannerPreviewUrl" class="w-64 h-40 object-cover rounded-lg shadow-sm border border-purple-300 dark:border-purple-600 ring-2 ring-purple-400" />
+                            <button type="button" @click="onBannerRemove" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600 shadow-md" v-tooltip.top="'Quitar imagen'">
+                                <i class="pi pi-times text-xs"></i>
+                            </button>
+                        </div>
+
+                        <!-- Subir nueva imagen -->
+                        <div v-if="!bannerPreviewUrl && !(existingBannerUrl && !form.deleted_banner)" class="mt-1">
+                            <FileUpload name="banner_image" mode="advanced" accept="image/*" :maxFileSize="10000000" 
+                                        @select="onBannerSelect" :showUploadButton="false" :showCancelButton="false" 
+                                        chooseLabel="Seleccionar imagen del banner" class="w-full" />
+                            <small class="text-gray-500 mt-1 block">Máx 10MB. Formatos: JPG, PNG.</small>
+                        </div>
+                        <small v-if="form.errors.banner_image" class="text-red-500">{{ form.errors.banner_image }}</small>
+                    </div>
+                </template>
             </div>
 
             <!-- Toggle de Publicación -->

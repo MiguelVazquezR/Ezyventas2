@@ -187,7 +187,7 @@ class User extends Authenticatable implements MustVerifyEmail
     public function readReleaseNotes(): BelongsToMany
     {
         return $this->belongsToMany(ReleaseNote::class, 'release_note_user')
-                    ->withPivot('read_at');
+                    ->withPivot('read_at', 'banner_dismissed_at');
     }
 
     /**

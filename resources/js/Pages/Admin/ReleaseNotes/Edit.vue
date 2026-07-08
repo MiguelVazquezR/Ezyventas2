@@ -8,7 +8,11 @@ defineProps({
     note: {
         type: Object,
         required: true
-    }
+    },
+    gallery: {
+        type: Array,
+        default: () => [],
+    },
 });
 </script>
 
@@ -33,7 +37,7 @@ defineProps({
                         <Tag :value="note.is_published ? 'Publicado' : 'Borrador'" :severity="note.is_published ? 'success' : 'secondary'" />
                     </div>
 
-                    <ReleaseNoteForm :note="note" />
+                    <ReleaseNoteForm :note="note" :gallery="gallery" />
                 </div>
             </div>
         </div>

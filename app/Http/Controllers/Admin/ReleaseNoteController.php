@@ -73,12 +73,15 @@ class ReleaseNoteController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'title' => 'required|string|max:255',
-            'version' => 'nullable|string|max:50',
-            'excerpt' => 'nullable|string|max:500',
-            'content' => 'required|string',
+            'title'        => 'required|string|max:255',
+            'version'      => 'nullable|string|max:50',
+            'excerpt'      => 'nullable|string|max:500',
+            'content'      => 'required|string',
             'is_published' => 'boolean',
-            'media.*' => 'nullable|file|mimes:jpg,jpeg,png,gif,mp4,webm|max:20480', // Máx 20MB
+            'is_banner'    => 'boolean',
+            'banner_title' => 'nullable|string|max:255',
+            'media.*'      => 'nullable|file|mimes:jpg,jpeg,png,gif,mp4,webm|max:20480',
+            'banner_image' => 'nullable|file|mimes:jpg,jpeg,png|max:10240',
         ]);
 
         if ($validated['is_published'] ?? false) {
@@ -87,11 +90,16 @@ class ReleaseNoteController extends Controller
 
         $note = ReleaseNote::create($validated);
 
-        // Subir nuevos archivos con Spatie MediaLibrary
+        // Subir archivos de galería con Spatie MediaLibrary
         if ($request->hasFile('media')) {
             foreach ($request->file('media') as $file) {
                 $note->addMedia($file)->toMediaCollection('gallery');
             }
+        }
+
+        // Subir imagen del banner
+        if ($request->hasFile('banner_image')) {
+            $note->addMedia($request->file('banner_image'))->toMediaCollection('banner');
         }
 
         return redirect()->route('admin.release-notes.index')
@@ -100,24 +108,30 @@ class ReleaseNoteController extends Controller
 
     public function edit(ReleaseNote $releaseNote): Response
     {
-        // CARGA CLAVE: Le decimos a Laravel que incluya los archivos adjuntos
-        $releaseNote->load('media');
+        // Cargar galería y banner por separado
+        $gallery = $releaseNote->getMedia('gallery');
+        $releaseNote->append('banner_image_url');
 
         return Inertia::render('Admin/ReleaseNotes/Edit', [
-            'note' => $releaseNote,
+            'note'  => $releaseNote,
+            'gallery' => $gallery,
         ]);
     }
 
     public function update(Request $request, ReleaseNote $releaseNote)
     {
         $validated = $request->validate([
-            'title' => 'required|string|max:255',
-            'version' => 'nullable|string|max:50',
-            'excerpt' => 'nullable|string|max:500',
-            'content' => 'required|string',
-            'is_published' => 'boolean',
-            'deleted_media' => 'nullable|array',
-            'media.*' => 'nullable|file|mimes:jpg,jpeg,png,gif,mp4,webm|max:20480',
+            'title'           => 'required|string|max:255',
+            'version'         => 'nullable|string|max:50',
+            'excerpt'         => 'nullable|string|max:500',
+            'content'         => 'required|string',
+            'is_published'    => 'boolean',
+            'is_banner'       => 'boolean',
+            'banner_title'    => 'nullable|string|max:255',
+            'deleted_media'   => 'nullable|array',
+            'deleted_banner'  => 'boolean',
+            'media.*'         => 'nullable|file|mimes:jpg,jpeg,png,gif,mp4,webm|max:20480',
+            'banner_image'    => 'nullable|file|mimes:jpg,jpeg,png|max:10240',
         ]);
 
         // Si cambia el estado de publicación
@@ -129,21 +143,29 @@ class ReleaseNoteController extends Controller
 
         $releaseNote->update($validated);
 
-        // 1. Eliminar archivos que el usuario borró en la vista
-        // CORRECCIÓN: Instanciamos los modelos Media para que Spatie dispare el evento "deleting"
-        // y elimine físicamente el archivo del disco (evitando archivos huérfanos).
+        // 1. Eliminar archivos de galería que el usuario borró en la vista
         if ($request->filled('deleted_media')) {
             $mediaToDelete = $releaseNote->media()->whereIn('id', $request->input('deleted_media'))->get();
             foreach ($mediaToDelete as $media) {
-                $media->delete(); 
+                $media->delete();
             }
         }
 
-        // 2. Subir nuevos archivos agregados
+        // 2. Eliminar banner image si se solicitó
+        if ($request->boolean('deleted_banner')) {
+            $releaseNote->clearMediaCollection('banner');
+        }
+
+        // 3. Subir nuevos archivos de galería
         if ($request->hasFile('media')) {
             foreach ($request->file('media') as $file) {
                 $releaseNote->addMedia($file)->toMediaCollection('gallery');
             }
+        }
+
+        // 4. Subir nueva imagen de banner
+        if ($request->hasFile('banner_image')) {
+            $releaseNote->addMedia($request->file('banner_image'))->toMediaCollection('banner');
         }
 
         return redirect()->route('admin.release-notes.index')
@@ -264,17 +286,20 @@ class ReleaseNoteController extends Controller
 
         return Inertia::render('Admin/ReleaseNotes/Show', [
             'note' => [
-                'id' => $releaseNote->id,
-                'version' => $releaseNote->version,
-                'title' => $releaseNote->title,
-                'content' => $releaseNote->content, // Enviamos el content completo
+                'id'           => $releaseNote->id,
+                'version'      => $releaseNote->version,
+                'title'        => $releaseNote->title,
+                'content'      => $releaseNote->content,
                 'published_at' => $releaseNote->published_at,
+                'is_banner'    => $releaseNote->is_banner,
+                'banner_title' => $releaseNote->banner_title,
+                'banner_image_url' => $releaseNote->banner_image_url,
                 'media' => $releaseNote->getMedia('gallery')->map(function ($media) {
                     return [
-                        'id' => $media->id,
-                        'url' => $media->getUrl(),
-                        'mime_type' => $media->mime_type,
-                        'name' => $media->name,
+                        'id'       => $media->id,
+                        'url'      => $media->getUrl(),
+                        'mime_type'=> $media->mime_type,
+                        'name'     => $media->name,
                     ];
                 }),
             ]
