@@ -181,10 +181,13 @@ const drawerPt = {
                         </template>
                     </Column>
 
-                    <Column field="is_published" header="Estado" style="width: 10rem" sortable>
+                    <Column field="is_published" header="Estado" style="width: 11rem" sortable>
                         <template #body="{ data }">
-                            <Tag :value="data.is_published ? 'Publicado' : 'Borrador'" 
-                                 :severity="getStatusSeverity(data.is_published)" :pt="tagPt" />
+                            <div class="flex items-center gap-1.5">
+                                <Tag :value="data.is_published ? 'Publicado' : 'Borrador'" 
+                                     :severity="getStatusSeverity(data.is_published)" :pt="tagPt" />
+                                <Tag v-if="data.is_banner" value="Banner" severity="info" :pt="tagPt" />
+                            </div>
                         </template>
                     </Column>
 

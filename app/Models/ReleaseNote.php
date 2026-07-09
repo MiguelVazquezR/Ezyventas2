@@ -13,12 +13,16 @@ class ReleaseNote extends Model implements HasMedia
 {
     use HasFactory, InteractsWithMedia;
 
+    protected $appends = ['banner_image_url'];
+
     protected $fillable = [
         'version',
         'title',
         'excerpt',
         'content',
         'is_published',
+        'is_banner',
+        'banner_title',
         'published_at',
     ];
 
@@ -26,6 +30,7 @@ class ReleaseNote extends Model implements HasMedia
     {
         return [
             'is_published' => 'boolean',
+            'is_banner'    => 'boolean',
             'published_at' => 'datetime',
         ];
     }
@@ -38,6 +43,16 @@ class ReleaseNote extends Model implements HasMedia
         return $query->where('is_published', true)
             ->where('published_at', '<=', now())
             ->orderBy('published_at', 'desc');
+    }
+
+    /**
+     * Scope para obtener solo las novedades que son banner activas.
+     */
+    public function scopeActiveBanner(Builder $query): Builder
+    {
+        return $query->where('is_banner', true)
+            ->where('is_published', true)
+            ->where('published_at', '<=', now());
     }
 
     /**
@@ -56,5 +71,15 @@ class ReleaseNote extends Model implements HasMedia
     {
         // Colección principal para las imágenes, videos o gifs de esta novedad
         $this->addMediaCollection('gallery');
+        // Colección dedicada para la imagen del banner
+        $this->addMediaCollection('banner')->singleFile();
+    }
+
+    /**
+     * Obtiene la URL de la imagen del banner.
+     */
+    public function getBannerImageUrlAttribute(): ?string
+    {
+        return $this->getFirstMediaUrl('banner');
     }
 }

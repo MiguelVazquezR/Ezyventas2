@@ -5,15 +5,27 @@ import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import BankAccountHistoryModal from '@/Components/BankAccountHistoryModal.vue';
 import BankAccountTransferModal from '@/Components/BankAccountTransferModal.vue';
+import BannerOverlay from '@/Components/BannerOverlay.vue';
 import { usePermissions } from '@/Composables'; 
 
 const props = defineProps({
     stats: Object,
     userBankAccounts: Array,
     allSubscriptionBankAccounts: Array,
+    activeBanner: {
+        type: Object,
+        default: null,
+    },
 });
 
 const { hasPermission } = usePermissions();
+
+// --- Estado del banner ---
+const showBanner = ref(!!props.activeBanner);
+
+const onBannerDismissed = () => {
+    showBanner.value = false;
+};
 
 const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 
@@ -132,6 +144,14 @@ const getExpirationSeverity = (days) => {
 
 <template>
     <AppLayout title="Dashboard">
+
+        <!-- Banner Overlay invasivo -->
+        <BannerOverlay 
+            v-if="showBanner && activeBanner" 
+            :banner="activeBanner" 
+            @dismissed="onBannerDismissed" 
+        />
+
         <div class="p-4 md:p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
             
             <!-- Encabezado estilo Dashboard Automotriz -->

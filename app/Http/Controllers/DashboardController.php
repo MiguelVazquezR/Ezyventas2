@@ -10,6 +10,7 @@ use App\Models\Customer;
 use App\Models\Expense;
 use App\Models\Product;
 use App\Models\ProductAttribute;
+use App\Models\ReleaseNote;
 use App\Models\ServiceOrder;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
@@ -142,10 +143,27 @@ class DashboardController extends Controller
 
         $allSubscriptionBankAccounts = BankAccount::where('subscription_id', $user->branch->subscription_id)->get();
 
+        // --- Banner activo (release note con is_banner = true, siempre se muestra al entrar al dashboard) ---
+        $activeBanner = ReleaseNote::activeBanner()
+            ->latest('published_at')
+            ->first();
+
+        $bannerData = null;
+        if ($activeBanner) {
+            $bannerData = [
+                'id'              => $activeBanner->id,
+                'title'           => $activeBanner->banner_title ?: $activeBanner->title,
+                'version'         => $activeBanner->version,
+                'excerpt'         => $activeBanner->excerpt,
+                'banner_image_url'=> $activeBanner->banner_image_url,
+            ];
+        }
+
         return Inertia::render('Dashboard', [
-            'stats' => $stats,
-            'userBankAccounts' => $userBankAccounts,
-            'allSubscriptionBankAccounts' => $allSubscriptionBankAccounts,
+            'stats'                     => $stats,
+            'userBankAccounts'          => $userBankAccounts,
+            'allSubscriptionBankAccounts'=> $allSubscriptionBankAccounts,
+            'activeBanner'              => $bannerData,
         ]);
     }
 
