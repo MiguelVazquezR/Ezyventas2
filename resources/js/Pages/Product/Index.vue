@@ -4,6 +4,7 @@ import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import ManageStockModal from './Partials/ManageStockModal.vue';
 import ImportProductsModal from './Partials/ImportProductsModal.vue';
+import ExportProductsModal from './Partials/ExportProductsModal.vue';
 import ProductNavigation from './Partials/ProductNavigation.vue';
 import InventorySummaryModal from './Partials/InventorySummaryModal.vue'; 
 import ProductDrawerDetails from './Partials/ProductDrawerDetails.vue';
@@ -51,6 +52,7 @@ const selectedProducts = ref([]);
 const showManageStockModal = ref(false);
 const productsForStockModal = ref([]);
 const showImportModal = ref(false);
+const showExportModal = ref(false);
 const showBulkEditModal = ref(false); 
 const showReportsModal = ref(false);
 const searchTerm = ref(props.filters.search || '');
@@ -142,7 +144,7 @@ const splitButtonItems = ref([
     {
         label: 'Exportar a excel',
         icon: 'pi pi-download',
-        command: () => window.location.href = route('import-export.products.export')
+        command: () => showExportModal.value = true
     },
 ]);
 
@@ -550,6 +552,8 @@ const drawerPt = {
         <BulkEditProductsModal v-model:visible="showBulkEditModal" :products="selectedProducts" @success="selectedProducts = []" />
 
         <ImportProductsModal :visible="showImportModal" @update:visible="showImportModal = false" />
+
+        <ExportProductsModal v-model:visible="showExportModal" />
 
         <ReportsModal v-model:visible="showReportsModal" :categories="reportCategories" />
 

@@ -6,6 +6,7 @@ use App\Enums\CashRegisterSessionStatus;
 use App\Events\SessionClosed;
 use App\Http\Requests\StoreCashRegisterSessionRequest;
 use App\Http\Requests\UpdateCashRegisterSessionRequest;
+use App\Http\Requests\CashRegisterSessions\UpdateClosingCashBalanceRequest;
 use App\Models\BankAccount;
 use App\Models\CashRegister;
 use App\Models\CashRegisterSession;
@@ -200,6 +201,15 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         });
 
         return redirect()->back()->with('success', 'Corte de caja realizado con éxito.');
+    }
+
+    public function updateClosingCashBalance(UpdateClosingCashBalanceRequest $request, CashRegisterSession $cashRegisterSession)
+    {
+        $cashRegisterSession->updateClosingCashBalance(
+            (float) $request->validated('closing_cash_balance')
+        );
+
+        return redirect()->back()->with('success', 'El monto de contado físico ha sido actualizado.');
     }
 
     public function rejoinOrStart(Request $request)

@@ -4,6 +4,7 @@ import { router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import debounce from 'lodash/debounce';
 import { useConfirm } from "primevue/useconfirm";
+import { useVirtualNumpad } from '@/Composables/useVirtualNumpad';
 import ProductCard from './ProductCard.vue';
 import CategoryFilters from './CategoryFilters.vue';
 import PendingCartsPopover from './PendingCartsPopover.vue';
@@ -25,6 +26,7 @@ const props = defineProps({
 
 const emit = defineEmits(['addToCart', 'resumeCart', 'deleteCart', 'productCreatedAndAddToCart', 'refreshSessionData', 'openCloseSessionModal', 'openHistoryModal', 'update:posMode']);
 const confirm = useConfirm();
+const { isEnabled: numpadEnabled, toggle: toggleNumpad } = useVirtualNumpad();
 
 // --- Lógica de Scroll simplificada ---
 const loadedProducts = ref(props.products.data);
@@ -301,6 +303,14 @@ const handleProductCreated = (newProduct) => {
                         :icon="posMode === 'retail' ? 'pi pi-shop' : 'pi pi-receipt'" rounded 
                         v-tooltip.bottom="posMode === 'retail' ? 'Cambiar a comandas' : 'Cambiar a retail'"
                         class="!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-purple-500 hover:!border-purple-500 transition-colors" />
+
+                    <Button @click="toggleNumpad"
+                        :icon="numpadEnabled ? 'pi pi-mobile' : 'pi pi-mobile'" rounded 
+                        v-tooltip.bottom="numpadEnabled ? 'Teclado virtual activo — toca cualquier campo numérico para usarlo' : 'Activar teclado virtual — evita el teclado del sistema en pantallas táctiles'"
+                        :class="numpadEnabled
+                            ? '!w-10 !h-10 !bg-primary-50 dark:!bg-primary-900/30 !border-primary-200 dark:!border-primary-800/50 !text-primary-500 hover:!border-primary-500 transition-colors'
+                            : '!w-10 !h-10 !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] !text-gray-400 dark:!text-gray-500 hover:!border-primary-500 transition-colors'
+                        " />
 
                     <Button @click="isCreateProductModalVisible = true" icon="pi pi-plus" rounded 
                         v-tooltip.bottom="'Agregar producto'"

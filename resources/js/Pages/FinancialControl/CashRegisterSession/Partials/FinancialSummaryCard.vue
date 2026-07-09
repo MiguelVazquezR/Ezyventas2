@@ -1,5 +1,7 @@
 <script setup>
-import { computed } from 'vue';
+import { ref, computed } from 'vue';
+import { router } from '@inertiajs/vue3';
+import InputNumber from 'primevue/inputnumber';
 
 const props = defineProps({
     session: {
@@ -11,6 +13,9 @@ const props = defineProps({
         required: true
     }
 });
+
+const isEditingClosingCash = ref(false);
+const closingCashEditValue = ref(0);
 
 const totalInflows = computed(() => {
     if (!props.session?.cash_movements) return 0;
@@ -35,6 +40,30 @@ const formatFriendlyTime = (dateString) => {
     const d = new Date(dateString);
     return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
 };
+
+function startEditingClosingCash() {
+    closingCashEditValue.value = parseFloat(props.session.closing_cash_balance) || 0;
+    isEditingClosingCash.value = true;
+}
+
+function cancelEditingClosingCash() {
+    isEditingClosingCash.value = false;
+}
+
+function saveClosingCash() {
+    router.patch(
+        route('cash-register-sessions.update-closing-cash', props.session.id),
+        { closing_cash_balance: closingCashEditValue.value },
+        {
+            onSuccess: () => {
+                isEditingClosingCash.value = false;
+            },
+            onError: () => {
+                // mantener el modo edición para que el usuario corrija
+            },
+        }
+    );
+}
 </script>
 
 <template>
@@ -71,7 +100,43 @@ const formatFriendlyTime = (dateString) => {
                         </div>
                         <div class="text-center">
                             <span class="text-[9px] uppercase tracking-widest text-gray-400 block m-0 mb-1">Contado físico</span>
-                            <span class="font-mono text-sm text-gray-900 dark:text-white font-bold m-0">{{ formatCurrency(session.closing_cash_balance) }}</span>
+
+                            <!-- Modo edición -->
+                            <div v-if="isEditingClosingCash" class="flex flex-col items-center gap-2">
+                                <InputNumber
+                                    v-model="closingCashEditValue"
+                                    mode="currency"
+                                    currency="MXN"
+                                    :minFractionDigits="2"
+                                    :maxFractionDigits="2"
+                                    class="w-36"
+                                    :pt="{
+                                        input: { root: { class: 'w-full min-w-0 !rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !py-1.5 !text-sm !font-mono !text-gray-900 dark:!text-white text-center' } }
+                                    }"
+                                />
+                                <div class="flex items-center gap-1.5">
+                                    <button
+                                        @click="saveClosingCash"
+                                        class="w-7 h-7 rounded-full bg-green-500 hover:bg-green-600 text-white flex items-center justify-center transition-colors"
+                                        title="Guardar"
+                                    >
+                                        <i class="pi pi-check !text-[10px]"></i>
+                                    </button>
+                                    <button
+                                        @click="cancelEditingClosingCash"
+                                        class="w-7 h-7 rounded-full bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 text-white flex items-center justify-center transition-colors"
+                                        title="Cancelar"
+                                    >
+                                        <i class="pi pi-times !text-[10px]"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Modo lectura -->
+                            <div v-else class="group inline-flex items-center gap-1.5 cursor-pointer" @click="startEditingClosingCash" title="Haz clic para editar el contado físico">
+                                <span class="font-mono text-sm text-gray-900 dark:text-white font-bold m-0">{{ formatCurrency(session.closing_cash_balance) }}</span>
+                                <i class="pi pi-pencil !text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"></i>
+                            </div>
                         </div>
                     </div>
                 </div>
