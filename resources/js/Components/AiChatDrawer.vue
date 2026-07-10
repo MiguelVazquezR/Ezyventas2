@@ -1,13 +1,11 @@
 <script setup>
-import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue';
-import { usePage } from '@inertiajs/vue3';
+import { ref, nextTick, watch } from 'vue';
 import { useAiChat } from '@/composables/useAiChat';
 import ProgressSpinner from 'primevue/progressspinner';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Drawer from 'primevue/drawer';
 import Divider from 'primevue/divider';
-import { useToast } from 'primevue/usetoast';
 
 const props = defineProps({
     /** Control the drawer visibility from parent. */
@@ -16,18 +14,10 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible']);
 
-const page = usePage();
-const toast = useToast();
 const { messages, isThinking, sendMessage, reset } = useAiChat();
 
 const inputText = ref('');
 const messagesContainer = ref(null);
-
-/** Check if the user has the ai_agent.access permission. */
-const canAccess = () => {
-    const permissions = page.props.auth?.user?.permissions ?? [];
-    return permissions.includes('ai_agent.access');
-};
 
 /** Auto-scroll when new messages arrive. */
 watch(
@@ -53,16 +43,6 @@ async function handleSend() {
     if (!text || isThinking.value) return;
 
     inputText.value = '';
-
-    if (!canAccess()) {
-        toast.add({
-            severity: 'warn',
-            summary: 'Sin acceso',
-            detail: 'No tienes permiso para usar el asistente de IA.',
-            life: 5000,
-        });
-        return;
-    }
 
     await sendMessage(text);
 }
@@ -215,17 +195,6 @@ function renderContent(text) {
             <p class="text-[10px] text-gray-400 m-0 mt-1.5 text-center">
                 El asistente puede cometer errores. Verifica la información importante.
             </p>
-        </div>
-
-        <!-- Permission denied state -->
-        <div v-if="!canAccess()" class="absolute inset-0 bg-white/80 dark:bg-[#232323]/90 backdrop-blur-sm flex items-center justify-center z-10 rounded-l-3xl">
-            <div class="text-center px-6">
-                <i class="pi pi-lock !text-3xl !text-gray-400 mb-3" />
-                <p class="text-sm font-semibold text-gray-600 mb-1">Sin acceso</p>
-                <p class="text-xs text-gray-400">
-                    Contacta al administrador para habilitar el asistente de IA.
-                </p>
-            </div>
         </div>
     </Drawer>
 </template>

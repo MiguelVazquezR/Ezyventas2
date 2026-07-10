@@ -1,5 +1,4 @@
 import { ref, nextTick } from 'vue';
-import axios from 'axios';
 import { useToast } from 'primevue/usetoast';
 
 /**
@@ -21,7 +20,7 @@ export function useAiChat() {
         if (conversationId.value) return;
 
         try {
-            const { data } = await axios.post('/ai-agent/conversations');
+            const { data } = await window.axios.post('/ai-agent/conversations');
             conversationId.value = data.conversation.id;
         } catch (e) {
             toast.add({
@@ -47,7 +46,7 @@ export function useAiChat() {
         isThinking.value = true;
 
         try {
-            const { data } = await axios.post(
+            const { data } = await window.axios.post(
                 `/ai-agent/conversations/${conversationId.value}/messages`,
                 { message: text }
             );

@@ -13,7 +13,7 @@ use Ezyventas\AiAgent\Http\Controllers\AiChatController;
 |
 */
 
-Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified', 'can:ai_agent.access'])
+Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified'])
     ->prefix('ai-agent')
     ->as('ai-agent.')
     ->group(function () {
@@ -21,8 +21,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified',
             ->name('conversations.store');
 
         Route::post('/conversations/{conversation}/messages', [AiChatController::class, 'sendMessage'])
-            ->name('messages.store')
-            ->middleware('can:ai_agent.access');
+            ->name('messages.store');
 
         Route::get('/download/{path}', [AiChatController::class, 'download'])
             ->name('download')

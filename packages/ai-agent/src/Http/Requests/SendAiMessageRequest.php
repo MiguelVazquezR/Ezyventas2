@@ -8,7 +8,7 @@ class SendAiMessageRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->can('ai_agent.access');
+        return true;
     }
 
     public function rules(): array
