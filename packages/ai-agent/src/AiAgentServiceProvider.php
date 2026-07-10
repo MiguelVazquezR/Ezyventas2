@@ -1,0 +1,35 @@
+<?php
+
+namespace Ezyventas\AiAgent;
+
+use Ezyventas\AiAgent\Contracts\AiToolProvider;
+use Ezyventas\AiAgent\Support\ToolRegistry;
+use Illuminate\Support\ServiceProvider;
+
+class AiAgentServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        $this->mergeConfigFrom(
+            __DIR__ . '/../config/ai-agent.php', 'ai-agent'
+        );
+
+        $this->app->singleton(ToolRegistry::class, function ($app) {
+            return new ToolRegistry($app->make(AiToolProvider::class));
+        });
+    }
+
+    public function boot(): void
+    {
+        $this->loadRoutesFrom(__DIR__ . '/../routes/ai-agent.php');
+        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+
+        $this->publishes([
+            __DIR__ . '/../config/ai-agent.php' => config_path('ai-agent.php'),
+        ], 'ai-agent-config');
+
+        $this->publishes([
+            __DIR__ . '/../database/migrations/' => database_path('migrations'),
+        ], 'ai-agent-migrations');
+    }
+}

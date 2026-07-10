@@ -1,0 +1,23 @@
+{
+    "name": "ezyventas/ai-agent",
+    "version": "1.0.0-dev",
+    "description": "Model-agnostic AI reporting/export agent for multi-tenant Laravel apps",
+    "type": "library",
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^11.0|^12.0",
+        "guzzlehttp/guzzle": "^7.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "Ezyventas\\AiAgent\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Ezyventas\\AiAgent\\AiAgentServiceProvider"
+            ]
+        }
+    }
+}

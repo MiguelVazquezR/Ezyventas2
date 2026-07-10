@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\AiTools\EzyVentasToolProvider;
+use Ezyventas\AiAgent\Contracts\AiToolProvider;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Spatie\Permission\Models\Permission;
@@ -13,7 +15,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(AiToolProvider::class, EzyVentasToolProvider::class);
     }
 
     /**
