@@ -20,6 +20,9 @@ export function useAiChat() {
         if (conversationId.value) return;
 
         try {
+            // Sanctum SPA: obtain CSRF cookie before first POST
+            await window.axios.get('/sanctum/csrf-cookie');
+
             const { data } = await window.axios.post('/ai-agent/conversations');
             conversationId.value = data.conversation.id;
         } catch (e) {

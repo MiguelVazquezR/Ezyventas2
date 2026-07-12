@@ -83,7 +83,7 @@ class Tool
             'description' => $this->description,
             'input_schema' => [
                 'type'       => 'object',
-                'properties' => $properties,
+                'properties' => empty($properties) ? new \stdClass() : $properties,
                 'required'   => $required,
             ],
         ];

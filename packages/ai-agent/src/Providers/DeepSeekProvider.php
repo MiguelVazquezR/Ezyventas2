@@ -26,9 +26,10 @@ class DeepSeekProvider implements AiProvider
 
     public function chat(string $model, string $systemPrompt, array $messages, array $tools, string $apiKey): AiProviderResponse
     {
+        // Format messages to OpenAI-compatible structure, preserving tool_call_id and tool_calls
         $formattedMessages = [
             ['role' => 'system', 'content' => $systemPrompt],
-            ...array_map(fn (array $msg) => ['role' => $msg['role'], 'content' => $msg['content']], $messages),
+            ...array_map(fn (array $msg) => $this->formatMessageForApi($msg), $messages),
         ];
 
         $body = [
@@ -77,5 +78,44 @@ class DeepSeekProvider implements AiProvider
             toolCalls: $toolCalls,
             finishReason: $choice['finish_reason'] ?? null,
         );
+    }
+
+    /**
+     * Transform an internal message into the OpenAI-compatible API format.
+     */
+    private function formatMessageForApi(array $msg): array
+    {
+        // Tool result — pass through as-is (role, tool_call_id, content)
+        if (($msg['role'] ?? '') === 'tool') {
+            return $msg;
+        }
+
+        // Assistant message with tool calls
+        if (! empty($msg['tool_calls'])) {
+            $openaiToolCalls = array_map(function (array $tc) {
+                return [
+                    'id'       => $tc['id'],
+                    'type'     => 'function',
+                    'function' => [
+                        'name'      => $tc['name'],
+                        'arguments' => is_string($tc['arguments'] ?? null)
+                            ? ($tc['arguments'] ?? '{}')
+                            : json_encode($tc['arguments'] ?? [], JSON_UNESCAPED_UNICODE),
+                    ],
+                ];
+            }, $msg['tool_calls']);
+
+            return [
+                'role'       => 'assistant',
+                'content'    => null,
+                'tool_calls' => $openaiToolCalls,
+            ];
+        }
+
+        // Plain user or assistant message
+        return [
+            'role'    => $msg['role'],
+            'content' => $msg['content'],
+        ];
     }
 }

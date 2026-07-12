@@ -28,7 +28,7 @@ class OpenAIProvider implements AiProvider
     {
         $formattedMessages = [
             ['role' => 'system', 'content' => $systemPrompt],
-            ...array_map(fn (array $msg) => ['role' => $msg['role'], 'content' => $msg['content']], $messages),
+            ...array_map(fn (array $msg) => $this->formatMessageForApi($msg), $messages),
         ];
 
         $body = [
@@ -77,5 +77,41 @@ class OpenAIProvider implements AiProvider
             toolCalls: $toolCalls,
             finishReason: $choice['finish_reason'] ?? null,
         );
+    }
+
+    /**
+     * Transform an internal message into the OpenAI-compatible API format.
+     */
+    private function formatMessageForApi(array $msg): array
+    {
+        if (($msg['role'] ?? '') === 'tool') {
+            return $msg;
+        }
+
+        if (! empty($msg['tool_calls'])) {
+            $openaiToolCalls = array_map(function (array $tc) {
+                return [
+                    'id'       => $tc['id'],
+                    'type'     => 'function',
+                    'function' => [
+                        'name'      => $tc['name'],
+                        'arguments' => is_string($tc['arguments'] ?? null)
+                            ? ($tc['arguments'] ?? '{}')
+                            : json_encode($tc['arguments'] ?? [], JSON_UNESCAPED_UNICODE),
+                    ],
+                ];
+            }, $msg['tool_calls']);
+
+            return [
+                'role'       => 'assistant',
+                'content'    => null,
+                'tool_calls' => $openaiToolCalls,
+            ];
+        }
+
+        return [
+            'role'    => $msg['role'],
+            'content' => $msg['content'],
+        ];
     }
 }

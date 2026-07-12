@@ -80,7 +80,7 @@ class AnthropicProvider implements AiProvider
                     'role'         => 'user',
                     'content'      => [[
                         'type'        => 'tool_result',
-                        'tool_use_id' => $msg['tool_use_id'],
+                        'tool_use_id' => $msg['tool_call_id'],
                         'content'     => $msg['content'],
                     ]],
                 ];

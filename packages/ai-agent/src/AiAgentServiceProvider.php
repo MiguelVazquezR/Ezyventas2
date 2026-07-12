@@ -21,7 +21,10 @@ class AiAgentServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->loadRoutesFrom(__DIR__ . '/../routes/ai-agent.php');
+        // Routes are loaded from routes/web.php (to inherit the web middleware group)
+        // so they go through EnsureFrontendRequestsAreStateful for Sanctum SPA auth.
+        // $this->loadRoutesFrom(__DIR__ . '/../routes/ai-agent.php');
+
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
 
         $this->publishes([

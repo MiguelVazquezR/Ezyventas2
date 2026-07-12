@@ -87,9 +87,9 @@ class AiAgentManager
                 ];
 
                 $messages[] = [
-                    'role'         => 'tool',
-                    'tool_use_id'  => $toolCall['id'],
-                    'content'      => $result,
+                    'role'          => 'tool',
+                    'tool_call_id'  => $toolCall['id'],
+                    'content'       => $result,
                 ];
             }
 
