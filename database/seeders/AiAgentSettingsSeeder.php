@@ -13,11 +13,11 @@ class AiAgentSettingsSeeder extends Seeder
             ['key' => 'ai.provider'],
             [
                 'name'          => 'AI Provider',
-                'description'   => 'Proveedor de inteligencia artificial (anthropic, openai, groq, ollama)',
+                'description'   => 'Proveedor de inteligencia artificial (deepseek, anthropic, openai, groq, ollama)',
                 'module'        => 'ai_agent',
                 'level'         => 'subscription',
                 'type'          => 'string',
-                'default_value' => 'anthropic',
+                'default_value' => 'deepseek',
             ],
         );
 
@@ -25,11 +25,11 @@ class AiAgentSettingsSeeder extends Seeder
             ['key' => 'ai.model'],
             [
                 'name'          => 'AI Model',
-                'description'   => 'Modelo de IA a utilizar (claude-sonnet-5, gpt-4o, etc.)',
+                'description'   => 'Modelo de IA a utilizar (deepseek-v4-flash, deepseek-v4-pro, etc.)',
                 'module'        => 'ai_agent',
                 'level'         => 'subscription',
                 'type'          => 'string',
-                'default_value' => 'claude-sonnet-5',
+                'default_value' => 'deepseek-v4-flash',
             ],
         );
 

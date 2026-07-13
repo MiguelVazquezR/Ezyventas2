@@ -22,9 +22,10 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 
         Route::post('/conversations/{conversation}/messages', [AiChatController::class, 'sendMessage'])
             ->name('messages.store');
-
-        Route::get('/download/{path}', [AiChatController::class, 'download'])
-            ->name('download')
-            ->where('path', '.*')
-            ->middleware('signed');
     });
+
+// Download route — protected by signed URL signature, not by session auth
+Route::get('/ai-agent/download/{path}', [AiChatController::class, 'download'])
+    ->name('ai-agent.download')
+    ->where('path', '.*')
+    ->middleware('signed');

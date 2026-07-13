@@ -8,11 +8,11 @@ return [
     |--------------------------------------------------------------------------
     |
     | Fallback provider when no tenant-specific setting is configured.
-    | Supported: "anthropic", "openai", "groq", "ollama"
+    | Supported: "deepseek", "anthropic", "openai", "groq", "ollama"
     |
     */
 
-    'default_provider' => env('AI_DEFAULT_PROVIDER', 'anthropic'),
+    'default_provider' => env('AI_DEFAULT_PROVIDER', 'deepseek'),
 
     /*
     |--------------------------------------------------------------------------
@@ -23,7 +23,7 @@ return [
     |
     */
 
-    'default_model' => env('AI_DEFAULT_MODEL', 'claude-sonnet-5'),
+    'default_model' => env('AI_DEFAULT_MODEL', 'deepseek-v4-flash'),
 
     /*
     |--------------------------------------------------------------------------

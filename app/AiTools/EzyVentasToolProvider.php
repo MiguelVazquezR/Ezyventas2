@@ -5,14 +5,23 @@ namespace App\AiTools;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\Transaction;
+use App\Services\CashRegisterReportService;
+use App\Services\CustomerReportService;
+use App\Services\ExpenseReportService;
 use App\Services\FinancialReportService;
 use App\Services\InventoryReportService;
+use App\Services\PromotionReportService;
+use App\Services\QuoteInvoiceReportService;
+use App\Services\SalesDashboardService;
+use App\Services\ServiceOrderReportService;
+use App\Services\StaffPerformanceService;
+use App\Services\TransactionQueryService;
 use Carbon\Carbon;
 use Ezyventas\AiAgent\Contracts\AiToolProvider;
-use Ezyventas\AiAgent\Schema\Tool;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\URL;
 use Maatwebsite\Excel\Facades\Excel;
+use Prism\Prism\Tool;
 
 class EzyVentasToolProvider implements AiToolProvider
 {
@@ -22,8 +31,8 @@ class EzyVentasToolProvider implements AiToolProvider
         $subscriptionId = $user->branch->subscription_id;
 
         return [
-            // ──── REPORTS ────
-            Tool::as('financial_report')
+            // ════════════════ REPORTS ════════════════
+            (new Tool)->as('financial_report')
                 ->for('Obtener KPIs financieros, ventas por canal, gastos por categoría y resumen de bancos para un rango de fechas determinado')
                 ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
                 ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
@@ -35,14 +44,12 @@ class EzyVentasToolProvider implements AiToolProvider
                     );
 
                     $data = $service->generateReportData();
-
-                    // Keep payload compact — remove heavy chart arrays
                     unset($data['chartData']);
 
                     return json_encode($data, JSON_PRETTY_PRINT);
                 }),
 
-            Tool::as('inventory_dead_stock')
+            (new Tool)->as('inventory_dead_stock')
                 ->for('Listar productos que NO han tenido ventas en los últimos N días (inventario muerto)')
                 ->withNumberParameter('days', 'Días sin movimiento, ej. 30, 60, 90')
                 ->withStringParameter('category_id', 'ID de categoría (opcional, usar null para todas)')
@@ -59,25 +66,41 @@ class EzyVentasToolProvider implements AiToolProvider
                     return json_encode($result, JSON_PRETTY_PRINT);
                 }),
 
-            // ──── SALES ────
-            Tool::as('recent_transactions')
+            // ════════════════ SALES ════════════════
+            (new Tool)->as('recent_transactions')
                 ->for('Obtener las transacciones más recientes de una sucursal')
                 ->withNumberParameter('limit', 'Cantidad máxima de transacciones (máx 20)')
                 ->using(function (int $limit = 10) use ($branchId) {
-                    $limit = min($limit, 20);
+                    $result = app(TransactionQueryService::class)->search($branchId, [
+                        'limit' => min($limit, 20),
+                    ]);
 
-                    $transactions = Transaction::query()
-                        ->where('branch_id', $branchId)
-                        ->with(['customer:id,name', 'user:id,name'])
-                        ->latest()
-                        ->take($limit)
-                        ->get(['id', 'folio', 'customer_id', 'user_id', 'status', 'total', 'created_at']);
-
-                    return json_encode($transactions, JSON_PRETTY_PRINT);
+                    return json_encode($result, JSON_PRETTY_PRINT);
                 }),
 
-            // ──── CUSTOMERS ────
-            Tool::as('search_customers')
+            (new Tool)->as('search_transactions')
+                ->for('Buscar transacciones con filtros: estado, método de pago, canal y rango de fechas')
+                ->withStringParameter('status', 'Estado de la transacción (completado, pendiente, cancelado, etc.) o null')
+                ->withStringParameter('payment_method', 'Método de pago (efectivo, tarjeta, transferencia) o null')
+                ->withStringParameter('date_from', 'Fecha inicial YYYY-MM-DD o null')
+                ->withStringParameter('date_to', 'Fecha final YYYY-MM-DD o null')
+                ->withStringParameter('channel', 'Canal de venta (tienda, en_linea) o null')
+                ->using(function (?string $status = null, ?string $payment_method = null, ?string $date_from = null, ?string $date_to = null, ?string $channel = null) use ($branchId) {
+                    $filters = array_filter([
+                        'status'         => $status,
+                        'payment_method' => $payment_method,
+                        'date_from'      => $date_from,
+                        'date_to'        => $date_to,
+                        'channel'        => $channel,
+                    ], fn ($v) => $v !== null && $v !== 'null');
+
+                    $result = app(TransactionQueryService::class)->search($branchId, $filters);
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            // ════════════════ CUSTOMERS ════════════════
+            (new Tool)->as('search_customers')
                 ->for('Buscar clientes por nombre, email o teléfono')
                 ->withStringParameter('query', 'Nombre parcial, email o teléfono a buscar')
                 ->using(function (string $query) use ($branchId) {
@@ -94,8 +117,54 @@ class EzyVentasToolProvider implements AiToolProvider
                     return json_encode($customers, JSON_PRETTY_PRINT);
                 }),
 
-            // ──── PRODUCTS ────
-            Tool::as('search_products')
+            (new Tool)->as('customer_purchase_history')
+                ->for('Obtener el historial de compras recientes de un cliente específico')
+                ->withStringParameter('customer_query', 'Nombre, email o teléfono del cliente a buscar')
+                ->using(function (string $customer_query) use ($branchId) {
+                    $customer = Customer::where('branch_id', $branchId)
+                        ->where(fn ($q) => $q->where('name', 'like', "%{$customer_query}%")
+                            ->orWhere('email', 'like', "%{$customer_query}%")
+                            ->orWhere('phone', 'like', "%{$customer_query}%"))
+                        ->firstOrFail();
+
+                    $result = app(CustomerReportService::class)->getPurchaseHistory($branchId, $customer->id);
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            (new Tool)->as('customer_account_statement')
+                ->for('Obtener el estado de cuenta y movimientos de saldo de un cliente')
+                ->withStringParameter('customer_query', 'Nombre, email o teléfono del cliente a buscar')
+                ->using(function (string $customer_query) use ($branchId) {
+                    $customer = Customer::where('branch_id', $branchId)
+                        ->where(fn ($q) => $q->where('name', 'like', "%{$customer_query}%")
+                            ->orWhere('email', 'like', "%{$customer_query}%")
+                            ->orWhere('phone', 'like', "%{$customer_query}%"))
+                        ->firstOrFail();
+
+                    $result = app(CustomerReportService::class)->getAccountStatement($branchId, $customer->id);
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            (new Tool)->as('top_customers')
+                ->for('Obtener el ranking de los clientes con mayor gasto en un período')
+                ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
+                ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
+                ->withNumberParameter('limit', 'Cantidad máxima de clientes (por defecto 10)')
+                ->using(function (string $start_date, string $end_date, ?int $limit = 10) use ($branchId) {
+                    $result = app(CustomerReportService::class)->getTopCustomers(
+                        $branchId,
+                        Carbon::parse($start_date),
+                        Carbon::parse($end_date),
+                        $limit ?? 10,
+                    );
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            // ════════════════ PRODUCTS ════════════════
+            (new Tool)->as('search_products')
                 ->for('Buscar productos por nombre o SKU')
                 ->withStringParameter('query', 'Nombre parcial o SKU del producto')
                 ->using(function (string $query) use ($branchId) {
@@ -112,8 +181,225 @@ class EzyVentasToolProvider implements AiToolProvider
                     return json_encode($products, JSON_PRETTY_PRINT);
                 }),
 
-            // ──── EXPORT ────
-            Tool::as('export_products_excel')
+            (new Tool)->as('low_stock_products')
+                ->for('Listar productos con stock bajo o por debajo del mínimo')
+                ->withNumberParameter('threshold', 'Cantidad máxima de productos a devolver (por defecto 5)')
+                ->using(function (?int $threshold = 5) use ($branchId) {
+                    $result = app(SalesDashboardService::class)->getLowStockProducts($branchId, $threshold ?? 5);
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            // ════════════════ CASH REGISTER ════════════════
+            (new Tool)->as('cash_register_session_summary')
+                ->for('Obtener el resumen de una sesión de caja: totales por método de pago y conciliación bancaria')
+                ->withNumberParameter('session_id', 'ID de la sesión de caja registradora')
+                ->using(function (int $session_id) use ($branchId) {
+                    $result = app(CashRegisterReportService::class)->getSessionSummary($branchId, $session_id);
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            (new Tool)->as('cash_register_discrepancies')
+                ->for('Listar sesiones de caja con discrepancias entre el efectivo contado y el esperado')
+                ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
+                ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
+                ->using(function (string $start_date, string $end_date) use ($branchId) {
+                    $result = app(CashRegisterReportService::class)->getDiscrepancies(
+                        $branchId,
+                        Carbon::parse($start_date),
+                        Carbon::parse($end_date),
+                    );
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            (new Tool)->as('daily_cash_close')
+                ->for('Obtener el cierre de caja de una fecha específica')
+                ->withStringParameter('date', 'Fecha en formato YYYY-MM-DD')
+                ->using(function (string $date) use ($branchId) {
+                    $result = app(CashRegisterReportService::class)->getDailyClose($branchId, $date);
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            // ════════════════ PROMOTIONS ════════════════
+            (new Tool)->as('active_promotions')
+                ->for('Listar las promociones actualmente activas')
+                ->using(function () use ($branchId) {
+                    $result = app(PromotionReportService::class)->getActivePromotions($branchId);
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            (new Tool)->as('promotion_usage_stats')
+                ->for('Obtener estadísticas de uso de una promoción específica')
+                ->withNumberParameter('promotion_id', 'ID de la promoción')
+                ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
+                ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
+                ->using(function (int $promotion_id, string $start_date, string $end_date) use ($branchId) {
+                    $result = app(PromotionReportService::class)->getUsageStats(
+                        $promotion_id,
+                        Carbon::parse($start_date),
+                        Carbon::parse($end_date),
+                        $branchId,
+                    );
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            // ════════════════ QUOTES & INVOICES ════════════════
+            (new Tool)->as('quote_status_summary')
+                ->for('Obtener resumen de cotizaciones agrupadas por estado')
+                ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
+                ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
+                ->using(function (string $start_date, string $end_date) use ($branchId) {
+                    $result = app(QuoteInvoiceReportService::class)->getQuoteStatusSummary(
+                        $branchId,
+                        Carbon::parse($start_date),
+                        Carbon::parse($end_date),
+                    );
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            (new Tool)->as('quote_conversion_rate')
+                ->for('Obtener la tasa de conversión de cotizaciones a ventas en un período')
+                ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
+                ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
+                ->using(function (string $start_date, string $end_date) use ($branchId) {
+                    $result = app(QuoteInvoiceReportService::class)->getConversionRate(
+                        $branchId,
+                        Carbon::parse($start_date),
+                        Carbon::parse($end_date),
+                    );
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            (new Tool)->as('invoice_status_summary')
+                ->for('Obtener resumen de facturas (CFDI) agrupadas por estado')
+                ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
+                ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
+                ->using(function (string $start_date, string $end_date) use ($branchId) {
+                    $result = app(QuoteInvoiceReportService::class)->getInvoiceStatusSummary(
+                        $branchId,
+                        Carbon::parse($start_date),
+                        Carbon::parse($end_date),
+                    );
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            // ════════════════ EXPENSES ════════════════
+            (new Tool)->as('expenses_by_category')
+                ->for('Obtener gastos agrupados por categoría en un período')
+                ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
+                ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
+                ->using(function (string $start_date, string $end_date) use ($branchId) {
+                    $result = app(ExpenseReportService::class)->byCategory(
+                        $branchId,
+                        Carbon::parse($start_date),
+                        Carbon::parse($end_date),
+                    );
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            (new Tool)->as('expense_trend')
+                ->for('Obtener la tendencia mensual de gastos de los últimos N meses')
+                ->withNumberParameter('months', 'Cantidad de meses (por defecto 6)')
+                ->using(function (?int $months = 6) use ($branchId) {
+                    $result = app(ExpenseReportService::class)->trend($branchId, $months ?? 6);
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            // ════════════════ SERVICE ORDERS ════════════════
+            (new Tool)->as('service_order_status_summary')
+                ->for('Obtener el resumen de órdenes de servicio agrupadas por estado')
+                ->using(function () use ($branchId) {
+                    $result = app(ServiceOrderReportService::class)->getStatusSummary($branchId);
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            (new Tool)->as('service_order_workload')
+                ->for('Obtener la carga de trabajo por técnico en un período')
+                ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
+                ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
+                ->using(function (string $start_date, string $end_date) use ($branchId) {
+                    $result = app(ServiceOrderReportService::class)->getWorkloadByTechnician(
+                        $branchId,
+                        Carbon::parse($start_date),
+                        Carbon::parse($end_date),
+                    );
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            (new Tool)->as('service_order_turnaround')
+                ->for('Obtener el tiempo promedio de atención de órdenes de servicio en un período')
+                ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
+                ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
+                ->using(function (string $start_date, string $end_date) use ($branchId) {
+                    $result = app(ServiceOrderReportService::class)->getAverageTurnaroundTime(
+                        $branchId,
+                        Carbon::parse($start_date),
+                        Carbon::parse($end_date),
+                    );
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            // ════════════════ STAFF PERFORMANCE ════════════════
+            (new Tool)->as('sales_by_employee')
+                ->for('Obtener las ventas agrupadas por empleado en un período')
+                ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
+                ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
+                ->using(function (string $start_date, string $end_date) use ($branchId) {
+                    $result = app(StaffPerformanceService::class)->salesByEmployee(
+                        $branchId,
+                        Carbon::parse($start_date),
+                        Carbon::parse($end_date),
+                    );
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            (new Tool)->as('ranking_by_branch')
+                ->for('Obtener el ranking de sucursales por ventas en un período (solo para suscripciones multi-sucursal)')
+                ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
+                ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
+                ->using(function (string $start_date, string $end_date) use ($subscriptionId) {
+                    $result = app(StaffPerformanceService::class)->rankingByBranch(
+                        $subscriptionId,
+                        Carbon::parse($start_date),
+                        Carbon::parse($end_date),
+                    );
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            // ════════════════ DASHBOARD ════════════════
+            (new Tool)->as('today_sales_summary')
+                ->for('Obtener los KPIs de ventas del día actual')
+                ->using(function () use ($branchId) {
+                    $result = app(SalesDashboardService::class)->getTodaySales($branchId);
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            (new Tool)->as('weekly_sales_trend')
+                ->for('Obtener la tendencia de ventas de los últimos 7 días')
+                ->using(function () use ($branchId) {
+                    $result = app(SalesDashboardService::class)->getWeeklyTrend($branchId);
+
+                    return json_encode($result, JSON_PRETTY_PRINT);
+                }),
+
+            // ════════════════ EXPORT ════════════════
+            (new Tool)->as('export_products_excel')
                 ->for('Generar un archivo Excel descargable con el catálogo completo de productos')
                 ->using(function () use ($subscriptionId) {
                     $filename = 'exports/' . $subscriptionId . '/productos_' . now()->timestamp . '.xlsx';
@@ -123,7 +409,7 @@ class EzyVentasToolProvider implements AiToolProvider
                     $url = URL::temporarySignedRoute(
                         'ai-agent.download',
                         now()->addMinutes(config('ai-agent.download_url_ttl', 15)),
-                        ['path' => $filename],
+                        ['path' => rtrim(strtr(base64_encode($filename), '+/', '-_'), '=')],
                     );
 
                     return json_encode([
@@ -134,3 +420,5 @@ class EzyVentasToolProvider implements AiToolProvider
         ];
     }
 }
+
+

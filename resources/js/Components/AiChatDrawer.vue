@@ -14,7 +14,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible']);
 
-const { messages, isThinking, sendMessage, reset } = useAiChat();
+const { messages, isThinking, sendMessage } = useAiChat();
 
 const inputText = ref('');
 const messagesContainer = ref(null);
@@ -27,14 +27,6 @@ watch(
         if (messagesContainer.value) {
             messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
         }
-    }
-);
-
-/** Clear state when drawer closes. */
-watch(
-    () => props.visible,
-    (v) => {
-        if (!v) reset();
     }
 );
 

@@ -2,16 +2,14 @@
 
 namespace Ezyventas\AiAgent\Support;
 
-use Ezyventas\AiAgent\Contracts\AiProvider;
-use Ezyventas\AiAgent\Contracts\AiProviderResponse;
 use Ezyventas\AiAgent\Models\AiConversation;
 use Ezyventas\AiAgent\Models\AiMessage;
 use Ezyventas\AiAgent\Models\AiToolExecution;
-use Ezyventas\AiAgent\Providers\AnthropicProvider;
-use Ezyventas\AiAgent\Providers\DeepSeekProvider;
-use Ezyventas\AiAgent\Providers\OpenAIProvider;
-use Ezyventas\AiAgent\Schema\Tool;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Prism\Prism\Enums\Provider;
+use Prism\Prism\Facades\Prism;
+use Prism\Prism\ValueObjects\Messages\AssistantMessage as PrismAssistantMessage;
+use Prism\Prism\ValueObjects\Messages\UserMessage as PrismUserMessage;
 use RuntimeException;
 
 class AiAgentManager
@@ -26,81 +24,35 @@ class AiAgentManager
     public function ask(AiConversation $conversation, string $userMessage, Authenticatable $user): AiMessage
     {
         $tools = $this->tools->forUser($user);
-        $provider = $this->resolveProvider($conversation->provider);
         $apiKey = $this->resolveApiKey($user);
-
-        $messages = $this->history($conversation);
-        // TODO: Append the new user message to messages list
-        // (handled by the caller already creating the user message row, but we
-        //  need to include it in the prompt — the history() method will pick it up
-        //  if called after the user message is persisted)
-
+        $prismMessages = $this->buildPrismMessages($conversation);
         $systemPrompt = $this->systemPrompt($user);
         $maxSteps = (int) config('ai-agent.max_tool_steps', 6);
 
+        $response = Prism::text()
+            ->using(Provider::from($conversation->provider), $conversation->model, ['api_key' => $apiKey])
+            ->withSystemPrompt($systemPrompt)
+            ->withMessages($prismMessages)
+            ->withTools($tools)
+            ->withMaxSteps($maxSteps)
+            ->generate();
+
+        // Build tool call log from Prism response steps
         $toolCallLog = [];
-        $finalContent = '';
-        $step = 0;
-
-        // ── Tool calling loop ──
-        while ($step < $maxSteps) {
-            $step++;
-
-            $response = $provider->chat(
-                $conversation->model,
-                $systemPrompt,
-                $messages,
-                $tools,
-                $apiKey,
-            );
-
-            if (empty($response->toolCalls)) {
-                // No more tools to call — this is the final answer
-                $finalContent = $response->content;
-                break;
-            }
-
-            // Append the assistant's tool-use request to messages
-            $messages[] = $this->formatAssistantToolUseMessage($response);
-
-            // Execute each tool and append results
-            foreach ($response->toolCalls as $toolCall) {
-                $tool = $this->findTool($tools, $toolCall['name']);
-
-                $startMs = (int) (microtime(true) * 1000);
-
-                try {
-                    $result = $tool
-                        ? $tool->execute($toolCall['arguments'])
-                        : json_encode(['error' => "Tool '{$toolCall['name']}' not found"]);
-                } catch (\Throwable $e) {
-                    $result = json_encode(['error' => $e->getMessage()]);
-                }
-
-                $durationMs = (int) (microtime(true) * 1000) - $startMs;
+        foreach ($response->steps as $step) {
+            foreach ($step->toolCalls as $index => $toolCall) {
+                $toolResult = $step->toolResults[$index] ?? null;
 
                 $toolCallLog[] = [
-                    'tool_name'  => $toolCall['name'],
-                    'arguments'  => $toolCall['arguments'],
-                    'result'     => $result,
-                    'duration_ms'=> $durationMs,
-                ];
-
-                $messages[] = [
-                    'role'          => 'tool',
-                    'tool_call_id'  => $toolCall['id'],
-                    'content'       => $result,
+                    'tool_name'   => $toolCall->name,
+                    'arguments'   => $toolCall->arguments(),
+                    'result'      => $toolResult?->result ?? null,
+                    'duration_ms' => null, // Prism doesn't expose per-tool timing
                 ];
             }
-
-            // Reset the system prompt after tool results — Anthropic requires it,
-            // OpenAI ignores it on subsequent calls
-            $systemPrompt = '';
         }
 
-        if ($step >= $maxSteps && empty($finalContent)) {
-            $finalContent = 'Lo siento, el asistente alcanzó el límite de pasos sin poder completar la respuesta. Intenta con una pregunta más concreta.';
-        }
+        $finalContent = $response->text ?: 'Lo siento, el asistente no pudo generar una respuesta. Intenta con una pregunta más concreta.';
 
         $assistantMessage = $conversation->messages()->create([
             'role'       => 'assistant',
@@ -112,13 +64,13 @@ class AiAgentManager
         $subscriptionId = $conversation->subscription_id;
         foreach ($toolCallLog as $log) {
             AiToolExecution::create([
-                'ai_message_id'  => $assistantMessage->id,
-                'subscription_id'=> $subscriptionId,
-                'user_id'        => $user->id,
-                'tool_name'      => $log['tool_name'],
-                'arguments'      => $log['arguments'],
-                'result'         => $log['result'],
-                'duration_ms'    => $log['duration_ms'],
+                'ai_message_id'   => $assistantMessage->id,
+                'subscription_id' => $subscriptionId,
+                'user_id'         => $user->id,
+                'tool_name'       => $log['tool_name'],
+                'arguments'       => $log['arguments'],
+                'result'          => is_string($log['result']) ? $log['result'] : json_encode($log['result']),
+                'duration_ms'     => $log['duration_ms'],
             ]);
         }
 
@@ -126,57 +78,29 @@ class AiAgentManager
     }
 
     /**
-     * Build the conversation history array for the provider.
+     * Build Prism message objects from the conversation history.
+     *
+     * Only role + content are passed to the provider. The tool_calls stored
+     * on assistant messages are audit metadata (not API-level tool_call data)
+     * — they were already resolved in a previous turn and the final answer is
+     * in the content field. Reconstructing tool calls from history would
+     * require matching tool_call_ids with tool result messages that don't
+     * exist in the DB (intermediate tool messages are never persisted).
      */
-    private function history(AiConversation $conversation): array
+    private function buildPrismMessages(AiConversation $conversation): array
     {
         return $conversation->messages()
             ->orderBy('id')
             ->get()
-            ->map(fn (AiMessage $msg) => [
-                'role'    => $msg->role,
-                'content' => $msg->content,
-            ])
-            ->toArray();
-    }
-
-    /**
-     * Find a tool by name in the tool array.
-     */
-    private function findTool(array $tools, string $name): ?Tool
-    {
-        foreach ($tools as $tool) {
-            if ($tool->name === $name) {
-                return $tool;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Format the assistant's tool-use request as a messages entry.
-     */
-    private function formatAssistantToolUseMessage(AiProviderResponse $response): array
-    {
-        return [
-            'role'    => 'assistant',
-            'content' => $response->content,
-            'tool_calls' => $response->toolCalls,
-        ];
-    }
-
-    /**
-     * Resolve the AI provider instance by name.
-     */
-    private function resolveProvider(string $provider): AiProvider
-    {
-        return match ($provider) {
-            'anthropic' => new AnthropicProvider,
-            'deepseek'  => new DeepSeekProvider,
-            'openai'    => new OpenAIProvider,
-            default     => throw new RuntimeException("Unsupported AI provider: {$provider}"),
-        };
+            ->map(function (AiMessage $msg): \Prism\Prism\Contracts\Message {
+                return match ($msg->role) {
+                    'user'      => new PrismUserMessage($msg->content),
+                    'assistant' => new PrismAssistantMessage($msg->content ?? ''),
+                    default     => new PrismUserMessage($msg->content ?? ''),
+                };
+            })
+            ->values()
+            ->all();
     }
 
     /**
@@ -222,6 +146,20 @@ class AiAgentManager
         return "You are the reporting assistant for {$businessName}, "
             . 'a point-of-sale business. Answer only using tool results. '
             . "If a question requires data you don't have a tool for, say so — never invent numbers. "
-            . 'Respond in the same language the user writes in.';
+            . 'Respond in the same language the user writes in. '
+            . 'You can answer questions about: '
+            . 'financial reports (KPIs, sales by channel, expenses by category), '
+            . 'inventory (dead stock, low stock), '
+            . 'transactions (recent, filtered by status/payment/channel/date), '
+            . 'customers (search, purchase history, account statements, top spenders), '
+            . 'products (search by name/SKU), '
+            . 'cash register sessions (session summaries, discrepancies, daily close), '
+            . 'promotions (active promotions, usage stats), '
+            . 'quotes and invoices (status summaries, quote-to-sale conversion rate), '
+            . 'expenses (by category, monthly trends), '
+            . 'service orders (status summary, technician workload, turnaround time), '
+            . 'staff performance (sales by employee, branch rankings), '
+            . 'and daily/weekly sales dashboards. '
+            . 'You can also generate downloadable Excel exports of the product catalog.';
     }
 }

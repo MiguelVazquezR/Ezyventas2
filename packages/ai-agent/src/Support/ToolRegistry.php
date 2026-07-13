@@ -3,8 +3,8 @@
 namespace Ezyventas\AiAgent\Support;
 
 use Ezyventas\AiAgent\Contracts\AiToolProvider;
-use Ezyventas\AiAgent\Schema\Tool;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Prism\Prism\Tool;
 
 class ToolRegistry
 {

@@ -2,8 +2,8 @@
 
 namespace Ezyventas\AiAgent\Contracts;
 
-use Ezyventas\AiAgent\Schema\Tool;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Prism\Prism\Tool;
 
 interface AiToolProvider
 {

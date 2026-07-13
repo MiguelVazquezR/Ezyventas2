@@ -84,14 +84,11 @@ class AiChatController extends Controller
             abort(401);
         }
 
-        $user = Auth::user();
-        $subscription = $user->branch->subscription;
+        // Decode URL-safe base64: reverse -_ → +/ and add padding
+        $path = base64_decode(strtr($path, '-_', '+/'));
 
-        // Path must be under the user's subscription folder
-        $expectedPrefix = "exports/{$subscription->id}/";
-
-        if (! str_starts_with($path, $expectedPrefix)) {
-            abort(403);
+        if (! $path || ! str_contains($path, '/')) {
+            abort(400, 'Invalid file path.');
         }
 
         $disk = Storage::disk(config('ai-agent.export_disk', 'local'));
@@ -109,7 +106,7 @@ class AiChatController extends Controller
     private function resolveProvider($subscription): string
     {
         return $this->getTenantSetting($subscription, 'ai.provider')
-            ?? config('ai-agent.default_provider', 'anthropic');
+            ?? config('ai-agent.default_provider', 'deepseek');
     }
 
     /**
@@ -118,7 +115,7 @@ class AiChatController extends Controller
     private function resolveModel($subscription): string
     {
         return $this->getTenantSetting($subscription, 'ai.model')
-            ?? config('ai-agent.default_model', 'claude-sonnet-5');
+            ?? config('ai-agent.default_model', 'deepseek-v4-flash');
     }
 
     /**

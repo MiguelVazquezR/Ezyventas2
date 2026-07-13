@@ -1,4 +1,5 @@
-import { ref, nextTick } from 'vue';
+import { ref, nextTick, watch } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 
 /**
@@ -6,12 +7,26 @@ import { useToast } from 'primevue/usetoast';
  * Manages conversation state, message sending, and the fade-in reveal.
  *
  * No Pinia — state is local to the composable, consistent with the rest of the app.
+ * State persists across drawer open/close cycles but resets on page navigation.
  */
 export function useAiChat() {
     const conversationId = ref(null);
     const messages = ref([]);
     const isThinking = ref(false);
     const toast = useToast();
+    const page = usePage();
+
+    // Reset conversation when navigating to a different page
+    let lastUrl = page.url;
+    watch(
+        () => page.url,
+        (url) => {
+            if (url !== lastUrl) {
+                lastUrl = url;
+                reset();
+            }
+        }
+    );
 
     /**
      * Start a new conversation (or reuse the existing one).
@@ -38,17 +53,19 @@ export function useAiChat() {
 
     /**
      * Send a user message and append the assistant's reply with a fade-in.
+     *
+     * The user message appears instantly (optimistic) while the AI thinks.
      */
     async function sendMessage(text) {
         if (!text.trim()) return;
 
-        await ensureConversation();
-
-        // Optimistic user message
+        // Show the user's message immediately — don't wait for API calls
         messages.value.push({ role: 'user', content: text, visible: true });
         isThinking.value = true;
 
         try {
+            await ensureConversation();
+
             const { data } = await window.axios.post(
                 `/ai-agent/conversations/${conversationId.value}/messages`,
                 { message: text }
@@ -65,6 +82,11 @@ export function useAiChat() {
             await nextTick();
             messages.value.at(-1).visible = true;
         } catch (e) {
+            // Remove the optimistic user message on failure
+            if (messages.value.at(-1)?.role === 'user') {
+                messages.value.pop();
+            }
+
             const detail = e.response?.data?.message
                 ?? 'El asistente no pudo procesar tu mensaje. Intenta de nuevo.';
 
