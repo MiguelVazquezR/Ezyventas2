@@ -135,9 +135,7 @@ class SubscriptionController extends Controller
             'limit_print_templates' => $subscription->print_templates_count,
         ];
 
-        // AI token usage (different data source — not a _count attribute)
-        $aiData = $subscription->getAiCreditLimitData();
-        $usages['limit_ai_credits'] = $aiData['usage'];
+        // 8. AI agent usage (read-only, limit is platform-wide)
 
         // Fallbacks visuales si un límite no trae un ícono definido en su columna 'meta'
         $defaultIcons = [
@@ -185,6 +183,9 @@ class SubscriptionController extends Controller
         $planValue = $subscription->getCurrentMonthlyCost();
         $referrerActiveDiscountPct = $subscription->getReferrerActiveDiscountPct();
 
+        // 8. AI agent usage (read-only, limit is platform-wide)
+        $aiData = $subscription->getAiCreditLimitData();
+
         return Inertia::render('Admin/Subscriptions/Show', [
             'subscription' => $subscription,
             'planItems' => $planItems,
@@ -196,6 +197,9 @@ class SubscriptionController extends Controller
             'planValue' => $planValue,
             'referrerActiveDiscountPct' => (float) $referrerActiveDiscountPct,
             'subscriptionCost' => (float) $planValue,
+            'aiUsage' => $aiData['usage'],
+            'aiPercentage' => $aiData['percentage'],
+            'hasAiAgentModule' => $subscription->hasAiAgentModule(),
         ]);
     }
 
@@ -249,33 +253,6 @@ class SubscriptionController extends Controller
     }
 
     /**
-     * Override the AI credit limit for a subscription directly (no payment flow).
-     */
-    public function updateAiCreditLimit(Request $request, Subscription $subscription)
-    {
-        $validated = $request->validate([
-            'quantity' => ['required', 'integer', 'min:0'],
-        ]);
-
-        $version = $subscription->currentVersion();
-
-        if (! $version) {
-            return back()->with('error', 'Esta suscripción no tiene una versión activa.');
-        }
-
-        $item = $version->items()->firstOrNew(['item_key' => 'limit_ai_credits']);
-        $item->fill([
-            'item_type'      => 'limit',
-            'name'           => 'Tokens de IA',
-            'quantity'       => $validated['quantity'],
-            'unit_price'     => 0,
-            'billing_period' => 'monthly',
-        ])->save();
-
-        return back()->with('success', 'Límite de tokens de IA actualizado a ' . number_format($validated['quantity']) . '.');
-    }
-
-    /**
      * Actualiza las configuraciones de una entidad específica (suscripción, sucursal o usuario).
      */
     public function updateSettings(Request $request, UpdateEntitySettingsAction $action)
@@ -302,7 +279,7 @@ class SubscriptionController extends Controller
      */
     private function buildSettingsData(Subscription $subscription): array
     {
-        $definitions = SettingDefinition::orderBy('name')->get();
+        $definitions = SettingDefinition::where('level', '!=', 'platform')->orderBy('name')->get();
 
         // Cargar sucursales con sus usuarios y settings (reutiliza la relación ya cargada)
         $branches = $subscription->branches->load(['users' => fn($q) => $q->with('settings'), 'settings']);

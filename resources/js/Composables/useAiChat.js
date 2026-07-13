@@ -71,12 +71,12 @@ export function useAiChat() {
                 { message: text }
             );
 
-            if (data.message.limit_exceeded) {
+            if (data.message.limit_exceeded || data.message.module_inactive) {
                 messages.value.push({
                     role: 'assistant',
                     content: null,
-                    limitExceeded: true,
-                    limit: data.message.tool_calls?.limit ?? 0,
+                    limitExceeded: data.message.limit_exceeded,
+                    moduleInactive: data.message.module_inactive,
                     visible: true,
                 });
             } else {

@@ -16,9 +16,21 @@ const inputText = ref('');
 const messagesContainer = ref(null);
 const usagePanel = ref(null);
 const usagePct = ref(0);
+const loadingUsage = ref(false);
 
-function toggleUsage(event) {
-    usagePanel.value?.toggle(event);
+async function toggleUsage(event) {
+    // Open panel immediately so PrimeVue can anchor it to the button
+    usagePanel.value?.show(event);
+
+    loadingUsage.value = true;
+    try {
+        const { data } = await window.axios.get('/ai-agent/usage');
+        usagePct.value = data.percentage;
+    } catch {
+        // Silently fail
+    } finally {
+        loadingUsage.value = false;
+    }
 }
 
 /** Fetch usage data when drawer opens. */
@@ -127,14 +139,21 @@ const progressBarPt = {
                         <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">
                             Uso este mes
                         </p>
-                        <ProgressBar
-                            :value="usagePct"
-                            :showValue="false"
-                            :pt="progressBarPt"
-                        />
-                        <p class="text-xs text-gray-500 dark:text-gray-400 m-0 mt-1.5 text-right tabular-nums">
-                            {{ usagePct }}%
-                        </p>
+                        <template v-if="loadingUsage">
+                            <div class="flex items-center justify-center py-3">
+                                <ProgressSpinner style="width: 20px; height: 20px" strokeWidth="6" />
+                            </div>
+                        </template>
+                        <template v-else>
+                            <ProgressBar
+                                :value="usagePct"
+                                :showValue="false"
+                                :pt="progressBarPt"
+                            />
+                            <p class="text-xs text-gray-500 dark:text-gray-400 m-0 mt-1.5 text-right tabular-nums">
+                                {{ usagePct }}%
+                            </p>
+                        </template>
                     </div>
                 </OverlayPanel>
             </div>
@@ -175,6 +194,29 @@ const progressBarPt = {
                     </div>
                 </div>
 
+                <!-- Module inactive card -->
+                <div
+                    v-if="msg.role === 'assistant' && msg.moduleInactive && msg.visible"
+                    class="flex justify-start"
+                >
+                    <div
+                        class="max-w-[85%] rounded-2xl px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-sm"
+                    >
+                        <p class="font-semibold text-amber-800 dark:text-amber-300 m-0 mb-1">
+                            Módulo no disponible
+                        </p>
+                        <p class="text-amber-700 dark:text-amber-400 m-0 mb-3">
+                            El módulo de Asistente IA no está activo en tu plan actual. Actívalo desde la gestión de suscripción.
+                        </p>
+                        <Button
+                            label="Gestionar suscripción"
+                            size="small"
+                            class="!rounded-xl !text-xs !font-bold"
+                            @click="goToManageSubscription"
+                        />
+                    </div>
+                </div>
+
                 <!-- Limit exceeded card -->
                 <div
                     v-if="msg.role === 'assistant' && msg.limitExceeded && msg.visible"
@@ -184,17 +226,19 @@ const progressBarPt = {
                         class="max-w-[85%] rounded-2xl px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-sm"
                     >
                         <p class="font-semibold text-amber-800 dark:text-amber-300 m-0 mb-1">
-                            Alcanzaste tu límite mensual
+                            Límite mensual alcanzado
                         </p>
-                        <p class="text-amber-700 dark:text-amber-400 m-0 mb-3">
-                            Has usado tus {{ msg.limit }} consultas de este mes. Puedes ampliar tu límite desde tu suscripción.
+                        <p class="text-amber-700 dark:text-amber-400 m-0">
+                            Tu suscripción alcanzó el límite de uso mensual del asistente. Si necesitas aumentar el límite, contacta a soporte.
                         </p>
-                        <Button
-                            label="Ampliar límite"
-                            size="small"
-                            class="!rounded-xl !text-xs !font-bold"
-                            @click="goToManageSubscription"
-                        />
+                        <a
+                            href="https://wa.me/5213321705650"
+                            target="_blank"
+                            rel="noopener"
+                            class="inline-flex items-center gap-1.5 mt-3 text-xs font-bold text-green-600 dark:text-green-400 hover:underline"
+                        >
+                            <i class="pi pi-whatsapp !text-sm"></i> Contactar por WhatsApp
+                        </a>
                     </div>
                 </div>
 

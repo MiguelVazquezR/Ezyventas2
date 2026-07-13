@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import EditVersionItemsModal from './Partials/EditVersionItemsModal.vue';
 import RegisterPaymentModal from './Partials/RegisterPaymentModal.vue';
@@ -18,6 +18,9 @@ const props = defineProps({
     planValue: Number,
     referrerActiveDiscountPct: Number,
     subscriptionCost: Number,
+    aiUsage: Number,
+    aiPercentage: Number,
+    hasAiAgentModule: Boolean,
 });
 
 // --- ESTADOS DE MODALES ---
@@ -234,6 +237,37 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Tarjeta de Telemetría: Uso de IA -->
+                        <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
+                            <h2 class="text-xs uppercase tracking-widest font-bold text-gray-500 m-0 mb-4 flex justify-between items-center">
+                                Asistente IA
+                                <i class="pi pi-sparkles text-gray-400"></i>
+                            </h2>
+                            <div v-if="hasAiAgentModule">
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                                        <i class="pi pi-database text-[10px] text-gray-500"></i> Tokens usados este mes
+                                    </span>
+                                    <span class="font-mono text-gray-500">
+                                        {{ aiUsage.toLocaleString() }}
+                                    </span>
+                                </div>
+                                <div class="w-full bg-gray-200 dark:bg-[#2a2a2a] rounded-full h-1.5 overflow-hidden mb-3">
+                                    <div class="h-1.5 rounded-full transition-all duration-500"
+                                        :class="aiPercentage >= 100 ? 'bg-red-500' : 'bg-purple-500'"
+                                        :style="`width: ${Math.min(aiPercentage, 100)}%`">
+                                    </div>
+                                </div>
+                                <Link :href="route('admin.ai-agent.index')" class="text-[10px] uppercase tracking-widest font-bold text-purple-500 hover:text-purple-400 transition-colors">
+                                    Gestionar límite global →
+                                </Link>
+                            </div>
+                            <div v-else class="flex flex-col items-center justify-center py-4 text-center">
+                                <i class="pi pi-lock !text-xl text-gray-300 dark:text-gray-600 mb-2"></i>
+                                <p class="text-xs text-gray-400 m-0">Módulo no contratado</p>
                             </div>
                         </div>
 

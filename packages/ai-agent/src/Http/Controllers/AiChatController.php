@@ -67,13 +67,15 @@ class AiChatController extends Controller
         );
 
         $limitExceeded = $assistantMessage->tool_calls['limit_exceeded'] ?? false;
+        $moduleInactive = $assistantMessage->tool_calls['module_inactive'] ?? false;
 
         return response()->json([
             'message' => [
-                'id'             => $assistantMessage->id,
-                'content'        => $assistantMessage->content,
-                'tool_calls'     => $assistantMessage->tool_calls,
-                'limit_exceeded' => $limitExceeded,
+                'id'              => $assistantMessage->id,
+                'content'         => $assistantMessage->content,
+                'tool_calls'      => $assistantMessage->tool_calls,
+                'limit_exceeded'  => $limitExceeded,
+                'module_inactive' => $moduleInactive,
             ],
         ]);
     }
@@ -124,20 +126,32 @@ class AiChatController extends Controller
 
     /**
      * Resolve AI provider from tenant settings with fallback.
+     * Priority: subscription override → platform setting → config/env
      */
     private function resolveProvider($subscription): string
     {
         return $this->getTenantSetting($subscription, 'ai.provider')
+            ?? $this->getPlatformSetting('ai.provider')
             ?? config('ai-agent.default_provider', 'deepseek');
     }
 
     /**
      * Resolve AI model from tenant settings with fallback.
+     * Priority: subscription override → platform setting → config/env
      */
     private function resolveModel($subscription): string
     {
         return $this->getTenantSetting($subscription, 'ai.model')
+            ?? $this->getPlatformSetting('ai.model')
             ?? config('ai-agent.default_model', 'deepseek-v4-flash');
+    }
+
+    /**
+     * Read a platform-level setting from SettingDefinition.
+     */
+    private function getPlatformSetting(string $key): ?string
+    {
+        return \App\Models\SettingDefinition::where('key', $key)->value('default_value');
     }
 
     /**

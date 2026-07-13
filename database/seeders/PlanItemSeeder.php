@@ -25,6 +25,7 @@ class PlanItemSeeder extends Seeder
             ['key' => 'module_quotes', 'name' => 'Cotizaciones', 'price' => 35, 'icon' => 'pi pi-file-check'], 
             ['key' => 'module_cash_registers', 'name' => 'Cajas', 'price' => 0, 'icon' => 'pi pi-dollar'], //Activo al suscribirse
             ['key' => 'module_settings', 'name' => 'Configuraciones', 'price' => 0, 'icon' => 'pi pi-cog'], //Activo al suscribirse
+            ['key' => 'module_ai_agent', 'name' => 'Asistente IA', 'price' => 0.00, 'icon' => 'pi pi-sparkles'],
         ];
 
         foreach ($modules as $module) {
@@ -45,7 +46,6 @@ class PlanItemSeeder extends Seeder
             ['key' => 'limit_services', 'name' => 'Servicios', 'price' => 1.5, 'quantity' => 100], // 100 al suscribirse
             ['key' => 'limit_cash_registers', 'name' => 'Cajas Registradoras', 'price' => 7.5, 'quantity' => 1], // 1 caja al suscribirse
             ['key' => 'limit_print_templates', 'name' => 'Plantillas personalizadas', 'price' => 3, 'quantity' => 1], // 2 plantillas al suscribirse
-            ['key' => 'limit_ai_credits', 'name' => 'Tokens de IA', 'price' => 15.00, 'quantity' => 500000], // 500 mil tokens por paquete
         ];
 
         foreach ($limits as $limit) {

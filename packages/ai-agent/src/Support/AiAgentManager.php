@@ -28,10 +28,17 @@ class AiAgentManager
         $limitData = $subscription->getAiCreditLimitData();
 
         if ($limitData['remaining'] <= 0) {
+            // Distinguish: module not active vs. limit exceeded
+            $moduleInactive = $limitData['limit'] === 0;
+
             return $conversation->messages()->create([
                 'role'       => 'assistant',
                 'content'    => null,
-                'tool_calls' => ['limit_exceeded' => true, 'limit' => $limitData['limit']],
+                'tool_calls' => [
+                    'limit_exceeded'  => ! $moduleInactive,
+                    'module_inactive' => $moduleInactive,
+                    'limit'           => $limitData['limit'],
+                ],
             ]);
         }
 
@@ -146,17 +153,30 @@ class AiAgentManager
 
     /**
      * Resolve the API key for the user's subscription.
+     *
+     * Priority: subscription override → platform setting → .env fallback
      */
     private function resolveApiKey(Authenticatable $user): string
     {
         $subscription = $user->branch->subscription;
 
+        // 1. Per-subscription override
         $apiKey = $this->getTenantSetting($subscription, 'ai.api_key');
-
         if ($apiKey) {
             return decrypt($apiKey);
         }
 
+        // 2. Platform-wide setting (encrypted in DB)
+        $platformKey = \App\Models\SettingDefinition::where('key', 'ai.api_key')->value('default_value');
+        if ($platformKey) {
+            try {
+                return decrypt($platformKey);
+            } catch (\Exception) {
+                // Fall through to env if decryption fails
+            }
+        }
+
+        // 3. .env fallback
         return config('ai-agent.default_api_key')
             ?? throw new RuntimeException('No se ha configurado una clave de API para el asistente de IA.');
     }
