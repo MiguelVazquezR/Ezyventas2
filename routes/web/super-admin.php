@@ -53,4 +53,8 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
         Route::post('/{releaseNote}/toggle-publish', [ReleaseNoteController::class, 'togglePublish'])->name('toggle-publish');
     });
 
+    // --- AI Credit Limit Override ---
+    Route::patch('/subscriptions/{subscription}/ai-credit-limit', [SubscriptionController::class, 'updateAiCreditLimit'])
+        ->name('subscriptions.update-ai-credit-limit');
+
 });

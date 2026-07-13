@@ -423,4 +423,34 @@ class Subscription extends Model implements HasMedia
             )
             ->sum('referrer_ongoing_discount_pct');
     }
+
+    /**
+     * Obtiene el límite y uso de tokens de IA para el mes actual.
+     * El límite viene del PlanItem (paquetes × meta.quantity) o del default config.
+     */
+    public function getAiCreditLimitData(): array
+    {
+        $limitItem = $this->currentVersion()?->items()->where('item_key', 'limit_ai_credits')->first();
+        $planItem = \App\Models\PlanItem::where('key', 'limit_ai_credits')->first();
+        $packageSize = (int) ($planItem?->meta['quantity'] ?? 1);
+        $defaultLimit = config('ai-agent.default_monthly_tokens', 2_000_000);
+
+        $limit = $limitItem
+            ? (int) $limitItem->quantity * $packageSize
+            : $defaultLimit;
+
+        $usage = \App\Models\AiUsageMonthly::where('subscription_id', $this->id)
+            ->where('year', now()->year)
+            ->where('month', now()->month)
+            ->first();
+
+        $usedTokens = $usage?->total_tokens ?? 0;
+
+        return [
+            'limit'      => $limit,
+            'usage'      => $usedTokens,
+            'remaining'  => max(0, $limit - $usedTokens),
+            'percentage' => $limit > 0 ? min(100, round(($usedTokens / $limit) * 100, 1)) : 0,
+        ];
+    }
 }

@@ -94,4 +94,32 @@ return [
 
     'tenant_fk_column' => 'subscription_id',
 
+    /*
+    |--------------------------------------------------------------------------
+    | Default Monthly AI Tokens
+    |--------------------------------------------------------------------------
+    |
+    | Free baseline token limit given to every subscription that existed before
+    | the AI token limit feature shipped and hasn't purchased the
+    | limit_ai_credits PlanItem yet. Default: 2 million tokens/month.
+    |
+    */
+
+    'default_monthly_tokens' => 2_000_000,
+
+    /*
+    |--------------------------------------------------------------------------
+    | AI Model Pricing (USD per million tokens)
+    |--------------------------------------------------------------------------
+    |
+    | Used to estimate cost for admin visibility only — does not feed into
+    | subscriber-facing credit math. Update these when provider pricing changes.
+    |
+    */
+
+    'pricing_usd_per_million_tokens' => [
+        'deepseek-v4-flash' => ['input' => 0.14, 'output' => 0.28],
+        'deepseek-v4-pro'   => ['input' => 1.10, 'output' => 4.40],
+    ],
+
 ];

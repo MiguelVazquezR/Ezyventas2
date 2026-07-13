@@ -135,6 +135,10 @@ class SubscriptionController extends Controller
             'limit_print_templates' => $subscription->print_templates_count,
         ];
 
+        // AI token usage (different data source — not a _count attribute)
+        $aiData = $subscription->getAiCreditLimitData();
+        $usages['limit_ai_credits'] = $aiData['usage'];
+
         // Fallbacks visuales si un límite no trae un ícono definido en su columna 'meta'
         $defaultIcons = [
             'limit_branches' => 'pi pi-building',
@@ -242,6 +246,33 @@ class SubscriptionController extends Controller
         $action->execute($version);
 
         return redirect()->back()->with('success', 'La versión y sus pagos asociados han sido eliminados correctamente.');
+    }
+
+    /**
+     * Override the AI credit limit for a subscription directly (no payment flow).
+     */
+    public function updateAiCreditLimit(Request $request, Subscription $subscription)
+    {
+        $validated = $request->validate([
+            'quantity' => ['required', 'integer', 'min:0'],
+        ]);
+
+        $version = $subscription->currentVersion();
+
+        if (! $version) {
+            return back()->with('error', 'Esta suscripción no tiene una versión activa.');
+        }
+
+        $item = $version->items()->firstOrNew(['item_key' => 'limit_ai_credits']);
+        $item->fill([
+            'item_type'      => 'limit',
+            'name'           => 'Tokens de IA',
+            'quantity'       => $validated['quantity'],
+            'unit_price'     => 0,
+            'billing_period' => 'monthly',
+        ])->save();
+
+        return back()->with('success', 'Límite de tokens de IA actualizado a ' . number_format($validated['quantity']) . '.');
     }
 
     /**

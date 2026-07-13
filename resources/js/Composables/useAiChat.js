@@ -71,16 +71,26 @@ export function useAiChat() {
                 { message: text }
             );
 
-            // Push with visible:false so the <Transition> animates it in
-            messages.value.push({
-                role: 'assistant',
-                content: data.message.content,
-                tool_calls: data.message.tool_calls,
-                visible: false,
-            });
+            if (data.message.limit_exceeded) {
+                messages.value.push({
+                    role: 'assistant',
+                    content: null,
+                    limitExceeded: true,
+                    limit: data.message.tool_calls?.limit ?? 0,
+                    visible: true,
+                });
+            } else {
+                // Push with visible:false so the <Transition> animates it in
+                messages.value.push({
+                    role: 'assistant',
+                    content: data.message.content,
+                    tool_calls: data.message.tool_calls,
+                    visible: false,
+                });
 
-            await nextTick();
-            messages.value.at(-1).visible = true;
+                await nextTick();
+                messages.value.at(-1).visible = true;
+            }
         } catch (e) {
             // Remove the optimistic user message on failure
             if (messages.value.at(-1)?.role === 'user') {

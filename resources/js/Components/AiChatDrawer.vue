@@ -1,11 +1,7 @@
 <script setup>
 import { ref, nextTick, watch } from 'vue';
+import { router } from '@inertiajs/vue3';
 import { useAiChat } from '@/composables/useAiChat';
-import ProgressSpinner from 'primevue/progressspinner';
-import Button from 'primevue/button';
-import InputText from 'primevue/inputtext';
-import Drawer from 'primevue/drawer';
-import Divider from 'primevue/divider';
 
 const props = defineProps({
     /** Control the drawer visibility from parent. */
@@ -18,6 +14,24 @@ const { messages, isThinking, sendMessage } = useAiChat();
 
 const inputText = ref('');
 const messagesContainer = ref(null);
+const usagePanel = ref(null);
+const usagePct = ref(0);
+
+function toggleUsage(event) {
+    usagePanel.value?.toggle(event);
+}
+
+/** Fetch usage data when drawer opens. */
+watch(() => props.visible, async (isVisible) => {
+    if (isVisible) {
+        try {
+            const { data } = await window.axios.get('/ai-agent/usage');
+            usagePct.value = data.percentage;
+        } catch {
+            // Silently fail — usage display is non-critical
+        }
+    }
+});
 
 /** Auto-scroll when new messages arrive. */
 watch(
@@ -46,6 +60,10 @@ function onKeydown(e) {
     }
 }
 
+function goToManageSubscription() {
+    router.visit(route('subscription.manage'));
+}
+
 /** Simple markdown-to-html for links in tool results. */
 function renderContent(text) {
     if (!text) return '';
@@ -60,6 +78,12 @@ function renderContent(text) {
             '<a href="$1" target="_blank" class="text-primary-500 underline">$1</a>'
         );
 }
+
+/** Reuse the same ProgressBar PT pattern from PlanDetailsCard */
+const progressBarPt = {
+    root: { class: '!h-1.5 !bg-gray-200 dark:!bg-[#2a2a2a] !rounded-full overflow-hidden' },
+    value: { class: '!bg-blue-500' },
+};
 </script>
 
 <template>
@@ -81,7 +105,7 @@ function renderContent(text) {
                 >
                     <i class="pi pi-sparkles !text-white !text-sm" />
                 </div>
-                <div>
+                <div class="flex-1 min-w-0">
                     <h3 class="m-0 text-sm font-semibold text-gray-900 dark:text-white">
                         Asistente IA
                     </h3>
@@ -89,6 +113,30 @@ function renderContent(text) {
                         EzyVentas AI
                     </p>
                 </div>
+                <Button
+                    ref="usageButton"
+                    icon="pi pi-chart-bar"
+                    text
+                    rounded
+                    size="small"
+                    :pt="{ root: { class: '!text-gray-400 hover:!text-gray-600 dark:hover:!text-gray-300' } }"
+                    @click="toggleUsage"
+                />
+                <OverlayPanel ref="usagePanel" :pt="{ content: { class: '!rounded-2xl' } }">
+                    <div class="p-3 w-48">
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">
+                            Uso este mes
+                        </p>
+                        <ProgressBar
+                            :value="usagePct"
+                            :showValue="false"
+                            :pt="progressBarPt"
+                        />
+                        <p class="text-xs text-gray-500 dark:text-gray-400 m-0 mt-1.5 text-right tabular-nums">
+                            {{ usagePct }}%
+                        </p>
+                    </div>
+                </OverlayPanel>
             </div>
         </template>
 
@@ -124,6 +172,29 @@ function renderContent(text) {
                         class="max-w-[80%] rounded-2xl rounded-br-md px-4 py-2.5 bg-primary-500 text-white text-sm"
                     >
                         {{ msg.content }}
+                    </div>
+                </div>
+
+                <!-- Limit exceeded card -->
+                <div
+                    v-if="msg.role === 'assistant' && msg.limitExceeded && msg.visible"
+                    class="flex justify-start"
+                >
+                    <div
+                        class="max-w-[85%] rounded-2xl px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-sm"
+                    >
+                        <p class="font-semibold text-amber-800 dark:text-amber-300 m-0 mb-1">
+                            Alcanzaste tu límite mensual
+                        </p>
+                        <p class="text-amber-700 dark:text-amber-400 m-0 mb-3">
+                            Has usado tus {{ msg.limit }} consultas de este mes. Puedes ampliar tu límite desde tu suscripción.
+                        </p>
+                        <Button
+                            label="Ampliar límite"
+                            size="small"
+                            class="!rounded-xl !text-xs !font-bold"
+                            @click="goToManageSubscription"
+                        />
                     </div>
                 </div>
 

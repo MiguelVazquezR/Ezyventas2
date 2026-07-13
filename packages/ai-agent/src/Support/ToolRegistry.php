@@ -20,4 +20,18 @@ class ToolRegistry
     {
         return $this->provider->tools($user);
     }
+
+    /**
+     * Return category labels for tools the user has permission to use.
+     *
+     * @return array<int, string>
+     */
+    public function categoriesForUser(Authenticatable $user): array
+    {
+        if (method_exists($this->provider, 'categories')) {
+            return $this->provider->categories($user);
+        }
+
+        return [];
+    }
 }

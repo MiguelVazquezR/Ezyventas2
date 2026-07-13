@@ -23,6 +23,18 @@ class AiAgentManager
      */
     public function ask(AiConversation $conversation, string $userMessage, Authenticatable $user): AiMessage
     {
+        // Enforce monthly token limit before calling the LLM
+        $subscription = $user->branch->subscription;
+        $limitData = $subscription->getAiCreditLimitData();
+
+        if ($limitData['remaining'] <= 0) {
+            return $conversation->messages()->create([
+                'role'       => 'assistant',
+                'content'    => null,
+                'tool_calls' => ['limit_exceeded' => true, 'limit' => $limitData['limit']],
+            ]);
+        }
+
         $tools = $this->tools->forUser($user);
         $apiKey = $this->resolveApiKey($user);
         $prismMessages = $this->buildPrismMessages($conversation);
@@ -36,6 +48,35 @@ class AiAgentManager
             ->withTools($tools)
             ->withMaxSteps($maxSteps)
             ->generate();
+
+        // Capture token usage for admin visibility
+        $promptTokens = $response->usage->promptTokens;
+        $completionTokens = $response->usage->completionTokens;
+        $totalTokens = $promptTokens + $completionTokens;
+
+        $pricing = config("ai-agent.pricing_usd_per_million_tokens.{$conversation->model}");
+        $costUsd = $pricing
+            ? ($promptTokens / 1_000_000 * $pricing['input']) + ($completionTokens / 1_000_000 * $pricing['output'])
+            : 0;
+
+        // Increment monthly token usage
+        \App\Models\AiUsageMonthly::firstOrCreate([
+            'subscription_id' => $subscription->id,
+            'year'            => now()->year,
+            'month'           => now()->month,
+        ]);
+
+        \App\Models\AiUsageMonthly::where([
+            'subscription_id' => $subscription->id,
+            'year'            => now()->year,
+            'month'           => now()->month,
+        ])->increment('total_tokens', $totalTokens);
+
+        \App\Models\AiUsageMonthly::where([
+            'subscription_id' => $subscription->id,
+            'year'            => now()->year,
+            'month'           => now()->month,
+        ])->increment('estimated_cost_usd', round($costUsd, 4));
 
         // Build tool call log from Prism response steps
         $toolCallLog = [];
@@ -142,24 +183,19 @@ class AiAgentManager
     private function systemPrompt(Authenticatable $user): string
     {
         $businessName = $user->branch?->subscription?->business_name ?? 'EzyVentas';
+        $today = now()->locale('es')->translatedFormat('l, d \d\e F \d\e Y, H:i \h\r\s');
 
-        return "You are the reporting assistant for {$businessName}, "
+        $categories = $this->tools->categoriesForUser($user);
+        $categoryList = ! empty($categories) ? implode(', ', $categories) : 'sales, inventory, customers, products, expenses, and cash register sessions';
+
+        return "Today's date and time is {$today} (America/Mexico_City). "
+            . 'Always use this as "today" for any relative date calculation — "last 3 months", "this week", "yesterday" — never infer or assume a different date. '
+            . "You are the reporting assistant for {$businessName}, "
             . 'a point-of-sale business. Answer only using tool results. '
             . "If a question requires data you don't have a tool for, say so — never invent numbers. "
             . 'Respond in the same language the user writes in. '
             . 'You can answer questions about: '
-            . 'financial reports (KPIs, sales by channel, expenses by category), '
-            . 'inventory (dead stock, low stock), '
-            . 'transactions (recent, filtered by status/payment/channel/date), '
-            . 'customers (search, purchase history, account statements, top spenders), '
-            . 'products (search by name/SKU), '
-            . 'cash register sessions (session summaries, discrepancies, daily close), '
-            . 'promotions (active promotions, usage stats), '
-            . 'quotes and invoices (status summaries, quote-to-sale conversion rate), '
-            . 'expenses (by category, monthly trends), '
-            . 'service orders (status summary, technician workload, turnaround time), '
-            . 'staff performance (sales by employee, branch rankings), '
-            . 'and daily/weekly sales dashboards. '
+            . $categoryList . '. '
             . 'You can also generate downloadable Excel exports of the product catalog.';
     }
 }

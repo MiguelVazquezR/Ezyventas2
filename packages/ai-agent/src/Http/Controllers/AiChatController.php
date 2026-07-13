@@ -66,11 +66,14 @@ class AiChatController extends Controller
             $conversation, $request->message, $user
         );
 
+        $limitExceeded = $assistantMessage->tool_calls['limit_exceeded'] ?? false;
+
         return response()->json([
             'message' => [
-                'id'        => $assistantMessage->id,
-                'content'   => $assistantMessage->content,
-                'tool_calls'=> $assistantMessage->tool_calls,
+                'id'             => $assistantMessage->id,
+                'content'        => $assistantMessage->content,
+                'tool_calls'     => $assistantMessage->tool_calls,
+                'limit_exceeded' => $limitExceeded,
             ],
         ]);
     }
@@ -80,24 +83,43 @@ class AiChatController extends Controller
      */
     public function download(Request $request, string $path): BinaryFileResponse
     {
-        if (! $request->hasValidSignature()) {
-            abort(401);
-        }
+        // The 'signed' middleware already validated the signature by this point.
 
         // Decode URL-safe base64: reverse -_ → +/ and add padding
-        $path = base64_decode(strtr($path, '-_', '+/'));
+        $decodedPath = base64_decode(strtr($path, '-_', '+/'));
 
-        if (! $path || ! str_contains($path, '/')) {
+        if (! $decodedPath || ! str_contains($decodedPath, '/')) {
             abort(400, 'Invalid file path.');
+        }
+
+        // Cross-subscription check
+        $pathSegments = explode('/', $decodedPath);
+        $pathSubscriptionId = (int) ($pathSegments[1] ?? 0);
+
+        if ($pathSubscriptionId === 0 || $pathSubscriptionId !== $request->user()?->branch?->subscription_id) {
+            abort(403, 'No tienes acceso a este archivo.');
         }
 
         $disk = Storage::disk(config('ai-agent.export_disk', 'local'));
 
-        if (! $disk->exists($path)) {
+        if (! $disk->exists($decodedPath)) {
             abort(404);
         }
 
-        return response()->download($disk->path($path));
+        return response()->download($disk->path($decodedPath));
+    }
+
+    /**
+     * Return the current month's AI token usage percentage for the authenticated user.
+     */
+    public function usage(Request $request): JsonResponse
+    {
+        $subscription = $request->user()->branch->subscription;
+        $data = $subscription->getAiCreditLimitData();
+
+        return response()->json([
+            'percentage' => $data['percentage'],
+        ]);
     }
 
     /**
