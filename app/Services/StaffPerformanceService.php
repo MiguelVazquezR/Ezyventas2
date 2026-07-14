@@ -10,15 +10,15 @@ class StaffPerformanceService
 {
     public function salesByEmployee(int $branchId, Carbon $start, Carbon $end): array
     {
-        return Transaction::where('branch_id', $branchId)
-            ->whereBetween('created_at', [$start, $end])
-            ->whereNotIn('status', ['cancelado', 'cambiado'])
+        return Transaction::where('transactions.branch_id', $branchId)
+            ->whereBetween('transactions.created_at', [$start, $end])
+            ->whereNotIn('transactions.status', ['cancelado', 'cambiado'])
             ->join('users', 'transactions.user_id', '=', 'users.id')
             ->select(
                 'users.id',
                 'users.name',
                 DB::raw('COUNT(*) as transaction_count'),
-                DB::raw('SUM(subtotal - total_discount + total_tax) as total_sales'),
+                DB::raw('SUM(transactions.subtotal - transactions.total_discount + transactions.total_tax) as total_sales'),
             )
             ->groupBy('users.id', 'users.name')
             ->orderByDesc('total_sales')
@@ -35,14 +35,14 @@ class StaffPerformanceService
     public function rankingByBranch(int $subscriptionId, Carbon $start, Carbon $end): array
     {
         return Transaction::whereHas('branch', fn ($q) => $q->where('subscription_id', $subscriptionId))
-            ->whereBetween('created_at', [$start, $end])
-            ->whereNotIn('status', ['cancelado', 'cambiado'])
+            ->whereBetween('transactions.created_at', [$start, $end])
+            ->whereNotIn('transactions.status', ['cancelado', 'cambiado'])
             ->join('branches', 'transactions.branch_id', '=', 'branches.id')
             ->select(
                 'branches.id as branch_id',
                 'branches.name as branch_name',
                 DB::raw('COUNT(*) as transaction_count'),
-                DB::raw('SUM(subtotal - total_discount + total_tax) as total_sales'),
+                DB::raw('SUM(transactions.subtotal - transactions.total_discount + transactions.total_tax) as total_sales'),
             )
             ->groupBy('branches.id', 'branches.name')
             ->orderByDesc('total_sales')

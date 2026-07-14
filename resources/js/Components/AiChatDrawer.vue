@@ -79,16 +79,34 @@ function goToManageSubscription() {
 /** Simple markdown-to-html for links in tool results. */
 function renderContent(text) {
     if (!text) return '';
-    return text
+    let html = text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        // markdown links: [label](url) — before the raw-URL autolink so it isn't double-processed
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^\)\s]+)\)/g, '<a href="$2" data-chat-link="1">$1</a>')
         .replace(/\n/g, '<br>')
         .replace(
             /(https?:\/\/[^\s<]+)/g,
             '<a href="$1" target="_blank" class="text-primary-500 underline">$1</a>'
         );
+    return html;
+}
+
+/** Handle clicks on chat message links — route same-origin page links through Inertia SPA. */
+function onMessagesClick(e) {
+    const link = e.target.closest('[data-chat-link]');
+    if (!link) return;
+
+    const url = new URL(link.href);
+    const isDownload = url.pathname.startsWith('/ai-agent/download');
+
+    if (url.origin === window.location.origin && !isDownload) {
+        e.preventDefault();
+        router.visit(url.pathname + url.search); // SPA navigation, no full reload
+    }
+    // else: same-origin download or external link — let the browser handle it normally
 }
 
 /** Reuse the same ProgressBar PT pattern from PlanDetailsCard */
@@ -134,7 +152,7 @@ const progressBarPt = {
                     :pt="{ root: { class: '!text-gray-400 hover:!text-gray-600 dark:hover:!text-gray-300' } }"
                     @click="toggleUsage"
                 />
-                <OverlayPanel ref="usagePanel" :pt="{ content: { class: '!rounded-2xl' } }">
+                <Popover ref="usagePanel" :pt="{ content: { class: '!rounded-2xl' } }">
                     <div class="p-3 w-48">
                         <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">
                             Uso este mes
@@ -155,7 +173,7 @@ const progressBarPt = {
                             </p>
                         </template>
                     </div>
-                </OverlayPanel>
+                </Popover>
             </div>
         </template>
 
@@ -164,6 +182,7 @@ const progressBarPt = {
             ref="messagesContainer"
             class="flex flex-col gap-3 p-4 overflow-y-auto"
             :style="{ height: 'calc(100vh - 12rem)' }"
+            @click="onMessagesClick"
         >
             <!-- Empty state -->
             <div

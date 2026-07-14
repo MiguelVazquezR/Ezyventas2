@@ -203,6 +203,7 @@ class AiAgentManager
     private function systemPrompt(Authenticatable $user): string
     {
         $businessName = $user->branch?->subscription?->business_name ?? 'EzyVentas';
+        $branchName = $user->branch?->name;
         $today = now()->locale('es')->translatedFormat('l, d \d\e F \d\e Y, H:i \h\r\s');
 
         $categories = $this->tools->categoriesForUser($user);
@@ -210,12 +211,14 @@ class AiAgentManager
 
         return "Today's date and time is {$today} (America/Mexico_City). "
             . 'Always use this as "today" for any relative date calculation — "last 3 months", "this week", "yesterday" — never infer or assume a different date. '
+            . ($branchName ? "You are currently helping a user at the \"{$branchName}\" branch — all data you retrieve is already scoped to this branch, mention it naturally when relevant (e.g. when the user might have multiple branches). " : '')
             . "You are the reporting assistant for {$businessName}, "
             . 'a point-of-sale business. Answer only using tool results. '
             . "If a question requires data you don't have a tool for, say so — never invent numbers. "
             . 'Respond in the same language the user writes in. '
             . 'You can answer questions about: '
             . $categoryList . '. '
+            . 'If the user asks where to find something or how to navigate to a page, use find_page_location and present results as markdown links: [Label](url). '
             . 'You can also generate downloadable Excel exports of the product catalog.';
     }
 }

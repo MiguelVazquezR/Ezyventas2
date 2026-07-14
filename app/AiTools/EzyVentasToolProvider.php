@@ -2,6 +2,7 @@
 
 namespace App\AiTools;
 
+use App\AiTools\SiteNavigationRegistry;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Services\CashRegisterReportService;
@@ -27,7 +28,10 @@ class EzyVentasToolProvider implements AiToolProvider
     public function tools(Authenticatable $user): array
     {
         return collect($this->definitions($user))
-            ->filter(fn ($def) => $def['permission'] === null || $user->can($def['permission']))
+            ->filter(function ($def) use ($user) {
+                $perms = (array) ($def['permission'] ?? []);
+                return empty($perms) || collect($perms)->every(fn ($p) => $user->can($p));
+            })
             ->map(fn ($def) => $def['tool'])
             ->values()
             ->all();
@@ -39,7 +43,10 @@ class EzyVentasToolProvider implements AiToolProvider
     public function categories(Authenticatable $user): array
     {
         return collect($this->definitions($user))
-            ->filter(fn ($def) => $def['permission'] === null || $user->can($def['permission']))
+            ->filter(function ($def) use ($user) {
+                $perms = (array) ($def['permission'] ?? []);
+                return empty($perms) || collect($perms)->every(fn ($p) => $user->can($p));
+            })
             ->pluck('category')
             ->filter()
             ->unique()
@@ -153,7 +160,7 @@ class EzyVentasToolProvider implements AiToolProvider
             ],
 
             [
-                'permission' => 'customers.access',
+                'permission' => 'customers.see_financial_info',
                 'category'   => 'customers',
                 'tool'       => (new Tool)->as('customer_purchase_history')
                     ->for('Obtener el historial de compras recientes de un cliente específico')
@@ -227,7 +234,7 @@ class EzyVentasToolProvider implements AiToolProvider
             ],
 
             [
-                'permission' => 'dashboard.see_sales',
+                'permission' => 'dashboard.see_inventory_details',
                 'category'   => 'inventory',
                 'tool'       => (new Tool)->as('low_stock_products')
                     ->for('Listar productos con stock bajo o por debajo del mínimo')
@@ -347,7 +354,7 @@ class EzyVentasToolProvider implements AiToolProvider
             ],
 
             [
-                'permission' => 'quotes.access',
+                'permission' => 'invoices.access',
                 'category'   => 'quotes and invoices',
                 'tool'       => (new Tool)->as('invoice_status_summary')
                     ->for('Obtener resumen de facturas (CFDI) agrupadas por estado')
@@ -497,9 +504,27 @@ class EzyVentasToolProvider implements AiToolProvider
                     }),
             ],
 
+            // ════════════════ NAVIGATION ════════════════
+            [
+                'permission' => null, // gated internally per-page by searchFor(), not by a single blanket permission
+                'category'   => 'navigation',
+                'tool'       => (new Tool)->as('find_page_location')
+                    ->for('Find where in the system to do something or see certain information — e.g. "where do I register an expense", "where can I see cash register history". Returns page names with clickable links. Use this whenever the user asks "dónde", "cómo llego a", or similar navigation questions.')
+                    ->withStringParameter('query', 'What the user wants to find or do, in their own words')
+                    ->using(function (string $query) use ($user) {
+                        $results = app(SiteNavigationRegistry::class)->searchFor($user, $query);
+
+                        if (empty($results)) {
+                            return json_encode(['message' => 'No encontré una página específica para eso. ¿Podrías darme más detalles sobre lo que buscas?']);
+                        }
+
+                        return json_encode($results, JSON_PRETTY_PRINT);
+                    }),
+            ],
+
             // ════════════════ EXPORT ════════════════
             [
-                'permission' => 'products.access',
+                'permission' => ['products.access', 'products.import_export'],
                 'category'   => 'downloadable Excel exports',
                 'tool'       => (new Tool)->as('export_products_excel')
                     ->for('Generar un archivo Excel descargable con el catálogo completo de productos')

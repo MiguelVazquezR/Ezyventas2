@@ -23,6 +23,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if ($this->app->environment('production')) {
+            \Illuminate\Support\Facades\URL::forceScheme('https');
+        }
+
         Gate::before(function ($user, $ability) {
             // Superadmin (ID 1) tiene acceso irrestricto para fines de soporte
             // sin comprometer la lógica de protección de otras suscripciones.

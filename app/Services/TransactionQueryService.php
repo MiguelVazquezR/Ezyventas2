@@ -40,7 +40,7 @@ class TransactionQueryService
 
         return $query->latest()
             ->take($limit)
-            ->get(['id', 'folio', 'customer_id', 'user_id', 'status', 'channel', 'total', 'created_at'])
+            ->get(['id', 'folio', 'customer_id', 'user_id', 'status', 'channel', 'subtotal', 'total_discount', 'total_tax', 'shipping_cost', 'created_at'])
             ->toArray();
     }
 }
