@@ -18,11 +18,11 @@ class CreateInvoiceAction
      *
      * 1. Persist invoice + items.
      * 2. Sync missing fiscal data back to the Customer model.
-     * 3. Stamp the invoice via SW Sapien HTTP API.
+     * 3. Stamp the invoice via SW Sapien HTTP API (unless draft mode).
      */
-    public function execute(array $data, User $user): Invoice
+    public function execute(array $data, User $user, bool $draft = false): Invoice
     {
-        return DB::transaction(function () use ($data, $user) {
+        return DB::transaction(function () use ($data, $user, $draft) {
             // 1. Persist
             $invoice = $this->swService->createInvoice($data, $user->branch_id);
 
@@ -31,8 +31,10 @@ class CreateInvoiceAction
                 $this->swService->syncCustomerFiscalData($data['customer_id'], $data);
             }
 
-            // 3. Stamp via SW Sapien
-            $this->swService->stamp($invoice);
+            // 3. Stamp via SW Sapien — skip if draft mode
+            if (! $draft) {
+                $this->swService->stamp($invoice);
+            }
 
             return $invoice->fresh('items');
         });

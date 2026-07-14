@@ -1,8 +1,9 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermissions } from '@/Composables';
+import { useConfirm } from 'primevue/useconfirm';
 
 const props = defineProps({
     invoices: Object,
@@ -11,6 +12,7 @@ const props = defineProps({
 });
 
 const { hasPermission } = usePermissions();
+const confirm = useConfirm();
 
 // ──────────────────────────────────────
 // Search & filters
@@ -118,7 +120,89 @@ const rowClass = (data) => {
 // ──────────────────────────────────────
 // Safe external URL opener
 // ──────────────────────────────────────
-const openUrl = (url) => { if (url) window.open(url, '_blank'); };
+const openUrl = (url) => { if (url) window?.open(url, '_blank'); };
+
+// ──────────────────────────────────────
+// Inline file download (same tab, no new window)
+// ──────────────────────────────────────
+const downloadFile = (url) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+};
+
+// ──────────────────────────────────────
+// More dropdown menu
+// ──────────────────────────────────────
+const menuRef = ref(null);
+const selectedInvoice = ref(null);
+const items = ref([]);
+
+const toggleMenu = (event, invoice) => {
+    selectedInvoice.value = invoice;
+
+    const isDraft = invoice.status === 'borrador' || invoice.status === 'pendiente';
+    const isCertified = invoice.status === 'certificada';
+
+    const options = [
+        {
+            label: 'Ver detalle',
+            icon: 'pi pi-eye',
+            command: () => router.get(route('billing.invoices.show', invoice.id)),
+        },
+        {
+            label: 'Ver PDF',
+            icon: 'pi pi-file-pdf',
+            command: () => window?.open(route('billing.invoices.pdf', invoice.id), '_blank'),
+        },
+    ];
+
+    if (isDraft) {
+        options.push({
+            label: 'Timbrar factura',
+            icon: 'pi pi-check-circle',
+            command: () => {
+                confirm.require({
+                    message: '¿Timbrar esta factura ante el SAT? Se enviará al PAC para certificación.',
+                    header: 'Timbrar factura',
+                    icon: 'pi pi-shield',
+                    acceptLabel: 'Timbrar',
+                    rejectLabel: 'Cancelar',
+                    accept: () => router.post(route('billing.invoices.stamp', invoice.id)),
+                });
+            },
+        });
+        options.push({
+            label: 'Eliminar prefactura',
+            icon: 'pi pi-trash',
+            command: () => {
+                confirm.require({
+                    message: '¿Eliminar esta prefactura? Esta acción no se puede deshacer.',
+                    header: 'Eliminar prefactura',
+                    icon: 'pi pi-exclamation-triangle',
+                    acceptLabel: 'Eliminar',
+                    rejectLabel: 'Cancelar',
+                    acceptClass: 'p-button-danger',
+                    accept: () => router.delete(route('billing.invoices.destroy', invoice.id)),
+                });
+            },
+        });
+    }
+
+    if (isCertified) {
+        options.push({
+            label: 'Cancelar factura',
+            icon: 'pi pi-times-circle',
+            command: () => router.get(route('billing.invoices.show', invoice.id)),
+        });
+    }
+
+    items.value = options;
+    menuRef.value?.toggle(event);
+};
 
 // ──────────────────────────────────────
 // Row click → navigate to detail
@@ -334,34 +418,25 @@ const tagPt = {
                     </Column>
 
                     <!-- Actions -->
-                    <Column headerStyle="width: 10rem; text-align: center">
+                    <Column headerStyle="width: 8rem; text-align: center">
                         <template #body="{ data }">
                             <div class="flex items-center gap-1 justify-center" @click.stop>
                                 <Button
                                     v-if="data.xml_url"
-                                    icon="pi pi-file-excel"
+                                    icon="pi pi-download"
                                     text
                                     rounded
-                                    @click="openUrl(data.xml_url)"
+                                    @click.stop="downloadFile(route('billing.invoices.xml', data.id))"
                                     class="!w-8 !h-8 !text-green-600 hover:!bg-green-50 dark:hover:!bg-green-900/20 !transition-colors"
                                     v-tooltip.top="'Descargar XML'"
                                 />
                                 <Button
-                                    icon="pi pi-file-pdf"
+                                    icon="pi pi-ellipsis-v"
                                     text
                                     rounded
-                                    @click="window.open(route('billing.invoices.pdf', data.id), '_blank')"
-                                    class="!w-8 !h-8 !text-red-600 hover:!bg-red-50 dark:hover:!bg-red-900/20 !transition-colors"
-                                    v-tooltip.top="'Ver PDF'"
-                                />
-                                <Button
-                                    v-if="hasPermission('invoices.see_details')"
-                                    icon="pi pi-arrow-right"
-                                    text
-                                    rounded
-                                    @click="router.get(route('billing.invoices.show', data.id))"
-                                    class="!w-8 !h-8 !text-gray-400 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors"
-                                    v-tooltip.top="'Ver detalle'"
+                                    @click.stop="toggleMenu($event, data)"
+                                    class="!w-8 !h-8 !text-gray-500 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors"
+                                    v-tooltip.top="'Más acciones'"
                                 />
                             </div>
                         </template>
@@ -369,5 +444,10 @@ const tagPt = {
                 </DataTable>
             </div>
         </div>
+
+        <!-- More actions dropdown -->
+        <Menu ref="menuRef" :model="items" :popup="true" />
+
+        <ConfirmPopup />
     </AppLayout>
 </template>

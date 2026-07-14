@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { useForm, Link, router } from '@inertiajs/vue3';
 import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import LogoUploadModal from './Partials/LogoUploadModal.vue';
 
 // ──────────────────────────────────────
 // Props
@@ -25,6 +26,23 @@ const isCsdDialogVisible = ref(false);
 // ──────────────────────────────────────
 const selectedProfile = ref(null);
 const isUpdatingCsd = ref(false);
+
+// ──────────────────────────────────────
+// Logo modal state
+// ──────────────────────────────────────
+const isLogoModalVisible = ref(false);
+const logoProfile = ref(null);
+
+const openLogoModal = (profile) => {
+    logoProfile.value = profile;
+    isLogoModalVisible.value = true;
+};
+
+const onLogoUpdated = () => {
+    // Full reload so the DataTable reflects the new logo_url
+    // and the flash from the previous response is cleared.
+    router.reload();
+};
 
 // ──────────────────────────────────────
 // Inertia form for new fiscal profile
@@ -260,6 +278,21 @@ const tagPt = {
                     <Column header="Acciones" style="width:120px">
                         <template #body="{ data }">
                             <div class="flex items-center gap-1">
+                                <!-- Logo button -->
+                                <Button
+                                    icon="pi pi-image"
+                                    text
+                                    rounded
+                                    :disabled="!data.sw_user_id"
+                                    v-tooltip.top="!data.sw_user_id ? 'La cuenta debe ser aprobada por el PAC primero' : (data.logo_url ? 'Ver o cambiar logotipo de facturación' : 'Subir logotipo de facturación')"
+                                    @click="openLogoModal(data)"
+                                    :class="!data.sw_user_id
+                                        ? '!text-gray-300 dark:!text-gray-700 !cursor-not-allowed'
+                                        : data.logo_url
+                                            ? '!bg-purple-50 dark:!bg-purple-900/20 !text-purple-600 dark:!text-purple-400 !border !border-purple-200 dark:!border-purple-800/50 hover:!bg-purple-100 dark:hover:!bg-purple-900/40'
+                                            : '!text-gray-400 hover:!text-purple-500 dark:hover:!text-purple-400 hover:!bg-purple-50 dark:hover:!bg-purple-900/20 !transition-colors'"
+                                    :pt="{ root: { class: '!w-9 !h-9' } }"
+                                />
                                 <!-- CSD key button -->
                                 <Button
                                     icon="pi pi-key"
@@ -666,5 +699,16 @@ const tagPt = {
                 </div>
             </template>
         </Dialog>
+
+        <!-- ════════════════════════════════════════
+             Logo Upload Modal
+             ════════════════════════════════════════ -->
+        <LogoUploadModal
+            v-if="logoProfile"
+            :profile="logoProfile"
+            :visible="isLogoModalVisible"
+            @update:visible="isLogoModalVisible = $event"
+            @updated="onLogoUpdated"
+        />
     </AppLayout>
 </template>

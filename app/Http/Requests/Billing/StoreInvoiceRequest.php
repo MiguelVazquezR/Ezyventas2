@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Billing;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 class StoreInvoiceRequest extends FormRequest
 {
@@ -103,6 +104,30 @@ class StoreInvoiceRequest extends FormRequest
             'items.*.retentions.*.rate.max'          => 'La tasa de retención no puede exceder 1 (100 %).',
             'items.*.retentions.*.amount.required_with' => 'El importe de retención es obligatorio.',
             'items.*.retentions.*.amount.min'        => 'El importe de retención no puede ser negativo.',
+        ];
+    }
+
+    /**
+     * Configure the validator instance.
+     *
+     * SAT CFDI 4.0 rules enforced here:
+     *  - PPD requires FormaPago = "99" (por definir).
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator) {
+                $method = $this->input('payment_method');
+                $form   = $this->input('payment_form');
+
+                // SAT rule: PPD → FormaPago must be "99" (por definir)
+                if ($method === 'PPD' && $form !== '99') {
+                    $validator->errors()->add(
+                        'payment_form',
+                        'Cuando el método de pago es PPD, la forma de pago debe ser "99" (por definir).'
+                    );
+                }
+            },
         ];
     }
 }

@@ -45,6 +45,13 @@ class Invoice extends Model
         'total',
         'exchange_rate',
         'cancellation_reason',
+        'fecha_timbrado',
+        'sello_cfdi',
+        'sello_sat',
+        'no_certificado_sat',
+        'rfc_prov_certif',
+        'cadena_original_sat',
+        'qr_code_base64',
     ];
 
     protected function casts(): array
@@ -52,6 +59,7 @@ class Invoice extends Model
         return [
             'status'               => InvoiceStatus::class,
             'issued_at'            => 'datetime',
+            'fecha_timbrado'       => 'datetime',
             'canceled_at'          => 'datetime',
             'created_at'           => 'datetime',
             'subtotal'             => 'decimal:2',

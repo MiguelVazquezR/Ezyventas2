@@ -8,7 +8,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\CancelInvoiceRequest;
 use App\Http\Requests\Billing\StoreInvoiceRequest;
 use App\Models\Billing\Invoice;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -120,13 +119,25 @@ class InvoiceController extends Controller implements HasMiddleware
      */
     public function store(StoreInvoiceRequest $request, CreateInvoiceAction $action): RedirectResponse
     {
-        $invoice = $action->execute(
-            $request->validated(),
-            Auth::user(),
-        );
+        try {
+            $draft = $request->boolean('draft', false);
+            $invoice = $action->execute(
+                $request->validated(),
+                Auth::user(),
+                $draft,
+            );
 
-        return redirect()->route('billing.invoices.show', $invoice->id)
-            ->with('success', 'Factura creada correctamente.');
+            $message = $draft
+                ? 'Prefactura guardada. Puedes timbrarla cuando estés listo.'
+                : 'Factura creada y timbrada correctamente.';
+
+            return redirect()->route('billing.invoices.show', $invoice->id)
+                ->with('success', $message);
+        } catch (\RuntimeException $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', $e->getMessage());
+        }
     }
 
     /**
@@ -142,14 +153,12 @@ class InvoiceController extends Controller implements HasMiddleware
     }
 
     /**
-     * Generate and stream a professional CFDI 4.0 PDF for the given invoice.
+     * Render a print-friendly CFDI 4.0 invoice view (Inertia page).
      *
-     * Loads the invoice with all its relationships and passes the data
-     * to a Blade template styled for the Mexican SAT CFDI 4.0 standard.
-     * The PAC timbre data (UUID, SelloCFD, FechaTimbrado, etc.) is
-     * extracted from the stored XML when available.
+     * The user prints/saves as PDF via the browser (Ctrl+P).
+     * No server-side PDF generation is used.
      */
-    public function pdf(Invoice $invoice): \Illuminate\Http\Response
+    public function pdf(Invoice $invoice): Response
     {
         $invoice->load([
             'items',
@@ -158,62 +167,98 @@ class InvoiceController extends Controller implements HasMiddleware
             'fiscalProfile',
         ]);
 
-        // ── Extract PAC timbre fiscal from stored XML ──
+        // ── Timbre data now read directly from model columns (saved at stamp time) ──
         $timbre = $this->extractTimbreData($invoice);
 
-        // ── Format totals for the template ──
-        $subtotal       = (float) $invoice->subtotal;
-        $discountTotal  = (float) $invoice->discount_total;
-        $taxesTotal     = (float) $invoice->taxes_total;
-        $retainedTotal  = (float) $invoice->retained_taxes_total;
-        $total          = (float) $invoice->total;
+        // ── Comprobante data from XML root — only needed when XML is available ──
+        $comprobante = $this->extractComprobanteData($invoice);
 
-        // ── Retrieve company logo from Spatie MediaLibrary ──
-        $logoBase64 = null;
-        $subscription = $invoice->branch?->subscription;
-        if ($subscription) {
-            $logoMedia = $subscription->getFirstMedia('company_logo');
-            if ($logoMedia && file_exists($logoMedia->getPath())) {
-                $logoBase64 = base64_encode(file_get_contents($logoMedia->getPath()));
-                $logoBase64 = 'data:' . $logoMedia->mime_type . ';base64,' . $logoBase64;
+        // ── Retrieve company logo — prefer fiscal profile logo, fallback to subscription logo ──
+        $logoUrl = $invoice->fiscalProfile?->getFirstMediaUrl('company_logo') ?: null;
+
+        if (! $logoUrl) {
+            $subscription = $invoice->branch?->subscription;
+            if ($subscription) {
+                $logoUrl = $subscription->getFirstMediaUrl('company_logo') ?: null;
             }
         }
 
-        $pdf = Pdf::loadView('billing.invoices.pdf', [
-            'invoice'       => $invoice,
-            'timbre'        => $timbre,
-            'subtotal'      => $subtotal,
-            'discountTotal' => $discountTotal,
-            'taxesTotal'    => $taxesTotal,
-            'retainedTotal' => $retainedTotal,
-            'total'         => $total,
-            'logoBase64'    => $logoBase64,
-            // Group taxes and retentions for the global Impuestos summary
+        // ── QR code as data URI from base64 stored at stamp time ──
+        $qrCodeSrc = $invoice->qr_code_base64
+            ? 'data:image/png;base64,' . $invoice->qr_code_base64
+            : null;
+
+        return Inertia::render('Billing/Invoices/Pdf', [
+            'invoice'           => $invoice,
+            'timbre'            => $timbre,
+            'comprobante'       => $comprobante,
+            'qrCodeSrc'         => $qrCodeSrc,
+            'subtotal'          => (float) $invoice->subtotal,
+            'discountTotal'     => (float) $invoice->discount_total,
+            'taxesTotal'        => (float) $invoice->taxes_total,
+            'retainedTotal'     => (float) $invoice->retained_taxes_total,
+            'total'             => (float) $invoice->total,
             'groupedTransfers'  => $this->groupTaxesByType($invoice),
             'groupedRetentions' => $this->groupRetentionsByType($invoice),
+            'logoUrl'           => $logoUrl,
         ]);
-
-        $pdf->setPaper('letter');
-
-        return $pdf->stream('factura-' . ($invoice->series ? $invoice->series . '-' : '') . $invoice->folio . '.pdf');
     }
 
     /**
-     * Extract SAT timbre fiscal data from the stored CFDI XML.
+     * Download the CFDI XML file for a certified invoice.
+     */
+    public function downloadXml(Invoice $invoice): \Symfony\Component\HttpFoundation\BinaryFileResponse|\Illuminate\Http\RedirectResponse
+    {
+        if (! $invoice->xml_url) {
+            return redirect()->back()->with('error', 'Esta factura no tiene un archivo XML disponible.');
+        }
+
+        $path = \Illuminate\Support\Facades\Storage::disk('public')->path($invoice->xml_url);
+
+        if (! file_exists($path)) {
+            return redirect()->back()->with('error', 'El archivo XML no se encontró en el servidor.');
+        }
+
+        $filename = ($invoice->uuid ?: $invoice->folio) . '.xml';
+
+        return response()->download($path, $filename, [
+            'Content-Type' => 'application/xml; charset=utf-8',
+        ]);
+    }
+
+    /**
+     * Extract timbre fiscal data directly from model columns.
      *
-     * Returns an associative array with UUID, FechaTimbrado, NoCertificadoSAT,
-     * RfcProvCertif, SelloCFD, and SelloSAT — or empty defaults if the XML
-     * is unavailable.
+     * All timbre fields are saved at stamp time from the SW Sapien JSON
+     * response — no XML parsing needed.
      */
     private function extractTimbreData(Invoice $invoice): array
     {
+        return [
+            'uuid'               => $invoice->uuid ?: '—',
+            'fecha_timbrado'     => $invoice->fecha_timbrado ?: '—',
+            'rfc_prov_certif'    => $invoice->rfc_prov_certif ?: '—',
+            'sello_cfd'          => $invoice->sello_cfdi ?: '—',
+            'no_certificado_sat' => $invoice->no_certificado_sat ?: '—',
+            'sello_sat'          => $invoice->sello_sat ?: '—',
+            'cadena_original'    => $invoice->cadena_original_sat ?: '—',
+        ];
+    }
+
+    /**
+     * Extract comprobante-level attributes from the stored CFDI XML.
+     *
+     * Returns NoCertificado (emisor CSD), Sello (emisor), TipoDeComprobante,
+     * Fecha, and LugarExpedicion from the root cfdi:Comprobante node.
+     */
+    private function extractComprobanteData(Invoice $invoice): array
+    {
         $defaults = [
-            'uuid'              => $invoice->uuid ?? '—',
-            'fecha_timbrado'    => '—',
-            'no_certificado_sat' => '—',
-            'rfc_prov_certif'   => '—',
-            'sello_cfd'         => '—',
-            'sello_sat'         => '—',
+            'no_certificado'      => '—',
+            'sello'               => '—',
+            'tipo_de_comprobante' => 'I',
+            'fecha'               => '—',
+            'lugar_expedicion'    => '—',
         ];
 
         if (! $invoice->xml_url) {
@@ -221,12 +266,10 @@ class InvoiceController extends Controller implements HasMiddleware
         }
 
         $xmlContent = \Illuminate\Support\Facades\Storage::disk('public')->get($invoice->xml_url);
-
         if (! $xmlContent) {
             return $defaults;
         }
 
-        // Suppress XML errors for potentially malformed CFDI
         libxml_use_internal_errors(true);
         $xml = simplexml_load_string($xmlContent);
         libxml_clear_errors();
@@ -235,26 +278,14 @@ class InvoiceController extends Controller implements HasMiddleware
             return $defaults;
         }
 
-        // Register CFDI namespaces
-        $namespaces = $xml->getNamespaces(true);
-
-        // Timbre Fiscal Digital (tfd)
-        $tfd = null;
-        if (isset($namespaces['tfd'])) {
-            $complemento = $xml->xpath('//cfdi:Complemento');
-            if (! empty($complemento)) {
-                $tfdNodes = $complemento[0]->children($namespaces['tfd'])->TimbreFiscalDigital ?? null;
-                $tfd = $tfdNodes ? $tfdNodes[0] ?? $tfdNodes : null;
-            }
-        }
+        $attrs = $xml->attributes();
 
         return [
-            'uuid'               => $invoice->uuid ?? (string) ($tfd->attributes()->UUID ?? '—'),
-            'fecha_timbrado'     => $tfd ? (string) $tfd->attributes()->FechaTimbrado : '—',
-            'no_certificado_sat' => $tfd ? (string) $tfd->attributes()->NoCertificadoSAT : '—',
-            'rfc_prov_certif'    => $tfd ? (string) $tfd->attributes()->RfcProvCertif : '—',
-            'sello_cfd'          => $tfd ? (string) $tfd->attributes()->SelloCFD : '—',
-            'sello_sat'          => $tfd ? (string) $tfd->attributes()->SelloSAT : '—',
+            'no_certificado'      => (string) ($attrs['NoCertificado'] ?? '—'),
+            'sello'               => (string) ($attrs['Sello'] ?? '—'),
+            'tipo_de_comprobante' => (string) ($attrs['TipoDeComprobante'] ?? 'I'),
+            'fecha'               => (string) ($attrs['Fecha'] ?? '—'),
+            'lugar_expedicion'    => (string) ($attrs['LugarExpedicion'] ?? '—'),
         ];
     }
 
@@ -348,5 +379,37 @@ class InvoiceController extends Controller implements HasMiddleware
 
         return redirect()->route('billing.invoices.show', $invoice->id)
             ->with('success', 'Factura cancelada correctamente.');
+    }
+
+    /**
+     * Stamp a draft/pending invoice via SW Sapien.
+     */
+    public function stamp(Invoice $invoice): RedirectResponse
+    {
+        if (! in_array($invoice->status->value, ['borrador', 'pendiente'])) {
+            return redirect()->back()->with('error', 'Solo se pueden timbrar facturas en estado borrador o pendiente.');
+        }
+
+        $swService = app(\App\Services\Billing\SWSapienService::class);
+        $swService->stamp($invoice);
+
+        return redirect()->route('billing.invoices.show', $invoice->id)
+            ->with('success', 'Factura timbrada correctamente.');
+    }
+
+    /**
+     * Delete a draft invoice that hasn't been stamped yet.
+     */
+    public function destroy(Invoice $invoice): RedirectResponse
+    {
+        if (! in_array($invoice->status->value, ['borrador', 'pendiente'])) {
+            return redirect()->back()->with('error', 'Solo se pueden eliminar facturas en estado borrador o pendiente.');
+        }
+
+        $invoice->items()->delete();
+        $invoice->delete();
+
+        return redirect()->route('billing.invoices.index')
+            ->with('success', 'Prefactura eliminada correctamente.');
     }
 }

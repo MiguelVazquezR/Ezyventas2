@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
 /**
  * FiscalProfile
@@ -18,9 +20,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Each profile is mapped to a SW Sapien sub-user account that the
  * PAC uses to isolate CSDs and stamping capacity per RFC.
  */
-class FiscalProfile extends Model
+class FiscalProfile extends Model implements HasMedia
 {
-    use HasFactory;
+    use HasFactory, InteractsWithMedia;
 
     protected $table = 'fiscal_profiles';
 
@@ -53,7 +55,31 @@ class FiscalProfile extends Model
     {
         return [
             'is_active' => 'boolean',
+            'password'  => 'encrypted',
         ];
+    }
+
+    protected $appends = ['logo_url'];
+
+    /*
+    |--------------------------------------------------------------------------
+    | Media Library
+    |--------------------------------------------------------------------------
+    */
+
+    public function registerMediaCollections(): void
+    {
+        $this->addMediaCollection('company_logo')
+            ->singleFile()
+            ->acceptsMimeTypes(['image/jpeg', 'image/png', 'image/webp']);
+    }
+
+    /**
+     * Convenience accessor for the company logo URL.
+     */
+    public function getLogoUrlAttribute(): ?string
+    {
+        return $this->getFirstMediaUrl('company_logo') ?: null;
     }
 
     /*

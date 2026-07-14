@@ -19,9 +19,16 @@ const formatCurrency = (value) =>
     );
 
 // ──────────────────────────────────────
-// Safe external URL opener
+// Inline file download (same tab, no new window)
 // ──────────────────────────────────────
-const openUrl = (url) => { if (url) window.open(url, '_blank'); };
+const downloadFile = (url) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+};
 
 const formatDate = (dateString) => {
     if (!dateString) return '—';
@@ -192,7 +199,7 @@ const tagPt = {
                         severity="secondary"
                         outlined
                         class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold"
-                        @click="openUrl(invoice.xml_url)"
+                        @click="downloadFile(route('billing.invoices.xml', invoice.id))"
                     />
                     <Button
                         icon="pi pi-file-pdf !text-sm"
@@ -200,7 +207,7 @@ const tagPt = {
                         severity="secondary"
                         outlined
                         class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold"
-                        @click="window.open(route('billing.invoices.pdf', invoice.id), '_blank')"
+                        @click="openUrl(route('billing.invoices.pdf', invoice.id))"
                     />
                 </div>
             </div>

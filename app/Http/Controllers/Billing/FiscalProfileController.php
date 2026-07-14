@@ -140,7 +140,8 @@ class FiscalProfileController extends Controller implements HasMiddleware
 
             $csdResult = $swService->uploadCsd($profile, $cerPath, $keyPath, $validated['password']);
 
-            // Persist CSD files to local storage
+            // Persist CSD files to local storage (certificate_number, valid_from,
+            // and valid_to are already persisted inside the service via processCsdResponse)
             $cerStoredPath = $cerFile->storeAs(
                 'csds/' . $profile->id,
                 'certificado.cer',
@@ -150,13 +151,9 @@ class FiscalProfileController extends Controller implements HasMiddleware
                 'llave.key',
             );
 
-            // Update the fiscal profile with CSD data and file paths
             $profile->update([
-                'certificate_number' => $csdResult['certificate_number'] ?? null,
-                'valid_from'         => $csdResult['valid_from'] ?? null,
-                'valid_to'           => $csdResult['valid_to'] ?? null,
-                'cer_file_path'      => $cerStoredPath,
-                'key_file_path'      => $keyStoredPath,
+                'cer_file_path' => $cerStoredPath,
+                'key_file_path' => $keyStoredPath,
             ]);
 
             Log::info('CSD uploaded and persisted locally', [
@@ -221,5 +218,36 @@ class FiscalProfileController extends Controller implements HasMiddleware
 
         return redirect()->route('billing.settings.index')
             ->with('success', 'Perfil fiscal dado de baja correctamente.');
+    }
+
+    /**
+     * Upload or replace the company logo for a fiscal profile.
+     */
+    public function uploadLogo(Request $request, FiscalProfile $fiscalProfile): RedirectResponse
+    {
+        $request->validate([
+            'logo' => ['required', 'image', 'mimes:jpeg,png,webp', 'max:2048'],
+        ], [
+            'logo.required' => 'Selecciona una imagen para el logotipo.',
+            'logo.image'    => 'El archivo debe ser una imagen válida.',
+            'logo.mimes'    => 'Solo se permiten formatos JPG, PNG o WebP.',
+            'logo.max'      => 'La imagen no debe pesar más de 2 MB.',
+        ]);
+
+        // MediaLibrary singleFile() replaces the previous one automatically
+        $fiscalProfile->addMediaFromRequest('logo')
+            ->toMediaCollection('company_logo');
+
+        return back()->with('success', 'Logotipo actualizado correctamente.');
+    }
+
+    /**
+     * Remove the company logo from a fiscal profile.
+     */
+    public function deleteLogo(FiscalProfile $fiscalProfile): RedirectResponse
+    {
+        $fiscalProfile->clearMediaCollection('company_logo');
+
+        return back()->with('success', 'Logotipo eliminado correctamente.');
     }
 }
