@@ -43,7 +43,8 @@ class DatabaseSeeder extends Seeder
             BusinessTypeSeeder::class,
             SettingDefinitionSeeder::class,
             PermissionSeeder::class,
-            PlanItemSeeder::class, // Seeder del catálogo de planes
+            PlanItemSeeder::class,
+            AiAgentSettingsSeeder::class,
         ]);
         
         // $this->seedGlobalBrandsAndProducts();

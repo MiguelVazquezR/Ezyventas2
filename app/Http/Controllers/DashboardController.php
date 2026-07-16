@@ -13,6 +13,7 @@ use App\Models\ProductAttribute;
 use App\Models\ReleaseNote;
 use App\Models\ServiceOrder;
 use App\Models\Transaction;
+use App\Services\SalesDashboardService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -35,21 +36,13 @@ class DashboardController extends Controller
 
         // --- 1. Ventas y Transacciones ---
         if ($isAdmin || $user->can('transactions.access')) {
-            $startOfDay = now()->startOfDay();
-            $endOfDay = now()->endOfDay();
+            $dashService = app(SalesDashboardService::class);
+            $todayData = $dashService->getTodaySales($branchId);
 
-            $todayAggregates = Transaction::where('branch_id', $branchId)
-                ->whereBetween('created_at', [$startOfDay, $endOfDay])
-                ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
-                ->selectRaw('SUM(subtotal - total_discount + total_tax) as total_sales')
-                ->selectRaw('COUNT(*) as total_count')
-                ->first();
-
-            $totalSales = $todayAggregates->total_sales ?? 0;
-            $transactionCount = $todayAggregates->total_count ?? 0;
-
-            $stats['today_sales'] = (float) $totalSales;
-            $stats['average_ticket_today'] = $transactionCount > 0 ? $totalSales / $transactionCount : 0;
+            $stats['today_sales'] = $todayData['total_sales'];
+            $stats['average_ticket_today'] = $todayData['transaction_count'] > 0
+                ? $todayData['total_sales'] / $todayData['transaction_count']
+                : 0;
 
             $stats['yesterday_sales'] = Cache::remember("{$cacheKey}_yesterday", 600, function () use ($branchId) {
                 return $this->getSalesTotalForPeriod($branchId, today()->subDay(), today()->subDay());

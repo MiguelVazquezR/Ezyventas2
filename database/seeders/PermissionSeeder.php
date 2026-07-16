@@ -128,10 +128,6 @@ class PermissionSeeder extends Seeder
             'Tienda en línea' => [
                 'online_store.config.access' => 'Acceder a la configuración de la tienda en línea',
                 'online_store.config.edit' => 'Editar la configuración de la tienda en línea',
-                // 'online_store.products.access' => 'Ver productos de la tienda en línea',
-                // 'online_store.products.create' => 'Agregar productos a la tienda en línea',
-                // 'online_store.products.edit' => 'Editar productos de la tienda en línea',
-                // 'online_store.products.delete' => 'Eliminar productos de la tienda en línea',
                 'online_store.orders.access' => 'Ver pedidos de la tienda en línea',
                 'online_store.orders.see_details' => 'Ver detalles de pedidos',
                 'online_store.orders.change_status' => 'Cambiar estado de pedidos',
@@ -144,6 +140,10 @@ class PermissionSeeder extends Seeder
                 'dashboard.see_orders' => 'Inicio: Ver panel de pedidos',
                 'dashboard.see_outstanding_balances' => 'Inicio: Ver panel de saldos por cobrar',
                 'dashboard.see_inventory_details' => 'Inicio: Ver detalles de inventario',
+            ],
+            'Agente IA' => [
+                'ai_agent.access' => 'Usar el asistente de IA para hacer preguntas y consultas',
+                'ai_agent.export' => 'Solicitar al asistente de IA la generación de archivos (Excel, PDF)',
             ],
         ];
 

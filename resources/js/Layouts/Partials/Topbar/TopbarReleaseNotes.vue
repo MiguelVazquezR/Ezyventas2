@@ -61,7 +61,7 @@ const drawerPt = {
     <button type="button" class="relative mr-2 flex items-center justify-center w-10 h-10 rounded-full hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors" @click="openReleaseNotes" v-tooltip.bottom="'Novedades'">
         <!-- Anillo de pulso sutil detrás del ícono -->
         <span v-if="notifications.unread_updates > 0" class="absolute inset-0 rounded-full bg-blue-500/20 animate-ping z-0"></span>
-        <i class="pi pi-sparkles !text-xl text-gray-400 relative z-10" :class="{'!text-blue-500': notifications.unread_updates > 0}"></i>
+        <i class="pi pi-megaphone !text-xl text-gray-400 relative z-10" :class="{'!text-blue-500': notifications.unread_updates > 0}"></i>
         
         <!-- Badge minimalista (Telemetría) -->
         <span v-if="notifications.unread_updates > 0" class="absolute top-1 right-1 flex h-3 w-3 z-20">
@@ -74,7 +74,7 @@ const drawerPt = {
         <template #header>
             <div class="flex items-center gap-3">
                 <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
-                    <i class="pi pi-sparkles text-blue-500 !text-sm"></i>
+                    <i class="pi pi-megaphone text-blue-500 !text-sm"></i>
                 </div>
                 <h2 class="text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0">Novedades del sistema</h2>
             </div>
@@ -120,7 +120,7 @@ const drawerPt = {
             
             <!-- Empty State -->
             <div class="p-6 flex flex-col items-center justify-center text-center flex-grow opacity-60" v-else>
-                <i class="pi pi-sparkles !text-4xl text-gray-400 mb-4"></i>
+                <i class="pi pi-megaphone !text-4xl text-gray-400 mb-4"></i>
                 <p class="text-sm font-medium text-gray-900 dark:text-white m-0 mb-1 tracking-tight">Sin novedades recientes</p>
                 <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Te avisaremos cuando haya actualizaciones.</p>
             </div>

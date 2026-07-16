@@ -423,4 +423,66 @@ class Subscription extends Model implements HasMedia
             )
             ->sum('referrer_ongoing_discount_pct');
     }
+
+    /**
+     * Obtiene el límite y uso de tokens de IA para el mes actual.
+     * Solo aplica si la suscripción tiene activo el módulo module_ai_agent.
+     * El límite se lee de la configuración por suscripción (ai.token_limit), con fallback a 2,000,000.
+     */
+    public function getAiCreditLimitData(): array
+    {
+        $activeModules = $this->getActiveModuleKeys();
+
+        if (! in_array('module_ai_agent', $activeModules)) {
+            return [
+                'limit'      => 0,
+                'usage'      => 0,
+                'remaining'  => 0,
+                'percentage' => 0,
+            ];
+        }
+
+        $limit = (int) (\App\Models\SettingDefinition::where('key', 'ai.token_limit')->value('default_value')
+            ?: config('ai-agent.default_monthly_tokens', 2_000_000));
+
+        $usage = \App\Models\AiUsageMonthly::where('subscription_id', $this->id)
+            ->where('year', now()->year)
+            ->where('month', now()->month)
+            ->first();
+
+        $usedTokens = (int) ($usage?->total_tokens ?? 0);
+
+        return [
+            'limit'      => $limit,
+            'usage'      => $usedTokens,
+            'remaining'  => max(0, $limit - $usedTokens),
+            'percentage' => $limit > 0 ? min(100, round(($usedTokens / $limit) * 100, 1)) : 0,
+        ];
+    }
+
+    /**
+     * Get a setting value for this subscription, falling back to the definition default.
+     */
+    public function getSettingValue(string $key, mixed $default = null): mixed
+    {
+        $definition = \App\Models\SettingDefinition::where('key', $key)->first();
+
+        if (! $definition) {
+            return $default;
+        }
+
+        $value = $this->settings()
+            ->where('setting_definition_id', $definition->id)
+            ->value('value');
+
+        return $value ?? $definition->default_value ?? $default;
+    }
+
+    /**
+     * Check if this subscription has the AI Agent module active.
+     */
+    public function hasAiAgentModule(): bool
+    {
+        return in_array('module_ai_agent', $this->getActiveModuleKeys());
+    }
 }

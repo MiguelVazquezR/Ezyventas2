@@ -25,6 +25,7 @@ class PlanItemSeeder extends Seeder
             ['key' => 'module_quotes', 'name' => 'Cotizaciones', 'price' => 35, 'icon' => 'pi pi-file-check'], 
             ['key' => 'module_cash_registers', 'name' => 'Cajas', 'price' => 0, 'icon' => 'pi pi-dollar'], //Activo al suscribirse
             ['key' => 'module_settings', 'name' => 'Configuraciones', 'price' => 0, 'icon' => 'pi pi-cog'], //Activo al suscribirse
+            ['key' => 'module_ai_agent', 'name' => 'Asistente IA', 'price' => 0.00, 'icon' => 'pi pi-sparkles'],
         ];
 
         foreach ($modules as $module) {

@@ -135,6 +135,8 @@ class SubscriptionController extends Controller
             'limit_print_templates' => $subscription->print_templates_count,
         ];
 
+        // 8. AI agent usage (read-only, limit is platform-wide)
+
         // Fallbacks visuales si un límite no trae un ícono definido en su columna 'meta'
         $defaultIcons = [
             'limit_branches' => 'pi pi-building',
@@ -181,6 +183,9 @@ class SubscriptionController extends Controller
         $planValue = $subscription->getCurrentMonthlyCost();
         $referrerActiveDiscountPct = $subscription->getReferrerActiveDiscountPct();
 
+        // 8. AI agent usage (read-only, limit is platform-wide)
+        $aiData = $subscription->getAiCreditLimitData();
+
         return Inertia::render('Admin/Subscriptions/Show', [
             'subscription' => $subscription,
             'planItems' => $planItems,
@@ -192,6 +197,9 @@ class SubscriptionController extends Controller
             'planValue' => $planValue,
             'referrerActiveDiscountPct' => (float) $referrerActiveDiscountPct,
             'subscriptionCost' => (float) $planValue,
+            'aiUsage' => $aiData['usage'],
+            'aiPercentage' => $aiData['percentage'],
+            'hasAiAgentModule' => $subscription->hasAiAgentModule(),
         ]);
     }
 
@@ -271,7 +279,7 @@ class SubscriptionController extends Controller
      */
     private function buildSettingsData(Subscription $subscription): array
     {
-        $definitions = SettingDefinition::orderBy('name')->get();
+        $definitions = SettingDefinition::where('level', '!=', 'platform')->orderBy('name')->get();
 
         // Cargar sucursales con sus usuarios y settings (reutiliza la relación ya cargada)
         $branches = $subscription->branches->load(['users' => fn($q) => $q->with('settings'), 'settings']);

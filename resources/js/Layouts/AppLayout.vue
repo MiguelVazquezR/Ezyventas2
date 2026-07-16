@@ -8,6 +8,7 @@ import AppTopbar from './AppTopbar.vue';
 import { useToast } from 'primevue/usetoast';
 import { Link } from '@inertiajs/vue3';
 import SessionClosedModal from '@/Components/SessionClosedModal.vue';
+import AiChatDrawer from '@/Components/AiChatDrawer.vue';
 
 defineProps({
     title: String,
@@ -48,6 +49,9 @@ provide('activeSession', computed(() => page.props.activeSession));
 
 const { layoutConfig, layoutState, isSidebarActive } = useLayout();
 const outsideClickListener = ref(null);
+
+// ── AI Chat Drawer ──
+const aiDrawerVisible = ref(false);
 
 const toast = useToast();
 
@@ -234,4 +238,17 @@ watch(activeSession, (newSession, oldSession) => {
         @update:visible="sessionClosedModalVisible = $event"
     />
     <!-- --- FIN: NUEVO MODAL AÑADIDO --- -->
+
+    <!-- ── AI Chat floating trigger button ── -->
+    <button
+        class="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-200 border-0 cursor-pointer"
+        :class="{ 'animate-pulse': !aiDrawerVisible }"
+        @click="aiDrawerVisible = true"
+        :aria-label="'Abrir asistente IA'"
+    >
+        <i class="pi pi-sparkles !text-white !text-xl" />
+    </button>
+
+    <!-- ── AI Chat Drawer ── -->
+    <AiChatDrawer v-model:visible="aiDrawerVisible" />
 </template>
