@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminSubscriptionPaymentController;
+use App\Http\Controllers\Admin\AiAgentSettingsController;
 use App\Http\Controllers\Admin\PlanItemController;
 use App\Http\Controllers\Admin\SubscriptionController;
 use App\Http\Controllers\Admin\ReportController;
@@ -52,5 +53,9 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
         Route::delete('/{releaseNote}', [ReleaseNoteController::class, 'destroy'])->name('destroy');
         Route::post('/{releaseNote}/toggle-publish', [ReleaseNoteController::class, 'togglePublish'])->name('toggle-publish');
     });
+
+    // --- Asistente IA (Configuración global) ---
+    Route::get('/ai-agent', [AiAgentSettingsController::class, 'index'])->name('ai-agent.index');
+    Route::put('/ai-agent', [AiAgentSettingsController::class, 'update'])->name('ai-agent.update');
 
 });

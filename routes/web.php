@@ -79,6 +79,9 @@ require __DIR__ . '/web/online-store.php';
 require __DIR__ . '/web/referrals.php';
 require __DIR__ . '/web/billing.php';
 
+// AI Agent routes — loaded here so they inherit the web middleware group
+require base_path('packages/ai-agent/routes/ai-agent.php');
+
 Route::get('/centro-ayuda', function () {
     return Inertia::render('HelpCenter');
 })->name('help-center');

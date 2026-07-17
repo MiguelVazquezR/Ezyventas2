@@ -208,7 +208,7 @@ const adminModel = ref([
             },
             {
                 label: 'Novedades',
-                icon: 'pi pi-sparkles',
+                icon: 'pi pi-megaphone',
                 to: route('admin.release-notes.index'),
                 routeName: 'admin.release-notes.*'
             },
