@@ -11,6 +11,7 @@ const props = defineProps({
     canceledInvoices: { type: Number, default: 0 },
     totalAmount: { type: Number, default: 0 },
     filters: { type: Object, default: () => ({ startDate: format(new Date(), 'yyyy-MM-dd'), endDate: format(new Date(), 'yyyy-MM-dd') }) },
+    facturacionHabilitada: { type: Boolean, default: false },
 });
 
 // --- STATE ---
@@ -108,7 +109,36 @@ const tagPt = {
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
 
-            <!-- Header -->
+            <!-- ════════════════════════════════════════
+                 Disabled state
+                 ════════════════════════════════════════ -->
+            <div
+                v-if="!facturacionHabilitada"
+                class="bg-white dark:bg-[#232323] p-8 lg:p-10 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col items-center text-center"
+            >
+                <div class="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center mb-5 border border-amber-100 dark:border-amber-900/30">
+                    <i class="pi pi-exclamation-triangle !text-2xl text-amber-500"></i>
+                </div>
+                <h1 class="text-2xl md:text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0 mb-3">
+                    Facturación no activada
+                </h1>
+                <p class="text-sm text-gray-500 dark:text-gray-400 m-0 max-w-md mb-8">
+                    La facturación electrónica (CFDI 4.0) está desactivada para esta cuenta.
+                    Actívala desde la configuración para comenzar a emitir facturas.
+                </p>
+                <Link
+                    :href="route('billing.settings.index')"
+                    class="inline-flex items-center gap-2 !rounded-full !px-8 !text-sm !font-bold !bg-primary-500 !text-white !py-3 no-underline hover:!bg-primary-600 transition-colors"
+                >
+                    <i class="pi pi-cog !text-sm"></i>
+                    Ir a configuración de facturación
+                </Link>
+            </div>
+
+            <!-- ════════════════════════════════════════
+                 Header (only when billing is enabled)
+                 ════════════════════════════════════════ -->
+            <div v-if="facturacionHabilitada">
             <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-2">
                 <div>
                     <h1 class="text-4xl md:text-5xl font-light tracking-tight text-gray-900 dark:text-white m-0">
@@ -290,6 +320,8 @@ const tagPt = {
                     Agregar perfil fiscal
                 </Link>
             </div>
+
+            </div> <!-- closes v-if="facturacionHabilitada" -->
 
         </div>
     </AppLayout>

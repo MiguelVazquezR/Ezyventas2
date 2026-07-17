@@ -38,6 +38,20 @@ class InvoiceController extends Controller implements HasMiddleware
         $user = Auth::user();
         $subscription = $user->branch?->subscription;
 
+        $facturacionHabilitada = $subscription?->facturacion_habilitada ?? false;
+
+        // If billing is not enabled, return safe defaults — no PAC calls needed
+        if (! $facturacionHabilitada) {
+            return Inertia::render('Billing/Dashboard/Index', [
+                'fiscalProfiles'        => collect(),
+                'totalStampsUsed'       => 0,
+                'totalInvoices'         => 0,
+                'canceledInvoices'      => 0,
+                'totalAmount'           => 0.0,
+                'facturacionHabilitada' => false,
+            ]);
+        }
+
         $fiscalProfiles = $subscription
             ? $subscription->fiscalProfiles()->orderBy('created_at', 'desc')->get()
             : collect();
@@ -51,11 +65,12 @@ class InvoiceController extends Controller implements HasMiddleware
             ->sum('total');
 
         return Inertia::render('Billing/Dashboard/Index', [
-            'fiscalProfiles'    => $fiscalProfiles,
-            'totalStampsUsed'   => $certifiedInvoices,
-            'totalInvoices'     => $totalInvoices,
-            'canceledInvoices'  => $canceledInvoices,
-            'totalAmount'       => (float) $totalAmount,
+            'fiscalProfiles'        => $fiscalProfiles,
+            'totalStampsUsed'       => $certifiedInvoices,
+            'totalInvoices'         => $totalInvoices,
+            'canceledInvoices'      => $canceledInvoices,
+            'totalAmount'           => (float) $totalAmount,
+            'facturacionHabilitada' => true,
         ]);
     }
 
@@ -107,10 +122,21 @@ class InvoiceController extends Controller implements HasMiddleware
         $user = Auth::user();
         $subscription = $user->branch?->subscription;
 
+        $facturacionHabilitada = $subscription?->facturacion_habilitada ?? false;
+
+        // Only fetch profiles when billing is enabled and there are active profiles with PAC subaccounts
+        $fiscalProfiles = $facturacionHabilitada
+            ? ($subscription?->fiscalProfiles()->active()->whereNotNull('sw_user_id')->get(['id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code']) ?? [])
+            : [];
+
+        $hasFiscalProfiles = $facturacionHabilitada
+            && ($subscription?->fiscalProfiles()->active()->whereNotNull('sw_user_id')->exists() ?? false);
+
         return Inertia::render('Billing/Invoices/Create', [
-            'customers'        => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
-            'fiscalProfiles'   => $subscription?->fiscalProfiles()->active()->whereNotNull('sw_user_id')->get(['id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code']) ?? [],
-            'hasFiscalProfiles' => $subscription?->fiscalProfiles()->active()->whereNotNull('sw_user_id')->exists() ?? false,
+            'customers'            => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
+            'fiscalProfiles'       => $fiscalProfiles,
+            'hasFiscalProfiles'    => $hasFiscalProfiles,
+            'facturacionHabilitada' => $facturacionHabilitada,
         ]);
     }
 
@@ -357,12 +383,15 @@ class InvoiceController extends Controller implements HasMiddleware
         $user = Auth::user();
         $subscription = $user->branch?->subscription;
 
-        $fiscalProfiles = $subscription
+        $facturacionHabilitada = $subscription?->facturacion_habilitada ?? false;
+
+        $fiscalProfiles = ($subscription && $facturacionHabilitada)
             ? $subscription->fiscalProfiles()->orderBy('created_at', 'desc')->get()
             : collect();
 
         return Inertia::render('Billing/Settings/Index', [
-            'fiscalProfiles' => $fiscalProfiles,
+            'fiscalProfiles'        => $fiscalProfiles,
+            'facturacionHabilitada' => $facturacionHabilitada,
         ]);
     }
 
@@ -411,5 +440,37 @@ class InvoiceController extends Controller implements HasMiddleware
 
         return redirect()->route('billing.invoices.index')
             ->with('success', 'Prefactura eliminada correctamente.');
+    }
+
+    /**
+     * Toggle CFDI invoicing (facturación) on or off for the subscription.
+     *
+     * When enabled for the first time, the user can later create fiscal
+     * profiles which will be auto-provisioned as SW Sapien subaccounts.
+     * When disabled, all PAC operations are skipped and the billing UI
+     * shows a safe "not configured" state.
+     */
+    public function toggleFacturacion(Request $request): RedirectResponse
+    {
+        $user = Auth::user();
+        $subscription = $user->branch?->subscription;
+
+        if (! $subscription) {
+            return redirect()->back()
+                ->with('error', 'No se encontró una suscripción activa.');
+        }
+
+        $nuevoEstado = ! $subscription->facturacion_habilitada;
+
+        $subscription->update([
+            'facturacion_habilitada' => $nuevoEstado,
+        ]);
+
+        $mensaje = $nuevoEstado
+            ? 'Facturación activada. Ahora puedes agregar perfiles fiscales y comenzar a facturar.'
+            : 'Facturación desactivada. Tus perfiles fiscales e historial se conservan, pero no se realizarán nuevas operaciones en el PAC.';
+
+        return redirect()->route('billing.settings.index')
+            ->with($nuevoEstado ? 'success' : 'info', $mensaje);
     }
 }

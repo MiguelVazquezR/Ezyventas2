@@ -13,7 +13,27 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    facturacionHabilitada: {
+        type: Boolean,
+        default: false,
+    },
 });
+
+// ──────────────────────────────────────
+// Activation toggle
+// ──────────────────────────────────────
+const isTogglingFacturacion = ref(false);
+
+const toggleFacturacion = () => {
+    isTogglingFacturacion.value = true;
+    router.post(route('billing.settings.toggleFacturacion'), {}, {
+        preserveScroll: true,
+        preserveState: false,
+        onFinish: () => {
+            isTogglingFacturacion.value = false;
+        },
+    });
+};
 
 // ──────────────────────────────────────
 // Dialog visibility
@@ -170,17 +190,51 @@ const tagPt = {
         <div class="p-4 md:p-6 lg:p-8 max-w-[1200px] mx-auto space-y-6">
 
             <!-- ════════════════════════════════════════
-                 Header
+                 Activation banner (when billing is disabled)
                  ════════════════════════════════════════ -->
-            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            <div
+                v-if="!facturacionHabilitada"
+                class="bg-white dark:bg-[#232323] p-8 lg:p-10 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col items-center text-center"
+            >
+                <div class="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center mb-5 border border-amber-100 dark:border-amber-900/30">
+                    <i class="pi pi-exclamation-triangle !text-2xl text-amber-500"></i>
+                </div>
+                <h1 class="text-2xl md:text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0 mb-3">
+                    Facturación no activada
+                </h1>
+                <p class="text-sm text-gray-500 dark:text-gray-400 m-0 max-w-md mb-8">
+                    La facturación electrónica (CFDI 4.0) está desactivada para esta cuenta.
+                    Actívala para comenzar a emitir facturas a través del PAC SW Sapien.
+                </p>
+                <div class="flex flex-col items-center gap-3">
+                    <Button
+                        label="Activar facturación"
+                        icon="pi pi-check-circle"
+                        @click="toggleFacturacion"
+                        :loading="isTogglingFacturacion"
+                        class="!rounded-full !px-8 !text-sm !font-bold"
+                    />
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0">
+                        Se creará una subcuenta automática en el PAC al registrar tu primer RFC
+                    </p>
+                </div>
+            </div>
+
+            <!-- ════════════════════════════════════════
+                 Header (only when billing is enabled)
+                 ════════════════════════════════════════ -->
+            <div
+                v-if="facturacionHabilitada"
+                class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
+            >
                 <div>
                     <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">
                         Perfiles fiscales
                     </h1>
                     <div class="flex items-center gap-4 mt-3 flex-wrap">
                         <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 flex items-center gap-2">
-                            <span class="w-1.5 h-1.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse"></span>
-                            Emisores CFDI 4.0
+                            <span class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse"></span>
+                            Facturación activa &middot; CFDI 4.0
                         </p>
                         <span class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
                         <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0">
@@ -188,7 +242,7 @@ const tagPt = {
                         </span>
                     </div>
                 </div>
-                <div class="flex gap-2 w-full md:w-auto">
+                <div class="flex gap-2 w-full md:w-auto flex-wrap">
                     <Link
                         :href="route('billing.invoices.index')"
                         class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors no-underline"
@@ -203,13 +257,27 @@ const tagPt = {
                         @click="openNewDialog"
                         class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold"
                     />
+                    <Button
+                        type="button"
+                        label="Desactivar facturación"
+                        icon="pi pi-power-off"
+                        severity="secondary"
+                        outlined
+                        @click="toggleFacturacion"
+                        :loading="isTogglingFacturacion"
+                        class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold !border-red-200 dark:!border-red-900/50 !text-red-500 hover:!bg-red-50 dark:hover:!bg-red-900/20"
+                    />
                 </div>
             </div>
 
             <!-- ════════════════════════════════════════
                  Fiscal profiles table / empty state
+                 (only when billing is enabled)
                  ════════════════════════════════════════ -->
-            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+            <div
+                v-if="facturacionHabilitada"
+                class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]"
+            >
                 <!-- Empty state -->
                 <div
                     v-if="fiscalProfiles.length === 0"
@@ -328,8 +396,12 @@ const tagPt = {
 
             <!-- ════════════════════════════════════════
                  PAC provider info
+                 (only when billing is enabled)
                  ════════════════════════════════════════ -->
-            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+            <div
+                v-if="facturacionHabilitada"
+                class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]"
+            >
                 <div class="flex items-center gap-4">
                     <div class="w-10 h-10 rounded-full bg-green-50 dark:bg-green-900/20 flex items-center justify-center flex-shrink-0 border border-green-100 dark:border-green-900/30">
                         <i class="pi pi-check-circle !text-sm text-green-500"></i>

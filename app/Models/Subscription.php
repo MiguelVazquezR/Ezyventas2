@@ -33,12 +33,14 @@ class Subscription extends Model implements HasMedia
         'slug',
         'onboarding_completed_at',
         'referrer_discount_active',
+        'facturacion_habilitada',
     ];
 
     protected $casts = [
         'address' => 'array',
         'onboarding_completed_at' => 'datetime',
         'referrer_discount_active' => 'boolean',
+        'facturacion_habilitada' => 'boolean',
         'status' => SubscriptionStatus::class,
     ];
     

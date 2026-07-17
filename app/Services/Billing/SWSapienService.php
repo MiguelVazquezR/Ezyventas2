@@ -384,7 +384,8 @@ class SWSapienService
     /**
      * Stamp the invoice via SW Sapien HTTP API.
      *
-     * @throws \RuntimeException when config is missing or the PAC rejects the request.
+     * @throws \RuntimeException when config is missing, billing is disabled,
+     *                           or the PAC rejects the request.
      */
     public function stamp(Invoice $invoice): void
     {
@@ -394,6 +395,14 @@ class SWSapienService
         if (! $endpoint || ! $token) {
             throw new \RuntimeException(
                 'SW Sapien no está configurado. Define SW_SAPIEN_ENDPOINT y SW_SAPIEN_TOKEN en .env.'
+            );
+        }
+
+        // ── Guard: billing must be enabled on the subscription ──
+        $subscription = $invoice->branch?->subscription;
+        if (! $subscription || ! $subscription->facturacion_habilitada) {
+            throw new \RuntimeException(
+                'La facturación no está habilitada para esta cuenta. Actívala en Configuración > Facturación.'
             );
         }
 
@@ -489,6 +498,14 @@ class SWSapienService
 
         if (! $endpoint || ! $token) {
             throw new \RuntimeException('SW Sapien no está configurado.');
+        }
+
+        // ── Guard: billing must be enabled on the subscription ──
+        $subscription = $invoice->branch?->subscription;
+        if (! $subscription || ! $subscription->facturacion_habilitada) {
+            throw new \RuntimeException(
+                'La facturación no está habilitada para esta cuenta. Actívala en Configuración > Facturación.'
+            );
         }
 
         $url = $endpoint . '/cfdi33/cancel/'

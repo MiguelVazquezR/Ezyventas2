@@ -43,6 +43,11 @@ class FiscalProfileController extends Controller implements HasMiddleware
                 ->with('error', 'No se encontró una suscripción activa asociada a tu cuenta.');
         }
 
+        if (! $subscription->facturacion_habilitada) {
+            return redirect()->route('billing.settings.index')
+                ->with('error', 'Activa la facturación antes de agregar perfiles fiscales.');
+        }
+
         $validated = $request->validated();
 
         DB::beginTransaction();

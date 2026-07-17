@@ -62,10 +62,10 @@ const form = useForm({
             : createDefaultHours(),
     })),
     limits: {
-        limit_users: props.currentLimits.limit_users.quantity,
-        limit_cash_registers: props.currentLimits.limit_cash_registers.quantity,
-        limit_products: props.currentLimits.limit_products.quantity,
-        limit_print_templates: props.currentLimits.limit_print_templates.quantity,
+        limit_users: props.currentLimits?.limit_users?.quantity ?? 5,
+        limit_cash_registers: props.currentLimits?.limit_cash_registers?.quantity ?? 3,
+        limit_products: props.currentLimits?.limit_products?.quantity ?? 100,
+        limit_print_templates: props.currentLimits?.limit_print_templates?.quantity ?? 2,
     },
     bank_accounts: props.subscription.bank_accounts.map(account => ({
         ...account,
