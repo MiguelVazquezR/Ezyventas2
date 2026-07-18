@@ -30,6 +30,9 @@ const downloadFile = (url) => {
     document.body.removeChild(a);
 };
 
+// Safe external URL opener (same as Index.vue)
+const openUrl = (url) => { if (url) window?.open(url, '_blank'); };
+
 const formatDate = (dateString) => {
     if (!dateString) return '—';
     return new Date(dateString).toLocaleDateString('es-MX', {
@@ -184,7 +187,7 @@ const tagPt = {
                 <!-- Action buttons -->
                 <div class="w-full sm:w-auto shrink-0 flex gap-2">
                     <Button
-                        v-if="invoice.status === 'certificada' && hasPermission('cancel invoices')"
+                        v-if="invoice.status === 'certificada' && hasPermission('invoices.cancel')"
                         label="Solicitar cancelación"
                         icon="pi pi-times-circle"
                         severity="danger"

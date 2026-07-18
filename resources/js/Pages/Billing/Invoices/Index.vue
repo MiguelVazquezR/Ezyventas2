@@ -270,7 +270,7 @@ const tagPt = {
                             class="!rounded-xl !text-xs !uppercase !tracking-wider !bg-transparent !border-gray-300 dark:!border-[#3a3a3a] !text-gray-500 dark:!text-gray-400 hover:!bg-gray-50 dark:hover:!bg-[#1a1a1a]"
                         />
                         <Button
-                            v-if="hasPermission('create invoices')"
+                            v-if="hasPermission('invoices.create')"
                             label="Emitir factura"
                             icon="pi pi-plus"
                             @click="router.get(route('billing.invoices.create'))"

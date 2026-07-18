@@ -187,140 +187,130 @@ const lugarFechaEmision = computed(() => {
         </div>
 
         <!-- ════════════════════════════════════════
-             Printable sheet — CFDI 4.0 Official Format
+             Printable sheet — CFDI 4.0 Modern High-Density
              ════════════════════════════════════════ -->
-        <div class="max-w-[21cm] mx-auto bg-white shadow-md print:shadow-none my-6 print:my-0 p-8 print:p-6 text-[11px] text-gray-800 leading-relaxed">
+        <div class="max-w-[21cm] mx-auto bg-white shadow-md print:shadow-none my-6 print:my-0 p-6 print:p-4 text-[10px] text-gray-900 leading-tight tracking-tight">
 
             <!-- ════════════════════════════════════════
-                 BLOCK 1 — Header: Logo + 2-column info
+                 BLOCK 1 — Header: 3-column grid
                  ════════════════════════════════════════ -->
-            <div class="flex justify-between items-start mb-6">
-                <!-- Logo -->
-                <div class="w-1/3">
-                    <img v-if="logoUrl" :src="logoUrl" alt="Logo" class="max-h-16 max-w-full object-contain" />
+            <div class="grid grid-cols-3 gap-x-5 gap-y-1.5 mb-5">
+                <!-- Col 1: Logo + Emitter -->
+                <div class="space-y-1">
+                    <img v-if="logoUrl" :src="logoUrl" alt="Logo" class="max-h-12 max-w-full object-contain mb-1" />
+                    <div class="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-0.5">Emisor</div>
+                    <div class="space-y-0.5">
+                        <p class="m-0 font-semibold text-gray-900">{{ invoice.fiscal_profile?.razon_social || '—' }}</p>
+                        <p class="text-[11px] m-0 text-gray-700">
+                            <span class="text-[11px] font-medium text-gray-900">RFC:</span> {{ invoice.fiscal_profile?.rfc || '—' }}
+                        </p>
+                        <p class="text-[11px] m-0 text-gray-700">
+                            <span class="text-[11px] font-medium text-gray-900">Régimen:</span> {{ taxRegimeLabel(invoice.fiscal_profile?.regimen_fiscal) }}
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Col 2: Receiver -->
+                <div class="space-y-1">
+                    <div class="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-0.5">Receptor</div>
+                    <div class="space-y-0.5">
+                        <p class="m-0 font-semibold text-gray-900">{{ invoice.receiver_legal_name }}</p>
+                        <p class="text-[11px] m-0 text-gray-700">
+                            <span class="text-[11px] font-medium text-gray-900">RFC:</span> {{ invoice.receiver_rfc }}
+                        </p>
+                        <p class="text-[11px] m-0 text-gray-700">
+                            <span class="text-[11px] font-medium text-gray-900">Régimen:</span> {{ taxRegimeLabel(invoice.receiver_tax_regime) }}
+                        </p>
+                        <p class="text-[11px] m-0 text-gray-700">
+                            <span class="text-[11px] font-medium text-gray-900">CP:</span> {{ invoice.receiver_postal_code || '—' }}
+                        </p>
+                        <p class="text-[11px] m-0 text-gray-700">
+                            <span class="text-[11px] font-medium text-gray-900">Uso CFDI:</span> {{ invoice.cfdi_use }} — {{ cfdiUseLabel(invoice.cfdi_use) }}
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Col 3: Comprobante metadata -->
+                <div class="bg-gray-50 rounded-lg p-2.5 space-y-1">
+                    <div class="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-0.5">Comprobante</div>
+                    <p class="text-[11px] m-0 text-gray-700 break-all leading-tight">
+                        <span class="text-[11px] font-medium text-gray-900">UUID:</span> {{ timbre.uuid }}
+                    </p>
+                    <p class="text-[11px] m-0 text-gray-700">
+                        <span class="text-[11px] font-medium text-gray-900">CSD:</span> {{ comprobante.no_certificado }}
+                    </p>
+                    <p class="text-[11px] m-0 text-gray-700">
+                        <span class="text-[11px] font-medium text-gray-900">Emisión:</span> {{ lugarFechaEmision }}
+                    </p>
+                    <p class="text-[11px] m-0 text-gray-700">
+                        <span class="text-[11px] font-medium text-gray-900">Efecto de comprobante:</span> {{ tipoComprobanteLabel(comprobante.tipo_de_comprobante) }}
+                    </p>
+                    <p class="text-[11px] m-0 text-gray-700">
+                        <span class="text-[11px] font-medium text-gray-900">Exportación:</span> {{ exportacionLabel(invoice.exportacion) }}
+                    </p>
                 </div>
             </div>
 
-            <!-- Two-column data grid -->
-            <table class="w-full text-[11px] border-collapse mb-6">
-                <tbody>
-                    <tr>
-                        <td class="w-1/2 pr-4 py-0.5"><strong>RFC emisor:</strong> {{ invoice.fiscal_profile?.rfc || '—' }}</td>
-                        <td class="w-1/2 pl-4 py-0.5"><strong>Folio fiscal:</strong> {{ timbre.uuid }}</td>
-                    </tr>
-                    <tr>
-                        <td class="pr-4 py-0.5"><strong>Nombre emisor:</strong> {{ invoice.fiscal_profile?.razon_social || '—' }}</td>
-                        <td class="pl-4 py-0.5"><strong>No. de serie del CSD:</strong> {{ comprobante.no_certificado }}</td>
-                    </tr>
-                    <tr>
-                        <td class="pr-4 py-0.5"><strong>RFC receptor:</strong> {{ invoice.receiver_rfc }}</td>
-                        <td class="pl-4 py-0.5"><strong>Código postal, fecha y hora de emisión:</strong> {{ lugarFechaEmision }}</td>
-                    </tr>
-                    <tr>
-                        <td class="pr-4 py-0.5"><strong>Nombre receptor:</strong> {{ invoice.receiver_legal_name }}</td>
-                        <td class="pl-4 py-0.5"><strong>Efecto de comprobante:</strong> {{ tipoComprobanteLabel(comprobante.tipo_de_comprobante) }}</td>
-                    </tr>
-                    <tr>
-                        <td class="pr-4 py-0.5"><strong>Código postal del receptor:</strong> {{ invoice.receiver_postal_code || '—' }}</td>
-                        <td class="pl-4 py-0.5"><strong>Régimen fiscal:</strong> {{ taxRegimeLabel(invoice.fiscal_profile?.regimen_fiscal) }}</td>
-                    </tr>
-                    <tr>
-                        <td class="pr-4 py-0.5"><strong>Régimen fiscal receptor:</strong> {{ taxRegimeLabel(invoice.receiver_tax_regime) }}</td>
-                        <td class="pl-4 py-0.5"><strong>Exportación:</strong> {{ exportacionLabel(invoice.exportacion) }}</td>
-                    </tr>
-                    <tr>
-                        <td class="pr-4 py-0.5"><strong>Uso CFDI:</strong> {{ cfdiUseLabel(invoice.cfdi_use) }}</td>
-                        <td class="pl-4 py-0.5"></td>
-                    </tr>
-                </tbody>
-            </table>
+            <hr class="border-gray-200 mb-2">
 
             <!-- ════════════════════════════════════════
-                 BLOCK 2 — Conceptos
+                 BLOCK 2 — Conceptos (ultra-compact)
                  ════════════════════════════════════════ -->
             <div class="mb-4">
-                <h2 class="text-sm font-bold m-0 mb-2">Conceptos</h2>
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400">Conceptos</span>
+                </div>
 
-                <!-- Outer concepts table -->
-                <table class="w-full border-collapse border border-gray-400 text-[11px]">
+                <table class="w-full border-collapse text-[10px]">
                     <thead>
-                        <tr class="bg-gray-100">
-                            <th class="border border-gray-400 p-1.5 text-left">Clave del producto y/o servicio</th>
-                            <th class="border border-gray-400 p-1.5 text-left">No. identificación</th>
-                            <th class="border border-gray-400 p-1.5 text-right">Cantidad</th>
-                            <th class="border border-gray-400 p-1.5 text-left">Clave de unidad</th>
-                            <th class="border border-gray-400 p-1.5 text-left">Unidad</th>
-                            <th class="border border-gray-400 p-1.5 text-right">Valor unitario</th>
-                            <th class="border border-gray-400 p-1.5 text-right">Importe</th>
-                            <th class="border border-gray-400 p-1.5 text-right">Descuento</th>
-                            <th class="border border-gray-400 p-1.5 text-left">Objeto impuesto</th>
+                        <tr class="bg-gray-50 border-y border-gray-200">
+                            <th class="p-1.5 text-left font-semibold text-gray-500">Clave Prod/Serv</th>
+                            <th class="p-1.5 text-left font-semibold text-gray-500">No. Ident.</th>
+                            <th class="p-1.5 text-right font-semibold text-gray-500 w-[7%]">Cant.</th>
+                            <th class="p-1.5 text-left font-semibold text-gray-500">Unidad</th>
+                            <th class="p-1.5 text-right font-semibold text-gray-500">V. Unitario</th>
+                            <th class="p-1.5 text-right font-semibold text-gray-500">Descuento</th>
+                            <th class="p-1.5 text-right font-semibold text-gray-500">Importe</th>
+                            <th class="p-1.5 text-left font-semibold text-gray-500">Obj. Imp.</th>
                         </tr>
                     </thead>
                     <tbody>
                         <template v-for="(item, idx) in invoice.items" :key="idx">
-                            <!-- Main item row -->
-                            <tr>
-                                <td class="border border-gray-400 p-1.5">{{ item.sat_product_code || '—' }}</td>
-                                <td class="border border-gray-400 p-1.5">{{ item.no_identificacion || '' }}</td>
-                                <td class="border border-gray-400 p-1.5 text-right">{{ parseFloat(item.quantity) }}</td>
-                                <td class="border border-gray-400 p-1.5">{{ item.sat_unit_code || '—' }}</td>
-                                <td class="border border-gray-400 p-1.5">{{ unidadLabel(item.sat_unit_code) || item.unit_name || '' }}</td>
-                                <td class="border border-gray-400 p-1.5 text-right">{{ formatCurrency(item.unit_price) }}</td>
-                                <td class="border border-gray-400 p-1.5 text-right">{{ formatCurrency(parseFloat(item.subtotal || item.quantity * item.unit_price)) }}</td>
-                                <td class="border border-gray-400 p-1.5 text-right">{{ parseFloat(item.discount_amount) > 0 ? formatCurrency(item.discount_amount) : '' }}</td>
-                                <td class="border border-gray-400 p-1.5">{{ objetoImpLabel(item.objeto_imp) }}</td>
+                            <!-- Main data row -->
+                            <tr class="border-b border-gray-100">
+                                <td class="p-1.5 text-gray-900 text-[9px]">{{ item.sat_product_code || '-' }}</td>
+                                <td class="p-1.5 text-gray-500 text-[9px]">{{ item.no_identificacion || '-' }}</td>
+                                <td class="p-1.5 text-right text-gray-900">{{ parseFloat(item.quantity) }}</td>
+                                <td class="p-1.5 text-gray-700">
+                                    {{ item.sat_unit_code || '' }}{{ item.unit_name ? ' - ' + item.unit_name : '' }}{{ unidadLabel(item.sat_unit_code) && !item.unit_name ? ' - ' + unidadLabel(item.sat_unit_code) : '' }}
+                                </td>
+                                <td class="p-1.5 text-right text-gray-500">{{ parseFloat(item.discount_amount) > 0 ? formatCurrency(item.discount_amount) : '-' }}</td>
+                                <td class="p-1.5 text-right text-gray-900">{{ formatCurrency(item.unit_price) }}</td>
+                                <td class="p-1.5 text-right text-gray-900 font-medium">{{ formatCurrency(parseFloat(item.subtotal || item.quantity * item.unit_price)) }}</td>
+                                <td class="p-1.5 text-[9px] text-gray-500">{{ objetoImpLabel(item.objeto_imp) }}</td>
                             </tr>
 
-                            <!-- Sub-row: Description (left) + Tax mini-table (right) -->
-                            <tr>
-                                <td colspan="5" class="border border-gray-400 p-1.5 align-top">
-                                    <strong>Descripción:</strong> {{ item.description }}
-                                </td>
-                                <td colspan="4" class="border border-gray-400 p-1.5 align-top">
-                                    <!-- Mini tax table -->
-                                    <table class="w-full border-collapse text-[10px]">
-                                        <thead>
-                                            <tr class="bg-gray-50">
-                                                <th class="border border-gray-300 p-1 text-left">Impuesto</th>
-                                                <th class="border border-gray-300 p-1 text-left">Tipo</th>
-                                                <th class="border border-gray-300 p-1 text-right">Base</th>
-                                                <th class="border border-gray-300 p-1 text-left">Tipo factor</th>
-                                                <th class="border border-gray-300 p-1 text-right">Tasa o cuota</th>
-                                                <th class="border border-gray-300 p-1 text-right">Importe</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr v-for="t in itemTransfers(item)" :key="t.impuesto + 'T'">
-                                                <td class="border border-gray-300 p-1">{{ t.impuesto === '002' ? 'IVA' : t.impuesto }}</td>
-                                                <td class="border border-gray-300 p-1">{{ t.tipo }}</td>
-                                                <td class="border border-gray-300 p-1 text-right">{{ formatCurrency(t.base) }}</td>
-                                                <td class="border border-gray-300 p-1">{{ t.tipoFactor }}</td>
-                                                <td class="border border-gray-300 p-1 text-right">{{ (t.tasaOCuota * 100).toFixed(2) }}%</td>
-                                                <td class="border border-gray-300 p-1 text-right">{{ formatCurrency(t.importe) }}</td>
-                                            </tr>
-                                            <tr v-for="r in itemRetentions(item)" :key="r.impuesto + 'R'">
-                                                <td class="border border-gray-300 p-1">{{ r.impuesto === '001' ? 'ISR' : r.impuesto === '002' ? 'IVA' : r.impuesto }}</td>
-                                                <td class="border border-gray-300 p-1">{{ r.tipo }}</td>
-                                                <td class="border border-gray-300 p-1 text-right">{{ formatCurrency(r.base) }}</td>
-                                                <td class="border border-gray-300 p-1">{{ r.tipoFactor }}</td>
-                                                <td class="border border-gray-300 p-1 text-right">{{ (r.tasaOCuota * 100).toFixed(2) }}%</td>
-                                                <td class="border border-gray-300 p-1 text-right">{{ formatCurrency(r.importe) }}</td>
-                                            </tr>
-                                            <tr v-if="itemTransfers(item).length === 0 && itemRetentions(item).length === 0">
-                                                <td colspan="6" class="border border-gray-300 p-1 text-gray-400 text-center">—</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </td>
-                            </tr>
+                            <!-- Metadata sub-row: Description + Taxes inline -->
+                            <tr class="border-b border-gray-100">
+                                <td colspan="8" class="p-1.5">
+                                    <div class="flex flex-wrap items-start gap-x-4 gap-y-1">
+                                        <!-- Description -->
+                                        <span class="text-gray-900 font-medium">{{ item.description }}</span>
 
-                            <!-- Sub-row: Pedimento / Cuenta predial -->
-                            <tr>
-                                <td colspan="5" class="border border-gray-400 p-1.5">
-                                    <strong>Número de pedimento:</strong>
-                                </td>
-                                <td colspan="4" class="border border-gray-400 p-1.5">
-                                    <strong>Número de cuenta predial:</strong>
+                                        <!-- Tax badges inline -->
+                                        <span v-for="t in itemTransfers(item)" :key="t.impuesto + 'T'"
+                                            class="inline-flex items-center gap-0.5 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[8px] text-emerald-700 font-medium">
+                                            {{ t.impuesto === '002' ? 'IVA' : t.impuesto }} {{ (t.tasaOCuota * 100).toFixed(0) }}%: {{ formatCurrency(t.importe) }}
+                                        </span>
+                                        <span v-for="r in itemRetentions(item)" :key="r.impuesto + 'R'"
+                                            class="inline-flex items-center gap-0.5 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded text-[8px] text-red-700 font-medium">
+                                            {{ retentionLabel(r) }} {{ (r.tasaOCuota * 100).toFixed(0) }}%: −{{ formatCurrency(r.importe) }}
+                                        </span>
+
+                                        <!-- Pedimento / Cuenta predial (tiny, at the end) -->
+                                        <span v-if="item.numero_pedimento" class="text-[8px] text-gray-400 ml-auto">Pedimento: {{ item.numero_pedimento }}</span>
+                                        <span v-if="item.cuenta_predial" class="text-[8px] text-gray-400 ml-auto">Cta. Predial: {{ item.cuenta_predial }}</span>
+                                    </div>
                                 </td>
                             </tr>
                         </template>
@@ -328,125 +318,118 @@ const lugarFechaEmision = computed(() => {
                 </table>
             </div>
 
+            <hr class="border-gray-200 mb-4">
+
             <!-- ════════════════════════════════════════
-                 BLOCK 3 — Forma/Método pago + Totals
+                 BLOCK 3 — Payment + Totals (mirror layout)
                  ════════════════════════════════════════ -->
-            <div class="flex justify-between items-start mb-6">
+            <div class="flex justify-between items-start gap-8 mb-5">
                 <!-- Left: Payment info -->
-                <div class="w-1/2">
-                    <table class="text-[11px]">
-                        <tbody>
-                            <tr>
-                                <td class="pr-4 py-0.5"><strong>Moneda:</strong></td>
-                                <td class="py-0.5">{{ currencyLabel(invoice.currency) }}</td>
-                            </tr>
-                            <tr>
-                                <td class="pr-4 py-0.5"><strong>Forma de pago:</strong></td>
-                                <td class="py-0.5">{{ paymentFormLabel(invoice.payment_form) }}</td>
-                            </tr>
-                            <tr>
-                                <td class="pr-4 py-0.5"><strong>Método de pago:</strong></td>
-                                <td class="py-0.5">{{ paymentMethodLabel(invoice.payment_method) }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <div class="space-y-0.5">
+                    <div class="text-[9px] uppercase tracking-widest font-bold text-gray-400 mb-1">Condiciones de pago</div>
+                    <div class="flex gap-1 text-gray-900">
+                        <span class="font-medium text-gray-600">Moneda:</span> {{ currencyLabel(invoice.currency) }}
+                    </div>
+                    <div class="flex gap-1 text-gray-900">
+                        <span class="font-medium text-gray-600">Forma de pago:</span> {{ invoice.payment_form }} — {{ paymentFormLabel(invoice.payment_form) }}
+                    </div>
+                    <div class="flex gap-1 text-gray-900">
+                        <span class="font-medium text-gray-600">Método de pago:</span> {{ invoice.payment_method }} — {{ paymentMethodLabel(invoice.payment_method) }}
+                    </div>
                 </div>
 
                 <!-- Right: Totals -->
-                <div class="w-1/2 flex justify-end">
-                    <table class="text-[11px]">
+                <div class="min-w-[220px]">
+                    <table class="w-full text-[10px]">
                         <tbody>
+                            <tr class="border-b border-gray-100">
+                                <td class="py-0.5 pr-6 text-right text-gray-600 font-medium">Subtotal</td>
+                                <td class="py-0.5 text-right text-gray-900">{{ formatCurrency(subtotal) }}</td>
+                            </tr>
+                            <tr v-if="parseFloat(discountTotal) > 0" class="border-b border-gray-100">
+                                <td class="py-0.5 pr-6 text-right text-gray-600 font-medium">Descuento</td>
+                                <td class="py-0.5 text-right text-gray-500">− {{ formatCurrency(discountTotal) }}</td>
+                            </tr>
+                            <tr v-for="t in groupedTransfers" :key="t.impuesto + '|' + (t.tasaOCuota || 0)" class="border-b border-gray-100">
+                                <td class="py-0.5 pr-6 text-right text-gray-600 font-medium">{{ taxLabel(t) }} trasladado</td>
+                                <td class="py-0.5 text-right text-gray-900">{{ formatCurrency(t.importe) }}</td>
+                            </tr>
+                            <tr v-for="r in groupedRetentions" :key="r.impuesto" class="border-b border-gray-100">
+                                <td class="py-0.5 pr-6 text-right text-red-500 font-medium">{{ retentionLabel(r) }} retenido</td>
+                                <td class="py-0.5 text-right text-red-500">− {{ formatCurrency(r.importe) }}</td>
+                            </tr>
                             <tr>
-                                <td class="pr-6 py-0.5 text-right"><strong>Subtotal:</strong></td>
-                                <td class="py-0.5 text-right">{{ formatCurrency(subtotal) }}</td>
-                            </tr>
-                            <tr v-for="t in groupedTransfers" :key="t.impuesto + '|' + (t.tasaOCuota || 0)">
-                                <td class="pr-6 py-0.5 text-right"><strong>Impuestos trasladados {{ taxLabel(t) }}:</strong></td>
-                                <td class="py-0.5 text-right">{{ formatCurrency(t.importe) }}</td>
-                            </tr>
-                            <tr v-for="r in groupedRetentions" :key="r.impuesto">
-                                <td class="pr-6 py-0.5 text-right"><strong>Impuestos retenidos {{ retentionLabel(r) }}:</strong></td>
-                                <td class="py-0.5 text-right">− {{ formatCurrency(r.importe) }}</td>
-                            </tr>
-                            <tr class="border-t border-gray-400">
-                                <td class="pr-6 py-1 text-right"><strong>Total:</strong></td>
-                                <td class="py-1 text-right"><strong>{{ formatCurrency(total) }}</strong></td>
+                                <td class="py-0.5 pr-6 text-right font-bold text-gray-900 text-xs">Total</td>
+                                <td class="py-0.5 text-right font-bold text-gray-900 text-xs">{{ formatCurrency(total) }}</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            <!-- ════════════════════════════════════════
-                 BLOCK 4 — Sellos digitales
-                 ════════════════════════════════════════ -->
-            <div class="mb-6">
-                <p class="m-0 mb-1"><strong>Sello digital del CFDI:</strong></p>
-                <p class="text-[9px] break-all m-0 mb-3 text-gray-600 leading-relaxed">{{ timbre.sello_cfd }}</p>
+            <hr class="border-gray-200 mb-4">
 
-                <p class="m-0 mb-1"><strong>Sello digital del SAT:</strong></p>
-                <p class="text-[9px] break-all m-0 text-gray-600 leading-relaxed">{{ timbre.sello_sat }}</p>
+            <!-- ════════════════════════════════════════
+                 BLOCK 4 — Sellos + QR + Certificador (parallel)
+                 ════════════════════════════════════════ -->
+            <div class="flex gap-5 mb-5">
+                <!-- QR + Certifier -->
+                <div class="shrink-0 flex flex-col items-center gap-1.5">
+                    <img v-if="qrCodeSrc" :src="qrCodeSrc" alt="QR verificación SAT" class="w-[90px] h-[90px]" />
+                    <span class="text-[7px] text-gray-400 text-center leading-tight">Sello digital<br>del SAT</span>
+                </div>
+
+                <!-- Certifier data -->
+                <div class="flex-1 space-y-0.5 text-[9px]">
+                    <div class="text-[9px] uppercase tracking-widest font-bold text-gray-400 mb-1">Certificación</div>
+                    <p class="m-0 text-gray-900">
+                        <span class="font-medium text-gray-600">RFC Prov. Certif.:</span> {{ timbre.rfc_prov_certif }}
+                    </p>
+                    <p class="m-0 text-gray-900">
+                        <span class="font-medium text-gray-600">Certificado SAT:</span> {{ timbre.no_certificado_sat }}
+                    </p>
+                    <p class="m-0 text-gray-900">
+                        <span class="font-medium text-gray-600">Fecha y hora:</span> {{ timbre.fecha_timbrado }}
+                    </p>
+                </div>
             </div>
 
             <!-- ════════════════════════════════════════
-                 BLOCK 5 — Cadena original + QR + Certificador
+                 BLOCK 5 — Sellos digitales (ultra-compact)
                  ════════════════════════════════════════ -->
-            <div class="mb-6">
-                <p class="m-0 mb-1"><strong>Cadena original del complemento de certificación digital del SAT:</strong></p>
-                <p class="text-[9px] break-all m-0 mb-4 text-gray-600 leading-relaxed">{{ timbre.cadena_original }}</p>
-
-                <!-- QR + Certifier data side by side -->
-                <div class="flex justify-between items-start gap-6">
-                    <!-- QR code -->
-                    <div class="shrink-0">
-                        <img
-                            v-if="qrCodeSrc"
-                            :src="qrCodeSrc"
-                            alt="Código QR verificación SAT"
-                            class="w-[120px] h-[120px]"
-                        />
-                    </div>
-
-                    <!-- Certifier data -->
-                    <div class="text-left">
-                        <table class="text-[11px]">
-                            <tbody>
-                                <tr>
-                                    <td class="pr-3 py-0.5"><strong>RFC del proveedor de certificación:</strong></td>
-                                    <td class="py-0.5">{{ timbre.rfc_prov_certif }}</td>
-                                </tr>
-                                <tr>
-                                    <td class="pr-3 py-0.5"><strong>No. de serie del certificado SAT:</strong></td>
-                                    <td class="py-0.5">{{ timbre.no_certificado_sat }}</td>
-                                </tr>
-                                <tr>
-                                    <td class="pr-3 py-0.5"><strong>Fecha y hora de certificación:</strong></td>
-                                    <td class="py-0.5">{{ timbre.fecha_timbrado }}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+            <div class="space-y-1.5 mb-4">
+                <div>
+                    <p class="m-0 text-[8px] font-semibold text-gray-500 uppercase tracking-wider">Sello digital del CFDI</p>
+                    <p class="text-[7px] break-all m-0 text-gray-500 leading-tight">{{ timbre.sello_cfd }}</p>
+                </div>
+                <div>
+                    <p class="m-0 text-[8px] font-semibold text-gray-500 uppercase tracking-wider">Sello digital del SAT</p>
+                    <p class="text-[7px] break-all m-0 text-gray-500 leading-tight">{{ timbre.sello_sat }}</p>
+                </div>
+                <div>
+                    <p class="m-0 text-[8px] font-semibold text-gray-500 uppercase tracking-wider">Cadena original del complemento de certificación digital del SAT</p>
+                    <p class="text-[7px] break-all m-0 text-gray-500 leading-tight">{{ timbre.cadena_original }}</p>
                 </div>
             </div>
 
             <!-- ════════════════════════════════════════
                  BLOCK 6 — Footer
                  ════════════════════════════════════════ -->
-            <div class="border-t border-gray-400 pt-3 mt-6">
-                <div class="flex justify-between text-[10px] text-gray-600 mb-3">
+            <div class="border-t border-gray-200 pt-3 mt-4">
+                <div class="flex justify-between text-[8px] text-gray-400 mb-2">
                     <span>RFC emisor: {{ invoice.fiscal_profile?.rfc || '—' }}</span>
                     <span>Folio fiscal: {{ timbre.uuid }}</span>
                 </div>
 
-                <div class="text-center text-[10px] text-gray-600 leading-relaxed">
-                    <p class="m-0"><strong>Este documento es una representación impresa de un CFDI</strong></p>
+                <div class="text-center text-[7.5px] text-gray-400 leading-relaxed space-y-0.5">
+                    <p class="m-0 font-medium text-gray-500">Este documento es una representación impresa de un CFDI</p>
                     <p class="m-0">
                         El logotipo de esta factura es responsabilidad única y exclusiva de quien la emite,
                         en consecuencia, el SAT queda relevado de cualquier obligación que derive de ello.
                     </p>
                 </div>
 
-                <div class="text-right text-[10px] text-gray-500 mt-3">
+                <div class="text-right text-[8px] text-gray-400 mt-2">
                     Página 1 de 1
                 </div>
             </div>

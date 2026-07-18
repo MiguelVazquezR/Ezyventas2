@@ -44,8 +44,9 @@ const hasFiscalProfiles = computed(() => props.hasFiscalProfiles || fiscalProfil
 const formSections = [
     { id: 'emisor', label: 'Emisor' },
     { id: 'receptor', label: 'Receptor' },
-    { id: 'pago', label: 'Pago' },
+    { id: 'forma-pago', label: 'Forma y método de pago' },
     { id: 'conceptos', label: 'Conceptos' },
+    { id: 'pago', label: 'Pago' },
 ];
 const { activeSection, scrollTo } = useScrollspy(formSections.map(s => s.id));
 
@@ -153,7 +154,7 @@ const removeItem = (index) => form.items.splice(index, 1);
 // ──────────────────────────────────────
 // Tax calculator
 // ──────────────────────────────────────
-const { subtotal, ivaTrasladado, isrRetenido, ivaRetenido, granTotal, formatCurrency, breakdown } = useInvoiceTaxes(form, fiscalProfiles, customers);
+const { subtotal, ivaTrasladado, isrRetenido, ivaRetenido, granTotal, formatCurrency, breakdown, retentionApplies, isResico } = useInvoiceTaxes(form, fiscalProfiles, customers);
 
 // ──────────────────────────────────────
 // Customer auto-fill
@@ -282,8 +283,8 @@ const readonlyPt = { root: { class: 'h-11 !rounded-xl !bg-zinc-100 dark:!bg-zinc
                     </div>
                 </div>
 
-                <!-- ═══ Pago ═══ -->
-                <div id="pago" class="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 lg:p-8">
+                <!-- ═══ Forma y método de pago ═══ -->
+                <div id="forma-pago" class="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 lg:p-8">
                     <div class="flex items-center gap-3 mb-5">
                         <div class="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center border border-amber-100 dark:border-amber-900/30">
                             <i class="pi pi-credit-card !text-sm text-amber-500"></i>
@@ -359,6 +360,19 @@ const readonlyPt = { root: { class: 'h-11 !rounded-xl !bg-zinc-100 dark:!bg-zinc
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- ═══ Pago (totales) ═══ -->
+                <div id="pago" class="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 lg:p-8">
+                    <InvoiceTotals
+                        :subtotal="subtotal"
+                        :iva-trasladado="ivaTrasladado"
+                        :isr-retenido="isrRetenido"
+                        :iva-retenido="ivaRetenido"
+                        :gran-total="granTotal"
+                        :retention-applies="retentionApplies"
+                        :is-resico="isResico"
+                    />
                 </div>
 
                 <!-- ═══ Submit buttons ═══ -->

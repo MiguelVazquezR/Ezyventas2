@@ -22,10 +22,10 @@ class InvoiceController extends Controller implements HasMiddleware
     {
         return [
             new Middleware('can:invoices.access', only: ['index']),
-            new Middleware('can:create invoices', only: ['create', 'store']),
+            new Middleware('can:invoices.create', only: ['create', 'store']),
             new Middleware('can:invoices.see_details', only: ['show']),
             new Middleware('can:invoices.edit', only: ['edit', 'update']),
-            new Middleware('can:cancel invoices', only: ['cancel']),
+            new Middleware('can:invoices.cancel', only: ['cancel']),
             new Middleware('can:invoices.settings.access', only: ['settings', 'dashboard']),
         ];
     }

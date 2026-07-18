@@ -9,7 +9,7 @@ class StoreInvoiceRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->can('create invoices');
+        return $this->user()->can('create.invoices');
     }
 
     public function rules(): array
@@ -22,7 +22,7 @@ class StoreInvoiceRequest extends FormRequest
             'exportacion'           => ['required', 'string', 'max:5', 'in:01,02,03,04'],
 
             // --- Receiver (receptor) ---
-            'receiver_rfc'          => ['required', 'string', 'size:13'],
+            'receiver_rfc'          => ['required', 'string', 'min:12', 'max:13'],
             'receiver_legal_name'   => ['required', 'string', 'max:255'],
             'receiver_tax_regime'   => ['required', 'string', 'max:10'],
             'receiver_postal_code'  => ['required', 'string', 'size:5'],
@@ -72,7 +72,8 @@ class StoreInvoiceRequest extends FormRequest
             'exportacion.required'           => 'El campo exportación es obligatorio.',
             'exportacion.in'                 => 'El valor de exportación no es válido.',
             'receiver_rfc.required'          => 'El campo RFC es obligatorio.',
-            'receiver_rfc.size'              => 'El RFC debe tener exactamente 13 caracteres.',
+            'receiver_rfc.min'               => 'El RFC debe tener al menos 12 caracteres.',
+            'receiver_rfc.max'               => 'El RFC debe tener máximo 13 caracteres.',
             'receiver_legal_name.required'   => 'La razón social es obligatoria.',
             'receiver_tax_regime.required'   => 'El régimen fiscal es obligatorio.',
             'receiver_postal_code.required'  => 'El código postal es obligatorio.',
@@ -112,6 +113,7 @@ class StoreInvoiceRequest extends FormRequest
      *
      * SAT CFDI 4.0 rules enforced here:
      *  - PPD requires FormaPago = "99" (por definir).
+     *  - RFC length depends on tax regime (12 = Persona Moral, 13 = Persona Física).
      */
     public function after(): array
     {
@@ -127,7 +129,47 @@ class StoreInvoiceRequest extends FormRequest
                         'Cuando el método de pago es PPD, la forma de pago debe ser "99" (por definir).'
                     );
                 }
+
+                // SAT rule: RFC length must match the tax regime type
+                $rfc    = $this->input('receiver_rfc');
+                $regime = $this->input('receiver_tax_regime');
+
+                if ($rfc && $regime) {
+                    $rfcLength = strlen($rfc);
+                    $expectedLength = $this->expectedRfcLengthForRegime($regime);
+
+                    if ($expectedLength !== null && $rfcLength !== $expectedLength) {
+                        $typeLabel = $expectedLength === 12 ? 'Persona Moral' : 'Persona Física';
+                        $validator->errors()->add(
+                            'receiver_rfc',
+                            "El RFC debe tener {$expectedLength} caracteres para el régimen seleccionado ({$typeLabel})."
+                        );
+                    }
+                }
             },
         ];
+    }
+
+    /**
+     * Determine the expected RFC length based on the SAT tax regime code.
+     * Returns 12 for Persona Moral, 13 for Persona Física, or null if unknown.
+     */
+    private function expectedRfcLengthForRegime(string $regime): ?int
+    {
+        // Persona Moral — 12-character RFC
+        $moralRegimes = ['601', '603', '610', '620', '622', '623', '624', '628'];
+
+        // Persona Física — 13-character RFC
+        $fisicaRegimes = ['605', '606', '607', '608', '609', '611', '612', '614', '615', '616', '621', '625', '626', '629'];
+
+        if (in_array($regime, $moralRegimes, true)) {
+            return 12;
+        }
+
+        if (in_array($regime, $fisicaRegimes, true)) {
+            return 13;
+        }
+
+        return null;
     }
 }
