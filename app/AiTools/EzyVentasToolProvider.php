@@ -69,7 +69,7 @@ class EzyVentasToolProvider implements AiToolProvider
                 'permission' => 'financial_reports.access',
                 'category'   => 'financial reports',
                 'tool'       => (new Tool)->as('financial_report')
-                    ->for('Obtener KPIs financieros, ventas por canal, gastos por categoría y resumen de bancos para un rango de fechas determinado')
+                    ->for('Obtener KPIs financieros, ventas por canal, gastos por categoría, distribución de ventas por hora (cuando el rango es un solo día), gráfica de tendencia y resumen de bancos para un rango de fechas determinado')
                     ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
                     ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
                     ->using(function (string $start_date, string $end_date) use ($branchId) {
@@ -79,7 +79,6 @@ class EzyVentasToolProvider implements AiToolProvider
                             Carbon::parse($end_date),
                         );
                         $data = $service->generateReportData();
-                        unset($data['chartData']);
                         return json_encode($data, JSON_PRETTY_PRINT);
                     }),
             ],
@@ -212,6 +211,25 @@ class EzyVentasToolProvider implements AiToolProvider
                     }),
             ],
 
+            [
+                'permission' => 'customers.see_financial_info',
+                'category'   => 'customers',
+                'tool'       => (new Tool)->as('customer_recency')
+                    ->for('Listar clientes que no han comprado en los últimos N días, o que compraron recientemente, para identificar clientes inactivos')
+                    ->withNumberParameter('days', 'Días de inactividad o ventana reciente, ej. 30, 60, 90')
+                    ->withStringParameter('direction', '"inactive" (no han comprado en N días) o "recent" (compraron dentro de N días). Por defecto "inactive"')
+                    ->withNumberParameter('limit', 'Cantidad máxima de clientes (por defecto 20, máximo 50)')
+                    ->using(function (int $days, ?string $direction = 'inactive', ?int $limit = 20) use ($branchId) {
+                        $result = app(CustomerReportService::class)->getCustomerRecency(
+                            $branchId,
+                            $days,
+                            $direction ?? 'inactive',
+                            min($limit ?? 20, 50),
+                        );
+                        return json_encode($result, JSON_PRETTY_PRINT);
+                    }),
+            ],
+
             // ════════════════ PRODUCTS ════════════════
             [
                 'permission' => 'products.access',
@@ -241,6 +259,48 @@ class EzyVentasToolProvider implements AiToolProvider
                     ->withNumberParameter('threshold', 'Cantidad máxima de productos a devolver (por defecto 5)')
                     ->using(function (?int $threshold = 5) use ($branchId) {
                         $result = app(SalesDashboardService::class)->getLowStockProducts($branchId, $threshold ?? 5);
+                        return json_encode($result, JSON_PRETTY_PRINT);
+                    }),
+            ],
+
+            [
+                'permission' => 'products.access',
+                'category'   => 'products',
+                'tool'       => (new Tool)->as('sales_by_product')
+                    ->for('Obtener las ventas agrupadas por producto o categoría en un período, ordenadas por monto o cantidad vendida')
+                    ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
+                    ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
+                    ->withStringParameter('group_by', '"product" o "category" (por defecto "product")')
+                    ->withNumberParameter('limit', 'Cantidad máxima de resultados (por defecto 10, máximo 50)')
+                    ->using(function (string $start_date, string $end_date, ?string $group_by = 'product', ?int $limit = 10) use ($branchId) {
+                        $result = app(InventoryReportService::class)->salesByProduct(
+                            $branchId,
+                            Carbon::parse($start_date),
+                            Carbon::parse($end_date),
+                            $group_by ?? 'product',
+                            min($limit ?? 10, 50),
+                        );
+                        return json_encode($result, JSON_PRETTY_PRINT);
+                    }),
+            ],
+
+            [
+                'permission' => 'financial_reports.access',
+                'category'   => 'products',
+                'tool'       => (new Tool)->as('product_margin_report')
+                    ->for('Obtener el margen de ganancia por producto en un período, calculado como (precio de venta - costo) × cantidad vendida')
+                    ->withStringParameter('start_date', 'Fecha inicial en formato YYYY-MM-DD')
+                    ->withStringParameter('end_date', 'Fecha final en formato YYYY-MM-DD')
+                    ->withNumberParameter('limit', 'Cantidad máxima de resultados (por defecto 10, máximo 50)')
+                    ->withStringParameter('sort', '"margin_amount" o "margin_percent" (por defecto "margin_amount")')
+                    ->using(function (string $start_date, string $end_date, ?int $limit = 10, ?string $sort = 'margin_amount') use ($branchId) {
+                        $result = app(InventoryReportService::class)->productMarginReport(
+                            $branchId,
+                            Carbon::parse($start_date),
+                            Carbon::parse($end_date),
+                            min($limit ?? 10, 50),
+                            $sort ?? 'margin_amount',
+                        );
                         return json_encode($result, JSON_PRETTY_PRINT);
                     }),
             ],
@@ -365,6 +425,21 @@ class EzyVentasToolProvider implements AiToolProvider
                             $branchId,
                             Carbon::parse($start_date),
                             Carbon::parse($end_date),
+                        );
+                        return json_encode($result, JSON_PRETTY_PRINT);
+                    }),
+            ],
+
+            [
+                'permission' => 'invoices.access',
+                'category'   => 'quotes and invoices',
+                'tool'       => (new Tool)->as('invoice_aging')
+                    ->for('Listar facturas (CFDI) pendientes de cobro, agrupadas por antigüedad (0-30, 31-60, 61-90, 90+ días)')
+                    ->withStringParameter('as_of_date', 'Fecha de referencia en formato YYYY-MM-DD (por defecto hoy)')
+                    ->using(function (?string $as_of_date = null) use ($branchId) {
+                        $result = app(QuoteInvoiceReportService::class)->getInvoiceAging(
+                            $branchId,
+                            $as_of_date,
                         );
                         return json_encode($result, JSON_PRETTY_PRINT);
                     }),
@@ -500,6 +575,21 @@ class EzyVentasToolProvider implements AiToolProvider
                     ->for('Obtener la tendencia de ventas de los últimos 7 días')
                     ->using(function () use ($branchId) {
                         $result = app(SalesDashboardService::class)->getWeeklyTrend($branchId);
+                        return json_encode($result, JSON_PRETTY_PRINT);
+                    }),
+            ],
+
+            [
+                'permission' => 'financial_reports.access',
+                'category'   => 'financial reports',
+                'tool'       => (new Tool)->as('monthly_revenue_trend')
+                    ->for('Obtener la tendencia de ingresos mensuales de los últimos N meses, con tasa de crecimiento mes contra mes')
+                    ->withNumberParameter('months', 'Cantidad de meses (por defecto 6, máximo 24)')
+                    ->using(function (?int $months = 6) use ($branchId) {
+                        $result = app(FinancialReportService::class)->monthlyRevenueTrend(
+                            $branchId,
+                            min($months ?? 6, 24),
+                        );
                         return json_encode($result, JSON_PRETTY_PRINT);
                     }),
             ],
