@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermissions } from '@/Composables';
@@ -8,7 +8,9 @@ import { useConfirm } from 'primevue/useconfirm';
 const props = defineProps({
     invoices: Object,
     filters: Object,
+    fiscalProfiles: Array,
     hasBillingSettings: Boolean,
+    hasFiscalProfiles: Boolean,
 });
 
 const { hasPermission } = usePermissions();
@@ -19,20 +21,38 @@ const confirm = useConfirm();
 // ──────────────────────────────────────
 const searchTerm = ref(props.filters?.search || '');
 const statusFilter = ref(props.filters?.status || null);
+const fiscalProfileFilter = ref(props.filters?.fiscal_profile_id || null);
 
 const statusOptions = [
     { label: 'Todos', value: null },
     { label: 'Borrador', value: 'borrador' },
     { label: 'Pendiente', value: 'pendiente' },
     { label: 'Certificada', value: 'certificada' },
+    { label: 'Cancelación pendiente', value: 'cancelacion_pendiente' },
     { label: 'Cancelada', value: 'cancelada' },
 ];
+
+// Build fiscal profile dropdown options
+const fiscalProfileOptions = computed(() => {
+    if (!props.fiscalProfiles) return [];
+    return [
+        { label: 'Todos los perfiles', value: null },
+        ...props.fiscalProfiles.map(fp => ({
+            label: `${fp.razon_social} (${fp.rfc})`,
+            value: fp.id,
+        })),
+    ];
+});
 
 let searchTimeout = null;
 watch(searchTerm, (val) => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-        router.get(route('billing.invoices.index'), { search: val || null, status: statusFilter.value }, {
+        router.get(route('billing.invoices.index'), {
+            search: val || null,
+            status: statusFilter.value,
+            fiscal_profile_id: fiscalProfileFilter.value,
+        }, {
             preserveState: true,
             replace: true,
         });
@@ -40,7 +60,22 @@ watch(searchTerm, (val) => {
 });
 
 watch(statusFilter, (val) => {
-    router.get(route('billing.invoices.index'), { search: searchTerm.value || null, status: val }, {
+    router.get(route('billing.invoices.index'), {
+        search: searchTerm.value || null,
+        status: val,
+        fiscal_profile_id: fiscalProfileFilter.value,
+    }, {
+        preserveState: true,
+        replace: true,
+    });
+});
+
+watch(fiscalProfileFilter, (val) => {
+    router.get(route('billing.invoices.index'), {
+        search: searchTerm.value || null,
+        status: statusFilter.value,
+        fiscal_profile_id: val,
+    }, {
         preserveState: true,
         replace: true,
     });
@@ -55,6 +90,7 @@ const onPage = (event) => {
         rows: event.rows,
         search: searchTerm.value || null,
         status: statusFilter.value,
+        fiscal_profile_id: fiscalProfileFilter.value,
         sortField: props.filters?.sortField,
         sortOrder: props.filters?.sortOrder,
     }, { preserveState: true });
@@ -66,6 +102,7 @@ const onSort = (event) => {
         sortOrder: event.sortOrder === 1 ? 'asc' : 'desc',
         search: searchTerm.value || null,
         status: statusFilter.value,
+        fiscal_profile_id: fiscalProfileFilter.value,
     }, { preserveState: true });
 };
 
@@ -85,6 +122,7 @@ const statusSeverity = (status) => {
         borrador: 'warn',
         pendiente: 'warn',
         certificada: 'success',
+        cancelacion_pendiente: 'warn',
         cancelada: 'danger',
         no_solicitada: 'secondary',
         solicitada: 'info',
@@ -98,6 +136,7 @@ const statusLabel = (status) => {
         borrador: 'Borrador',
         pendiente: 'Pendiente',
         certificada: 'Certificada',
+        cancelacion_pendiente: 'Cancelación pendiente',
         cancelada: 'Cancelada',
         no_solicitada: 'No solicitada',
         solicitada: 'Solicitada',
@@ -109,11 +148,13 @@ const statusLabel = (status) => {
 const statusDotClass = (status) => {
     if (status === 'certificada' || status === 'generada') return 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]';
     if (status === 'cancelada') return 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]';
+    if (status === 'cancelacion_pendiente') return 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)] animate-pulse';
     return 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]';
 };
 
 const rowClass = (data) => {
     if (data.status === 'cancelada') return 'opacity-60';
+    if (data.status === 'cancelacion_pendiente') return 'bg-amber-50/30 dark:bg-amber-900/10';
     return '';
 };
 
@@ -293,6 +334,17 @@ const tagPt = {
                     </IconField>
 
                     <div class="flex items-center gap-3 w-full md:w-auto">
+                        <!-- Fiscal profile filter (hidden if only one profile) -->
+                        <Select
+                            v-if="fiscalProfiles && fiscalProfiles.length > 1"
+                            v-model="fiscalProfileFilter"
+                            :options="fiscalProfileOptions"
+                            optionLabel="label"
+                            optionValue="value"
+                            placeholder="Perfil fiscal"
+                            class="w-full md:w-56"
+                            :pt="selectPt"
+                        />
                         <!-- Status filter -->
                         <Select
                             v-model="statusFilter"

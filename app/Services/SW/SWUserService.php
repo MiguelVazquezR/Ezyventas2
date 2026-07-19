@@ -230,6 +230,168 @@ class SWUserService
     }
 
     /**
+     * Consultar el saldo de timbres de una subcuenta en tiempo real.
+     *
+     * GET /management/v2/api/dealers/balance/users/{idUser}
+     * Auth: Bearer token DEALER (token permanente, NO el de la subcuenta).
+     *
+     * @param string $swUserId The SW Sapien user ID from fiscal_profiles.sw_user_id.
+     * @return array The full 'data' payload: stampsBalance, stampsUsed, stampsAssigned, isUnlimited, expirationDate.
+     *
+     * @throws \RuntimeException When the PAC is unreachable or returns an error.
+     */
+    public function getStampsBalance(string $swUserId): array
+    {
+        $endpoint = $this->resolveManagementEndpoint();
+        $token    = config('services.swsapien.token');
+
+        if (! $endpoint || ! $token) {
+            throw new \RuntimeException('SW Sapien Management no está configurado.');
+        }
+
+        $url = rtrim($endpoint, '/') . '/management/v2/api/dealers/balance/users/' . $swUserId;
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+            'Accept'        => 'application/json',
+        ])->get($url);
+
+        if ($response->failed()) {
+            $status  = $response->status();
+            $body    = $response->body();
+
+            Log::error('SW Sapien balance query failed', [
+                'sw_user_id'   => $swUserId,
+                'endpoint'     => $url,
+                'http_status'  => $status,
+                'response'     => $body,
+            ]);
+
+            throw new \RuntimeException(
+                $status === 404
+                    ? 'La subcuenta no pertenece a la cuenta dealer.'
+                    : 'No se pudo consultar el saldo de timbres en este momento.'
+            );
+        }
+
+        $data = $response->json();
+
+        return $data['data'] ?? [];
+    }
+
+    /**
+     * Agregar timbres a una subcuenta (abono — delta, no fijar total).
+     *
+     * POST /management/v2/api/dealers/users/{userId}/stamps
+     * Auth: Bearer token DEALER.
+     *
+     * @param string      $swUserId The SW Sapien user ID.
+     * @param int         $quantity Number of stamps to add.
+     * @param string|null $comment  Optional audit comment for the PAC.
+     * @return array The response data from the PAC (includes new total).
+     *
+     * @throws \RuntimeException When the PAC call fails.
+     */
+    public function addStampsToSubaccount(string $swUserId, int $quantity, ?string $comment = null): array
+    {
+        $endpoint = $this->resolveManagementEndpoint();
+        $token    = config('services.swsapien.token');
+
+        if (! $endpoint || ! $token) {
+            throw new \RuntimeException('SW Sapien Management no está configurado.');
+        }
+
+        $url = rtrim($endpoint, '/') . '/management/v2/api/dealers/users/' . $swUserId . '/stamps';
+
+        $payload = ['stamps' => $quantity];
+        if ($comment) {
+            $payload['comment'] = $comment;
+        }
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+            'Content-Type'  => 'application/json',
+            'Accept'        => 'application/json',
+        ])->post($url, $payload);
+
+        if ($response->failed()) {
+            $status = $response->status();
+            $body   = $response->body();
+
+            Log::error('SW Sapien add stamps failed', [
+                'sw_user_id'  => $swUserId,
+                'quantity'    => $quantity,
+                'endpoint'    => $url,
+                'http_status' => $status,
+                'response'    => $body,
+            ]);
+
+            throw new \RuntimeException(
+                'El PAC rechazó la asignación de timbres. HTTP ' . $status . ' — ' . $body
+            );
+        }
+
+        return $response->json();
+    }
+
+    /**
+     * Retirar timbres de una subcuenta (uso exclusivo del superadmin para correcciones).
+     *
+     * DELETE /management/v2/api/dealers/users/{userId}/stamps
+     * Auth: Bearer token DEALER.
+     *
+     * @param string      $swUserId The SW Sapien user ID.
+     * @param int         $quantity Number of stamps to remove.
+     * @param string|null $comment  Optional audit comment for the PAC.
+     * @return array The response data from the PAC (includes new total).
+     *
+     * @throws \RuntimeException When the PAC call fails or balance is insufficient.
+     */
+    public function removeStampsFromSubaccount(string $swUserId, int $quantity, ?string $comment = null): array
+    {
+        $endpoint = $this->resolveManagementEndpoint();
+        $token    = config('services.swsapien.token');
+
+        if (! $endpoint || ! $token) {
+            throw new \RuntimeException('SW Sapien Management no está configurado.');
+        }
+
+        $url = rtrim($endpoint, '/') . '/management/v2/api/dealers/users/' . $swUserId . '/stamps';
+
+        $payload = ['stamps' => $quantity];
+        if ($comment) {
+            $payload['comment'] = $comment;
+        }
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+            'Content-Type'  => 'application/json',
+            'Accept'        => 'application/json',
+        ])->delete($url, $payload);
+
+        if ($response->failed()) {
+            $status = $response->status();
+            $body   = $response->body();
+            $json   = $response->json();
+            $message = $json['message'] ?? $body;
+
+            Log::error('SW Sapien remove stamps failed', [
+                'sw_user_id'  => $swUserId,
+                'quantity'    => $quantity,
+                'endpoint'    => $url,
+                'http_status' => $status,
+                'response'    => $body,
+            ]);
+
+            throw new \RuntimeException(
+                $message ?: 'El PAC rechazó el retiro de timbres. HTTP ' . $status
+            );
+        }
+
+        return $response->json();
+    }
+
+    /**
      * Resolve the correct base URL for Management V2 (dealer) operations.
      *
      * SW Sapien uses separate hosts for different API surfaces:

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Billing\FiscalProfileController;
 use App\Http\Controllers\Billing\InvoiceController;
+use App\Http\Controllers\Billing\StampPurchaseController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -30,8 +31,23 @@ Route::middleware(['auth', 'verified'])->prefix('billing')->name('billing.')->gr
         Route::get('/{invoice}/xml', [InvoiceController::class, 'downloadXml'])->name('xml');
         Route::get('/{invoice}', [InvoiceController::class, 'show'])->name('show');
         Route::post('/{invoice}/cancel', [InvoiceController::class, 'cancel'])->name('cancel');
+        Route::post('/{invoice}/check-cancelation', [InvoiceController::class, 'checkCancelationStatus'])->name('checkCancelation');
         Route::post('/{invoice}/stamp', [InvoiceController::class, 'stamp'])->name('stamp');
         Route::delete('/{invoice}', [InvoiceController::class, 'destroy'])->name('destroy');
+    });
+
+    // ── Fiscal Profiles (detail, stamp purchases & manifest) ─────────
+    Route::prefix('fiscal-profiles')->name('fiscal-profiles.')->group(function () {
+        Route::get('/{fiscalProfile}', [FiscalProfileController::class, 'show'])->name('show');
+
+        // Stamp purchasing
+        Route::post('/{fiscalProfile}/stamps/quote', [StampPurchaseController::class, 'quote'])->name('stamps.quote');
+        Route::post('/{fiscalProfile}/stamps', [StampPurchaseController::class, 'store'])->name('stamps.store');
+        Route::get('/{fiscalProfile}/stamps/return', [StampPurchaseController::class, 'return'])->name('stamps.return');
+
+        // Manifest signing
+        Route::post('/{fiscalProfile}/manifest', [FiscalProfileController::class, 'signManifest'])->name('manifest.sign');
+        Route::get('/{fiscalProfile}/manifest/download', [FiscalProfileController::class, 'downloadManifest'])->name('manifest.download');
     });
 
     // ── Settings (Fiscal profiles & CSD) ───────────────────

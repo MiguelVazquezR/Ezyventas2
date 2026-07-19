@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers\Billing;
 
+use App\Actions\Billing\SignManifestAction;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Billing\SignManifestRequest;
 use App\Http\Requests\Billing\StoreFiscalProfileRequest;
 use App\Models\Billing\FiscalProfile;
 use App\Models\Billing\Invoice;
+use App\Models\BankAccount;
 use App\Services\Billing\SWSapienService;
 use App\Services\SW\SWUserService;
 use Illuminate\Http\Client\ConnectionException;
@@ -17,6 +20,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class FiscalProfileController extends Controller implements HasMiddleware
 {
@@ -190,6 +195,68 @@ class FiscalProfileController extends Controller implements HasMiddleware
     }
 
     /**
+     * Show a single fiscal profile with live stamp balance, invoice KPIs,
+     * CSD info, logo, and purchase history.
+     */
+    public function show(FiscalProfile $fiscalProfile, SWUserService $swUserService): Response
+    {
+        $user         = Auth::user();
+        $subscription = $user->branch?->subscription;
+
+        // Authorization: the profile must belong to the user's subscription
+        if ($fiscalProfile->subscription_id !== $subscription?->id) {
+            abort(403);
+        }
+
+        // Load the logo relation
+        $fiscalProfile->load('media');
+
+        // Live PAC balance
+        $balance = null;
+        $balanceError = null;
+
+        if ($fiscalProfile->sw_user_id) {
+            try {
+                $balance = $swUserService->getStampsBalance($fiscalProfile->sw_user_id);
+            } catch (\Exception $e) {
+                $balanceError = 'No se pudo consultar el saldo en este momento.';
+            }
+        }
+
+        // Invoice KPIs for this fiscal profile
+        $invoiceQuery = Invoice::where('branch_id', $user->branch_id)
+            ->where('fiscal_profile_id', $fiscalProfile->id);
+
+        $invoiceStats = [
+            'totalInvoices'  => $invoiceQuery->count(),
+            'certifiedCount' => (clone $invoiceQuery)->certified()->count(),
+            'canceledCount'  => (clone $invoiceQuery)->canceled()->count(),
+            'totalAmount'    => (float) (clone $invoiceQuery)->certified()->sum('total'),
+        ];
+
+        // Purchase history
+        $purchases = $fiscalProfile->stampPurchases()
+            ->with(['requestedBy', 'reviewedBy'])
+            ->latest()
+            ->paginate(15);
+
+        // Platform bank accounts (same source as "Mejorar suscripción")
+        $ourBankAccounts = BankAccount::whereHas('branches', function ($q) {
+            $q->where('branch_id', 1)->where('is_favorite', true);
+        })->get();
+
+        return Inertia::render('Billing/FiscalProfiles/Show', [
+            'fiscalProfile'     => $fiscalProfile,
+            'balance'           => $balance,
+            'balanceError'      => $balanceError,
+            'invoiceStats'      => $invoiceStats,
+            'purchases'         => $purchases,
+            'ourBankAccounts'   => $ourBankAccounts,
+            'canPurchaseStamps' => $user->can('stamps.purchase'),
+        ]);
+    }
+
+    /**
      * Delete or deactivate a fiscal profile.
      *
      * If the profile has issued invoices it is soft-deactivated;
@@ -254,5 +321,45 @@ class FiscalProfileController extends Controller implements HasMiddleware
         $fiscalProfile->clearMediaCollection('company_logo');
 
         return back()->with('success', 'Logotipo eliminado correctamente.');
+    }
+
+    /**
+     * Sign the SW manifest for a fiscal profile using its FIEL (e.firma).
+     */
+    public function signManifest(
+        FiscalProfile $fiscalProfile,
+        SignManifestRequest $request,
+        SignManifestAction $action,
+    ): RedirectResponse {
+        $result = $action->execute($fiscalProfile, [
+            'cer_file' => $request->file('cer_file'),
+            'key_file' => $request->file('key_file'),
+            'password' => $request->input('password'),
+            'email'    => $request->input('email', $fiscalProfile->email),
+        ]);
+
+        if ($result['status'] === 'error') {
+            return back()->with('error', $result['message']);
+        }
+
+        return back()->with('success', 'Manifiesto firmado exitosamente. Ya puedes descargar el acuse.');
+    }
+
+    /**
+     * Download the signed manifest PDF for a fiscal profile.
+     */
+    public function downloadManifest(FiscalProfile $fiscalProfile): \Symfony\Component\HttpFoundation\BinaryFileResponse|\Illuminate\Http\RedirectResponse
+    {
+        if (! $fiscalProfile->manifest_pdf_path) {
+            return back()->with('error', 'Este perfil aún no tiene un manifiesto firmado.');
+        }
+
+        $fullPath = storage_path('app/public/' . $fiscalProfile->manifest_pdf_path);
+
+        if (! file_exists($fullPath)) {
+            return back()->with('error', 'El archivo del manifiesto ya no está disponible.');
+        }
+
+        return response()->download($fullPath, 'Manifiesto_SW_' . $fiscalProfile->rfc . '.pdf');
     }
 }

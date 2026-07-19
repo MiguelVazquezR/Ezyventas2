@@ -45,6 +45,7 @@ const statusLabel = computed(() => {
         borrador: 'Borrador',
         pendiente: 'Pendiente',
         certificada: 'Certificada',
+        cancelacion_pendiente: 'Cancelación pendiente',
         cancelada: 'Cancelada',
     };
     return map[props.invoice.status] || props.invoice.status;
@@ -55,6 +56,7 @@ const statusSeverity = computed(() => {
         borrador: 'warn',
         pendiente: 'warn',
         certificada: 'success',
+        cancelacion_pendiente: 'warn',
         cancelada: 'danger',
     };
     return map[props.invoice.status] || 'secondary';
@@ -109,6 +111,17 @@ const cancelReasons = [
 ];
 
 const needsSubstitutionUuid = computed(() => cancelForm.cancellation_reason === '01');
+
+// ──────────────────────────────────────
+// 72h warning for cancelation
+// ──────────────────────────────────────
+const isOlderThan72h = computed(() => {
+    if (!props.invoice.fecha_timbrado) return false;
+    const timbrado = new Date(props.invoice.fecha_timbrado);
+    const now = new Date();
+    const diffMs = now - timbrado;
+    return diffMs > 72 * 60 * 60 * 1000;
+});
 
 const submitCancel = () => {
     cancelForm.post(route('billing.invoices.cancel', props.invoice.id), {
@@ -196,6 +209,15 @@ const tagPt = {
                         @click="showCancelDialog = true"
                     />
                     <Button
+                        v-if="invoice.status === 'cancelacion_pendiente'"
+                        label="Verificar estatus"
+                        icon="pi pi-refresh"
+                        severity="warn"
+                        outlined
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto"
+                        @click="router.post(route('billing.invoices.checkCancelation', invoice.id))"
+                    />
+                    <Button
                         v-if="invoice.xml_url"
                         icon="pi pi-file-excel !text-sm"
                         label="XML"
@@ -213,6 +235,21 @@ const tagPt = {
                         @click="openUrl(route('billing.invoices.pdf', invoice.id))"
                     />
                 </div>
+            </div>
+            <!-- 72h warning -->
+            <div v-if="invoice.status === 'certificada' && isOlderThan72h && hasPermission('invoices.cancel')" class="flex items-start gap-2 mt-2 text-xs text-amber-600 dark:text-amber-400">
+                <i class="pi pi-exclamation-triangle !text-xs mt-0.5" />
+                <span class="m-0">Esta factura tiene más de 72 horas desde que se timbró. Es probable que el SAT requiera la aprobación de tu cliente para poder cancelarla. La cancelación no será inmediata en ese caso.</span>
+            </div>
+            <!-- Cancel note -->
+            <div v-if="invoice.status === 'certificada' && hasPermission('invoices.cancel')" class="flex items-start gap-2 mt-2 text-xs text-gray-400">
+                <i class="pi pi-info-circle !text-xs mt-0.5" />
+                <span class="m-0">Cancelar esta factura no modifica tu saldo de timbres. El PAC cobra un timbre al timbrar, no al cancelar.</span>
+            </div>
+            <!-- Cancelation pending info -->
+            <div v-if="invoice.status === 'cancelacion_pendiente'" class="flex items-start gap-2 mt-2 text-xs text-amber-600 dark:text-amber-400">
+                <i class="pi pi-clock !text-xs mt-0.5" />
+                <span class="m-0">Solicitud de cancelación enviada. Tu cliente (RFC receptor) debe aceptarla o rechazarla ante el SAT. Usa "Verificar estatus" para consultar si ya se resolvió. Mientras tanto, esta factura sigue vigente.</span>
             </div>
 
             <!-- Two-panel layout -->

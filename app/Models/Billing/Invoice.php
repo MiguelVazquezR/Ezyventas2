@@ -52,6 +52,10 @@ class Invoice extends Model
         'rfc_prov_certif',
         'cadena_original_sat',
         'qr_code_base64',
+        'cancelation_requires_acceptance',
+        'cancelation_status',
+        'cancelation_requested_at',
+        'cancelation_last_checked_at',
     ];
 
     protected function casts(): array
@@ -61,6 +65,9 @@ class Invoice extends Model
             'issued_at'            => 'datetime',
             'fecha_timbrado'       => 'datetime',
             'canceled_at'          => 'datetime',
+            'cancelation_requested_at'     => 'datetime',
+            'cancelation_last_checked_at'  => 'datetime',
+            'cancelation_requires_acceptance' => 'boolean',
             'created_at'           => 'datetime',
             'subtotal'             => 'decimal:2',
             'discount_total'       => 'decimal:2',

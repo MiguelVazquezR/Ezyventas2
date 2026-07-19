@@ -21,6 +21,8 @@ const props = defineProps({
     aiUsage: Number,
     aiPercentage: Number,
     hasAiAgentModule: Boolean,
+    fiscalProfiles: Array,
+    allStampPurchases: Array,
 });
 
 // --- ESTADOS DE MODALES ---
@@ -123,6 +125,76 @@ const currentVersion = computed(() => {
 
 // --- TESLA UI PT ---
 const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold border' } };
+
+// ──────────────────────────────────────
+// Stamp adjustment modal
+// ──────────────────────────────────────
+const showStampModal = ref(false);
+const selectedFiscalProfile = ref(null);
+const stampAdjustmentType = ref('add');
+const stampQuantity = ref(1);
+const stampAdminNote = ref('');
+const stampFormProcessing = ref(false);
+
+function openStampModal(profile) {
+    selectedFiscalProfile.value = profile;
+    stampAdjustmentType.value = 'add';
+    stampQuantity.value = 1;
+    stampAdminNote.value = '';
+    showStampModal.value = true;
+}
+
+function submitStampAdjustment() {
+    if (!stampAdminNote.value.trim()) return;
+
+    stampFormProcessing.value = true;
+    router.post(route('admin.stamps.manual-adjustment'), {
+        fiscal_profile_id: selectedFiscalProfile.value.id,
+        stamp_quantity: stampQuantity.value,
+        adjustment_type: stampAdjustmentType.value,
+        admin_note: stampAdminNote.value,
+    }, {
+        preserveScroll: true,
+        preserveState: false,
+        onFinish: () => {
+            stampFormProcessing.value = false;
+            showStampModal.value = false;
+        },
+    });
+}
+
+function stampStatusLabel(status) {
+    const labels = {
+        'pending': 'Pendiente',
+        'awaiting_review': 'En revisión',
+        'approved': 'Aprobado',
+        'rejected': 'Rechazado',
+        'failed': 'Fallido',
+        'stamps_applied': 'Acreditado',
+    };
+    return labels[status] || status;
+}
+
+function stampStatusSeverity(status) {
+    const map = {
+        'pending': 'warn',
+        'awaiting_review': 'info',
+        'approved': 'success',
+        'rejected': 'danger',
+        'failed': 'danger',
+        'stamps_applied': 'success',
+    };
+    return map[status] || 'secondary';
+}
+
+function stampPaymentMethodLabel(method) {
+    const labels = {
+        'mercadopago': 'Mercado Pago',
+        'bank_transfer': 'Transferencia',
+        'manual_adjustment': 'Ajuste manual',
+    };
+    return labels[method] || method;
+}
 </script>
 
 <template>
@@ -340,6 +412,106 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
                     />
                 </div>
 
+                <!-- ── Timbres por perfil fiscal ──────────── -->
+                <div v-if="fiscalProfiles && fiscalProfiles.length > 0" class="mt-8 pt-8 border-t border-gray-100 dark:border-[#3a3a3a]">
+                    <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-4">
+                        Timbres por perfil fiscal
+                    </h2>
+
+                    <!-- Fiscal profiles cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div
+                            v-for="profile in fiscalProfiles"
+                            :key="profile.id"
+                            class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]"
+                        >
+                            <div class="flex items-start justify-between mb-3">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-900 dark:text-white m-0">{{ profile.razon_social }}</p>
+                                    <p class="text-xs text-gray-400 m-0">RFC: {{ profile.rfc }}</p>
+                                </div>
+                                <Tag
+                                    :value="profile.is_active ? 'Activo' : 'Inactivo'"
+                                    :severity="profile.is_active ? 'success' : 'secondary'"
+                                    class="!rounded-full"
+                                />
+                            </div>
+
+                            <!-- Balance -->
+                            <div v-if="profile.balanceError" class="text-xs text-red-500 mb-3">
+                                {{ profile.balanceError }}
+                            </div>
+                            <div v-else-if="profile.balance" class="grid grid-cols-3 gap-3 mb-3">
+                                <div class="text-center">
+                                    <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Disponibles</p>
+                                    <p class="text-lg font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsBalance ?? '—' }}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Usados</p>
+                                    <p class="text-lg font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsUsed ?? '—' }}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Asignados</p>
+                                    <p class="text-lg font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsAssigned ?? '—' }}</p>
+                                </div>
+                            </div>
+                            <div v-else class="text-xs text-gray-400 mb-3">
+                                Sin subcuenta PAC vinculada.
+                            </div>
+
+                            <Button
+                                v-if="profile.is_active"
+                                icon="pi pi-cog"
+                                label="Ajustar timbres"
+                                size="small"
+                                severity="secondary"
+                                class="!rounded-full w-full"
+                                @click="openStampModal(profile)"
+                            />
+                        </div>
+                    </div>
+
+                    <!-- Combined purchase history -->
+                    <div v-if="allStampPurchases && allStampPurchases.length > 0">
+                        <h3 class="text-xs font-bold text-gray-500 m-0 mb-3">Historial de movimientos</h3>
+                        <DataTable
+                            :value="allStampPurchases"
+                            stripedRows
+                            class="w-full text-sm"
+                            :pt="{
+                                root: { class: '!bg-transparent' },
+                                headerRow: { class: '!bg-transparent' },
+                            }"
+                        >
+                            <Column header="Perfil">
+                                <template #body="{ data }">
+                                    <span class="text-xs">{{ data.fiscal_profile?.razon_social ?? '—' }}</span>
+                                </template>
+                            </Column>
+                            <Column header="Cantidad">
+                                <template #body="{ data }">
+                                    {{ data.stamp_quantity.toLocaleString() }}
+                                </template>
+                            </Column>
+                            <Column header="Método">
+                                <template #body="{ data }">
+                                    {{ stampPaymentMethodLabel(data.payment_method) }}
+                                </template>
+                            </Column>
+                            <Column header="Estado">
+                                <template #body="{ data }">
+                                    <Tag :value="stampStatusLabel(data.status)" :severity="stampStatusSeverity(data.status)" class="!rounded-full" />
+                                </template>
+                            </Column>
+                            <Column header="Fecha">
+                                <template #body="{ data }">
+                                    <span class="text-xs text-gray-500">{{ formatDate(data.created_at) }}</span>
+                                </template>
+                            </Column>
+                        </DataTable>
+                    </div>
+                </div>
+
             </div>
         </div>
 
@@ -357,6 +529,80 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
             :subscription-id="subscription.id"
             :plan-items="planItems"
         />
+
+        <!-- Modal: Ajuste manual de timbres -->
+        <Dialog
+            v-model:visible="showStampModal"
+            header="Ajustar timbres"
+            :modal="true"
+            class="w-full max-w-md"
+            :pt="{
+                root: { class: '!rounded-3xl !bg-white dark:!bg-[#232323] !border-gray-100 dark:!border-[#3a3a3a]' },
+                header: { class: '!bg-transparent' },
+                content: { class: '!bg-transparent' },
+            }"
+        >
+            <div v-if="selectedFiscalProfile" class="flex flex-col gap-4">
+                <p class="text-sm text-gray-500 m-0">
+                    {{ selectedFiscalProfile.razon_social }} — RFC: {{ selectedFiscalProfile.rfc }}
+                </p>
+
+                <!-- Adjustment type -->
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Tipo de ajuste</label>
+                    <div class="flex gap-4">
+                        <div class="flex items-center gap-2">
+                            <RadioButton v-model="stampAdjustmentType" value="add" inputId="adj_add" />
+                            <label for="adj_add" class="text-sm cursor-pointer">Agregar timbres</label>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <RadioButton v-model="stampAdjustmentType" value="remove" inputId="adj_remove" />
+                            <label for="adj_remove" class="text-sm cursor-pointer">Retirar timbres</label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quantity -->
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Cantidad</label>
+                    <InputNumber
+                        v-model="stampQuantity"
+                        :min="1"
+                        :max="999999"
+                        class="w-full"
+                        :pt="{
+                            input: { root: { class: 'w-full min-w-0 !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-3 !text-xl !font-light !text-gray-900 dark:!text-white' } }
+                        }"
+                    />
+                </div>
+
+                <!-- Admin note -->
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Motivo del ajuste *</label>
+                    <Textarea
+                        v-model="stampAdminNote"
+                        rows="3"
+                        class="w-full"
+                        placeholder="Ej. Compensación por incidencia de timbrado duplicado"
+                        :pt="{
+                            root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a]' }
+                        }"
+                    />
+                </div>
+            </div>
+
+            <template #footer>
+                <Button label="Cancelar" severity="secondary" class="!rounded-full" @click="showStampModal = false" />
+                <Button
+                    :label="stampAdjustmentType === 'remove' ? 'Retirar timbres' : 'Agregar timbres'"
+                    :severity="stampAdjustmentType === 'remove' ? 'danger' : 'primary'"
+                    class="!rounded-full"
+                    :loading="stampFormProcessing"
+                    :disabled="!stampAdminNote.trim()"
+                    @click="submitStampAdjustment"
+                />
+            </template>
+        </Dialog>
 
     </AppLayout>
 </template>

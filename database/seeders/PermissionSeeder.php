@@ -73,6 +73,7 @@ class PermissionSeeder extends Seeder
                 'invoices.settings.manage_logo' => 'Subir y eliminar logotipos de perfiles fiscales',
                 'invoices.settings.delete_fiscal_profiles' => 'Eliminar perfiles fiscales',
                 'invoices.settings.toggle' => 'Activar o desactivar facturación electrónica',
+                'stamps.purchase' => 'Comprar timbres para perfiles fiscales',
             ],
             'Clientes' => [
                 'customers.access' => 'Ver listado de clientes',

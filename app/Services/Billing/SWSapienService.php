@@ -489,9 +489,14 @@ class SWSapienService
     /**
      * Cancel a CFDI via SW Sapien HTTP API (UUID-based, CSDs precargados).
      *
+     * Returns the PAC response data so the caller can determine if the
+     * cancelation requires receiver acceptance (isCancelable).
+     *
+     * @return array The full 'data' payload from the PAC response.
+     *
      * @throws \RuntimeException
      */
-    public function cancel(Invoice $invoice, string $emitterRfc, string $reason, ?string $substitutionUuid = null): void
+    public function cancel(Invoice $invoice, string $emitterRfc, string $reason, ?string $substitutionUuid = null): array
     {
         $endpoint = config('services.swsapien.endpoint');
         $token    = config('services.swsapien.token');
@@ -549,11 +554,9 @@ class SWSapienService
             );
         }
 
-        $invoice->update([
-            'status'              => InvoiceStatus::CANCELED,
-            'cancellation_reason' => $reason,
-            'canceled_at'         => now(),
-        ]);
+        // Return the full data payload so the caller can inspect
+        // isCancelable, statusCancelation, etc.
+        return $data['data'] ?? $data;
     }
 
     /**

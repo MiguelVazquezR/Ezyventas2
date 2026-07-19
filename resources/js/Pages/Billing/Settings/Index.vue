@@ -326,7 +326,12 @@ const tagPt = {
                     </Column>
                     <Column field="razon_social" header="Razón social">
                         <template #body="{ data }">
-                            <span class="font-medium">{{ data.razon_social }}</span>
+                            <Link
+                                :href="route('billing.fiscal-profiles.show', data.id)"
+                                class="font-medium text-gray-900 dark:text-white hover:text-primary-500 transition-colors no-underline"
+                            >
+                                {{ data.razon_social }}
+                            </Link>
                         </template>
                     </Column>
                     <Column field="regimen_fiscal" header="Régimen fiscal">
@@ -343,9 +348,34 @@ const tagPt = {
                             />
                         </template>
                     </Column>
-                    <Column header="Acciones" style="width:120px">
+                    <Column header="Manifiesto">
                         <template #body="{ data }">
-                            <div class="flex items-center gap-1">
+                            <Tag
+                                v-if="data.manifest_signed_at"
+                                value="Firmado"
+                                severity="success"
+                                :pt="tagPt"
+                            />
+                            <Tag
+                                v-else-if="data.sw_user_id"
+                                value="Pendiente"
+                                severity="warn"
+                                :pt="tagPt"
+                            />
+                            <span v-else class="text-xs text-gray-400">—</span>
+                        </template>
+                    </Column>
+                    <Column header="Acciones" style="width:160px">
+                        <template #body="{ data }">
+                            <div class="flex items-center gap-0.5">
+                                <!-- Link to detail page -->
+                                <Link
+                                    :href="route('billing.fiscal-profiles.show', data.id)"
+                                    v-tooltip.top="'Ver detalle del perfil'"
+                                    class="w-9 h-9 rounded-full flex items-center justify-center text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors no-underline"
+                                >
+                                    <i class="pi pi-eye !text-sm" />
+                                </Link>
                                 <!-- Logo button -->
                                 <Button
                                     icon="pi pi-image"

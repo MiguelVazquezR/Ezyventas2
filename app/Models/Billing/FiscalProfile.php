@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\MediaLibrary\HasMedia;
 use Spatie\MediaLibrary\InteractsWithMedia;
 
@@ -42,6 +43,10 @@ class FiscalProfile extends Model implements HasMedia
         'cer_file_path',
         'key_file_path',
         'is_active',
+        'manifest_signed_at',
+        'manifest_pdf_path',
+        'manifest_sent_to_email',
+        'manifest_last_attempt_error',
     ];
 
     /**
@@ -56,6 +61,7 @@ class FiscalProfile extends Model implements HasMedia
         return [
             'is_active' => 'boolean',
             'password'  => 'encrypted',
+            'manifest_signed_at' => 'datetime',
         ];
     }
 
@@ -96,6 +102,14 @@ class FiscalProfile extends Model implements HasMedia
         return $this->belongsTo(Subscription::class);
     }
 
+    /**
+     * Stamp purchase history for this fiscal profile.
+     */
+    public function stampPurchases(): HasMany
+    {
+        return $this->hasMany(StampPurchase::class);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Scopes
@@ -132,5 +146,13 @@ class FiscalProfile extends Model implements HasMedia
     public function isReadyForInvoicing(): bool
     {
         return $this->is_active && $this->hasSwSubaccount();
+    }
+
+    /**
+     * Whether the SW manifest has been signed for this fiscal profile.
+     */
+    public function hasSignedManifest(): bool
+    {
+        return ! empty($this->manifest_signed_at);
     }
 }

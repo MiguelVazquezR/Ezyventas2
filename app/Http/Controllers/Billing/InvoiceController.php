@@ -8,6 +8,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\CancelInvoiceRequest;
 use App\Http\Requests\Billing\StoreInvoiceRequest;
 use App\Models\Billing\Invoice;
+use App\Services\Billing\SatConsultationService;
+use App\Services\SW\SWUserService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -64,8 +66,38 @@ class InvoiceController extends Controller implements HasMiddleware
             ->certified()
             ->sum('total');
 
+        // Per-fiscal-profile KPIs with live stamp balances
+        $swUserService = app(SWUserService::class);
+        $fiscalProfilesData = $fiscalProfiles->map(function ($profile) use ($swUserService, $user, $request) {
+            $balance = null;
+            $balanceError = null;
+
+            if ($profile->sw_user_id) {
+                try {
+                    $balance = $swUserService->getStampsBalance($profile->sw_user_id);
+                } catch (\Exception $e) {
+                    $balanceError = 'No se pudo consultar el saldo en este momento.';
+                }
+            }
+
+            $invoiceQuery = Invoice::where('branch_id', $user->branch_id)
+                ->where('fiscal_profile_id', $profile->id);
+
+            return [
+                'id'             => $profile->id,
+                'rfc'            => $profile->rfc,
+                'razon_social'   => $profile->razon_social,
+                'balance'        => $balance,
+                'balanceError'   => $balanceError,
+                'totalInvoices'  => $invoiceQuery->count(),
+                'certifiedCount' => (clone $invoiceQuery)->certified()->count(),
+                'canceledCount'  => (clone $invoiceQuery)->canceled()->count(),
+                'totalAmount'    => (float) (clone $invoiceQuery)->certified()->sum('total'),
+            ];
+        });
+
         return Inertia::render('Billing/Dashboard/Index', [
-            'fiscalProfiles'        => $fiscalProfiles,
+            'fiscalProfiles'        => $fiscalProfilesData,
             'totalStampsUsed'       => $certifiedInvoices,
             'totalInvoices'         => $totalInvoices,
             'canceledInvoices'      => $canceledInvoices,
@@ -102,14 +134,24 @@ class InvoiceController extends Controller implements HasMiddleware
             $query->where('status', $request->input('status'));
         }
 
+        // Filter by fiscal profile if provided
+        if ($request->filled('fiscal_profile_id')) {
+            $query->where('fiscal_profile_id', $request->input('fiscal_profile_id'));
+        }
+
         $query->orderBy(
             $request->input('sortField', 'created_at'),
             $request->input('sortOrder', 'desc'),
         );
 
+        // Get fiscal profiles for the filter dropdown
+        $fiscalProfiles = $subscription?->fiscalProfiles()->active()
+            ->get(['id', 'rfc', 'razon_social']) ?? collect();
+
         return Inertia::render('Billing/Invoices/Index', [
             'invoices'           => $query->paginate($request->input('rows', 20))->withQueryString(),
-            'filters'            => $request->only(['search', 'status', 'sortField', 'sortOrder']),
+            'filters'            => $request->only(['search', 'status', 'fiscal_profile_id', 'sortField', 'sortOrder']),
+            'fiscalProfiles'     => $fiscalProfiles,
             'hasFiscalProfiles'  => $subscription?->fiscalProfiles()->active()->exists() ?? false,
         ]);
     }
@@ -400,14 +442,57 @@ class InvoiceController extends Controller implements HasMiddleware
      */
     public function cancel(Invoice $invoice, CancelInvoiceRequest $request, CancelInvoiceAction $action): RedirectResponse
     {
-        $action->execute(
+        $result = $action->execute(
             $invoice,
             $request->validated('cancellation_reason'),
             $request->validated('substitution_uuid'),
         );
 
+        if ($result['status'] === 'pending_acceptance') {
+            return redirect()->route('billing.invoices.show', $invoice->id)
+                ->with('warning', $result['message']);
+        }
+
         return redirect()->route('billing.invoices.show', $invoice->id)
-            ->with('success', 'Factura cancelada correctamente.');
+            ->with('success', $result['message']);
+    }
+
+    /**
+     * Verify the cancelation status of a CFDI that requires receiver acceptance.
+     * Queries the SAT public consultation service.
+     */
+    public function checkCancelationStatus(Invoice $invoice, SatConsultationService $satService): RedirectResponse
+    {
+        if ($invoice->status->value !== 'cancelacion_pendiente') {
+            return redirect()->back()
+                ->with('error', 'Esta factura no tiene una cancelación pendiente de aprobación.');
+        }
+
+        try {
+            $satResult = $satService->consult($invoice);
+            $result = $satService->applyResult($invoice, $satResult);
+
+            $messages = [
+                'canceled' => 'La cancelación fue aceptada. La factura ahora está cancelada.',
+                'rejected' => 'Tu cliente rechazó la solicitud de cancelación. La factura sigue vigente.',
+                'expired'  => 'El plazo para que tu cliente respondiera ha vencido sin resolución. Puedes intentar cancelar de nuevo.',
+                'pending'  => 'La cancelación sigue pendiente de aprobación por parte de tu cliente.',
+            ];
+
+            $message = $messages[$result] ?? 'Estatus de cancelación actualizado.';
+
+            if ($result === 'canceled' || $result === 'rejected') {
+                return redirect()->route('billing.invoices.show', $invoice->id)
+                    ->with($result === 'canceled' ? 'success' : 'warning', $message);
+            }
+
+            return redirect()->route('billing.invoices.show', $invoice->id)
+                ->with('info', $message);
+
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->with('error', $e->getMessage());
+        }
     }
 
     /**

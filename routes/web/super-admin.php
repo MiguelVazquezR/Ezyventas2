@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AdminStampPurchaseController;
 use App\Http\Controllers\Admin\AdminSubscriptionPaymentController;
 use App\Http\Controllers\Admin\AiAgentSettingsController;
 use App\Http\Controllers\Admin\PlanItemController;
@@ -21,6 +22,15 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
     Route::get('payments/{payment}', [AdminSubscriptionPaymentController::class, 'show'])->name('payments.show');
     Route::post('payments/{payment}/approve', [AdminSubscriptionPaymentController::class, 'approve'])->name('payments.approve');
     Route::post('payments/{payment}/reject', [AdminSubscriptionPaymentController::class, 'reject'])->name('payments.reject');
+
+    // --- Gestión de Timbres (Comprobantes pendientes + Ajustes manuales) ---
+    Route::get('stamps', [AdminStampPurchaseController::class, 'index'])->name('stamps.index');
+    Route::get('stamps/{purchase}', [AdminStampPurchaseController::class, 'show'])->name('stamps.show');
+    Route::post('stamps/{purchase}/approve', [AdminStampPurchaseController::class, 'approve'])->name('stamps.approve');
+    Route::post('stamps/{purchase}/reject', [AdminStampPurchaseController::class, 'reject'])->name('stamps.reject');
+    Route::post('stamps/{purchase}/retry', [AdminStampPurchaseController::class, 'retry'])->name('stamps.retry');
+    Route::post('stamps/manual-adjustment', [AdminStampPurchaseController::class, 'manualAdjustment'])->name('stamps.manual-adjustment');
+    Route::get('stamps/balance/{fiscalProfile}', [AdminStampPurchaseController::class, 'balance'])->name('stamps.balance');
 
     // --- Ítems de Planes (Módulos y Límites del SaaS) ---
     Route::resource('plan-items', PlanItemController::class)->names([

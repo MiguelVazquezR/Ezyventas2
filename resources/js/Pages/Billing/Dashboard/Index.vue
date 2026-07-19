@@ -96,7 +96,7 @@ const formatNumber = (value) =>
     new Intl.NumberFormat('es-MX').format(value || 0);
 
 const activeProfiles = computed(() =>
-    props.fiscalProfiles.filter(p => p.is_active),
+    props.fiscalProfiles,
 );
 
 const tagPt = {
@@ -236,18 +236,82 @@ const tagPt = {
                 </div>
             </div>
 
-            <!-- Fiscal Profiles Table -->
-            <div v-if="fiscalProfiles.length > 0" class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
-                <div class="flex items-center gap-3 mb-6">
-                    <div class="w-10 h-10 rounded-full bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0 border border-purple-100 dark:border-purple-900/30">
-                        <i class="pi pi-building !text-sm text-purple-500"></i>
-                    </div>
-                    <div>
-                        <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Perfiles fiscales</h2>
-                        <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">{{ fiscalProfiles.length }} {{ fiscalProfiles.length === 1 ? 'RFC registrado' : 'RFCs registrados' }}</p>
+            <!-- Per-Fiscal-Profile Cards -->
+            <div v-if="fiscalProfiles.length > 0" class="space-y-6">
+                <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Perfiles fiscales</h2>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div
+                        v-for="profile in fiscalProfiles"
+                        :key="profile.id"
+                        class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] space-y-4"
+                    >
+                        <!-- Profile header -->
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <Link
+                                    :href="route('billing.fiscal-profiles.show', profile.id)"
+                                    class="text-sm font-medium text-gray-900 dark:text-white hover:text-primary-500 transition-colors no-underline"
+                                >
+                                    {{ profile.razon_social }}
+                                </Link>
+                                <p class="text-xs text-gray-400 m-0">RFC: {{ profile.rfc }}</p>
+                            </div>
+                        </div>
+
+                        <!-- Live stamp balance -->
+                        <div v-if="profile.balanceError" class="text-xs text-red-500">
+                            {{ profile.balanceError }}
+                        </div>
+                        <div v-else-if="profile.balance" class="grid grid-cols-3 gap-3 p-3 rounded-2xl bg-gray-50 dark:bg-[#1a1a1a]">
+                            <div class="text-center">
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Disponibles</p>
+                                <p class="text-xl font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsBalance ?? '—' }}</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Usados</p>
+                                <p class="text-xl font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsUsed ?? '—' }}</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Asignados</p>
+                                <p class="text-xl font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsAssigned ?? '—' }}</p>
+                            </div>
+                        </div>
+
+                        <!-- Invoice KPIs -->
+                        <div class="grid grid-cols-4 gap-3">
+                            <div class="text-center">
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Comprobantes</p>
+                                <p class="text-lg font-light text-gray-900 dark:text-white m-0">{{ formatNumber(profile.totalInvoices) }}</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Certificadas</p>
+                                <p class="text-lg font-light text-emerald-600 dark:text-emerald-400 m-0">{{ formatNumber(profile.certifiedCount) }}</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Canceladas</p>
+                                <p class="text-lg font-light text-red-500 m-0">{{ formatNumber(profile.canceledCount) }}</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Total facturado</p>
+                                <p class="text-sm font-light text-gray-900 dark:text-white m-0">{{ formatCurrency(profile.totalAmount) }}</p>
+                            </div>
+                        </div>
+
+                        <!-- Action link -->
+                        <Link
+                            :href="route('billing.fiscal-profiles.show', profile.id)"
+                            class="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-primary-500 transition-colors no-underline"
+                        >
+                            <i class="pi pi-arrow-right !text-[10px]"></i>
+                            Ver detalle y comprar timbres
+                        </Link>
                     </div>
                 </div>
+            </div>
 
+            <!-- Legacy table (fallback — now hidden in favor of cards above) -->
+            <div v-if="false" class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
                 <DataTable
                     :value="fiscalProfiles"
                     stripedRows
