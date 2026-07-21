@@ -9,12 +9,15 @@ use Illuminate\Support\Facades\Log;
 /**
  * SignManifestAction
  *
- * Orchestrates the SW manifest signing flow for a fiscal profile:
- * 1. Validates FIEL file extensions and sizes (handled by FormRequest)
- * 2. Optionally validates that the RFC in the .cer matches the profile's RFC
- * 3. Converts .cer/.key to Base64 in-memory
- * 4. Calls SWManifestService
- * 5. Ensures sensitive data (.key, password) is NEVER persisted or logged
+ * Step 3 of the manifest signing flow: submit the FIEL certificate,
+ * private key, and password to the PAC via POST.
+ *
+ * Per SW Sapien API docs, the PAC handles RSA-SHA256 signing
+ * internally — we do NOT pre-compute the signature.
+ *
+ * Prerequisites:
+ *   - Step 1 (FetchManifestLegendAction) must have been completed.
+ *   - Step 2 (UI acceptance) should have been completed.
  */
 class SignManifestAction
 {
@@ -23,17 +26,27 @@ class SignManifestAction
     ) {}
 
     /**
-     * Execute the manifest signing.
+     * Execute the manifest signing (step 3).
      *
      * @return array{status: string, pdf_path?: string, message?: string}
      */
     public function execute(FiscalProfile $profile, array $data): array
     {
-        // 1. Read and encode files (in-memory only, discarded after this method ends)
-        $cerContent = file_get_contents($data['cer_file']->getRealPath());
-        $keyContent = file_get_contents($data['key_file']->getRealPath());
+        // 1. Validate prerequisites — manifest text must have been fetched
+        if (empty($profile->manifest_text_b64)) {
+            return [
+                'status'  => 'error',
+                'message' => 'Primero debes obtener el texto del manifiesto. Recarga la página e intenta de nuevo.',
+            ];
+        }
 
-        // 2. Optional RFC validation: check the certificate's RFC matches the profile
+        // 2. Read and encode the .cer file (in-memory only)
+        //    The .cer is re-requested here for simplicity — the subscriber
+        //    provides all FIEL files together in step 3.
+        $cerContent = file_get_contents($data['cer_file']->getRealPath());
+        $b64Cer = base64_encode($cerContent);
+
+        // 3. Optional RFC validation
         $cerRfc = $this->extractRfcFromCer($cerContent);
         if ($cerRfc && strtoupper($cerRfc) !== strtoupper($profile->rfc)) {
             return [
@@ -42,12 +55,14 @@ class SignManifestAction
             ];
         }
 
-        // 3. Base64 encode (in-memory)
-        $b64Cer = base64_encode($cerContent);
+        // 4. Read and encode the .key file (in-memory only — never persisted).
+        $keyContent = file_get_contents($data['key_file']->getRealPath());
         $b64Key = base64_encode($keyContent);
 
-        // 4. Call the PAC — password and key are passed but never stored
-        $result = $this->manifestService->signManifest(
+        // 5. Submit to the PAC via POST.
+        //    Per SW Sapien API docs: the PAC handles the RSA signature
+        //    internally. We send B64Cer + B64Key + Password.
+        $result = $this->manifestService->submitSignature(
             $profile,
             $b64Cer,
             $b64Key,
@@ -55,27 +70,20 @@ class SignManifestAction
             $data['email'] ?? $profile->email,
         );
 
-        // 5. If error, persist the error message for UI display
+        // 8. If error, persist the error message for UI display
         if ($result['status'] === 'error') {
             $profile->update([
                 'manifest_last_attempt_error' => $result['message'],
             ]);
         }
 
-        // 6. Sensitive data ($b64Key, $password, $keyContent) go out of scope here
+        // 9. Sensitive data ($keyContent, $data['password']) go out of scope here
         //    and are garbage-collected — nothing persisted to DB, disk, or logs.
         return $result;
     }
 
     /**
      * Try to extract the RFC from a PEM/DER X.509 certificate.
-     *
-     * Parses the Subject field for common RFC patterns like:
-     *   /O=EMPRESA SA DE CV/OU=RFC123456ABC/...
-     *   /CN=RFC: XXXX000101XXX/...
-     *
-     * Returns null if extraction fails — the PAC will validate
-     * it anyway; this is just a helpful pre-check.
      */
     private function extractRfcFromCer(string $cerContent): ?string
     {
@@ -91,18 +99,14 @@ class SignManifestAction
                 ['CN' => $subject['CN'] ?? '', 'OU' => $subject['OU'] ?? '']
             );
 
-            // Common patterns in Mexican FIEL certificates:
-            // OU often contains the RFC directly
             foreach (['OU', 'CN', 'x500UniqueIdentifier', 'serialNumber'] as $key) {
                 $value = $fields[$key] ?? '';
                 if (empty($value)) continue;
 
-                // Pattern: standalone RFC (12-13 alphanumeric chars)
                 if (preg_match('/\b([A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3})\b/i', $value, $m)) {
                     return strtoupper($m[1]);
                 }
 
-                // Pattern: "RFC: XXXX000101XXX" or "RFC XXXX000101XXX"
                 if (preg_match('/RFC:?\s*([A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3})\b/i', $value, $m)) {
                     return strtoupper($m[1]);
                 }
@@ -110,7 +114,6 @@ class SignManifestAction
 
             return null;
         } catch (\Throwable $e) {
-            // RFC extraction is best-effort; don't fail if parsing fails
             Log::info('Could not extract RFC from FIEL certificate', [
                 'error' => $e->getMessage(),
             ]);

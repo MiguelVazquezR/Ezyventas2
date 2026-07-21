@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers\Billing;
 
+use App\Actions\Billing\FetchManifestLegendAction;
 use App\Actions\Billing\SignManifestAction;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Billing\AcceptManifestTextRequest;
+use App\Http\Requests\Billing\FetchManifestLegendRequest;
 use App\Http\Requests\Billing\SignManifestRequest;
 use App\Http\Requests\Billing\StoreFiscalProfileRequest;
 use App\Models\Billing\FiscalProfile;
@@ -245,7 +248,7 @@ class FiscalProfileController extends Controller implements HasMiddleware
             $q->where('branch_id', 1)->where('is_favorite', true);
         })->get();
 
-        return Inertia::render('Billing/FiscalProfiles/Show', [
+        return Inertia::render('Billing/Settings/Show', [
             'fiscalProfile'     => $fiscalProfile,
             'balance'           => $balance,
             'balanceError'      => $balanceError,
@@ -253,6 +256,7 @@ class FiscalProfileController extends Controller implements HasMiddleware
             'purchases'         => $purchases,
             'ourBankAccounts'   => $ourBankAccounts,
             'canPurchaseStamps' => $user->can('stamps.purchase'),
+            'canRetryManifestSigning' => $fiscalProfile->canRetryManifestSigning(),
         ]);
     }
 
@@ -293,6 +297,38 @@ class FiscalProfileController extends Controller implements HasMiddleware
     }
 
     /**
+     * Toggle the active status of a fiscal profile.
+     * Inactive profiles are hidden from invoice creation dropdowns
+     * but all historical data remains intact.
+     */
+    public function toggleActive(FiscalProfile $fiscalProfile): RedirectResponse
+    {
+        $user = Auth::user();
+        $subscription = $user->branch?->subscription;
+
+        if ($fiscalProfile->subscription_id !== $subscription?->id) {
+            abort(403);
+        }
+
+        $newStatus = ! $fiscalProfile->is_active;
+        $fiscalProfile->update(['is_active' => $newStatus]);
+
+        Log::info('Fiscal profile active status toggled', [
+            'fiscal_profile_id' => $fiscalProfile->id,
+            'rfc'               => $fiscalProfile->rfc,
+            'is_active'         => $newStatus,
+            'by_user_id'        => $user->id,
+        ]);
+
+        $message = $newStatus
+            ? 'Perfil fiscal activado correctamente.'
+            : 'Perfil fiscal inactivado. Ya no aparecerá al crear facturas.';
+
+        return redirect()->route('billing.settings.index')
+            ->with('success', $message);
+    }
+
+    /**
      * Upload or replace the company logo for a fiscal profile.
      */
     public function uploadLogo(Request $request, FiscalProfile $fiscalProfile): RedirectResponse
@@ -324,7 +360,47 @@ class FiscalProfileController extends Controller implements HasMiddleware
     }
 
     /**
-     * Sign the SW manifest for a fiscal profile using its FIEL (e.firma).
+     * Step 1 — Fetch the manifest legend (legal text to sign).
+     *
+     * Only the FIEL public certificate (.cer) is required at this stage.
+     * The subscriber sees the text before providing their private key.
+     */
+    public function fetchManifestLegend(
+        FiscalProfile $fiscalProfile,
+        FetchManifestLegendRequest $request,
+        FetchManifestLegendAction $action,
+    ): RedirectResponse {
+        $cerFile = $request->file('cer_file');
+        $cerContent = file_get_contents($cerFile->getRealPath());
+
+        $result = $action->execute($fiscalProfile, $cerContent);
+
+        if ($result['status'] === 'error') {
+            return back()->with('error', $result['message']);
+        }
+
+        return back()->with('success', 'Texto del manifiesto obtenido. Léelo cuidadosamente antes de continuar.');
+    }
+
+    /**
+     * Step 2 — Record that the subscriber has read and accepted the manifest text.
+     */
+    public function acceptManifestText(
+        FiscalProfile $fiscalProfile,
+        AcceptManifestTextRequest $request,
+    ): RedirectResponse {
+        $fiscalProfile->update([
+            'manifest_text_accepted_at' => now(),
+        ]);
+
+        return back()->with('success', 'Has aceptado el manifiesto. Ahora proporciona tu FIEL para firmarlo.');
+    }
+
+    /**
+     * Step 3 — Sign the SW manifest using the FIEL (e.firma).
+     *
+     * Uses the previously fetched manifest text (manifest_text_b64) and
+     * generates an RSA-SHA256 signature with the subscriber's private key.
      */
     public function signManifest(
         FiscalProfile $fiscalProfile,

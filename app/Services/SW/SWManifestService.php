@@ -18,27 +18,125 @@ use Illuminate\Support\Facades\Storage;
  * to authorize SW Sapien to deliver CFDI copies to the SAT
  * (RMF rule 2.7.2.7). It uses the FIEL (e.firma), NOT the CSD.
  *
+ * Uses the TWO-STEP flow:
+ *   1. PATCH — fetch the manifest legend (text to sign) using only the .cer.
+ *   2. PUT  — submit the signed text (legend + RSA-SHA256 signature).
+ *
  * SECURITY: The FIEL private key (.key) and password are NEVER
- * persisted. They are converted to Base64 in-memory, sent to the
- * PAC, and immediately discarded after the response — no traces
+ * persisted. They are used in-memory only during signature generation,
+ * sent to the PAC, and immediately discarded — no traces
  * in logs, queues, or database.
  */
 class SWManifestService
 {
     /**
-     * Sign the SW manifest for a fiscal profile using its FIEL.
+     * Step 1 — Fetch the manifest legend (legal text to be signed).
      *
-     * @param FiscalProfile $profile  The fiscal profile to sign for.
-     * @param string        $b64Cer   Base64-encoded .cer file content.
-     * @param string        $b64Key   Base64-encoded .key file content (discarded after call).
-     * @param string        $password FIEL password (discarded after call).
-     * @param string        $email    Email to receive the signed manifest copy.
+     * This only requires the FIEL public certificate (.cer). The private key
+     * is NOT needed at this stage — the subscriber sees the text first and
+     * decides whether to authorize it before providing their .key and password.
      *
-     * @return array{status: 'success'|'error', pdf_path?: string, message?: string}
+     * @param FiscalProfile $profile The fiscal profile requesting the legend.
+     * @param string        $b64Cer  Base64-encoded .cer file content.
+     *
+     * @return array{status: string, contentB64: string, message?: string}
      *
      * @throws \RuntimeException When the PAC is unreachable or configuration is missing.
      */
-    public function signManifest(
+    public function fetchLegend(FiscalProfile $profile, string $b64Cer): array
+    {
+        $endpoint = $this->resolveManagementEndpoint();
+        $token    = config('services.swsapien.token');
+
+        if (! $endpoint || ! $token) {
+            throw new \RuntimeException(
+                'SW Sapien Management no está configurado. Define SW_SAPIEN_MANAGEMENT_ENDPOINT y SW_SAPIEN_TOKEN en .env.'
+            );
+        }
+
+        $url = rtrim($endpoint, '/') . '/management/v2/api/dealers/manifests';
+
+        $payload = [
+            'B64Cer' => $b64Cer,
+        ];
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+                'Accept'        => 'application/json',
+            ])
+            ->timeout(30)
+            ->patch($url, $payload);
+
+        } catch (ConnectionException $e) {
+            Log::error('SW Manifest legend fetch failed — PAC unreachable', [
+                'fiscal_profile_id' => $profile->id,
+                'rfc'               => $profile->rfc,
+            ]);
+
+            throw new \RuntimeException(
+                'No se pudo obtener el texto del manifiesto. El PAC no está disponible. Intenta de nuevo.'
+            );
+        }
+
+        // ── Error response ──
+        if ($response->failed()) {
+            $json    = $response->json();
+            $message = $json['message'] ?? $response->body();
+
+            Log::error('SW Manifest legend fetch rejected by PAC', [
+                'fiscal_profile_id' => $profile->id,
+                'rfc'               => $profile->rfc,
+                'pac_message'       => $message,
+            ]);
+
+            return [
+                'status'  => 'error',
+                'message' => $message,
+            ];
+        }
+
+        // ── Success response (200): JSON with contentB64 ──
+        $json       = $response->json();
+        $contentB64 = $json['data']['contentB64'] ?? null;
+
+        if (empty($contentB64)) {
+            Log::error('SW Manifest legend response missing contentB64', [
+                'fiscal_profile_id' => $profile->id,
+                'rfc'               => $profile->rfc,
+                'response_keys'     => array_keys($json),
+            ]);
+
+            return [
+                'status'  => 'error',
+                'message' => 'El PAC no devolvió el texto del manifiesto. Intenta de nuevo.',
+            ];
+        }
+
+        return [
+            'status'     => 'success',
+            'contentB64' => $contentB64,
+        ];
+    }
+
+    /**
+     * Step 2 — Submit the manifest for signing by the PAC.
+     *
+     * Per SW Sapien API docs (POST /management/v2/api/dealers/manifests):
+     * The PAC handles the RSA-SHA256 signature internally. We send the
+     * FIEL public cert (B64Cer), private key (B64Key), and password
+     * directly. We do NOT pre-compute the signature ourselves.
+     *
+     * @param FiscalProfile $profile  The fiscal profile being signed for.
+     * @param string        $b64Cer   Base64-encoded .cer file content.
+     * @param string        $b64Key   Base64-encoded .key file content.
+     * @param string        $password Password for the private key.
+     * @param string        $email    Email to receive the signed manifest copy.
+     *
+     * @return array{status: 'success'|'error', pdf_path?: string, message?: string}
+     */
+    public function submitSignature(
         FiscalProfile $profile,
         string $b64Cer,
         string $b64Key,
@@ -57,8 +155,8 @@ class SWManifestService
         $url = rtrim($endpoint, '/') . '/management/v2/api/dealers/manifests';
 
         $payload = [
-            'B64Cer'    => $b64Cer,
-            'B64Key'    => $b64Key,
+            'B64Cer'    => str_replace(["\r", "\n", ' '], '', $b64Cer),
+            'B64Key'    => str_replace(["\r", "\n", ' '], '', $b64Key),
             'Password'  => $password,
             'SendEmail' => true,
             'Email'     => $email,
@@ -74,8 +172,7 @@ class SWManifestService
             ->post($url, $payload);
 
         } catch (ConnectionException $e) {
-            // Log only the fact that it failed — no payload data
-            Log::error('SW Manifest signing failed — PAC unreachable', [
+            Log::error('SW Manifest signature submission failed — PAC unreachable', [
                 'fiscal_profile_id' => $profile->id,
                 'rfc'               => $profile->rfc,
             ]);
@@ -87,11 +184,10 @@ class SWManifestService
 
         // ── Error response (400): JSON with message ──
         if ($response->failed()) {
-            $json  = $response->json();
+            $json    = $response->json();
             $message = $json['message'] ?? $response->body();
 
-            // Log only the error message from the PAC — never the FIEL data
-            Log::error('SW Manifest signing rejected by PAC', [
+            Log::error('SW Manifest signature rejected by PAC', [
                 'fiscal_profile_id' => $profile->id,
                 'rfc'               => $profile->rfc,
                 'pac_message'       => $message,
@@ -104,8 +200,8 @@ class SWManifestService
         }
 
         // ── Success response (200): binary PDF ──
-        $pdfContent    = $response->body();
-        $contentType   = $response->header('Content-Type');
+        $pdfContent  = $response->body();
+        $contentType = $response->header('Content-Type');
 
         // Sanity check: we expect a PDF
         if (empty($pdfContent) || (is_string($contentType) && ! str_contains($contentType, 'pdf') && strlen($pdfContent) < 100)) {

@@ -406,4 +406,59 @@ class SWUserService
         return config('services.swsapien.management_endpoint')
             ?: config('services.swsapien.endpoint', 'https://services.test.sw.com.mx');
     }
+
+    /**
+     * Consultar el saldo de la cuenta maestra (dealer) en tiempo real.
+     *
+     * GET /management/v2/api/users/balance
+     * Auth: Bearer token DEALER.
+     *
+     * Este endpoint es distinto al de consultar subcuentas — consulta
+     * el saldo de la cuenta dueña del token, es decir, TU cuenta maestra.
+     *
+     * @return array{
+     *     stampsBalance: int,
+     *     stampsUsed: int,
+     *     stampsAssigned: int,
+     *     isUnlimited: bool,
+     *     expirationDate: string|null,
+     * }
+     *
+     * @throws \RuntimeException When the PAC is unreachable or returns an error.
+     */
+    public function getMasterAccountBalance(): array
+    {
+        $endpoint = $this->resolveManagementEndpoint();
+        $token    = config('services.swsapien.token');
+
+        if (! $endpoint || ! $token) {
+            throw new \RuntimeException('SW Sapien Management no está configurado.');
+        }
+
+        $url = rtrim($endpoint, '/') . '/management/v2/api/users/balance';
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+            'Accept'        => 'application/json',
+        ])->get($url);
+
+        if ($response->failed()) {
+            $status = $response->status();
+            $body   = $response->body();
+
+            Log::error('SW Sapien master account balance query failed', [
+                'endpoint'    => $url,
+                'http_status' => $status,
+                'response'    => $body,
+            ]);
+
+            throw new \RuntimeException(
+                'No se pudo consultar el saldo de la cuenta maestra en este momento.'
+            );
+        }
+
+        $data = $response->json();
+
+        return $data['data'] ?? [];
+    }
 }

@@ -12,6 +12,7 @@ use App\Http\Requests\Admin\StoreManualStampAdjustmentRequest;
 use App\Jobs\Billing\ApplyStampsToPacJob;
 use App\Models\Billing\FiscalProfile;
 use App\Models\Billing\StampPurchase;
+use App\Services\Billing\StampPurchaseService;
 use App\Services\SW\SWUserService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -58,8 +59,21 @@ class AdminStampPurchaseController extends Controller
         ApproveStampPurchaseRequest $request,
         StampPurchase $purchase,
         ApproveStampPurchaseAction $approveAction,
+        StampPurchaseService $stampPurchaseService,
     ): RedirectResponse {
         $approveAction->execute($purchase, Auth::id());
+
+        // Check master balance and warn if low — non-blocking per spec.
+        $balanceCheck = $stampPurchaseService->checkMasterBalance($purchase->stamp_quantity);
+
+        if (! $balanceCheck['sufficient']) {
+            return back()->with(
+                'warning',
+                "Compra aprobada, pero tu cuenta maestra tiene solo {$balanceCheck['stampsBalance']} timbres disponibles "
+                . "y esta compra requiere {$purchase->stamp_quantity}. Recarga tu cuenta maestra en el portal de SW antes de que "
+                . "el job intente aplicar los timbres."
+            );
+        }
 
         return back()->with('success', 'Compra aprobada. Los timbres se están acreditando al perfil fiscal.');
     }
@@ -107,15 +121,33 @@ class AdminStampPurchaseController extends Controller
     public function manualAdjustment(
         StoreManualStampAdjustmentRequest $request,
         CreateManualStampAdjustmentAction $adjustmentAction,
+        StampPurchaseService $stampPurchaseService,
     ): RedirectResponse {
         $user = Auth::user();
 
         $data = $request->validated();
         $data['requested_by_user_id'] = $user->id;
 
+        $isRemoval = ($data['adjustment_type'] ?? 'add') === 'remove';
+        $stampQuantity = (int) $data['stamp_quantity'];
+
+        // Block "add" adjustments if master balance is insufficient.
+        if (! $isRemoval) {
+            $balanceCheck = $stampPurchaseService->checkMasterBalance($stampQuantity, false);
+
+            if (! $balanceCheck['sufficient']) {
+                return back()->with(
+                    'error',
+                    "Tu cuenta maestra tiene {$balanceCheck['stampsBalance']} timbres disponibles "
+                    . "y este ajuste requiere {$stampQuantity}. Recarga tu cuenta maestra en el portal de SW "
+                    . "antes de intentar de nuevo."
+                );
+            }
+        }
+
         $purchase = $adjustmentAction->execute($data);
 
-        $action = $data['adjustment_type'] === 'remove' ? 'retiraron' : 'agregaron';
+        $action = $isRemoval ? 'retiraron' : 'agregaron';
 
         return back()->with(
             'success',

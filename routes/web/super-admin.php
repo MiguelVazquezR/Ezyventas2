@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminStampPurchaseController;
+use App\Http\Controllers\Admin\AdminStampPricingController;
 use App\Http\Controllers\Admin\AdminSubscriptionPaymentController;
 use App\Http\Controllers\Admin\AiAgentSettingsController;
 use App\Http\Controllers\Admin\PlanItemController;
@@ -31,6 +32,13 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
     Route::post('stamps/{purchase}/retry', [AdminStampPurchaseController::class, 'retry'])->name('stamps.retry');
     Route::post('stamps/manual-adjustment', [AdminStampPurchaseController::class, 'manualAdjustment'])->name('stamps.manual-adjustment');
     Route::get('stamps/balance/{fiscalProfile}', [AdminStampPurchaseController::class, 'balance'])->name('stamps.balance');
+    Route::get('stamps/adjust', fn () => Inertia\Inertia::render('Admin/Stamps/Adjust'))->name('stamps.adjust-form');
+
+    // --- Precios de Timbres (Tramas de descuento por volumen) ---
+    Route::get('stamps/pricing', [AdminStampPricingController::class, 'index'])->name('stamps.pricing.index');
+    Route::post('stamps/pricing', [AdminStampPricingController::class, 'store'])->name('stamps.pricing.store');
+    Route::put('stamps/pricing/{tier}', [AdminStampPricingController::class, 'update'])->name('stamps.pricing.update');
+    Route::delete('stamps/pricing/{tier}', [AdminStampPricingController::class, 'destroy'])->name('stamps.pricing.destroy');
 
     // --- Ítems de Planes (Módulos y Límites del SaaS) ---
     Route::resource('plan-items', PlanItemController::class)->names([

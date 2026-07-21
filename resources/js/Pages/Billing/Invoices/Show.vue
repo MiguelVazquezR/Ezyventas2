@@ -1,8 +1,9 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermissions } from '@/Composables';
+import CancelInvoiceModal from './Partials/CancelInvoiceModal.vue';
 
 const props = defineProps({
     invoice: Object,
@@ -42,7 +43,7 @@ const formatDate = (dateString) => {
 
 const statusLabel = computed(() => {
     const map = {
-        borrador: 'Borrador',
+        borrador: 'Pre-factura',
         pendiente: 'Pendiente',
         certificada: 'Certificada',
         cancelacion_pendiente: 'Cancelación pendiente',
@@ -53,7 +54,7 @@ const statusLabel = computed(() => {
 
 const statusSeverity = computed(() => {
     const map = {
-        borrador: 'warn',
+        borrador: 'info',
         pendiente: 'warn',
         certificada: 'success',
         cancelacion_pendiente: 'warn',
@@ -94,42 +95,9 @@ const taxRegimeLabel = ((code) => {
 });
 
 // ──────────────────────────────────────
-// Cancel dialog
+// Cancel modal ref
 // ──────────────────────────────────────
-const showCancelDialog = ref(false);
-
-const cancelForm = useForm({
-    cancellation_reason: '',
-    substitution_uuid: '',
-});
-
-const cancelReasons = [
-    { label: '01 — Comprobante emitido con errores con relación', value: '01' },
-    { label: '02 — Comprobante emitido con errores sin relación', value: '02' },
-    { label: '03 — No se llevó a cabo la operación', value: '03' },
-    { label: '04 — Operación nominativa relacionada en factura global', value: '04' },
-];
-
-const needsSubstitutionUuid = computed(() => cancelForm.cancellation_reason === '01');
-
-// ──────────────────────────────────────
-// 72h warning for cancelation
-// ──────────────────────────────────────
-const isOlderThan72h = computed(() => {
-    if (!props.invoice.fecha_timbrado) return false;
-    const timbrado = new Date(props.invoice.fecha_timbrado);
-    const now = new Date();
-    const diffMs = now - timbrado;
-    return diffMs > 72 * 60 * 60 * 1000;
-});
-
-const submitCancel = () => {
-    cancelForm.post(route('billing.invoices.cancel', props.invoice.id), {
-        onSuccess: () => {
-            showCancelDialog.value = false;
-        },
-    });
-};
+const cancelModalRef = ref(null);
 
 // ──────────────────────────────────────
 // Tesla UI Pass-Through
@@ -140,24 +108,6 @@ const dataTablePt = {
     headerCell: { class: 'bg-transparent text-[10px] uppercase tracking-widest text-gray-500 font-bold py-3 px-4 border-b border-gray-100 dark:border-[#3a3a3a]' },
     bodyRow: { class: 'hover:bg-gray-50 dark:hover:bg-[#1a1a1a]/50 transition-colors text-sm text-gray-700 dark:text-gray-300' },
     bodyCell: { class: 'py-3 px-4 border-b border-gray-50 dark:border-[#2a2a2a]' },
-};
-
-const dialogPt = {
-    root: { class: 'dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] rounded-3xl shadow-2xl overflow-hidden' },
-    header: { class: 'dark:bg-[#232323] border-b border-gray-100 dark:border-[#3a3a3a] px-6 py-5' },
-    title: { class: 'text-lg font-medium text-gray-900 dark:text-white tracking-tight m-0' },
-    content: { class: 'dark:bg-[#232323] p-6 lg:p-8' },
-    closeButton: { class: 'hover:bg-gray-100 dark:hover:bg-[#1a1a1a] transition-colors rounded-full w-8 h-8 flex items-center justify-center' },
-    closeButtonIcon: { class: 'dark:text-gray-400 !text-sm' },
-    mask: { class: 'bg-gray-900/60 dark:bg-black/80' },
-};
-
-const selectPt = {
-    root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a]' },
-};
-
-const inputPt = {
-    root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !py-3' },
 };
 
 const tagPt = {
@@ -199,6 +149,13 @@ const tagPt = {
 
                 <!-- Action buttons -->
                 <div class="w-full sm:w-auto shrink-0 flex gap-2">
+                    <Link
+                        v-if="invoice.status === 'borrador'"
+                        :href="route('billing.invoices.edit', invoice.id)"
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white no-underline transition-colors"
+                    >
+                        <i class="pi pi-pencil !text-xs"></i> Editar prefactura
+                    </Link>
                     <Button
                         v-if="invoice.status === 'certificada' && hasPermission('invoices.cancel')"
                         label="Solicitar cancelación"
@@ -206,7 +163,7 @@ const tagPt = {
                         severity="danger"
                         outlined
                         class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto"
-                        @click="showCancelDialog = true"
+                        @click="cancelModalRef?.open()"
                     />
                     <Button
                         v-if="invoice.status === 'cancelacion_pendiente'"
@@ -235,16 +192,6 @@ const tagPt = {
                         @click="openUrl(route('billing.invoices.pdf', invoice.id))"
                     />
                 </div>
-            </div>
-            <!-- 72h warning -->
-            <div v-if="invoice.status === 'certificada' && isOlderThan72h && hasPermission('invoices.cancel')" class="flex items-start gap-2 mt-2 text-xs text-amber-600 dark:text-amber-400">
-                <i class="pi pi-exclamation-triangle !text-xs mt-0.5" />
-                <span class="m-0">Esta factura tiene más de 72 horas desde que se timbró. Es probable que el SAT requiera la aprobación de tu cliente para poder cancelarla. La cancelación no será inmediata en ese caso.</span>
-            </div>
-            <!-- Cancel note -->
-            <div v-if="invoice.status === 'certificada' && hasPermission('invoices.cancel')" class="flex items-start gap-2 mt-2 text-xs text-gray-400">
-                <i class="pi pi-info-circle !text-xs mt-0.5" />
-                <span class="m-0">Cancelar esta factura no modifica tu saldo de timbres. El PAC cobra un timbre al timbrar, no al cancelar.</span>
             </div>
             <!-- Cancelation pending info -->
             <div v-if="invoice.status === 'cancelacion_pendiente'" class="flex items-start gap-2 mt-2 text-xs text-amber-600 dark:text-amber-400">
@@ -315,7 +262,7 @@ const tagPt = {
                             <div v-if="invoice.receiver_tax_regime" class="flex flex-col gap-1">
                                 <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Régimen fiscal</span>
                                 <span class="text-sm text-gray-900 dark:text-gray-200">
-                                    {{ invoice.receiver_tax_regime }} — {{ taxRegimeLabel(invoice.receiver_tax_regime) }}
+                                    {{ invoice.receiver_tax_regime }} - {{ taxRegimeLabel(invoice.receiver_tax_regime) }}
                                 </span>
                             </div>
                         </div>
@@ -348,7 +295,7 @@ const tagPt = {
                             <div class="flex flex-col gap-1">
                                 <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Uso de CFDI</span>
                                 <span class="text-sm text-gray-900 dark:text-gray-200">
-                                    {{ invoice.cfdi_use }} — {{ cfdiUseLabel(invoice.cfdi_use) }}
+                                    {{ invoice.cfdi_use }} - {{ cfdiUseLabel(invoice.cfdi_use) }}
                                 </span>
                             </div>
                             <Divider class="!my-3 !border-gray-100 dark:!border-[#3a3a3a]" />
@@ -356,13 +303,13 @@ const tagPt = {
                                 <div class="flex flex-col gap-1">
                                     <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Forma de pago</span>
                                     <span class="text-sm text-gray-900 dark:text-gray-200">
-                                        {{ invoice.payment_form }} — {{ paymentFormLabel(invoice.payment_form) }}
+                                        {{ invoice.payment_form }} - {{ paymentFormLabel(invoice.payment_form) }}
                                     </span>
                                 </div>
                                 <div class="flex flex-col gap-1">
                                     <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Método de pago</span>
                                     <span class="text-sm text-gray-900 dark:text-gray-200">
-                                        {{ invoice.payment_method }} — {{ paymentMethodLabel(invoice.payment_method) }}
+                                        {{ invoice.payment_method }} - {{ paymentMethodLabel(invoice.payment_method) }}
                                     </span>
                                 </div>
                             </div>
@@ -425,7 +372,7 @@ const tagPt = {
                             </Column>
                             <Column field="sat_product_code" header="Clave SAT">
                                 <template #body="{ data }">
-                                    <span class="font-mono text-xs text-gray-500 dark:text-gray-400">{{ data.sat_product_code || '—' }}</span>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ data.sat_product_code || '—' }}</span>
                                 </template>
                             </Column>
                             <Column field="description" header="Descripción">
@@ -505,103 +452,10 @@ const tagPt = {
             </div>
         </div>
 
-        <!-- ════════════════════════════════════════
-             Cancel Dialog
-             ════════════════════════════════════════ -->
-        <Dialog
-            v-model:visible="showCancelDialog"
-            modal
-            class="w-full max-w-lg mx-4"
-            :pt="dialogPt"
-        >
-            <template #header>
-                <div class="flex items-center gap-4">
-                    <div class="w-10 h-10 rounded-full bg-red-50 dark:bg-red-900/20 text-red-500 flex items-center justify-center flex-shrink-0 border border-red-100 dark:border-red-900/30">
-                        <i class="pi pi-times-circle !text-sm"></i>
-                    </div>
-                    <div>
-                        <h2 class="text-xl font-light tracking-tight text-gray-900 dark:text-white m-0 leading-tight">Solicitar cancelación de factura</h2>
-                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1">
-                            Motivo de cancelación fiscal SAT
-                        </p>
-                    </div>
-                </div>
-            </template>
-
-            <div class="space-y-5 pt-2">
-                <p class="text-sm text-gray-500 dark:text-gray-400 m-0">
-                    Selecciona el motivo de cancelación fiscal según el catálogo del SAT.
-                    Esta acción no se puede deshacer.
-                </p>
-
-                <!-- Cancellation reason -->
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
-                        Motivo de cancelación *
-                    </label>
-                    <Select
-                        v-model="cancelForm.cancellation_reason"
-                        :options="cancelReasons"
-                        optionLabel="label"
-                        optionValue="value"
-                        placeholder="Selecciona el motivo"
-                        class="w-full"
-                        :pt="selectPt"
-                    />
-                    <Message
-                        v-if="cancelForm.errors.cancellation_reason"
-                        severity="error"
-                        variant="simple"
-                        size="small"
-                    >
-                        {{ cancelForm.errors.cancellation_reason }}
-                    </Message>
-                </div>
-
-                <!-- Substitution UUID (only for motivo 01) -->
-                <div v-if="needsSubstitutionUuid" class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
-                        UUID de sustitución *
-                    </label>
-                    <InputText
-                        v-model="cancelForm.substitution_uuid"
-                        placeholder="00000000-0000-0000-0000-000000000000"
-                        class="w-full font-mono text-sm"
-                        :pt="inputPt"
-                    />
-                    <Message
-                        v-if="cancelForm.errors.substitution_uuid"
-                        severity="error"
-                        variant="simple"
-                        size="small"
-                    >
-                        {{ cancelForm.errors.substitution_uuid }}
-                    </Message>
-                    <p class="text-xs text-gray-400 dark:text-gray-500 m-0">
-                        Ingresa el UUID del comprobante que sustituye a esta factura.
-                    </p>
-                </div>
-            </div>
-
-            <template #footer>
-                <div class="flex justify-end items-center gap-3 w-full mt-4 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
-                    <Button
-                        label="Cancelar"
-                        text
-                        @click="showCancelDialog = false"
-                        :disabled="cancelForm.processing"
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold"
-                    />
-                    <Button
-                        label="Confirmar cancelación"
-                        icon="pi pi-times-circle"
-                        severity="danger"
-                        :loading="cancelForm.processing"
-                        @click="submitCancel"
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-6 shadow-sm"
-                    />
-                </div>
-            </template>
-        </Dialog>
+        <CancelInvoiceModal
+            ref="cancelModalRef"
+            :invoice="invoice"
+            @success="router.reload()"
+        />
     </AppLayout>
 </template>

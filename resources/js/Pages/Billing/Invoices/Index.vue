@@ -4,6 +4,7 @@ import { Head, router, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermissions } from '@/Composables';
 import { useConfirm } from 'primevue/useconfirm';
+import CancelInvoiceModal from './Partials/CancelInvoiceModal.vue';
 
 const props = defineProps({
     invoices: Object,
@@ -25,7 +26,7 @@ const fiscalProfileFilter = ref(props.filters?.fiscal_profile_id || null);
 
 const statusOptions = [
     { label: 'Todos', value: null },
-    { label: 'Borrador', value: 'borrador' },
+    { label: 'Pre-factura', value: 'Pre-factura' },
     { label: 'Pendiente', value: 'pendiente' },
     { label: 'Certificada', value: 'certificada' },
     { label: 'Cancelación pendiente', value: 'cancelacion_pendiente' },
@@ -119,8 +120,8 @@ const truncateUuid = (uuid) => {
 
 const statusSeverity = (status) => {
     const map = {
-        borrador: 'warn',
-        pendiente: 'warn',
+        borrador: 'info',
+        pendiente: 'secondary',
         certificada: 'success',
         cancelacion_pendiente: 'warn',
         cancelada: 'danger',
@@ -133,7 +134,7 @@ const statusSeverity = (status) => {
 
 const statusLabel = (status) => {
     const map = {
-        borrador: 'Borrador',
+        borrador: 'Pre-factura',
         pendiente: 'Pendiente',
         certificada: 'Certificada',
         cancelacion_pendiente: 'Cancelación pendiente',
@@ -181,6 +182,7 @@ const downloadFile = (url) => {
 const menuRef = ref(null);
 const selectedInvoice = ref(null);
 const items = ref([]);
+const cancelModalRef = ref(null);
 
 const toggleMenu = (event, invoice) => {
     selectedInvoice.value = invoice;
@@ -202,6 +204,11 @@ const toggleMenu = (event, invoice) => {
     ];
 
     if (isDraft) {
+        options.push({
+            label: 'Editar prefactura',
+            icon: 'pi pi-pencil',
+            command: () => router.get(route('billing.invoices.edit', invoice.id)),
+        });
         options.push({
             label: 'Timbrar factura',
             icon: 'pi pi-check-circle',
@@ -235,9 +242,9 @@ const toggleMenu = (event, invoice) => {
 
     if (isCertified) {
         options.push({
-            label: 'Cancelar factura',
+            label: 'Solicitar cancelación',
             icon: 'pi pi-times-circle',
-            command: () => router.get(route('billing.invoices.show', invoice.id)),
+            command: () => cancelModalRef.value?.open(),
         });
     }
 
@@ -470,9 +477,17 @@ const tagPt = {
                     </Column>
 
                     <!-- Actions -->
-                    <Column headerStyle="width: 8rem; text-align: center">
+                    <Column headerStyle="width: 10rem; text-align: center">
                         <template #body="{ data }">
                             <div class="flex items-center gap-1 justify-center" @click.stop>
+                                <Button
+                                    icon="pi pi-file-pdf"
+                                    text
+                                    rounded
+                                    @click.stop="openUrl(route('billing.invoices.pdf', data.id))"
+                                    class="!w-8 !h-8 !text-red-500 hover:!bg-red-50 dark:hover:!bg-red-900/20 !transition-colors"
+                                    v-tooltip.top="'Ver PDF'"
+                                />
                                 <Button
                                     v-if="data.xml_url"
                                     icon="pi pi-download"
@@ -482,6 +497,7 @@ const tagPt = {
                                     class="!w-8 !h-8 !text-green-600 hover:!bg-green-50 dark:hover:!bg-green-900/20 !transition-colors"
                                     v-tooltip.top="'Descargar XML'"
                                 />
+                                <span v-else class="w-8 h-8 shrink-0"></span>
                                 <Button
                                     icon="pi pi-ellipsis-v"
                                     text
@@ -499,6 +515,13 @@ const tagPt = {
 
         <!-- More actions dropdown -->
         <Menu ref="menuRef" :model="items" :popup="true" />
+
+        <CancelInvoiceModal
+            v-if="selectedInvoice"
+            ref="cancelModalRef"
+            :invoice="selectedInvoice"
+            @success="router.reload()"
+        />
 
         <ConfirmPopup />
     </AppLayout>

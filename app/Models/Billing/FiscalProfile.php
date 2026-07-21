@@ -47,6 +47,9 @@ class FiscalProfile extends Model implements HasMedia
         'manifest_pdf_path',
         'manifest_sent_to_email',
         'manifest_last_attempt_error',
+        'manifest_text_b64',
+        'manifest_text_shown_at',
+        'manifest_text_accepted_at',
     ];
 
     /**
@@ -59,9 +62,11 @@ class FiscalProfile extends Model implements HasMedia
     protected function casts(): array
     {
         return [
-            'is_active' => 'boolean',
-            'password'  => 'encrypted',
-            'manifest_signed_at' => 'datetime',
+            'is_active'             => 'boolean',
+            'password'              => 'encrypted',
+            'manifest_signed_at'    => 'datetime',
+            'manifest_text_shown_at'    => 'datetime',
+            'manifest_text_accepted_at' => 'datetime',
         ];
     }
 
@@ -154,5 +159,18 @@ class FiscalProfile extends Model implements HasMedia
     public function hasSignedManifest(): bool
     {
         return ! empty($this->manifest_signed_at);
+    }
+
+    /**
+     * Whether the manifest text was accepted recently (within 24 hours)
+     * and can be retried without re-showing the text.
+     */
+    public function canRetryManifestSigning(): bool
+    {
+        if (! $this->manifest_text_accepted_at) {
+            return false;
+        }
+
+        return $this->manifest_text_accepted_at->diffInHours(now()) < 24;
     }
 }

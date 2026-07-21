@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Billing;
 
 use App\Actions\Billing\CancelInvoiceAction;
 use App\Actions\Billing\CreateInvoiceAction;
+use App\Actions\Billing\UpdateInvoiceAction;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\CancelInvoiceRequest;
 use App\Http\Requests\Billing\StoreInvoiceRequest;
+use App\Http\Requests\Billing\UpdateInvoiceRequest;
 use App\Models\Billing\Invoice;
 use App\Services\Billing\SatConsultationService;
 use App\Services\SW\SWUserService;
@@ -201,6 +203,50 @@ class InvoiceController extends Controller implements HasMiddleware
 
             return redirect()->route('billing.invoices.show', $invoice->id)
                 ->with('success', $message);
+        } catch (\RuntimeException $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Show the form for editing a draft invoice (prefactura).
+     */
+    public function edit(Invoice $invoice): Response|RedirectResponse
+    {
+        if (! $invoice->isEditable()) {
+            return redirect()->route('billing.invoices.show', $invoice->id)
+                ->with('error', 'Solo las prefacturas pueden editarse. Una factura timbrada no se puede modificar.');
+        }
+
+        $invoice->load(['items', 'customer', 'fiscalProfile']);
+
+        $user = Auth::user();
+        $subscription = $user->branch?->subscription;
+
+        $fiscalProfiles = $subscription?->fiscalProfiles()->active()
+            ->whereNotNull('sw_user_id')
+            ->get(['id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code']) ?? collect();
+
+        return Inertia::render('Billing/Invoices/Edit', [
+            'invoice'          => $invoice,
+            'customers'        => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
+            'fiscalProfiles'   => $fiscalProfiles,
+            'hasFiscalProfiles' => $fiscalProfiles->isNotEmpty(),
+        ]);
+    }
+
+    /**
+     * Update a draft invoice (prefactura).
+     */
+    public function update(UpdateInvoiceRequest $request, Invoice $invoice, UpdateInvoiceAction $action): RedirectResponse
+    {
+        try {
+            $action->execute($request->validated(), $invoice, Auth::user());
+
+            return redirect()->route('billing.invoices.show', $invoice->id)
+                ->with('success', 'Prefactura actualizada correctamente.');
         } catch (\RuntimeException $e) {
             return redirect()->back()
                 ->withInput()
@@ -418,22 +464,62 @@ class InvoiceController extends Controller implements HasMiddleware
     }
 
     /**
-     * Display all fiscal profiles for the user's subscription.
+     * Display all fiscal profiles with pagination, search, sorting,
+     * CSD certificate status, and live stamp balance per profile.
      */
-    public function settings(): Response
+    public function settings(Request $request): Response
     {
         $user = Auth::user();
         $subscription = $user->branch?->subscription;
 
         $facturacionHabilitada = $subscription?->facturacion_habilitada ?? false;
 
-        $fiscalProfiles = ($subscription && $facturacionHabilitada)
-            ? $subscription->fiscalProfiles()->orderBy('created_at', 'desc')->get()
-            : collect();
+        if (! $facturacionHabilitada) {
+            return Inertia::render('Billing/Settings/Index', [
+                'fiscalProfiles'        => ['data' => [], 'total' => 0, 'per_page' => 20],
+                'filters'               => [],
+                'facturacionHabilitada' => false,
+            ]);
+        }
+
+        $query = $subscription->fiscalProfiles();
+
+        // Search across RFC and razón social
+        if ($request->filled('search')) {
+            $searchTerm = $request->input('search');
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('rfc', 'LIKE', "%{$searchTerm}%")
+                  ->orWhere('razon_social', 'LIKE', "%{$searchTerm}%");
+            });
+        }
+
+        // Sorting
+        $query->orderBy(
+            $request->input('sortField', 'created_at'),
+            $request->input('sortOrder', 'desc'),
+        );
+
+        $paginated = $query->paginate($request->input('rows', 20))->withQueryString();
+
+        // Enrich each profile with CSD status and live stamp balance
+        $swUserService = app(SWUserService::class);
+        foreach ($paginated as $profile) {
+            $profile->csd_status = $profile->certificate_number ? 'Activo' : 'Faltante';
+            $profile->stamps_available = null;
+            if ($profile->sw_user_id) {
+                try {
+                    $balance = $swUserService->getStampsBalance($profile->sw_user_id);
+                    $profile->stamps_available = $balance['stampsBalance'] ?? 0;
+                } catch (\Exception $e) {
+                    $profile->stamps_available = null;
+                }
+            }
+        }
 
         return Inertia::render('Billing/Settings/Index', [
-            'fiscalProfiles'        => $fiscalProfiles,
-            'facturacionHabilitada' => $facturacionHabilitada,
+            'fiscalProfiles'        => $paginated,
+            'filters'               => $request->only(['search', 'sortField', 'sortOrder']),
+            'facturacionHabilitada' => true,
         ]);
     }
 

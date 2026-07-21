@@ -14,6 +14,7 @@ use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Inertia;
 
 class StampPurchaseController extends Controller implements HasMiddleware
 {
@@ -33,8 +34,13 @@ class StampPurchaseController extends Controller implements HasMiddleware
         $pricing = $stampPurchaseService->calculatePrice($request->integer('quantity'));
 
         return response()->json([
-            'unit_price'   => $pricing['unit_price'],
-            'amount_total' => $pricing['amount_total'],
+            'quantity'            => $request->integer('quantity'),
+            'unit_price'          => $pricing['unit_price'],
+            'amount_total'        => $pricing['amount_total'],
+            'pricing_tier_label'  => $pricing['pricing_tier_label'],
+            'base_unit_price'     => $pricing['base_unit_price'],
+            'savings_amount'      => $pricing['savings_amount'],
+            'savings_percentage'  => $pricing['savings_percentage'],
         ]);
     }
 
@@ -57,7 +63,12 @@ class StampPurchaseController extends Controller implements HasMiddleware
             $data['proof_file_path'] = $path;
         }
 
-        $result = $createStampPurchaseAction->execute($data);
+        try {
+            $result = $createStampPurchaseAction->execute($data);
+        } catch (\RuntimeException $e) {
+            return redirect()->route('billing.fiscal-profiles.show', $fiscalProfile)
+                ->with('error', $e->getMessage());
+        }
 
         // For MercadoPago, redirect to the MP checkout
         if ($data['payment_method'] === 'mercadopago' && ! empty($result['mp_preference']['init_point'])) {

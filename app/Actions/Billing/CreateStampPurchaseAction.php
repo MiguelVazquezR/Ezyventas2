@@ -31,6 +31,21 @@ class CreateStampPurchaseAction
         // Recalculate price server-side — never trust client price
         $pricing = $this->stampPurchaseService->calculatePrice($data['stamp_quantity']);
 
+        // Check master account balance before allowing the purchase.
+        // For Mercado Pago: blocks the purchase before creating the preference
+        // so the subscriber is never charged for stamps we can't deliver.
+        if ($data['payment_method'] === 'mercadopago') {
+            $balanceCheck = $this->stampPurchaseService->checkMasterBalance($data['stamp_quantity']);
+
+            if (! $balanceCheck['sufficient']) {
+                throw new \RuntimeException(
+                    "En este momento no podemos procesar esta cantidad de timbres. "
+                    . "Tu cuenta maestra tiene {$balanceCheck['stampsBalance']} timbres disponibles. "
+                    . "Intenta con una cantidad menor o contacta a soporte."
+                );
+            }
+        }
+
         $purchaseData = [
             'fiscal_profile_id'    => $data['fiscal_profile_id'],
             'requested_by_user_id' => $data['requested_by_user_id'],

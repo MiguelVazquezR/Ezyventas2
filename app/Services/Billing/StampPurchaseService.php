@@ -25,29 +25,51 @@ class StampPurchaseService
     /**
      * Calculate the applicable unit price and total for a given quantity.
      *
-     * @return array{unit_price: float, amount_total: float, pricing_tier_id: int|null}
+     * @return array{
+     *     unit_price: float,
+     *     amount_total: float,
+     *     pricing_tier_id: int|null,
+     *     pricing_tier_label: string|null,
+     *     base_unit_price: float,
+     *     savings_amount: float,
+     *     savings_percentage: int,
+     * }
      */
     public function calculatePrice(int $quantity): array
     {
         $tier = StampPricingTier::findForQuantity($quantity);
+        $baseTier = StampPricingTier::findForQuantity(1);
+
+        $baseUnitPrice = $baseTier ? (float) $baseTier->unit_price : 0.0;
 
         if (! $tier) {
-            // No tier configured — fallback to 0. This should not happen
-            // once the superadmin configures tiers, but it's a safe default.
             return [
-                'unit_price'       => 0.0,
-                'amount_total'     => 0.0,
-                'pricing_tier_id'  => null,
+                'unit_price'         => 0.0,
+                'amount_total'       => 0.0,
+                'pricing_tier_id'    => null,
+                'pricing_tier_label' => null,
+                'base_unit_price'    => $baseUnitPrice,
+                'savings_amount'     => 0.0,
+                'savings_percentage' => 0,
             ];
         }
 
         $unitPrice   = (float) $tier->unit_price;
         $amountTotal = round($quantity * $unitPrice, 2);
+        $savingsPerUnit = $baseUnitPrice - $unitPrice;
+        $savingsTotal = round($savingsPerUnit * $quantity, 2);
+        $savingsPct = $baseUnitPrice > 0
+            ? (int) round(($savingsPerUnit / $baseUnitPrice) * 100)
+            : 0;
 
         return [
-            'unit_price'       => $unitPrice,
-            'amount_total'     => $amountTotal,
-            'pricing_tier_id'  => $tier->id,
+            'unit_price'         => $unitPrice,
+            'amount_total'       => $amountTotal,
+            'pricing_tier_id'    => $tier->id,
+            'pricing_tier_label' => $tier->label,
+            'base_unit_price'    => $baseUnitPrice,
+            'savings_amount'     => $savingsTotal,
+            'savings_percentage' => $savingsPct,
         ];
     }
 
@@ -135,5 +157,45 @@ class StampPurchaseService
         }
 
         return "Transferencia aprobada #{$purchase->id}";
+    }
+
+    /**
+     * Verify the master account has enough stamps to fulfill a purchase or adjustment.
+     *
+     * For "add" adjustments and purchases: checks that stampsBalance >= quantity.
+     * For "remove" adjustments: does not check (you're returning stamps to the master).
+     *
+     * @param int  $quantity       Number of stamps being purchased/assigned.
+     * @param bool $isRemoval      True if this is a removal (returns stamps to master).
+     *
+     * @return array{sufficient: bool, stampsBalance: int, stampsAssigned: int}
+     */
+    public function checkMasterBalance(int $quantity, bool $isRemoval = false): array
+    {
+        // Removing stamps (returning to master) — no balance check needed.
+        if ($isRemoval) {
+            return ['sufficient' => true, 'stampsBalance' => 0, 'stampsAssigned' => 0];
+        }
+
+        try {
+            $balance = $this->swUserService->getMasterAccountBalance();
+        } catch (\RuntimeException $e) {
+            Log::warning('Master account balance check failed — allowing purchase to proceed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            // If we can't check, allow the purchase to proceed rather than
+            // blocking legitimate transactions due to a transient PAC error.
+            return ['sufficient' => true, 'stampsBalance' => 0, 'stampsAssigned' => 0];
+        }
+
+        $stampsBalance  = (int) ($balance['stampsBalance'] ?? 0);
+        $stampsAssigned = (int) ($balance['stampsAssigned'] ?? 0);
+
+        return [
+            'sufficient'     => $stampsBalance >= $quantity,
+            'stampsBalance'  => $stampsBalance,
+            'stampsAssigned' => $stampsAssigned,
+        ];
     }
 }

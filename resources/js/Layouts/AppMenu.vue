@@ -23,13 +23,13 @@ const model = ref([
                         routeName: 'billing.dashboard',
                     },
                     {
-                        label: 'Comprobantes',
+                        label: 'Facturas',
                         icon: 'pi pi-receipt',
                         to: route('billing.invoices.index'),
                         routeName: 'billing.invoices.*',
                     },
                     {
-                        label: 'Configuración',
+                        label: 'Configuración fiscal',
                         icon: 'pi pi-cog',
                         to: route('billing.settings.index'),
                         routeName: 'billing.settings.*',

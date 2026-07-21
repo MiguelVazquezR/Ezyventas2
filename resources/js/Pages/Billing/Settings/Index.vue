@@ -1,51 +1,62 @@
 <script setup>
-import { ref } from 'vue';
-import { useForm, Link, router } from '@inertiajs/vue3';
-import { useConfirm } from 'primevue/useconfirm';
+import { ref, watch } from 'vue';
+import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import { usePermissions } from '@/Composables';
+import { useConfirm } from 'primevue/useconfirm';
 import LogoUploadModal from './Partials/LogoUploadModal.vue';
+import PurchaseStampsModal from './Partials/PurchaseStampsModal.vue';
+import ManifestWizardModal from './Partials/ManifestWizardModal.vue';
+import FiscalProfileFormModal from './Partials/FiscalProfileFormModal.vue';
+import CsdUploadModal from './Partials/CsdUploadModal.vue';
+
+const props = defineProps({
+    fiscalProfiles: Object,
+    filters: Object,
+    facturacionHabilitada: Boolean,
+});
+
+const { hasPermission } = usePermissions();
+const confirm = useConfirm();
 
 // ──────────────────────────────────────
-// Props
+// Search
 // ──────────────────────────────────────
-const props = defineProps({
-    fiscalProfiles: {
-        type: Array,
-        default: () => [],
-    },
-    facturacionHabilitada: {
-        type: Boolean,
-        default: false,
-    },
+const searchTerm = ref(props.filters?.search || '');
+
+let searchTimeout = null;
+watch(searchTerm, (val) => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        router.get(route('billing.settings.index'), {
+            search: val || null,
+        }, {
+            preserveState: true,
+            replace: true,
+        });
+    }, 400);
 });
 
 // ──────────────────────────────────────
-// Activation toggle
+// Pagination & sorting
 // ──────────────────────────────────────
-const isTogglingFacturacion = ref(false);
-
-const toggleFacturacion = () => {
-    isTogglingFacturacion.value = true;
-    router.post(route('billing.settings.toggleFacturacion'), {}, {
-        preserveScroll: true,
-        preserveState: false,
-        onFinish: () => {
-            isTogglingFacturacion.value = false;
-        },
-    });
+const onPage = (event) => {
+    router.get(route('billing.settings.index'), {
+        page: event.page + 1,
+        rows: event.rows,
+        search: searchTerm.value || null,
+        sortField: props.filters?.sortField,
+        sortOrder: props.filters?.sortOrder,
+    }, { preserveState: true });
 };
 
-// ──────────────────────────────────────
-// Dialog visibility
-// ──────────────────────────────────────
-const isDialogVisible = ref(false);
-const isCsdDialogVisible = ref(false);
-
-// ──────────────────────────────────────
-// CSD dialog state
-// ──────────────────────────────────────
-const selectedProfile = ref(null);
-const isUpdatingCsd = ref(false);
+const onSort = (event) => {
+    router.get(route('billing.settings.index'), {
+        sortField: event.sortField,
+        sortOrder: event.sortOrder === 1 ? 'asc' : 'desc',
+        search: searchTerm.value || null,
+    }, { preserveState: true });
+};
 
 // ──────────────────────────────────────
 // Logo modal state
@@ -59,52 +70,97 @@ const openLogoModal = (profile) => {
 };
 
 const onLogoUpdated = () => {
-    // Full reload so the DataTable reflects the new logo_url
-    // and the flash from the previous response is cleared.
     router.reload();
 };
 
 // ──────────────────────────────────────
-// Inertia form for new fiscal profile
+// Reusable modal refs
 // ──────────────────────────────────────
-const form = useForm({
-    rfc: '',
-    razon_social: '',
-    regimen_fiscal: '',
-    postal_code: '',
-    email: '',
-});
+const fiscalProfileFormModalRef = ref(null);
+const csdUploadModalRef = ref(null);
 
 // ──────────────────────────────────────
-// Inertia form for CSD upload
+// More dropdown menu
 // ──────────────────────────────────────
-const csdForm = useForm({
-    fiscal_profile_id: null,
-    cer: null,
-    key: null,
-    password: '',
-});
+const menuRef = ref(null);
+const items = ref([]);
+const selectedProfileForModal = ref(null);
+const purchaseModalRef = ref(null);
+const manifestModalRef = ref(null);
+
+const toggleMenu = (event, profile) => {
+    selectedProfileForModal.value = profile;
+    const options = [];
+
+    // Logo
+    if (profile.sw_user_id) {
+        options.push({
+            label: profile.logo_url ? 'Cambiar logotipo' : 'Agregar logotipo',
+            icon: 'pi pi-image',
+            command: () => openLogoModal(profile),
+        });
+    }
+
+    // Certificados CSD
+    if (profile.sw_user_id) {
+        options.push({
+            label: profile.certificate_number ? 'Actualizar certificados' : 'Agregar certificados',
+            icon: 'pi pi-key',
+            command: () => csdUploadModalRef.value?.open(profile),
+        });
+    }
+
+    // Firmar manifiesto
+    if (profile.sw_user_id) {
+        options.push({
+            label: profile.manifest_signed_at ? 'Volver a firmar manifiesto' : 'Firmar manifiesto',
+            icon: 'pi pi-pen-to-square',
+            command: () => manifestModalRef.value?.open(),
+        });
+    }
+
+    // Comprar timbres
+    if (profile.sw_user_id) {
+        options.push({
+            label: 'Comprar timbres',
+            icon: 'pi pi-ticket',
+            command: () => purchaseModalRef.value?.open(),
+        });
+    }
+
+    // Inactivar / Activar
+    options.push({
+        label: profile.is_active ? 'Inactivar perfil fiscal' : 'Activar perfil fiscal',
+        icon: profile.is_active ? 'pi pi-power-off' : 'pi pi-check-circle',
+        command: () => {
+            const action = profile.is_active ? 'inactivar' : 'activar';
+            confirm.require({
+                message: profile.is_active
+                    ? '¿Inactivar este perfil fiscal? Ya no aparecerá al crear facturas. Tus facturas anteriores permanecerán intactas.'
+                    : '¿Activar este perfil fiscal? Volverá a estar disponible al crear facturas.',
+                header: profile.is_active ? 'Inactivar perfil fiscal' : 'Activar perfil fiscal',
+                icon: 'pi pi-exclamation-triangle',
+                acceptLabel: profile.is_active ? 'Inactivar' : 'Activar',
+                rejectLabel: 'Cancelar',
+                acceptClass: profile.is_active ? 'p-button-danger' : '',
+                accept: () => router.post(route('billing.settings.toggleFiscalProfileActive', profile.id)),
+            });
+        },
+    });
+
+    items.value = options;
+    menuRef.value?.toggle(event);
+};
 
 // ──────────────────────────────────────
-// SAT tax regime options
+// Row click → navigate to detail
 // ──────────────────────────────────────
-const taxRegimeOptions = [
-    { label: '601 — General de Ley Personas Morales', value: '601' },
-    { label: '603 — Personas Morales con Fines no Lucrativos', value: '603' },
-    { label: '605 — Sueldos y Salarios', value: '605' },
-    { label: '606 — Arrendamiento', value: '606' },
-    { label: '608 — Demás ingresos', value: '608' },
-    { label: '612 — Personas Físicas con Actividades Empresariales', value: '612' },
-    { label: '614 — Ingresos por intereses', value: '614' },
-    { label: '616 — Sin obligaciones fiscales', value: '616' },
-    { label: '620 — Sociedades Cooperativas', value: '620' },
-    { label: '621 — Incorporación Fiscal', value: '621' },
-    { label: '622 — Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras', value: '622' },
-    { label: '626 — Régimen Simplificado de Confianza', value: '626' },
-];
+const onRowClick = (event) => {
+    router.get(route('billing.fiscal-profiles.show', event.data.id));
+};
 
 // ──────────────────────────────────────
-// Status helpers
+// Helpers
 // ──────────────────────────────────────
 const getStatusSeverity = (profile) => {
     if (!profile.is_active) return 'secondary';
@@ -118,66 +174,52 @@ const getStatusLabel = (profile) => {
     return 'Pendiente PAC';
 };
 
-const openNewDialog = () => {
-    form.reset();
-    form.clearErrors();
-    isDialogVisible.value = true;
+const getCsdSeverity = (profile) => {
+    if (!profile.certificate_number) return 'warn';
+    return 'success';
 };
 
-const submit = () => {
-    form.post(route('billing.settings.storeFiscalProfile'), {
-        onSuccess: () => {
-            isDialogVisible.value = false;
-            form.reset();
-        },
-    });
+const getCsdLabel = (profile) => {
+    if (!profile.certificate_number) return 'Pendiente';
+    return 'Activo';
 };
 
-const openCsdDialog = (profile) => {
-    csdForm.reset();
-    csdForm.clearErrors();
-    csdForm.fiscal_profile_id = profile.id;
-    selectedProfile.value = profile;
-    isUpdatingCsd.value = !profile.certificate_number;
-    isCsdDialogVisible.value = true;
+const getManifestSeverity = (profile) => {
+    if (profile.manifest_signed_at) return 'success';
+    if (profile.sw_user_id) return 'warn';
+    return 'secondary';
 };
 
-const confirm = useConfirm();
-
-const submitCsd = () => {
-    csdForm.post(route('billing.settings.uploadCsd'), {
-        onSuccess: () => {
-            isCsdDialogVisible.value = false;
-            csdForm.reset();
-        },
-    });
+const getManifestLabel = (profile) => {
+    if (profile.manifest_signed_at) return 'Firmado';
+    if (profile.sw_user_id) return 'Pendiente';
+    return '—';
 };
 
-const confirmDeleteProfile = (profile) => {
-    confirm.require({
-        message: '¿Deseas dar de baja este perfil fiscal? Esta acción desactivará la cuenta en el PAC. Tus facturas anteriores e historial permanecerán intactos.',
-        header: 'Baja de perfil fiscal',
-        icon: 'pi pi-exclamation-triangle',
-        rejectLabel: 'Cancelar',
-        acceptLabel: 'Dar de baja',
-        acceptClass: 'p-button-danger',
-        accept: () => {
-            router.delete(route('billing.settings.destroyFiscalProfile', profile.id));
-        },
-    });
+const formatStamps = (val) => {
+    if (val === null || val === undefined) return 'No disponible';
+    return Number(val).toLocaleString('es-MX');
+};
+
+const rowClass = (data) => {
+    if (!data.is_active) return 'opacity-50';
+    return '';
 };
 
 // ──────────────────────────────────────
-// Tesla UI PT configurations
+// Tesla UI Pass-Through configurations
 // ──────────────────────────────────────
-const dialogPt = {
-    root: { class: 'dark:!bg-[#232323] !border !border-gray-100 dark:!border-[#3a3a3a] !rounded-3xl !shadow-2xl !overflow-hidden' },
-    header: { class: 'dark:!bg-[#232323] !border-b !border-gray-100 dark:!border-[#3a3a3a] !px-6 !py-5' },
-    title: { class: '!text-lg !font-medium !text-gray-900 dark:!text-white !tracking-tight !m-0' },
-    content: { class: 'dark:!bg-[#232323] !p-6 lg:!p-8' },
-    closeButton: { class: '!hover:bg-gray-100 dark:!hover:bg-[#1a1a1a] !transition-colors !rounded-full !w-8 !h-8 !flex !items-center !justify-center' },
-    closeButtonIcon: { class: 'dark:!text-gray-400 !text-sm' },
-    mask: { class: '!bg-gray-900/60 dark:!bg-black/80' },
+const dataTablePt = {
+    root: { class: 'border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden' },
+    headerRow: { class: 'bg-gray-50 dark:bg-[#1a1a1a]' },
+    headerCell: { class: 'bg-transparent !text-[10px] !uppercase !tracking-widest !font-bold !text-gray-400 py-4 px-4 border-b border-gray-100 dark:border-[#3a3a3a]' },
+    bodyRow: { class: 'dark:bg-[#232323] hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors text-sm text-gray-700 dark:text-gray-300 cursor-pointer' },
+    bodyCell: { class: 'py-4 px-4 border-b border-gray-50 dark:border-[#2a2a2a]' },
+    paginator: { root: { class: 'dark:bg-[#1a1a1a] border-t border-gray-100 dark:border-[#3a3a3a] p-3' } },
+};
+
+const inputPt = {
+    root: { class: '!rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2 !text-sm w-full' },
 };
 
 const tagPt = {
@@ -186,160 +228,115 @@ const tagPt = {
 </script>
 
 <template>
-    <AppLayout title="Perfiles fiscales">
-        <div class="p-4 md:p-6 lg:p-8 max-w-[1200px] mx-auto space-y-6">
+    <Head title="Perfiles fiscales" />
+    <AppLayout>
+        <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
 
             <!-- ════════════════════════════════════════
-                 Activation banner (when billing is disabled)
+                 Main panel
                  ════════════════════════════════════════ -->
-            <div
-                v-if="!facturacionHabilitada"
-                class="bg-white dark:bg-[#232323] p-8 lg:p-10 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col items-center text-center"
-            >
-                <div class="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center mb-5 border border-amber-100 dark:border-amber-900/30">
-                    <i class="pi pi-exclamation-triangle !text-2xl text-amber-500"></i>
-                </div>
-                <h1 class="text-2xl md:text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0 mb-3">
-                    Facturación no activada
-                </h1>
-                <p class="text-sm text-gray-500 dark:text-gray-400 m-0 max-w-md mb-8">
-                    La facturación electrónica (CFDI 4.0) está desactivada para esta cuenta.
-                    Actívala para comenzar a emitir facturas a través del PAC SW Sapien.
-                </p>
-                <div class="flex flex-col items-center gap-3">
-                    <Button
-                        label="Activar facturación"
-                        icon="pi pi-check-circle"
-                        @click="toggleFacturacion"
-                        :loading="isTogglingFacturacion"
-                        class="!rounded-full !px-8 !text-sm !font-bold"
-                    />
-                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0">
-                        Se creará una subcuenta automática en el PAC al registrar tu primer RFC
-                    </p>
-                </div>
-            </div>
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
 
-            <!-- ════════════════════════════════════════
-                 Header (only when billing is enabled)
-                 ════════════════════════════════════════ -->
-            <div
-                v-if="facturacionHabilitada"
-                class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
-            >
-                <div>
-                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">
-                        Perfiles fiscales
-                    </h1>
-                    <div class="flex items-center gap-4 mt-3 flex-wrap">
-                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 flex items-center gap-2">
+                <!-- Header -->
+                <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-8">
+                    <div>
+                        <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">
+                            Perfiles fiscales
+                        </h1>
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
                             <span class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse"></span>
-                            Facturación activa &middot; CFDI 4.0
+                            CFDI 4.0 &middot; Administración de RFCs emisores
                         </p>
-                        <span class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
-                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400 m-0">
-                            {{ fiscalProfiles.length }} {{ fiscalProfiles.length === 1 ? 'perfil' : 'perfiles' }} registrados
-                        </span>
+                    </div>
+
+                    <!-- Header actions -->
+                    <div class="flex items-center gap-3 shrink-0">
+                        <Button
+                            label="Agregar perfil fiscal"
+                            icon="pi pi-plus"
+                            @click="fiscalProfileFormModalRef?.open()"
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider"
+                        />
                     </div>
                 </div>
-                <div class="flex gap-2 w-full md:w-auto flex-wrap">
-                    <Link
-                        :href="route('billing.invoices.index')"
-                        class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors no-underline"
-                    >
-                        <i class="pi pi-arrow-left !text-[10px]"></i>
-                        Historial
-                    </Link>
-                    <Button
-                        type="button"
-                        label="Agregar perfil fiscal"
-                        icon="pi pi-plus"
-                        @click="openNewDialog"
-                        class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold"
-                    />
-                    <Button
-                        type="button"
-                        label="Desactivar facturación"
-                        icon="pi pi-power-off"
-                        severity="secondary"
-                        outlined
-                        @click="toggleFacturacion"
-                        :loading="isTogglingFacturacion"
-                        class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold !border-red-200 dark:!border-red-900/50 !text-red-500 hover:!bg-red-50 dark:hover:!bg-red-900/20"
-                    />
-                </div>
-            </div>
 
-            <!-- ════════════════════════════════════════
-                 Fiscal profiles table / empty state
-                 (only when billing is enabled)
-                 ════════════════════════════════════════ -->
-            <div
-                v-if="facturacionHabilitada"
-                class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]"
-            >
-                <!-- Empty state -->
-                <div
-                    v-if="fiscalProfiles.length === 0"
-                    class="flex flex-col items-center justify-center py-16 text-center"
-                >
-                    <div class="w-16 h-16 rounded-full bg-gray-50 dark:bg-[#1a1a1a] flex items-center justify-center mb-4 border border-gray-100 dark:border-[#3a3a3a]">
-                        <i class="pi pi-building !text-2xl text-gray-400"></i>
-                    </div>
-                    <h2 class="text-lg font-light tracking-tight text-gray-900 dark:text-white m-0 mb-2">
-                        Sin perfiles fiscales
-                    </h2>
-                    <p class="text-sm text-gray-500 dark:text-gray-400 m-0 max-w-sm">
-                        Agrega tu primer RFC para comenzar a facturar. Puedes registrar múltiples razones sociales desde una misma cuenta.
-                    </p>
-                    <Button
-                        type="button"
-                        label="Agregar perfil fiscal"
-                        icon="pi pi-plus"
-                        @click="openNewDialog"
-                        severity="secondary"
-                        outlined
-                        class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold mt-6"
-                    />
+                <!-- Search bar -->
+                <div class="flex items-center bg-gray-50 dark:bg-[#1a1a1a] p-3 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] mb-6">
+                    <IconField iconPosition="left" class="w-full md:w-1/2 lg:w-1/3">
+                        <InputIcon class="pi pi-search !text-sm text-gray-400 dark:text-gray-500" />
+                        <InputText
+                            v-model="searchTerm"
+                            placeholder="Buscar por RFC o razón social..."
+                            :pt="inputPt"
+                            class="!pl-10"
+                        />
+                    </IconField>
+                    <span class="ml-auto text-[10px] uppercase tracking-widest font-bold text-gray-400 shrink-0 hidden sm:block">
+                        {{ fiscalProfiles.total ?? 0 }} {{ (fiscalProfiles.total ?? 0) === 1 ? 'perfil' : 'perfiles' }}
+                    </span>
                 </div>
 
-                <!-- DataTable -->
+                <!-- ════════════════════════════════════════
+                     DataTable
+                     ════════════════════════════════════════ -->
                 <DataTable
-                    v-else
-                    :value="fiscalProfiles"
-                    stripedRows
-                    class="!border-none !bg-transparent"
-                    :pt="{
-                        root: { class: '!bg-transparent !border-none' },
-                        header: { class: '!bg-transparent !border-none !p-0 !mb-4' },
-                        table: { class: '!border-collapse' },
-                        thead: { class: '!bg-transparent' },
-                        th: { class: '!bg-gray-50 dark:!bg-[#1a1a1a] !border-none !py-3 !px-5 !text-[10px] !uppercase !tracking-widest !font-bold !text-gray-500 first:!rounded-l-2xl last:!rounded-r-2xl' },
-                        td: { class: '!border-b !border-gray-50 dark:!border-[#2a2a2a] !py-4 !px-5 !text-sm !text-gray-900 dark:!text-gray-100' },
-                        tbody: { class: '!border-none' },
-                    }"
+                    :value="fiscalProfiles.data"
+                    lazy
+                    paginator
+                    :totalRecords="fiscalProfiles.total"
+                    :rows="fiscalProfiles.per_page"
+                    :rowsPerPageOptions="[10, 20, 50]"
+                    dataKey="id"
+                    @page="onPage"
+                    @sort="onSort"
+                    @row-click="onRowClick"
+                    removableSort
+                    tableStyle="min-width: 50rem"
+                    paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
+                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} perfiles"
+                    rowHover
+                    :rowClass="rowClass"
+                    :pt="dataTablePt"
                 >
-                    <Column field="rfc" header="RFC">
+                    <!-- Empty state -->
+                    <template #empty>
+                        <div class="flex flex-col items-center justify-center py-16 px-4 text-center">
+                            <i class="pi pi-building !text-4xl text-gray-300 dark:text-gray-600 mb-4"></i>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 max-w-md leading-relaxed">
+                                No se encontraron perfiles fiscales. Agrega tu primer RFC para comenzar a facturar.
+                            </p>
+                        </div>
+                    </template>
+
+                    <!-- RFC -->
+                    <Column field="rfc" header="RFC" sortable>
                         <template #body="{ data }">
-                            <span class="font-mono text-sm font-medium text-gray-900 dark:text-white">{{ data.rfc }}</span>
+                            <span class="font-mono text-sm font-bold text-gray-900 dark:text-gray-100">
+                                {{ data.rfc }}
+                            </span>
                         </template>
                     </Column>
-                    <Column field="razon_social" header="Razón social">
+
+                    <!-- Razón social -->
+                    <Column field="razon_social" header="Razón social" sortable>
                         <template #body="{ data }">
-                            <Link
-                                :href="route('billing.fiscal-profiles.show', data.id)"
-                                class="font-medium text-gray-900 dark:text-white hover:text-primary-500 transition-colors no-underline"
-                            >
+                            <span class="font-medium text-gray-900 dark:text-gray-100">
                                 {{ data.razon_social }}
-                            </Link>
+                            </span>
                         </template>
                     </Column>
-                    <Column field="regimen_fiscal" header="Régimen fiscal">
+
+                    <!-- Régimen fiscal -->
+                    <Column field="regimen_fiscal" header="Régimen fiscal" sortable>
                         <template #body="{ data }">
-                            <span class="text-gray-500 dark:text-gray-400">{{ data.regimen_fiscal }}</span>
+                            <span class="text-xs text-gray-500 dark:text-gray-400">
+                                {{ data.regimen_fiscal }}
+                            </span>
                         </template>
                     </Column>
-                    <Column header="Estado">
+
+                    <!-- Estado PAC -->
+                    <Column field="is_active" header="Estado" sortable>
                         <template #body="{ data }">
                             <Tag
                                 :value="getStatusLabel(data)"
@@ -348,75 +345,55 @@ const tagPt = {
                             />
                         </template>
                     </Column>
-                    <Column header="Manifiesto">
+
+                    <!-- Manifiesto -->
+                    <Column field="manifest_signed_at" header="Manifiesto" sortable>
                         <template #body="{ data }">
                             <Tag
-                                v-if="data.manifest_signed_at"
-                                value="Firmado"
-                                severity="success"
+                                :value="getManifestLabel(data)"
+                                :severity="getManifestSeverity(data)"
                                 :pt="tagPt"
                             />
-                            <Tag
-                                v-else-if="data.sw_user_id"
-                                value="Pendiente"
-                                severity="warn"
-                                :pt="tagPt"
-                            />
-                            <span v-else class="text-xs text-gray-400">—</span>
                         </template>
                     </Column>
-                    <Column header="Acciones" style="width:160px">
+
+                    <!-- Certificados CSD -->
+                    <Column header="Certificados CSD">
                         <template #body="{ data }">
-                            <div class="flex items-center gap-0.5">
-                                <!-- Link to detail page -->
-                                <Link
-                                    :href="route('billing.fiscal-profiles.show', data.id)"
-                                    v-tooltip.top="'Ver detalle del perfil'"
-                                    class="w-9 h-9 rounded-full flex items-center justify-center text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors no-underline"
-                                >
-                                    <i class="pi pi-eye !text-sm" />
-                                </Link>
-                                <!-- Logo button -->
+                            <Tag
+                                :value="getCsdLabel(data)"
+                                :severity="getCsdSeverity(data)"
+                                :pt="tagPt"
+                            />
+                        </template>
+                    </Column>
+
+                    <!-- Timbres disponibles -->
+                    <Column header="Timbres disponibles">
+                        <template #body="{ data }">
+                            <span
+                                v-if="data.stamps_available !== null && data.stamps_available !== undefined"
+                                class="font-mono font-light tracking-tight text-lg text-gray-900 dark:text-white"
+                            >
+                                {{ formatStamps(data.stamps_available) }}
+                            </span>
+                            <span v-else class="text-xs text-gray-400 dark:text-gray-600 italic">
+                                No disponible
+                            </span>
+                        </template>
+                    </Column>
+
+                    <!-- Actions (More menu) -->
+                    <Column headerStyle="width: 5rem; text-align: center">
+                        <template #body="{ data }">
+                            <div class="flex items-center justify-center" @click.stop>
                                 <Button
-                                    icon="pi pi-image"
+                                    icon="pi pi-ellipsis-v"
                                     text
                                     rounded
-                                    :disabled="!data.sw_user_id"
-                                    v-tooltip.top="!data.sw_user_id ? 'La cuenta debe ser aprobada por el PAC primero' : (data.logo_url ? 'Ver o cambiar logotipo de facturación' : 'Subir logotipo de facturación')"
-                                    @click="openLogoModal(data)"
-                                    :class="!data.sw_user_id
-                                        ? '!text-gray-300 dark:!text-gray-700 !cursor-not-allowed'
-                                        : data.logo_url
-                                            ? '!bg-purple-50 dark:!bg-purple-900/20 !text-purple-600 dark:!text-purple-400 !border !border-purple-200 dark:!border-purple-800/50 hover:!bg-purple-100 dark:hover:!bg-purple-900/40'
-                                            : '!text-gray-400 hover:!text-purple-500 dark:hover:!text-purple-400 hover:!bg-purple-50 dark:hover:!bg-purple-900/20 !transition-colors'"
-                                    :pt="{ root: { class: '!w-9 !h-9' } }"
-                                />
-                                <!-- CSD key button -->
-                                <Button
-                                    icon="pi pi-key"
-                                    text
-                                    rounded
-                                    :disabled="!data.sw_user_id"
-                                    v-tooltip.top="data.certificate_number ? 'Ver o actualizar certificado CSD' : (data.sw_user_id ? 'Cargar certificados CSD' : 'Aprovisiona la subcuenta en el PAC primero')"
-                                    @click="openCsdDialog(data)"
-                                    :class="data.certificate_number
-                                        ? '!bg-amber-50 dark:!bg-amber-900/20 !text-amber-600 dark:!text-amber-400 !border !border-amber-200 dark:!border-amber-800/50 hover:!bg-amber-100 dark:hover:!bg-amber-900/40'
-                                        : '!text-gray-400 hover:!text-primary-500 dark:hover:!text-primary-400 !transition-colors'"
-                                    :pt="{
-                                        root: { class: '!w-9 !h-9' },
-                                    }"
-                                />
-                                <!-- Delete / deactivate button -->
-                                <Button
-                                    icon="pi pi-trash"
-                                    text
-                                    rounded
-                                    v-tooltip.top="'Dar de baja perfil fiscal'"
-                                    @click="confirmDeleteProfile(data)"
-                                    class="!text-gray-400 hover:!text-red-500 dark:hover:!text-red-400 hover:!bg-red-50 dark:hover:!bg-red-900/20 !transition-colors"
-                                    :pt="{
-                                        root: { class: '!w-9 !h-9' },
-                                    }"
+                                    @click.stop="toggleMenu($event, data)"
+                                    class="!w-8 !h-8 !text-gray-500 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors"
+                                    v-tooltip.top="'Más acciones'"
                                 />
                             </div>
                         </template>
@@ -426,12 +403,8 @@ const tagPt = {
 
             <!-- ════════════════════════════════════════
                  PAC provider info
-                 (only when billing is enabled)
                  ════════════════════════════════════════ -->
-            <div
-                v-if="facturacionHabilitada"
-                class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]"
-            >
+            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
                 <div class="flex items-center gap-4">
                     <div class="w-10 h-10 rounded-full bg-green-50 dark:bg-green-900/20 flex items-center justify-center flex-shrink-0 border border-green-100 dark:border-green-900/30">
                         <i class="pi pi-check-circle !text-sm text-green-500"></i>
@@ -451,356 +424,18 @@ const tagPt = {
             </div>
         </div>
 
-        <!-- ════════════════════════════════════════
-             Dialog: Agregar perfil fiscal
-             ════════════════════════════════════════ -->
-        <Dialog
-            v-model:visible="isDialogVisible"
-            modal
-            class="w-full max-w-lg mx-4"
-            :pt="dialogPt"
-        >
-            <template #header>
-                <div class="flex items-center gap-4">
-                    <div class="w-10 h-10 rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-500 flex items-center justify-center flex-shrink-0 border border-primary-100 dark:border-primary-900/30">
-                        <i class="pi pi-building !text-sm"></i>
-                    </div>
-                    <div>
-                        <h2 class="text-xl font-light tracking-tight text-gray-900 dark:text-white m-0 leading-tight">
-                            Agregar perfil fiscal
-                        </h2>
-                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1">
-                            Nueva razón social para facturación
-                        </p>
-                    </div>
-                </div>
-            </template>
+        <!-- More actions dropdown -->
+        <Menu ref="menuRef" :model="items" :popup="true" />
 
-            <form @submit.prevent="submit" class="flex flex-col gap-5 pt-2">
-                <!-- RFC -->
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
-                        RFC *
-                    </label>
-                    <InputText
-                        v-model="form.rfc"
-                        placeholder="Ej. XAXX010101000"
-                        class="w-full"
-                        :class="{ '!border-red-500': form.errors.rfc }"
-                        maxlength="13"
-                        :pt="{
-                            root: {
-                                class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !text-sm',
-                            },
-                        }"
-                    />
-                    <Message v-if="form.errors.rfc" severity="error" variant="simple" size="small">
-                        {{ form.errors.rfc }}
-                    </Message>
-                </div>
+        <FiscalProfileFormModal
+            ref="fiscalProfileFormModalRef"
+            @success="router.reload()"
+        />
 
-                <!-- Razón social -->
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
-                        Razón social *
-                    </label>
-                    <InputText
-                        v-model="form.razon_social"
-                        placeholder="Nombre o razón social del emisor"
-                        class="w-full"
-                        :class="{ '!border-red-500': form.errors.razon_social }"
-                        :pt="{
-                            root: {
-                                class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !text-sm',
-                            },
-                        }"
-                    />
-                    <Message v-if="form.errors.razon_social" severity="error" variant="simple" size="small">
-                        {{ form.errors.razon_social }}
-                    </Message>
-                </div>
-
-                <!-- Régimen fiscal -->
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
-                        Régimen fiscal *
-                    </label>
-                    <Select
-                        v-model="form.regimen_fiscal"
-                        :options="taxRegimeOptions"
-                        optionLabel="label"
-                        optionValue="value"
-                        placeholder="Selecciona el régimen fiscal"
-                        class="w-full"
-                        :class="{ '!border-red-500': form.errors.regimen_fiscal }"
-                        :pt="{
-                            root: {
-                                class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !text-sm',
-                            },
-                        }"
-                    />
-                    <Message v-if="form.errors.regimen_fiscal" severity="error" variant="simple" size="small">
-                        {{ form.errors.regimen_fiscal }}
-                    </Message>
-                </div>
-
-                <!-- Código postal fiscal -->
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
-                        Código postal fiscal *
-                    </label>
-                    <InputText
-                        v-model="form.postal_code"
-                        placeholder="Ej. 44600"
-                        class="w-full"
-                        :class="{ '!border-red-500': form.errors.postal_code }"
-                        maxlength="5"
-                        :pt="{
-                            root: {
-                                class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !text-sm',
-                            },
-                        }"
-                    />
-                    <Message v-if="form.errors.postal_code" severity="error" variant="simple" size="small">
-                        {{ form.errors.postal_code }}
-                    </Message>
-                </div>
-
-                <!-- Email de contacto fiscal -->
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
-                        Email de contacto fiscal *
-                    </label>
-                    <InputText
-                        v-model="form.email"
-                        type="email"
-                        placeholder="Ej. facturacion@empresa.com"
-                        class="w-full"
-                        :class="{ '!border-red-500': form.errors.email }"
-                        :pt="{
-                            root: {
-                                class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !text-sm',
-                            },
-                        }"
-                    />
-                    <Message v-if="form.errors.email" severity="error" variant="simple" size="small">
-                        {{ form.errors.email }}
-                    </Message>
-                </div>
-
-                <!-- Info sobre aprovisionamiento automático -->
-                <div class="bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/30">
-                    <div class="flex items-start gap-3">
-                        <i class="pi pi-info-circle !text-sm text-blue-500 mt-0.5"></i>
-                        <div>
-                            <p class="text-xs font-medium text-blue-700 dark:text-blue-400 m-0 mb-0.5">
-                                Aprovisionamiento automático
-                            </p>
-                            <p class="text-[10px] text-blue-600/70 dark:text-blue-400/70 m-0 leading-relaxed">
-                                Al guardar, se creará automáticamente una subcuenta en SW Smarter Web para este RFC.
-                                El estado cambiará a "Activo" cuando el PAC confirme el registro.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </form>
-
-            <template #footer>
-                <div class="flex justify-end items-center gap-3 w-full mt-4 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
-                    <Button
-                        label="Cancelar"
-                        text
-                        @click="isDialogVisible = false"
-                        :disabled="form.processing"
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold"
-                    />
-                    <Button
-                        label="Guardar perfil"
-                        icon="pi pi-save"
-                        @click="submit"
-                        :loading="form.processing"
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-6 shadow-sm"
-                        severity="primary"
-                    />
-                </div>
-            </template>
-        </Dialog>
-
-        <!-- ════════════════════════════════════════
-             Dialog: Certificado (CSD)
-             ════════════════════════════════════════ -->
-        <Dialog
-            v-model:visible="isCsdDialogVisible"
-            modal
-            class="w-full max-w-lg mx-4"
-            :pt="dialogPt"
-            @hide="isUpdatingCsd = false"
-        >
-            <template #header>
-                <div class="flex items-center gap-4">
-                    <div
-                        class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 border"
-                        :class="selectedProfile?.certificate_number && !isUpdatingCsd
-                            ? 'bg-green-50 dark:bg-green-900/20 text-green-500 border-green-100 dark:border-green-900/30'
-                            : 'bg-amber-50 dark:bg-amber-900/20 text-amber-500 border-amber-100 dark:border-amber-900/30'"
-                    >
-                        <i class="pi text-sm" :class="selectedProfile?.certificate_number && !isUpdatingCsd ? 'pi-check-circle' : 'pi-key'"></i>
-                    </div>
-                    <div>
-                        <h2 class="text-xl font-light tracking-tight text-gray-900 dark:text-white m-0 leading-tight">
-                            {{ selectedProfile?.certificate_number && !isUpdatingCsd ? 'Certificado activo' : 'Cargar Certificado (CSD)' }}
-                        </h2>
-                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1">
-                            {{ selectedProfile?.certificate_number && !isUpdatingCsd ? 'Datos del CSD registrado' : 'Archivos .cer y .key del SAT' }}
-                        </p>
-                    </div>
-                </div>
-            </template>
-
-            <!-- ── MODO LECTURA: certificado ya registrado ── -->
-            <div v-if="selectedProfile?.certificate_number && !isUpdatingCsd" class="flex flex-col gap-5 pt-2">
-                <div class="flex items-center gap-3 mb-2">
-                    <Tag value="Certificado activo" severity="success" :pt="tagPt" />
-                    <span class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse"></span>
-                </div>
-
-                <div class="bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl p-5 space-y-4 border border-gray-100 dark:border-[#3a3a3a]">
-                    <div class="flex flex-col gap-1">
-                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Número de serie</span>
-                        <span class="text-sm font-mono text-gray-900 dark:text-white break-all">{{ selectedProfile.certificate_number }}</span>
-                    </div>
-                    <div class="flex flex-col gap-1">
-                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Vigencia</span>
-                        <span class="text-sm text-gray-700 dark:text-gray-300">{{ selectedProfile.valid_from }} — {{ selectedProfile.valid_to }}</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ── MODO CARGA: formulario de subida ── -->
-            <form v-if="!selectedProfile?.certificate_number || isUpdatingCsd" @submit.prevent="submitCsd" class="flex flex-col gap-5 pt-2">
-                <!-- Archivo .cer -->
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
-                        Certificado (.cer) *
-                    </label>
-                    <input
-                        type="file"
-                        accept=".cer"
-                        @input="csdForm.cer = $event.target.files[0]"
-                        class="w-full text-sm text-gray-600 dark:text-gray-400
-                               file:mr-4 file:py-2.5 file:px-5
-                               file:rounded-xl file:border-0
-                               file:text-[10px] file:uppercase file:tracking-widest file:font-bold
-                               file:bg-gray-100 dark:file:bg-[#1a1a1a]
-                               file:text-gray-700 dark:file:text-gray-300
-                               hover:file:bg-primary-50 dark:hover:file:bg-primary-900/20
-                               file:transition-colors file:cursor-pointer"
-                    />
-                    <Message v-if="csdForm.errors.cer" severity="error" variant="simple" size="small">
-                        {{ csdForm.errors.cer }}
-                    </Message>
-                </div>
-
-                <!-- Archivo .key -->
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
-                        Llave privada (.key) *
-                    </label>
-                    <input
-                        type="file"
-                        accept=".key"
-                        @input="csdForm.key = $event.target.files[0]"
-                        class="w-full text-sm text-gray-600 dark:text-gray-400
-                               file:mr-4 file:py-2.5 file:px-5
-                               file:rounded-xl file:border-0
-                               file:text-[10px] file:uppercase file:tracking-widest file:font-bold
-                               file:bg-gray-100 dark:file:bg-[#1a1a1a]
-                               file:text-gray-700 dark:file:text-gray-300
-                               hover:file:bg-primary-50 dark:hover:file:bg-primary-900/20
-                               file:transition-colors file:cursor-pointer"
-                    />
-                    <Message v-if="csdForm.errors.key" severity="error" variant="simple" size="small">
-                        {{ csdForm.errors.key }}
-                    </Message>
-                </div>
-
-                <!-- Contraseña del CSD -->
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
-                        Contraseña del CSD *
-                    </label>
-                    <InputText
-                        v-model="csdForm.password"
-                        type="password"
-                        toggleMask
-                        placeholder="Contraseña de la llave privada"
-                        class="w-full"
-                        :class="{ '!border-red-500': csdForm.errors.password }"
-                        :pt="{
-                            root: {
-                                class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !text-sm',
-                            },
-                        }"
-                    />
-                    <Message v-if="csdForm.errors.password" severity="error" variant="simple" size="small">
-                        {{ csdForm.errors.password }}
-                    </Message>
-                </div>
-
-                <!-- Info sobre CSD -->
-                <div class="bg-amber-50/50 dark:bg-amber-900/10 p-4 rounded-2xl border border-amber-100 dark:border-amber-900/30">
-                    <div class="flex items-start gap-3">
-                        <i class="pi pi-shield !text-sm text-amber-500 mt-0.5"></i>
-                        <div>
-                            <p class="text-xs font-medium text-amber-700 dark:text-amber-400 m-0 mb-0.5">
-                                Certificados oficiales del SAT
-                            </p>
-                            <p class="text-[10px] text-amber-600/70 dark:text-amber-400/70 m-0 leading-relaxed">
-                                Los archivos .cer y .key son emitidos por el SAT. Se enviarán de forma segura al PAC
-                                para configurar el timbrado de este RFC.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </form>
-
-            <template #footer>
-                <div class="flex justify-end items-center gap-3 w-full mt-4 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
-                    <Button
-                        v-if="selectedProfile?.certificate_number && !isUpdatingCsd"
-                        label="Actualizar certificado"
-                        icon="pi pi-refresh"
-                        text
-                        @click="isUpdatingCsd = true"
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold"
-                    />
-                    <Button
-                        v-if="!selectedProfile?.certificate_number || isUpdatingCsd"
-                        label="Cancelar"
-                        text
-                        @click="selectedProfile?.certificate_number ? isUpdatingCsd = false : isCsdDialogVisible = false"
-                        :disabled="csdForm.processing"
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold"
-                    />
-                    <Button
-                        v-if="!selectedProfile?.certificate_number || isUpdatingCsd"
-                        label="Cargar certificados"
-                        icon="pi pi-cloud-upload"
-                        @click="submitCsd"
-                        :loading="csdForm.processing"
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-6 shadow-sm"
-                        severity="primary"
-                    />
-                    <Button
-                        v-if="selectedProfile?.certificate_number && !isUpdatingCsd"
-                        label="Cerrar"
-                        text
-                        @click="isCsdDialogVisible = false"
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold"
-                    />
-                </div>
-            </template>
-        </Dialog>
+        <CsdUploadModal
+            ref="csdUploadModalRef"
+            @success="router.reload()"
+        />
 
         <!-- ════════════════════════════════════════
              Logo Upload Modal
@@ -812,5 +447,23 @@ const tagPt = {
             @update:visible="isLogoModalVisible = $event"
             @updated="onLogoUpdated"
         />
+
+        <PurchaseStampsModal
+            v-if="selectedProfileForModal"
+            ref="purchaseModalRef"
+            :fiscalProfileId="selectedProfileForModal.id"
+            :ourBankAccounts="[]"
+            @success="router.reload()"
+        />
+
+        <ManifestWizardModal
+            v-if="selectedProfileForModal"
+            ref="manifestModalRef"
+            :fiscalProfile="selectedProfileForModal"
+            :canRetryManifestSigning="selectedProfileForModal.canRetryManifestSigning ?? false"
+            @success="router.reload()"
+        />
+
+        <ConfirmPopup />
     </AppLayout>
 </template>

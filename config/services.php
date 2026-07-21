@@ -57,6 +57,7 @@ return [
         'management_users_path'  => env('SW_SAPIEN_MANAGEMENT_USERS_PATH', '/management/v2/api/dealers/users'),
         'default_stamps'         => env('SW_SAPIEN_DEFAULT_STAMPS', 10),
         'mock'                   => env('SW_SAPIEN_MOCK', false),
+        'low_balance_threshold'  => env('SW_SAPIEN_LOW_BALANCE_THRESHOLD', 500),
     ],
 
 ];
