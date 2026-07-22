@@ -228,7 +228,7 @@ const tagPt = {
 </script>
 
 <template>
-    <Head title="Perfiles fiscales" />
+    <Head title="Razones sociales" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
 
@@ -241,18 +241,18 @@ const tagPt = {
                 <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-8">
                     <div>
                         <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">
-                            Perfiles fiscales
+                            Emisores fiscales
                         </h1>
                         <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
                             <span class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse"></span>
-                            CFDI 4.0 &middot; Administración de RFCs emisores
+                            CFDI 4.0 &middot; Administra los RFC's emisores para emitir facturas desde esta cuenta.
                         </p>
                     </div>
 
                     <!-- Header actions -->
                     <div class="flex items-center gap-3 shrink-0">
                         <Button
-                            label="Agregar perfil fiscal"
+                            label="Agregar emisor fiscal"
                             icon="pi pi-plus"
                             @click="fiscalProfileFormModalRef?.open()"
                             class="!rounded-xl !text-xs !uppercase !tracking-wider"
@@ -272,7 +272,7 @@ const tagPt = {
                         />
                     </IconField>
                     <span class="ml-auto text-[10px] uppercase tracking-widest font-bold text-gray-400 shrink-0 hidden sm:block">
-                        {{ fiscalProfiles.total ?? 0 }} {{ (fiscalProfiles.total ?? 0) === 1 ? 'perfil' : 'perfiles' }}
+                        {{ fiscalProfiles.total ?? 0 }} {{ (fiscalProfiles.total ?? 0) === 1 ? 'emisor' : 'emisores' }}
                     </span>
                 </div>
 

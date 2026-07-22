@@ -37,7 +37,7 @@ const statusOptions = [
 const fiscalProfileOptions = computed(() => {
     if (!props.fiscalProfiles) return [];
     return [
-        { label: 'Todos los perfiles', value: null },
+        { label: 'Todos los emisores', value: null },
         ...props.fiscalProfiles.map(fp => ({
             label: `${fp.razon_social} (${fp.rfc})`,
             value: fp.id,
@@ -348,7 +348,7 @@ const tagPt = {
                             :options="fiscalProfileOptions"
                             optionLabel="label"
                             optionValue="value"
-                            placeholder="Perfil fiscal"
+                            placeholder="Emisor fiscal"
                             class="w-full md:w-56"
                             :pt="selectPt"
                         />
@@ -436,6 +436,20 @@ const tagPt = {
                             <span class="font-mono text-xs text-gray-600 dark:text-gray-400 tracking-wide">
                                 {{ data.receiver_rfc }}
                             </span>
+                        </template>
+                    </Column>
+
+                    <!-- Emisor (only when multiple fiscal profiles exist) -->
+                    <Column v-if="fiscalProfiles && fiscalProfiles.length > 1" field="fiscal_profile_id" header="Emisor">
+                        <template #body="{ data }">
+                            <div class="flex flex-col">
+                                <span class="font-medium text-gray-900 dark:text-gray-100">
+                                    {{ data.fiscal_profile?.razon_social }}
+                                </span>
+                                <span class="text-[9px] uppercase tracking-widest text-gray-400 dark:text-gray-500">
+                                    {{ data.fiscal_profile?.rfc }}
+                                </span>
+                            </div>
                         </template>
                     </Column>
 

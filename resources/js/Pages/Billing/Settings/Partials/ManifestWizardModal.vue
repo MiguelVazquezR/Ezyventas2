@@ -66,7 +66,7 @@ function open() {
     signKeyFile.value = null;
 
     if (props.canRetryManifestSigning) {
-        step.value = 3;
+        step.value = 1;
     } else if (props.fiscalProfile.manifest_text_b64 && props.fiscalProfile.manifest_text_shown_at) {
         step.value = 2;
     } else {
@@ -126,6 +126,9 @@ function submitManifest() {
             onSuccess: () => {
                 visible.value = false;
                 emit('success');
+            },
+            onError: () => {
+                manifestForm.password = '';
             },
         },
     );

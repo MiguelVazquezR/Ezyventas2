@@ -118,7 +118,7 @@ class InvoiceController extends Controller implements HasMiddleware
 
         $query = Invoice::query()
             ->where('branch_id', $user->branch_id)
-            ->with('customer:id,name,company_name');
+            ->with(['customer:id,name,company_name', 'fiscalProfile:id,razon_social,rfc']);
 
         // Search across folio, receiver name, receiver RFC, and UUID
         if ($request->has('search')) {

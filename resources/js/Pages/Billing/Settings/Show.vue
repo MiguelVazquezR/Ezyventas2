@@ -289,7 +289,7 @@ const tagPt = {
                     <span class="text-sm">Consultando saldo...</span>
                 </div>
                 <div v-else-if="!fiscalProfile.sw_user_id" class="text-sm text-gray-500">
-                    Este perfil aún no tiene una subcuenta PAC vinculada.
+                    Este emisor aún no tiene una subcuenta PAC vinculada.
                 </div>
                 <div v-else class="grid grid-cols-2 sm:grid-cols-4 gap-6">
                     <div class="flex flex-col gap-1">
@@ -393,7 +393,7 @@ const tagPt = {
                     </Column>
                 </DataTable>
                 <div v-if="purchases.data.length === 0" class="text-center py-8 text-sm text-gray-400">
-                    No hay compras registradas para este perfil fiscal.
+                    No hay compras registradas para este emisor fiscal.
                 </div>
             </div>
 

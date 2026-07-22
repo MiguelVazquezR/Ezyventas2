@@ -442,8 +442,8 @@ const tagPt = {
 
                         <!-- Total -->
                         <div class="flex items-center justify-between pt-4">
-                            <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">Total</span>
-                            <span class="text-3xl font-light tracking-tight text-gray-900 dark:text-white">
+                            <span class="text-sm font-semibold text-green-600 dark:text-gray-300">Total</span>
+                            <span class="text-3xl font-light tracking-tight text-green-600 dark:text-white">
                                 {{ formatCurrency(invoice.total) }}
                             </span>
                         </div>
