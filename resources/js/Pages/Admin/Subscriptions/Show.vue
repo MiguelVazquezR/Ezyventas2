@@ -414,9 +414,18 @@ function stampPaymentMethodLabel(method) {
 
                 <!-- ── Timbres por perfil fiscal ──────────── -->
                 <div v-if="fiscalProfiles && fiscalProfiles.length > 0" class="mt-8 pt-8 border-t border-gray-100 dark:border-[#3a3a3a]">
-                    <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-4">
-                        Timbres por perfil fiscal
-                    </h2>
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
+                            Timbres por perfil fiscal
+                        </h2>
+                        <Link
+                            :href="route('admin.stamps.index')"
+                            class="text-[10px] uppercase tracking-widest font-bold text-gray-400 hover:text-primary-500 transition-colors"
+                        >
+                            Panel global de timbres
+                            <i class="pi pi-arrow-up-right !text-[8px] ml-1" />
+                        </Link>
+                    </div>
 
                     <!-- Fiscal profiles cards -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">

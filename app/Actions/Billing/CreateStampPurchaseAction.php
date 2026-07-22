@@ -31,10 +31,12 @@ class CreateStampPurchaseAction
         // Recalculate price server-side — never trust client price
         $pricing = $this->stampPurchaseService->calculatePrice($data['stamp_quantity']);
 
-        // Check master account balance before allowing the purchase.
-        // For Mercado Pago: blocks the purchase before creating the preference
-        // so the subscriber is never charged for stamps we can't deliver.
+        // Determine if this Mercado Pago purchase exceeds the review threshold
+        $threshold = $this->getLargePurchaseThreshold();
+        $reviewReason = null;
+
         if ($data['payment_method'] === 'mercadopago') {
+            // Check master account balance before allowing the purchase.
             $balanceCheck = $this->stampPurchaseService->checkMasterBalance($data['stamp_quantity']);
 
             if (! $balanceCheck['sufficient']) {
@@ -44,6 +46,14 @@ class CreateStampPurchaseAction
                     . "Intenta con una cantidad menor o contacta a soporte."
                 );
             }
+
+            // If quantity meets or exceeds the threshold, flag for manual review
+            if ($data['stamp_quantity'] >= $threshold) {
+                $reviewReason = 'large_quantity';
+            }
+        } else {
+            // Bank transfers always require review
+            $reviewReason = 'bank_transfer';
         }
 
         $purchaseData = [
@@ -54,9 +64,10 @@ class CreateStampPurchaseAction
             'amount_total'         => $pricing['amount_total'],
             'pricing_tier_id'      => $pricing['pricing_tier_id'],
             'payment_method'       => $data['payment_method'],
-            'status'               => $data['payment_method'] === 'mercadopago'
-                ? StampPurchaseStatus::PENDING
-                : StampPurchaseStatus::AWAITING_REVIEW,
+            'status'               => $reviewReason
+                ? StampPurchaseStatus::AWAITING_REVIEW
+                : StampPurchaseStatus::PENDING,
+            'review_reason'        => $reviewReason,
             'proof_file_path'      => $data['proof_file_path'] ?? null,
             'proof_uploaded_at'    => $data['proof_file_path'] ? now() : null,
         ];
@@ -83,5 +94,15 @@ class CreateStampPurchaseAction
             'purchase'      => $purchase,
             'mp_preference' => $mpPreference,
         ];
+    }
+
+    /**
+     * Get the configured threshold for large purchase review.
+     */
+    private function getLargePurchaseThreshold(): int
+    {
+        $definition = \App\Models\SettingDefinition::where('key', 'stamp_large_purchase_threshold')->first();
+
+        return (int) ($definition?->default_value ?? 1000);
     }
 }

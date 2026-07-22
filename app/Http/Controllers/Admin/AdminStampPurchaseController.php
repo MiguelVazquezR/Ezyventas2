@@ -35,7 +35,7 @@ class AdminStampPurchaseController extends Controller
             ->latest()
             ->paginate(25);
 
-        return Inertia::render('Admin/Stamps/Index', [
+        return Inertia::render('Admin/Stamps/ReviewQueue', [
             'purchases' => $purchases,
         ]);
     }

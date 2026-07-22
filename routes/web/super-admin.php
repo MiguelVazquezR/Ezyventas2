@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AdminStampDashboardController;
 use App\Http\Controllers\Admin\AdminStampPurchaseController;
 use App\Http\Controllers\Admin\AdminStampPricingController;
 use App\Http\Controllers\Admin\AdminSubscriptionPaymentController;
@@ -24,8 +25,16 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
     Route::post('payments/{payment}/approve', [AdminSubscriptionPaymentController::class, 'approve'])->name('payments.approve');
     Route::post('payments/{payment}/reject', [AdminSubscriptionPaymentController::class, 'reject'])->name('payments.reject');
 
-    // --- Gestión de Timbres (Comprobantes pendientes + Ajustes manuales) ---
-    Route::get('stamps', [AdminStampPurchaseController::class, 'index'])->name('stamps.index');
+    // ──── Panel Global de Timbres ──────────────────────────
+    Route::get('stamps', [AdminStampDashboardController::class, 'index'])->name('stamps.index');
+    Route::get('stamps/master-balance', [AdminStampDashboardController::class, 'masterBalance'])->name('stamps.master-balance');
+    Route::get('stamps/global-stats', [AdminStampDashboardController::class, 'globalStats'])->name('stamps.global-stats');
+    Route::post('stamps/global-stats/refresh', [AdminStampDashboardController::class, 'refreshGlobalStats'])->name('stamps.global-stats.refresh');
+    Route::get('stamps/issuers', [AdminStampDashboardController::class, 'issuersIndex'])->name('stamps.issuers.index');
+    Route::post('stamps/threshold', [AdminStampDashboardController::class, 'updateThreshold'])->name('stamps.threshold.update');
+
+    // ──── Bandeja de Revisión ──────────────────────────────
+    Route::get('stamps/review-queue', [AdminStampPurchaseController::class, 'index'])->name('stamps.review-queue');
     Route::get('stamps/{purchase}', [AdminStampPurchaseController::class, 'show'])->name('stamps.show');
     Route::post('stamps/{purchase}/approve', [AdminStampPurchaseController::class, 'approve'])->name('stamps.approve');
     Route::post('stamps/{purchase}/reject', [AdminStampPurchaseController::class, 'reject'])->name('stamps.reject');
@@ -34,11 +43,11 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
     Route::get('stamps/balance/{fiscalProfile}', [AdminStampPurchaseController::class, 'balance'])->name('stamps.balance');
     Route::get('stamps/adjust', fn () => Inertia\Inertia::render('Admin/Stamps/Adjust'))->name('stamps.adjust-form');
 
-    // --- Precios de Timbres (Tramas de descuento por volumen) ---
-    Route::get('stamps/pricing', [AdminStampPricingController::class, 'index'])->name('stamps.pricing.index');
-    Route::post('stamps/pricing', [AdminStampPricingController::class, 'store'])->name('stamps.pricing.store');
-    Route::put('stamps/pricing/{tier}', [AdminStampPricingController::class, 'update'])->name('stamps.pricing.update');
-    Route::delete('stamps/pricing/{tier}', [AdminStampPricingController::class, 'destroy'])->name('stamps.pricing.destroy');
+    // ──── Precios de Timbres (CRUD de tramos) ──────────────
+    Route::get('stamps/pricing-tiers', [AdminStampPricingController::class, 'index'])->name('stamps.pricing.index');
+    Route::post('stamps/pricing-tiers', [AdminStampPricingController::class, 'store'])->name('stamps.pricing.store');
+    Route::put('stamps/pricing-tiers/{tier}', [AdminStampPricingController::class, 'update'])->name('stamps.pricing.update');
+    Route::delete('stamps/pricing-tiers/{tier}', [AdminStampPricingController::class, 'destroy'])->name('stamps.pricing.destroy');
 
     // --- Ítems de Planes (Módulos y Límites del SaaS) ---
     Route::resource('plan-items', PlanItemController::class)->names([

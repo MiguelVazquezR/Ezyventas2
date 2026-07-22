@@ -75,7 +75,11 @@ const manifestModalRef = ref(null);
 // ──────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────
-function statusLabel(status) {
+function statusLabel(status, reviewReason) {
+    // For MercadoPago purchases awaiting admin review, show a subscriber-friendly label
+    if (status === 'awaiting_review' && reviewReason === 'large_quantity') {
+        return 'Pago confirmado, aplicando timbres';
+    }
     const labels = {
         pending: 'Pendiente',
         awaiting_review: 'En revisión',
@@ -87,7 +91,11 @@ function statusLabel(status) {
     return labels[status] || status;
 }
 
-function statusSeverity(status) {
+function statusSeverity(status, reviewReason) {
+    // Large quantity awaiting review: use success-like severity (payment confirmed)
+    if (status === 'awaiting_review' && reviewReason === 'large_quantity') {
+        return 'info';
+    }
     const map = {
         pending: 'warn',
         awaiting_review: 'info',
@@ -270,11 +278,11 @@ const tagPt = {
                     <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Saldo de timbres</h2>
                     <Link
                         v-if="$page.props.auth.user?.is_super_admin"
-                        :href="route('admin.stamps.pricing.index')"
+                        :href="route('admin.stamps.index')"
                         class="text-[10px] uppercase tracking-widest font-bold text-gray-400 hover:text-primary-500 transition-colors"
                         v-tooltip.top="'Estos precios aplican a todos los suscriptores, no solo a este.'"
                     >
-                        Gestionar precios y descuentos
+                        Gestionar timbres y precios
                         <i class="pi pi-arrow-up-right !text-[8px] ml-1" />
                     </Link>
                 </div>
@@ -388,7 +396,7 @@ const tagPt = {
                     </Column>
                     <Column field="status" header="Estado">
                         <template #body="{ data }">
-                            <Tag :value="statusLabel(data.status)" :severity="statusSeverity(data.status)" class="!rounded-full" />
+                            <Tag :value="statusLabel(data.status, data.review_reason)" :severity="statusSeverity(data.status, data.review_reason)" class="!rounded-full" />
                         </template>
                     </Column>
                 </DataTable>

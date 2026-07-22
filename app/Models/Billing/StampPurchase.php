@@ -46,6 +46,7 @@ class StampPurchase extends Model
         'stamps_applied_at',
         'admin_note',
         'adjustment_type',
+        'review_reason',
     ];
 
     protected function casts(): array
@@ -57,6 +58,7 @@ class StampPurchase extends Model
             'payment_method'          => StampPaymentMethod::class,
             'status'                  => StampPurchaseStatus::class,
             'adjustment_type'         => StampAdjustmentType::class,
+            'review_reason'           => 'string',
             'pac_stamps_response_raw' => 'array',
             'proof_uploaded_at'       => 'datetime',
             'reviewed_at'             => 'datetime',

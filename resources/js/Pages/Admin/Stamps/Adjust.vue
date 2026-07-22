@@ -89,8 +89,8 @@ const adjustmentTypeLabel = (type) => type === 'add' ? 'Agregar timbres' : 'Reti
                     <i class="pi pi-info-circle !text-sm text-blue-500 mt-0.5" />
                     <div>
                         <p class="text-xs text-blue-700 dark:text-blue-300 m-0 leading-relaxed">
-                            <strong v-if="form.adjustment_type === 'add'">Agregar timbres:</strong> descuenta de la cuenta maestra y acredita al perfil fiscal.
-                            <strong v-else>Retirar timbres:</strong> devuelve timbres del perfil fiscal a la cuenta maestra.
+                            <template v-if="form.adjustment_type === 'add'"><strong>Agregar timbres:</strong> descuenta de la cuenta maestra y acredita al perfil fiscal.</template>
+                            <template v-else><strong>Retirar timbres:</strong> devuelve timbres del perfil fiscal a la cuenta maestra.</template>
                         </p>
                         <p class="text-xs text-blue-600 dark:text-blue-400 m-0 mt-2">
                             La cuenta maestra debe tener saldo suficiente para agregar timbres. Los cambios se aplican de inmediato y se reflejan en el PAC en breve.

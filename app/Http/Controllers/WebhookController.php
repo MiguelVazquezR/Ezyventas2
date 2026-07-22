@@ -116,10 +116,29 @@ class WebhookController extends Controller
 
             $stampPurchase->update([
                 'mp_payment_id' => $mpPaymentId,
-                'status'        => StampPurchaseStatus::APPROVED,
             ]);
 
-            // Approve and dispatch PAC job
+            // If this purchase requires review (large_quantity), don't auto-approve.
+            // The payment is confirmed, but the superadmin must review before stamps are applied.
+            if ($stampPurchase->review_reason === 'large_quantity') {
+                $stampPurchase->update([
+                    'status' => StampPurchaseStatus::AWAITING_REVIEW,
+                ]);
+
+                Log::info('MP webhook: large stamp purchase awaiting review', [
+                    'stamp_purchase_id' => $stampPurchase->id,
+                    'mp_payment_id'     => $mpPaymentId,
+                    'quantity'          => $stampPurchase->stamp_quantity,
+                ]);
+
+                return response()->json(['status' => 'ok', 'reason' => 'awaiting review — large quantity']);
+            }
+
+            // Normal purchase: auto-approve and dispatch PAC job
+            $stampPurchase->update([
+                'status' => StampPurchaseStatus::APPROVED,
+            ]);
+
             $stampApproveAction = app(ApproveStampPurchaseAction::class);
             $stampApproveAction->execute($stampPurchase, $stampPurchase->requested_by_user_id);
 
