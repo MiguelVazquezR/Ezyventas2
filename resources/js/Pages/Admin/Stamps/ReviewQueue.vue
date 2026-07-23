@@ -8,6 +8,29 @@ const props = defineProps({
 });
 
 // ──────────────────────────────────────
+// Tesla UI Pass-Through configurations
+// ──────────────────────────────────────
+const dataTablePt = {
+    root: { class: 'border border-gray-100 dark:border-[#3a3a3a] rounded-2xl overflow-hidden' },
+    headerRow: { class: 'bg-gray-50 dark:bg-[#1a1a1a]' },
+    headerCell: { class: 'bg-transparent !text-[10px] !uppercase !tracking-widest !font-bold !text-gray-400 py-4 px-4 border-b border-gray-100 dark:border-[#3a3a3a]' },
+    bodyRow: { class: 'dark:bg-[#232323] hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors text-sm text-gray-700 dark:text-gray-300' },
+    bodyCell: { class: 'py-4 px-4 border-b border-gray-50 dark:border-[#2a2a2a]' },
+    paginator: { root: { class: 'dark:bg-[#1a1a1a] border-t border-gray-100 dark:border-[#3a3a3a] p-3' } },
+};
+
+const tagPt = {
+    root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' },
+    icon: { class: '!text-[10px] !mr-1.5' },
+};
+
+const dialogPt = {
+    root: { class: '!rounded-3xl !bg-white dark:!bg-[#232323] !border-gray-100 dark:!border-[#3a3a3a]' },
+    header: { class: '!bg-transparent' },
+    content: { class: '!bg-transparent' },
+};
+
+// ──────────────────────────────────────
 // Breadcrumb
 // ──────────────────────────────────────
 const home = ref({ icon: 'pi pi-home', url: route('admin.reports.index') });
@@ -50,8 +73,33 @@ function formatCurrency(amount) {
 }
 
 function formatDate(date) {
-    return new Date(date).toLocaleDateString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+    return new Date(date).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
 }
+
+// ──────────────────────────────────────
+// Pagination & sorting
+// ──────────────────────────────────────
+const sortField = ref(props.purchases?.sort_field || 'created_at');
+const sortOrder = ref(props.purchases?.sort_order || 'desc');
+
+const onPage = (event) => {
+    router.get(route('admin.stamps.index'), {
+        page: event.page + 1,
+        rows: event.rows,
+        sortField: sortField.value,
+        sortOrder: sortOrder.value,
+    }, { preserveState: true });
+};
+
+const onSort = (event) => {
+    sortField.value = event.sortField;
+    sortOrder.value = event.sortOrder === 1 ? 'asc' : 'desc';
+
+    router.get(route('admin.stamps.index'), {
+        sortField: sortField.value,
+        sortOrder: sortOrder.value,
+    }, { preserveState: true });
+};
 
 // ──────────────────────────────────────
 // Approve / Reject
@@ -110,22 +158,36 @@ function confirmReject() {
             <div class="rounded-3xl bg-white dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] p-6">
                 <DataTable
                     :value="purchases.data"
-                    :paginator="purchases.total > 25"
-                    :rows="25"
+                    lazy
+                    paginator
                     :totalRecords="purchases.total"
-                    stripedRows
-                    class="w-full"
-                    :pt="{
-                        root: { class: '!bg-transparent' },
-                        headerRow: { class: '!bg-transparent' },
-                    }"
+                    :rows="purchases.per_page || 25"
+                    :rowsPerPageOptions="[20, 50, 100]"
+                    dataKey="id"
+                    removableSort
+                    rowHover
+                    tableStyle="min-width: 60rem"
+                    @page="onPage"
+                    @sort="onSort"
+                    paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
+                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} compras"
+                    :pt="dataTablePt"
                 >
+                    <template #empty>
+                        <div class="flex flex-col items-center justify-center py-16 px-4 text-center">
+                            <i class="pi pi-check-circle !text-4xl text-gray-300 dark:text-gray-600 mb-4"></i>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 max-w-md leading-relaxed">
+                                No hay compras pendientes de revisión.
+                            </p>
+                        </div>
+                    </template>
+
                     <Column header="Tipo">
                         <template #body="{ data }">
                             <Tag
                                 :value="reviewReasonLabel(data.review_reason)"
                                 :severity="reviewReasonSeverity(data.review_reason)"
-                                class="!rounded-full"
+                                :pt="tagPt"
                             />
                         </template>
                     </Column>
@@ -134,40 +196,44 @@ function confirmReject() {
                             <div class="flex flex-col">
                                 <Link
                                     :href="route('admin.subscriptions.show', data.fiscal_profile?.subscription_id)"
-                                    class="text-sm font-medium text-primary-500 hover:underline"
+                                    class="font-medium text-primary-500 hover:underline text-sm"
                                 >
                                     {{ data.fiscal_profile?.subscription?.commercial_name ?? '—' }}
                                 </Link>
-                                <span class="text-xs text-gray-400">ID: {{ data.fiscal_profile?.subscription_id }}</span>
+                                <span class="text-[9px] uppercase tracking-widest text-gray-400 dark:text-gray-500">ID: {{ data.fiscal_profile?.subscription_id }}</span>
                             </div>
                         </template>
                     </Column>
                     <Column header="Perfil fiscal">
                         <template #body="{ data }">
                             <div class="flex flex-col">
-                                <span class="text-sm font-medium">{{ data.fiscal_profile?.razon_social ?? '—' }}</span>
-                                <span class="text-xs text-gray-400">RFC: {{ data.fiscal_profile?.rfc }}</span>
+                                <span class="font-medium text-gray-900 dark:text-gray-100">{{ data.fiscal_profile?.razon_social ?? '—' }}</span>
+                                <span class="text-[9px] uppercase tracking-widest text-gray-400 dark:text-gray-500">RFC: {{ data.fiscal_profile?.rfc }}</span>
                             </div>
                         </template>
                     </Column>
-                    <Column field="stamp_quantity" header="Timbres">
+                    <Column field="stamp_quantity" header="Timbres" sortable>
                         <template #body="{ data }">
-                            <span class="font-medium">{{ data.stamp_quantity.toLocaleString() }}</span>
+                            <span class="font-light tracking-tight text-lg text-gray-900 dark:text-white">
+                                {{ data.stamp_quantity.toLocaleString() }}
+                            </span>
                         </template>
                     </Column>
-                    <Column field="amount_total" header="Monto">
+                    <Column field="amount_total" header="Monto" sortable>
                         <template #body="{ data }">
-                            {{ formatCurrency(data.amount_total) }}
+                            <span class="font-light tracking-tight text-lg text-gray-900 dark:text-white">
+                                {{ formatCurrency(data.amount_total) }}
+                            </span>
                         </template>
                     </Column>
-                    <Column field="created_at" header="Fecha">
+                    <Column field="created_at" header="Fecha" sortable>
                         <template #body="{ data }">
-                            <span class="text-sm text-gray-500">{{ formatDate(data.created_at) }}</span>
+                            <span class="text-sm text-gray-500 dark:text-gray-400">{{ formatDate(data.created_at) }}</span>
                         </template>
                     </Column>
-                    <Column header="Acciones">
+                    <Column header="Acciones" headerStyle="width: 12rem; text-align: center">
                         <template #body="{ data }">
-                            <div class="flex gap-2">
+                            <div class="flex items-center gap-1 justify-center">
                                 <!-- Bank transfer: show proof + approve/reject -->
                                 <template v-if="data.review_reason === 'bank_transfer'">
                                     <Button
@@ -178,14 +244,14 @@ function confirmReject() {
                                         icon="pi pi-eye"
                                         severity="secondary"
                                         size="small"
-                                        class="!rounded-full"
+                                        class="!rounded-full !w-8 !h-8"
                                         v-tooltip.top="'Ver comprobante'"
                                     />
                                     <Button
                                         icon="pi pi-check"
                                         severity="success"
                                         size="small"
-                                        class="!rounded-full"
+                                        class="!rounded-full !w-8 !h-8"
                                         v-tooltip.top="'Aprobar'"
                                         @click="approve(data)"
                                     />
@@ -193,7 +259,7 @@ function confirmReject() {
                                         icon="pi pi-times"
                                         severity="danger"
                                         size="small"
-                                        class="!rounded-full"
+                                        class="!rounded-full !w-8 !h-8"
                                         v-tooltip.top="'Rechazar'"
                                         @click="openRejectDialog(data)"
                                     />
@@ -206,7 +272,7 @@ function confirmReject() {
                                         label="Aplicar ahora"
                                         severity="success"
                                         size="small"
-                                        class="!rounded-full"
+                                        class="!rounded-full !text-[10px] !uppercase !tracking-wider"
                                         @click="approve(data)"
                                     />
                                 </template>
@@ -215,10 +281,6 @@ function confirmReject() {
                     </Column>
                 </DataTable>
 
-                <div v-if="purchases.data.length === 0" class="text-center py-12 text-sm text-gray-400">
-                    <i class="pi pi-check-circle text-3xl mb-3 text-green-400" />
-                    <p class="m-0">No hay compras pendientes de revisión.</p>
-                </div>
             </div>
 
         </div>
@@ -229,11 +291,7 @@ function confirmReject() {
             header="Rechazar comprobante"
             :modal="true"
             class="w-full max-w-md"
-            :pt="{
-                root: { class: '!rounded-3xl !bg-white dark:!bg-[#232323] !border-gray-100 dark:!border-[#3a3a3a]' },
-                header: { class: '!bg-transparent' },
-                content: { class: '!bg-transparent' },
-            }"
+            :pt="dialogPt"
         >
             <div class="flex flex-col gap-1.5">
                 <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Motivo del rechazo *</label>

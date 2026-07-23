@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue';
 import { useForm, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import AdjustStampModal from '@/Components/AdjustStampModal.vue';
 
 const props = defineProps({
     masterBalance: [Object, null],
@@ -10,7 +11,23 @@ const props = defineProps({
     tiers: Array,
     preview: Array,
     threshold: Number,
+    totalSubaccounts: Number,
+    fiscalProfiles: {
+        type: Array,
+        default: () => [],
+    },
 });
+
+// ──────────────────────────────────────
+// Adjust Stamp Modal
+// ──────────────────────────────────────
+const showAdjustModal = ref(false);
+const adjustPreselectedId = ref(null);
+
+function openAdjustModal(profileId = null) {
+    adjustPreselectedId.value = profileId;
+    showAdjustModal.value = true;
+}
 
 // ──────────────────────────────────────
 // Breadcrumb
@@ -261,18 +278,17 @@ const dialogPt = {
                         class="!rounded-full"
                     />
                     <Button
-                        as="a"
-                        :href="route('admin.stamps.adjust-form')"
                         icon="pi pi-cog"
                         label="Ajuste manual"
                         severity="secondary"
                         class="!rounded-full"
+                        @click="openAdjustModal()"
                     />
                 </div>
             </div>
 
             <!-- ════════════════ KPIs ════════════════ -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 <!-- Master balance (live) -->
                 <div class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
                     <div class="flex items-center justify-between mb-2">
@@ -324,6 +340,33 @@ const dialogPt = {
                         {{ snapshotData ? formatNumber(snapshotData.active_issuers_count) : '—' }}
                     </p>
                     <p v-if="statsMessage" class="text-xs mt-1 m-0" :class="statsMessage.includes('Error') ? 'text-red-500' : 'text-green-500'">{{ statsMessage }}</p>
+                </div>
+
+                <!-- Timbres Distribuidos (live from master balance) -->
+                <div class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Timbres distribuidos</p>
+                        <button @click="refreshMasterBalance" class="bg-transparent border-none cursor-pointer p-0 text-gray-400 hover:text-primary-500 transition-colors" :disabled="masterBalanceRefreshing">
+                            <i class="pi pi-refresh" :class="{ 'animate-spin': masterBalanceRefreshing }" :style="{ fontSize: '12px' }"></i>
+                        </button>
+                    </div>
+                    <p v-if="masterBalanceError" class="text-xs text-red-500 m-0">{{ masterBalanceError }}</p>
+                    <template v-else-if="liveMasterBalance">
+                        <p class="text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0">
+                            {{ formatNumber(liveMasterBalance.stampsAssigned) }}
+                        </p>
+                        <p class="text-xs text-gray-400 mt-1 m-0">Asignados a subcuentas</p>
+                    </template>
+                    <p v-else class="text-sm text-gray-400 m-0">Cargando...</p>
+                </div>
+
+                <!-- Subcuentas (live count from DB) -->
+                <div class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">Subcuentas</p>
+                    <p class="text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0">
+                        {{ formatNumber(totalSubaccounts) }}
+                    </p>
+                    <p class="text-xs text-gray-400 mt-1 m-0">Perfiles fiscales activos en el PAC</p>
                 </div>
             </div>
 
@@ -415,15 +458,25 @@ const dialogPt = {
                         </Column>
                         <Column header="">
                             <template #body="{ data }">
-                                <Button
-                                    as="a"
-                                    :href="route('admin.subscriptions.show', data.subscription_id)"
-                                    icon="pi pi-cog"
-                                    severity="secondary"
-                                    size="small"
-                                    class="!rounded-full"
-                                    v-tooltip.top="'Ajustar timbres'"
-                                />
+                                <div class="flex gap-2">
+                                    <Button
+                                        as="a"
+                                        :href="route('admin.stamps.history', data.id)"
+                                        icon="pi pi-history"
+                                        severity="secondary"
+                                        size="small"
+                                        class="!rounded-full"
+                                        v-tooltip.top="'Historial de timbres'"
+                                    />
+                                    <Button
+                                        icon="pi pi-cog"
+                                        severity="secondary"
+                                        size="small"
+                                        class="!rounded-full"
+                                        v-tooltip.top="'Ajustar timbres'"
+                                        @click="openAdjustModal(data.id)"
+                                    />
+                                </div>
                             </template>
                         </Column>
                     </DataTable>
@@ -601,5 +654,12 @@ const dialogPt = {
                 />
             </template>
         </Dialog>
+        <!-- ── Adjust Stamp Modal ─────────────────────── -->
+        <AdjustStampModal
+            v-model:visible="showAdjustModal"
+            :fiscal-profiles="fiscalProfiles"
+            :tiers="tiers"
+            :preselected-profile-id="adjustPreselectedId"
+        />
     </AppLayout>
 </template>

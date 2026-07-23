@@ -35,13 +35,15 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
 
     // ──── Bandeja de Revisión ──────────────────────────────
     Route::get('stamps/review-queue', [AdminStampPurchaseController::class, 'index'])->name('stamps.review-queue');
+    // Redirect the old standalone adjust page to the index (modal is used instead).
+    Route::redirect('stamps/adjust', 'admin/stamps')->name('stamps.adjust-form');
     Route::get('stamps/{purchase}', [AdminStampPurchaseController::class, 'show'])->name('stamps.show');
     Route::post('stamps/{purchase}/approve', [AdminStampPurchaseController::class, 'approve'])->name('stamps.approve');
     Route::post('stamps/{purchase}/reject', [AdminStampPurchaseController::class, 'reject'])->name('stamps.reject');
     Route::post('stamps/{purchase}/retry', [AdminStampPurchaseController::class, 'retry'])->name('stamps.retry');
     Route::post('stamps/manual-adjustment', [AdminStampPurchaseController::class, 'manualAdjustment'])->name('stamps.manual-adjustment');
     Route::get('stamps/balance/{fiscalProfile}', [AdminStampPurchaseController::class, 'balance'])->name('stamps.balance');
-    Route::get('stamps/adjust', fn () => Inertia\Inertia::render('Admin/Stamps/Adjust'))->name('stamps.adjust-form');
+    Route::get('stamps/history/{fiscalProfile}', [AdminStampPurchaseController::class, 'history'])->name('stamps.history');
 
     // ──── Precios de Timbres (CRUD de tramos) ──────────────
     Route::get('stamps/pricing-tiers', [AdminStampPricingController::class, 'index'])->name('stamps.pricing.index');

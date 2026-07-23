@@ -115,6 +115,14 @@ class FiscalProfile extends Model implements HasMedia
         return $this->hasMany(StampPurchase::class);
     }
 
+    /**
+     * Invoices issued under this fiscal profile.
+     */
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Scopes

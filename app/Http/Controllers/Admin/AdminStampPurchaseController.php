@@ -11,12 +11,16 @@ use App\Http\Requests\Admin\RejectStampPurchaseRequest;
 use App\Http\Requests\Admin\StoreManualStampAdjustmentRequest;
 use App\Jobs\Billing\ApplyStampsToPacJob;
 use App\Models\Billing\FiscalProfile;
+use App\Models\Billing\Invoice;
 use App\Models\Billing\StampPurchase;
 use App\Services\Billing\StampPurchaseService;
 use App\Services\SW\SWUserService;
+use App\Enums\StampPaymentMethod;
+use App\Enums\StampPurchaseStatus;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -25,15 +29,28 @@ class AdminStampPurchaseController extends Controller
     /**
      * Bandeja de revisión: list all stamp purchases awaiting review (bank transfers).
      */
-    public function index(): Response
+    public function index(Request $request): Response
     {
+        $perPage = (int) $request->integer('rows', 25) ?: 25;
+        $sortField = $request->input('sortField', 'created_at');
+        $sortOrder = $request->input('sortOrder', 'desc');
+
+        // Map sortField to actual DB columns
+        $sortable = [
+            'stamp_quantity' => 'stamp_quantity',
+            'amount_total'   => 'amount_total',
+            'created_at'     => 'created_at',
+        ];
+        $orderBy = $sortable[$sortField] ?? 'created_at';
+        $direction = strtolower($sortOrder) === 'asc' ? 'asc' : 'desc';
+
         $purchases = StampPurchase::with([
                 'fiscalProfile.subscription',
                 'requestedBy',
             ])
             ->awaitingReview()
-            ->latest()
-            ->paginate(25);
+            ->orderBy($orderBy, $direction)
+            ->paginate($perPage);
 
         return Inertia::render('Admin/Stamps/ReviewQueue', [
             'purchases' => $purchases,
@@ -116,7 +133,12 @@ class AdminStampPurchaseController extends Controller
     }
 
     /**
-     * Create a manual adjustment (add or remove stamps) for a fiscal profile.
+     * Create a manual adjustment or process a stamp purchase for a fiscal profile.
+     *
+     * Two modes:
+     *  - 'manual'   : add/remove stamps directly (existing behavior).
+     *  - 'purchase' : sell stamps with payment proof, pricing-tier calculation,
+     *                 file upload, and master-balance deduction.
      */
     public function manualAdjustment(
         StoreManualStampAdjustmentRequest $request,
@@ -124,10 +146,66 @@ class AdminStampPurchaseController extends Controller
         StampPurchaseService $stampPurchaseService,
     ): RedirectResponse {
         $user = Auth::user();
-
         $data = $request->validated();
-        $data['requested_by_user_id'] = $user->id;
+        $mode = $data['mode'] ?? 'manual';
+        $stampQuantity = (int) $data['stamp_quantity'];
 
+        // ── Mode: purchase ──────────────────────────────────────
+        if ($mode === 'purchase') {
+            // Check master balance
+            $balanceCheck = $stampPurchaseService->checkMasterBalance($stampQuantity, false);
+
+            if (! $balanceCheck['sufficient']) {
+                return back()->with(
+                    'error',
+                    "Tu cuenta maestra tiene {$balanceCheck['stampsBalance']} timbres disponibles "
+                    . "y esta operación requiere {$stampQuantity}. Recarga tu cuenta maestra en el portal de SW "
+                    . "antes de intentar de nuevo."
+                );
+            }
+            // Recalculate price server-side for security
+            $price = $stampPurchaseService->calculatePrice($stampQuantity);
+
+            if (! $price['pricing_tier_id']) {
+                return back()->with('error', 'No hay un tramo de precio configurado para esta cantidad.');
+            }
+
+            // Store the proof file
+            $proofPath = null;
+            if ($request->hasFile('proof_file')) {
+                $proofPath = $request->file('proof_file')
+                    ->store('comprobantes', 'public');
+            }
+
+            $purchase = StampPurchase::create([
+                'fiscal_profile_id'    => $data['fiscal_profile_id'],
+                'requested_by_user_id' => $user->id,
+                'stamp_quantity'       => $stampQuantity,
+                'unit_price'           => $price['unit_price'],
+                'amount_total'         => $price['amount_total'],
+                'pricing_tier_id'      => $price['pricing_tier_id'],
+                'payment_method'       => StampPaymentMethod::BANK_TRANSFER,
+                'status'               => StampPurchaseStatus::APPROVED,
+                'admin_note'           => 'Compra de timbres ingresada por administrador',
+                'proof_file_path'      => $proofPath,
+                'proof_uploaded_at'    => now(),
+                'reviewed_by_user_id'  => $user->id,
+                'reviewed_at'          => now(),
+            ]);
+
+            // Dispatch PAC job
+            ApplyStampsToPacJob::dispatch($purchase->id);
+
+            return back()->with(
+                'success',
+                "Compra de {$stampQuantity} timbres registrada exitosamente por "
+                . '$' . number_format($price['amount_total'], 2) . ' MXN. '
+                . 'Los timbres se están acreditando al perfil fiscal.'
+            );
+        }
+
+        // ── Mode: manual (existing behavior) ────────────────────
+        $data['requested_by_user_id'] = $user->id;
         $isRemoval = ($data['adjustment_type'] ?? 'add') === 'remove';
         $stampQuantity = (int) $data['stamp_quantity'];
 
@@ -171,5 +249,169 @@ class AdminStampPurchaseController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => 'No se pudo consultar el saldo en este momento.'], 502);
         }
+    }
+
+    /**
+     * Show the stamp movement history for a single fiscal profile.
+     *
+     * Combines StampPurchase records (acquisitions & adjustments) with
+     * stamped invoices (consumption) into a unified chronological list
+     * with running balance anchored to the PAC live balance.
+     */
+    public function history(
+        Request $request,
+        FiscalProfile $fiscalProfile,
+        SWUserService $swUserService,
+    ): Response {
+        $fiscalProfile->load('subscription');
+
+        $startDate = $request->input('start_date');
+        $endDate   = $request->input('end_date');
+
+        // ── Get the live PAC balance as the anchor ──────────────
+        $currentBalance = null;
+        $balanceError   = null;
+
+        if ($fiscalProfile->sw_user_id) {
+            try {
+                $pacData        = $swUserService->getStampsBalance($fiscalProfile->sw_user_id);
+                $currentBalance = (int) ($pacData['stampsBalance'] ?? 0);
+            } catch (\Exception $e) {
+                $balanceError = 'No se pudo consultar el saldo actual del PAC.';
+            }
+        }
+
+        // ── Build ALL movements (unfiltered) to compute the initial balance ──
+        $allPurchases = $fiscalProfile->stampPurchases()
+            ->orderBy('created_at')
+            ->get();
+
+        $firstPurchaseId = $allPurchases->first()?->id;
+
+        // ── Stamped invoices (consumption) — all, for anchor calculation ──
+        $allInvoices = $fiscalProfile->invoices()
+            ->whereNotNull('fecha_timbrado')
+            ->orderBy('fecha_timbrado')
+            ->get();
+
+        // Total net change from ALL movements
+        $totalEntradas = 0;
+        $totalSalidas  = 0;
+
+        foreach ($allPurchases as $p) {
+            $isAdd    = $p->isManualAdjustment() && $p->adjustment_type?->value === 'add';
+            $isRemove = $p->isManualAdjustment() && $p->adjustment_type?->value === 'remove';
+            $totalEntradas += $isAdd ? $p->stamp_quantity : ($p->isManualAdjustment() ? 0 : $p->stamp_quantity);
+            $totalSalidas  += $isRemove ? $p->stamp_quantity : 0;
+        }
+
+        $totalSalidas += $allInvoices->count(); // each stamped invoice = 1 stamp consumed
+
+        // Initial balance = current PAC balance - total net change
+        $initialBalance = $currentBalance !== null
+            ? max(0, $currentBalance - $totalEntradas + $totalSalidas)
+            : 0;
+
+        // ── Filter purchases by date range ──────────────────────
+        $purchases = $allPurchases
+            ->filter(function (StampPurchase $p) use ($startDate, $endDate) {
+                if ($startDate && $p->created_at->lt($startDate.' 00:00:00')) return false;
+                if ($endDate   && $p->created_at->gt($endDate.' 23:59:59'))   return false;
+                return true;
+            })
+            ->values()
+            ->map(function (StampPurchase $p) use ($firstPurchaseId) {
+                $isAdd    = $p->isManualAdjustment() && $p->adjustment_type?->value === 'add';
+                $isRemove = $p->isManualAdjustment() && $p->adjustment_type?->value === 'remove';
+                $isFirst  = $p->id === $firstPurchaseId;
+
+                $description = match (true) {
+                    $isFirst                => 'Depósito por apertura de cuenta',
+                    $p->isMercadoPago()     => 'Compra por Mercado Pago',
+                    $p->isBankTransfer()    => 'Compra por transferencia bancaria',
+                    $isAdd                  => 'Adición manual',
+                    $isRemove               => 'Retiro manual',
+                    default                 => 'Movimiento de timbres',
+                };
+
+                if ($p->admin_note && ! $isFirst) {
+                    $description .= " — {$p->admin_note}";
+                }
+
+                return [
+                    'date'        => $p->created_at->format('Y-m-d\TH:i:s'),
+                    'description' => $description,
+                    'entrada'     => $isAdd ? $p->stamp_quantity : ($p->isManualAdjustment() ? 0 : $p->stamp_quantity),
+                    'salida'      => $isRemove ? $p->stamp_quantity : 0,
+                    'type'        => 'purchase',
+                ];
+            });
+
+        // ── Filter invoices by date range ───────────────────────
+        $invoices = $allInvoices
+            ->filter(function (Invoice $inv) use ($startDate, $endDate) {
+                if ($startDate && $inv->fecha_timbrado->lt($startDate.' 00:00:00')) return false;
+                if ($endDate   && $inv->fecha_timbrado->gt($endDate.' 23:59:59'))   return false;
+                return true;
+            })
+            ->values()
+            ->map(function (Invoice $inv) {
+                $folio = $inv->series && $inv->folio ? "{$inv->series}{$inv->folio}" : null;
+
+                return [
+                    'date'        => $inv->fecha_timbrado->format('Y-m-d\TH:i:s'),
+                    'description' => $folio
+                        ? "Timbrado de factura {$folio}"
+                        : 'Timbrado de factura',
+                    'entrada'     => 0,
+                    'salida'      => 1,
+                    'type'        => 'invoice',
+                ];
+            });
+
+        // ── Merge & sort chronologically (oldest → newest) ─────
+        $movements = collect()
+            ->merge($purchases)
+            ->merge($invoices)
+            ->sortBy('date')
+            ->values();
+
+        // ── Compute running balance anchored to PAC ────────────
+        $running = $initialBalance;
+        $movements = $movements->map(function (array $m) use (&$running) {
+            $running += $m['entrada'] - $m['salida'];
+            $m['saldo'] = $running;
+            return $m;
+        });
+
+        // Fiscal profiles list for the Adjust Stamp modal
+        $allProfiles = FiscalProfile::with('subscription')
+            ->active()
+            ->get()
+            ->map(fn ($p) => [
+                'id'                 => $p->id,
+                'rfc'                => $p->rfc,
+                'razon_social'       => $p->razon_social,
+                'email'              => $p->email,
+                'subscription_name'  => $p->subscription?->business_name,
+                'subscription_email' => $p->subscription?->contact_email,
+            ])
+            ->values();
+
+        // Pricing tiers for the modal
+        $tiers = \App\Models\Billing\StampPricingTier::orderBy('min_quantity')->get();
+
+        return Inertia::render('Admin/Stamps/SubaccountHistory', [
+            'fiscalProfile'  => $fiscalProfile,
+            'fiscalProfiles' => $allProfiles,
+            'tiers'          => $tiers,
+            'movements'      => $movements,
+            'currentBalance' => $currentBalance,
+            'balanceError'   => $balanceError,
+            'filters'        => [
+                'start_date' => $startDate,
+                'end_date'   => $endDate,
+            ],
+        ]);
     }
 }

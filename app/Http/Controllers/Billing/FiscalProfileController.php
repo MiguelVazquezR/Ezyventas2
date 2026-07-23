@@ -9,8 +9,11 @@ use App\Http\Requests\Billing\AcceptManifestTextRequest;
 use App\Http\Requests\Billing\FetchManifestLegendRequest;
 use App\Http\Requests\Billing\SignManifestRequest;
 use App\Http\Requests\Billing\StoreFiscalProfileRequest;
+use App\Enums\StampPaymentMethod;
+use App\Enums\StampPurchaseStatus;
 use App\Models\Billing\FiscalProfile;
 use App\Models\Billing\Invoice;
+use App\Models\Billing\StampPurchase;
 use App\Models\BankAccount;
 use App\Services\Billing\SWSapienService;
 use App\Services\SW\SWUserService;
@@ -78,6 +81,24 @@ class FiscalProfileController extends Controller implements HasMiddleware
                 $profile->password,
             );
 
+            // Record the initial stamp deposit as a StampPurchase audit trail.
+            $defaultStamps = (int) config('services.swsapien.default_stamps', 10);
+
+            if ($defaultStamps > 0) {
+                StampPurchase::create([
+                    'fiscal_profile_id'    => $profile->id,
+                    'requested_by_user_id' => $user->id,
+                    'stamp_quantity'       => $defaultStamps,
+                    'unit_price'           => 0,
+                    'amount_total'         => 0,
+                    'payment_method'       => StampPaymentMethod::MANUAL_ADJUSTMENT,
+                    'status'               => StampPurchaseStatus::STAMPS_APPLIED,
+                    'adjustment_type'      => 'add',
+                    'admin_note'           => 'Depósito inicial por apertura de cuenta',
+                    'stamps_applied_at'    => now(),
+                ]);
+            }
+
             DB::commit();
 
             Log::info('Fiscal profile created and PAC subaccount provisioned', [
@@ -85,6 +106,7 @@ class FiscalProfileController extends Controller implements HasMiddleware
                 'rfc'               => $profile->rfc,
                 'email'             => $profile->email,
                 'subscription_id'   => $subscription->id,
+                'initial_stamps'    => $defaultStamps,
             ]);
 
             return redirect()->route('billing.settings.index')

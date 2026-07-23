@@ -58,6 +58,23 @@ class AdminStampDashboardController extends Controller
         $threshold = (int) (\App\Models\SettingDefinition::where('key', 'stamp_large_purchase_threshold')
             ->value('default_value') ?? 1000);
 
+        // Total subaccounts (active fiscal profiles linked to SW Sapien)
+        $totalSubaccounts = FiscalProfile::active()->whereNotNull('sw_user_id')->count();
+
+        // Fiscal profiles for the Adjust Stamp modal
+        $fiscalProfiles = FiscalProfile::with('subscription')
+            ->active()
+            ->get()
+            ->map(fn ($profile) => [
+                'id'                => $profile->id,
+                'rfc'               => $profile->rfc,
+                'razon_social'      => $profile->razon_social,
+                'email'             => $profile->email,
+                'subscription_name' => $profile->subscription?->business_name,
+                'subscription_email' => $profile->subscription?->contact_email,
+            ])
+            ->values();
+
         return Inertia::render('Admin/Stamps/Index', [
             'masterBalance'      => $masterBalance,
             'masterBalanceError' => $masterBalanceError,
@@ -65,6 +82,8 @@ class AdminStampDashboardController extends Controller
             'tiers'              => $tiers,
             'preview'            => $preview,
             'threshold'          => $threshold,
+            'totalSubaccounts'   => $totalSubaccounts,
+            'fiscalProfiles'     => $fiscalProfiles,
         ]);
     }
 
