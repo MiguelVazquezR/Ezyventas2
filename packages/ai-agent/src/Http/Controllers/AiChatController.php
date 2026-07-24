@@ -10,11 +10,28 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\URL;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class AiChatController extends Controller
 {
+    /**
+     * List all conversations for the authenticated user.
+     */
+    public function index(): JsonResponse
+    {
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+
+        $conversations = AiConversation::where('subscription_id', $subscriptionId)
+            ->where('user_id', $user->id)
+            ->orderByDesc('updated_at')
+            ->get(['id', 'title', 'created_at']);
+
+        return response()->json([
+            'conversations' => $conversations,
+        ]);
+    }
+
     /**
      * Create a new conversation.
      */
@@ -26,8 +43,6 @@ class AiChatController extends Controller
         $conversation = AiConversation::create([
             'subscription_id' => $subscription->id,
             'user_id'         => $user->id,
-            'provider'        => $this->resolveProvider($subscription),
-            'model'           => $this->resolveModel($subscription),
         ]);
 
         return response()->json([
@@ -35,6 +50,43 @@ class AiChatController extends Controller
                 'id'    => $conversation->id,
                 'title' => $conversation->title,
             ],
+        ]);
+    }
+
+    /**
+     * Show a single conversation with its messages.
+     */
+    public function show(AiConversation $conversation): JsonResponse
+    {
+        $user = Auth::user();
+
+        $this->authorizeConversation($conversation, $user);
+
+        $messages = $conversation->messages()
+            ->orderBy('id')
+            ->get(['id', 'role', 'content', 'tool_calls'])
+            ->map(function ($msg) {
+                $data = [
+                    'id'      => $msg->id,
+                    'role'    => $msg->role,
+                    'content' => $msg->content,
+                ];
+
+                if ($msg->tool_calls) {
+                    $data['tool_calls'] = $msg->tool_calls;
+                    $data['limitExceeded'] = $msg->tool_calls['limit_exceeded'] ?? false;
+                    $data['moduleInactive'] = $msg->tool_calls['module_inactive'] ?? false;
+                }
+
+                return $data;
+            });
+
+        return response()->json([
+            'conversation' => [
+                'id'    => $conversation->id,
+                'title' => $conversation->title,
+            ],
+            'messages' => $messages,
         ]);
     }
 
@@ -81,6 +133,23 @@ class AiChatController extends Controller
     }
 
     /**
+     * Delete all conversations for the authenticated user.
+     */
+    public function destroyAll(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+        $subscriptionId = $user->branch->subscription_id;
+
+        AiConversation::where('subscription_id', $subscriptionId)
+            ->where('user_id', $user->id)
+            ->delete();
+
+        return response()->json([
+            'message' => 'Historial eliminado.',
+        ]);
+    }
+
+    /**
      * Serve a signed download (Excel, PDF, txt).
      */
     public function download(Request $request, string $path): BinaryFileResponse
@@ -122,54 +191,6 @@ class AiChatController extends Controller
         return response()->json([
             'percentage' => $data['percentage'],
         ]);
-    }
-
-    /**
-     * Resolve AI provider from tenant settings with fallback.
-     * Priority: subscription override → platform setting → config/env
-     */
-    private function resolveProvider($subscription): string
-    {
-        return $this->getTenantSetting($subscription, 'ai.provider')
-            ?? $this->getPlatformSetting('ai.provider')
-            ?? config('ai-agent.default_provider', 'deepseek');
-    }
-
-    /**
-     * Resolve AI model from tenant settings with fallback.
-     * Priority: subscription override → platform setting → config/env
-     */
-    private function resolveModel($subscription): string
-    {
-        return $this->getTenantSetting($subscription, 'ai.model')
-            ?? $this->getPlatformSetting('ai.model')
-            ?? config('ai-agent.default_model', 'deepseek-v4-flash');
-    }
-
-    /**
-     * Read a platform-level setting from SettingDefinition.
-     */
-    private function getPlatformSetting(string $key): ?string
-    {
-        return \App\Models\SettingDefinition::where('key', $key)->value('default_value');
-    }
-
-    /**
-     * Get a setting value for a subscription via the existing polymorphic settings system.
-     */
-    private function getTenantSetting($subscription, string $key): ?string
-    {
-        $definition = \App\Models\SettingDefinition::where('key', $key)->first();
-
-        if (! $definition) {
-            return null;
-        }
-
-        $value = $subscription->settings()
-            ->where('setting_definition_id', $definition->id)
-            ->value('value');
-
-        return $value;
     }
 
     /**

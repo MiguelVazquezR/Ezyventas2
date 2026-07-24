@@ -196,6 +196,13 @@ class PrintEncoderService
             }
         }
 
+        // Footer / Publicidad de marca — centrado y en negritas
+        $fullText .= $alignCenter;
+        $fullText .= $boldOn;
+        $fullText .= "\n** ezyventas.com **\n";
+        $fullText .= $boldOff;
+        $fullText .= $alignLeft;
+
         $fullText .= str_repeat("\n", $config['feedLines'] ?? 0);
         $fullText .= $cutPaper;
         return $fullText;

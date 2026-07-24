@@ -4,7 +4,7 @@ import { useToast } from 'primevue/usetoast';
 
 /**
  * Composable for the AI chat drawer.
- * Manages conversation state, message sending, and the fade-in reveal.
+ * Manages conversation state, message sending, history, and the fade-in reveal.
  *
  * No Pinia — state is local to the composable, consistent with the rest of the app.
  * State persists across drawer open/close cycles but resets on page navigation.
@@ -12,6 +12,7 @@ import { useToast } from 'primevue/usetoast';
 export function useAiChat() {
     const conversationId = ref(null);
     const messages = ref([]);
+    const conversations = ref([]);
     const isThinking = ref(false);
     const toast = useToast();
     const page = usePage();
@@ -117,6 +118,91 @@ export function useAiChat() {
         }
     }
 
+    /** Fetch all conversations for the current user. */
+    async function fetchConversations() {
+        try {
+            const { data } = await window.axios.get('/ai-agent/conversations');
+            conversations.value = data.conversations;
+        } catch {
+            toast.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'No se pudo cargar el historial.',
+                life: 4000,
+            });
+        }
+    }
+
+    /** Load a conversation from history and its messages. */
+    async function loadConversation(id) {
+        try {
+            const { data } = await window.axios.get(`/ai-agent/conversations/${id}`);
+
+            conversationId.value = data.conversation.id;
+
+            // Map backend messages to the format the drawer expects
+            messages.value = data.messages.map((msg) => ({
+                role: msg.role,
+                content: msg.content,
+                tool_calls: msg.tool_calls,
+                limitExceeded: msg.limitExceeded || false,
+                moduleInactive: msg.moduleInactive || false,
+                visible: true,
+            }));
+        } catch (e) {
+            toast.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'No se pudo cargar la conversación.',
+                life: 4000,
+            });
+            throw e;
+        }
+    }
+
+    /**
+     * Start a fresh chat: reset local state + create a new conversation immediately
+     * so the empty state shows the greeting.
+     */
+    async function startNewChat() {
+        conversationId.value = null;
+        messages.value = [];
+
+        try {
+            // Sanctum SPA: obtain CSRF cookie before first POST
+            await window.axios.get('/sanctum/csrf-cookie');
+
+            const { data } = await window.axios.post('/ai-agent/conversations');
+            conversationId.value = data.conversation.id;
+        } catch {
+            // Silently fail — conversation will be created on first message
+        }
+    }
+
+    /** Delete all conversations for the current user. */
+    async function deleteAllConversations() {
+        try {
+            await window.axios.delete('/ai-agent/conversations');
+
+            conversations.value = [];
+            reset();
+
+            toast.add({
+                severity: 'success',
+                summary: 'Historial eliminado',
+                detail: 'Todas las conversaciones fueron eliminadas.',
+                life: 4000,
+            });
+        } catch {
+            toast.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'No se pudo eliminar el historial.',
+                life: 4000,
+            });
+        }
+    }
+
     /** Clear the conversation and start fresh. */
     function reset() {
         conversationId.value = null;
@@ -126,8 +212,13 @@ export function useAiChat() {
     return {
         conversationId,
         messages,
+        conversations,
         isThinking,
         sendMessage,
+        fetchConversations,
+        loadConversation,
+        startNewChat,
+        deleteAllConversations,
         reset,
     };
 }

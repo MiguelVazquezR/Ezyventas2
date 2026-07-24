@@ -43,13 +43,15 @@ class AiAgentManager
         }
 
         $tools = $this->tools->forUser($user);
-        $apiKey = $this->resolveApiKey($user);
+        $apiKey = $this->resolveApiKey();
         $prismMessages = $this->buildPrismMessages($conversation);
         $systemPrompt = $this->systemPrompt($user);
         $maxSteps = (int) config('ai-agent.max_tool_steps', 6);
+        $provider = config('ai-agent.default_provider', 'deepseek');
+        $model = config('ai-agent.default_model', 'deepseek-v4-flash');
 
         $response = Prism::text()
-            ->using(Provider::from($conversation->provider), $conversation->model, ['api_key' => $apiKey])
+            ->using(Provider::from($provider), $model, ['api_key' => $apiKey])
             ->withSystemPrompt($systemPrompt)
             ->withMessages($prismMessages)
             ->withTools($tools)
@@ -61,7 +63,7 @@ class AiAgentManager
         $completionTokens = $response->usage->completionTokens;
         $totalTokens = $promptTokens + $completionTokens;
 
-        $pricing = config("ai-agent.pricing_usd_per_million_tokens.{$conversation->model}");
+        $pricing = config("ai-agent.pricing_usd_per_million_tokens.{$model}");
         $costUsd = $pricing
             ? ($promptTokens / 1_000_000 * $pricing['input']) + ($completionTokens / 1_000_000 * $pricing['output'])
             : 0;
@@ -152,49 +154,12 @@ class AiAgentManager
     }
 
     /**
-     * Resolve the API key for the user's subscription.
-     *
-     * Priority: subscription override → platform setting → .env fallback
+     * Resolve the API key from config (which reads from .env).
      */
-    private function resolveApiKey(Authenticatable $user): string
+    private function resolveApiKey(): string
     {
-        $subscription = $user->branch->subscription;
-
-        // 1. Per-subscription override
-        $apiKey = $this->getTenantSetting($subscription, 'ai.api_key');
-        if ($apiKey) {
-            return decrypt($apiKey);
-        }
-
-        // 2. Platform-wide setting (encrypted in DB)
-        $platformKey = \App\Models\SettingDefinition::where('key', 'ai.api_key')->value('default_value');
-        if ($platformKey) {
-            try {
-                return decrypt($platformKey);
-            } catch (\Exception) {
-                // Fall through to env if decryption fails
-            }
-        }
-
-        // 3. .env fallback
         return config('ai-agent.default_api_key')
             ?? throw new RuntimeException('No se ha configurado una clave de API para el asistente de IA.');
-    }
-
-    /**
-     * Get a setting value for a subscription.
-     */
-    private function getTenantSetting($subscription, string $key): ?string
-    {
-        $definition = \App\Models\SettingDefinition::where('key', $key)->first();
-
-        if (! $definition) {
-            return null;
-        }
-
-        return $subscription->settings()
-            ->where('setting_definition_id', $definition->id)
-            ->value('value');
     }
 
     /**

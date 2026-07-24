@@ -1,6 +1,7 @@
 <script setup>
 import { ref, nextTick, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
+import { useConfirm } from 'primevue/useconfirm';
 import { useAiChat } from '@/composables/useAiChat';
 
 const props = defineProps({
@@ -10,13 +11,29 @@ const props = defineProps({
 
 const emit = defineEmits(['update:visible']);
 
-const { messages, isThinking, sendMessage } = useAiChat();
+const {
+    messages,
+    conversations,
+    isThinking,
+    sendMessage,
+    fetchConversations,
+    loadConversation,
+    startNewChat,
+    deleteAllConversations,
+} = useAiChat();
+
+const confirm = useConfirm();
+const page = usePage();
 
 const inputText = ref('');
 const messagesContainer = ref(null);
 const usagePanel = ref(null);
+const menuRef = ref(null);
 const usagePct = ref(0);
 const loadingUsage = ref(false);
+const showHistory = ref(false);
+
+const userName = page.props.auth?.user?.name ?? '';
 
 async function toggleUsage(event) {
     // Open panel immediately so PrimeVue can anchor it to the button
@@ -80,9 +97,9 @@ function goToManageSubscription() {
 function renderContent(text) {
     if (!text) return '';
     let html = text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
+        .replace(/&/g, '&')
+        .replace(/</g, '<')
+        .replace(/>/g, '>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         // markdown links: [label](url) — before the raw-URL autolink so it isn't double-processed
         .replace(/\[([^\]]+)\]\((https?:\/\/[^\)\s]+)\)/g, '<a href="$2" data-chat-link="1">$1</a>')
@@ -109,6 +126,75 @@ function onMessagesClick(e) {
     // else: same-origin download or external link — let the browser handle it normally
 }
 
+function toggleMenu(event) {
+    menuRef.value?.toggle(event);
+}
+
+const menuItems = [
+    {
+        label: 'Nuevo chat',
+        icon: 'pi pi-plus',
+        command: () => {
+            showHistory.value = false;
+            startNewChat();
+        },
+    },
+    {
+        label: 'Historial',
+        icon: 'pi pi-history',
+        command: async () => {
+            await fetchConversations();
+            showHistory.value = true;
+        },
+    },
+    {
+        label: 'Borrar historial',
+        icon: 'pi pi-trash',
+        command: () => {
+            confirm.require({
+                message: '¿Eliminar todo el historial de conversaciones? Esta acción no se puede deshacer.',
+                header: 'Borrar historial',
+                icon: 'pi pi-exclamation-triangle',
+                rejectLabel: 'Cancelar',
+                acceptLabel: 'Eliminar todo',
+                acceptClass: 'p-button-danger',
+                accept: async () => {
+                    await deleteAllConversations();
+                    showHistory.value = false;
+                },
+            });
+        },
+    },
+];
+
+async function onHistoryItemClick(conversation) {
+    await loadConversation(conversation.id);
+    showHistory.value = false;
+}
+
+function onBackFromHistory() {
+    showHistory.value = false;
+}
+
+function formatRelativeDate(dateStr) {
+    if (!dateStr) return '';
+
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Ahora';
+    if (diffMins < 60) return `Hace ${diffMins} min`;
+    if (diffHours < 24) return `Hace ${diffHours}h`;
+    if (diffDays === 1) return 'Ayer';
+    if (diffDays < 7) return `Hace ${diffDays} días`;
+
+    return date.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+}
+
 /** Reuse the same ProgressBar PT pattern from PlanDetailsCard */
 const progressBarPt = {
     root: { class: '!h-1.5 !bg-gray-200 dark:!bg-[#2a2a2a] !rounded-full overflow-hidden' },
@@ -120,7 +206,7 @@ const progressBarPt = {
     <Drawer
         :visible="visible"
         position="right"
-        :style="{ width: '420px' }"
+        :style="{ width: '490px' }"
         :pt="{
             root: { class: '!bg-white dark:!bg-[#232323] !rounded-l-3xl !shadow-2xl' },
             header: { class: '!bg-white dark:!bg-[#232323] !border-b !border-gray-100 dark:!border-[#3a3a3a]' },
@@ -152,6 +238,15 @@ const progressBarPt = {
                     :pt="{ root: { class: '!text-gray-400 hover:!text-gray-600 dark:hover:!text-gray-300' } }"
                     @click="toggleUsage"
                 />
+                <Button
+                    icon="pi pi-ellipsis-v"
+                    text
+                    rounded
+                    size="small"
+                    :pt="{ root: { class: '!text-gray-400 hover:!text-gray-600 dark:hover:!text-gray-300' } }"
+                    @click="toggleMenu"
+                />
+                <Menu ref="menuRef" id="ai-chat-menu" :model="menuItems" :popup="true" :pt="{ root: { class: '!rounded-2xl' }, menuitem: { class: '!text-sm' } }" />
                 <Popover ref="usagePanel" :pt="{ content: { class: '!rounded-2xl' } }">
                     <div class="p-3 w-48">
                         <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">
@@ -177,152 +272,201 @@ const progressBarPt = {
             </div>
         </template>
 
-        <!-- Messages area -->
-        <div
-            ref="messagesContainer"
-            class="flex flex-col gap-3 p-4 overflow-y-auto"
-            :style="{ height: 'calc(100vh - 12rem)' }"
-            @click="onMessagesClick"
-        >
-            <!-- Empty state -->
-            <div
-                v-if="messages.length === 0 && !isThinking"
-                class="flex flex-col items-center justify-center h-full text-center px-4"
-            >
-                <div
-                    class="w-16 h-16 rounded-full bg-gray-50 dark:bg-[#1a1a1a] flex items-center justify-center mb-4"
-                >
-                    <i class="pi pi-sparkles !text-2xl !text-primary-500" />
+        <!-- History panel -->
+        <template v-if="showHistory">
+            <div class="flex flex-col h-full">
+                <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-[#3a3a3a]">
+                    <Button
+                        icon="pi pi-arrow-left"
+                        text
+                        rounded
+                        size="small"
+                        :pt="{ root: { class: '!text-gray-500 hover:!text-gray-700 dark:hover:!text-gray-300' } }"
+                        @click="onBackFromHistory"
+                    />
+                    <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">Historial de chats</span>
                 </div>
-                <p class="text-sm font-semibold text-gray-700 dark:text-gray-200 m-0 mb-1">
-                    ¿En qué puedo ayudarte?
-                </p>
-                <p class="text-xs text-gray-500 dark:text-gray-400 m-0">
-                    Pregúntame sobre ventas, inventario, clientes o pídeme que genere reportes.
-                </p>
-            </div>
 
-            <!-- Messages -->
-            <template v-for="(msg, i) in messages" :key="i">
-                <!-- User bubble -->
-                <div v-if="msg.role === 'user'" class="flex justify-end">
-                    <div
-                        class="max-w-[80%] rounded-2xl rounded-br-md px-4 py-2.5 bg-primary-500 text-white text-sm"
-                    >
-                        {{ msg.content }}
+                <div class="flex-1 overflow-y-auto">
+                    <div v-if="conversations.length === 0" class="flex flex-col items-center justify-center h-full text-center px-4">
+                        <i class="pi pi-inbox !text-5xl !text-gray-300 dark:!text-gray-600 mb-3" />
+                        <p class="text-base text-gray-500 dark:text-gray-400 m-0">No hay conversaciones aún.</p>
                     </div>
-                </div>
 
-                <!-- Module inactive card -->
-                <div
-                    v-if="msg.role === 'assistant' && msg.moduleInactive && msg.visible"
-                    class="flex justify-start"
-                >
-                    <div
-                        class="max-w-[85%] rounded-2xl px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-sm"
-                    >
-                        <p class="font-semibold text-amber-800 dark:text-amber-300 m-0 mb-1">
-                            Módulo no disponible
-                        </p>
-                        <p class="text-amber-700 dark:text-amber-400 m-0 mb-3">
-                            El módulo de Asistente IA no está activo en tu plan actual. Actívalo desde la gestión de suscripción.
-                        </p>
-                        <Button
-                            label="Gestionar suscripción"
-                            size="small"
-                            class="!rounded-xl !text-xs !font-bold"
-                            @click="goToManageSubscription"
-                        />
-                    </div>
-                </div>
-
-                <!-- Limit exceeded card -->
-                <div
-                    v-if="msg.role === 'assistant' && msg.limitExceeded && msg.visible"
-                    class="flex justify-start"
-                >
-                    <div
-                        class="max-w-[85%] rounded-2xl px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-sm"
-                    >
-                        <p class="font-semibold text-amber-800 dark:text-amber-300 m-0 mb-1">
-                            Límite mensual alcanzado
-                        </p>
-                        <p class="text-amber-700 dark:text-amber-400 m-0">
-                            Tu suscripción alcanzó el límite de uso mensual del asistente. Si necesitas aumentar el límite, contacta a soporte.
-                        </p>
-                        <a
-                            href="https://wa.me/5213321705650"
-                            target="_blank"
-                            rel="noopener"
-                            class="inline-flex items-center gap-1.5 mt-3 text-xs font-bold text-green-600 dark:text-green-400 hover:underline"
+                    <div v-else class="p-2 space-y-1">
+                        <div
+                            v-for="conv in conversations"
+                            :key="conv.id"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-2xl cursor-pointer hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors"
+                            @click="onHistoryItemClick(conv)"
                         >
-                            <i class="pi pi-whatsapp !text-sm"></i> Contactar por WhatsApp
-                        </a>
+                            <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-[#2a2a2a] flex items-center justify-center flex-shrink-0">
+                                <i class="pi pi-comment !text-xs !text-gray-400" />
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm text-gray-700 dark:text-gray-200 m-0 truncate">
+                                    {{ conv.title || 'Sin título' }}
+                                </p>
+                                <p class="text-[10px] text-gray-400 m-0 mt-0.5">
+                                    {{ formatRelativeDate(conv.created_at) }}
+                                </p>
+                            </div>
+                        </div>
                     </div>
                 </div>
+            </div>
+        </template>
 
-                <!-- Assistant bubble -->
-                <Transition name="fade-in">
+        <!-- Chat area (when not in history) -->
+        <template v-else>
+            <!-- Messages area -->
+            <div
+                ref="messagesContainer"
+                class="flex flex-col gap-3 p-4 overflow-y-auto"
+                :style="{ height: 'calc(100vh - 12rem)' }"
+                @click="onMessagesClick"
+            >
+                <!-- Empty state -->
+                <div
+                    v-if="messages.length === 0 && !isThinking"
+                    class="flex flex-col items-center justify-center h-full text-center px-4"
+                >
                     <div
-                        v-if="msg.role === 'assistant' && msg.visible"
+                        class="w-20 h-20 rounded-full bg-gray-50 dark:bg-[#1a1a1a] flex items-center justify-center mb-4"
+                    >
+                        <i class="pi pi-sparkles !text-4xl !text-primary-500" />
+                    </div>
+                    <p class="text-xl font-semibold text-gray-700 dark:text-gray-200 m-0 mb-1">
+                        ¡Hola{{ userName ? ', ' + userName : '' }}!
+                    </p>
+                    <p class="text-lg text-gray-500 dark:text-gray-400 m-0">
+                        ¿En qué puedo ayudarte?
+                    </p>
+                </div>
+
+                <!-- Messages -->
+                <template v-for="(msg, i) in messages" :key="i">
+                    <!-- User bubble -->
+                    <div v-if="msg.role === 'user'" class="flex justify-end">
+                        <div
+                            class="max-w-[80%] rounded-2xl rounded-br-md px-4 py-2.5 bg-primary-500 text-white text-sm"
+                        >
+                            {{ msg.content }}
+                        </div>
+                    </div>
+
+                    <!-- Module inactive card -->
+                    <div
+                        v-if="msg.role === 'assistant' && msg.moduleInactive && msg.visible"
                         class="flex justify-start"
                     >
                         <div
-                            class="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] text-sm text-gray-800 dark:text-gray-200"
+                            class="max-w-[85%] rounded-2xl px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-sm"
                         >
-                            <!-- eslint-disable-next-line vue/no-v-html -->
-                            <div class="chat-content prose prose-sm max-w-none" v-html="renderContent(msg.content)" />
+                            <p class="font-semibold text-amber-800 dark:text-amber-300 m-0 mb-1">
+                                Módulo no disponible
+                            </p>
+                            <p class="text-amber-700 dark:text-amber-400 m-0 mb-3">
+                                El módulo de Asistente IA no está activo en tu plan actual. Actívalo desde la gestión de suscripción.
+                            </p>
+                            <Button
+                                label="Gestionar suscripción"
+                                size="small"
+                                class="!rounded-xl !text-xs !font-bold"
+                                @click="goToManageSubscription"
+                            />
                         </div>
                     </div>
-                </Transition>
-            </template>
 
-            <!-- Thinking indicator -->
-            <div v-if="isThinking" class="flex justify-start">
-                <div
-                    class="rounded-2xl rounded-bl-md px-5 py-3 bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] flex items-center gap-2"
-                >
-                    <ProgressSpinner
-                        style="width: 18px; height: 18px"
-                        strokeWidth="6"
-                        animationDuration="0.8s"
-                    />
-                    <span class="text-xs text-gray-500">Pensando...</span>
+                    <!-- Limit exceeded card -->
+                    <div
+                        v-if="msg.role === 'assistant' && msg.limitExceeded && msg.visible"
+                        class="flex justify-start"
+                    >
+                        <div
+                            class="max-w-[85%] rounded-2xl px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-sm"
+                        >
+                            <p class="font-semibold text-amber-800 dark:text-amber-300 m-0 mb-1">
+                                Límite mensual alcanzado
+                            </p>
+                            <p class="text-amber-700 dark:text-amber-400 m-0">
+                                Tu suscripción alcanzó el límite de uso mensual del asistente. Si necesitas aumentar el límite, contacta a soporte.
+                            </p>
+                            <a
+                                href="https://wa.me/5213321705650"
+                                target="_blank"
+                                rel="noopener"
+                                class="inline-flex items-center gap-1.5 mt-3 text-xs font-bold text-green-600 dark:text-green-400 hover:underline"
+                            >
+                                <i class="pi pi-whatsapp !text-sm"></i> Contactar por WhatsApp
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Assistant bubble -->
+                    <Transition name="fade-in">
+                        <div
+                            v-if="msg.role === 'assistant' && msg.visible"
+                            class="flex justify-start"
+                        >
+                            <div
+                                class="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] text-sm text-gray-800 dark:text-gray-200"
+                            >
+                                <!-- eslint-disable-next-line vue/no-v-html -->
+                                <div class="chat-content prose prose-sm max-w-none" v-html="renderContent(msg.content)" />
+                            </div>
+                        </div>
+                    </Transition>
+                </template>
+
+                <!-- Thinking indicator -->
+                <div v-if="isThinking" class="flex justify-start">
+                    <div
+                        class="rounded-2xl rounded-bl-md px-5 py-3 bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] flex items-center gap-2"
+                    >
+                        <ProgressSpinner
+                            style="width: 18px; height: 18px"
+                            strokeWidth="6"
+                            animationDuration="0.8s"
+                        />
+                        <span class="text-xs text-gray-500">Pensando...</span>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <Divider class="!m-0" />
+            <Divider class="!m-0" />
 
-        <!-- Input area -->
-        <div class="p-3">
-            <div class="flex gap-2">
-                <InputText
-                    v-model="inputText"
-                    placeholder="Escribe tu mensaje..."
-                    class="flex-1"
-                    :disabled="isThinking"
-                    :pt="{
-                        root: {
-                            class:
-                                '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !text-sm',
-                        },
-                    }"
-                    @keydown="onKeydown"
-                />
-                <Button
-                    icon="pi pi-send"
-                    :loading="isThinking"
-                    :disabled="!inputText.trim() || isThinking"
-                    class="!rounded-full !w-10 !h-10 !p-0 flex-shrink-0"
-                    @click="handleSend"
-                />
+            <!-- Input area -->
+            <div class="p-3">
+                <div class="flex gap-2">
+                    <InputText
+                        v-model="inputText"
+                        placeholder="Escribe tu mensaje..."
+                        class="flex-1"
+                        :disabled="isThinking"
+                        :pt="{
+                            root: {
+                                class:
+                                    '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !text-sm',
+                            },
+                        }"
+                        @keydown="onKeydown"
+                    />
+                    <Button
+                        icon="pi pi-send"
+                        :loading="isThinking"
+                        :disabled="!inputText.trim() || isThinking"
+                        class="!rounded-full !w-10 !h-10 !p-0 flex-shrink-0"
+                        @click="handleSend"
+                    />
+                </div>
+                <p class="text-[10px] text-gray-400 m-0 mt-1.5 text-center">
+                    El asistente puede cometer errores. Verifica la información importante.
+                </p>
             </div>
-            <p class="text-[10px] text-gray-400 m-0 mt-1.5 text-center">
-                El asistente puede cometer errores. Verifica la información importante.
-            </p>
-        </div>
+        </template>
     </Drawer>
+
 </template>
 
 <style scoped>
