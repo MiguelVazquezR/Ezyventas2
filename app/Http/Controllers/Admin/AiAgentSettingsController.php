@@ -3,8 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\SettingDefinition;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -15,74 +16,62 @@ class AiAgentSettingsController extends Controller
      */
     public function index(): Response
     {
-        $definitions = SettingDefinition::where('module', 'ai_agent')
-            ->where('level', 'platform')
-            ->get()
-            ->keyBy('key');
-
-        $settings = [];
-        foreach ($definitions as $key => $def) {
-            $value = $def->default_value;
-
-            // Decrypt encrypted values for display
-            if ($def->type === 'encrypted_string' && $value) {
-                try {
-                    $value = decrypt($value);
-                } catch (\Exception) {
-                    $value = '';
-                }
-            }
-
-            $settings[$key] = [
-                'id'            => $def->id,
-                'name'          => $def->name,
-                'description'   => $def->description,
-                'type'          => $def->type,
-                'value'         => $value,
-            ];
-        }
-
         return Inertia::render('Admin/AiAgent/Settings', [
-            'settings' => $settings,
+            'provider'   => config('ai-agent.default_provider', 'deepseek'),
+            'model'      => config('ai-agent.default_model', 'deepseek-v4-flash'),
+            'apiKey'     => config('ai-agent.default_api_key', ''),
+            'tokenLimit' => (int) config('ai-agent.default_monthly_tokens', 2_000_000),
         ]);
     }
 
     /**
-     * Update platform-level AI agent settings.
+     * Update platform-level AI agent settings via .env.
      */
-    public function update(Request $request)
+    public function update(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'ai_provider'     => ['required', 'string', 'in:deepseek,anthropic,openai,groq,ollama'],
-            'ai_model'        => ['required', 'string', 'max:100'],
-            'ai_api_key'      => ['nullable', 'string', 'max:500'],
-            'ai_token_limit'  => ['required', 'integer', 'min:0'],
+            'ai_provider'    => ['required', 'string', 'in:deepseek,anthropic,openai,groq,ollama'],
+            'ai_model'       => ['required', 'string', 'max:100'],
+            'ai_api_key'     => ['nullable', 'string', 'max:500'],
+            'ai_token_limit' => ['required', 'integer', 'min:0'],
         ]);
 
-        // Map form keys (underscore) to database keys (dot notation)
-        $keyMap = [
-            'ai_provider'    => 'ai.provider',
-            'ai_model'       => 'ai.model',
-            'ai_api_key'     => 'ai.api_key',
-            'ai_token_limit' => 'ai.token_limit',
+        $envPath = base_path('.env');
+
+        if (! file_exists($envPath) || ! is_writable($envPath)) {
+            return back()->with('error', 'El archivo .env no se puede escribir. Verifica los permisos.');
+        }
+
+        $envContents = file_get_contents($envPath);
+
+        $envMap = [
+            'AI_DEFAULT_PROVIDER'       => $validated['ai_provider'],
+            'AI_DEFAULT_MODEL'          => $validated['ai_model'],
+            'AI_DEFAULT_API_KEY'        => $validated['ai_api_key'] ?? '',
+            'AI_DEFAULT_MONTHLY_TOKENS' => (string) $validated['ai_token_limit'],
         ];
 
-        foreach ($validated as $formKey => $value) {
-            $dbKey = $keyMap[$formKey] ?? $formKey;
-            $definition = SettingDefinition::where('key', $dbKey)->first();
+        foreach ($envMap as $key => $value) {
+            // Quote values that contain spaces or special characters
+            $quotedValue = str_contains($value, ' ') || $value === '' ? '"' . $value . '"' : $value;
 
-            if (! $definition) {
-                continue;
+            if (preg_match("/^{$key}=/m", $envContents)) {
+                // Replace existing key
+                $envContents = preg_replace(
+                    "/^{$key}=.*/m",
+                    "{$key}={$quotedValue}",
+                    $envContents
+                );
+            } else {
+                // Append new key
+                $envContents .= "\n{$key}={$quotedValue}";
             }
-
-            // Encrypt API keys before storing
-            if ($formKey === 'ai_api_key' && $value) {
-                $value = encrypt($value);
-            }
-
-            $definition->default_value = (string) $value;
-            $definition->save();
         }
+
+        file_put_contents($envPath, $envContents, LOCK_EX);
+
+        // Clear config cache so the new values take effect immediately
+        Artisan::call('config:clear');
 
         return back()->with('success', 'Configuración del Asistente IA actualizada.');
     }

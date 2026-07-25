@@ -33,12 +33,43 @@ class FinancialReportService
         return [
             'kpis' => $this->getKpis($periods),
             'chartData' => $this->getChartData(),
+            'hourlySales' => $this->getHourlySalesSummary(),
             'paymentMethods' => $this->getPaymentMethodsDistribution(),
             'salesByChannel' => $this->getSalesByChannel(),
             'expensesByCategory' => $this->getExpensesByCategory(),
             'bankAccounts' => $this->getBankAccounts(),
             'filters' => ['startDate' => $this->startDate->toDateString(), 'endDate' => $this->endDate->toDateString()]
         ];
+    }
+
+    /**
+     * Hourly sales distribution for the current date range.
+     * Only computed when the range is a single day; returns empty array otherwise.
+     * Returns compact {hour, total_sales, transaction_count} for LLM consumption.
+     */
+    private function getHourlySalesSummary(): array
+    {
+        if (! $this->startDate->isSameDay($this->endDate)) {
+            return [];
+        }
+
+        return Transaction::where('branch_id', $this->branchId)
+            ->whereBetween('created_at', [$this->startDate, $this->endDate])
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+            ->select(
+                DB::raw('HOUR(created_at) as hour'),
+                DB::raw('SUM(subtotal - total_discount + total_tax) as total_sales'),
+                DB::raw('COUNT(*) as transaction_count')
+            )
+            ->groupBy('hour')
+            ->orderBy('hour')
+            ->get()
+            ->map(fn ($row) => [
+                'hour'              => (int) $row->hour,
+                'total_sales'       => (float) $row->total_sales,
+                'transaction_count' => (int) $row->transaction_count,
+            ])
+            ->toArray();
     }
 
     private function getKpis(array $periods): array
@@ -322,5 +353,52 @@ class FinancialReportService
             default:
                 return strval($index);
         }
+    }
+
+    /**
+     * Monthly revenue trend with month-over-month growth rate.
+     * Mirrors the pattern used by ExpenseReportService::trend().
+     */
+    public function monthlyRevenueTrend(int $branchId, int $months = 6): array
+    {
+        $start = now()->subMonths($months)->startOfMonth();
+
+        $monthly = Transaction::where('branch_id', $branchId)
+            ->where('created_at', '>=', $start)
+            ->whereNotIn('status', [TransactionStatus::CANCELLED, TransactionStatus::CHANGED])
+            ->select(
+                DB::raw("DATE_FORMAT(created_at, '%Y-%m') as month"),
+                DB::raw('SUM(subtotal - total_discount + total_tax) as total'),
+                DB::raw('COUNT(*) as transaction_count')
+            )
+            ->groupBy('month')
+            ->orderBy('month')
+            ->get()
+            ->keyBy('month');
+
+        $trend = [];
+        $previousTotal = null;
+
+        for ($i = $months - 1; $i >= 0; $i--) {
+            $month = now()->subMonths($i)->format('Y-m');
+            $total = (float) ($monthly->get($month)?->total ?? 0);
+            $count = (int) ($monthly->get($month)?->transaction_count ?? 0);
+
+            $growth = null;
+            if ($previousTotal !== null && $previousTotal > 0) {
+                $growth = round((($total - $previousTotal) / $previousTotal) * 100, 1);
+            }
+
+            $trend[] = [
+                'month'             => $month,
+                'total'             => $total,
+                'transaction_count' => $count,
+                'mom_growth_pct'    => $growth,
+            ];
+
+            $previousTotal = $total;
+        }
+
+        return $trend;
     }
 }

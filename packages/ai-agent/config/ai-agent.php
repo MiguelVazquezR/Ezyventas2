@@ -105,7 +105,7 @@ return [
     |
     */
 
-    'default_monthly_tokens' => 2_000_000,
+    'default_monthly_tokens' => (int) env('AI_DEFAULT_MONTHLY_TOKENS', 2_000_000),
 
     /*
     |--------------------------------------------------------------------------

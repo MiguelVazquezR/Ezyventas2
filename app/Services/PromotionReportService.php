@@ -45,9 +45,19 @@ class PromotionReportService
 
     public function getUsageStats(int $promotionId, Carbon $start, Carbon $end, int $branchId): array
     {
-        $promotion = Promotion::with(['transactions' => function ($q) use ($start, $end) {
-            $q->whereBetween('transactions.created_at', [$start, $end]);
-        }])->findOrFail($promotionId);
+        $subscriptionId = DB::table('branches')
+            ->where('id', $branchId)
+            ->value('subscription_id');
+
+        if (! $subscriptionId) {
+            return [];
+        }
+
+        $promotion = Promotion::where('subscription_id', $subscriptionId)
+            ->with(['transactions' => function ($q) use ($start, $end) {
+                $q->whereBetween('transactions.created_at', [$start, $end]);
+            }])
+            ->findOrFail($promotionId);
 
         $usageCount = $promotion->transactions->count();
         $totalDiscount = $promotion->transactions->sum('pivot.discount_applied');

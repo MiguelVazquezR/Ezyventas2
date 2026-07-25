@@ -6,21 +6,18 @@ import { router } from '@inertiajs/vue3';
 import InputLabel from './InputLabel.vue';
 
 // --- Importar Composables ---
-import { useDeviceDetection } from '@/Composables/useDeviceDetection';
 import { usePrintPlugin } from '@/Composables/usePrintPlugin';
-import { useWebBluetooth } from '@/Composables/useWebBluetooth';
 
 // --- Props y Emits ---
 const props = defineProps({
     visible: Boolean,
-    dataSource: Object, 
+    dataSource: Object,
     availableTemplates: Array,
 });
 const emit = defineEmits(['update:visible']);
 
 // --- Instanciar Composables ---
 const toast = useToast();
-const { isMobileOrTablet } = useDeviceDetection();
 const {
     printers: pluginPrinters,
     selectedTicketPrinter,
@@ -30,48 +27,16 @@ const {
     fetchPrinters: fetchPluginPrinters,
     sendToPlugin,
 } = usePrintPlugin();
-const {
-    bluetoothDevice,
-    writableCharacteristic,
-    isConnectingBluetooth,
-    isScanningBluetooth,
-    bluetoothError,
-    isSecureContext,
-    scanAndConnectBluetooth,
-    disconnectBluetooth,
-    sendViaWebBluetooth,
-} = useWebBluetooth();
 
 // --- Estado del Modal ---
 const printJobs = ref([]);
 const isPrinting = ref(false);
 const generalError = ref(null);
-const printMode = ref('plugin');
 const openDrawer = ref(true);
 
-// --- Lógica de Modo de Impresión ---
+// --- Cargar impresoras al montar ---
 onMounted(() => {
-    if (isMobileOrTablet.value) {
-        printMode.value = 'bluetooth';
-    } else {
-        printMode.value = localStorage.getItem('printMode') || 'plugin';
-        if (printMode.value === 'plugin') {
-            fetchPluginPrinters();
-        }
-    }
-    isSecureContext.value = window.isSecureContext;
-});
-
-watch(printMode, (newMode) => {
-    if (!isMobileOrTablet.value) {
-        localStorage.setItem('printMode', newMode);
-    }
-    if (newMode === 'plugin' && pluginPrinters.value.length === 0) {
-        fetchPluginPrinters();
-    }
-    generalError.value = null;
-    pluginError.value = null;
-    bluetoothError.value = null;
+    fetchPluginPrinters();
 });
 
 // --- Lógica de Trabajos ---
@@ -118,7 +83,7 @@ const loadOffsetsForPrinter = (printerName) => {
 };
 
 const saveCurrentLabelOffsets = () => {
-    if (printMode.value === 'plugin' && selectedLabelPrinter.value) {
+    if (selectedLabelPrinter.value) {
         const offsetKey = `printer_offset_${selectedLabelPrinter.value}`;
         localStorage.setItem(offsetKey, JSON.stringify({ x: labelOffsetX.value, y: labelOffsetY.value }));
     }
@@ -127,23 +92,15 @@ const saveCurrentLabelOffsets = () => {
 watch(labelOffsetX, saveCurrentLabelOffsets);
 watch(labelOffsetY, saveCurrentLabelOffsets);
 watch(selectedLabelPrinter, (newPrinterName) => {
-    if (printMode.value === 'plugin') {
-        loadOffsetsForPrinter(newPrinterName);
-    }
+    loadOffsetsForPrinter(newPrinterName);
 });
 
 // --- Lógica Principal de Impresión ---
 const canPrint = computed(() => {
     if (printJobs.value.length === 0) return false;
-    if (printMode.value === 'plugin') {
-        const ticketsOk = !hasTicketJobs.value || (hasTicketJobs.value && !!selectedTicketPrinter.value);
-        const labelsOk = !hasLabelJobs.value || (hasLabelJobs.value && !!selectedLabelPrinter.value);
-        return ticketsOk && labelsOk;
-    }
-    if (printMode.value === 'bluetooth') {
-        return !!bluetoothDevice.value && !!writableCharacteristic.value;
-    }
-    return false;
+    const ticketsOk = !hasTicketJobs.value || (hasTicketJobs.value && !!selectedTicketPrinter.value);
+    const labelsOk = !hasLabelJobs.value || (hasLabelJobs.value && !!selectedLabelPrinter.value);
+    return ticketsOk && labelsOk;
 });
 
 
@@ -151,14 +108,11 @@ const print = async () => {
     isPrinting.value = true;
     generalError.value = null;
     pluginError.value = null;
-    bluetoothError.value = null;
 
     for (const job of printJobs.value) {
-        let printerIdentifier = null; 
-
-        if (printMode.value === 'plugin') {
-            printerIdentifier = job.template.type === 'ticket_venta' ? selectedTicketPrinter.value : selectedLabelPrinter.value;
-        } 
+        const printerIdentifier = job.template.type === 'ticket_venta'
+            ? selectedTicketPrinter.value
+            : selectedLabelPrinter.value;
 
         for (let i = 0; i < job.copies; i++) {
             try {
@@ -180,28 +134,10 @@ const print = async () => {
                 const payloadResponse = await axios.post(route('print.payload'), payload);
                 const printData = payloadResponse.data;
 
-                let rawCommands = "";
-                if (printData.operations && Array.isArray(printData.operations)) {
-                    printData.operations.forEach(op => {
-                        if ((op.nombre === "EscribirTexto" || op.nombre === "TextoSegunPaginaDeCodigos") && op.argumentos?.length > 0) {
-                            rawCommands += op.argumentos[op.argumentos.length - 1];
-                        }
-                    });
-                }
-
-                if (!rawCommands && printMode.value === 'bluetooth') {
-                    continue; 
-                }
-
-                if (printMode.value === 'plugin') {
-                    await sendToPlugin(printerIdentifier, printData.operations, printData.paperWidth);
-                } else {
-                    await sendViaWebBluetooth(rawCommands); 
-                }
+                await sendToPlugin(printerIdentifier, printData.operations, printData.paperWidth);
 
             } catch (e) {
-                if (printMode.value === 'plugin') pluginError.value = e.message;
-                else bluetoothError.value = e.message;
+                pluginError.value = e.message;
                 generalError.value = `Error imprimiendo "${job.template.name}": ${e.message}`;
                 toast.add({ severity: 'error', summary: 'Error de Impresión', detail: generalError.value, life: 7000 });
                 isPrinting.value = false;
@@ -265,34 +201,20 @@ const toggleDefaultTemplate = (template) => {
 
 // --- Watchers ---
 
-// AÑADIDO { immediate: true } para que funcione desde la primera vez que nace el Modal
 watch(() => props.visible, (newVal) => {
     if (newVal) {
         generalError.value = null;
         pluginError.value = null;
-        bluetoothError.value = null;
-        openDrawer.value = false; 
-        
-        // Prevención por si window no está definido aún
-        if (typeof window !== 'undefined') {
-            isSecureContext.value = window.isSecureContext; 
-        }
+        openDrawer.value = false;
 
-        // Ejecutamos la autoselección en caso de que los datos ya existan
         evaluateAutoSelection();
 
-        if (printMode.value === 'plugin') {
-            fetchPluginPrinters().then(() => {
-                loadOffsetsForPrinter(selectedLabelPrinter.value);
-            });
-        } else {
-            labelOffsetX.value = 0.0;
-            labelOffsetY.value = 0.0;
-        }
+        fetchPluginPrinters().then(() => {
+            loadOffsetsForPrinter(selectedLabelPrinter.value);
+        });
     }
-}, { immediate: true }); 
+}, { immediate: true });
 
-// AÑADIDO { immediate: true } al observador profundo de las plantillas
 watch(() => props.availableTemplates, () => {
     evaluateAutoSelection();
 }, { deep: true, immediate: true });
@@ -404,83 +326,56 @@ const getTemplateTypeSeverity = (type) => {
                     </div>
                 </template>
 
-                <div v-if="printMode === 'plugin'">
-                    <div class="flex items-center mb-3">
-                        <h6 class="font-medium text-gray-800 dark:text-gray-200 m-0">
-                            Impresoras (detectadas por plugin)
-                        </h6>
-                        <Button icon="pi pi-refresh" rounded severity="secondary" @click="fetchPluginPrinters"
-                            v-tooltip.bottom="'Recargar lista'" :loading="isLoadingPluginPrinters"
-                            class="ml-auto size-8" />
-                    </div>
-                    <div v-if="!hasTicketJobs && !hasLabelJobs && printJobs.length > 0"
-                        class="text-sm text-center text-gray-500 p-4 bg-gray-100 dark:bg-gray-800 rounded-md">
-                        Las plantillas añadidas no requieren una impresora específica.
-                    </div>
-                    <div v-else class="space-y-3">
-                        <div v-if="hasTicketJobs">
-                            <InputLabel for="ticket-printer" value="Impresora de Tickets" class="text-sm" />
-                            <Select id="ticket-printer" v-model="selectedTicketPrinter" :options="pluginPrinters" fluid
-                                :placeholder="isLoadingPluginPrinters ? 'Buscando...' : (pluginPrinters.length === 0 ? 'No hay impresoras (plugin)' : 'Selecciona impresora')"
-                                class="w-full mt-1" :loading="isLoadingPluginPrinters"
-                                :disabled="pluginPrinters.length === 0 || isLoadingPluginPrinters" />
-                            
-                            <div class="mt-3 ml-1 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-100 dark:border-blue-800 flex items-start gap-2">
-                                <i class="pi pi-info-circle text-blue-500 mt-0.5"></i>
-                                <p class="text-xs text-blue-700 dark:text-blue-300 m-0">
-                                    Se enviará automáticamente la instrucción para abrir el cajón de dinero. Si tu equipo no cuenta con uno de apertura automática, no hay problema, tu ticket se imprimirá con normalidad.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div v-if="hasLabelJobs">
-                            <InputLabel for="label-printer" value="Impresora de Etiquetas" class="text-sm" />
-                            <Select id="label-printer" v-model="selectedLabelPrinter" :options="pluginPrinters" fluid
-                                :placeholder="isLoadingPluginPrinters ? 'Buscando...' : (pluginPrinters.length === 0 ? 'No hay impresoras (plugin)' : 'Selecciona impresora')"
-                                class="w-full mt-1" :loading="isLoadingPluginPrinters"
-                                :disabled="pluginPrinters.length === 0 || isLoadingPluginPrinters" />
-                        </div>
-                    </div>
-                    <InlineMessage v-if="pluginError" severity="error" class="mt-3 text-sm">
-                        {{ pluginError }}
-                        Si no tienes el plugin, envíanos un whatsapp al +52 33 2170 5650 o un correo a notificaciones@ezyventas.com para compartirtelo.
-                    </InlineMessage>
-                    <Message
-                        v-if="!isLoadingPluginPrinters && pluginPrinters.length === 0 && !pluginError && (hasTicketJobs || hasLabelJobs)"
-                        severity="info" :closable="false" class="mt-3 text-sm">
-                        No se detectaron impresoras. Asegúrate de que el plugin EzyPrint esté corriendo y las impresoras
-                        estén
-                        instaladas.
-                    </Message>
+                <div class="flex items-center mb-3">
+                    <h6 class="font-medium text-gray-800 dark:text-gray-200 m-0">
+                        Impresoras (detectadas por plugin)
+                    </h6>
+                    <Button icon="pi pi-refresh" rounded severity="secondary" @click="fetchPluginPrinters"
+                        v-tooltip.bottom="'Recargar lista'" :loading="isLoadingPluginPrinters"
+                        class="ml-auto size-8" />
                 </div>
-
-                <div v-else>
-                    <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-3">Impresora Bluetooth</h3>
-                    <div v-if="bluetoothDevice"
-                        class="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-700">
-                        <div class="flex items-center gap-2 text-blue-800 dark:text-blue-200">
-                            <i class="pi pi-bluetooth text-xl"></i>
-                            <span class="font-medium">{{ bluetoothDevice.name }}</span>
-                        </div>
-                        <Button icon="pi pi-times" @click="disconnectBluetooth" severity="danger" text rounded
-                            aria-label="Desconectar" v-tooltip.bottom="'Desconectar'" class="w-8 h-8" />
-                    </div>
-                    <div v-else class="flex items-center gap-2 mt-1">
-                        <Button label="Buscar y conectar impresora Bluetooth"
-                            :icon="isScanningBluetooth || isConnectingBluetooth ? 'pi pi-spin pi-spinner' : 'pi pi-bluetooth'"
-                            @click="scanAndConnectBluetooth" :loading="isScanningBluetooth || isConnectingBluetooth"
-                            severity="info" outlined class="flex-grow"
-                            :disabled="!isSecureContext || printJobs.length === 0" />
-                    </div>
-                    <InlineMessage v-if="bluetoothError" severity="error" class="mt-3 text-sm">{{ bluetoothError }}
-                    </InlineMessage>
-                    <Message severity="warn" :closable="false" class="mt-3 text-xs" v-if="!isSecureContext">
-                        La impresión Bluetooth requiere una conexión segura (HTTPS) o usar localhost/127.0.0.1.
-                    </Message>
+                <div v-if="!hasTicketJobs && !hasLabelJobs && printJobs.length > 0"
+                    class="text-sm text-center text-gray-500 p-4 bg-gray-100 dark:bg-gray-800 rounded-md">
+                    Las plantillas añadidas no requieren una impresora específica.
                 </div>
+                <div v-else class="space-y-3">
+                    <div v-if="hasTicketJobs">
+                        <InputLabel for="ticket-printer" value="Impresora de Tickets" class="text-sm" />
+                        <Select id="ticket-printer" v-model="selectedTicketPrinter" :options="pluginPrinters" fluid
+                            :placeholder="isLoadingPluginPrinters ? 'Buscando...' : (pluginPrinters.length === 0 ? 'No hay impresoras (plugin)' : 'Selecciona impresora')"
+                            class="w-full mt-1" :loading="isLoadingPluginPrinters"
+                            :disabled="pluginPrinters.length === 0 || isLoadingPluginPrinters" />
+                        
+                        <div class="mt-3 ml-1 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-100 dark:border-blue-800 flex items-start gap-2">
+                            <i class="pi pi-info-circle text-blue-500 mt-0.5"></i>
+                            <p class="text-xs text-blue-700 dark:text-blue-300 m-0">
+                                Se enviará automáticamente la instrucción para abrir el cajón de dinero. Si tu equipo no cuenta con uno de apertura automática, no hay problema, tu ticket se imprimirá con normalidad.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div v-if="hasLabelJobs">
+                        <InputLabel for="label-printer" value="Impresora de Etiquetas" class="text-sm" />
+                        <Select id="label-printer" v-model="selectedLabelPrinter" :options="pluginPrinters" fluid
+                            :placeholder="isLoadingPluginPrinters ? 'Buscando...' : (pluginPrinters.length === 0 ? 'No hay impresoras (plugin)' : 'Selecciona impresora')"
+                            class="w-full mt-1" :loading="isLoadingPluginPrinters"
+                            :disabled="pluginPrinters.length === 0 || isLoadingPluginPrinters" />
+                    </div>
+                </div>
+                <InlineMessage v-if="pluginError" severity="error" class="mt-3 text-sm">
+                    {{ pluginError }}
+                    Si no tienes el plugin, envíanos un whatsapp al +52 33 2170 5650 o un correo a notificaciones@ezyventas.com para compartirtelo.
+                </InlineMessage>
+                <Message
+                    v-if="!isLoadingPluginPrinters && pluginPrinters.length === 0 && !pluginError && (hasTicketJobs || hasLabelJobs)"
+                    severity="info" :closable="false" class="mt-3 text-sm">
+                    No se detectaron impresoras. Asegúrate de que el plugin EzyPrint esté corriendo y las impresoras
+                    estén
+                    instaladas.
+                </Message>
             </Fieldset>
 
-            <Message v-if="generalError && !pluginError && !bluetoothError" severity="error" :closable="false" class="mt-4">
+            <Message v-if="generalError && !pluginError" severity="error" :closable="false" class="mt-4">
                 {{ generalError }}
             </Message>
 
@@ -490,7 +385,7 @@ const getTemplateTypeSeverity = (type) => {
             <div class="flex justify-end items-center gap-2">
                 <Button label="Cancelar" text severity="secondary" @click="closeModal" />
                 <Button label="Imprimir" icon="pi pi-print" @click="print"
-                    :disabled="!canPrint || (printMode === 'bluetooth' && !isSecureContext) || isPrinting" :loading="isPrinting"
+                    :disabled="!canPrint || isPrinting" :loading="isPrinting"
                     severity="primary" />
             </div>
         </template>

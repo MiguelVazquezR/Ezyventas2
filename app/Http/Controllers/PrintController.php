@@ -81,4 +81,104 @@ class PrintController extends Controller
             'feedLines' => $template->content['config']['feedLines'] ?? 0,
         ]);
     }
+
+    /**
+     * Genera payload para impresión Bluetooth: comandos ESC/POS crudos en Base64.
+     * Endpoint usado exclusivamente por Web Bluetooth API.
+     */
+    public function bluetoothPayload(Request $request)
+    {
+        $validated = $request->validate([
+            'template_id' => 'required|exists:print_templates,id',
+            'data_source_type' => 'required',
+            'data_source_id' => 'required|integer',
+            'open_drawer' => 'nullable|boolean',
+        ]);
+
+        $template = PrintTemplate::find($validated['template_id']);
+        $user = Auth::user();
+        if ($template->subscription_id !== $user->branch->subscription_id) {
+            abort(403);
+        }
+
+        $dataSource = $this->resolveDataSource($validated['data_source_type'], $validated['data_source_id'], $user);
+
+        $options = [
+            'open_drawer' => $validated['open_drawer'] ?? false,
+        ];
+
+        $base64Commands = PrintEncoderService::encodeEscPosToBase64($template, $dataSource, $options);
+
+        return response()->json([
+            'commands_base64' => $base64Commands,
+            'paperWidth' => $template->content['config']['paperWidth'] ?? '80mm',
+        ]);
+    }
+
+    /**
+     * Genera HTML del ticket para vista previa / AirPrint / PDF.
+     * Usado como fallback en navegadores sin soporte Web Bluetooth (iOS/Safari).
+     */
+    public function ticketHtml(Request $request)
+    {
+        $validated = $request->validate([
+            'template_id' => 'required|exists:print_templates,id',
+            'data_source_type' => 'required',
+            'data_source_id' => 'required|integer',
+        ]);
+
+        $template = PrintTemplate::find($validated['template_id']);
+        $user = Auth::user();
+        if ($template->subscription_id !== $user->branch->subscription_id) {
+            abort(403);
+        }
+
+        $dataSource = $this->resolveDataSource($validated['data_source_type'], $validated['data_source_id'], $user);
+
+        $html = PrintEncoderService::encodeTicketToHtml($template, $dataSource);
+
+        return response()->json([
+            'html' => $html,
+            'paperWidth' => $template->content['config']['paperWidth'] ?? '80mm',
+            'template_name' => $template->name,
+        ]);
+    }
+
+    private function resolveDataSource(string $type, int $id, $user)
+    {
+        if ($type === 'customer') {
+            return Customer::where('id', $id)
+                ->where(function ($q) use ($user) {
+                    $q->whereHas('branch', function ($b) use ($user) {
+                        $b->where('subscription_id', $user->branch->subscription_id);
+                    })->orWhereNull('branch_id');
+                })->firstOrFail();
+        }
+
+        if (in_array($type, ['transaction', 'pos', 'general'])) {
+            $source = Transaction::with(['customer', 'items.itemable'])->find($id);
+            if (!$source || $source->branch->subscription_id !== $user->branch->subscription_id) {
+                abort(404);
+            }
+            return $source;
+        }
+
+        if ($type === 'product') {
+            $source = Product::find($id);
+            if (!$source || $source->branch->subscription_id !== $user->branch->subscription_id) {
+                abort(404);
+            }
+            return $source;
+        }
+
+        if ($type === 'service_order') {
+            $source = ServiceOrder::find($id);
+            if (!$source || $source->branch->subscription_id !== $user->branch->subscription_id) {
+                abort(404);
+            }
+            return $source;
+        }
+
+        abort(404, 'Data source not found.');
+    }
 }

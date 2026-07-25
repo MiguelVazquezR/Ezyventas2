@@ -1,23 +1,19 @@
 <script setup>
 import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import InputText from 'primevue/inputtext';
-import InputNumber from 'primevue/inputnumber';
-import Select from 'primevue/select';
-import Button from 'primevue/button';
-import Card from 'primevue/card';
-import Message from 'primevue/message';
-import Divider from 'primevue/divider';
 
 const props = defineProps({
-    settings: Object,
+    provider: String,
+    model: String,
+    apiKey: String,
+    tokenLimit: Number,
 });
 
 const form = useForm({
-    ai_provider: props.settings['ai.provider']?.value ?? 'deepseek',
-    ai_model: props.settings['ai.model']?.value ?? 'deepseek-v4-flash',
-    ai_api_key: props.settings['ai.api_key']?.value ?? '',
-    ai_token_limit: parseInt(props.settings['ai.token_limit']?.value ?? 2000000),
+    ai_provider: props.provider ?? 'deepseek',
+    ai_model: props.model ?? 'deepseek-v4-flash',
+    ai_api_key: props.apiKey ?? '',
+    ai_token_limit: props.tokenLimit ?? 2000000,
 });
 
 const providerOptions = [
@@ -31,6 +27,7 @@ const providerOptions = [
 function submit() {
     form.put(route('admin.ai-agent.update'), {
         preserveScroll: true,
+        onSuccess: () => {},
     });
 }
 </script>
@@ -81,7 +78,7 @@ function submit() {
                             placeholder="Dejar vacío para no modificar"
                             class="w-full"
                             :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a]' } }" />
-                        <p class="text-[10px] text-gray-400 m-0">La clave se almacena encriptada. Déjala vacía para conservar la actual.</p>
+                        <p class="text-[10px] text-gray-400 m-0">La clave se almacena en el archivo .env del servidor.</p>
                     </div>
                 </template>
             </Card>

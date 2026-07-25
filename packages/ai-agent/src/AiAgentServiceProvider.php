@@ -2,6 +2,7 @@
 
 namespace Ezyventas\AiAgent;
 
+use App\AiTools\WriteModeGate;
 use Ezyventas\AiAgent\Contracts\AiToolProvider;
 use Ezyventas\AiAgent\Support\ToolRegistry;
 use Illuminate\Support\ServiceProvider;
@@ -16,6 +17,10 @@ class AiAgentServiceProvider extends ServiceProvider
 
         $this->app->singleton(ToolRegistry::class, function ($app) {
             return new ToolRegistry($app->make(AiToolProvider::class));
+        });
+
+        $this->app->scoped(WriteModeGate::class, function () {
+            return new WriteModeGate();
         });
     }
 
