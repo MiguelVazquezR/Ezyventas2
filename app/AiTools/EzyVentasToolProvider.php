@@ -3,6 +3,9 @@
 namespace App\AiTools;
 
 use App\AiTools\SiteNavigationRegistry;
+use App\Actions\Customer\CreateCustomerAction;
+use App\Actions\Customer\UpdateCustomerAction;
+use App\Actions\Expense\CreateExpenseAction;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Services\CashRegisterReportService;
@@ -633,6 +636,214 @@ class EzyVentasToolProvider implements AiToolProvider
                             'download_url'       => $url,
                             'expires_in_minutes' => config('ai-agent.download_url_ttl', 15),
                         ]);
+                    }),
+            ],
+
+            // ════════════════ CRUD: CUSTOMERS ════════════════
+            [
+                'permission' => 'customers.create',
+                'category'   => 'customers (crear/editar)',
+                'tool'       => (new Tool)->as('create_customer')
+                    ->for('Crear un nuevo cliente. REQUIERE modo escritura activado.')
+                    ->withStringParameter('name', 'Nombre completo del cliente')
+                    ->withStringParameter('email', 'Email del cliente (opcional)')
+                    ->withStringParameter('phone', 'Teléfono del cliente (opcional)')
+                    ->withStringParameter('notes', 'Notas adicionales (opcional)')
+                    ->using(function (string $name, ?string $email = null, ?string $phone = null, ?string $notes = null) use ($branchId) {
+                        $gate = app(WriteModeGate::class);
+                        if (! $gate->isEnabled()) {
+                            return json_encode(['error' => $gate->rejectionMessage()]);
+                        }
+
+                        $customer = app(CreateCustomerAction::class)->execute([
+                            'branch_id' => $branchId,
+                            'name'      => $name,
+                            'email'     => $email,
+                            'phone'     => $phone,
+                            'notes'     => $notes,
+                        ]);
+
+                        return json_encode([
+                            'message' => 'Cliente creado exitosamente.',
+                            'customer' => [
+                                'id'    => $customer->id,
+                                'name'  => $customer->name,
+                                'email' => $customer->email,
+                                'phone' => $customer->phone,
+                            ],
+                        ], JSON_PRETTY_PRINT);
+                    }),
+            ],
+
+            [
+                'permission' => 'customers.edit',
+                'category'   => 'customers (crear/editar)',
+                'tool'       => (new Tool)->as('update_customer')
+                    ->for('Actualizar los datos de un cliente existente. REQUIERE modo escritura activado.')
+                    ->withNumberParameter('customer_id', 'ID del cliente a actualizar')
+                    ->withStringParameter('name', 'Nuevo nombre (opcional)')
+                    ->withStringParameter('email', 'Nuevo email (opcional)')
+                    ->withStringParameter('phone', 'Nuevo teléfono (opcional)')
+                    ->withStringParameter('notes', 'Nuevas notas (opcional)')
+                    ->using(function (int $customer_id, ?string $name = null, ?string $email = null, ?string $phone = null, ?string $notes = null) use ($branchId) {
+                        $gate = app(WriteModeGate::class);
+                        if (! $gate->isEnabled()) {
+                            return json_encode(['error' => $gate->rejectionMessage()]);
+                        }
+
+                        $data = array_filter([
+                            'name'  => $name,
+                            'email' => $email,
+                            'phone' => $phone,
+                            'notes' => $notes,
+                        ], fn ($v) => $v !== null);
+
+                        if (empty($data)) {
+                            return json_encode(['error' => 'Debes proporcionar al menos un campo para actualizar.']);
+                        }
+
+                        $customer = Customer::where('branch_id', $branchId)->findOrFail($customer_id);
+
+                        app(UpdateCustomerAction::class)->execute($customer, $data);
+
+                        return json_encode([
+                            'message' => 'Cliente actualizado exitosamente.',
+                            'customer' => [
+                                'id'    => $customer->id,
+                                'name'  => $customer->name,
+                                'email' => $customer->email,
+                                'phone' => $customer->phone,
+                            ],
+                        ], JSON_PRETTY_PRINT);
+                    }),
+            ],
+
+            // ════════════════ CRUD: PRODUCTS ════════════════
+            [
+                'permission' => 'products.edit',
+                'category'   => 'products (crear/editar)',
+                'tool'       => (new Tool)->as('update_product_price')
+                    ->for('Actualizar el precio de venta de un producto. REQUIERE modo escritura activado.')
+                    ->withNumberParameter('product_id', 'ID del producto')
+                    ->withNumberParameter('selling_price', 'Nuevo precio de venta')
+                    ->using(function (int $product_id, float $selling_price) use ($branchId) {
+                        $gate = app(WriteModeGate::class);
+                        if (! $gate->isEnabled()) {
+                            return json_encode(['error' => $gate->rejectionMessage()]);
+                        }
+
+                        $product = Product::where('branch_id', $branchId)->findOrFail($product_id);
+                        $oldPrice = $product->selling_price;
+                        $product->update(['selling_price' => $selling_price]);
+
+                        return json_encode([
+                            'message' => 'Precio actualizado exitosamente.',
+                            'product' => [
+                                'id'            => $product->id,
+                                'name'          => $product->name,
+                                'previous_price' => $oldPrice,
+                                'new_price'     => $product->selling_price,
+                            ],
+                        ], JSON_PRETTY_PRINT);
+                    }),
+            ],
+
+            [
+                'permission' => 'products.edit',
+                'category'   => 'products (crear/editar)',
+                'tool'       => (new Tool)->as('update_product_stock')
+                    ->for('Actualizar el stock de un producto. REQUIERE modo escritura activado.')
+                    ->withNumberParameter('product_id', 'ID del producto')
+                    ->withNumberParameter('stock', 'Nueva cantidad de stock')
+                    ->using(function (int $product_id, int $stock) use ($branchId) {
+                        $gate = app(WriteModeGate::class);
+                        if (! $gate->isEnabled()) {
+                            return json_encode(['error' => $gate->rejectionMessage()]);
+                        }
+
+                        $product = Product::where('branch_id', $branchId)->findOrFail($product_id);
+                        $oldStock = $product->stock;
+                        $product->update(['stock' => $stock]);
+
+                        return json_encode([
+                            'message' => 'Stock actualizado exitosamente.',
+                            'product' => [
+                                'id'           => $product->id,
+                                'name'         => $product->name,
+                                'previous_stock' => $oldStock,
+                                'new_stock'    => $product->stock,
+                            ],
+                        ], JSON_PRETTY_PRINT);
+                    }),
+            ],
+
+            // ════════════════ CRUD: EXPENSES ════════════════
+            [
+                'permission' => 'expenses.create',
+                'category'   => 'expenses (crear)',
+                'tool'       => (new Tool)->as('create_expense')
+                    ->for('Registrar un nuevo gasto. REQUIERE modo escritura activado.')
+                    ->withStringParameter('description', 'Descripción del gasto')
+                    ->withNumberParameter('amount', 'Monto del gasto')
+                    ->withNumberParameter('expense_category_id', 'ID de la categoría de gasto')
+                    ->withStringParameter('payment_method', 'Método de pago (efectivo, tarjeta, transferencia)')
+                    ->withStringParameter('expense_date', 'Fecha del gasto en formato YYYY-MM-DD (por defecto hoy)')
+                    ->using(function (string $description, float $amount, int $expense_category_id, string $payment_method = 'efectivo', ?string $expense_date = null) use ($branchId) {
+                        $gate = app(WriteModeGate::class);
+                        if (! $gate->isEnabled()) {
+                            return json_encode(['error' => $gate->rejectionMessage()]);
+                        }
+
+                        $expense = app(CreateExpenseAction::class)->execute([
+                            'branch_id'           => $branchId,
+                            'description'         => $description,
+                            'amount'              => $amount,
+                            'expense_category_id' => $expense_category_id,
+                            'payment_method'      => $payment_method,
+                            'expense_date'        => $expense_date ?? now()->toDateString(),
+                        ]);
+
+                        return json_encode([
+                            'message' => 'Gasto registrado exitosamente.',
+                            'expense' => [
+                                'id'          => $expense->id,
+                                'description' => $expense->description,
+                                'amount'      => $expense->amount,
+                                'date'        => $expense->expense_date->toDateString(),
+                            ],
+                        ], JSON_PRETTY_PRINT);
+                    }),
+            ],
+
+            // ════════════════ CRUD: DELETE ════════════════
+            [
+                'permission' => 'products.delete',
+                'category'   => 'products (eliminar)',
+                'tool'       => (new Tool)->as('delete_product')
+                    ->for('Eliminar un producto. ¡OPERACIÓN DESTRUCTIVA! REQUIERE modo escritura activado y confirmación explícita del usuario.')
+                    ->withNumberParameter('product_id', 'ID del producto a eliminar')
+                    ->withStringParameter('confirmation', 'Debe ser exactamente "CONFIRMAR" para proceder')
+                    ->using(function (int $product_id, string $confirmation) use ($branchId) {
+                        $gate = app(WriteModeGate::class);
+                        if (! $gate->isEnabled()) {
+                            return json_encode(['error' => $gate->rejectionMessage()]);
+                        }
+
+                        if ($confirmation !== 'CONFIRMAR') {
+                            return json_encode(['error' => 'Para eliminar un producto, debes pasar confirmation="CONFIRMAR". Esta operación no se puede deshacer.']);
+                        }
+
+                        $product = Product::where('branch_id', $branchId)->findOrFail($product_id);
+                        $productName = $product->name;
+                        $product->delete();
+
+                        return json_encode([
+                            'message' => 'Producto eliminado exitosamente.',
+                            'product' => [
+                                'id'   => $product_id,
+                                'name' => $productName,
+                            ],
+                        ], JSON_PRETTY_PRINT);
                     }),
             ],
         ];

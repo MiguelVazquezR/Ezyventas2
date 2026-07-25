@@ -1,5 +1,5 @@
 <script setup>
-import { ref, nextTick, watch } from 'vue';
+import { computed, ref, nextTick, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import { useConfirm } from 'primevue/useconfirm';
 import { useAiChat } from '@/composables/useAiChat';
@@ -15,6 +15,7 @@ const {
     messages,
     conversations,
     isThinking,
+    writeMode,
     sendMessage,
     fetchConversations,
     loadConversation,
@@ -91,6 +92,24 @@ function onKeydown(e) {
 
 function goToManageSubscription() {
     router.visit(route('subscription.manage'));
+}
+
+function toggleWriteMode() {
+    if (!writeMode.value) {
+        confirm.require({
+            message: 'El asistente podrá crear, editar y eliminar registros reales en tu sistema. ¿Deseas activar el modo escritura?',
+            header: 'Activar modo escritura',
+            icon: 'pi pi-exclamation-triangle',
+            rejectLabel: 'Cancelar',
+            acceptLabel: 'Activar',
+            acceptClass: 'p-button-warning',
+            accept: () => {
+                writeMode.value = true;
+            },
+        });
+    } else {
+        writeMode.value = false;
+    }
 }
 
 /** Simple markdown-to-html for links in tool results. */
@@ -200,13 +219,21 @@ const progressBarPt = {
     root: { class: '!h-1.5 !bg-gray-200 dark:!bg-[#2a2a2a] !rounded-full overflow-hidden' },
     value: { class: '!bg-blue-500' },
 };
+
+const drawerStyle = computed(() => {
+    const base = { width: '490px' };
+    if (writeMode.value) {
+        return { ...base, borderTop: '3px solid #f59e0b' };
+    }
+    return base;
+});
 </script>
 
 <template>
     <Drawer
         :visible="visible"
         position="right"
-        :style="{ width: '490px' }"
+        :style="drawerStyle"
         :pt="{
             root: { class: '!bg-white dark:!bg-[#232323] !rounded-l-3xl !shadow-2xl' },
             header: { class: '!bg-white dark:!bg-[#232323] !border-b !border-gray-100 dark:!border-[#3a3a3a]' },
@@ -237,6 +264,15 @@ const progressBarPt = {
                     size="small"
                     :pt="{ root: { class: '!text-gray-400 hover:!text-gray-600 dark:hover:!text-gray-300' } }"
                     @click="toggleUsage"
+                />
+                <Button
+                    v-tooltip.top="writeMode ? 'Modo escritura activado — el asistente puede modificar datos' : 'Modo escritura desactivado — solo consultas'"
+                    :icon="writeMode ? 'pi pi-lock-open' : 'pi pi-lock'"
+                    text
+                    rounded
+                    size="small"
+                    :pt="{ root: { class: writeMode ? '!text-amber-500 hover:!text-amber-600' : '!text-gray-400 hover:!text-gray-600 dark:hover:!text-gray-300' } }"
+                    @click="toggleWriteMode"
                 />
                 <Button
                     icon="pi pi-ellipsis-v"

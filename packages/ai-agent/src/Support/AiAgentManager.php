@@ -20,8 +20,10 @@ class AiAgentManager
 
     /**
      * Send a user message within a conversation and return the assistant's reply.
+     *
+     * @param  bool  $writeMode  Whether write operations are enabled for this request.
      */
-    public function ask(AiConversation $conversation, string $userMessage, Authenticatable $user): AiMessage
+    public function ask(AiConversation $conversation, string $userMessage, Authenticatable $user, bool $writeMode = false): AiMessage
     {
         // Enforce monthly token limit before calling the LLM
         $subscription = $user->branch->subscription;
@@ -45,7 +47,7 @@ class AiAgentManager
         $tools = $this->tools->forUser($user);
         $apiKey = $this->resolveApiKey();
         $prismMessages = $this->buildPrismMessages($conversation);
-        $systemPrompt = $this->systemPrompt($user);
+        $systemPrompt = $this->systemPrompt($user, $writeMode);
         $maxSteps = (int) config('ai-agent.max_tool_steps', 6);
         $provider = config('ai-agent.default_provider', 'deepseek');
         $model = config('ai-agent.default_model', 'deepseek-v4-flash');
@@ -164,8 +166,10 @@ class AiAgentManager
 
     /**
      * Generate the system prompt scoped to the current tenant.
+     *
+     * @param  bool  $writeMode  Whether the user has enabled write mode.
      */
-    private function systemPrompt(Authenticatable $user): string
+    private function systemPrompt(Authenticatable $user, bool $writeMode = false): string
     {
         $businessName = $user->branch?->subscription?->business_name ?? 'EzyVentas';
         $branchName = $user->branch?->name;
@@ -173,6 +177,10 @@ class AiAgentManager
 
         $categories = $this->tools->categoriesForUser($user);
         $categoryList = ! empty($categories) ? implode(', ', $categories) : 'sales, inventory, customers, products, expenses, and cash register sessions';
+
+        $writeModeInstructions = $writeMode
+            ? 'WRITE MODE IS ACTIVE. You may create, edit, and delete records using the available tools. IMPORTANT: always ask for user confirmation before executing any destructive operation (delete). Summarize what you are about to do and wait for the user to confirm before calling the tool. Never delete without explicit confirmation. '
+            : 'WRITE MODE IS DISABLED. You can only READ data. If the user asks to create, edit, or delete something, tell them they need to activate write mode by clicking the lock icon in the assistant panel. Do NOT attempt to call any create/update/delete tools.';
 
         return "Today's date and time is {$today} (America/Mexico_City). "
             . 'Always use this as "today" for any relative date calculation — "last 3 months", "this week", "yesterday" — never infer or assume a different date. '
@@ -184,6 +192,7 @@ class AiAgentManager
             . 'You can answer questions about: '
             . $categoryList . '. '
             . 'If the user asks where to find something or how to navigate to a page, use find_page_location and present results as markdown links: [Label](url). '
-            . 'You can also generate downloadable Excel exports of the product catalog.';
+            . 'You can also generate downloadable Excel exports of the product catalog. '
+            . $writeModeInstructions;
     }
 }

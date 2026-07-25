@@ -14,6 +14,7 @@ export function useAiChat() {
     const messages = ref([]);
     const conversations = ref([]);
     const isThinking = ref(false);
+    const writeMode = ref(false);
     const toast = useToast();
     const page = usePage();
 
@@ -69,7 +70,7 @@ export function useAiChat() {
 
             const { data } = await window.axios.post(
                 `/ai-agent/conversations/${conversationId.value}/messages`,
-                { message: text }
+                { message: text, write_mode: writeMode.value }
             );
 
             if (data.message.limit_exceeded || data.message.module_inactive) {
@@ -167,6 +168,7 @@ export function useAiChat() {
     async function startNewChat() {
         conversationId.value = null;
         messages.value = [];
+        writeMode.value = false;
 
         try {
             // Sanctum SPA: obtain CSRF cookie before first POST
@@ -207,6 +209,7 @@ export function useAiChat() {
     function reset() {
         conversationId.value = null;
         messages.value = [];
+        writeMode.value = false;
     }
 
     return {
@@ -214,6 +217,7 @@ export function useAiChat() {
         messages,
         conversations,
         isThinking,
+        writeMode,
         sendMessage,
         fetchConversations,
         loadConversation,

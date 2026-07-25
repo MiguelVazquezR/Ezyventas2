@@ -2,6 +2,7 @@
 
 namespace Ezyventas\AiAgent\Http\Controllers;
 
+use App\AiTools\WriteModeGate;
 use Ezyventas\AiAgent\Http\Requests\SendAiMessageRequest;
 use Ezyventas\AiAgent\Models\AiConversation;
 use Ezyventas\AiAgent\Support\AiAgentManager;
@@ -114,8 +115,14 @@ class AiChatController extends Controller
             ]);
         }
 
+        // Set write mode gate for this request
+        $writeMode = (bool) $request->input('write_mode', false);
+        if ($writeMode) {
+            app(WriteModeGate::class)->enable();
+        }
+
         $assistantMessage = app(AiAgentManager::class)->ask(
-            $conversation, $request->message, $user
+            $conversation, $request->message, $user, $writeMode
         );
 
         $limitExceeded = $assistantMessage->tool_calls['limit_exceeded'] ?? false;
