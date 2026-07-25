@@ -11,6 +11,7 @@ import PrimeVue from 'primevue/config';
 import ConfirmationService from 'primevue/confirmationservice';
 import ToastService from 'primevue/toastservice';
 import "primeicons/primeicons.css";
+import "quill/dist/quill.snow.css";
 
 import '@/assets/styles.scss';
 import Ezyventas from './presets/ezyventas';
