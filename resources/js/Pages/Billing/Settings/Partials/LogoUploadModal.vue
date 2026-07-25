@@ -117,18 +117,21 @@ const dialogPt = {
             </div>
         </template>
 
-        <div class="space-y-6 pt-2">
+        <div class="space-y-6 pt-0">
             <!-- Explanation -->
-            <div class="bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl p-5 border border-gray-100 dark:border-[#3a3a3a]">
+            <div class="bg-indigo-50 dark:bg-[#1a1a1a] rounded-2xl p-5 border border-gray-100 dark:border-[#3a3a3a]">
                 <div class="flex gap-4">
                     <i class="pi pi-info-circle !text-lg text-indigo-400 shrink-0 mt-0.5"></i>
                     <div>
-                        <p class="text-sm text-gray-700 dark:text-gray-300 m-0 leading-relaxed">
-                            Sube el logotipo de tu marca que aparecerá en la representación impresa (PDF) de tus facturas y en el CFDI.
+                        <p class="text-sm font-medium text-indigo-700 dark:text-indigo-300 m-0 leading-relaxed">
+                            Logo de tu empresa.
                         </p>
-                        <p class="text-xs text-gray-400 dark:text-gray-500 m-0 mt-2 leading-relaxed">
-                            De preferencia utiliza una imagen con <strong>fondo blanco o transparente</strong> para una correcta visualización en el comprobante fiscal.
-                            Formatos aceptados: JPG, PNG o WebP. Tamaño máximo: 2 MB.
+                        <p class="text-sm text-indigo-700 dark:text-gray-300 m-0 leading-relaxed">
+                            Sube el logotipo que aparecerá en el PDF de tus facturas.
+                        </p>
+                        <p class="text-[11px] text-gray-600 dark:text-gray-500 m-0 mt-2 leading-justified">
+                                <strong>Recomendación:</strong> Usa una imagen con fondo transparente o blanco para un acabado más limpio.
+                                Formatos aceptados: JPG, PNG o WebP (máximo: 2 MB).
                         </p>
                     </div>
                 </div>

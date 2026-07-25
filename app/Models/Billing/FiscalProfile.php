@@ -2,6 +2,7 @@
 
 namespace App\Models\Billing;
 
+use App\Models\Billing\StampMovement;
 use App\Models\Subscription;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -115,8 +116,14 @@ class FiscalProfile extends Model implements HasMedia
         return $this->hasMany(StampPurchase::class);
     }
 
-    /**
-     * Invoices issued under this fiscal profile.
+    /**     * Stamp movement ledger for this fiscal profile.
+     */
+    public function stampMovements(): HasMany
+    {
+        return $this->hasMany(StampMovement::class);
+    }
+
+    /**     * Invoices issued under this fiscal profile.
      */
     public function invoices(): HasMany
     {

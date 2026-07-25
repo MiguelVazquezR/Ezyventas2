@@ -70,13 +70,13 @@ const selectPt = {
         :pt="dialogPt"
     >
         <template #header>
-            <div class="flex items-center gap-4">
+            <div class="flex items-center gap-4 mb-0">
                 <div class="w-10 h-10 rounded-full bg-primary-50 dark:bg-primary-900/20 text-primary-500 flex items-center justify-center flex-shrink-0 border border-primary-100 dark:border-primary-900/30">
                     <i class="pi pi-building !text-sm"></i>
                 </div>
                 <div>
                     <h2 class="text-xl font-light tracking-tight text-gray-900 dark:text-white m-0 leading-tight">
-                        Agregar perfil fiscal
+                        Agregar emisor fiscal
                     </h2>
                     <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1">
                         Nueva razón social para facturación
@@ -86,100 +86,119 @@ const selectPt = {
         </template>
 
         <form @submit.prevent="submit" class="flex flex-col gap-5 pt-2">
-            <!-- RFC -->
-            <div class="flex flex-col gap-1.5">
-                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">RFC *</label>
-                <InputText
-                    v-model="form.rfc"
-                    placeholder="Ej. XAXX010101000"
-                    class="w-full"
-                    :class="{ '!border-red-500': form.errors.rfc }"
-                    maxlength="13"
-                    :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !text-sm' } }"
-                />
-                <Message v-if="form.errors.rfc" severity="error" variant="simple" size="small">
-                    {{ form.errors.rfc }}
-                </Message>
+            <!-- ═══════════════ PASO 1: Info banner (style like CsdUploadModal) ═══════════════ -->
+            <div class="bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/30">
+                <div class="flex items-start gap-3">
+                    <i class="pi pi-info-circle !text-sm text-blue-500 mt-0.5"></i>
+                    <div>
+                        <p class="text-[12px] font-medium text-blue-700 dark:text-blue-400 m-0 mb-0.5">
+                            Paso 1 de 3: Vinculación fiscal
+                        </p>
+                        <p class="text-[12px] text-blue-600/90 dark:text-blue-400/70 m-0 leading-relaxed">
+                            Registra tus datos fiscales básicos para conectar tu RFC con nuestro sistema. En el siguiente paso subirás tus Certificados (CSD) para comenzar a emitir facturas.
+                        </p>
+                    </div>
+                </div>
             </div>
 
-            <!-- Razón social -->
+            <!-- ═══════════════ RFC + Código Postal (same row) ═══════════════ -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">RFC *</label>
+                    <div class="relative">
+                        <i class="pi pi-id-card !absolute !left-3.5 !top-1/2 !-translate-y-1/2 !text-xs text-gray-400 dark:text-gray-500 pointer-events-none"></i>
+                        <InputText
+                            v-model="form.rfc"
+                            placeholder="XAXX010101000"
+                            class="w-full"
+                            :class="{ '!border-red-500': form.errors.rfc }"
+                            maxlength="13"
+                            :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !pl-9 !text-sm !placeholder:text-gray-400 dark:!placeholder:text-gray-500' } }"
+                        />
+                    </div>
+                    <Message v-if="form.errors.rfc" severity="error" variant="simple" size="small">
+                        {{ form.errors.rfc }}
+                    </Message>
+                </div>
+
+                <div class="flex flex-col gap-1.5">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Código postal *</label>
+                    <div class="relative">
+                        <i class="pi pi-map-marker !absolute !left-3.5 !top-1/2 !-translate-y-1/2 !text-xs text-gray-400 dark:text-gray-500 pointer-events-none"></i>
+                        <InputText
+                            v-model="form.postal_code"
+                            placeholder="44600"
+                            class="w-full"
+                            :class="{ '!border-red-500': form.errors.postal_code }"
+                            maxlength="5"
+                            :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !pl-9 !text-sm !placeholder:text-gray-400 dark:!placeholder:text-gray-500' } }"
+                        />
+                    </div>
+                    <Message v-if="form.errors.postal_code" severity="error" variant="simple" size="small">
+                        {{ form.errors.postal_code }}
+                    </Message>
+                </div>
+            </div>
+
+            <!-- ═══════════════ Razón social ═══════════════ -->
             <div class="flex flex-col gap-1.5">
                 <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Razón social *</label>
-                <InputText
-                    v-model="form.razon_social"
-                    placeholder="Nombre o razón social del emisor"
-                    class="w-full"
-                    :class="{ '!border-red-500': form.errors.razon_social }"
-                    :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !text-sm' } }"
-                />
+                <div class="relative">
+                    <i class="pi pi-building !absolute !left-3.5 !top-1/2 !-translate-y-1/2 !text-xs text-gray-400 dark:text-gray-500 pointer-events-none"></i>
+                    <InputText
+                        v-model="form.razon_social"
+                        placeholder="Nombre o razón social del emisor"
+                        class="w-full"
+                        :class="{ '!border-red-500': form.errors.razon_social }"
+                        :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !pl-9 !text-sm !placeholder:text-gray-400 dark:!placeholder:text-gray-500' } }"
+                    />
+                </div>
                 <Message v-if="form.errors.razon_social" severity="error" variant="simple" size="small">
                     {{ form.errors.razon_social }}
                 </Message>
             </div>
 
-            <!-- Régimen fiscal -->
+            <!-- ═══════════════ Régimen fiscal ═══════════════ -->
             <div class="flex flex-col gap-1.5">
                 <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Régimen fiscal *</label>
-                <Select
-                    v-model="form.regimen_fiscal"
-                    :options="taxRegimeOptions"
-                    optionLabel="label"
-                    optionValue="value"
-                    placeholder="Selecciona el régimen fiscal"
-                    class="w-full"
-                    :class="{ '!border-red-500': form.errors.regimen_fiscal }"
-                    :pt="selectPt"
-                />
+                <div class="relative">
+                    <i class="pi pi-tag !absolute !left-3.5 !top-1/2 !-translate-y-1/2 !text-xs text-gray-400 dark:text-gray-500 pointer-events-none z-10"></i>
+                    <Select
+                        v-model="form.regimen_fiscal"
+                        :options="taxRegimeOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        placeholder="Selecciona el régimen fiscal"
+                        class="w-full"
+                        :class="{ '!border-red-500': form.errors.regimen_fiscal }"
+                        :pt="{
+                            ...selectPt,
+                            root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] !pl-9' },
+                        }"
+                    />
+                </div>
                 <Message v-if="form.errors.regimen_fiscal" severity="error" variant="simple" size="small">
                     {{ form.errors.regimen_fiscal }}
                 </Message>
             </div>
 
-            <!-- Código postal -->
-            <div class="flex flex-col gap-1.5">
-                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Código postal fiscal *</label>
-                <InputText
-                    v-model="form.postal_code"
-                    placeholder="Ej. 44600"
-                    class="w-full"
-                    :class="{ '!border-red-500': form.errors.postal_code }"
-                    maxlength="5"
-                    :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !text-sm' } }"
-                />
-                <Message v-if="form.errors.postal_code" severity="error" variant="simple" size="small">
-                    {{ form.errors.postal_code }}
-                </Message>
-            </div>
-
-            <!-- Email -->
+            <!-- ═══════════════ Email ═══════════════ -->
             <div class="flex flex-col gap-1.5">
                 <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Email de contacto fiscal *</label>
-                <InputText
-                    v-model="form.email"
-                    type="email"
-                    placeholder="Ej. facturacion@empresa.com"
-                    class="w-full"
-                    :class="{ '!border-red-500': form.errors.email }"
-                    :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !text-sm' } }"
-                />
+                <div class="relative">
+                    <i class="pi pi-envelope !absolute !left-3.5 !top-1/2 !-translate-y-1/2 !text-xs text-gray-400 dark:text-gray-500 pointer-events-none"></i>
+                    <InputText
+                        v-model="form.email"
+                        type="email"
+                        placeholder="facturacion@empresa.com"
+                        class="w-full"
+                        :class="{ '!border-red-500': form.errors.email }"
+                        :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !pl-9 !text-sm !placeholder:text-gray-400 dark:!placeholder:text-gray-500' } }"
+                    />
+                </div>
                 <Message v-if="form.errors.email" severity="error" variant="simple" size="small">
                     {{ form.errors.email }}
                 </Message>
-            </div>
-
-            <!-- Info -->
-            <div class="bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-900/30">
-                <div class="flex items-start gap-3">
-                    <i class="pi pi-info-circle !text-sm text-blue-500 mt-0.5"></i>
-                    <div>
-                        <p class="text-xs font-medium text-blue-700 dark:text-blue-400 m-0 mb-0.5">
-                            Aprovisionamiento automático
-                        </p>
-                        <p class="text-[10px] text-blue-600/70 dark:text-blue-400/70 m-0 leading-relaxed">
-                            Al guardar, se creará automáticamente una subcuenta en SW Smarter Web para este RFC.
-                        </p>
-                    </div>
-                </div>
             </div>
         </form>
 
@@ -190,14 +209,14 @@ const selectPt = {
                     text
                     @click="visible = false"
                     :disabled="form.processing"
-                    class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold"
+                    class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold !text-gray-500 hover:!text-gray-700 dark:!text-gray-400 dark:hover:!text-gray-200 !transition-colors"
                 />
                 <Button
-                    label="Guardar perfil"
+                    label="Guardar emisor"
                     icon="pi pi-save"
                     @click="submit"
                     :loading="form.processing"
-                    class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-6 shadow-sm"
+                    class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold !px-6 !shadow-lg !shadow-primary-500/20 hover:!shadow-primary-500/30 !transition-all !duration-200 hover:!scale-[1.02] active:!scale-[0.98]"
                     severity="primary"
                 />
             </div>

@@ -45,7 +45,7 @@ const statusLabel = computed(() => {
     const map = {
         borrador: 'Pre-factura',
         pendiente: 'Pendiente',
-        certificada: 'Certificada',
+        certificada: 'Timbrada',
         cancelacion_pendiente: 'Cancelación pendiente',
         cancelada: 'Cancelada',
     };

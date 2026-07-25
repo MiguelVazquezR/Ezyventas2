@@ -110,7 +110,7 @@ class FiscalProfileController extends Controller implements HasMiddleware
             ]);
 
             return redirect()->route('billing.settings.index')
-                ->with('success', 'Perfil fiscal creado y vinculado al PAC exitosamente.');
+                ->with('success', '<strong>Paso 1 completado:</strong> Datos fiscales conectados.');
         } catch (\Exception $e) {
             DB::rollBack();
 
@@ -253,15 +253,16 @@ class FiscalProfileController extends Controller implements HasMiddleware
             ->where('fiscal_profile_id', $fiscalProfile->id);
 
         $invoiceStats = [
-            'totalInvoices'  => $invoiceQuery->count(),
-            'certifiedCount' => (clone $invoiceQuery)->certified()->count(),
-            'canceledCount'  => (clone $invoiceQuery)->canceled()->count(),
-            'totalAmount'    => (float) (clone $invoiceQuery)->certified()->sum('total'),
+            'draftCount'          => (clone $invoiceQuery)->draft()->count(),
+            'draftAmount'         => (float) ((clone $invoiceQuery)->draft()->sum('total') ?? 0),
+            'certifiedCount'      => (clone $invoiceQuery)->certified()->count(),
+            'certifiedAmount'     => (float) ((clone $invoiceQuery)->certified()->sum('total') ?? 0),
+            'canceledCount'       => (clone $invoiceQuery)->canceled()->count(),
+            'cancelPendingCount'  => (clone $invoiceQuery)->where('status', \App\Enums\InvoiceStatus::CANCELATION_PENDING)->count(),
         ];
 
-        // Purchase history
-        $purchases = $fiscalProfile->stampPurchases()
-            ->with(['requestedBy', 'reviewedBy'])
+        // Stamp movement ledger (entries + exits with running balance)
+        $movements = $fiscalProfile->stampMovements()
             ->latest()
             ->paginate(15);
 
@@ -275,7 +276,11 @@ class FiscalProfileController extends Controller implements HasMiddleware
             'balance'           => $balance,
             'balanceError'      => $balanceError,
             'invoiceStats'      => $invoiceStats,
-            'purchases'         => $purchases,
+            'movements'         => $movements,
+            'purchases'         => $fiscalProfile->stampPurchases()
+                ->with(['requestedBy', 'reviewedBy'])
+                ->latest()
+                ->paginate(15),
             'ourBankAccounts'   => $ourBankAccounts,
             'canPurchaseStamps' => $user->can('stamps.purchase'),
             'canRetryManifestSigning' => $fiscalProfile->canRetryManifestSigning(),

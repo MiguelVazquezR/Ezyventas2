@@ -164,20 +164,20 @@ const dialogPt = {
         <!-- ════════════════════════════════════════
              Fiscal profile banner
              ════════════════════════════════════════ -->
-        <div class="flex items-start gap-3 px-4 py-3 mb-6 rounded-2xl bg-blue-50/60 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/20">
+        <div class="flex items-start gap-3 px-4 py-3 mb-3 rounded-2xl bg-blue-50/60 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/20">
             <div class="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0 mt-px">
                 <i class="pi pi-info-circle !text-xs text-blue-600 dark:text-blue-400"></i>
             </div>
-            <p class="text-xs text-blue-700 dark:text-blue-300 m-0 leading-relaxed">
-                Los timbres adquiridos se acreditarán automáticamente al perfil fiscal activo actualmente seleccionado.
+            <p class="text-[12px] text-blue-700 dark:text-blue-300 m-0 leading-relaxed">
+                Los timbres adquiridos se acreditarán automáticamente al emisor fiscal activo actualmente seleccionado.
             </p>
         </div>
 
         <!-- ════════════════════════════════════════
              Quantity selection
              ════════════════════════════════════════ -->
-        <div class="mb-8">
-            <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-4">
+        <div class="mb-2">
+            <h3 class="text-[11px] uppercase tracking-wide font-bold text-gray-600 dark:text-gray-500 m-0 mb-4">
                 Cantidad de timbres
             </h3>
 
@@ -232,7 +232,7 @@ const dialogPt = {
              Price breakdown card
              ════════════════════════════════════════ -->
         <div class="mb-8">
-            <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-4">
+            <h3 class="text-[11px] uppercase tracking-wide font-bold text-gray-600 dark:text-gray-500 m-0 mb-4">
                 Desglose de precio
             </h3>
 
@@ -293,7 +293,7 @@ const dialogPt = {
              Payment method selector
              ════════════════════════════════════════ -->
         <div class="mb-6">
-            <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-4">
+            <h3 class="text-[11px] uppercase tracking-wide font-bold text-gray-600 dark:text-gray-500 m-0 mb-4">
                 Método de pago
             </h3>
 
@@ -306,16 +306,17 @@ const dialogPt = {
                     :class="paymentMethod === 'bank_transfer'
                         ? 'bg-primary-50/50 dark:bg-primary-900/10 border-primary-300 dark:border-primary-700 shadow-[0_0_0_1px_rgba(99,102,241,0.3)]'
                         : 'bg-gray-50/80 dark:bg-[#121212] border-gray-100 dark:border-[#2e2e2e] hover:border-gray-200 dark:hover:border-[#3a3a3a]'"
-                >
-                    <div class="w-10 h-10 rounded-full bg-white dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#2e2e2e] flex items-center justify-center">
-                        <i
-                            class="pi pi-building-columns !text-lg"
-                            :class="paymentMethod === 'bank_transfer' ? 'text-primary-500' : 'text-gray-400 dark:text-gray-500'"
-                        ></i>
+                >   <div class="flex flex-col-2 items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-white dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#2e2e2e] flex items-center justify-center">
+                            <i
+                                class="pi pi-building-columns !text-lg"
+                                :class="paymentMethod === 'bank_transfer' ? 'text-primary-500' : 'text-gray-400 dark:text-gray-500'"
+                            ></i>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-sm font-medium text-gray-900 dark:text-white m-0">Transferencia</p>
+                            <p class="text-[11px] text-gray-600 dark:text-gray-500 m-0 mt-1">Bancaria</p>
                     </div>
-                    <div class="text-center">
-                        <p class="text-sm font-medium text-gray-900 dark:text-white m-0">Transferencia</p>
-                        <p class="text-[10px] text-gray-400 dark:text-gray-500 m-0 mt-1">Bancaria</p>
                     </div>
                 </button>
 
@@ -327,17 +328,18 @@ const dialogPt = {
                     :class="paymentMethod === 'mercadopago'
                         ? 'bg-primary-50/50 dark:bg-primary-900/10 border-primary-300 dark:border-primary-700 shadow-[0_0_0_1px_rgba(99,102,241,0.3)]'
                         : 'bg-gray-50/80 dark:bg-[#121212] border-gray-100 dark:border-[#2e2e2e] hover:border-gray-200 dark:hover:border-[#3a3a3a]'"
-                >
-                    <div class="w-10 h-10 rounded-full bg-white dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#2e2e2e] flex items-center justify-center overflow-hidden">
-                        <img
-                            src="/images/Mercado_Pago_logo.webp"
-                            alt="Mercado Pago"
-                            class="w-7 h-7 object-contain"
-                        />
-                    </div>
-                    <div class="text-center">
-                        <p class="text-sm font-medium text-gray-900 dark:text-white m-0">Mercado Pago</p>
-                        <p class="text-[10px] text-gray-400 dark:text-gray-500 m-0 mt-1">Instantáneo</p>
+                >   <div class="flex flex-col-2 items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-white dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#2e2e2e] flex items-center justify-center overflow-hidden">
+                            <img
+                                src="/images/Mercado_Pago_logo.webp"
+                                alt="Mercado Pago"
+                                class="w-7 h-7 object-contain"
+                            />
+                        </div>
+                        <div class="text-center">
+                            <p class="text-sm font-medium text-gray-900 dark:text-white m-0">Mercado Pago</p>
+                            <p class="text-[11px] text-gray-600 dark:text-gray-500 m-0 mt-1">Instantáneo</p>
+                        </div>
                     </div>
                 </button>
             </div>
@@ -349,7 +351,7 @@ const dialogPt = {
         <div v-if="paymentMethod === 'bank_transfer'" class="space-y-5">
             <!-- Bank accounts -->
             <div>
-                <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-3">
+                <h3 class="text-[11px] uppercase tracking-wide font-bold text-gray-600 dark:text-gray-500 m-0 mb-3">
                     Cuentas bancarias
                 </h3>
                 <div class="space-y-2">
@@ -393,7 +395,7 @@ const dialogPt = {
 
             <!-- File upload -->
             <div>
-                <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 m-0 mb-3">
+                <h3 class="text-[11px] uppercase tracking-wide font-bold text-gray-600 dark:text-gray-500 m-0 mb-3">
                     Comprobante de pago *
                 </h3>
 

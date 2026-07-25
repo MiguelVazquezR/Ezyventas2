@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { usePermissions } from '@/Composables';
+import { usePermissions, taxRegimeLabel } from '@/Composables';
 import { useConfirm } from 'primevue/useconfirm';
 import LogoUploadModal from './Partials/LogoUploadModal.vue';
 import PurchaseStampsModal from './Partials/PurchaseStampsModal.vue';
@@ -14,6 +14,10 @@ const props = defineProps({
     fiscalProfiles: Object,
     filters: Object,
     facturacionHabilitada: Boolean,
+    ourBankAccounts: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const { hasPermission } = usePermissions();
@@ -130,15 +134,15 @@ const toggleMenu = (event, profile) => {
 
     // Inactivar / Activar
     options.push({
-        label: profile.is_active ? 'Inactivar perfil fiscal' : 'Activar perfil fiscal',
+        label: profile.is_active ? 'Inactivar emisor fiscal' : 'Activar emisor fiscal',
         icon: profile.is_active ? 'pi pi-power-off' : 'pi pi-check-circle',
         command: () => {
             const action = profile.is_active ? 'inactivar' : 'activar';
             confirm.require({
                 message: profile.is_active
-                    ? '¿Inactivar este perfil fiscal? Ya no aparecerá al crear facturas. Tus facturas anteriores permanecerán intactas.'
-                    : '¿Activar este perfil fiscal? Volverá a estar disponible al crear facturas.',
-                header: profile.is_active ? 'Inactivar perfil fiscal' : 'Activar perfil fiscal',
+                    ? '¿Inactivar este emisor fiscal? Ya no aparecerá al crear facturas. Tus facturas anteriores permanecerán intactas.'
+                    : '¿Activar este emisor fiscal? Volverá a estar disponible al crear facturas.',
+                header: profile.is_active ? 'Inactivar emisor fiscal' : 'Activar emisor fiscal',
                 icon: 'pi pi-exclamation-triangle',
                 acceptLabel: profile.is_active ? 'Inactivar' : 'Activar',
                 rejectLabel: 'Cancelar',
@@ -293,7 +297,7 @@ const tagPt = {
                     removableSort
                     tableStyle="min-width: 50rem"
                     paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
-                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} perfiles"
+                    currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} emores fiscales"
                     rowHover
                     :rowClass="rowClass"
                     :pt="dataTablePt"
@@ -303,7 +307,7 @@ const tagPt = {
                         <div class="flex flex-col items-center justify-center py-16 px-4 text-center">
                             <i class="pi pi-building !text-4xl text-gray-300 dark:text-gray-600 mb-4"></i>
                             <p class="text-sm text-gray-500 dark:text-gray-400 max-w-md leading-relaxed">
-                                No se encontraron perfiles fiscales. Agrega tu primer RFC para comenzar a facturar.
+                                No se encontraron emisores fiscales. Agrega tu primer RFC para comenzar a facturar.
                             </p>
                         </div>
                     </template>
@@ -330,7 +334,7 @@ const tagPt = {
                     <Column field="regimen_fiscal" header="Régimen fiscal" sortable>
                         <template #body="{ data }">
                             <span class="text-xs text-gray-500 dark:text-gray-400">
-                                {{ data.regimen_fiscal }}
+                                {{ data.regimen_fiscal }} - {{ taxRegimeLabel(data.regimen_fiscal) }}
                             </span>
                         </template>
                     </Column>
@@ -341,6 +345,17 @@ const tagPt = {
                             <Tag
                                 :value="getStatusLabel(data)"
                                 :severity="getStatusSeverity(data)"
+                                :pt="tagPt"
+                            />
+                        </template>
+                    </Column>
+
+                    <!-- Certificados CSD -->
+                    <Column header="Certificados CSD" sortable>
+                        <template #body="{ data }">
+                            <Tag
+                                :value="getCsdLabel(data)"
+                                :severity="getCsdSeverity(data)"
                                 :pt="tagPt"
                             />
                         </template>
@@ -357,19 +372,9 @@ const tagPt = {
                         </template>
                     </Column>
 
-                    <!-- Certificados CSD -->
-                    <Column header="Certificados CSD">
-                        <template #body="{ data }">
-                            <Tag
-                                :value="getCsdLabel(data)"
-                                :severity="getCsdSeverity(data)"
-                                :pt="tagPt"
-                            />
-                        </template>
-                    </Column>
 
                     <!-- Timbres disponibles -->
-                    <Column header="Timbres disponibles">
+                    <Column header="Timbres disponibles" sortable>
                         <template #body="{ data }">
                             <span
                                 v-if="data.stamps_available !== null && data.stamps_available !== undefined"
@@ -399,28 +404,6 @@ const tagPt = {
                         </template>
                     </Column>
                 </DataTable>
-            </div>
-
-            <!-- ════════════════════════════════════════
-                 PAC provider info
-                 ════════════════════════════════════════ -->
-            <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
-                <div class="flex items-center gap-4">
-                    <div class="w-10 h-10 rounded-full bg-green-50 dark:bg-green-900/20 flex items-center justify-center flex-shrink-0 border border-green-100 dark:border-green-900/30">
-                        <i class="pi pi-check-circle !text-sm text-green-500"></i>
-                    </div>
-                    <div>
-                        <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">
-                            Proveedor de timbrado
-                        </h2>
-                        <p class="text-sm text-gray-600 dark:text-gray-400 m-0 mt-1">
-                            SW Smarter Web — Token infinito configurado
-                        </p>
-                    </div>
-                </div>
-                <p class="text-[10px] text-gray-400 dark:text-gray-500 m-0 mt-4 ml-14">
-                    Cada perfil fiscal se aprovisiona automáticamente como subcuenta en el PAC al momento de crearlo.
-                </p>
             </div>
         </div>
 
@@ -452,7 +435,7 @@ const tagPt = {
             v-if="selectedProfileForModal"
             ref="purchaseModalRef"
             :fiscalProfileId="selectedProfileForModal.id"
-            :ourBankAccounts="[]"
+            :ourBankAccounts="ourBankAccounts"
             @success="router.reload()"
         />
 
@@ -464,6 +447,5 @@ const tagPt = {
             @success="router.reload()"
         />
 
-        <ConfirmPopup />
     </AppLayout>
 </template>

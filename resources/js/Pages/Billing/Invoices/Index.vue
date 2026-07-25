@@ -28,7 +28,7 @@ const statusOptions = [
     { label: 'Todos', value: null },
     { label: 'Pre-factura', value: 'Pre-factura' },
     { label: 'Pendiente', value: 'pendiente' },
-    { label: 'Certificada', value: 'certificada' },
+    { label: 'Timbrada', value: 'Timbrada' },
     { label: 'Cancelación pendiente', value: 'cancelacion_pendiente' },
     { label: 'Cancelada', value: 'cancelada' },
 ];
@@ -136,7 +136,7 @@ const statusLabel = (status) => {
     const map = {
         borrador: 'Pre-factura',
         pendiente: 'Pendiente',
-        certificada: 'Certificada',
+        certificada: 'Timbrada',
         cancelacion_pendiente: 'Cancelación pendiente',
         cancelada: 'Cancelada',
         no_solicitada: 'No solicitada',
@@ -214,7 +214,7 @@ const toggleMenu = (event, invoice) => {
             icon: 'pi pi-check-circle',
             command: () => {
                 confirm.require({
-                    message: '¿Timbrar esta factura ante el SAT? Se enviará al PAC para certificación.',
+                    message: '¿Timbrar factura? La factura se registrará y validará ante el SAT.',
                     header: 'Timbrar factura',
                     icon: 'pi pi-shield',
                     acceptLabel: 'Timbrar',

@@ -479,6 +479,7 @@ class InvoiceController extends Controller implements HasMiddleware
                 'fiscalProfiles'        => ['data' => [], 'total' => 0, 'per_page' => 20],
                 'filters'               => [],
                 'facturacionHabilitada' => false,
+                'ourBankAccounts'       => [],
             ]);
         }
 
@@ -516,10 +517,15 @@ class InvoiceController extends Controller implements HasMiddleware
             }
         }
 
+        $ourBankAccounts = \App\Models\BankAccount::whereHas('branches', function ($q) {
+            $q->where('branch_id', 1)->where('is_favorite', true);
+        })->get();
+
         return Inertia::render('Billing/Settings/Index', [
             'fiscalProfiles'        => $paginated,
             'filters'               => $request->only(['search', 'sortField', 'sortOrder']),
             'facturacionHabilitada' => true,
+            'ourBankAccounts'       => $ourBankAccounts,
         ]);
     }
 
