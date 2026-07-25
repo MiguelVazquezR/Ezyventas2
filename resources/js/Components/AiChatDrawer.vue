@@ -112,6 +112,42 @@ function toggleWriteMode() {
     }
 }
 
+/** Regex to match [CONFIRM:action:entity_description] markers. */
+const CONFIRM_REGEX = /\[CONFIRM:([a-z_]+):([^\]]+)\]/gi;
+
+/**
+ * Extract confirmation data from a message and strip the marker from visible content.
+ * Returns { cleanContent, confirmAction, confirmEntity } or null if no marker present.
+ */
+function extractConfirmMarker(text) {
+    if (!text) return null;
+
+    CONFIRM_REGEX.lastIndex = 0;
+    const match = CONFIRM_REGEX.exec(text);
+    if (!match) return null;
+
+    return {
+        cleanContent: text.replace(CONFIRM_REGEX, '').trim(),
+        confirmAction: match[1],
+        confirmEntity: match[2],
+    };
+}
+
+/**
+ * Handle inline confirmation — sends the confirmation text as a user message
+ * so the AI continues the conversation naturally.
+ */
+async function handleConfirm(msg, confirmed) {
+    // Mark this message's confirmation as resolved so buttons disappear
+    msg.confirmResolved = true;
+
+    const response = confirmed
+        ? `Sí, confirmo la eliminación de ${msg.confirmEntity}.`
+        : `No, cancelar la eliminación de ${msg.confirmEntity}.`;
+
+    await sendMessage(response);
+}
+
 /** Simple markdown-to-html for links in tool results. */
 function renderContent(text) {
     if (!text) return '';
@@ -120,11 +156,13 @@ function renderContent(text) {
         .replace(/</g, '<')
         .replace(/>/g, '>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        // Strip CONFIRM markers before markdown link processing
+        .replace(CONFIRM_REGEX, '')
         // markdown links: [label](url) — before the raw-URL autolink so it isn't double-processed
         .replace(/\[([^\]]+)\]\((https?:\/\/[^\)\s]+)\)/g, '<a href="$2" data-chat-link="1">$1</a>')
         .replace(/\n/g, '<br>')
         .replace(
-            /(https?:\/\/[^\s<]+)/g,
+            /(?<!["'=])(https?:\/\/[^\s<>"']+)/g,
             '<a href="$1" target="_blank" class="text-primary-500 underline">$1</a>'
         );
     return html;
@@ -355,11 +393,11 @@ const drawerStyle = computed(() => {
 
         <!-- Chat area (when not in history) -->
         <template v-else>
+            <div class="flex flex-col h-full">
             <!-- Messages area -->
             <div
                 ref="messagesContainer"
-                class="flex flex-col gap-3 p-4 overflow-y-auto"
-                :style="{ height: 'calc(100vh - 12rem)' }"
+                class="flex flex-col gap-3 p-4 overflow-y-auto flex-1 min-h-0"
                 @click="onMessagesClick"
             >
                 <!-- Empty state -->
@@ -450,6 +488,30 @@ const drawerStyle = computed(() => {
                             >
                                 <!-- eslint-disable-next-line vue/no-v-html -->
                                 <div class="chat-content prose prose-sm max-w-none" v-html="renderContent(msg.content)" />
+
+                                <!-- Inline confirmation buttons -->
+                                <div
+                                    v-if="msg.confirmAction && !msg.confirmResolved && !isThinking"
+                                    class="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200 dark:border-[#3a3a3a]"
+                                >
+                                    <span class="text-xs text-gray-500 dark:text-gray-400">¿Confirmas la acción?</span>
+                                    <Button
+                                        label="Sí, confirmar"
+                                        size="small"
+                                        severity="danger"
+                                        class="!rounded-full !text-xs !font-bold"
+                                        :disabled="isThinking"
+                                        @click="handleConfirm(msg, true)"
+                                    />
+                                    <Button
+                                        label="No, cancelar"
+                                        size="small"
+                                        text
+                                        class="!rounded-full !text-xs !font-bold !text-gray-500 dark:!text-gray-400"
+                                        :disabled="isThinking"
+                                        @click="handleConfirm(msg, false)"
+                                    />
+                                </div>
                             </div>
                         </div>
                     </Transition>
@@ -473,17 +535,20 @@ const drawerStyle = computed(() => {
             <Divider class="!m-0" />
 
             <!-- Input area -->
-            <div class="p-3">
-                <div class="flex gap-2">
-                    <InputText
+            <div class="p-3 flex-shrink-0">
+                <div class="flex gap-2 items-end">
+                    <Textarea
                         v-model="inputText"
                         placeholder="Escribe tu mensaje..."
                         class="flex-1"
                         :disabled="isThinking"
+                        :autoResize="true"
+                        rows="1"
                         :pt="{
                             root: {
                                 class:
-                                    '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !text-sm',
+                                    '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !text-sm !max-h-32 !overflow-y-auto',
+                                style: 'resize: none;',
                             },
                         }"
                         @keydown="onKeydown"
@@ -499,6 +564,7 @@ const drawerStyle = computed(() => {
                 <p class="text-[10px] text-gray-400 m-0 mt-1.5 text-center">
                     El asistente puede cometer errores. Verifica la información importante.
                 </p>
+            </div>
             </div>
         </template>
     </Drawer>

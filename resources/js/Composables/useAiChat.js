@@ -2,6 +2,24 @@ import { ref, nextTick, watch } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import { useToast } from 'primevue/usetoast';
 
+/** Regex to match [CONFIRM:action:entity_description] markers. */
+const CONFIRM_REGEX = /\[CONFIRM:([a-z_]+):([^\]]+)\]/gi;
+
+/**
+ * Parse a message's content for CONFIRM markers and attach confirmAction/confirmEntity.
+ * Called on every assistant message before it enters the reactive state.
+ */
+function hydrateConfirmState(msg) {
+    if (!msg.content || msg.role !== 'assistant') return;
+
+    CONFIRM_REGEX.lastIndex = 0;
+    const match = CONFIRM_REGEX.exec(msg.content);
+    if (match) {
+        msg.confirmAction = match[1];
+        msg.confirmEntity = match[2];
+    }
+}
+
 /**
  * Composable for the AI chat drawer.
  * Manages conversation state, message sending, history, and the fade-in reveal.
@@ -82,13 +100,16 @@ export function useAiChat() {
                     visible: true,
                 });
             } else {
-                // Push with visible:false so the <Transition> animates it in
-                messages.value.push({
+                const msg = {
                     role: 'assistant',
                     content: data.message.content,
                     tool_calls: data.message.tool_calls,
                     visible: false,
-                });
+                };
+                hydrateConfirmState(msg);
+
+                // Push with visible:false so the <Transition> animates it in
+                messages.value.push(msg);
 
                 await nextTick();
                 messages.value.at(-1).visible = true;
@@ -142,14 +163,18 @@ export function useAiChat() {
             conversationId.value = data.conversation.id;
 
             // Map backend messages to the format the drawer expects
-            messages.value = data.messages.map((msg) => ({
-                role: msg.role,
-                content: msg.content,
-                tool_calls: msg.tool_calls,
-                limitExceeded: msg.limitExceeded || false,
-                moduleInactive: msg.moduleInactive || false,
-                visible: true,
-            }));
+            messages.value = data.messages.map((msg) => {
+                const mapped = {
+                    role: msg.role,
+                    content: msg.content,
+                    tool_calls: msg.tool_calls,
+                    limitExceeded: msg.limitExceeded || false,
+                    moduleInactive: msg.moduleInactive || false,
+                    visible: true,
+                };
+                hydrateConfirmState(mapped);
+                return mapped;
+            });
         } catch (e) {
             toast.add({
                 severity: 'error',

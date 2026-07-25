@@ -3,10 +3,9 @@
 namespace App\AiTools;
 
 use App\AiTools\SiteNavigationRegistry;
-use App\Actions\Customer\CreateCustomerAction;
-use App\Actions\Customer\UpdateCustomerAction;
-use App\Actions\Expense\CreateExpenseAction;
+use App\Actions\Expense\StoreExpenseAction;
 use App\Models\Customer;
+use App\Models\ExpenseCategory;
 use App\Models\Product;
 use App\Services\CashRegisterReportService;
 use App\Services\CustomerReportService;
@@ -655,12 +654,13 @@ class EzyVentasToolProvider implements AiToolProvider
                             return json_encode(['error' => $gate->rejectionMessage()]);
                         }
 
-                        $customer = app(CreateCustomerAction::class)->execute([
+                        $customer = Customer::create([
                             'branch_id' => $branchId,
                             'name'      => $name,
                             'email'     => $email,
                             'phone'     => $phone,
                             'notes'     => $notes,
+                            'balance'   => 0,
                         ]);
 
                         return json_encode([
@@ -703,8 +703,7 @@ class EzyVentasToolProvider implements AiToolProvider
                         }
 
                         $customer = Customer::where('branch_id', $branchId)->findOrFail($customer_id);
-
-                        app(UpdateCustomerAction::class)->execute($customer, $data);
+                        $customer->update($data);
 
                         return json_encode([
                             'message' => 'Cliente actualizado exitosamente.',
@@ -714,6 +713,37 @@ class EzyVentasToolProvider implements AiToolProvider
                                 'email' => $customer->email,
                                 'phone' => $customer->phone,
                             ],
+                        ], JSON_PRETTY_PRINT);
+                    }),
+            ],
+
+            // ════════════════ LOOKUP: EXPENSE CATEGORIES ════════════════
+            [
+                'permission' => 'expenses.access',
+                'category'   => 'expenses',
+                'tool'       => (new Tool)->as('search_expense_categories')
+                    ->for('Buscar categorías de gasto por nombre. Úsala SIEMPRE antes de registrar un gasto para obtener el ID correcto de la categoría.')
+                    ->withStringParameter('query', 'Nombre parcial de la categoría (dejar vacío para listar todas)')
+                    ->using(function (?string $query = null) use ($branchId) {
+                        $categories = ExpenseCategory::query()
+                            ->where('branch_id', $branchId)
+                            ->when($query, fn ($q) => $q->where('name', 'LIKE', "%{$query}%"))
+                            ->orderBy('name')
+                            ->limit(20)
+                            ->get(['id', 'name']);
+
+                        if ($categories->isEmpty()) {
+                            return json_encode([
+                                'message' => $query
+                                    ? "No se encontró ninguna categoría de gasto que coincida con '{$query}'. Pregunta al usuario si desea crear una nueva categoría con ese nombre."
+                                    : 'No hay categorías de gasto registradas. Pregunta al usuario si desea crear una.',
+                                'categories' => [],
+                            ], JSON_PRETTY_PRINT);
+                        }
+
+                        return json_encode([
+                            'message' => 'Categorías encontradas.',
+                            'categories' => $categories->toArray(),
                         ], JSON_PRETTY_PRINT);
                     }),
             ],
@@ -788,20 +818,20 @@ class EzyVentasToolProvider implements AiToolProvider
                     ->withNumberParameter('expense_category_id', 'ID de la categoría de gasto')
                     ->withStringParameter('payment_method', 'Método de pago (efectivo, tarjeta, transferencia)')
                     ->withStringParameter('expense_date', 'Fecha del gasto en formato YYYY-MM-DD (por defecto hoy)')
-                    ->using(function (string $description, float $amount, int $expense_category_id, string $payment_method = 'efectivo', ?string $expense_date = null) use ($branchId) {
+                    ->using(function (string $description, float $amount, int $expense_category_id, string $payment_method = 'efectivo', ?string $expense_date = null) use ($branchId, $user) {
                         $gate = app(WriteModeGate::class);
                         if (! $gate->isEnabled()) {
                             return json_encode(['error' => $gate->rejectionMessage()]);
                         }
 
-                        $expense = app(CreateExpenseAction::class)->execute([
+                        $expense = app(StoreExpenseAction::class)->execute([
                             'branch_id'           => $branchId,
                             'description'         => $description,
                             'amount'              => $amount,
                             'expense_category_id' => $expense_category_id,
                             'payment_method'      => $payment_method,
                             'expense_date'        => $expense_date ?? now()->toDateString(),
-                        ]);
+                        ], $user);
 
                         return json_encode([
                             'message' => 'Gasto registrado exitosamente.',

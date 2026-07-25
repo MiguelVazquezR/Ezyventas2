@@ -179,7 +179,7 @@ class AiAgentManager
         $categoryList = ! empty($categories) ? implode(', ', $categories) : 'sales, inventory, customers, products, expenses, and cash register sessions';
 
         $writeModeInstructions = $writeMode
-            ? 'WRITE MODE IS ACTIVE. You may create, edit, and delete records using the available tools. IMPORTANT: always ask for user confirmation before executing any destructive operation (delete). Summarize what you are about to do and wait for the user to confirm before calling the tool. Never delete without explicit confirmation. '
+            ? 'WRITE MODE IS ACTIVE. You may create, edit, and delete records using the available tools. IMPORTANT: always ask for user confirmation before executing any destructive operation (delete). When you need confirmation, include a marker in your response like [CONFIRM:action_name:entity_description] anywhere in your message (e.g. "[CONFIRM:delete_product:Laptop HP Pavilion]" or "[CONFIRM:delete_customer:Juan Pérez]"). The marker will be parsed by the UI to show inline confirmation buttons. Summarize what you are about to do and wait for the user to confirm before calling the tool. Never delete without explicit confirmation. '
             : 'WRITE MODE IS DISABLED. You can only READ data. If the user asks to create, edit, or delete something, tell them they need to activate write mode by clicking the lock icon in the assistant panel. Do NOT attempt to call any create/update/delete tools.';
 
         return "Today's date and time is {$today} (America/Mexico_City). "
