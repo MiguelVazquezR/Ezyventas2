@@ -21,6 +21,17 @@ const props = defineProps({
 });
 
 // ──────────────────────────────────────
+// Rejection reason popover
+// ──────────────────────────────────────
+const popoverRef = ref(null);
+const selectedRejectionReason = ref('');
+
+function openRejectionPopover(event, reason) {
+    selectedRejectionReason.value = reason;
+    popoverRef.value?.show(event);
+}
+
+// ──────────────────────────────────────
 // Breadcrumb
 // ──────────────────────────────────────
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
@@ -215,11 +226,22 @@ const dialogPt = {
 const tagPt = {
     root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' },
 };
+
+const rejectionPopoverPt = {
+    root: { class: '!bg-white dark:!bg-[#232323] !border !border-gray-100 dark:!border-[#3a3a3a] !rounded-3xl !shadow-2xl dark:!shadow-[0_8px_32px_rgba(0,0,0,0.4)] !p-0 !overflow-hidden !max-w-[20rem]' },
+    content: { class: '!p-0' },
+};
 </script>
 
 <template>
     <AppLayout :home="home" :breadcrumbItems="breadcrumbItems">
-        <div class="max-w-5xl mx-auto space-y-6">
+        <div class="max-w-5xl mx-auto space-y-6 pt-6">
+            <!-- Breadcrumb / Back link -->
+            <div class="flex items-center">
+                <Link :href="route('billing.settings.index')" class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
+                    <i class="pi pi-arrow-left !text-[10px]"></i> Volver a configuración fiscal
+                </Link>
+            </div>
 
             <!-- ═══════════════════════════════ HEADER: Profile identity ═══════════════════════════════ -->
             <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
@@ -597,6 +619,10 @@ const tagPt = {
                                         :severity="statusSeverity(data.metadata.status)"
                                         class="!rounded-full !ml-2 !text-[9px] !uppercase !tracking-widest !font-bold"
                                     />
+                                    <i v-if="data.metadata.rejection_reason"
+                                       class="pi pi-comment !text-[12px] text-gray-400 ml-1 cursor-pointer hover:text-primary-500 dark:hover:text-primary-400 transition-colors"
+                                       @click="openRejectionPopover($event, data.metadata.rejection_reason)">
+                                    </i>
                                 </span>
                             </div>
                         </template>
@@ -667,5 +693,18 @@ const tagPt = {
             :canRetryManifestSigning="canRetryManifestSigning"
             @success="router.reload()"
         />
+
+        <!-- Rejection reason popover -->
+        <Popover ref="popoverRef" :pt="rejectionPopoverPt">
+            <div class="flex flex-col">
+                <div class="flex items-center gap-2 px-5 py-3.5 border-b border-gray-100 dark:border-[#3a3a3a]">
+                    <i class="pi pi-info-circle !text-sm text-red-400"></i>
+                    <h3 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 dark:text-gray-400 m-0">Motivo del rechazo</h3>
+                </div>
+                <div class="px-5 py-4">
+                    <p class="text-sm text-gray-700 dark:text-gray-300 m-0 leading-relaxed">{{ selectedRejectionReason }}</p>
+                </div>
+            </div>
+        </Popover>
     </AppLayout>
 </template>

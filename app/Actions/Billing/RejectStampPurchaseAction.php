@@ -3,6 +3,7 @@
 namespace App\Actions\Billing;
 
 use App\Enums\StampPurchaseStatus;
+use App\Models\Billing\StampMovement;
 use App\Models\Billing\StampPurchase;
 
 /**
@@ -21,5 +22,21 @@ class RejectStampPurchaseAction
             'reviewed_at'          => now(),
             'rejection_reason'     => $rejectionReason,
         ]);
+
+        // Mark the pending movement as rejected — stamps never counted toward balance
+        $movement = StampMovement::where('reference_type', StampPurchase::class)
+            ->where('reference_id', $purchase->id)
+            ->first();
+
+        if ($movement) {
+            $metadata = $movement->metadata ?? [];
+            $metadata['status'] = 'rejected';
+            $metadata['rejection_reason'] = $rejectionReason;
+
+            $movement->update([
+                'description' => 'Compra de timbres por transferencia — rechazada',
+                'metadata'    => $metadata,
+            ]);
+        }
     }
 }

@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\StampQuoteRequest;
 use App\Http\Requests\Billing\StoreStampPurchaseRequest;
 use App\Models\Billing\FiscalProfile;
+use App\Models\Billing\StampPricingTier;
 use App\Services\Billing\StampPurchaseService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -33,14 +34,25 @@ class StampPurchaseController extends Controller implements HasMiddleware
     {
         $pricing = $stampPurchaseService->calculatePrice($request->integer('quantity'));
 
+        // Include all active tiers so the frontend can display tier reference & dynamic suggestions
+        $tiers = StampPricingTier::active()->ordered()->get()->map(fn (StampPricingTier $t) => [
+            'id'           => $t->id,
+            'min_quantity' => $t->min_quantity,
+            'max_quantity' => $t->max_quantity,
+            'unit_price'   => (float) $t->unit_price,
+            'label'        => $t->label,
+        ])->values();
+
         return response()->json([
             'quantity'            => $request->integer('quantity'),
             'unit_price'          => $pricing['unit_price'],
             'amount_total'        => $pricing['amount_total'],
             'pricing_tier_label'  => $pricing['pricing_tier_label'],
+            'pricing_tier_id'     => $pricing['pricing_tier_id'],
             'base_unit_price'     => $pricing['base_unit_price'],
             'savings_amount'      => $pricing['savings_amount'],
             'savings_percentage'  => $pricing['savings_percentage'],
+            'tiers'               => $tiers,
         ]);
     }
 
@@ -57,9 +69,10 @@ class StampPurchaseController extends Controller implements HasMiddleware
         $data['fiscal_profile_id']    = $fiscalProfile->id;
         $data['requested_by_user_id'] = $user->id;
 
-        // Handle proof file upload for bank transfers
+        // Handle proof file upload for bank transfers — store on public disk so
+        // the admin review queue can display the file via /storage/... URL.
         if ($request->hasFile('proof_file')) {
-            $path = $request->file('proof_file')->store('stamp-purchase-proofs');
+            $path = $request->file('proof_file')->store('stamp-purchase-proofs', 'public');
             $data['proof_file_path'] = $path;
         }
 

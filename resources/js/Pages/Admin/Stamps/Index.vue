@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue';
 import { useForm, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import AdjustStampModal from '@/Components/AdjustStampModal.vue';
+import MovementsTab from './Partials/MovementsTab.vue';
 
 const props = defineProps({
     masterBalance: [Object, null],
@@ -12,6 +13,10 @@ const props = defineProps({
     preview: Array,
     threshold: Number,
     totalSubaccounts: Number,
+    totalAssignedFromSubaccounts: [Number, null],
+    totalRevenue: { type: Number, default: 0 },
+    totalStampsSold: { type: Number, default: 0 },
+    pendingReviewCount: { type: Number, default: 0 },
     fiscalProfiles: {
         type: Array,
         default: () => [],
@@ -48,6 +53,7 @@ const activeTab = ref(0);
 // ──────────────────────────────────────
 const masterBalanceRefreshing = ref(false);
 const liveMasterBalance = ref(props.masterBalance);
+const totalAssignedFromSubaccounts = ref(props.totalAssignedFromSubaccounts ?? null);
 
 function refreshMasterBalance() {
     masterBalanceRefreshing.value = true;
@@ -55,6 +61,9 @@ function refreshMasterBalance() {
         .then(r => r.json())
         .then(data => {
             if (data.balance) liveMasterBalance.value = data.balance;
+            if (data.totalAssignedFromSubaccounts !== undefined) {
+                totalAssignedFromSubaccounts.value = data.totalAssignedFromSubaccounts;
+            }
         })
         .finally(() => { masterBalanceRefreshing.value = false; });
 }
@@ -274,21 +283,14 @@ const dialogPt = {
                         :href="route('admin.stamps.review-queue')"
                         icon="pi pi-inbox"
                         label="Bandeja de revisión"
-                        severity="secondary"
+                        severity="success"
                         class="!rounded-full"
-                    />
-                    <Button
-                        icon="pi pi-cog"
-                        label="Ajuste manual"
-                        severity="secondary"
-                        class="!rounded-full"
-                        @click="openAdjustModal()"
                     />
                 </div>
             </div>
 
             <!-- ════════════════ KPIs ════════════════ -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4">
                 <!-- Master balance (live) -->
                 <div class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
                     <div class="flex items-center justify-between mb-2">
@@ -310,39 +312,7 @@ const dialogPt = {
                     <p v-else class="text-sm text-gray-400 m-0">Cargando...</p>
                 </div>
 
-                <!-- Timbres Asignados (cached) -->
-                <div class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
-                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">Timbres asignados</p>
-                    <p class="text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0">
-                        {{ snapshotData ? formatNumber(snapshotData.total_stamps_assigned) : '—' }}
-                    </p>
-                    <p v-if="snapshotData" class="text-xs text-gray-400 mt-1 m-0">Actualizado {{ timeAgo(snapshotData.computed_at) }}</p>
-                </div>
-
-                <!-- Timbres Consumidos (cached) -->
-                <div class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
-                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">Timbres consumidos</p>
-                    <p class="text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0">
-                        {{ snapshotData ? formatNumber(snapshotData.total_stamps_used) : '—' }}
-                    </p>
-                    <p v-if="snapshotData" class="text-xs text-gray-400 mt-1 m-0">Actualizado {{ timeAgo(snapshotData.computed_at) }}</p>
-                </div>
-
-                <!-- Emisores Activos (cached + refresh button) -->
-                <div class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
-                    <div class="flex items-center justify-between mb-2">
-                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Emisores activos</p>
-                        <button @click="refreshStats" class="bg-transparent border-none cursor-pointer p-0 text-gray-400 hover:text-primary-500 transition-colors" :disabled="statsRefreshing">
-                            <i class="pi pi-refresh" :class="{ 'animate-spin': statsRefreshing }" :style="{ fontSize: '12px' }"></i>
-                        </button>
-                    </div>
-                    <p class="text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0">
-                        {{ snapshotData ? formatNumber(snapshotData.active_issuers_count) : '—' }}
-                    </p>
-                    <p v-if="statsMessage" class="text-xs mt-1 m-0" :class="statsMessage.includes('Error') ? 'text-red-500' : 'text-green-500'">{{ statsMessage }}</p>
-                </div>
-
-                <!-- Timbres Distribuidos (live from master balance) -->
+                <!-- Timbres Distribuidos (sum of all subaccounts) -->
                 <div class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
                     <div class="flex items-center justify-between mb-2">
                         <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Timbres distribuidos</p>
@@ -353,9 +323,11 @@ const dialogPt = {
                     <p v-if="masterBalanceError" class="text-xs text-red-500 m-0">{{ masterBalanceError }}</p>
                     <template v-else-if="liveMasterBalance">
                         <p class="text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0">
-                            {{ formatNumber(liveMasterBalance.stampsAssigned) }}
+                            {{ formatNumber(totalAssignedFromSubaccounts ?? liveMasterBalance.stampsAssigned) }}
                         </p>
-                        <p class="text-xs text-gray-400 mt-1 m-0">Asignados a subcuentas</p>
+                        <p class="text-xs text-gray-400 mt-1 m-0">
+                            Suma de {{ totalAssignedFromSubaccounts !== null ? 'todas las subcuentas' : 'cuenta maestra (actualiza para ver el desglose)' }}
+                        </p>
                     </template>
                     <p v-else class="text-sm text-gray-400 m-0">Cargando...</p>
                 </div>
@@ -370,11 +342,51 @@ const dialogPt = {
                 </div>
             </div>
 
+            <!-- ════════════════ Revenue KPIs ════════════════ -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Total revenue -->
+                <div class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">Monto total vendido</p>
+                    <p class="text-3xl font-light tracking-tight text-emerald-600 dark:text-emerald-400 m-0">
+                        {{ formatCurrency(totalRevenue) }}
+                    </p>
+                    <p class="text-xs text-gray-400 mt-1 m-0">Suma de todas las compras acreditadas y aprobadas</p>
+                </div>
+
+                <!-- Total stamps sold -->
+                <div class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">Total de timbres vendidos</p>
+                    <p class="text-3xl font-light tracking-tight text-primary-600 dark:text-primary-400 m-0">
+                        {{ formatNumber(totalStampsSold) }}
+                    </p>
+                    <p class="text-xs text-gray-400 mt-1 m-0">Timbres acreditados a perfiles fiscales</p>
+                </div>
+
+                <!-- Pending review -->
+                <div class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Pendientes de revisión</p>
+                        <Link
+                            :href="route('admin.stamps.review-queue')"
+                            class="text-[10px] uppercase tracking-widest font-bold text-amber-500 hover:text-amber-400 transition-colors"
+                        >
+                            Ver bandeja
+                            <i class="pi pi-arrow-up-right !text-[8px] ml-1" />
+                        </Link>
+                    </div>
+                    <p class="text-3xl font-light tracking-tight m-0"
+                       :class="pendingReviewCount > 0 ? 'text-amber-500' : 'text-gray-300 dark:text-gray-600'">
+                        {{ formatNumber(pendingReviewCount) }}
+                    </p>
+                    <p class="text-xs text-gray-400 mt-1 m-0">Transferencias y compras grandes por revisar</p>
+                </div>
+            </div>
+
             <!-- ════════════════ Tabs: Distribución | Precios | Configuración ════════════════ -->
             <div class="rounded-3xl bg-white dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] overflow-hidden">
                 <div class="flex border-b border-gray-100 dark:border-[#3a3a3a]">
                     <button
-                        v-for="(tab, i) in ['Distribución por emisor', 'Precios y escalas', 'Configuración']"
+                        v-for="(tab, i) in ['Distribución por emisor', 'Movimientos', 'Precios y escalas', 'Configuración']"
                         :key="i"
                         @click="activeTab = i"
                         class="flex-1 px-4 py-3 text-xs uppercase tracking-widest font-bold transition-colors border-b-2 bg-transparent cursor-pointer"
@@ -460,15 +472,6 @@ const dialogPt = {
                             <template #body="{ data }">
                                 <div class="flex gap-2">
                                     <Button
-                                        as="a"
-                                        :href="route('admin.stamps.history', data.id)"
-                                        icon="pi pi-history"
-                                        severity="secondary"
-                                        size="small"
-                                        class="!rounded-full"
-                                        v-tooltip.top="'Historial de timbres'"
-                                    />
-                                    <Button
                                         icon="pi pi-cog"
                                         severity="secondary"
                                         size="small"
@@ -482,8 +485,13 @@ const dialogPt = {
                     </DataTable>
                 </div>
 
-                <!-- ──── Tab 1: Precios y escalas ──── -->
-                <div v-if="activeTab === 1" class="p-6 space-y-6">
+                <!-- ──── Tab 1: Movimientos ──── -->
+                <div v-if="activeTab === 1">
+                    <MovementsTab />
+                </div>
+
+                <!-- ──── Tab 2: Precios y escalas ──── -->
+                <div v-if="activeTab === 2" class="p-6 space-y-6">
                     <!-- Preview -->
                     <div>
                         <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-4">Vista previa de precios</h2>
@@ -555,8 +563,8 @@ const dialogPt = {
                     </div>
                 </div>
 
-                <!-- ──── Tab 2: Configuración ──── -->
-                <div v-if="activeTab === 2" class="p-6 space-y-6">
+                <!-- ──── Tab 3: Configuración ──── -->
+                <div v-if="activeTab === 3" class="p-6 space-y-6">
                     <!-- Threshold -->
                     <div>
                         <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-4">Umbral de revisión de compras grandes</h2>
@@ -660,6 +668,7 @@ const dialogPt = {
             :fiscal-profiles="fiscalProfiles"
             :tiers="tiers"
             :preselected-profile-id="adjustPreselectedId"
+            @success="refreshMasterBalance"
         />
     </AppLayout>
 </template>

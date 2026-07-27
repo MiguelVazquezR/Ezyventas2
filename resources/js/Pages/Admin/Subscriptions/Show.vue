@@ -6,6 +6,7 @@ import EditVersionItemsModal from './Partials/EditVersionItemsModal.vue';
 import RegisterPaymentModal from './Partials/RegisterPaymentModal.vue';
 import PaymentHistoryTable from './Partials/PaymentHistoryTable.vue';
 import SubscriptionSettings from './Partials/SubscriptionSettings.vue';
+import AdjustStampModal from '@/Components/AdjustStampModal.vue';
 
 const props = defineProps({
     subscription: Object,
@@ -131,36 +132,15 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
 // ──────────────────────────────────────
 const showStampModal = ref(false);
 const selectedFiscalProfile = ref(null);
-const stampAdjustmentType = ref('add');
-const stampQuantity = ref(1);
-const stampAdminNote = ref('');
-const stampFormProcessing = ref(false);
 
 function openStampModal(profile) {
     selectedFiscalProfile.value = profile;
-    stampAdjustmentType.value = 'add';
-    stampQuantity.value = 1;
-    stampAdminNote.value = '';
     showStampModal.value = true;
 }
 
-function submitStampAdjustment() {
-    if (!stampAdminNote.value.trim()) return;
-
-    stampFormProcessing.value = true;
-    router.post(route('admin.stamps.manual-adjustment'), {
-        fiscal_profile_id: selectedFiscalProfile.value.id,
-        stamp_quantity: stampQuantity.value,
-        adjustment_type: stampAdjustmentType.value,
-        admin_note: stampAdminNote.value,
-    }, {
-        preserveScroll: true,
-        preserveState: false,
-        onFinish: () => {
-            stampFormProcessing.value = false;
-            showStampModal.value = false;
-        },
-    });
+function onStampAdjustSuccess() {
+    showStampModal.value = false;
+    selectedFiscalProfile.value = null;
 }
 
 function stampStatusLabel(status) {
@@ -412,15 +392,15 @@ function stampPaymentMethodLabel(method) {
                     />
                 </div>
 
-                <!-- ── Timbres por perfil fiscal ──────────── -->
-                <div v-if="fiscalProfiles && fiscalProfiles.length > 0" class="mt-8 pt-8 border-t border-gray-100 dark:border-[#3a3a3a]">
+                <!-- ── Timbres / Facturación ──────────── -->
+                <div class="mt-8 pt-8 border-t border-gray-100 dark:border-[#3a3a3a]">
                     <div class="flex items-center justify-between mb-4">
                         <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
-                            Timbres por perfil fiscal
+                            Facturación
                         </h2>
                         <Link
                             :href="route('admin.stamps.index')"
-                            class="text-[10px] uppercase tracking-widest font-bold text-gray-400 hover:text-primary-500 transition-colors"
+                            class="text-[10px] uppercase tracking-widest font-bold text-purple-500 hover:text-primary-500 transition-colors"
                         >
                             Panel global de timbres
                             <i class="pi pi-arrow-up-right !text-[8px] ml-1" />
@@ -428,7 +408,7 @@ function stampPaymentMethodLabel(method) {
                     </div>
 
                     <!-- Fiscal profiles cards -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div v-if="fiscalProfiles && fiscalProfiles.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div
                             v-for="profile in fiscalProfiles"
                             :key="profile.id"
@@ -480,16 +460,33 @@ function stampPaymentMethodLabel(method) {
                         </div>
                     </div>
 
+                    <!-- Empty state: no fiscal profiles -->
+                    <div v-if="!fiscalProfiles || fiscalProfiles.length === 0" class="flex flex-col items-center justify-center py-12 px-4 text-center rounded-2xl bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a]">
+                        <i class="pi pi-file !text-3xl text-gray-300 dark:text-gray-600 mb-3"></i>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 max-w-sm leading-relaxed m-0">
+                            Este suscriptor no tiene perfiles fiscales registrados.
+                        </p>
+                        <p class="text-xs text-gray-400 mt-2 m-0">
+                            Los perfiles fiscales se crean desde la sección de facturación del suscriptor.
+                        </p>
+                    </div>
+
                     <!-- Combined purchase history -->
-                    <div v-if="allStampPurchases && allStampPurchases.length > 0">
+                    <div v-if="allStampPurchases && allStampPurchases.length > 0" class="mt-6">
                         <h3 class="text-xs font-bold text-gray-500 m-0 mb-3">Historial de movimientos</h3>
                         <DataTable
                             :value="allStampPurchases"
+                            paginator
+                            :rows="10"
+                            :rowsPerPageOptions="[10, 15, 25, 50]"
                             stripedRows
                             class="w-full text-sm"
+                            paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
+                            currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} movimientos"
                             :pt="{
                                 root: { class: '!bg-transparent' },
                                 headerRow: { class: '!bg-transparent' },
+                                paginator: { root: { class: '!bg-transparent !border-0 !pt-3' } },
                             }"
                         >
                             <Column header="Perfil">
@@ -539,79 +536,14 @@ function stampPaymentMethodLabel(method) {
             :plan-items="planItems"
         />
 
-        <!-- Modal: Ajuste manual de timbres -->
-        <Dialog
-            v-model:visible="showStampModal"
-            header="Ajustar timbres"
-            :modal="true"
-            class="w-full max-w-md"
-            :pt="{
-                root: { class: '!rounded-3xl !bg-white dark:!bg-[#232323] !border-gray-100 dark:!border-[#3a3a3a]' },
-                header: { class: '!bg-transparent' },
-                content: { class: '!bg-transparent' },
-            }"
-        >
-            <div v-if="selectedFiscalProfile" class="flex flex-col gap-4">
-                <p class="text-sm text-gray-500 m-0">
-                    {{ selectedFiscalProfile.razon_social }} — RFC: {{ selectedFiscalProfile.rfc }}
-                </p>
-
-                <!-- Adjustment type -->
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Tipo de ajuste</label>
-                    <div class="flex gap-4">
-                        <div class="flex items-center gap-2">
-                            <RadioButton v-model="stampAdjustmentType" value="add" inputId="adj_add" />
-                            <label for="adj_add" class="text-sm cursor-pointer">Agregar timbres</label>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <RadioButton v-model="stampAdjustmentType" value="remove" inputId="adj_remove" />
-                            <label for="adj_remove" class="text-sm cursor-pointer">Retirar timbres</label>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Quantity -->
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Cantidad</label>
-                    <InputNumber
-                        v-model="stampQuantity"
-                        :min="1"
-                        :max="999999"
-                        class="w-full"
-                        :pt="{
-                            input: { root: { class: 'w-full min-w-0 !rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-3 !text-xl !font-light !text-gray-900 dark:!text-white' } }
-                        }"
-                    />
-                </div>
-
-                <!-- Admin note -->
-                <div class="flex flex-col gap-1.5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Motivo del ajuste *</label>
-                    <Textarea
-                        v-model="stampAdminNote"
-                        rows="3"
-                        class="w-full"
-                        placeholder="Ej. Compensación por incidencia de timbrado duplicado"
-                        :pt="{
-                            root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a]' }
-                        }"
-                    />
-                </div>
-            </div>
-
-            <template #footer>
-                <Button label="Cancelar" severity="secondary" class="!rounded-full" @click="showStampModal = false" />
-                <Button
-                    :label="stampAdjustmentType === 'remove' ? 'Retirar timbres' : 'Agregar timbres'"
-                    :severity="stampAdjustmentType === 'remove' ? 'danger' : 'primary'"
-                    class="!rounded-full"
-                    :loading="stampFormProcessing"
-                    :disabled="!stampAdminNote.trim()"
-                    @click="submitStampAdjustment"
-                />
-            </template>
-        </Dialog>
+        <!-- Modal: Ajuste de timbres (manual o compra) -->
+        <AdjustStampModal
+            :fiscalProfile="selectedFiscalProfile"
+            :visible="showStampModal"
+            :showModeToggle="false"
+            @update:visible="showStampModal = $event"
+            @success="onStampAdjustSuccess"
+        />
 
     </AppLayout>
 </template>

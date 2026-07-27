@@ -1,15 +1,15 @@
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, isSameDay, isToday, format } from 'date-fns';
 
 const props = defineProps({
     fiscalProfiles: { type: Array, default: () => [] },
-    totalStampsUsed: { type: Number, default: 0 },
-    totalInvoices: { type: Number, default: 0 },
+    draftInvoices: { type: Number, default: 0 },
+    certifiedInvoices: { type: Number, default: 0 },
+    cancelationPendingInvoices: { type: Number, default: 0 },
     canceledInvoices: { type: Number, default: 0 },
-    totalAmount: { type: Number, default: 0 },
     filters: { type: Object, default: () => ({ startDate: format(new Date(), 'yyyy-MM-dd'), endDate: format(new Date(), 'yyyy-MM-dd') }) },
     facturacionHabilitada: { type: Boolean, default: false },
 });
@@ -89,15 +89,8 @@ onMounted(() => {
 });
 
 // --- HELPERS ---
-const formatCurrency = (value) =>
-    new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value || 0);
-
 const formatNumber = (value) =>
     new Intl.NumberFormat('es-MX').format(value || 0);
-
-const activeProfiles = computed(() =>
-    props.fiscalProfiles,
-);
 
 const tagPt = {
     root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' },
@@ -146,7 +139,7 @@ const tagPt = {
                     </h1>
                     <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 mt-2 m-0 flex items-center gap-2">
                         <span class="w-1.5 h-1.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse"></span>
-                        Resumen general &middot; CFDI 4.0
+                        Resumen general de todos tus emisores fiscales
                     </p>
                 </div>
 
@@ -187,58 +180,58 @@ const tagPt = {
 
             <!-- KPI Cards -->
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <!-- Total comprobantes -->
+                <!-- Pre-facturas -->
                 <div class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col gap-3">
                     <div class="flex items-center gap-2">
-                        <div class="w-9 h-9 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
-                            <i class="pi pi-receipt !text-sm text-blue-500"></i>
+                        <div class="w-9 h-9 rounded-full bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0 border border-purple-100 dark:border-purple-900/30">
+                            <i class="pi pi-file !text-sm text-purple-500"></i>
                         </div>
-                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Comprobantes</span>
+                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Pre-facturas</span>
                     </div>
-                    <span class="text-4xl font-light tracking-tight text-gray-900 dark:text-white">{{ formatNumber(totalInvoices) }}</span>
-                    <span class="text-xs text-gray-400">Total de CFDI emitidos</span>
+                    <span class="text-4xl font-light tracking-tight text-gray-900 dark:text-white">{{ formatNumber(draftInvoices) }}</span>
+                    <span class="text-xs text-gray-400">Pendientes de timbrar</span>
                 </div>
 
-                <!-- Timbres usados -->
+                <!-- Facturas timbradas -->
                 <div class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col gap-3">
                     <div class="flex items-center gap-2">
                         <div class="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center flex-shrink-0 border border-emerald-100 dark:border-emerald-900/30">
                             <i class="pi pi-check-circle !text-sm text-emerald-500"></i>
                         </div>
-                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Timbres usados</span>
+                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Facturas timbradas</span>
                     </div>
-                    <span class="text-4xl font-light tracking-tight text-gray-900 dark:text-white">{{ formatNumber(totalStampsUsed) }}</span>
-                    <span class="text-xs text-gray-400">Facturas certificadas</span>
+                    <span class="text-4xl font-light tracking-tight text-gray-900 dark:text-white">{{ formatNumber(certifiedInvoices) }}</span>
+                    <span class="text-xs text-gray-400">CFDI certificados</span>
                 </div>
 
-                <!-- Canceladas -->
+                <!-- Pendientes de cancelación -->
+                <div class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col gap-3">
+                    <div class="flex items-center gap-2">
+                        <div class="w-9 h-9 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0 border border-amber-100 dark:border-amber-900/30">
+                            <i class="pi pi-clock !text-sm text-amber-500"></i>
+                        </div>
+                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Pendientes de cancelación</span>
+                    </div>
+                    <span class="text-4xl font-light tracking-tight text-gray-900 dark:text-white">{{ formatNumber(cancelationPendingInvoices) }}</span>
+                    <span class="text-xs text-gray-400">En proceso de cancelación</span>
+                </div>
+
+                <!-- Facturas canceladas -->
                 <div class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col gap-3">
                     <div class="flex items-center gap-2">
                         <div class="w-9 h-9 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center flex-shrink-0 border border-red-100 dark:border-red-900/30">
                             <i class="pi pi-times-circle !text-sm text-red-500"></i>
                         </div>
-                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Canceladas</span>
+                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Facturas canceladas</span>
                     </div>
                     <span class="text-4xl font-light tracking-tight text-gray-900 dark:text-white">{{ formatNumber(canceledInvoices) }}</span>
                     <span class="text-xs text-gray-400">CFDI cancelados</span>
                 </div>
-
-                <!-- Total facturado -->
-                <div class="bg-white dark:bg-[#232323] p-6 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col gap-3">
-                    <div class="flex items-center gap-2">
-                        <div class="w-9 h-9 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0 border border-amber-100 dark:border-amber-900/30">
-                            <i class="pi pi-dollar !text-sm text-amber-500"></i>
-                        </div>
-                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Total facturado</span>
-                    </div>
-                    <span class="text-3xl font-light tracking-tight text-gray-900 dark:text-white">{{ formatCurrency(totalAmount) }}</span>
-                    <span class="text-xs text-gray-400">MXN facturas certificadas</span>
-                </div>
             </div>
 
             <!-- Per-Fiscal-Profile Cards -->
-            <div v-if="fiscalProfiles.length > 0" class="space-y-6">
-                <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Perfiles fiscales</h2>
+            <div v-if="fiscalProfiles.length > 0" class="space-y-6 pt-6 lg:pt-8">
+                <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Emisores fiscales</h2>
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div
@@ -265,15 +258,15 @@ const tagPt = {
                         </div>
                         <div v-else-if="profile.balance" class="grid grid-cols-3 gap-3 p-3 rounded-2xl bg-gray-50 dark:bg-[#1a1a1a]">
                             <div class="text-center">
-                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Disponibles</p>
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Timbres disponibles</p>
                                 <p class="text-xl font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsBalance ?? '—' }}</p>
                             </div>
                             <div class="text-center">
-                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Usados</p>
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Timbres usados</p>
                                 <p class="text-xl font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsUsed ?? '—' }}</p>
                             </div>
                             <div class="text-center">
-                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Asignados</p>
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Timbres asignados</p>
                                 <p class="text-xl font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsAssigned ?? '—' }}</p>
                             </div>
                         </div>
@@ -281,20 +274,20 @@ const tagPt = {
                         <!-- Invoice KPIs -->
                         <div class="grid grid-cols-4 gap-3">
                             <div class="text-center">
-                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Comprobantes</p>
-                                <p class="text-lg font-light text-gray-900 dark:text-white m-0">{{ formatNumber(profile.totalInvoices) }}</p>
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Pre-facturas</p>
+                                <p class="text-lg font-light text-purple-600 dark:text-purple-400 m-0">{{ formatNumber(profile.draftCount) }}</p>
                             </div>
                             <div class="text-center">
-                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Certificadas</p>
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Timbradas</p>
                                 <p class="text-lg font-light text-emerald-600 dark:text-emerald-400 m-0">{{ formatNumber(profile.certifiedCount) }}</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Pend. cancelar</p>
+                                <p class="text-lg font-light text-amber-500 m-0">{{ formatNumber(profile.cancelationPendingCount) }}</p>
                             </div>
                             <div class="text-center">
                                 <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Canceladas</p>
                                 <p class="text-lg font-light text-red-500 m-0">{{ formatNumber(profile.canceledCount) }}</p>
-                            </div>
-                            <div class="text-center">
-                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Total facturado</p>
-                                <p class="text-sm font-light text-gray-900 dark:text-white m-0">{{ formatCurrency(profile.totalAmount) }}</p>
                             </div>
                         </div>
 
@@ -304,7 +297,7 @@ const tagPt = {
                             class="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-primary-500 transition-colors no-underline"
                         >
                             <i class="pi pi-arrow-right !text-[10px]"></i>
-                            Ver detalle y comprar timbres
+                            Ver detalle
                         </Link>
                     </div>
                 </div>
@@ -360,29 +353,6 @@ const tagPt = {
                         </template>
                     </Column>
                 </DataTable>
-            </div>
-
-            <!-- Empty state -->
-            <div
-                v-else
-                class="bg-white dark:bg-[#232323] p-10 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] text-center"
-            >
-                <div class="w-16 h-16 rounded-full bg-gray-50 dark:bg-[#1a1a1a] flex items-center justify-center mx-auto mb-4 border border-gray-100 dark:border-[#3a3a3a]">
-                    <i class="pi pi-building !text-2xl text-gray-400"></i>
-                </div>
-                <h2 class="text-lg font-light tracking-tight text-gray-900 dark:text-white m-0 mb-2">
-                    Sin perfiles fiscales
-                </h2>
-                <p class="text-sm text-gray-500 dark:text-gray-400 m-0 max-w-md mx-auto mb-6">
-                    Agrega tu primer RFC emisor para comenzar a facturar.
-                </p>
-                <Link
-                    :href="route('billing.settings.index')"
-                    class="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white rounded-full text-sm font-medium transition-colors no-underline"
-                >
-                    <i class="pi pi-plus !text-sm"></i>
-                    Agregar perfil fiscal
-                </Link>
             </div>
 
             </div> <!-- closes v-if="facturacionHabilitada" -->

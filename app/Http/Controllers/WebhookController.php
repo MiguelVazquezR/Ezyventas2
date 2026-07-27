@@ -134,13 +134,47 @@ class WebhookController extends Controller
                 return response()->json(['status' => 'ok', 'reason' => 'awaiting review — large quantity']);
             }
 
-            // Normal purchase: auto-approve and dispatch PAC job
+            // Normal purchase: auto-approve and dispatch PAC job.
+            // Double-check master balance in case stamps were depleted between
+            // purchase creation and payment confirmation.
+            $stampPurchaseService = app(\App\Services\Billing\StampPurchaseService::class);
+            $balanceCheck = $stampPurchaseService->checkMasterBalance($stampPurchase->stamp_quantity);
+
+            if (! $balanceCheck['sufficient']) {
+                // Master balance insufficient — escalate to admin review instead of
+                // auto-approving so the admin can handle it when balance is replenished.
+                $stampPurchase->update([
+                    'status'        => StampPurchaseStatus::AWAITING_REVIEW,
+                    'review_reason' => 'large_quantity',
+                ]);
+
+                Log::warning('MP webhook: stamp purchase set to awaiting review — master balance insufficient', [
+                    'stamp_purchase_id' => $stampPurchase->id,
+                    'mp_payment_id'     => $mpPaymentId,
+                    'quantity'          => $stampPurchase->stamp_quantity,
+                    'master_balance'    => $balanceCheck['stampsBalance'],
+                ]);
+
+                return response()->json(['status' => 'ok', 'reason' => 'awaiting review — insufficient master balance']);
+            }
+
             $stampPurchase->update([
                 'status' => StampPurchaseStatus::APPROVED,
             ]);
 
             $stampApproveAction = app(ApproveStampPurchaseAction::class);
-            $stampApproveAction->execute($stampPurchase, $stampPurchase->requested_by_user_id);
+
+            try {
+                $stampApproveAction->execute($stampPurchase, $stampPurchase->requested_by_user_id);
+            } catch (\RuntimeException $e) {
+                Log::error('MP webhook: stamp purchase PAC call failed', [
+                    'stamp_purchase_id' => $stampPurchase->id,
+                    'mp_payment_id'     => $mpPaymentId,
+                    'error'             => $e->getMessage(),
+                ]);
+
+                return response()->json(['status' => 'error', 'reason' => 'PAC assignment failed'], 500);
+            }
 
             Log::info('MP webhook: stamp purchase approved', [
                 'stamp_purchase_id' => $stampPurchase->id,

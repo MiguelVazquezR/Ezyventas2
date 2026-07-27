@@ -4,6 +4,7 @@ namespace App\Actions\Billing;
 
 use App\Enums\StampPaymentMethod;
 use App\Enums\StampPurchaseStatus;
+use App\Models\Billing\StampMovement;
 use App\Models\Billing\StampPurchase;
 use App\Services\Billing\StampPurchaseService;
 use App\Services\PlatformMercadoPagoService;
@@ -73,6 +74,30 @@ class CreateStampPurchaseAction
         ];
 
         $purchase = $this->stampPurchaseService->createPurchase($purchaseData);
+
+        // For bank transfers, create a pending movement immediately so it appears in history.
+        // The balance_after is NOT incremented — stamps are not usable until approved & applied.
+        if ($reviewReason === 'bank_transfer') {
+            $lastBalance = StampMovement::where('fiscal_profile_id', $purchase->fiscal_profile_id)
+                ->latest('id')
+                ->value('balance_after') ?? 0;
+
+            StampMovement::create([
+                'fiscal_profile_id' => $purchase->fiscal_profile_id,
+                'type'              => 'entry',
+                'description'       => 'Compra de timbres por transferencia — pendiente de revisión',
+                'quantity'          => $purchase->stamp_quantity,
+                'balance_after'     => $lastBalance,
+                'reference_type'    => StampPurchase::class,
+                'reference_id'      => $purchase->id,
+                'metadata'          => [
+                    'payment_method' => 'bank_transfer',
+                    'status'         => 'pending',
+                    'amount_total'   => (float) $purchase->amount_total,
+                    'unit_price'     => (float) $purchase->unit_price,
+                ],
+            ]);
+        }
 
         $mpPreference = null;
 

@@ -8,6 +8,7 @@ use App\Models\Billing\Invoice;
 use App\Models\Billing\StampMovement;
 use App\Models\Billing\StampPurchase;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 /**
  * StampMovementObserver
@@ -42,8 +43,8 @@ class StampMovementObserver
     public function updated(Model $model): void
     {
         if ($model instanceof StampPurchase) {
-            if ($model->isDirty('status') && $model->status->value === 'stamps_applied' && ! $this->movementExists($model)) {
-                $this->recordEntryFromPurchase($model);
+            if ($model->isDirty('status') && $model->status->value === 'stamps_applied') {
+                $this->handlePurchaseApplied($model);
             }
         } elseif ($model instanceof Invoice) {
             if ($model->isDirty('status') && $model->status === InvoiceStatus::CERTIFIED && ! $this->movementExists($model)) {
@@ -192,5 +193,53 @@ class StampMovementObserver
             ->value('balance_after');
 
         return ($last ?? 0) + $delta;
+    }
+
+    /**
+     * Handle a StampPurchase reaching stamps_applied.
+     *
+     * If a pending movement already exists (bank_transfer flow), update it
+     * with the correct balance_after and recalculate subsequent movements.
+     * Otherwise, create a new movement entry.
+     */
+    private function handlePurchaseApplied(StampPurchase $purchase): void
+    {
+        $existing = StampMovement::where('reference_type', StampPurchase::class)
+            ->where('reference_id', $purchase->id)
+            ->first();
+
+        if ($existing && ($existing->metadata['status'] ?? null) === 'pending') {
+            // Transition pending → applied: update balance_after and metadata
+            $delta = $purchase->stamp_quantity;
+            $newBalance = ($existing->balance_after ?? 0) + $delta;
+
+            $existing->update([
+                'description'   => $this->buildPurchaseDescription($purchase),
+                'balance_after' => $newBalance,
+                'metadata'      => array_merge($existing->metadata ?? [], [
+                    'status' => 'stamps_applied',
+                ]),
+            ]);
+
+            // Bump all subsequent movements' balance_after by the same delta
+            $this->bumpSubsequentBalances($purchase->fiscal_profile_id, $existing->id, $delta);
+
+            return;
+        }
+
+        // No pending movement exists — create a fresh one (MP, manual adjustments, etc.)
+        if (! $this->movementExists($purchase)) {
+            $this->recordEntryFromPurchase($purchase);
+        }
+    }
+
+    /**
+     * Add $delta to balance_after for all movements after $movementId.
+     */
+    private function bumpSubsequentBalances(int $fiscalProfileId, int $movementId, int $delta): void
+    {
+        StampMovement::where('fiscal_profile_id', $fiscalProfileId)
+            ->where('id', '>', $movementId)
+            ->update(['balance_after' => DB::raw("balance_after + {$delta}")]);
     }
 }

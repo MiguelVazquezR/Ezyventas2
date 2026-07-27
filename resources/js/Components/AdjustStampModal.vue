@@ -7,18 +7,23 @@ import axios from 'axios';
 const props = defineProps({
     visible: Boolean,
     fiscalProfiles: { type: Array, default: () => [] },
+    fiscalProfile: { type: Object, default: null },
     tiers: { type: Array, default: () => [] },
     preselectedProfileId: { type: [Number, null], default: null },
+    showModeToggle: { type: Boolean, default: true },
 });
-const emit = defineEmits(['update:visible']);
+const emit = defineEmits(['update:visible', 'success']);
+
+// ── Single-profile mode ───────────────────────────────────
+const isSingleProfile = computed(() => !!props.fiscalProfile);
 
 // ── Operation mode ─────────────────────────────────────────
 const opMode = ref('manual'); // 'manual' | 'purchase'
 
 // ── Form state ─────────────────────────────────────────────
 const form = useForm({
-    fiscal_profile_id: props.preselectedProfileId,
-    stamp_quantity: 100,
+    fiscal_profile_id: props.fiscalProfile?.id ?? props.preselectedProfileId,
+    stamp_quantity: 1,
     adjustment_type: 'add',
     admin_note: '',
     mode: 'manual',
@@ -27,28 +32,30 @@ const form = useForm({
 
 watch(() => props.visible, (open) => {
     if (!open) return;
-    opMode.value = 'manual';
-    form.fiscal_profile_id = props.preselectedProfileId;
-    form.stamp_quantity = 100;
+    opMode.value = props.showModeToggle ? 'manual' : 'manual';
+    form.fiscal_profile_id = props.fiscalProfile?.id ?? props.preselectedProfileId;
+    form.stamp_quantity = 1;
     form.adjustment_type = 'add';
     form.admin_note = '';
     form.mode = 'manual';
     form.proof_file = null;
     form.clearErrors();
     filePreviewUrl.value = null;
-    if (props.preselectedProfileId) fetchBalance(props.preselectedProfileId);
+    const profileId = props.fiscalProfile?.id ?? props.preselectedProfileId;
+    if (profileId) fetchBalance(profileId);
 });
 
 watch(() => props.preselectedProfileId, (id) => {
-    if (id && props.visible) { form.fiscal_profile_id = id; fetchBalance(id); }
+    if (id && props.visible && !isSingleProfile.value) { form.fiscal_profile_id = id; fetchBalance(id); }
 });
 
 watch(opMode, (m) => { form.mode = m; });
 
 // ── Selected profile ───────────────────────────────────────
-const selectedProfile = computed(() =>
-    props.fiscalProfiles.find(p => p.id === form.fiscal_profile_id) ?? null
-);
+const selectedProfile = computed(() => {
+    if (isSingleProfile.value) return props.fiscalProfile;
+    return props.fiscalProfiles.find(p => p.id === form.fiscal_profile_id) ?? null;
+});
 
 // ── Stamp balance ──────────────────────────────────────────
 const stampBalance = ref(null);
@@ -107,10 +114,15 @@ function submit() {
     form.post(route('admin.stamps.manual-adjustment'), {
         preserveScroll: true,
         forceFormData: opMode.value === 'purchase',
-        onSuccess: () => emit('update:visible', false),
+        onSuccess: () => {
+            emit('update:visible', false);
+            emit('success');
+        },
     });
 }
-function close() { emit('update:visible', false); }
+function close() {
+    emit('update:visible', false);
+}
 
 // ── Helpers ────────────────────────────────────────────────
 const adjLabel = (t) => t === 'add' ? 'Agregar timbres' : 'Retirar timbres';
@@ -144,8 +156,8 @@ const dpt = {
 
         <form @submit.prevent="submit" class="flex flex-col gap-5">
 
-            <!-- ── Mode Toggle ──────────────────────────── -->
-            <div class="flex flex-col gap-1.5">
+            <!-- ── Mode Toggle (hidden in single-profile mode) ── -->
+            <div v-if="showModeToggle && !isSingleProfile" class="flex flex-col gap-1.5">
                 <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Modo de operaci&oacute;n</label>
                 <div class="flex p-1 rounded-2xl bg-gray-100 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a]">
                     <button type="button" @click="opMode = 'manual'"
@@ -161,8 +173,25 @@ const dpt = {
                 </div>
             </div>
 
-            <!-- ── Fiscal Profile Select ────────────────── -->
-            <div class="flex flex-col gap-1.5">
+            <!-- ── Mode Toggle (single-profile: simpler) ── -->
+            <div v-if="showModeToggle && isSingleProfile" class="flex flex-col gap-1.5">
+                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Modo de operaci&oacute;n</label>
+                <div class="flex p-1 rounded-2xl bg-gray-100 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a]">
+                    <button type="button" @click="opMode = 'manual'"
+                        class="flex-1 px-4 py-2 text-xs font-semibold uppercase tracking-widest rounded-xl transition-all cursor-pointer"
+                        :class="opMode === 'manual' ? 'bg-white dark:bg-[#232323] text-gray-900 dark:text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'">
+                        <i class="pi pi-sliders-h !text-xs mr-1.5" />Ajuste manual
+                    </button>
+                    <button type="button" @click="opMode = 'purchase'"
+                        class="flex-1 px-4 py-2 text-xs font-semibold uppercase tracking-widest rounded-xl transition-all cursor-pointer"
+                        :class="opMode === 'purchase' ? 'bg-white dark:bg-[#232323] text-gray-900 dark:text-white shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'">
+                        <i class="pi pi-shopping-cart !text-xs mr-1.5" />Compra
+                    </button>
+                </div>
+            </div>
+
+            <!-- ── Fiscal Profile Select (hidden in single-profile mode) ── -->
+            <div v-if="!isSingleProfile" class="flex flex-col gap-1.5">
                 <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Perfil fiscal *</label>
                 <Select v-model="form.fiscal_profile_id" :options="fiscalProfiles" optionLabel="razon_social" optionValue="id"
                     placeholder="Selecciona un perfil fiscal" class="w-full" :disabled="!!preselectedProfileId"
@@ -257,7 +286,7 @@ const dpt = {
 
             <!-- ── Manual: note ─────────────────────────── -->
             <div v-if="opMode === 'manual'" class="flex flex-col gap-1.5">
-                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Nota administrativa *</label>
+                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Nota del ajuste *</label>
                 <Textarea v-model="form.admin_note" placeholder="Raz&oacute;n del ajuste..." rows="3" class="w-full"
                     :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-3' } }" />
                 <Message v-if="form.errors.admin_note" severity="error" variant="simple" size="small">{{ form.errors.admin_note }}</Message>

@@ -47,12 +47,12 @@ class InvoiceController extends Controller implements HasMiddleware
         // If billing is not enabled, return safe defaults — no PAC calls needed
         if (! $facturacionHabilitada) {
             return Inertia::render('Billing/Dashboard/Index', [
-                'fiscalProfiles'        => collect(),
-                'totalStampsUsed'       => 0,
-                'totalInvoices'         => 0,
-                'canceledInvoices'      => 0,
-                'totalAmount'           => 0.0,
-                'facturacionHabilitada' => false,
+                'fiscalProfiles'             => collect(),
+                'draftInvoices'              => 0,
+                'certifiedInvoices'          => 0,
+                'cancelationPendingInvoices' => 0,
+                'canceledInvoices'           => 0,
+                'facturacionHabilitada'      => false,
             ]);
         }
 
@@ -60,13 +60,12 @@ class InvoiceController extends Controller implements HasMiddleware
             ? $subscription->fiscalProfiles()->orderBy('created_at', 'desc')->get()
             : collect();
 
-        $totalInvoices = Invoice::where('branch_id', $user->branch_id)->count();
+        $draftInvoices = Invoice::where('branch_id', $user->branch_id)->draft()->count();
         $certifiedInvoices = Invoice::where('branch_id', $user->branch_id)->certified()->count();
+        $cancelationPendingInvoices = Invoice::where('branch_id', $user->branch_id)
+            ->where('status', \App\Enums\InvoiceStatus::CANCELATION_PENDING)
+            ->count();
         $canceledInvoices = Invoice::where('branch_id', $user->branch_id)->canceled()->count();
-
-        $totalAmount = Invoice::where('branch_id', $user->branch_id)
-            ->certified()
-            ->sum('total');
 
         // Per-fiscal-profile KPIs with live stamp balances
         $swUserService = app(SWUserService::class);
@@ -86,25 +85,25 @@ class InvoiceController extends Controller implements HasMiddleware
                 ->where('fiscal_profile_id', $profile->id);
 
             return [
-                'id'             => $profile->id,
-                'rfc'            => $profile->rfc,
-                'razon_social'   => $profile->razon_social,
-                'balance'        => $balance,
-                'balanceError'   => $balanceError,
-                'totalInvoices'  => $invoiceQuery->count(),
-                'certifiedCount' => (clone $invoiceQuery)->certified()->count(),
-                'canceledCount'  => (clone $invoiceQuery)->canceled()->count(),
-                'totalAmount'    => (float) (clone $invoiceQuery)->certified()->sum('total'),
+                'id'                      => $profile->id,
+                'rfc'                     => $profile->rfc,
+                'razon_social'            => $profile->razon_social,
+                'balance'                 => $balance,
+                'balanceError'            => $balanceError,
+                'draftCount'              => (clone $invoiceQuery)->draft()->count(),
+                'certifiedCount'          => (clone $invoiceQuery)->certified()->count(),
+                'cancelationPendingCount' => (clone $invoiceQuery)->where('status', \App\Enums\InvoiceStatus::CANCELATION_PENDING)->count(),
+                'canceledCount'           => (clone $invoiceQuery)->canceled()->count(),
             ];
         });
 
         return Inertia::render('Billing/Dashboard/Index', [
-            'fiscalProfiles'        => $fiscalProfilesData,
-            'totalStampsUsed'       => $certifiedInvoices,
-            'totalInvoices'         => $totalInvoices,
-            'canceledInvoices'      => $canceledInvoices,
-            'totalAmount'           => (float) $totalAmount,
-            'facturacionHabilitada' => true,
+            'fiscalProfiles'             => $fiscalProfilesData,
+            'draftInvoices'              => $draftInvoices,
+            'certifiedInvoices'          => $certifiedInvoices,
+            'cancelationPendingInvoices' => $cancelationPendingInvoices,
+            'canceledInvoices'           => $canceledInvoices,
+            'facturacionHabilitada'      => true,
         ]);
     }
 
@@ -494,11 +493,13 @@ class InvoiceController extends Controller implements HasMiddleware
             });
         }
 
-        // Sorting
-        $query->orderBy(
-            $request->input('sortField', 'created_at'),
-            $request->input('sortOrder', 'desc'),
-        );
+        // Sorting — only allow known columns; fall back to created_at if sortField is empty or invalid
+        $allowedSortFields = ['created_at', 'rfc', 'razon_social', 'regimen_fiscal', 'is_active', 'manifest_signed_at'];
+        $sortField = $request->input('sortField');
+        $sortField = in_array($sortField, $allowedSortFields, true) ? $sortField : 'created_at';
+        $sortOrder = $request->input('sortOrder') === 'asc' ? 'asc' : 'desc';
+
+        $query->orderBy($sortField, $sortOrder);
 
         $paginated = $query->paginate($request->input('rows', 20))->withQueryString();
 

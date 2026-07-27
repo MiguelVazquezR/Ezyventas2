@@ -303,7 +303,7 @@ const tagPt = {
                         </h1>
                         <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
                             <span class="w-1.5 h-1.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse"></span>
-                            CFDI 4.0 &middot; Historial de comprobantes fiscales
+                            CFDI 4.0 &middot; Historial de facturas
                         </p>
                     </div>
 

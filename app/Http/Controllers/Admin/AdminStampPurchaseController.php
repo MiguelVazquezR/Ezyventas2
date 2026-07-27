@@ -9,7 +9,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ApproveStampPurchaseRequest;
 use App\Http\Requests\Admin\RejectStampPurchaseRequest;
 use App\Http\Requests\Admin\StoreManualStampAdjustmentRequest;
-use App\Jobs\Billing\ApplyStampsToPacJob;
 use App\Models\Billing\FiscalProfile;
 use App\Models\Billing\Invoice;
 use App\Models\Billing\StampPurchase;
@@ -58,18 +57,6 @@ class AdminStampPurchaseController extends Controller
     }
 
     /**
-     * Show a single stamp purchase detail (for viewing proof file).
-     */
-    public function show(StampPurchase $purchase): Response
-    {
-        $purchase->load(['fiscalProfile.subscription', 'requestedBy', 'reviewedBy']);
-
-        return Inertia::render('Admin/Stamps/Show', [
-            'purchase' => $purchase,
-        ]);
-    }
-
-    /**
      * Approve a stamp purchase and dispatch the PAC application job.
      */
     public function approve(
@@ -78,21 +65,35 @@ class AdminStampPurchaseController extends Controller
         ApproveStampPurchaseAction $approveAction,
         StampPurchaseService $stampPurchaseService,
     ): RedirectResponse {
-        $approveAction->execute($purchase, Auth::id());
+        // Guard: don't allow re-approval of already-approved purchases.
+        if ($purchase->status === StampPurchaseStatus::APPROVED || $purchase->isStampsApplied()) {
+            return back()->with('info', 'Esta compra ya fue aprobada.');
+        }
 
-        // Check master balance and warn if low — non-blocking per spec.
+        // Check master account balance BEFORE approving — block if insufficient.
+        // The PAC will reject the assignment if the dealer lacks stamps, so we
+        // prevent the approval upfront rather than letting the async job fail.
         $balanceCheck = $stampPurchaseService->checkMasterBalance($purchase->stamp_quantity);
 
         if (! $balanceCheck['sufficient']) {
             return back()->with(
-                'warning',
-                "Compra aprobada, pero tu cuenta maestra tiene solo {$balanceCheck['stampsBalance']} timbres disponibles "
-                . "y esta compra requiere {$purchase->stamp_quantity}. Recarga tu cuenta maestra en el portal de SW antes de que "
-                . "el job intente aplicar los timbres."
+                'error',
+                "No puedes aprobar esta compra. Tu cuenta maestra tiene {$balanceCheck['stampsBalance']} timbres disponibles "
+                . "y esta compra requiere {$purchase->stamp_quantity}. Recarga tu cuenta maestra en el portal de SW "
+                . "antes de aprobar."
             );
         }
 
-        return back()->with('success', 'Compra aprobada. Los timbres se están acreditando al perfil fiscal.');
+        try {
+            $approveAction->execute($purchase, Auth::id());
+        } catch (\RuntimeException $e) {
+            return back()->with(
+                'error',
+                'No se pudieron acreditar los timbres al perfil fiscal. ' . $e->getMessage()
+            );
+        }
+
+        return back()->with('success', 'Compra aprobada. Los timbres se acreditaron al perfil fiscal.');
     }
 
     /**
@@ -114,22 +115,32 @@ class AdminStampPurchaseController extends Controller
 
     /**
      * Retry applying stamps to PAC for a purchase that was approved
-     * but whose PAC call failed.
+     * but whose PAC call failed (approved or failed status).
      */
-    public function retry(StampPurchase $purchase): RedirectResponse
-    {
-        // Only retry if approved but not yet applied
-        if ($purchase->status->value !== 'approved') {
-            return back()->with('error', 'Solo se puede reintentar compras en estado aprobado.');
+    public function retry(
+        StampPurchase $purchase,
+        StampPurchaseService $stampPurchaseService,
+    ): RedirectResponse {
+        $allowedStatuses = [StampPurchaseStatus::APPROVED, StampPurchaseStatus::FAILED];
+
+        if (! in_array($purchase->status, $allowedStatuses, true)) {
+            return back()->with('error', 'Solo se puede reintentar compras en estado aprobado o fallido.');
         }
 
         if ($purchase->isStampsApplied()) {
             return back()->with('info', 'Los timbres ya fueron aplicados.');
         }
 
-        ApplyStampsToPacJob::dispatch($purchase->id);
+        try {
+            $stampPurchaseService->applyStampsToPac($purchase);
+        } catch (\RuntimeException $e) {
+            return back()->with(
+                'error',
+                'No se pudieron aplicar los timbres al perfil fiscal. ' . $e->getMessage()
+            );
+        }
 
-        return back()->with('success', 'Reintentando aplicar timbres al PAC. Los cambios se reflejarán en breve.');
+        return back()->with('success', 'Timbers aplicados exitosamente al perfil fiscal.');
     }
 
     /**
@@ -193,14 +204,21 @@ class AdminStampPurchaseController extends Controller
                 'reviewed_at'          => now(),
             ]);
 
-            // Dispatch PAC job
-            ApplyStampsToPacJob::dispatch($purchase->id);
+            // Apply stamps to PAC synchronously so the admin sees immediate results.
+            try {
+                $stampPurchaseService->applyStampsToPac($purchase);
+            } catch (\RuntimeException $e) {
+                return back()->with(
+                    'error',
+                    'No se pudieron acreditar los timbres al perfil fiscal. ' . $e->getMessage()
+                );
+            }
 
             return back()->with(
                 'success',
                 "Compra de {$stampQuantity} timbres registrada exitosamente por "
                 . '$' . number_format($price['amount_total'], 2) . ' MXN. '
-                . 'Los timbres se están acreditando al perfil fiscal.'
+                . 'Los timbres se acreditaron al perfil fiscal.'
             );
         }
 
@@ -223,7 +241,14 @@ class AdminStampPurchaseController extends Controller
             }
         }
 
-        $purchase = $adjustmentAction->execute($data);
+        try {
+            $purchase = $adjustmentAction->execute($data);
+        } catch (\RuntimeException $e) {
+            return back()->with(
+                'error',
+                'No se pudieron aplicar los timbres al perfil fiscal. ' . $e->getMessage()
+            );
+        }
 
         $action = $isRemoval ? 'retiraron' : 'agregaron';
 

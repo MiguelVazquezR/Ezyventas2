@@ -254,7 +254,7 @@ class SWUserService
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . $token,
             'Accept'        => 'application/json',
-        ])->get($url);
+        ])->timeout(15)->connectTimeout(5)->get($url);
 
         if ($response->failed()) {
             $status  = $response->status();

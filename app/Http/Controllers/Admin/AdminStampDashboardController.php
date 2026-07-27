@@ -7,6 +7,8 @@ use App\Jobs\Billing\RefreshStampGlobalStatsJob;
 use App\Models\Billing\FiscalProfile;
 use App\Models\Billing\StampGlobalStats;
 use App\Models\Billing\StampPricingTier;
+use App\Models\Billing\StampPurchase;
+use App\Enums\StampPurchaseStatus;
 use App\Services\SW\SWUserService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -61,6 +63,23 @@ class AdminStampDashboardController extends Controller
         // Total subaccounts (active fiscal profiles linked to SW Sapien)
         $totalSubaccounts = FiscalProfile::active()->whereNotNull('sw_user_id')->count();
 
+        // Sum stampsAssigned across all active subaccounts for the "Timbres distribuidos" KPI
+        $totalAssignedFromSubaccounts = null;
+        try {
+            $totalAssignedFromSubaccounts = 0;
+            $profiles = FiscalProfile::active()->whereNotNull('sw_user_id')->get();
+            foreach ($profiles as $profile) {
+                try {
+                    $subBalance = $swUserService->getStampsBalance($profile->sw_user_id);
+                    $totalAssignedFromSubaccounts += (int) ($subBalance['stampsAssigned'] ?? 0);
+                } catch (\Exception $e) {
+                    continue;
+                }
+            }
+        } catch (\Exception $e) {
+            $totalAssignedFromSubaccounts = null;
+        }
+
         // Fiscal profiles for the Adjust Stamp modal
         $fiscalProfiles = FiscalProfile::with('subscription')
             ->active()
@@ -75,6 +94,22 @@ class AdminStampDashboardController extends Controller
             ])
             ->values();
 
+        // Revenue & volume stats (exclude rejected purchases)
+        $completedStatuses = [
+            StampPurchaseStatus::APPROVED,
+            StampPurchaseStatus::STAMPS_APPLIED,
+            StampPurchaseStatus::AWAITING_REVIEW,
+        ];
+
+        $revenueStats = StampPurchase::whereIn('status', $completedStatuses)
+            ->selectRaw('
+                COALESCE(SUM(amount_total), 0) as total_revenue,
+                COALESCE(SUM(stamp_quantity), 0) as total_stamps_sold
+            ')
+            ->first();
+
+        $pendingReviewCount = StampPurchase::where('status', StampPurchaseStatus::AWAITING_REVIEW)->count();
+
         return Inertia::render('Admin/Stamps/Index', [
             'masterBalance'      => $masterBalance,
             'masterBalanceError' => $masterBalanceError,
@@ -83,19 +118,55 @@ class AdminStampDashboardController extends Controller
             'preview'            => $preview,
             'threshold'          => $threshold,
             'totalSubaccounts'   => $totalSubaccounts,
+            'totalAssignedFromSubaccounts' => $totalAssignedFromSubaccounts,
+            'totalRevenue'       => (float) $revenueStats->total_revenue,
+            'totalStampsSold'    => (int) $revenueStats->total_stamps_sold,
+            'pendingReviewCount' => $pendingReviewCount,
             'fiscalProfiles'     => $fiscalProfiles,
         ]);
     }
 
     /**
-     * AJAX: Get live master account balance.
+     * AJAX: Get live master account balance, plus the sum of stamps
+     * assigned to all individual subaccounts for cross-validation.
      */
     public function masterBalance(SWUserService $swUserService): JsonResponse
     {
         try {
             $balance = $swUserService->getMasterAccountBalance();
 
-            return response()->json(['balance' => $balance]);
+            // Sum stampsAssigned across all active subaccounts for accuracy.
+            // The PAC's master balance endpoint should report this natively,
+            // but calculating it from individual subaccounts ensures we never
+            // show stale or incorrect data.
+            $totalAssignedFromSubaccounts = 0;
+            $subaccountCount = 0;
+
+            try {
+                $profiles = FiscalProfile::active()
+                    ->whereNotNull('sw_user_id')
+                    ->get();
+
+                foreach ($profiles as $profile) {
+                    try {
+                        $subBalance = $swUserService->getStampsBalance($profile->sw_user_id);
+                        $totalAssignedFromSubaccounts += (int) ($subBalance['stampsAssigned'] ?? 0);
+                        $subaccountCount++;
+                    } catch (\Exception $e) {
+                        // Skip individual failures — don't break the whole response
+                        continue;
+                    }
+                }
+            } catch (\Exception $e) {
+                // If bulk calculation fails, fall back to master balance value
+                $totalAssignedFromSubaccounts = (int) ($balance['stampsAssigned'] ?? 0);
+            }
+
+            return response()->json([
+                'balance'                         => $balance,
+                'totalAssignedFromSubaccounts'    => $totalAssignedFromSubaccounts,
+                'subaccountCount'                 => $subaccountCount,
+            ]);
         } catch (\Exception $e) {
             return response()->json(['error' => 'No se pudo consultar el saldo de la cuenta maestra.'], 502);
         }
@@ -227,5 +298,90 @@ class AdminStampDashboardController extends Controller
             'threshold' => (int) $request->input('threshold'),
             'message'   => 'Umbral actualizado correctamente.',
         ]);
+    }
+
+    /**
+     * Paginated list of all stamp movements (purchases and adjustments)
+     * with filters for search, status, payment method, and date range.
+     */
+    public function movements(Request $request): JsonResponse
+    {
+        $perPage    = min((int) $request->input('per_page', 20), 100);
+        $search     = $request->input('search', '');
+        $status     = $request->input('status');
+        $method     = $request->input('payment_method');
+        $dateFrom   = $request->input('date_from');
+        $dateTo     = $request->input('date_to');
+        $sortField  = $request->input('sort_field', 'created_at');
+        $sortOrder  = $request->input('sort_order', 'desc');
+
+        $sortable = [
+            'created_at'     => 'created_at',
+            'stamp_quantity' => 'stamp_quantity',
+            'amount_total'   => 'amount_total',
+        ];
+        $orderBy = $sortable[$sortField] ?? 'created_at';
+        $direction = strtolower($sortOrder) === 'asc' ? 'asc' : 'desc';
+
+        $query = StampPurchase::with(['fiscalProfile.subscription', 'requestedBy', 'reviewedBy']);
+
+        // Search by subscriber name or RFC
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->whereHas('fiscalProfile.subscription', fn ($sq) =>
+                    $sq->where('commercial_name', 'like', "%{$search}%")
+                       ->orWhere('business_name', 'like', "%{$search}%")
+                )->orWhereHas('fiscalProfile', fn ($fq) =>
+                    $fq->where('rfc', 'like', "%{$search}%")
+                       ->orWhere('razon_social', 'like', "%{$search}%")
+                );
+            });
+        }
+
+        if ($status) {
+            $query->where('status', $status);
+        }
+
+        if ($method) {
+            $query->where('payment_method', $method);
+        }
+
+        if ($dateFrom) {
+            $query->whereDate('created_at', '>=', $dateFrom);
+        }
+
+        if ($dateTo) {
+            $query->whereDate('created_at', '<=', $dateTo);
+        }
+
+        $movements = $query->orderBy($orderBy, $direction)
+            ->paginate($perPage)
+            ->through(fn ($p) => [
+                'id'                 => $p->id,
+                'stamp_quantity'     => $p->stamp_quantity,
+                'amount_total'       => (float) $p->amount_total,
+                'unit_price'         => (float) $p->unit_price,
+                'payment_method'     => $p->payment_method?->value,
+                'status'             => $p->status?->value,
+                'adjustment_type'    => $p->adjustment_type?->value,
+                'review_reason'      => $p->review_reason,
+                'rejection_reason'   => $p->rejection_reason,
+                'admin_note'         => $p->admin_note,
+                'created_at'         => $p->created_at->toISOString(),
+                'stamps_applied_at'  => $p->stamps_applied_at?->toISOString(),
+                'fiscal_profile'     => [
+                    'id'           => $p->fiscalProfile?->id,
+                    'rfc'          => $p->fiscalProfile?->rfc,
+                    'razon_social' => $p->fiscalProfile?->razon_social,
+                    'subscription' => [
+                        'id'              => $p->fiscalProfile?->subscription?->id,
+                        'commercial_name' => $p->fiscalProfile?->subscription?->commercial_name,
+                    ],
+                ],
+                'requested_by'       => ['name' => $p->requestedBy?->name],
+                'reviewed_by'        => ['name' => $p->reviewedBy?->name],
+            ]);
+
+        return response()->json(['movements' => $movements]);
     }
 }

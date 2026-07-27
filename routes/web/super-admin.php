@@ -31,13 +31,13 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
     Route::get('stamps/global-stats', [AdminStampDashboardController::class, 'globalStats'])->name('stamps.global-stats');
     Route::post('stamps/global-stats/refresh', [AdminStampDashboardController::class, 'refreshGlobalStats'])->name('stamps.global-stats.refresh');
     Route::get('stamps/issuers', [AdminStampDashboardController::class, 'issuersIndex'])->name('stamps.issuers.index');
+    Route::get('stamps/movements', [AdminStampDashboardController::class, 'movements'])->name('stamps.movements');
     Route::post('stamps/threshold', [AdminStampDashboardController::class, 'updateThreshold'])->name('stamps.threshold.update');
 
     // ──── Bandeja de Revisión ──────────────────────────────
     Route::get('stamps/review-queue', [AdminStampPurchaseController::class, 'index'])->name('stamps.review-queue');
     // Redirect the old standalone adjust page to the index (modal is used instead).
     Route::redirect('stamps/adjust', 'admin/stamps')->name('stamps.adjust-form');
-    Route::get('stamps/{purchase}', [AdminStampPurchaseController::class, 'show'])->name('stamps.show');
     Route::post('stamps/{purchase}/approve', [AdminStampPurchaseController::class, 'approve'])->name('stamps.approve');
     Route::post('stamps/{purchase}/reject', [AdminStampPurchaseController::class, 'reject'])->name('stamps.reject');
     Route::post('stamps/{purchase}/retry', [AdminStampPurchaseController::class, 'retry'])->name('stamps.retry');
