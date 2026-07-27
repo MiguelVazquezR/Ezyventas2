@@ -80,5 +80,9 @@ export default {
             boxShadow: ['print'],
         },
     },
-    plugins: [forms, typography, PrimeUI],
+    plugins: [
+        forms({ strategy: 'class' }), // 👈 antes: forms
+        typography,
+        PrimeUI
+    ],
 };
