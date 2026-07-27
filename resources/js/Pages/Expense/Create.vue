@@ -179,7 +179,7 @@ watch(activeSession, (newSession) => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                     <InputLabel for="folio" value="Concepto" />
-                    <InputText id="folio" v-model="form.folio" class="mt-1 w-full" />
+                    <InputText id="folio" v-model="form.folio" class="mt-1 w-full" placeholder="Ej. Pago de renta, insumos de limpieza" />
                     <InputError :message="form.errors.folio" class="mt-2" />
                 </div>
                 <div>
@@ -207,6 +207,7 @@ watch(activeSession, (newSession) => {
 
                 <div class="md:col-span-2 space-y-4 p-4 border rounded-lg bg-gray-50 dark:bg-gray-900/50">
                     <h5 class="font-semibold text-gray-700 dark:text-gray-300">Detalles del pago</h5>
+                    <p class="text-[10px] text-gray-400 dark:text-gray-500">Indica de dónde proviene el dinero para separar correctamente las finanzas del negocio de los gastos personales.</p>
                     <div>
                         <InputLabel for="payment_method" value="Método de pago *" />
                         <SelectButton id="payment_method" v-model="form.payment_method" :options="paymentMethodOptions"
@@ -229,6 +230,7 @@ watch(activeSession, (newSession) => {
                                 <span>{{ slotProps.option.label }}</span>
                             </template>
                         </SelectButton>
+                        <small class="text-[10px] text-gray-400 dark:text-gray-500 mt-1 block">Los gastos con dinero del negocio afectan las métricas de caja. Los gastos externos se registran como personales y no descuentan de la caja.</small>
                         <InputError :message="form.errors.take_from_cash_register" class="mt-2" />
                         <InputError :message="form.errors.cash_register_session_id" class="mt-2" />
                     </div>
@@ -243,6 +245,7 @@ watch(activeSession, (newSession) => {
                                 <span>{{ slotProps.option.label }}</span>
                             </template>
                         </SelectButton>
+                        <small class="text-[10px] text-gray-400 dark:text-gray-500 mt-1 block">Las cuentas de negocio afectan las métricas bancarias de la empresa. Las cuentas externas registran gastos personales sin afectar los saldos del negocio.</small>
 
                         <div v-if="selectedOrigin === 'business'" class="mt-4">
                             <InputLabel for="bank_account_id" value="Cuenta de origen *" />
@@ -270,7 +273,7 @@ watch(activeSession, (newSession) => {
 
                 <div class="md:col-span-2">
                     <InputLabel for="description" value="Descripción" />
-                    <Textarea id="description" v-model="form.description" rows="3" class="mt-1 w-full" />
+                    <Textarea id="description" v-model="form.description" rows="3" class="mt-1 w-full" placeholder="Describe el motivo de este gasto" />
                     <InputError :message="form.errors.description" class="mt-2" />
                 </div>
             </div>

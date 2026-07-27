@@ -127,23 +127,25 @@ const submit = () => {
                 <div class="space-y-4">
                     <div>
                         <InputLabel for="name" value="Nombre de la promoción *" />
-                        <InputText id="name" v-model="form.name" class="mt-1 w-full" />
+                        <InputText id="name" v-model="form.name" class="mt-1 w-full" placeholder="Ej. Descuento de verano" />
                         <InputError :message="form.errors.name" />
                     </div>
                     <div>
                         <InputLabel for="description" value="Descripción" />
-                        <Textarea id="description" v-model="form.description" rows="3" class="mt-1 w-full" />
+                        <Textarea id="description" v-model="form.description" rows="3" class="mt-1 w-full" placeholder="Describe brevemente en qué consiste esta promoción" />
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <InputLabel for="start_date" value="Fecha de inicio" />
+                            <InputLabel for="start_date" value="Inicio programado" />
                             <Calendar id="start_date" v-model="form.start_date" showTime hourFormat="12"
                                 class="w-full mt-1" />
+                            <small class="text-[10px] text-gray-400 dark:text-gray-500 mt-1 block">Programa la activación automática. Déjalo vacío si no quieres programarla.</small>
                         </div>
                         <div>
-                            <InputLabel for="end_date" value="Fecha de fin" />
+                            <InputLabel for="end_date" value="Fin programado" />
                             <Calendar id="end_date" v-model="form.end_date" showTime hourFormat="12"
                                 class="w-full mt-1" />
+                            <small class="text-[10px] text-gray-400 dark:text-gray-500 mt-1 block">Programa la desactivación automática. Déjalo vacío si no quieres programarla.</small>
                         </div>
                     </div>
                 </div>
@@ -154,6 +156,7 @@ const submit = () => {
                 <h2 class="text-lg font-semibold border-b pb-3 mb-4">Tipo de Promoción</h2>
                 <Select v-model="promotionType" :options="promotionTypes" optionLabel="label" optionValue="value"
                     class="w-full" size="large" />
+                <small class="text-[10px] text-gray-400 dark:text-gray-500 mt-1 block">Selecciona el tipo de descuento o beneficio que aplicarás.</small>
 
                 <!-- Configuración para Descuento -->
                 <div v-if="promotionType === 'ITEM_DISCOUNT'" class="mt-6 space-y-4">
@@ -175,7 +178,7 @@ const submit = () => {
                         <InputNumber v-model="form.required_quantity" :min="1" fluid class="!w-20" />
                         <span>de</span>
                         <Select v-model="form.required_product_id" :options="allAvailableProducts"
-                            optionLabel="name" optionValue="id" class="flex-grow" filter />
+                            optionLabel="name" optionValue="id" class="flex-grow" filter placeholder="Seleccionar producto" />
                     </div>
                     <h3 class="font-semibold">Efecto: "... y llévate"</h3>
                     <div class="flex items-center gap-4">
@@ -183,7 +186,7 @@ const submit = () => {
                         <InputNumber v-model="form.free_quantity" :min="1" fluid class="!w-20" />
                         <span>de</span>
                         <Select v-model="form.free_product_id" :options="allAvailableProducts" optionLabel="name"
-                            optionValue="id" class="flex-grow" filter />
+                            optionValue="id" class="flex-grow" filter placeholder="Seleccionar producto" />
                         <span>gratis.</span>
                     </div>
                 </div>
