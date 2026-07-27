@@ -2,7 +2,7 @@
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
-import debounce from 'lodash/debounce';
+import debounce from 'lodash-es/debounce';
 import { useConfirm } from "primevue/useconfirm";
 import { useVirtualNumpad } from '@/Composables/useVirtualNumpad';
 import ProductCard from './ProductCard.vue';
