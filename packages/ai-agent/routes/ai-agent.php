@@ -32,6 +32,9 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::delete('/conversations', [AiChatController::class, 'destroyAll'])
             ->name('conversations.destroy-all');
 
+        Route::delete('/conversations/{conversation}', [AiChatController::class, 'destroy'])
+            ->name('conversations.destroy');
+
         Route::get('/usage', [AiChatController::class, 'usage'])
             ->name('usage');
     });

@@ -40,9 +40,6 @@ export function useBluetoothPrinter() {
     onMounted(() => {
         isSecure.value = window.isSecureContext ?? false;
         isSupported.value = typeof navigator !== 'undefined' && !!navigator.bluetooth;
-        if (!isSupported.value) {
-            logger.info('Web Bluetooth no soportado. Se usará fallback HTML/PDF.');
-        }
     });
 
     // --- Búsqueda de característica escribible en el GATT server ---

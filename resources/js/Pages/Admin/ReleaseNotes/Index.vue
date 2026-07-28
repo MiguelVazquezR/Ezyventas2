@@ -210,7 +210,7 @@ const drawerPt = {
 
                     <template #empty>
                         <div class="flex flex-col items-center justify-center text-center py-10 opacity-60">
-                            <i class="pi pi-sparkles !text-3xl text-gray-400 mb-3"></i>
+                            <i class="pi pi-megaphone !text-3xl text-gray-400 mb-3"></i>
                             <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin novedades</p>
                             <p class="text-xs text-gray-400 mt-1">No hay actualizaciones registradas en el sistema.</p>
                         </div>

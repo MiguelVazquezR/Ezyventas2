@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\PlanItemController;
 use App\Http\Controllers\Admin\SubscriptionController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\ReleaseNoteController;
+use App\Http\Controllers\Admin\SuggestionController;
 use App\Http\Middleware\CheckSuperAdmin;
 use Illuminate\Support\Facades\Route;
 
@@ -81,6 +82,14 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
         Route::put('/{releaseNote}', [ReleaseNoteController::class, 'update'])->name('update');
         Route::delete('/{releaseNote}', [ReleaseNoteController::class, 'destroy'])->name('destroy');
         Route::post('/{releaseNote}/toggle-publish', [ReleaseNoteController::class, 'togglePublish'])->name('toggle-publish');
+    });
+
+    // --- Sugerencias / Feedback de usuarios ---
+    Route::prefix('suggestions')->name('suggestions.')->group(function () {
+        Route::get('/', [SuggestionController::class, 'index'])->name('index');
+        Route::put('/{suggestion}/status', [SuggestionController::class, 'updateStatus'])->name('update-status');
+        Route::put('/{suggestion}/priority', [SuggestionController::class, 'updatePriority'])->name('update-priority');
+        Route::put('/{suggestion}/notes', [SuggestionController::class, 'updateAdminNotes'])->name('update-notes');
     });
 
     // --- Asistente IA (Configuración global) ---

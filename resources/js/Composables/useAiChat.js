@@ -206,6 +206,33 @@ export function useAiChat() {
         }
     }
 
+    /** Delete a single conversation by ID. */
+    async function deleteConversation(id) {
+        try {
+            await window.axios.delete(`/ai-agent/conversations/${id}`);
+
+            conversations.value = conversations.value.filter((c) => c.id !== id);
+
+            if (conversationId.value === id) {
+                reset();
+            }
+
+            toast.add({
+                severity: 'success',
+                summary: 'Conversación eliminada',
+                detail: 'La conversación fue eliminada.',
+                life: 4000,
+            });
+        } catch {
+            toast.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'No se pudo eliminar la conversación.',
+                life: 4000,
+            });
+        }
+    }
+
     /** Delete all conversations for the current user. */
     async function deleteAllConversations() {
         try {
@@ -247,6 +274,7 @@ export function useAiChat() {
         fetchConversations,
         loadConversation,
         startNewChat,
+        deleteConversation,
         deleteAllConversations,
         reset,
     };

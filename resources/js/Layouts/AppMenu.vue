@@ -213,6 +213,12 @@ const adminModel = ref([
                 routeName: 'admin.release-notes.*'
             },
             {
+                label: 'Sugerencias',
+                icon: 'pi pi-lightbulb',
+                to: route('admin.suggestions.index'),
+                routeName: 'admin.suggestions.*'
+            },
+            {
                 label: 'Referidos',
                 icon: 'pi pi-users',
                 items: [

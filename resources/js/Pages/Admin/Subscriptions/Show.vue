@@ -296,7 +296,7 @@ function stampPaymentMethodLabel(method) {
                         <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
                             <h2 class="text-xs uppercase tracking-widest font-bold text-gray-500 m-0 mb-4 flex justify-between items-center">
                                 Asistente IA
-                                <i class="pi pi-sparkles text-gray-400"></i>
+                                <i class="pi pi-megaphone text-gray-400"></i>
                             </h2>
                             <div v-if="hasAiAgentModule">
                                 <div class="flex justify-between text-xs mb-1">

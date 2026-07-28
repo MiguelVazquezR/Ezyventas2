@@ -241,8 +241,7 @@ watch(activeSession, (newSession, oldSession) => {
 
     <!-- ── AI Chat floating trigger button ── -->
     <button
-        class="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-200 border-0 cursor-pointer"
-        :class="{ 'animate-pulse': !aiDrawerVisible }"
+        class="fixed bottom-2 right-2 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-200 border-0 cursor-pointer"
         @click="aiDrawerVisible = true"
         :aria-label="'Abrir asistente IA'"
     >

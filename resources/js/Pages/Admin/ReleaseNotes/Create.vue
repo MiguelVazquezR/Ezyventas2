@@ -17,7 +17,7 @@ import ReleaseNoteForm from './Partials/ReleaseNoteForm.vue';
                 <div class="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 md:p-8">
                     <div class="mb-8 border-b border-gray-100 dark:border-gray-700 pb-4">
                         <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                            <i class="pi pi-sparkles text-blue-500"></i> Redactar nueva actualización
+                            <i class="pi pi-megaphone text-blue-500"></i> Redactar nueva actualización
                         </h1>
                         <p class="text-gray-500 dark:text-gray-400 mt-1">Comparte las nuevas características o correcciones con tus suscriptores.</p>
                     </div>
