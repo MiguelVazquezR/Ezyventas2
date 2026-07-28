@@ -443,6 +443,14 @@ const drawerStyle = computed(() => {
                     <p class="text-lg text-gray-500 dark:text-gray-400 m-0">
                         ¿En qué puedo ayudarte?
                     </p>
+                    <div class="mt-4 px-2 text-sm text-gray-400 dark:text-gray-500 text-center leading-relaxed max-w-sm">
+                        <p class="m-0 mb-1">Puedo ayudarte a:</p>
+                        <ul class="list-none p-0 m-0 space-y-0.5">
+                            <li>• Consultar información de tu negocio</li>
+                            <li>• Crear y modificar clientes, productos y más <span class="text-[10px] text-amber-500">(modo escritura)</span></li>
+                            <li>• Enviar sugerencias y reportar problemas</li>
+                        </ul>
+                    </div>
                 </div>
 
                 <!-- Messages -->

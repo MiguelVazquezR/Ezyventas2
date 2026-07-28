@@ -15,6 +15,7 @@ use App\AiTools\Registrars\ReportTools;
 use App\AiTools\Registrars\ServiceOrderTools;
 use App\AiTools\Registrars\ServiceTools;
 use App\AiTools\Registrars\StaffPerformanceTools;
+use App\AiTools\Registrars\SuggestionTools;
 use App\AiTools\Registrars\ToolRegistrar;
 use App\AiTools\Registrars\TransactionTools;
 use Ezyventas\AiAgent\Contracts\AiToolProvider;
@@ -86,6 +87,7 @@ class EzyVentasToolProvider implements AiToolProvider
             new DashboardTools(),
             new NavigationTools(),
             new ExportTools(),
+            new SuggestionTools(),
         ];
     }
 }
