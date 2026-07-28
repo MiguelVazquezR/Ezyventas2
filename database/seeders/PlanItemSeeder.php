@@ -23,10 +23,11 @@ class PlanItemSeeder extends Seeder
             ['key' => 'module_customers', 'name' => 'Clientes', 'price' => 30, 'icon' => 'pi pi-users'], //Activo al suscribirse
             ['key' => 'module_services', 'name' => 'Servicios', 'price' => 50, 'icon' => 'pi pi-wrench'], //Activo al suscribirse
             ['key' => 'module_quotes', 'name' => 'Cotizaciones', 'price' => 35, 'icon' => 'pi pi-file-check'],
-            ['key' => 'module_billing', 'name' => 'Facturación', 'price' => 0, 'icon' => 'pi pi-receipt'], //Activo al suscribirse 
+            ['key' => 'module_billing', 'name' => 'Facturación', 'price' => 15, 'icon' => 'pi pi-receipt'],
             ['key' => 'module_cash_registers', 'name' => 'Cajas', 'price' => 0, 'icon' => 'pi pi-dollar'], //Activo al suscribirse
             ['key' => 'module_settings', 'name' => 'Configuraciones', 'price' => 0, 'icon' => 'pi pi-cog'], //Activo al suscribirse
-            ['key' => 'module_ai_agent', 'name' => 'Asistente IA', 'price' => 0.00, 'icon' => 'pi pi-sparkles'],
+            ['key' => 'module_online_store', 'name' => 'Tienda en línea', 'price' => 50.00, 'icon' => 'pi pi-globe'], //
+            ['key' => 'module_ai_agent', 'name' => 'Asistente IA', 'price' => 0.00, 'icon' => 'pi pi-sparkles'], //Activo al suscribirse, gratis por tiempo limitado
         ];
 
         foreach ($modules as $module) {

@@ -10,11 +10,18 @@
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.bunny.net">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Krub:wght@200;300;400;500;600;700&display=swap" rel="stylesheet" />
 
     <!-- Scripts -->
     @routes
-    @vite(['resources/js/app.js', "resources/js/Pages/{$page['component']}.vue"])
+    @if(in_array($page['component'], ['Welcome', 'WelcomeMobile']))
+        @vite(['resources/js/landing.js', "resources/js/Pages/{$page['component']}.vue"])
+    @else
+        @vite(['resources/js/app.js', "resources/js/Pages/{$page['component']}.vue"])
+    @endif
     @inertiaHead
 
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
