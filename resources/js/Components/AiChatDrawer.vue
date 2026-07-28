@@ -20,6 +20,7 @@ const {
     fetchConversations,
     loadConversation,
     startNewChat,
+    deleteConversation,
     deleteAllConversations,
 } = useAiChat();
 
@@ -204,24 +205,6 @@ const menuItems = [
             showHistory.value = true;
         },
     },
-    {
-        label: 'Borrar historial',
-        icon: 'pi pi-trash',
-        command: () => {
-            confirm.require({
-                message: '¿Eliminar todo el historial de conversaciones? Esta acción no se puede deshacer.',
-                header: 'Borrar historial',
-                icon: 'pi pi-exclamation-triangle',
-                rejectLabel: 'Cancelar',
-                acceptLabel: 'Eliminar todo',
-                acceptClass: 'p-button-danger',
-                accept: async () => {
-                    await deleteAllConversations();
-                    showHistory.value = false;
-                },
-            });
-        },
-    },
 ];
 
 async function onHistoryItemClick(conversation) {
@@ -358,7 +341,28 @@ const drawerStyle = computed(() => {
                         :pt="{ root: { class: '!text-gray-500 hover:!text-gray-700 dark:hover:!text-gray-300' } }"
                         @click="onBackFromHistory"
                     />
-                    <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">Historial de chats</span>
+                    <span class="flex-1 text-sm font-semibold text-gray-700 dark:text-gray-200">Historial de chats</span>
+                    <Button
+                        v-if="conversations.length > 0"
+                        icon="pi pi-trash"
+                        text
+                        rounded
+                        size="small"
+                        v-tooltip.left="'Borrar todo'"
+                        :pt="{ root: { class: '!text-gray-400 hover:!text-red-500 dark:hover:!text-red-400' } }"
+                        @click="confirm.require({
+                            message: '¿Eliminar todo el historial de conversaciones? Esta acción no se puede deshacer.',
+                            header: 'Borrar historial',
+                            icon: 'pi pi-exclamation-triangle',
+                            rejectLabel: 'Cancelar',
+                            acceptLabel: 'Eliminar todo',
+                            acceptClass: 'p-button-danger',
+                            accept: async () => {
+                                await deleteAllConversations();
+                                showHistory = false;
+                            },
+                        })"
+                    />
                 </div>
 
                 <div class="flex-1 overflow-y-auto">
@@ -371,20 +375,43 @@ const drawerStyle = computed(() => {
                         <div
                             v-for="conv in conversations"
                             :key="conv.id"
-                            class="flex items-center gap-3 px-3 py-2.5 rounded-2xl cursor-pointer hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors"
-                            @click="onHistoryItemClick(conv)"
+                            class="flex items-center gap-3 px-3 py-2.5 rounded-2xl cursor-pointer hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors group"
                         >
-                            <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-[#2a2a2a] flex items-center justify-center flex-shrink-0">
-                                <i class="pi pi-comment !text-xs !text-gray-400" />
+                            <div
+                                class="flex items-center gap-3 flex-1 min-w-0"
+                                @click="onHistoryItemClick(conv)"
+                            >
+                                <div class="w-8 h-8 rounded-full bg-gray-100 dark:bg-[#2a2a2a] flex items-center justify-center flex-shrink-0">
+                                    <i class="pi pi-comment !text-xs !text-gray-400" />
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-sm text-gray-700 dark:text-gray-200 m-0 truncate">
+                                        {{ conv.title || 'Sin título' }}
+                                    </p>
+                                    <p class="text-[10px] text-gray-400 m-0 mt-0.5">
+                                        {{ formatRelativeDate(conv.created_at) }}
+                                    </p>
+                                </div>
                             </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm text-gray-700 dark:text-gray-200 m-0 truncate">
-                                    {{ conv.title || 'Sin título' }}
-                                </p>
-                                <p class="text-[10px] text-gray-400 m-0 mt-0.5">
-                                    {{ formatRelativeDate(conv.created_at) }}
-                                </p>
-                            </div>
+                            <Button
+                                icon="pi pi-trash"
+                                text
+                                rounded
+                                size="small"
+                                v-tooltip.left="'Eliminar'"
+                                :pt="{ root: { class: '!text-gray-300 hover:!text-red-500 dark:hover:!text-red-400 opacity-0 group-hover:opacity-100 transition-opacity' } }"
+                                @click.stop="confirm.require({
+                                    message: '¿Eliminar esta conversación? Esta acción no se puede deshacer.',
+                                    header: 'Eliminar conversación',
+                                    icon: 'pi pi-exclamation-triangle',
+                                    rejectLabel: 'Cancelar',
+                                    acceptLabel: 'Eliminar',
+                                    acceptClass: 'p-button-danger',
+                                    accept: async () => {
+                                        await deleteConversation(conv.id);
+                                    },
+                                })"
+                            />
                         </div>
                     </div>
                 </div>
@@ -416,6 +443,14 @@ const drawerStyle = computed(() => {
                     <p class="text-lg text-gray-500 dark:text-gray-400 m-0">
                         ¿En qué puedo ayudarte?
                     </p>
+                    <div class="mt-4 px-2 text-sm text-gray-400 dark:text-gray-500 text-center leading-relaxed max-w-sm">
+                        <p class="m-0 mb-1">Puedo ayudarte a:</p>
+                        <ul class="list-none p-0 m-0 space-y-0.5">
+                            <li>• Consultar información de tu negocio</li>
+                            <li>• Crear y modificar clientes, productos y más <span class="text-[10px] text-amber-500">(modo escritura)</span></li>
+                            <li>• Enviar sugerencias y reportar problemas</li>
+                        </ul>
+                    </div>
                 </div>
 
                 <!-- Messages -->

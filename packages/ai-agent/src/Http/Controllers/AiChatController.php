@@ -140,6 +140,22 @@ class AiChatController extends Controller
     }
 
     /**
+     * Delete a single conversation.
+     */
+    public function destroy(AiConversation $conversation): JsonResponse
+    {
+        $user = Auth::user();
+
+        $this->authorizeConversation($conversation, $user);
+
+        $conversation->delete();
+
+        return response()->json([
+            'message' => 'Conversación eliminada.',
+        ]);
+    }
+
+    /**
      * Delete all conversations for the authenticated user.
      */
     public function destroyAll(Request $request): JsonResponse
