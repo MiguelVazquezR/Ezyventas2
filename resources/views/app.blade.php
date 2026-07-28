@@ -17,11 +17,7 @@
 
     <!-- Scripts -->
     @routes
-    @if(in_array($page['component'], ['Welcome', 'WelcomeMobile']))
-        @vite(['resources/js/landing.js', "resources/js/Pages/{$page['component']}.vue"])
-    @else
-        @vite(['resources/js/app.js', "resources/js/Pages/{$page['component']}.vue"])
-    @endif
+    @vite(['resources/js/app.js', "resources/js/Pages/{$page['component']}.vue"])
     @inertiaHead
 
     <link rel="icon" href="/favicon.ico" type="image/x-icon">

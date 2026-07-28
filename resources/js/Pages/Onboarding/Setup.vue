@@ -11,6 +11,8 @@ import HoursModal from './Partials/HoursModal.vue';
 const props = defineProps({
     subscription: Object,
     currentLimits: Object,
+    availableModules: Array,
+    activeModuleKeys: Array,
 });
 
 // --- State ---
@@ -67,6 +69,7 @@ const form = useForm({
         limit_products: props.currentLimits?.limit_products?.quantity ?? 100,
         limit_print_templates: props.currentLimits?.limit_print_templates?.quantity ?? 2,
     },
+    modules: [...props.activeModuleKeys],
     bank_accounts: props.subscription.bank_accounts.map(account => ({
         ...account,
         balance: parseFloat(account.balance) || 0.00,
@@ -142,7 +145,7 @@ const saveStep = (step, nextStep = true) => {
         };
     } else if (step === 1) {
         routeName = route('onboarding.store.step2');
-        data = { limits: form.limits };
+        data = { limits: form.limits, modules: form.modules };
     }
 
     form.post(routeName, {
@@ -274,6 +277,7 @@ const currentBranchHours = computed(() => {
                             <Step2Limits
                                 :form="form"
                                 :saving="saving"
+                                :available-modules="availableModules"
                                 @save-step="saveStep"
                                 @go-back="activeStep = 0"
                             />

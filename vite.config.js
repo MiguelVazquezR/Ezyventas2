@@ -9,7 +9,6 @@ export default defineConfig({
         laravel({
             input: [
                 'resources/js/app.js',
-                'resources/js/landing.js',
             ],
             refresh: true,
         }),
