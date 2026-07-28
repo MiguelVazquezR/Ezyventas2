@@ -41,6 +41,10 @@
         "primevue": "^4.5.5",
         "quill": "^2.0.3",
         "tailwindcss-primeui": "^0.6.1",
-        "uuid": "^13.0.0"
+        "uuid": "^13.0.0",
+        "pusher-js": "^8.4.0"
+    },
+    "overrides": {
+        "@primeuix/mcp": "1.0.0"
     }
 }

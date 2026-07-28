@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Billing\ApproveStampPurchaseAction;
 use App\Actions\Subscription\ApproveSubscriptionPaymentAction;
+use App\Enums\StampPurchaseStatus;
 use App\Enums\SubscriptionPaymentStatus;
+use App\Models\Billing\StampPurchase;
 use App\Models\SubscriptionPayment;
 use App\Services\PlatformMercadoPagoService;
 use Illuminate\Http\Request;
@@ -68,46 +71,125 @@ class WebhookController extends Controller
             return response()->json(['status' => 'ignored', 'reason' => "payment status: {$status}"]);
         }
 
-        // Buscar nuestro SubscriptionPayment por external_reference
+        // ── Try subscription payment first ──
         $subscriptionPayment = SubscriptionPayment::find($externalReference);
 
-        if (!$subscriptionPayment) {
-            Log::warning('MP webhook: subscription payment not found', [
-                'external_reference' => $externalReference,
-                'mp_payment_id'      => $mpPaymentId,
-            ]);
-            return response()->json(['status' => 'error', 'reason' => 'subscription payment not found'], 404);
-        }
+        if ($subscriptionPayment) {
+            // Si ya está aprobado, no hacemos nada
+            if ($subscriptionPayment->status === SubscriptionPaymentStatus::APPROVED) {
+                return response()->json(['status' => 'ok', 'reason' => 'already approved']);
+            }
 
-        // Si ya está aprobado, no hacemos nada
-        if ($subscriptionPayment->status === SubscriptionPaymentStatus::APPROVED) {
-            return response()->json(['status' => 'ok', 'reason' => 'already approved']);
-        }
+            // Guardar datos de MP en payment_details antes de aprobar
+            $currentDetails = $subscriptionPayment->payment_details ?? [];
+            $currentDetails['mp_payment_id'] = $mpPaymentId;
+            $currentDetails['mp_status'] = $status;
+            $subscriptionPayment->update(['payment_details' => $currentDetails]);
 
-        // Guardar datos de MP en payment_details antes de aprobar
-        $currentDetails = $subscriptionPayment->payment_details ?? [];
-        $currentDetails['mp_payment_id'] = $mpPaymentId;
-        $currentDetails['mp_status'] = $status;
-        $subscriptionPayment->update(['payment_details' => $currentDetails]);
+            // Aprobar el pago
+            try {
+                $approveAction->execute($subscriptionPayment);
+            } catch (\Exception $e) {
+                Log::error('MP webhook: approval failed', [
+                    'subscription_payment_id' => $subscriptionPayment->id,
+                    'mp_payment_id'           => $mpPaymentId,
+                    'error'                   => $e->getMessage(),
+                ]);
+                return response()->json(['status' => 'error', 'reason' => 'approval failed'], 500);
+            }
 
-        // Aprobar el pago
-        try {
-            $approveAction->execute($subscriptionPayment);
-        } catch (\Exception $e) {
-            Log::error('MP webhook: approval failed', [
+            Log::info('MP webhook: payment approved via webhook', [
                 'subscription_payment_id' => $subscriptionPayment->id,
                 'mp_payment_id'           => $mpPaymentId,
-                'error'                   => $e->getMessage(),
             ]);
-            return response()->json(['status' => 'error', 'reason' => 'approval failed'], 500);
+
+            return response()->json(['status' => 'ok']);
         }
 
-        Log::info('MP webhook: payment approved via webhook', [
-            'subscription_payment_id' => $subscriptionPayment->id,
-            'mp_payment_id'           => $mpPaymentId,
+        // ── Try stamp purchase ──
+        $stampPurchase = StampPurchase::find($externalReference);
+
+        if ($stampPurchase) {
+            if ($stampPurchase->isStampsApplied()) {
+                return response()->json(['status' => 'ok', 'reason' => 'stamps already applied']);
+            }
+
+            $stampPurchase->update([
+                'mp_payment_id' => $mpPaymentId,
+            ]);
+
+            // If this purchase requires review (large_quantity), don't auto-approve.
+            // The payment is confirmed, but the superadmin must review before stamps are applied.
+            if ($stampPurchase->review_reason === 'large_quantity') {
+                $stampPurchase->update([
+                    'status' => StampPurchaseStatus::AWAITING_REVIEW,
+                ]);
+
+                Log::info('MP webhook: large stamp purchase awaiting review', [
+                    'stamp_purchase_id' => $stampPurchase->id,
+                    'mp_payment_id'     => $mpPaymentId,
+                    'quantity'          => $stampPurchase->stamp_quantity,
+                ]);
+
+                return response()->json(['status' => 'ok', 'reason' => 'awaiting review — large quantity']);
+            }
+
+            // Normal purchase: auto-approve and dispatch PAC job.
+            // Double-check master balance in case stamps were depleted between
+            // purchase creation and payment confirmation.
+            $stampPurchaseService = app(\App\Services\Billing\StampPurchaseService::class);
+            $balanceCheck = $stampPurchaseService->checkMasterBalance($stampPurchase->stamp_quantity);
+
+            if (! $balanceCheck['sufficient']) {
+                // Master balance insufficient — escalate to admin review instead of
+                // auto-approving so the admin can handle it when balance is replenished.
+                $stampPurchase->update([
+                    'status'        => StampPurchaseStatus::AWAITING_REVIEW,
+                    'review_reason' => 'large_quantity',
+                ]);
+
+                Log::warning('MP webhook: stamp purchase set to awaiting review — master balance insufficient', [
+                    'stamp_purchase_id' => $stampPurchase->id,
+                    'mp_payment_id'     => $mpPaymentId,
+                    'quantity'          => $stampPurchase->stamp_quantity,
+                    'master_balance'    => $balanceCheck['stampsBalance'],
+                ]);
+
+                return response()->json(['status' => 'ok', 'reason' => 'awaiting review — insufficient master balance']);
+            }
+
+            $stampPurchase->update([
+                'status' => StampPurchaseStatus::APPROVED,
+            ]);
+
+            $stampApproveAction = app(ApproveStampPurchaseAction::class);
+
+            try {
+                $stampApproveAction->execute($stampPurchase, $stampPurchase->requested_by_user_id);
+            } catch (\RuntimeException $e) {
+                Log::error('MP webhook: stamp purchase PAC call failed', [
+                    'stamp_purchase_id' => $stampPurchase->id,
+                    'mp_payment_id'     => $mpPaymentId,
+                    'error'             => $e->getMessage(),
+                ]);
+
+                return response()->json(['status' => 'error', 'reason' => 'PAC assignment failed'], 500);
+            }
+
+            Log::info('MP webhook: stamp purchase approved', [
+                'stamp_purchase_id' => $stampPurchase->id,
+                'mp_payment_id'     => $mpPaymentId,
+            ]);
+
+            return response()->json(['status' => 'ok']);
+        }
+
+        Log::warning('MP webhook: neither subscription payment nor stamp purchase found', [
+            'external_reference' => $externalReference,
+            'mp_payment_id'      => $mpPaymentId,
         ]);
 
-        return response()->json(['status' => 'ok']);
+        return response()->json(['status' => 'error', 'reason' => 'payment record not found'], 404);
     }
 
     /**

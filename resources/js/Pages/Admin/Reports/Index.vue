@@ -9,7 +9,8 @@ import DatePicker from 'primevue/datepicker';
 const props = defineProps({
     metrics: Object,
     chartData: Array,
-    filters: Object
+    filters: Object,
+    masterBalanceWarning: Object,
 });
 
 // --- ESTADO DE FILTROS (Manejando objetos Date para PrimeVue) ---
@@ -146,6 +147,19 @@ const datePickerPt = {
 <template>
     <AppLayout title="Reportes y Métricas">
         <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+
+            <!-- ── Low Stamps Balance Banner ────────────────── -->
+            <div v-if="props.masterBalanceWarning"
+                class="rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 p-4 flex items-start gap-3">
+                <i class="pi pi-exclamation-triangle text-amber-500 !text-sm mt-0.5" />
+                <div>
+                    <p class="text-sm text-amber-700 dark:text-amber-300 m-0">
+                        Tu cuenta maestra tiene solo <strong>{{ props.masterBalanceWarning.stampsBalance.toLocaleString() }}</strong> timbres disponibles
+                        (umbral de aviso: {{ props.masterBalanceWarning.threshold.toLocaleString() }}).
+                        Considera recargar pronto desde el portal de SW Sapien.
+                    </p>
+                </div>
+            </div>
             
             <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
                 

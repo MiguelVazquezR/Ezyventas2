@@ -6,6 +6,7 @@ import EditVersionItemsModal from './Partials/EditVersionItemsModal.vue';
 import RegisterPaymentModal from './Partials/RegisterPaymentModal.vue';
 import PaymentHistoryTable from './Partials/PaymentHistoryTable.vue';
 import SubscriptionSettings from './Partials/SubscriptionSettings.vue';
+import AdjustStampModal from '@/Components/AdjustStampModal.vue';
 
 const props = defineProps({
     subscription: Object,
@@ -21,6 +22,8 @@ const props = defineProps({
     aiUsage: Number,
     aiPercentage: Number,
     hasAiAgentModule: Boolean,
+    fiscalProfiles: Array,
+    allStampPurchases: Array,
 });
 
 // --- ESTADOS DE MODALES ---
@@ -123,6 +126,55 @@ const currentVersion = computed(() => {
 
 // --- TESLA UI PT ---
 const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold border' } };
+
+// ──────────────────────────────────────
+// Stamp adjustment modal
+// ──────────────────────────────────────
+const showStampModal = ref(false);
+const selectedFiscalProfile = ref(null);
+
+function openStampModal(profile) {
+    selectedFiscalProfile.value = profile;
+    showStampModal.value = true;
+}
+
+function onStampAdjustSuccess() {
+    showStampModal.value = false;
+    selectedFiscalProfile.value = null;
+}
+
+function stampStatusLabel(status) {
+    const labels = {
+        'pending': 'Pendiente',
+        'awaiting_review': 'En revisión',
+        'approved': 'Aprobado',
+        'rejected': 'Rechazado',
+        'failed': 'Fallido',
+        'stamps_applied': 'Acreditado',
+    };
+    return labels[status] || status;
+}
+
+function stampStatusSeverity(status) {
+    const map = {
+        'pending': 'warn',
+        'awaiting_review': 'info',
+        'approved': 'success',
+        'rejected': 'danger',
+        'failed': 'danger',
+        'stamps_applied': 'success',
+    };
+    return map[status] || 'secondary';
+}
+
+function stampPaymentMethodLabel(method) {
+    const labels = {
+        'mercadopago': 'Mercado Pago',
+        'bank_transfer': 'Transferencia',
+        'manual_adjustment': 'Ajuste manual',
+    };
+    return labels[method] || method;
+}
 </script>
 
 <template>
@@ -340,6 +392,132 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
                     />
                 </div>
 
+                <!-- ── Timbres / Facturación ──────────── -->
+                <div class="mt-8 pt-8 border-t border-gray-100 dark:border-[#3a3a3a]">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
+                            Facturación
+                        </h2>
+                        <Link
+                            :href="route('admin.stamps.index')"
+                            class="text-[10px] uppercase tracking-widest font-bold text-purple-500 hover:text-primary-500 transition-colors"
+                        >
+                            Panel global de timbres
+                            <i class="pi pi-arrow-up-right !text-[8px] ml-1" />
+                        </Link>
+                    </div>
+
+                    <!-- Fiscal profiles cards -->
+                    <div v-if="fiscalProfiles && fiscalProfiles.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div
+                            v-for="profile in fiscalProfiles"
+                            :key="profile.id"
+                            class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]"
+                        >
+                            <div class="flex items-start justify-between mb-3">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-900 dark:text-white m-0">{{ profile.razon_social }}</p>
+                                    <p class="text-xs text-gray-400 m-0">RFC: {{ profile.rfc }}</p>
+                                </div>
+                                <Tag
+                                    :value="profile.is_active ? 'Activo' : 'Inactivo'"
+                                    :severity="profile.is_active ? 'success' : 'secondary'"
+                                    class="!rounded-full"
+                                />
+                            </div>
+
+                            <!-- Balance -->
+                            <div v-if="profile.balanceError" class="text-xs text-red-500 mb-3">
+                                {{ profile.balanceError }}
+                            </div>
+                            <div v-else-if="profile.balance" class="grid grid-cols-3 gap-3 mb-3">
+                                <div class="text-center">
+                                    <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Disponibles</p>
+                                    <p class="text-lg font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsBalance ?? '—' }}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Usados</p>
+                                    <p class="text-lg font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsUsed ?? '—' }}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Asignados</p>
+                                    <p class="text-lg font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsAssigned ?? '—' }}</p>
+                                </div>
+                            </div>
+                            <div v-else class="text-xs text-gray-400 mb-3">
+                                Sin subcuenta PAC vinculada.
+                            </div>
+
+                            <Button
+                                v-if="profile.is_active"
+                                icon="pi pi-cog"
+                                label="Ajustar timbres"
+                                size="small"
+                                severity="secondary"
+                                class="!rounded-full w-full"
+                                @click="openStampModal(profile)"
+                            />
+                        </div>
+                    </div>
+
+                    <!-- Empty state: no fiscal profiles -->
+                    <div v-if="!fiscalProfiles || fiscalProfiles.length === 0" class="flex flex-col items-center justify-center py-12 px-4 text-center rounded-2xl bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a]">
+                        <i class="pi pi-file !text-3xl text-gray-300 dark:text-gray-600 mb-3"></i>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 max-w-sm leading-relaxed m-0">
+                            Este suscriptor no tiene perfiles fiscales registrados.
+                        </p>
+                        <p class="text-xs text-gray-400 mt-2 m-0">
+                            Los perfiles fiscales se crean desde la sección de facturación del suscriptor.
+                        </p>
+                    </div>
+
+                    <!-- Combined purchase history -->
+                    <div v-if="allStampPurchases && allStampPurchases.length > 0" class="mt-6">
+                        <h3 class="text-xs font-bold text-gray-500 m-0 mb-3">Historial de movimientos</h3>
+                        <DataTable
+                            :value="allStampPurchases"
+                            paginator
+                            :rows="10"
+                            :rowsPerPageOptions="[10, 15, 25, 50]"
+                            stripedRows
+                            class="w-full text-sm"
+                            paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
+                            currentPageReportTemplate="Mostrando {first} a {last} de {totalRecords} movimientos"
+                            :pt="{
+                                root: { class: '!bg-transparent' },
+                                headerRow: { class: '!bg-transparent' },
+                                paginator: { root: { class: '!bg-transparent !border-0 !pt-3' } },
+                            }"
+                        >
+                            <Column header="Perfil">
+                                <template #body="{ data }">
+                                    <span class="text-xs">{{ data.fiscal_profile?.razon_social ?? '—' }}</span>
+                                </template>
+                            </Column>
+                            <Column header="Cantidad">
+                                <template #body="{ data }">
+                                    {{ data.stamp_quantity.toLocaleString() }}
+                                </template>
+                            </Column>
+                            <Column header="Método">
+                                <template #body="{ data }">
+                                    {{ stampPaymentMethodLabel(data.payment_method) }}
+                                </template>
+                            </Column>
+                            <Column header="Estado">
+                                <template #body="{ data }">
+                                    <Tag :value="stampStatusLabel(data.status)" :severity="stampStatusSeverity(data.status)" class="!rounded-full" />
+                                </template>
+                            </Column>
+                            <Column header="Fecha">
+                                <template #body="{ data }">
+                                    <span class="text-xs text-gray-500">{{ formatDate(data.created_at) }}</span>
+                                </template>
+                            </Column>
+                        </DataTable>
+                    </div>
+                </div>
+
             </div>
         </div>
 
@@ -356,6 +534,15 @@ const tagPt = { root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercas
             v-model:visible="showRegisterPaymentModal"
             :subscription-id="subscription.id"
             :plan-items="planItems"
+        />
+
+        <!-- Modal: Ajuste de timbres (manual o compra) -->
+        <AdjustStampModal
+            :fiscalProfile="selectedFiscalProfile"
+            :visible="showStampModal"
+            :showModeToggle="false"
+            @update:visible="showStampModal = $event"
+            @success="onStampAdjustSuccess"
         />
 
     </AppLayout>

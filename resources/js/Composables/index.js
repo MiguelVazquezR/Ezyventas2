@@ -2,3 +2,4 @@
 // para que puedan ser importadas desde una sola ubicación.
 
 export * from './usePermissions';
+export * from './useSatCatalogs';

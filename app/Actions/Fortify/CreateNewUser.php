@@ -98,9 +98,10 @@ class CreateNewUser implements CreatesNewUsers
     protected function getInitialPlanItems()
     {
         $defaultModuleKeys = [
-            'module_pos', 'module_financial_reports', 'module_transactions', 
-            'module_products', 'module_expenses', 'module_customers', 
-            'module_services', 'module_cash_registers', 'module_settings'
+            'module_pos', 'module_financial_reports', 'module_transactions',
+            'module_products', 'module_expenses', 'module_customers',
+            'module_services', 'module_cash_registers', 'module_settings',
+            'module_billing',
         ];
         
         $defaultLimitKeys = [

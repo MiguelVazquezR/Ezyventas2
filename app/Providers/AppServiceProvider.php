@@ -3,6 +3,10 @@
 namespace App\Providers;
 
 use App\AiTools\EzyVentasToolProvider;
+use App\Models\Billing\Invoice;
+use App\Models\Billing\StampMovement;
+use App\Models\Billing\StampPurchase;
+use App\Observers\Billing\StampMovementObserver;
 use Ezyventas\AiAgent\Contracts\AiToolProvider;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -68,5 +72,9 @@ class AppServiceProvider extends ServiceProvider
 
             return null;
         });
+
+        // ── Stamp Movement Observer ──
+        StampPurchase::observe(StampMovementObserver::class);
+        Invoice::observe(StampMovementObserver::class);
     }
 }

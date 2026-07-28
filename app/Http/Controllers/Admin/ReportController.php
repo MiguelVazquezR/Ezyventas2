@@ -7,7 +7,9 @@ use App\Models\Subscription;
 use App\Models\SubscriptionPayment;
 use App\Enums\SubscriptionPaymentStatus;
 use App\Models\ReferralUsage;
+use App\Services\SW\SWUserService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Carbon\Carbon;
 
@@ -115,7 +117,34 @@ class ReportController extends Controller
             'filters' => [
                 'start_date' => $startDate->format('Y-m-d'),
                 'end_date' => $endDate->format('Y-m-d'),
-            ]
+            ],
+            'masterBalanceWarning' => $this->getMasterBalanceWarning(),
         ]);
+    }
+
+    /**
+     * Check the master account balance and return a warning if below threshold.
+     * Returns null if everything is fine or the PAC is unreachable.
+     */
+    private function getMasterBalanceWarning(): ?array
+    {
+        try {
+            $balance = app(SWUserService::class)->getMasterAccountBalance();
+        } catch (\RuntimeException $e) {
+            Log::warning('Admin dashboard: master balance check failed', ['error' => $e->getMessage()]);
+            return null;
+        }
+
+        $stampsBalance = (int) ($balance['stampsBalance'] ?? 0);
+        $threshold     = (int) (config('services.swsapien.low_balance_threshold', 500));
+
+        if ($stampsBalance <= $threshold) {
+            return [
+                'stampsBalance' => $stampsBalance,
+                'threshold'     => $threshold,
+            ];
+        }
+
+        return null;
     }
 }
