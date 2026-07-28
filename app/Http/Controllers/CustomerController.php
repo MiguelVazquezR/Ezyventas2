@@ -80,6 +80,7 @@ class CustomerController extends Controller implements HasMiddleware
                 'branch_id' => Auth::user()->branch_id,
                 'balance' => 0, 
                 'address' => $request->input('address', []),
+                'fiscal_address' => $request->input('fiscal_address'),
             ]));
 
             // Usamos el nuevo método delegado al modelo
@@ -161,6 +162,9 @@ class CustomerController extends Controller implements HasMiddleware
         $data = $request->validated();
         if ($request->has('address')) {
             $data['address'] = $request->input('address');
+        }
+        if ($request->has('fiscal_address')) {
+            $data['fiscal_address'] = $request->input('fiscal_address');
         }
 
         $customer->update($data);

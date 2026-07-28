@@ -13,5 +13,6 @@ enum InvoiceStatus: string
     case DRAFT = 'borrador';
     case PENDING = 'pendiente';
     case CERTIFIED = 'certificada';
+    case CANCELATION_PENDING = 'cancelacion_pendiente';
     case CANCELED = 'cancelada';
 }

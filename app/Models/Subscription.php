@@ -6,6 +6,7 @@ use App\Enums\BillingPeriod;
 use App\Enums\PlanItemType;
 use App\Enums\SubscriptionPaymentStatus;
 use App\Enums\SubscriptionStatus;
+use App\Models\Billing\FiscalProfile;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -32,12 +33,14 @@ class Subscription extends Model implements HasMedia
         'slug',
         'onboarding_completed_at',
         'referrer_discount_active',
+        'facturacion_habilitada',
     ];
 
     protected $casts = [
         'address' => 'array',
         'onboarding_completed_at' => 'datetime',
         'referrer_discount_active' => 'boolean',
+        'facturacion_habilitada' => 'boolean',
         'status' => SubscriptionStatus::class,
     ];
     
@@ -363,6 +366,7 @@ class Subscription extends Model implements HasMedia
 
     public function printTemplates(): HasMany { return $this->hasMany(PrintTemplate::class); }
     public function bankAccounts(): HasMany { return $this->hasMany(BankAccount::class); }
+    public function fiscalProfiles(): HasMany { return $this->hasMany(FiscalProfile::class); }
     public function getRouteKeyName(): string { return 'slug'; }
     public function users(): HasManyThrough { return $this->hasManyThrough(User::class, Branch::class); }
     public function cashRegisters(): HasManyThrough { return $this->hasManyThrough(CashRegister::class, Branch::class); }

@@ -133,7 +133,7 @@ const menuPt = {
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                 <!-- Columna Principal -->
-                <div class="lg:col-span-2 space-y-6">
+                <div class="lg:col-span-3 space-y-6">
 
                     <!-- Card: Información Principal -->
                     <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
@@ -208,17 +208,17 @@ const menuPt = {
                 </div>
 
                 <!-- Columna Derecha -->
-                <div class="lg:col-span-1">
+                <!-- <div class="lg:col-span-1">
                     <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
-                        <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0 mb-6">Historial de actividad</h2>
+                        <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0 mb-6">Historial de actividad</h2> -->
                         <!-- El historial está comentado en la versión actual -->
-                        <div class="flex flex-col items-center justify-center text-center py-10 opacity-60">
+                        <!-- <div class="flex flex-col items-center justify-center text-center py-10 opacity-60">
                             <i class="pi pi-history !text-2xl text-gray-400 mb-3"></i>
                             <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin actividad</p>
                             <p class="text-xs text-gray-400 mt-1">No hay cambios registrados en este gasto.</p>
-                        </div>
-                    </div>
-                </div>
+                        </div> -->
+                    <!-- </div>
+                </div> -->
             </div>
         </div>
     </AppLayout>

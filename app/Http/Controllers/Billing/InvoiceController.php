@@ -1,0 +1,654 @@
+<?php
+
+namespace App\Http\Controllers\Billing;
+
+use App\Actions\Billing\CancelInvoiceAction;
+use App\Actions\Billing\CreateInvoiceAction;
+use App\Actions\Billing\UpdateInvoiceAction;
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Billing\CancelInvoiceRequest;
+use App\Http\Requests\Billing\StoreInvoiceRequest;
+use App\Http\Requests\Billing\UpdateInvoiceRequest;
+use App\Models\Billing\Invoice;
+use App\Services\Billing\SatConsultationService;
+use App\Services\SW\SWUserService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
+use Inertia\Response;
+
+class InvoiceController extends Controller implements HasMiddleware
+{
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('can:invoices.access', only: ['index']),
+            new Middleware('can:invoices.create', only: ['create', 'store']),
+            new Middleware('can:invoices.see_details', only: ['show']),
+            new Middleware('can:invoices.edit', only: ['edit', 'update']),
+            new Middleware('can:invoices.cancel', only: ['cancel']),
+            new Middleware('can:invoices.settings.access', only: ['settings', 'dashboard']),
+        ];
+    }
+
+    /**
+     * Billing dashboard — KPIs & stamp usage overview.
+     */
+    public function dashboard(Request $request): Response
+    {
+        $user = Auth::user();
+        $subscription = $user->branch?->subscription;
+
+        $facturacionHabilitada = $subscription?->facturacion_habilitada ?? false;
+
+        // If billing is not enabled, return safe defaults — no PAC calls needed
+        if (! $facturacionHabilitada) {
+            return Inertia::render('Billing/Dashboard/Index', [
+                'fiscalProfiles'             => collect(),
+                'draftInvoices'              => 0,
+                'certifiedInvoices'          => 0,
+                'cancelationPendingInvoices' => 0,
+                'canceledInvoices'           => 0,
+                'facturacionHabilitada'      => false,
+            ]);
+        }
+
+        $fiscalProfiles = $subscription
+            ? $subscription->fiscalProfiles()->orderBy('created_at', 'desc')->get()
+            : collect();
+
+        $draftInvoices = Invoice::where('branch_id', $user->branch_id)->draft()->count();
+        $certifiedInvoices = Invoice::where('branch_id', $user->branch_id)->certified()->count();
+        $cancelationPendingInvoices = Invoice::where('branch_id', $user->branch_id)
+            ->where('status', \App\Enums\InvoiceStatus::CANCELATION_PENDING)
+            ->count();
+        $canceledInvoices = Invoice::where('branch_id', $user->branch_id)->canceled()->count();
+
+        // Per-fiscal-profile KPIs with live stamp balances
+        $swUserService = app(SWUserService::class);
+        $fiscalProfilesData = $fiscalProfiles->map(function ($profile) use ($swUserService, $user, $request) {
+            $balance = null;
+            $balanceError = null;
+
+            if ($profile->sw_user_id) {
+                try {
+                    $balance = $swUserService->getStampsBalance($profile->sw_user_id);
+                } catch (\Exception $e) {
+                    $balanceError = 'No se pudo consultar el saldo en este momento.';
+                }
+            }
+
+            $invoiceQuery = Invoice::where('branch_id', $user->branch_id)
+                ->where('fiscal_profile_id', $profile->id);
+
+            return [
+                'id'                      => $profile->id,
+                'rfc'                     => $profile->rfc,
+                'razon_social'            => $profile->razon_social,
+                'balance'                 => $balance,
+                'balanceError'            => $balanceError,
+                'draftCount'              => (clone $invoiceQuery)->draft()->count(),
+                'certifiedCount'          => (clone $invoiceQuery)->certified()->count(),
+                'cancelationPendingCount' => (clone $invoiceQuery)->where('status', \App\Enums\InvoiceStatus::CANCELATION_PENDING)->count(),
+                'canceledCount'           => (clone $invoiceQuery)->canceled()->count(),
+            ];
+        });
+
+        return Inertia::render('Billing/Dashboard/Index', [
+            'fiscalProfiles'             => $fiscalProfilesData,
+            'draftInvoices'              => $draftInvoices,
+            'certifiedInvoices'          => $certifiedInvoices,
+            'cancelationPendingInvoices' => $cancelationPendingInvoices,
+            'canceledInvoices'           => $canceledInvoices,
+            'facturacionHabilitada'      => true,
+        ]);
+    }
+
+    /**
+     * List all invoices for the current branch.
+     */
+    public function index(Request $request): Response
+    {
+        $user = Auth::user();
+        $subscription = $user->branch?->subscription;
+
+        $query = Invoice::query()
+            ->where('branch_id', $user->branch_id)
+            ->with(['customer:id,name,company_name', 'fiscalProfile:id,razon_social,rfc']);
+
+        // Search across folio, receiver name, receiver RFC, and UUID
+        if ($request->has('search')) {
+            $searchTerm = $request->input('search');
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('folio', 'LIKE', "%{$searchTerm}%")
+                  ->orWhere('receiver_legal_name', 'LIKE', "%{$searchTerm}%")
+                  ->orWhere('receiver_rfc', 'LIKE', "%{$searchTerm}%")
+                  ->orWhere('uuid', 'LIKE', "%{$searchTerm}%");
+            });
+        }
+
+        // Filter by status if provided
+        if ($request->filled('status')) {
+            $query->where('status', $request->input('status'));
+        }
+
+        // Filter by fiscal profile if provided
+        if ($request->filled('fiscal_profile_id')) {
+            $query->where('fiscal_profile_id', $request->input('fiscal_profile_id'));
+        }
+
+        $query->orderBy(
+            $request->input('sortField', 'created_at'),
+            $request->input('sortOrder', 'desc'),
+        );
+
+        // Get fiscal profiles for the filter dropdown
+        $fiscalProfiles = $subscription?->fiscalProfiles()->active()
+            ->get(['id', 'rfc', 'razon_social']) ?? collect();
+
+        return Inertia::render('Billing/Invoices/Index', [
+            'invoices'           => $query->paginate($request->input('rows', 20))->withQueryString(),
+            'filters'            => $request->only(['search', 'status', 'fiscal_profile_id', 'sortField', 'sortOrder']),
+            'fiscalProfiles'     => $fiscalProfiles,
+            'hasFiscalProfiles'  => $subscription?->fiscalProfiles()->active()->exists() ?? false,
+        ]);
+    }
+
+    /**
+     * Show the invoice creation form.
+     */
+    public function create(): Response
+    {
+        $user = Auth::user();
+        $subscription = $user->branch?->subscription;
+
+        $facturacionHabilitada = $subscription?->facturacion_habilitada ?? false;
+
+        // Only fetch profiles when billing is enabled and there are active profiles with PAC subaccounts
+        $fiscalProfiles = $facturacionHabilitada
+            ? ($subscription?->fiscalProfiles()->active()->whereNotNull('sw_user_id')->get(['id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code']) ?? [])
+            : [];
+
+        $hasFiscalProfiles = $facturacionHabilitada
+            && ($subscription?->fiscalProfiles()->active()->whereNotNull('sw_user_id')->exists() ?? false);
+
+        return Inertia::render('Billing/Invoices/Create', [
+            'customers'            => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
+            'fiscalProfiles'       => $fiscalProfiles,
+            'hasFiscalProfiles'    => $hasFiscalProfiles,
+            'facturacionHabilitada' => $facturacionHabilitada,
+        ]);
+    }
+
+    /**
+     * Store a newly created CFDI invoice.
+     */
+    public function store(StoreInvoiceRequest $request, CreateInvoiceAction $action): RedirectResponse
+    {
+        try {
+            $draft = $request->boolean('draft', false);
+            $invoice = $action->execute(
+                $request->validated(),
+                Auth::user(),
+                $draft,
+            );
+
+            $message = $draft
+                ? 'Prefactura guardada. Puedes timbrarla cuando estés listo.'
+                : 'Factura creada y timbrada correctamente.';
+
+            return redirect()->route('billing.invoices.show', $invoice->id)
+                ->with('success', $message);
+        } catch (\RuntimeException $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Show the form for editing a draft invoice (prefactura).
+     */
+    public function edit(Invoice $invoice): Response|RedirectResponse
+    {
+        if (! $invoice->isEditable()) {
+            return redirect()->route('billing.invoices.show', $invoice->id)
+                ->with('error', 'Solo las prefacturas pueden editarse. Una factura timbrada no se puede modificar.');
+        }
+
+        $invoice->load(['items', 'customer', 'fiscalProfile']);
+
+        $user = Auth::user();
+        $subscription = $user->branch?->subscription;
+
+        $fiscalProfiles = $subscription?->fiscalProfiles()->active()
+            ->whereNotNull('sw_user_id')
+            ->get(['id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code']) ?? collect();
+
+        return Inertia::render('Billing/Invoices/Edit', [
+            'invoice'          => $invoice,
+            'customers'        => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
+            'fiscalProfiles'   => $fiscalProfiles,
+            'hasFiscalProfiles' => $fiscalProfiles->isNotEmpty(),
+        ]);
+    }
+
+    /**
+     * Update a draft invoice (prefactura).
+     */
+    public function update(UpdateInvoiceRequest $request, Invoice $invoice, UpdateInvoiceAction $action): RedirectResponse
+    {
+        try {
+            $action->execute($request->validated(), $invoice, Auth::user());
+
+            return redirect()->route('billing.invoices.show', $invoice->id)
+                ->with('success', 'Prefactura actualizada correctamente.');
+        } catch (\RuntimeException $e) {
+            return redirect()->back()
+                ->withInput()
+                ->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Display a single invoice with its items and customer.
+     */
+    public function show(Invoice $invoice): Response
+    {
+        $invoice->load(['items', 'customer', 'branch', 'fiscalProfile']);
+
+        return Inertia::render('Billing/Invoices/Show', [
+            'invoice' => $invoice,
+        ]);
+    }
+
+    /**
+     * Render a print-friendly CFDI 4.0 invoice view (Inertia page).
+     *
+     * The user prints/saves as PDF via the browser (Ctrl+P).
+     * No server-side PDF generation is used.
+     */
+    public function pdf(Invoice $invoice): Response
+    {
+        $invoice->load([
+            'items',
+            'customer',
+            'branch.subscription.media',
+            'fiscalProfile',
+        ]);
+
+        // ── Timbre data now read directly from model columns (saved at stamp time) ──
+        $timbre = $this->extractTimbreData($invoice);
+
+        // ── Comprobante data from XML root — only needed when XML is available ──
+        $comprobante = $this->extractComprobanteData($invoice);
+
+        // ── Retrieve company logo — prefer fiscal profile logo, fallback to subscription logo ──
+        $logoUrl = $invoice->fiscalProfile?->getFirstMediaUrl('company_logo') ?: null;
+
+        if (! $logoUrl) {
+            $subscription = $invoice->branch?->subscription;
+            if ($subscription) {
+                $logoUrl = $subscription->getFirstMediaUrl('company_logo') ?: null;
+            }
+        }
+
+        // ── QR code as data URI from base64 stored at stamp time ──
+        $qrCodeSrc = $invoice->qr_code_base64
+            ? 'data:image/png;base64,' . $invoice->qr_code_base64
+            : null;
+
+        return Inertia::render('Billing/Invoices/Pdf', [
+            'invoice'           => $invoice,
+            'timbre'            => $timbre,
+            'comprobante'       => $comprobante,
+            'qrCodeSrc'         => $qrCodeSrc,
+            'subtotal'          => (float) $invoice->subtotal,
+            'discountTotal'     => (float) $invoice->discount_total,
+            'taxesTotal'        => (float) $invoice->taxes_total,
+            'retainedTotal'     => (float) $invoice->retained_taxes_total,
+            'total'             => (float) $invoice->total,
+            'groupedTransfers'  => $this->groupTaxesByType($invoice),
+            'groupedRetentions' => $this->groupRetentionsByType($invoice),
+            'logoUrl'           => $logoUrl,
+        ]);
+    }
+
+    /**
+     * Download the CFDI XML file for a certified invoice.
+     */
+    public function downloadXml(Invoice $invoice): \Symfony\Component\HttpFoundation\BinaryFileResponse|\Illuminate\Http\RedirectResponse
+    {
+        if (! $invoice->xml_url) {
+            return redirect()->back()->with('error', 'Esta factura no tiene un archivo XML disponible.');
+        }
+
+        $path = \Illuminate\Support\Facades\Storage::disk('public')->path($invoice->xml_url);
+
+        if (! file_exists($path)) {
+            return redirect()->back()->with('error', 'El archivo XML no se encontró en el servidor.');
+        }
+
+        $filename = ($invoice->uuid ?: $invoice->folio) . '.xml';
+
+        return response()->download($path, $filename, [
+            'Content-Type' => 'application/xml; charset=utf-8',
+        ]);
+    }
+
+    /**
+     * Extract timbre fiscal data directly from model columns.
+     *
+     * All timbre fields are saved at stamp time from the SW Sapien JSON
+     * response — no XML parsing needed.
+     */
+    private function extractTimbreData(Invoice $invoice): array
+    {
+        return [
+            'uuid'               => $invoice->uuid ?: '—',
+            'fecha_timbrado'     => $invoice->fecha_timbrado ?: '—',
+            'rfc_prov_certif'    => $invoice->rfc_prov_certif ?: '—',
+            'sello_cfd'          => $invoice->sello_cfdi ?: '—',
+            'no_certificado_sat' => $invoice->no_certificado_sat ?: '—',
+            'sello_sat'          => $invoice->sello_sat ?: '—',
+            'cadena_original'    => $invoice->cadena_original_sat ?: '—',
+        ];
+    }
+
+    /**
+     * Extract comprobante-level attributes from the stored CFDI XML.
+     *
+     * Returns NoCertificado (emisor CSD), Sello (emisor), TipoDeComprobante,
+     * Fecha, and LugarExpedicion from the root cfdi:Comprobante node.
+     */
+    private function extractComprobanteData(Invoice $invoice): array
+    {
+        $defaults = [
+            'no_certificado'      => '—',
+            'sello'               => '—',
+            'tipo_de_comprobante' => 'I',
+            'fecha'               => '—',
+            'lugar_expedicion'    => '—',
+        ];
+
+        if (! $invoice->xml_url) {
+            return $defaults;
+        }
+
+        $xmlContent = \Illuminate\Support\Facades\Storage::disk('public')->get($invoice->xml_url);
+        if (! $xmlContent) {
+            return $defaults;
+        }
+
+        libxml_use_internal_errors(true);
+        $xml = simplexml_load_string($xmlContent);
+        libxml_clear_errors();
+
+        if (! $xml) {
+            return $defaults;
+        }
+
+        $attrs = $xml->attributes();
+
+        return [
+            'no_certificado'      => (string) ($attrs['NoCertificado'] ?? '—'),
+            'sello'               => (string) ($attrs['Sello'] ?? '—'),
+            'tipo_de_comprobante' => (string) ($attrs['TipoDeComprobante'] ?? 'I'),
+            'fecha'               => (string) ($attrs['Fecha'] ?? '—'),
+            'lugar_expedicion'    => (string) ($attrs['LugarExpedicion'] ?? '—'),
+        ];
+    }
+
+    /**
+     * Group transferred taxes (traslados) by Impuesto + TipoFactor + TasaOCuota
+     * for the global Impuestos summary in the PDF.
+     */
+    private function groupTaxesByType(Invoice $invoice): array
+    {
+        $groups = [];
+
+        foreach ($invoice->items as $item) {
+            if ($item->objeto_imp !== '02' || (float) $item->tax_amount <= 0) {
+                continue;
+            }
+
+            $key = ($item->tax_type ?: '002') . '|Tasa|' . number_format((float) ($item->tax_rate ?: 0.16), 6, '.', '');
+
+            if (! isset($groups[$key])) {
+                $groups[$key] = [
+                    'impuesto'   => $item->tax_type ?: '002',
+                    'tipoFactor' => 'Tasa',
+                    'tasaOCuota' => (float) ($item->tax_rate ?: 0.16),
+                    'base'       => 0.0,
+                    'importe'    => 0.0,
+                ];
+            }
+
+            $base = round((float) $item->subtotal - (float) $item->discount_amount, 2);
+            $groups[$key]['base']    = round($groups[$key]['base'] + $base, 2);
+            $groups[$key]['importe'] = round($groups[$key]['importe'] + (float) $item->tax_amount, 2);
+        }
+
+        return array_values($groups);
+    }
+
+    /**
+     * Group retained taxes (retenciones) by Impuesto for the PDF summary.
+     */
+    private function groupRetentionsByType(Invoice $invoice): array
+    {
+        $groups = [];
+
+        foreach ($invoice->items as $item) {
+            if (! $item->retained_tax_type || (float) $item->retained_tax_amount <= 0) {
+                continue;
+            }
+
+            $key = $item->retained_tax_type;
+
+            if (! isset($groups[$key])) {
+                $groups[$key] = [
+                    'impuesto' => $item->retained_tax_type,
+                    'importe'  => 0.0,
+                ];
+            }
+
+            $groups[$key]['importe'] = round($groups[$key]['importe'] + (float) $item->retained_tax_amount, 2);
+        }
+
+        return array_values($groups);
+    }
+
+    /**
+     * Display all fiscal profiles with pagination, search, sorting,
+     * CSD certificate status, and live stamp balance per profile.
+     */
+    public function settings(Request $request): Response
+    {
+        $user = Auth::user();
+        $subscription = $user->branch?->subscription;
+
+        $facturacionHabilitada = $subscription?->facturacion_habilitada ?? false;
+
+        if (! $facturacionHabilitada) {
+            return Inertia::render('Billing/Settings/Index', [
+                'fiscalProfiles'        => ['data' => [], 'total' => 0, 'per_page' => 20],
+                'filters'               => [],
+                'facturacionHabilitada' => false,
+                'ourBankAccounts'       => [],
+            ]);
+        }
+
+        $query = $subscription->fiscalProfiles();
+
+        // Search across RFC and razón social
+        if ($request->filled('search')) {
+            $searchTerm = $request->input('search');
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('rfc', 'LIKE', "%{$searchTerm}%")
+                  ->orWhere('razon_social', 'LIKE', "%{$searchTerm}%");
+            });
+        }
+
+        // Sorting — only allow known columns; fall back to created_at if sortField is empty or invalid
+        $allowedSortFields = ['created_at', 'rfc', 'razon_social', 'regimen_fiscal', 'is_active', 'manifest_signed_at'];
+        $sortField = $request->input('sortField');
+        $sortField = in_array($sortField, $allowedSortFields, true) ? $sortField : 'created_at';
+        $sortOrder = $request->input('sortOrder') === 'asc' ? 'asc' : 'desc';
+
+        $query->orderBy($sortField, $sortOrder);
+
+        $paginated = $query->paginate($request->input('rows', 20))->withQueryString();
+
+        // Enrich each profile with CSD status and live stamp balance
+        $swUserService = app(SWUserService::class);
+        foreach ($paginated as $profile) {
+            $profile->csd_status = $profile->certificate_number ? 'Activo' : 'Faltante';
+            $profile->stamps_available = null;
+            if ($profile->sw_user_id) {
+                try {
+                    $balance = $swUserService->getStampsBalance($profile->sw_user_id);
+                    $profile->stamps_available = $balance['stampsBalance'] ?? 0;
+                } catch (\Exception $e) {
+                    $profile->stamps_available = null;
+                }
+            }
+        }
+
+        $ourBankAccounts = \App\Models\BankAccount::whereHas('branches', function ($q) {
+            $q->where('branch_id', 1)->where('is_favorite', true);
+        })->get();
+
+        return Inertia::render('Billing/Settings/Index', [
+            'fiscalProfiles'        => $paginated,
+            'filters'               => $request->only(['search', 'sortField', 'sortOrder']),
+            'facturacionHabilitada' => true,
+            'ourBankAccounts'       => $ourBankAccounts,
+        ]);
+    }
+
+    /**
+     * Cancel a CFDI invoice (fiscal cancellation).
+     */
+    public function cancel(Invoice $invoice, CancelInvoiceRequest $request, CancelInvoiceAction $action): RedirectResponse
+    {
+        $result = $action->execute(
+            $invoice,
+            $request->validated('cancellation_reason'),
+            $request->validated('substitution_uuid'),
+        );
+
+        if ($result['status'] === 'pending_acceptance') {
+            return redirect()->route('billing.invoices.show', $invoice->id)
+                ->with('warning', $result['message']);
+        }
+
+        return redirect()->route('billing.invoices.show', $invoice->id)
+            ->with('success', $result['message']);
+    }
+
+    /**
+     * Verify the cancelation status of a CFDI that requires receiver acceptance.
+     * Queries the SAT public consultation service.
+     */
+    public function checkCancelationStatus(Invoice $invoice, SatConsultationService $satService): RedirectResponse
+    {
+        if ($invoice->status->value !== 'cancelacion_pendiente') {
+            return redirect()->back()
+                ->with('error', 'Esta factura no tiene una cancelación pendiente de aprobación.');
+        }
+
+        try {
+            $satResult = $satService->consult($invoice);
+            $result = $satService->applyResult($invoice, $satResult);
+
+            $messages = [
+                'canceled' => 'La cancelación fue aceptada. La factura ahora está cancelada.',
+                'rejected' => 'Tu cliente rechazó la solicitud de cancelación. La factura sigue vigente.',
+                'expired'  => 'El plazo para que tu cliente respondiera ha vencido sin resolución. Puedes intentar cancelar de nuevo.',
+                'pending'  => 'La cancelación sigue pendiente de aprobación por parte de tu cliente.',
+            ];
+
+            $message = $messages[$result] ?? 'Estatus de cancelación actualizado.';
+
+            if ($result === 'canceled' || $result === 'rejected') {
+                return redirect()->route('billing.invoices.show', $invoice->id)
+                    ->with($result === 'canceled' ? 'success' : 'warning', $message);
+            }
+
+            return redirect()->route('billing.invoices.show', $invoice->id)
+                ->with('info', $message);
+
+        } catch (\Exception $e) {
+            return redirect()->back()
+                ->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Stamp a draft/pending invoice via SW Sapien.
+     */
+    public function stamp(Invoice $invoice): RedirectResponse
+    {
+        if (! in_array($invoice->status->value, ['borrador', 'pendiente'])) {
+            return redirect()->back()->with('error', 'Solo se pueden timbrar facturas en estado borrador o pendiente.');
+        }
+
+        $swService = app(\App\Services\Billing\SWSapienService::class);
+        $swService->stamp($invoice);
+
+        return redirect()->route('billing.invoices.show', $invoice->id)
+            ->with('success', 'Factura timbrada correctamente.');
+    }
+
+    /**
+     * Delete a draft invoice that hasn't been stamped yet.
+     */
+    public function destroy(Invoice $invoice): RedirectResponse
+    {
+        if (! in_array($invoice->status->value, ['borrador', 'pendiente'])) {
+            return redirect()->back()->with('error', 'Solo se pueden eliminar facturas en estado borrador o pendiente.');
+        }
+
+        $invoice->items()->delete();
+        $invoice->delete();
+
+        return redirect()->route('billing.invoices.index')
+            ->with('success', 'Prefactura eliminada correctamente.');
+    }
+
+    /**
+     * Toggle CFDI invoicing (facturación) on or off for the subscription.
+     *
+     * When enabled for the first time, the user can later create fiscal
+     * profiles which will be auto-provisioned as SW Sapien subaccounts.
+     * When disabled, all PAC operations are skipped and the billing UI
+     * shows a safe "not configured" state.
+     */
+    public function toggleFacturacion(Request $request): RedirectResponse
+    {
+        $user = Auth::user();
+        $subscription = $user->branch?->subscription;
+
+        if (! $subscription) {
+            return redirect()->back()
+                ->with('error', 'No se encontró una suscripción activa.');
+        }
+
+        $nuevoEstado = ! $subscription->facturacion_habilitada;
+
+        $subscription->update([
+            'facturacion_habilitada' => $nuevoEstado,
+        ]);
+
+        $mensaje = $nuevoEstado
+            ? 'Facturación activada. Ahora puedes agregar perfiles fiscales y comenzar a facturar.'
+            : 'Facturación desactivada. Tus perfiles fiscales e historial se conservan, pero no se realizarán nuevas operaciones en el PAC.';
+
+        return redirect()->route('billing.settings.index')
+            ->with($nuevoEstado ? 'success' : 'info', $mensaje);
+    }
+}

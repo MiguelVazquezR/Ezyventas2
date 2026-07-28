@@ -18,13 +18,14 @@ export function useScrollspy(sectionIds, options = { rootMargin: '-20% 0px -50% 
 
     onMounted(() => {
         observer = new IntersectionObserver((entries) => {
-            if (isManualScrolling) return; 
-            
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    activeSection.value = entry.target.id;
-                }
-            });
+            if (isManualScrolling) return;
+
+            // Pick the intersecting section closest to the top of the viewport
+            const intersecting = entries.filter(e => e.isIntersecting);
+            if (intersecting.length === 0) return;
+
+            intersecting.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+            activeSection.value = intersecting[0].target.id;
         }, options);
 
         setTimeout(() => {

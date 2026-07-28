@@ -15,6 +15,8 @@ use App\Actions\Admin\Subscriptions\UpdateVersionItemsAction;
 use App\Actions\Admin\Subscriptions\CreateVersionWithPaymentAction;
 use App\Actions\Admin\Subscriptions\DeleteVersionAction;
 use App\Actions\Admin\Subscriptions\UpdateEntitySettingsAction;
+use App\Models\Billing\StampPurchase;
+use App\Services\SW\SWUserService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -186,6 +188,43 @@ class SubscriptionController extends Controller
         // 8. AI agent usage (read-only, limit is platform-wide)
         $aiData = $subscription->getAiCreditLimitData();
 
+        // 10. Fiscal profiles with live stamp balances for the superadmin stamp section
+        $fiscalProfiles = $subscription->fiscalProfiles()
+            ->with(['stampPurchases' => fn ($q) => $q->latest()->limit(50)])
+            ->get();
+
+        $swUserService = app(SWUserService::class);
+        $fiscalProfilesData = $fiscalProfiles->map(function ($profile) use ($swUserService) {
+            $balance = null;
+            $balanceError = null;
+
+            if ($profile->sw_user_id) {
+                try {
+                    $balance = $swUserService->getStampsBalance($profile->sw_user_id);
+                } catch (\Exception $e) {
+                    $balanceError = 'No se pudo consultar el saldo.';
+                }
+            }
+
+            return [
+                'id'             => $profile->id,
+                'rfc'            => $profile->rfc,
+                'razon_social'   => $profile->razon_social,
+                'sw_user_id'     => $profile->sw_user_id,
+                'is_active'      => $profile->is_active,
+                'balance'        => $balance,
+                'balanceError'   => $balanceError,
+                'purchases'      => $profile->stampPurchases,
+            ];
+        });
+
+        // Combined stamp purchase history for all profiles
+        $allStampPurchases = StampPurchase::whereIn('fiscal_profile_id', $fiscalProfiles->pluck('id'))
+            ->with(['fiscalProfile', 'requestedBy', 'reviewedBy'])
+            ->latest()
+            ->limit(100)
+            ->get();
+
         return Inertia::render('Admin/Subscriptions/Show', [
             'subscription' => $subscription,
             'planItems' => $planItems,
@@ -200,6 +239,8 @@ class SubscriptionController extends Controller
             'aiUsage' => $aiData['usage'],
             'aiPercentage' => $aiData['percentage'],
             'hasAiAgentModule' => $subscription->hasAiAgentModule(),
+            'fiscalProfiles' => $fiscalProfilesData,
+            'allStampPurchases' => $allStampPurchases,
         ]);
     }
 

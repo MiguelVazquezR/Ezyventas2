@@ -27,10 +27,11 @@ class OnboardingController extends Controller
             'versions.items'
         ])->first();
 
-        // Obtener límites actuales
-        $limits = $subscription->versions->first()->items
-            ->where('item_type', 'limit')
-            ->keyBy('item_key');
+        // Obtener límites actuales con fallback seguro
+        $currentVersion = $subscription->versions->first();
+        $limits = $currentVersion?->items
+            ?->where('item_type', 'limit')
+            ?->keyBy('item_key') ?? collect();
 
         return Inertia::render('Onboarding/Setup', [
             'subscription' => $subscription,

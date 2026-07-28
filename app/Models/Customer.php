@@ -19,13 +19,15 @@ class Customer extends Model
 
     protected $fillable = [
         'branch_id', 'company_name', 'name', 'email', 'phone',
-        'address', 'tax_id', 'balance', 'credit_limit', 'created_at', 'updated_at',
+        'address', 'fiscal_address', 'tax_id', 'tax_regime',
+        'balance', 'credit_limit', 'created_at', 'updated_at',
     ];
 
     protected function casts(): array
     {
         return [
             'address' => 'array',
+            'fiscal_address' => 'array',
             'balance' => 'decimal:2',
             'credit_limit' => 'decimal:2',
         ];
