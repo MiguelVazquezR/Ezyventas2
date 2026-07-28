@@ -590,8 +590,8 @@ const rejectionPopoverPt = {
                 <DataTable
                     :value="movements.data"
                     lazy
-                    :paginator="movements.total > 15"
-                    :rows="15"
+                    :paginator="movements.total > 10"
+                    :rows="10"
                     :totalRecords="movements.total"
                     :first="(movements.current_page - 1) * movements.per_page"
                     @page="onMovementPage($event)"

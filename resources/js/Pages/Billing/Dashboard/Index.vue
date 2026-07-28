@@ -1,8 +1,7 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue';
-import { Head, Link, router } from '@inertiajs/vue3';
+import { ref } from 'vue';
+import { Head, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, isSameDay, isToday, format } from 'date-fns';
 
 const props = defineProps({
     fiscalProfiles: { type: Array, default: () => [] },
@@ -10,82 +9,8 @@ const props = defineProps({
     certifiedInvoices: { type: Number, default: 0 },
     cancelationPendingInvoices: { type: Number, default: 0 },
     canceledInvoices: { type: Number, default: 0 },
-    filters: { type: Object, default: () => ({ startDate: format(new Date(), 'yyyy-MM-dd'), endDate: format(new Date(), 'yyyy-MM-dd') }) },
+    filters: { type: Object, default: () => ({}) },
     facturacionHabilitada: { type: Boolean, default: false },
-});
-
-// --- STATE ---
-const dates = ref();
-const selectedRange = ref('day');
-const isExporting = ref(false);
-
-// --- DATE RANGE ---
-const rangeOptions = ref([
-    { label: 'Hoy', value: 'day' },
-    { label: 'Semana', value: 'week' },
-    { label: 'Mes', value: 'month' },
-    { label: 'Año', value: 'year' },
-    { label: 'Personalizado', value: 'custom' },
-]);
-
-const setDateRange = (period) => {
-    const today = new Date();
-    let startDate, endDate;
-    switch (period) {
-        case 'week': startDate = startOfWeek(today, { weekStartsOn: 1 }); endDate = endOfWeek(today, { weekStartsOn: 1 }); break;
-        case 'month': startDate = startOfMonth(today); endDate = endOfMonth(today); break;
-        case 'year': startDate = startOfYear(today); endDate = endOfYear(today); break;
-        case 'day': default: startDate = today; endDate = today; break;
-    }
-    dates.value = [startDate, endDate];
-};
-
-watch(selectedRange, (newPeriod) => {
-    if (newPeriod !== 'custom') {
-        setDateRange(newPeriod);
-    }
-});
-
-// --- DATA FETCHING ---
-const fetchData = () => {
-    if (dates.value && dates.value[0] && dates.value[1]) {
-        router.get(route('billing.dashboard'), {
-            start_date: format(dates.value[0], 'yyyy-MM-dd'),
-            end_date: format(dates.value[1], 'yyyy-MM-dd'),
-        }, { preserveState: true, replace: true });
-    }
-};
-
-watch(dates, (newDates, oldDates) => {
-    if (newDates && newDates[0] && newDates[1]) {
-        if (!oldDates || !isSameDay(newDates[0], oldDates[0]) || !isSameDay(newDates[1], oldDates[1])) {
-            fetchData();
-        }
-    }
-}, { deep: true });
-
-// --- EXPORT ---
-const handleExport = () => {
-    // TODO: implement export logic
-};
-
-// --- INIT ---
-onMounted(() => {
-    const initialStartDate = props.filters.startDate ? new Date(props.filters.startDate.replace(/-/g, '/')) : new Date();
-    const initialEndDate = props.filters.endDate ? new Date(props.filters.endDate.replace(/-/g, '/')) : new Date();
-    dates.value = [initialStartDate, initialEndDate];
-
-    if (isSameDay(initialStartDate, initialEndDate) && isToday(initialStartDate)) {
-        selectedRange.value = 'day';
-    } else if (isSameDay(initialStartDate, startOfWeek(initialStartDate, { weekStartsOn: 1 })) && isSameDay(initialEndDate, endOfWeek(initialStartDate, { weekStartsOn: 1 }))) {
-        selectedRange.value = 'week';
-    } else if (isSameDay(initialStartDate, startOfMonth(initialStartDate)) && isSameDay(initialEndDate, endOfMonth(initialStartDate))) {
-        selectedRange.value = 'month';
-    } else if (isSameDay(initialStartDate, startOfYear(initialStartDate)) && isSameDay(initialEndDate, endOfYear(initialStartDate))) {
-        selectedRange.value = 'year';
-    } else {
-        selectedRange.value = 'custom';
-    }
 });
 
 // --- HELPERS ---
@@ -116,8 +41,7 @@ const tagPt = {
                     Facturación no activada
                 </h1>
                 <p class="text-sm text-gray-500 dark:text-gray-400 m-0 max-w-md mb-8">
-                    La facturación electrónica (CFDI 4.0) está desactivada para esta cuenta.
-                    Actívala desde la configuración para comenzar a emitir facturas.
+                    Agrega un emisor fiscal para poder generar facturas y llevar un control de tus timbres fiscales.
                 </p>
                 <Link
                     :href="route('billing.settings.index')"
@@ -132,50 +56,14 @@ const tagPt = {
                  Header (only when billing is enabled)
                  ════════════════════════════════════════ -->
             <div v-if="facturacionHabilitada">
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-2">
-                <div>
-                    <h1 class="text-4xl md:text-5xl font-light tracking-tight text-gray-900 dark:text-white m-0">
-                        Facturación
-                    </h1>
-                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 mt-2 m-0 flex items-center gap-2">
-                        <span class="w-1.5 h-1.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse"></span>
-                        Resumen general de todos tus emisores fiscales
-                    </p>
-                </div>
-
-                <div class="flex items-center gap-3 flex-wrap bg-white dark:bg-[#232323] p-2 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] shadow-sm">
-                    <SelectButton
-                        v-model="selectedRange"
-                        :options="rangeOptions"
-                        optionLabel="label"
-                        optionValue="value"
-                        :pt="{
-                            root: { class: 'bg-gray-100 dark:bg-[#1a1a1a] rounded-full p-1 border border-gray-200 dark:border-[#3a3a3a] flex' },
-                            button: { class: 'rounded-full px-4 py-2 transition-colors focus:ring-0 !border-none text-xs font-medium' },
-                        }"
-                    />
-
-                    <DatePicker
-                        v-if="selectedRange === 'custom'"
-                        v-model="dates"
-                        selectionMode="range"
-                        dateFormat="dd/mm/yy"
-                        class="!w-64"
-                        @update:modelValue="selectedRange = 'custom'"
-                        :pt="{
-                            input: { root: { class: '!rounded-full !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors text-sm' } },
-                        }"
-                    />
-
-                    <Button
-                        label="Exportar"
-                        icon="pi pi-file-excel"
-                        severity="secondary"
-                        @click="handleExport"
-                        :loading="isExporting"
-                        class="!rounded-full !px-5 !text-xs !font-bold !uppercase !tracking-wider"
-                    />
-                </div>
+            <div class="mb-6">
+                <h1 class="text-4xl md:text-5xl font-light tracking-tight text-gray-900 dark:text-white m-0">
+                    Facturación
+                </h1>
+                <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 mt-2 m-0 flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse"></span>
+                    Resumen general de todos tus emisores fiscales
+                </p>
             </div>
 
             <!-- KPI Cards -->

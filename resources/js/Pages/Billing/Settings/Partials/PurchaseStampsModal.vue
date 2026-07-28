@@ -115,6 +115,7 @@ function open() {
     pricingTiers.value = [];
     paymentMethod.value = 'bank_transfer';
     purchaseForm.reset();
+    purchaseForm.proof_file = null;
     purchaseForm.clearErrors();
     visible.value = true;
     fetchQuote();
