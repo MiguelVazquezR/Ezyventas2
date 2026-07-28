@@ -17,11 +17,20 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     ->prefix('ai-agent')
     ->as('ai-agent.')
     ->group(function () {
+        Route::get('/conversations', [AiChatController::class, 'index'])
+            ->name('conversations.index');
+
         Route::post('/conversations', [AiChatController::class, 'store'])
             ->name('conversations.store');
 
+        Route::get('/conversations/{conversation}', [AiChatController::class, 'show'])
+            ->name('conversations.show');
+
         Route::post('/conversations/{conversation}/messages', [AiChatController::class, 'sendMessage'])
             ->name('messages.store');
+
+        Route::delete('/conversations', [AiChatController::class, 'destroyAll'])
+            ->name('conversations.destroy-all');
 
         Route::get('/usage', [AiChatController::class, 'usage'])
             ->name('usage');

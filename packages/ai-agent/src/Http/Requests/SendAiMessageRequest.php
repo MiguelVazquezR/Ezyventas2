@@ -14,7 +14,8 @@ class SendAiMessageRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'message' => ['required', 'string', 'max:2000'],
+            'message'    => ['required', 'string', 'max:2000'],
+            'write_mode' => ['boolean'],
         ];
     }
 

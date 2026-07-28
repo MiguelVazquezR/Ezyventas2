@@ -101,4 +101,49 @@ class CustomerReportService
             })
             ->toArray();
     }
+
+    /**
+     * List customers by their most recent purchase date.
+     * "inactive" = last purchase older than N days (or never purchased).
+     * "recent" = last purchase within N days.
+     */
+    public function getCustomerRecency(int $branchId, int $days, string $direction = 'inactive', int $limit = 20): array
+    {
+        $customers = Customer::where('branch_id', $branchId)
+            ->withMax('transactions as last_purchase_date', 'created_at')
+            ->when($direction === 'inactive', function ($q) use ($days) {
+                $q->where(function ($sub) use ($days) {
+                    $sub->where('last_purchase_date', '<', now()->subDays($days))
+                        ->orWhereNull('last_purchase_date');
+                });
+            })
+            ->when($direction === 'recent', function ($q) use ($days) {
+                $q->where('last_purchase_date', '>=', now()->subDays($days));
+            })
+            ->orderBy($direction === 'inactive' ? 'last_purchase_date' : 'last_purchase_date', $direction === 'inactive' ? 'asc' : 'desc')
+            ->take(min($limit, 50))
+            ->get(['id', 'name', 'email', 'phone', 'balance', 'credit_limit'])
+            ->map(function ($c) {
+                return [
+                    'id'                 => $c->id,
+                    'name'               => $c->name,
+                    'email'              => $c->email,
+                    'phone'              => $c->phone,
+                    'balance'            => (float) $c->balance,
+                    'credit_limit'       => (float) $c->credit_limit,
+                    'last_purchase_date' => $c->last_purchase_date,
+                    'days_since_last'    => $c->last_purchase_date
+                        ? (int) now()->diffInDays($c->last_purchase_date)
+                        : null,
+                ];
+            })
+            ->toArray();
+
+        return [
+            'direction' => $direction,
+            'days'      => $days,
+            'count'     => count($customers),
+            'rows'      => $customers,
+        ];
+    }
 }

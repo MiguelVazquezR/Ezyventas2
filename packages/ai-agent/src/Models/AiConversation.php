@@ -14,8 +14,6 @@ class AiConversation extends Model
         'subscription_id',
         'user_id',
         'title',
-        'provider',
-        'model',
     ];
 
     public function user(): BelongsTo
