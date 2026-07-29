@@ -31,6 +31,8 @@ class UpdateProductRequest extends FormRequest
                     return $query->where('branch_id', $user->branch_id);
                 }),
             ],
+            'sat_product_code' => 'nullable|string|max:8',
+            'sat_unit_code' => 'nullable|string|max:10',
             'location' => 'nullable|string|max:255', 
 
             'branch_ids' => 'required|array|min:1',

@@ -22,7 +22,7 @@ class Product extends Model implements HasMedia
     use HasFactory, InteractsWithMedia, LogsActivity, HasSubscription;
 
     protected $fillable = [
-        'name', 'description', 'sku', 'selling_price', 'price_tiers', 'cost_price',
+        'name', 'description', 'sku', 'sat_product_code', 'sat_unit_code', 'selling_price', 'price_tiers', 'cost_price',
         'category_id', 'provider_id', 'brand_id', 'branch_id', 'global_product_id',
         'measure_unit', 'currency', 'show_online', 'online_price', 'show_in_pos',
         'slug', 'delivery_days', 'tags', 'is_featured', 'is_on_sale', 'sale_price',

@@ -1,6 +1,6 @@
 <script setup>
-import { ref, watch } from 'vue';
-import { useForm } from '@inertiajs/vue3';
+import { ref, watch, computed } from 'vue';
+import { useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
@@ -55,6 +55,11 @@ const form = useForm({
     address: mainAddr,
     fiscal_address: fiscalAddr || copyAddress(mainAddr),
 });
+
+// ──────────────────────────────────────
+// Billing module gate
+// ──────────────────────────────────────
+const hasBilling = computed(() => usePage().props.auth.active_modules?.includes('module_billing'));
 
 // ──────────────────────────────────────
 // Fiscal address toggle
@@ -121,6 +126,11 @@ const submit = () => {
                         <InputText id="email" v-model="form.email" type="email" class="mt-1 w-full" />
                         <InputError :message="form.errors.email" class="mt-2" />
                     </div>
+                    <div v-if="!hasBilling">
+                        <InputLabel for="tax_id" value="RFC" />
+                        <InputText id="tax_id" v-model="form.tax_id" class="mt-1 w-full" placeholder="XAXX010101000" />
+                        <InputError :message="form.errors.tax_id" class="mt-2" />
+                    </div>
                 </div>
             </div>
 
@@ -163,7 +173,7 @@ const submit = () => {
             </Panel>
 
             <!-- SECCIÓN 3: DATOS PARA FACTURACIÓN -->
-            <Panel header="Datos para Facturación" :toggleable="true" :collapsed="false" class="mb-6 !rounded-2xl !border !border-gray-200" :pt="{ header: { class: '!bg-gray-50 !rounded-t-2xl !py-3 !px-4 !text-sm !font-semibold !text-gray-700 !border-none' }, content: { class: '!bg-white !p-4 !rounded-b-2xl' }, toggler: { class: '!text-gray-500' } }">
+            <Panel v-if="hasBilling" header="Datos para Facturación" :toggleable="true" :collapsed="false" class="mb-6 !rounded-2xl !border !border-gray-200" :pt="{ header: { class: '!bg-gray-50 !rounded-t-2xl !py-3 !px-4 !text-sm !font-semibold !text-gray-700 !border-none' }, content: { class: '!bg-white !p-4 !rounded-b-2xl' }, toggler: { class: '!text-gray-500' } }">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-5">
                     <div>
                         <InputLabel for="company_name" value="Razón social" />

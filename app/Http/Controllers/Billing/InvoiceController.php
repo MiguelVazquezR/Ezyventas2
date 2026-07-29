@@ -10,6 +10,8 @@ use App\Http\Requests\Billing\CancelInvoiceRequest;
 use App\Http\Requests\Billing\StoreInvoiceRequest;
 use App\Http\Requests\Billing\UpdateInvoiceRequest;
 use App\Models\Billing\Invoice;
+use App\Models\Product;
+use App\Models\Service;
 use App\Services\Billing\SatConsultationService;
 use App\Services\SW\SWUserService;
 use Illuminate\Http\RedirectResponse;
@@ -180,6 +182,8 @@ class InvoiceController extends Controller implements HasMiddleware
             'fiscalProfiles'       => $fiscalProfiles,
             'hasFiscalProfiles'    => $hasFiscalProfiles,
             'facturacionHabilitada' => $facturacionHabilitada,
+            'products'             => Product::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'sku', 'selling_price', 'sat_product_code', 'sat_unit_code']),
+            'services'             => Service::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'base_price', 'sat_product_code', 'sat_unit_code']),
         ]);
     }
 
@@ -233,6 +237,8 @@ class InvoiceController extends Controller implements HasMiddleware
             'customers'        => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
             'fiscalProfiles'   => $fiscalProfiles,
             'hasFiscalProfiles' => $fiscalProfiles->isNotEmpty(),
+            'products'         => Product::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'sku', 'selling_price', 'sat_product_code', 'sat_unit_code']),
+            'services'         => Service::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'base_price', 'sat_product_code', 'sat_unit_code']),
         ]);
     }
 

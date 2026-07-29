@@ -52,6 +52,8 @@ const form = useForm({
     name: props.product.name,
     description: props.product.description,
     sku: props.product.sku,
+    sat_product_code: props.product.sat_product_code || '',
+    sat_unit_code: props.product.sat_unit_code || '',
     location: props.product.location,
     branch_ids: props.product.branches ? props.product.branches.map(b => b.id) : [],
     category_id: props.product.category_id,
@@ -185,7 +187,7 @@ const submit = () => {
                         />
                     </div>
 
-                    <div class="flex justify-end sticky bottom-4 z-20">
+                    <div class="flex justify-start sticky bottom-4 z-20">
                         <Button type="submit" label="Guardar cambios" icon="pi pi-save" severity="warning" size="large" :loading="form.processing" class="shadow-xl" />
                     </div>
                 </form>

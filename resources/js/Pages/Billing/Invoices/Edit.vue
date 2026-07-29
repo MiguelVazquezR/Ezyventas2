@@ -7,6 +7,8 @@ const props = defineProps({
     customers: Array,
     fiscalProfiles: Array,
     hasFiscalProfiles: Boolean,
+    products: Array,
+    services: Array,
 });
 
 function handleSubmit({ form }) {
@@ -36,6 +38,8 @@ function handleSubmit({ form }) {
             :customers="customers"
             :fiscalProfiles="fiscalProfiles"
             :hasFiscalProfiles="hasFiscalProfiles"
+            :products="products"
+            :services="services"
             @submit="handleSubmit"
         />
     </AppLayout>
