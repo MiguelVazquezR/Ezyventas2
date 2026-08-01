@@ -2,6 +2,7 @@
 
 namespace App\AiTools;
 
+use App\AiTools\Registrars\BusinessHealthTools;
 use App\AiTools\Registrars\CashRegisterTools;
 use App\AiTools\Registrars\CustomerTools;
 use App\AiTools\Registrars\DashboardTools;
@@ -88,6 +89,7 @@ class EzyVentasToolProvider implements AiToolProvider
             new NavigationTools(),
             new ExportTools(),
             new SuggestionTools(),
+            new BusinessHealthTools(),
         ];
     }
 }

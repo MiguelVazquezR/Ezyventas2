@@ -569,6 +569,20 @@ const drawerStyle = computed(() => {
 
             <Divider class="!m-0" />
 
+            <!-- Quick actions -->
+            <div class="px-3 pt-2.5 flex gap-2 flex-wrap">
+                <Button
+                    label="Revisar mi negocio"
+                    icon="pi pi-search"
+                    size="small"
+                    severity="secondary"
+                    :disabled="isThinking"
+                    :loading="isThinking"
+                    class="!rounded-full !text-xs !font-medium"
+                    @click="sendMessage('Revisa los datos de mi negocio y dime si hay algo importante que deba atender hoy.')"
+                />
+            </div>
+
             <!-- Input area -->
             <div class="p-3 flex-shrink-0">
                 <div class="flex gap-2 items-end">
