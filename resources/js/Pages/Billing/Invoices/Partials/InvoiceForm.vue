@@ -90,6 +90,11 @@ onMounted(() => {
         selectedFiscalProfile.value = fiscalProfilesList.value[0];
         form.fiscal_profile_id = fiscalProfilesList.value[0].id;
     }
+
+    // Pre-fill customer search text in edit mode
+    if (props.mode === 'edit' && props.invoice?.customer) {
+        customerSearchText.value = props.invoice.customer.name || '';
+    }
 });
 
 const emitterRegime = ref('');
@@ -257,17 +262,55 @@ const onConceptSelect = (event, index) => {
 const { subtotal, ivaTrasladado, isrRetenido, ivaRetenido, granTotal, formatCurrency, breakdown, retentionApplies, isResico } = useInvoiceTaxes(form, fiscalProfilesList, customersList);
 
 // ──────────────────────────────────────
-// Customer auto-fill
+// Customer autocomplete (receptor)
 // ──────────────────────────────────────
-watch(() => form.customer_id, (newId) => {
-    if (!newId) return;
-    const customer = customersList.value?.find(c => c.id === newId);
+const customerSearchText = ref('');
+const customerSuggestions = ref([]);
+
+const searchCustomers = (event) => {
+    const query = event.query.toLowerCase().trim();
+    if (!query) {
+        customerSuggestions.value = [...customersList.value];
+    } else {
+        customerSuggestions.value = customersList.value.filter(
+            c => c.name.toLowerCase().includes(query)
+                || (c.company_name && c.company_name.toLowerCase().includes(query))
+                || (c.tax_id && c.tax_id.toLowerCase().includes(query)),
+        );
+    }
+};
+
+const onCustomerSelect = (event) => {
+    const selected = event.value;
+    // Guard: must be a valid object with an id
+    if (!selected || typeof selected !== 'object' || !selected.id) return;
+
+    // Always resolve from the master list by ID — never trust the suggestions
+    // array reference, which can go stale inside PrimeVue's AutoComplete
+    const customer = customersList.value.find(c => c.id === selected.id);
     if (!customer) return;
+
+    // Explicitly sync the display text so v-model stays consistent
+    customerSearchText.value = customer.name;
+    form.customer_id = customer.id;
+
+    // Auto-fill receiver fields from the definitive customer object
     form.receiver_rfc = customer.tax_id || '';
     form.receiver_legal_name = customer.company_name || customer.name || '';
+
     const fiscal = extractFiscalData(customer);
     form.receiver_tax_regime = fiscal.tax_regime || '';
     form.receiver_postal_code = fiscal.postal_code || '';
+    if (customer.cfdi_use) {
+        form.cfdi_use = customer.cfdi_use;
+    }
+};
+
+// Clear customer association when the user manually deletes the search text
+watch(customerSearchText, (val) => {
+    if (!val || val.trim() === '') {
+        form.customer_id = null;
+    }
 });
 
 // ──────────────────────────────────────
@@ -355,13 +398,37 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                 </div>
 
                 <div class="flex flex-col gap-1.5 mb-5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Cliente</label>
-                    <Select v-model="form.customer_id" :options="customersList" optionLabel="name" optionValue="id" placeholder="Selecciona un cliente" showClear filter class="w-full" :pt="selectPt" />
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Cliente (Opcional)</label>
+                    <AutoComplete
+                        v-model="customerSearchText"
+                        :suggestions="customerSuggestions"
+                        @complete="searchCustomers"
+                        @item-select="onCustomerSelect"
+                        field="name"
+                        optionLabel="name"
+                        placeholder="Busca o escribe el nombre del cliente"
+                        class="w-full"
+                        dropdown
+                        :pt="{ root: { class: 'w-full' }, input: { root: { class: 'h-11 !bg-white dark:!bg-zinc-950 !border !border-zinc-200 dark:!border-zinc-800 focus:dark:!border-primary-500 !transition-colors !text-sm !shadow-none w-full !rounded-xl' } } }"
+                    >
+                        <template #option="slotProps">
+                            <div class="flex items-center justify-between gap-3 py-1">
+                                <div class="flex flex-col gap-0.5 min-w-0">
+                                    <span class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ slotProps.option.name }}</span>
+                                    <span v-if="slotProps.option.company_name && slotProps.option.company_name !== slotProps.option.name" class="text-[11px] text-gray-500 dark:text-gray-400 truncate">{{ slotProps.option.company_name }}</span>
+                                </div>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <Tag v-if="slotProps.option.tax_id" :value="slotProps.option.tax_id" severity="info" class="!text-[9px] !px-2 !py-0.5" />
+                                    <i v-if="slotProps.option.tax_regime" class="pi pi-check-circle !text-[11px] text-emerald-400" v-tooltip.top="'Datos fiscales completos'" />
+                                </div>
+                            </div>
+                        </template>
+                    </AutoComplete>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">RFC *</label><InputText v-model="form.receiver_rfc" placeholder="XAXX010101000" class="w-full uppercase" :pt="inputPt" /><Message v-if="form.errors.receiver_rfc" severity="error" variant="simple" size="small">{{ form.errors.receiver_rfc }}</Message></div>
-                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Razón social *</label><InputText v-model="form.receiver_legal_name" placeholder="Nombre o razón social" class="w-full" :pt="inputPt" /><Message v-if="form.errors.receiver_legal_name" severity="error" variant="simple" size="small">{{ form.errors.receiver_legal_name }}</Message></div>
+                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Razón social *</label><InputText v-model="form.receiver_legal_name" placeholder="Nombre o razón social" class="w-full" :pt="inputPt" /><p class="text-[11px] text-gray-600 dark:text-gray-500 m-0 mt-1">Ej: "Servicios" - omite el SA de CV, S de RL, SC, etc.</p><Message v-if="form.errors.receiver_legal_name" severity="error" variant="simple" size="small">{{ form.errors.receiver_legal_name }}</Message></div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Régimen fiscal *</label><Select v-model="form.receiver_tax_regime" :options="taxRegimeOptions" optionLabel="label" optionValue="value" placeholder="Selecciona" filter class="w-full" :pt="selectPt" /><Message v-if="form.errors.receiver_tax_regime" severity="error" variant="simple" size="small">{{ form.errors.receiver_tax_regime }}</Message></div>

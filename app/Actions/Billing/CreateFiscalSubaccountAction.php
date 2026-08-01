@@ -32,7 +32,7 @@ class CreateFiscalSubaccountAction
         if ($profile->hasSwSubaccount()) {
             return [
                 'success' => false,
-                'message' => 'Este perfil fiscal ya tiene una subcuenta vinculada en el PAC.',
+                'message' => 'Este RFC ya tiene una cuenta vinculada con el Proveedor de timbrado. Contacta con soporte.',
             ];
         }
 
@@ -41,13 +41,13 @@ class CreateFiscalSubaccountAction
 
             return [
                 'success'    => true,
-                'message'    => 'Subcuenta creada exitosamente en el PAC.',
+                'message'    => 'Se completo exitosamente la vinculación fiscal.',
                 'sw_user_id' => $profile->sw_user_id,
             ];
         } catch (ConnectionException $e) {
             return [
                 'success' => false,
-                'message' => 'No se pudo conectar con el PAC. Verifica tu conexión a internet e inténtalo de nuevo.',
+                'message' => 'No se pudo conectar. Verifica tu conexión a internet e inténtalo de nuevo.',
             ];
         } catch (\RuntimeException $e) {
             return [

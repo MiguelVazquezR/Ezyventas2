@@ -219,6 +219,7 @@ const toggleMenu = (event, invoice) => {
                     icon: 'pi pi-shield',
                     acceptLabel: 'Timbrar',
                     rejectLabel: 'Cancelar',
+                    rejectClass: 'p-button-outlined',
                     accept: () => router.post(route('billing.invoices.stamp', invoice.id)),
                 });
             },
@@ -537,6 +538,5 @@ const tagPt = {
             @success="router.reload()"
         />
 
-        <ConfirmPopup />
     </AppLayout>
 </template>

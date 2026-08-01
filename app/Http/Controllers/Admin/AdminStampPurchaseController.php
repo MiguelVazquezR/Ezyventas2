@@ -302,7 +302,7 @@ class AdminStampPurchaseController extends Controller
                 $pacData        = $swUserService->getStampsBalance($fiscalProfile->sw_user_id);
                 $currentBalance = (int) ($pacData['stampsBalance'] ?? 0);
             } catch (\Exception $e) {
-                $balanceError = 'No se pudo consultar el saldo actual del PAC.';
+                $balanceError = 'No se pudo consultar el saldo actual. Inténtalo más tarde.';
             }
         }
 

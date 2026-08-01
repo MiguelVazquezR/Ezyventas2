@@ -603,8 +603,12 @@ class InvoiceController extends Controller implements HasMiddleware
             return redirect()->back()->with('error', 'Solo se pueden timbrar facturas en estado borrador o pendiente.');
         }
 
-        $swService = app(\App\Services\Billing\SWSapienService::class);
-        $swService->stamp($invoice);
+        try {
+            $swService = app(\App\Services\Billing\SWSapienService::class);
+            $swService->stamp($invoice);
+        } catch (\RuntimeException $e) {
+            return redirect()->back()->with('warning', $e->getMessage());
+        }
 
         return redirect()->route('billing.invoices.show', $invoice->id)
             ->with('success', 'Factura timbrada correctamente.');
@@ -652,7 +656,7 @@ class InvoiceController extends Controller implements HasMiddleware
 
         $mensaje = $nuevoEstado
             ? 'Facturación activada. Ahora puedes agregar perfiles fiscales y comenzar a facturar.'
-            : 'Facturación desactivada. Tus perfiles fiscales e historial se conservan, pero no se realizarán nuevas operaciones en el PAC.';
+            : 'Facturación desactivada. Tus perfiles fiscales e historial se conservan, pero no podrás emitir nuevas facturas hasta que la actives de nuevo.';
 
         return redirect()->route('billing.settings.index')
             ->with($nuevoEstado ? 'success' : 'info', $mensaje);

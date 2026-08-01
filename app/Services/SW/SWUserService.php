@@ -49,7 +49,7 @@ class SWUserService
 
         if (! $endpoint || ! $token) {
             throw new \RuntimeException(
-                'SW Sapien Management no está configurado. Define SW_SAPIEN_MANAGEMENT_ENDPOINT y SW_SAPIEN_TOKEN en .env.'
+                'El servicio de facturación no está configurado. Contacta con soporte técnico.'
             );
         }
 
@@ -94,8 +94,7 @@ class SWUserService
             ]);
 
             throw new \RuntimeException(
-                'El PAC rechazó la creación de la subcuenta. '
-                . 'HTTP ' . $status . ' — '
+                'Verifica que la información ingresada sea correcta. '
                 . ($message ?: (is_array($json) ? json_encode($json) : ($body ?: 'Sin cuerpo de respuesta')))
             );
         }
@@ -117,7 +116,7 @@ class SWUserService
             ]);
 
             throw new \RuntimeException(
-                'El PAC no devolvió un identificador de usuario válido.'
+                'No se confirmó tu registro fiscal. Revisa tus datos o contacta con soporte si el problema persiste.'
             );
         }
 
@@ -147,7 +146,7 @@ class SWUserService
         $token    = config('services.swsapien.token');
 
         if (! $endpoint || ! $token) {
-            throw new \RuntimeException('SW Sapien Management no está configurado.');
+            throw new \RuntimeException('El servicio de facturación no está configurado. Contacta con soporte técnico.');
         }
 
         $managementPath = config('services.swsapien.management_users_path', '/management/v2/api/dealers/users');
@@ -166,8 +165,7 @@ class SWUserService
             ]);
 
             throw new \RuntimeException(
-                'No se pudo obtener la lista de subcuentas: '
-                . ($response->json('message') ?? $response->body())
+                'No se pudo consultar el servicio de facturación en este momento. Intenta de nuevo.'
             );
         }
 
@@ -190,7 +188,7 @@ class SWUserService
         $token    = config('services.swsapien.token');
 
         if (! $endpoint || ! $token) {
-            throw new \RuntimeException('SW Sapien Management no está configurado.');
+            throw new \RuntimeException('El servicio de facturación no está configurado. Contacta con soporte técnico.');
         }
 
         if (! $profile->sw_user_id) {
@@ -218,8 +216,7 @@ class SWUserService
             ]);
 
             throw new \RuntimeException(
-                'El PAC rechazó la desactivación de la subcuenta: '
-                . ($response->json('message') ?? $response->body())
+                'No se pudo desactivar la cuenta. Contacta con soporte.'
             );
         }
 
@@ -246,7 +243,7 @@ class SWUserService
         $token    = config('services.swsapien.token');
 
         if (! $endpoint || ! $token) {
-            throw new \RuntimeException('SW Sapien Management no está configurado.');
+            throw new \RuntimeException('El servicio de facturación no está configurado. Contacta con soporte técnico.');
         }
 
         $url = rtrim($endpoint, '/') . '/management/v2/api/dealers/balance/users/' . $swUserId;
@@ -269,7 +266,7 @@ class SWUserService
 
             throw new \RuntimeException(
                 $status === 404
-                    ? 'La subcuenta no pertenece a la cuenta dealer.'
+                    ? 'El RFC no se encontró en el servicio de timbrado.'
                     : 'No se pudo consultar el saldo de timbres en este momento.'
             );
         }
@@ -298,7 +295,7 @@ class SWUserService
         $token    = config('services.swsapien.token');
 
         if (! $endpoint || ! $token) {
-            throw new \RuntimeException('SW Sapien Management no está configurado.');
+            throw new \RuntimeException('El servicio de facturación no está configurado. Contacta con soporte técnico.');
         }
 
         $url = rtrim($endpoint, '/') . '/management/v2/api/dealers/users/' . $swUserId . '/stamps';
@@ -327,7 +324,7 @@ class SWUserService
             ]);
 
             throw new \RuntimeException(
-                'El PAC rechazó la asignación de timbres. HTTP ' . $status . ' — ' . $body
+                'No se pudieron asignar los timbres. Intenta de nuevo.'
             );
         }
 
@@ -353,7 +350,7 @@ class SWUserService
         $token    = config('services.swsapien.token');
 
         if (! $endpoint || ! $token) {
-            throw new \RuntimeException('SW Sapien Management no está configurado.');
+            throw new \RuntimeException('El servicio de facturación no está configurado. Contacta con soporte técnico.');
         }
 
         $url = rtrim($endpoint, '/') . '/management/v2/api/dealers/users/' . $swUserId . '/stamps';
@@ -384,7 +381,7 @@ class SWUserService
             ]);
 
             throw new \RuntimeException(
-                $message ?: 'El PAC rechazó el retiro de timbres. HTTP ' . $status
+                $message ?: 'No se pudieron retirar los timbres. Intenta de nuevo.'
             );
         }
 
@@ -432,7 +429,7 @@ class SWUserService
         $token    = config('services.swsapien.token');
 
         if (! $endpoint || ! $token) {
-            throw new \RuntimeException('SW Sapien Management no está configurado.');
+            throw new \RuntimeException('El servicio de facturación no está configurado. Contacta con soporte técnico.');
         }
 
         $url = rtrim($endpoint, '/') . '/management/v2/api/users/balance';
@@ -453,7 +450,7 @@ class SWUserService
             ]);
 
             throw new \RuntimeException(
-                'No se pudo consultar el saldo de la cuenta maestra en este momento.'
+                'No se pudo consultar el saldo de timbres en este momento. Intenta de nuevo.'
             );
         }
 
