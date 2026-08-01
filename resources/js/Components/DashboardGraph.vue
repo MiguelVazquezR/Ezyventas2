@@ -132,7 +132,7 @@ onUnmounted(() => {
         <!-- HEADER DEL DASHBOARD FALSO -->
         <div class="absolute top-0 left-0 right-0 p-4 md:p-6 z-10 flex justify-between items-center bg-white/50 backdrop-blur-sm border-b border-gray-50">
             <div class="flex items-center gap-2 md:gap-3">
-                <img src="/images/black_logo.png" class="h-7 md:h-11 w-auto"></img>
+                <img src="/images/black_logo.png" alt="Ezy Ventas" loading="lazy" decoding="async" class="h-7 md:h-11 w-auto" />
             </div>
             <div class="text-[10px] md:text-xs font-bold text-gray-400 tracking-widest uppercase">Resumen Semanal</div>
         </div>

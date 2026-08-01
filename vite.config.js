@@ -7,7 +7,9 @@ import { PrimeVueResolver } from '@primevue/auto-import-resolver';
 export default defineConfig({
     plugins: [
         laravel({
-            input: 'resources/js/app.js',
+            input: [
+                'resources/js/app.js',
+            ],
             refresh: true,
         }),
         vue({

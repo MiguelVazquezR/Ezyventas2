@@ -30,7 +30,7 @@ const cards = ref([
         image: '/imagesLanding/C2.webp',
         badge: 'Servicio',
         badgeColor: 'bg-blue-50 text-blue-600 ring-blue-100',
-        mainInfo: 'Reparación',
+        mainInfo: 'Reparaciรณn',
         subInfo: 'Listo',
         actionIcon: 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z', // Icono Check
         btnClass: 'hover:bg-blue-50 text-blue-500'
@@ -49,14 +49,14 @@ const cards = ref([
                 
                 <!-- 1. Imagen (Izquierda) -->
                 <div class="relative shrink-0">
-                    <img :src="card.image" class="w-12 h-12 rounded-full object-cover shadow-sm ring-2 ring-white" alt="Avatar" />
+                    <img :src="card.image" loading="lazy" decoding="async" class="w-12 h-12 rounded-full object-cover shadow-sm ring-2 ring-white" :alt="`Foto de perfil de ${card.name}`" />
                     <!-- Indicador de estado (punto de color en la imagen) -->
                      <div class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-white rounded-full flex items-center justify-center">
                         <div class="w-2 h-2 rounded-full" :class="card.badgeColor.replace('bg-', 'bg-').replace('text-', '').split(' ')[0].replace('-50', '-500')"></div>
                      </div>
                 </div>
 
-                <!-- 2. Información (Centro - Horizontal layout interno) -->
+                <!-- 2. Informaciรณn (Centro - Horizontal layout interno) -->
                 <div class="flex-1 min-w-0 flex flex-col justify-center">
                     <div class="flex items-center justify-between mb-0.5">
                         <h3 class="text-sm font-bold text-gray-900 truncate mr-2">{{ card.name }}</h3>
@@ -66,13 +66,13 @@ const cards = ref([
                     </div>
                     <div class="flex items-center gap-2 text-xs">
                         <span class="font-bold text-gray-700">{{ card.mainInfo }}</span>
-                        <span class="text-gray-300">•</span>
+                        <span class="text-gray-300">โ�ข</span>
                         <span class="text-gray-500 truncate">{{ card.subInfo }}</span>
                     </div>
                 </div>
 
-                <!-- 3. Acción (Derecha - Botón Circular) -->
-                <button class="w-9 h-9 rounded-full bg-gray-50 flex items-center justify-center transition-colors shrink-0" :class="card.btnClass">
+                <!-- 3. Acciรณn (Derecha - Botรณn Circular) -->
+                <button :aria-label="`Acción para ${card.name}: ${card.badge}`" class="w-9 h-9 rounded-full bg-gray-50 flex items-center justify-center transition-colors shrink-0" :class="card.btnClass">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
                         <path fill-rule="evenodd" :d="card.actionIcon" clip-rule="evenodd" />
                     </svg>
@@ -85,7 +85,7 @@ const cards = ref([
 </template>
 
 <style scoped>
-/* Animación de entrada suave tipo cascada */
+/* Animaciรณn de entrada suave tipo cascada */
 @keyframes slideIn {
     from {
         opacity: 0;

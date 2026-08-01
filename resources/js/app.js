@@ -1,6 +1,5 @@
 import './bootstrap';
 import '../css/app.css';
-// import '../css/fonts.css';
 
 import { createApp, h } from 'vue';
 import { createInertiaApp } from '@inertiajs/vue3';
@@ -15,6 +14,7 @@ import "quill/dist/quill.snow.css";
 
 import '@/assets/styles.scss';
 import Ezyventas from './presets/ezyventas';
+import { initEcho } from './bootstrap';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -22,6 +22,11 @@ createInertiaApp({
     title: (title) => `${title} - ${appName}`,
     resolve: (name) => resolvePageComponent(`./Pages/${name}.vue`, import.meta.glob('./Pages/**/*.vue')),
     setup({ el, App, props, plugin }) {
+        // Defer WebSocket initialization to authenticated users only
+        if (props.initialPage.props.auth?.user) {
+            initEcho();
+        }
+
         return createApp({ render: () => h(App, props) })
             .use(plugin)
             .use(ZiggyVue)

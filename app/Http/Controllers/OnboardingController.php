@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\BillingPeriod;
+use App\Enums\PlanItemType;
 use App\Models\BankAccount;
 use App\Models\Branch;
+use App\Models\PlanItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -33,9 +36,40 @@ class OnboardingController extends Controller
             ?->where('item_type', 'limit')
             ?->keyBy('item_key') ?? collect();
 
+        // Módulos disponibles en el sistema
+        $availableModules = PlanItem::where('type', PlanItemType::MODULE)
+            ->where('is_active', true)
+            ->get()
+            ->values();
+
+        // Módulos actualmente activos en la versión (si ya existen)
+        $activeModuleKeys = $currentVersion?->items
+            ?->where('item_type', 'module')
+            ?->pluck('item_key')
+            ?->toArray() ?? [];
+
+        // Si no hay módulos activos aún (primera carga), por defecto todos activos
+        if (empty($activeModuleKeys)) {
+            $activeModuleKeys = $availableModules->pluck('key')->toArray();
+        }
+
+        // Ensure AI Agent module is always active
+        if (!in_array('module_ai_agent', $activeModuleKeys)) {
+            $activeModuleKeys[] = 'module_ai_agent';
+        }
+
+        // Items de tipo límite disponibles en el sistema (para precios, descripciones, etc.)
+        $availableLimits = PlanItem::where('type', PlanItemType::LIMIT)
+            ->where('is_active', true)
+            ->get()
+            ->values();
+
         return Inertia::render('Onboarding/Setup', [
-            'subscription' => $subscription,
-            'currentLimits' => $limits,
+            'subscription'     => $subscription,
+            'currentLimits'    => $limits,
+            'availableModules' => $availableModules,
+            'availableLimits'  => $availableLimits,
+            'activeModuleKeys' => $activeModuleKeys,
         ]);
     }
 
@@ -132,23 +166,53 @@ class OnboardingController extends Controller
     }
 
     /**
-     * Guarda el Paso 2: Límites de Recursos.
+     * Guarda el Paso 2: Límites de Recursos y Módulos.
      */
     public function storeStep2(Request $request)
     {
         $validated = $request->validate([
-            'limits.limit_users' => 'required|integer|min:1',
+            'limits.limit_users'          => 'required|integer|min:1',
             'limits.limit_cash_registers' => 'required|integer|min:1',
-            'limits.limit_products' => 'required|integer|min:1',
+            'limits.limit_products'       => 'required|integer|min:1',
             'limits.limit_print_templates' => 'required|integer|min:1',
+            'modules'                     => 'required|array|min:1',
+            'modules.*'                   => 'string|exists:plan_items,key',
         ]);
 
         $user = Auth::user();
         $version = $user->subscription->versions()->latest()->first();
 
         DB::transaction(function () use ($validated, $version) {
+            // 1. Actualizar límites
             foreach ($validated['limits'] as $key => $quantity) {
                 $version->items()->where('item_key', $key)->update(['quantity' => $quantity]);
+            }
+
+            // 2. Sincronizar módulos
+            $selectedModules = $validated['modules'];
+
+            // Ensure AI Agent module is always active
+            if (!in_array('module_ai_agent', $selectedModules)) {
+                $selectedModules[] = 'module_ai_agent';
+            }
+
+            $allModuleItems = PlanItem::where('type', PlanItemType::MODULE)->get()->keyBy('key');
+
+            foreach ($allModuleItems as $moduleKey => $planItem) {
+                if (in_array($moduleKey, $selectedModules)) {
+                    $version->items()->updateOrCreate(
+                        ['item_key' => $moduleKey],
+                        [
+                            'item_type'      => 'module',
+                            'name'           => $planItem->name,
+                            'quantity'       => 1,
+                            'unit_price'     => $planItem->monthly_price,
+                            'billing_period' => BillingPeriod::MONTHLY,
+                        ]
+                    );
+                } else {
+                    $version->items()->where('item_key', $moduleKey)->delete();
+                }
             }
         });
 

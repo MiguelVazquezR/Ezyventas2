@@ -10,10 +10,13 @@ use App\Models\SettingDefinition;
 use App\Http\Requests\Admin\UpdateSubscriptionVersionRequest;
 use App\Http\Requests\Admin\UpdateVersionItemsRequest;
 use App\Http\Requests\Admin\StoreVersionWithPaymentRequest;
+use App\Http\Requests\Admin\Subscriptions\StoreSubscriptionRequest;
 use App\Actions\Admin\Subscriptions\UpdateSubscriptionVersionAction;
 use App\Actions\Admin\Subscriptions\UpdateVersionItemsAction;
 use App\Actions\Admin\Subscriptions\CreateVersionWithPaymentAction;
+use App\Actions\Admin\Subscriptions\CreateSubscriptionAction;
 use App\Actions\Admin\Subscriptions\DeleteVersionAction;
+use App\Actions\Admin\Subscriptions\DeleteSubscriptionAction;
 use App\Actions\Admin\Subscriptions\UpdateEntitySettingsAction;
 use App\Models\Billing\StampPurchase;
 use App\Services\SW\SWUserService;
@@ -71,6 +74,30 @@ class SubscriptionController extends Controller
             'subscriptions' => $subscriptions,
             'filters' => $filters,
         ]);
+    }
+
+    /**
+     * Muestra el formulario para crear una nueva suscripción.
+     */
+    public function create()
+    {
+        $planItems = PlanItem::where('is_active', true)->get();
+
+        return Inertia::render('Admin/Subscriptions/Create', [
+            'planItems' => $planItems,
+        ]);
+    }
+
+    /**
+     * Almacena una nueva suscripción creada manualmente por el superadmin.
+     */
+    public function store(StoreSubscriptionRequest $request, CreateSubscriptionAction $action)
+    {
+        $subscription = $action->execute($request->validated());
+
+        return redirect()
+            ->route('admin.subscriptions.show', $subscription->id)
+            ->with('success', 'La suscripción ha sido creada exitosamente.');
     }
 
     /**
@@ -291,6 +318,20 @@ class SubscriptionController extends Controller
         $action->execute($version);
 
         return redirect()->back()->with('success', 'La versión y sus pagos asociados han sido eliminados correctamente.');
+    }
+
+    /**
+     * Elimina una suscripción y todos sus recursos relacionados en cascada.
+     */
+    public function destroy($id, DeleteSubscriptionAction $action)
+    {
+        $subscription = Subscription::findOrFail($id);
+        $commercialName = $subscription->commercial_name;
+        $action->execute($subscription);
+
+        return redirect()
+            ->route('admin.subscriptions.index')
+            ->with('success', "La suscripción \"{$commercialName}\" y todos sus recursos han sido eliminados permanentemente.");
     }
 
     /**
