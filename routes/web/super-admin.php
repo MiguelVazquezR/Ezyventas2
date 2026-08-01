@@ -65,7 +65,7 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
 
     // --- Gestión de Suscriptores (SaaS) ---
     Route::resource('subscriptions', SubscriptionController::class)->only([
-        'index', 'show'
+        'index', 'create', 'store', 'show', 'destroy'
     ]);
     Route::put('subscriptions/versions/{version}', [SubscriptionController::class, 'updateVersion'])->name('subscriptions.update-version');
     Route::put('subscriptions/versions/{version}/items', [SubscriptionController::class, 'updateVersionItems'])->name('subscriptions.update-version-items');

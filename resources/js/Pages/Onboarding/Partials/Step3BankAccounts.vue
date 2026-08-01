@@ -27,9 +27,9 @@ const multiSelectPt = {
     <div class="p-5 lg:p-6 space-y-6">
         
         <!-- Warning message -->
-        <Message severity="warn" :closable="false" class="!rounded-xl !text-xs" :pt="{ content: { class: '!text-xs' } }">
-            <span class="font-bold">Importante:</span> Este paso es opcional y
-            <strong>únicamente para control financiero interno</strong>.
+        <Message severity="warn" :closable="false" class="!rounded-xl">
+            <span class="font-bold text-lg">Importante:</span> Este paso es opcional y
+            <strong class="text-lg">únicamente para control financiero de cuentas bancarias de tu negocio</strong>.
             No solicitamos CVV ni información sensible. Esto NO es para pagar tu suscripción.
         </Message>
 

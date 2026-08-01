@@ -12,6 +12,7 @@ const props = defineProps({
     subscription: Object,
     currentLimits: Object,
     availableModules: Array,
+    availableLimits: Array,
     activeModuleKeys: Array,
 });
 
@@ -64,12 +65,18 @@ const form = useForm({
             : createDefaultHours(),
     })),
     limits: {
-        limit_users: props.currentLimits?.limit_users?.quantity ?? 5,
-        limit_cash_registers: props.currentLimits?.limit_cash_registers?.quantity ?? 3,
-        limit_products: props.currentLimits?.limit_products?.quantity ?? 100,
-        limit_print_templates: props.currentLimits?.limit_print_templates?.quantity ?? 2,
+        limit_users: Math.max(1, props.currentLimits?.limit_users?.quantity ?? 5),
+        limit_cash_registers: Math.max(1, props.currentLimits?.limit_cash_registers?.quantity ?? 3),
+        limit_products: Math.max(1200, props.currentLimits?.limit_products?.quantity ?? 1100),
+        limit_services: Math.max(100, props.currentLimits?.limit_services?.quantity ?? 100),
+        limit_print_templates: Math.max(2, props.currentLimits?.limit_print_templates?.quantity ?? 2),
     },
-    modules: [...props.activeModuleKeys],
+    modules: [
+        ...new Set([
+            'module_ai_agent',
+            ...props.activeModuleKeys,
+        ]),
+    ],
     bank_accounts: props.subscription.bank_accounts.map(account => ({
         ...account,
         balance: parseFloat(account.balance) || 0.00,
@@ -231,7 +238,7 @@ const currentBranchHours = computed(() => {
                                     </span>
                                     <span class="text-[11px] uppercase tracking-widest font-bold"
                                         :class="value <= activeStep ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
-                                        Límites de recursos
+                                        Funciones en suscripción
                                     </span>
                                 </button>
                                 <Divider />
@@ -278,6 +285,7 @@ const currentBranchHours = computed(() => {
                                 :form="form"
                                 :saving="saving"
                                 :available-modules="availableModules"
+                                :available-limits="availableLimits"
                                 @save-step="saveStep"
                                 @go-back="activeStep = 0"
                             />

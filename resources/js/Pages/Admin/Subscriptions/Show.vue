@@ -1,12 +1,15 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
+import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import EditVersionItemsModal from './Partials/EditVersionItemsModal.vue';
 import RegisterPaymentModal from './Partials/RegisterPaymentModal.vue';
 import PaymentHistoryTable from './Partials/PaymentHistoryTable.vue';
 import SubscriptionSettings from './Partials/SubscriptionSettings.vue';
 import AdjustStampModal from '@/Components/AdjustStampModal.vue';
+
+const confirm = useConfirm();
 
 const props = defineProps({
     subscription: Object,
@@ -47,6 +50,29 @@ const handleDeleteVersion = (version) => {
         onError: (errors) => {
             console.error('Error al eliminar la versión:', errors);
         }
+    });
+};
+
+const handleDeleteSubscription = () => {
+    confirm.require({
+        message: `¿Estás seguro de eliminar permanentemente "${props.subscription.commercial_name}" y todos sus recursos?`,
+        header: 'Eliminar suscripción',
+        icon: 'pi pi-exclamation-triangle',
+        rejectLabel: 'Cancelar',
+        acceptLabel: 'Eliminar permanentemente',
+        rejectClass: 'p-button-secondary p-button-outlined !rounded-xl !text-xs !uppercase !tracking-wider',
+        acceptClass: 'p-button-danger !rounded-xl !text-xs !uppercase !tracking-wider',
+        accept: () => {
+            router.delete(route('admin.subscriptions.destroy', props.subscription.id), {
+                onSuccess: () => {
+                    // Toast handled by controller flash message
+                },
+                onError: (errors) => {
+                    console.error('Error al eliminar la suscripción:', errors);
+                },
+            });
+        },
+        reject: () => {},
     });
 };
 
@@ -207,6 +233,14 @@ function stampPaymentMethodLabel(method) {
                         </div>
                     </div>
                     
+                    <Button
+                        label="Eliminar suscripción"
+                        icon="pi pi-trash"
+                        severity="danger"
+                        outlined
+                        @click="handleDeleteSubscription"
+                        class="!rounded-xl !text-xs !uppercase !tracking-wider shrink-0"
+                    />
 
                 </div>
 

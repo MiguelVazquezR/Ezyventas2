@@ -53,10 +53,22 @@ class OnboardingController extends Controller
             $activeModuleKeys = $availableModules->pluck('key')->toArray();
         }
 
+        // Ensure AI Agent module is always active
+        if (!in_array('module_ai_agent', $activeModuleKeys)) {
+            $activeModuleKeys[] = 'module_ai_agent';
+        }
+
+        // Items de tipo límite disponibles en el sistema (para precios, descripciones, etc.)
+        $availableLimits = PlanItem::where('type', PlanItemType::LIMIT)
+            ->where('is_active', true)
+            ->get()
+            ->values();
+
         return Inertia::render('Onboarding/Setup', [
             'subscription'     => $subscription,
             'currentLimits'    => $limits,
             'availableModules' => $availableModules,
+            'availableLimits'  => $availableLimits,
             'activeModuleKeys' => $activeModuleKeys,
         ]);
     }
@@ -178,6 +190,12 @@ class OnboardingController extends Controller
 
             // 2. Sincronizar módulos
             $selectedModules = $validated['modules'];
+
+            // Ensure AI Agent module is always active
+            if (!in_array('module_ai_agent', $selectedModules)) {
+                $selectedModules[] = 'module_ai_agent';
+            }
+
             $allModuleItems = PlanItem::where('type', PlanItemType::MODULE)->get()->keyBy('key');
 
             foreach ($allModuleItems as $moduleKey => $planItem) {

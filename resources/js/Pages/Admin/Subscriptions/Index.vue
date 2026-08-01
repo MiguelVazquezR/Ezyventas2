@@ -134,6 +134,9 @@ const clearFilters = () => {
                     </div>
                     
                     <div class="flex items-center gap-2 w-full md:w-auto">
+                        <Button label="Nueva suscripción" icon="pi pi-plus" severity="primary"
+                            @click="router.get(route('admin.subscriptions.create'))"
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider flex-grow md:flex-none" />
                         <Button label="Exportar" icon="pi pi-download" severity="secondary" outlined
                             class="!rounded-xl !text-xs !uppercase !tracking-wider flex-grow md:flex-none" />
                     </div>
