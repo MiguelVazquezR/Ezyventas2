@@ -65,20 +65,29 @@ watch(isSidebarActive, (newVal) => {
 
 let removeFlashListener = null;
 
+/**
+ * Calculate toast duration based on message length so users have
+ * enough time to read longer error/warning messages.
+ *
+ * Formula: 60 ms per character, with a floor of 6 s and a ceiling of 14 s.
+ * ~100 chars → 6 s | ~150 chars → 9 s | 200+ chars → 12-14 s
+ */
+const toastLife = (detail) => Math.max(6000, Math.min(14000, (detail || '').length * 60));
+
 const handleFlashMessages = (event) => {
     const flash = event.detail.page.props.flash;
     if (flash) {
         if (flash.success) {
-            toast.add({ severity: 'success', summary: 'Éxito', detail: flash.success, life: 6000 });
+            toast.add({ severity: 'success', summary: 'Éxito', detail: flash.success, life: toastLife(flash.success) });
         }
         if (flash.error) {
-            toast.add({ severity: 'error', summary: 'Error', detail: flash.error, life: 6000 });
+            toast.add({ severity: 'error', summary: 'Error', detail: flash.error, life: toastLife(flash.error) });
         }
         if (flash.warning) {
-            toast.add({ severity: 'warn', summary: 'Advertencia', detail: flash.warning, life: 6000 });
+            toast.add({ severity: 'warn', summary: 'Advertencia', detail: flash.warning, life: toastLife(flash.warning) });
         }
         if (flash.info) {
-            toast.add({ severity: 'info', summary: 'Información', detail: flash.info, life: 6000 });
+            toast.add({ severity: 'info', summary: 'Información', detail: flash.info, life: toastLife(flash.info) });
         }
     }
 };

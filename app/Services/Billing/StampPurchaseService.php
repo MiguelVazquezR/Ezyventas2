@@ -105,7 +105,7 @@ class StampPurchaseService
 
         if (! $fiscalProfile || ! $fiscalProfile->sw_user_id) {
             throw new \RuntimeException(
-                "El perfil fiscal #{$purchase->fiscal_profile_id} no tiene una subcuenta PAC vinculada."
+                'El RFC no está vinculado al servicio de timbrado. Sincroniza tu información fiscal primero.'
             );
         }
 

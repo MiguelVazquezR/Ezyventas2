@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreServiceRequest extends FormRequest
 {
@@ -19,10 +20,17 @@ class StoreServiceRequest extends FormRequest
             'category_id' => 'required|exists:categories,id',
             'show_online' => 'boolean',
             'image' => 'nullable|image',
+            'sat_product_code' => 'nullable|string|max:8',
+            'sat_unit_code' => 'nullable|string|max:10',
 
             // Campos base actualizados
             'has_variants' => 'boolean',
-            'base_price' => 'nullable|numeric|min:0',
+            'base_price' => [
+                Rule::requiredIf(fn () => ! $this->boolean('has_variants')),
+                'nullable',
+                'numeric',
+                'min:0',
+            ],
             'duration_estimate' => 'nullable|string|max:255',
             'branch_ids' => 'required|array|min:1',
             'branch_ids.*' => 'exists:branches,id',

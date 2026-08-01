@@ -50,7 +50,7 @@ class SWManifestService
 
         if (! $endpoint || ! $token) {
             throw new \RuntimeException(
-                'SW Sapien Management no está configurado. Define SW_SAPIEN_MANAGEMENT_ENDPOINT y SW_SAPIEN_TOKEN en .env.'
+                'El servicio de facturación no está configurado. Contacta con soporte técnico.'
             );
         }
 
@@ -76,7 +76,7 @@ class SWManifestService
             ]);
 
             throw new \RuntimeException(
-                'No se pudo obtener el texto del manifiesto. El PAC no está disponible. Intenta de nuevo.'
+                'No se pudo obtener el texto del manifiesto. El servicio no está disponible. Intenta de nuevo.'
             );
         }
 
@@ -110,7 +110,7 @@ class SWManifestService
 
             return [
                 'status'  => 'error',
-                'message' => 'El PAC no devolvió el texto del manifiesto. Intenta de nuevo.',
+                'message' => 'No se pudo obtener el texto del manifiesto. Intenta de nuevo.',
             ];
         }
 
@@ -148,7 +148,7 @@ class SWManifestService
 
         if (! $endpoint || ! $token) {
             throw new \RuntimeException(
-                'SW Sapien Management no está configurado. Define SW_SAPIEN_MANAGEMENT_ENDPOINT y SW_SAPIEN_TOKEN en .env.'
+                'El servicio de facturación no está configurado. Contacta con soporte técnico.'
             );
         }
 
@@ -178,7 +178,7 @@ class SWManifestService
             ]);
 
             throw new \RuntimeException(
-                'No se pudo completar la firma. El PAC no está disponible. Intenta de nuevo.'
+                'No se pudo completar la firma del manifiesto. El servicio no está disponible. Intenta de nuevo.'
             );
         }
 
@@ -214,7 +214,7 @@ class SWManifestService
 
             return [
                 'status'  => 'error',
-                'message' => 'El PAC no devolvió un PDF válido. Intenta de nuevo.',
+                'message' => 'No se pudo generar el PDF del manifiesto. Intenta de nuevo.',
             ];
         }
 

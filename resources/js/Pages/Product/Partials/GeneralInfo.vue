@@ -1,4 +1,7 @@
 <script setup>
+import { computed } from 'vue';
+import { usePage } from '@inertiajs/vue3';
+
 const props = defineProps({
     form: Object,
     categories: Array,
@@ -8,6 +11,8 @@ const props = defineProps({
 });
 
 defineEmits(['open-category', 'open-brand', 'open-provider']);
+
+const hasBilling = computed(() => usePage().props.auth.active_modules?.includes('module_billing'));
 </script>
 
 <template>
@@ -33,6 +38,32 @@ defineEmits(['open-category', 'open-brand', 'open-provider']);
                 <InputText v-model="form.location" id="location" class="w-full" placeholder="Ej: Pasillo 3, Nivel 2" :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a]' } }" />
                 <Message v-if="form.errors.location" severity="error" variant="simple" size="small">{{ form.errors.location }}</Message>
             </div>
+
+            <!-- SAT fiscal fields (only when billing module is active) -->
+            <template v-if="hasBilling">
+                <div class="col-span-full md:col-span-3 flex flex-col gap-1.5">
+                    <label for="sat_product_code" class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Clave de Producto (En caso de emitir facturas)</label>
+                    <InputText v-model="form.sat_product_code" id="sat_product_code" class="w-full" placeholder="01010101" maxlength="8" :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a]' } }" />
+                    <Message v-if="form.errors.sat_product_code" severity="error" variant="simple" size="small">{{ form.errors.sat_product_code }}</Message>
+                </div>
+                <div class="col-span-full md:col-span-3 flex flex-col gap-1.5">
+                    <label for="sat_unit_code" class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Clave Unidad (En caso de emitir facturas)</label>
+                    <Select v-model="form.sat_unit_code" :options="[
+                        { value: 'H87', label: 'H87 - Pieza', description: 'Artículos individuales / Productos físicos' },
+                        { value: 'E48', label: 'E48 - Unidad de servicio', description: 'Servicios (consultoría, desarrollo, honorarios, comisiones)' },
+                        { value: 'KGM', label: 'KGM - Kilogramo', description: 'Materiales, alimentos a granel, peso' },
+                        { value: 'LTR', label: 'LTR - Litro', description: 'Líquidos, insumos' },
+                        { value: 'MTR', label: 'MTR - Metro', description: 'Telas, cables, construcción' },
+                        { value: 'XBX', label: 'XBX - Caja', description: 'Empaques o ventas agrupadas' },
+                        { value: 'XPK', label: 'XPK - Paquete', description: 'Kits o venta agrupada' },
+                        { value: 'DAY', label: 'DAY - Día', description: 'Arrendamiento de equipo, hospedaje' },
+                        { value: 'HUR', label: 'HUR - Hora', description: 'Soporte por tiempo, asesorías' },
+                        { value: 'MON', label: 'MON - Mes', description: 'Suscripciones, rentas' },
+                        { value: 'ACT', label: 'ACT - Actividad', description: 'Tareas de mantenimiento o servicios por avance' },
+                    ]" optionLabel="label" optionValue="value" placeholder="Selecciona" filter showClear class="w-full" :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a]' } }"><template #option="s"><div class="flex flex-col gap-0.5"><span class="text-sm font-medium">{{ s.option.label }}</span><span class="text-xs text-zinc-500">{{ s.option.description }}</span></div></template></Select>
+                    <Message v-if="form.errors.sat_unit_code" severity="error" variant="simple" size="small">{{ form.errors.sat_unit_code }}</Message>
+                </div>
+            </template>
 
             <div class="col-span-full flex flex-col gap-1.5">
                 <label for="branch_ids" class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Disponible en sucursales: *</label>

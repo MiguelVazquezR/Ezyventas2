@@ -10,6 +10,8 @@ use App\Http\Requests\Billing\CancelInvoiceRequest;
 use App\Http\Requests\Billing\StoreInvoiceRequest;
 use App\Http\Requests\Billing\UpdateInvoiceRequest;
 use App\Models\Billing\Invoice;
+use App\Models\Product;
+use App\Models\Service;
 use App\Services\Billing\SatConsultationService;
 use App\Services\SW\SWUserService;
 use Illuminate\Http\RedirectResponse;
@@ -180,6 +182,8 @@ class InvoiceController extends Controller implements HasMiddleware
             'fiscalProfiles'       => $fiscalProfiles,
             'hasFiscalProfiles'    => $hasFiscalProfiles,
             'facturacionHabilitada' => $facturacionHabilitada,
+            'products'             => Product::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'sku', 'selling_price', 'sat_product_code', 'sat_unit_code']),
+            'services'             => Service::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'base_price', 'sat_product_code', 'sat_unit_code']),
         ]);
     }
 
@@ -233,6 +237,8 @@ class InvoiceController extends Controller implements HasMiddleware
             'customers'        => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
             'fiscalProfiles'   => $fiscalProfiles,
             'hasFiscalProfiles' => $fiscalProfiles->isNotEmpty(),
+            'products'         => Product::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'sku', 'selling_price', 'sat_product_code', 'sat_unit_code']),
+            'services'         => Service::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'base_price', 'sat_product_code', 'sat_unit_code']),
         ]);
     }
 
@@ -597,8 +603,12 @@ class InvoiceController extends Controller implements HasMiddleware
             return redirect()->back()->with('error', 'Solo se pueden timbrar facturas en estado borrador o pendiente.');
         }
 
-        $swService = app(\App\Services\Billing\SWSapienService::class);
-        $swService->stamp($invoice);
+        try {
+            $swService = app(\App\Services\Billing\SWSapienService::class);
+            $swService->stamp($invoice);
+        } catch (\RuntimeException $e) {
+            return redirect()->back()->with('warning', $e->getMessage());
+        }
 
         return redirect()->route('billing.invoices.show', $invoice->id)
             ->with('success', 'Factura timbrada correctamente.');
@@ -646,7 +656,7 @@ class InvoiceController extends Controller implements HasMiddleware
 
         $mensaje = $nuevoEstado
             ? 'Facturación activada. Ahora puedes agregar perfiles fiscales y comenzar a facturar.'
-            : 'Facturación desactivada. Tus perfiles fiscales e historial se conservan, pero no se realizarán nuevas operaciones en el PAC.';
+            : 'Facturación desactivada. Tus perfiles fiscales e historial se conservan, pero no podrás emitir nuevas facturas hasta que la actives de nuevo.';
 
         return redirect()->route('billing.settings.index')
             ->with($nuevoEstado ? 'success' : 'info', $mensaje);

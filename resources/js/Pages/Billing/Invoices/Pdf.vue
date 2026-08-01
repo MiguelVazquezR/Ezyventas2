@@ -222,10 +222,10 @@ const lugarFechaEmision = computed(() => {
                             <span class="text-[11px] font-medium text-gray-900">Régimen:</span> {{ taxRegimeLabel(invoice.receiver_tax_regime) }}
                         </p>
                         <p class="text-[11px] m-0 text-gray-700">
-                            <span class="text-[11px] font-medium text-gray-900">CP:</span> {{ invoice.receiver_postal_code || '—' }}
+                            <span class="text-[11px] font-medium text-gray-900">CP:</span> {{ invoice.receiver_postal_code || '-' }}
                         </p>
                         <p class="text-[11px] m-0 text-gray-700">
-                            <span class="text-[11px] font-medium text-gray-900">Uso CFDI:</span> {{ invoice.cfdi_use }} — {{ cfdiUseLabel(invoice.cfdi_use) }}
+                            <span class="text-[11px] font-medium text-gray-900">Uso CFDI:</span> {{ invoice.cfdi_use }} - {{ cfdiUseLabel(invoice.cfdi_use) }}
                         </p>
                     </div>
                 </div>

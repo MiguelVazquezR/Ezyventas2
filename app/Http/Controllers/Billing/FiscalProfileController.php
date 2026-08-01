@@ -123,7 +123,7 @@ class FiscalProfileController extends Controller implements HasMiddleware
             ]);
 
             return redirect()->route('billing.settings.index')
-                ->with('error', 'El PAC rechazó la creación de la subcuenta: ' . $e->getMessage());
+                ->with('error', 'Se rechazó la creación de la cuenta: ' . $e->getMessage());
         }
     }
 
@@ -163,7 +163,7 @@ class FiscalProfileController extends Controller implements HasMiddleware
 
         if (! $profile->sw_user_id) {
             return back()
-                ->with('error', 'Este perfil fiscal aún no tiene una subcuenta en el PAC. Espera a que se complete el aprovisionamiento.');
+                ->with('error', 'Este RFC aún no tiene una cuenta. Espera a que se complete el aprovisionamiento.');
         }
 
         try {
@@ -199,7 +199,7 @@ class FiscalProfileController extends Controller implements HasMiddleware
             ]);
 
             return back()
-                ->with('success', $csdResult['message'] ?? 'Certificados CSD cargados exitosamente en el PAC.');
+                ->with('success', $csdResult['message'] ?? 'Certificados CSD cargados exitosamente.');
         } catch (ConnectionException $e) {
             Log::warning('PAC unreachable during CSD upload', [
                 'fiscal_profile_id' => $profile->id,
@@ -207,7 +207,7 @@ class FiscalProfileController extends Controller implements HasMiddleware
             ]);
 
             return back()
-                ->with('warning', 'El PAC no está disponible en este momento. Intenta cargar los certificados más tarde.');
+                ->with('warning', 'El Proveedor de timbrado no está disponible en este momento. Intenta cargar los certificados más tarde.');
         } catch (\RuntimeException $e) {
             Log::error('PAC rejected CSD upload', [
                 'fiscal_profile_id' => $profile->id,
@@ -215,7 +215,7 @@ class FiscalProfileController extends Controller implements HasMiddleware
             ]);
 
             return back()
-                ->with('error', 'El PAC rechazó los certificados: ' . $e->getMessage());
+                ->with('warning', 'Se rechazaron los certificados: ' . $e->getMessage());
         }
     }
 

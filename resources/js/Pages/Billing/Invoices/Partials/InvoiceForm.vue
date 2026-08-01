@@ -12,6 +12,8 @@ const props = defineProps({
     customers: { type: [Array, Object], default: () => [] },
     fiscalProfiles: { type: [Array, Object], default: () => [] },
     hasFiscalProfiles: { type: Boolean, default: false },
+    products: { type: [Array, Object], default: () => [] },
+    services: { type: [Array, Object], default: () => [] },
 });
 
 const emit = defineEmits(['submit']);
@@ -64,7 +66,6 @@ const mapInvoiceItems = (invoice) => {
         unit_price: parseFloat(item.unit_price) || 0,
         sat_product_code: item.sat_product_code || '',
         sat_unit_code: item.sat_unit_code || '',
-        unit_name: item.unit_name || '',
         no_identificacion: item.no_identificacion || '',
         objeto_imp: item.objeto_imp || '02',
         tax_type: item.tax_type || '002',
@@ -88,6 +89,11 @@ onMounted(() => {
     } else if (fiscalProfilesList.value.length === 1) {
         selectedFiscalProfile.value = fiscalProfilesList.value[0];
         form.fiscal_profile_id = fiscalProfilesList.value[0].id;
+    }
+
+    // Pre-fill customer search text in edit mode
+    if (props.mode === 'edit' && props.invoice?.customer) {
+        customerSearchText.value = props.invoice.customer.name || '';
     }
 });
 
@@ -167,17 +173,38 @@ const taxRegimeOptions = [
 ];
 
 const objetoImpOptions = [
-    { label: '01 - No objeto de impuesto', value: '01' },
-    { label: '02 - Sí objeto de impuesto', value: '02' },
-    { label: '03 - Sí objeto y no obligado al desglose', value: '03' },
+    { label: '02 - Sí objeto de impuesto', value: '02', description: 'Aplica en más del 90% de los casos. Úsalo cuando la venta o servicio esté sujeto a IVA (16%, 0% o exento) o IEPS.' },
+    { label: '01 - No objeto de impuesto', value: '01', description: 'Operaciones que no están sujetas a las leyes mexicanas de IVA/IEPS (ej. servicios o productos prestados/vendidos 100% en el extranjero).' },
+    { label: '03 - Sí objeto (sin desglose)', value: '03', description: 'Operaciones gravadas donde la norma permite omitir el desglose de impuesto por concepto (ej. ciertas ventas al público en general).' },
+    { label: '04 - Sí objeto y no causa impuesto', value: '04', description: 'Operaciones que entran en la norma de impuestos pero por disposición legal específica no generan el cobro directo del mismo.' },
+];
+
+const taxRateOptions = [
+    { label: '16%', value: 0.16 },
+    { label: '0%', value: 0 },
+    { label: 'Exento', value: 'Exento' },
+];
+
+const satUnitOptions = [
+    { value: 'H87', label: 'H87 - Pieza', description: 'Artículos individuales / Productos físicos' },
+    { value: 'E48', label: 'E48 - Unidad de servicio', description: 'Servicios (consultoría, desarrollo, honorarios, comisiones)' },
+    { value: 'KGM', label: 'KGM - Kilogramo', description: 'Materiales, alimentos a granel, peso' },
+    { value: 'LTR', label: 'LTR - Litro', description: 'Líquidos, insumos' },
+    { value: 'MTR', label: 'MTR - Metro', description: 'Telas, cables, construcción' },
+    { value: 'XBX', label: 'XBX - Caja', description: 'Empaques o ventas agrupadas' },
+    { value: 'XPK', label: 'XPK - Paquete', description: 'Kits o venta agrupada' },
+    { value: 'DAY', label: 'DAY - Día', description: 'Arrendamiento de equipo, hospedaje' },
+    { value: 'HUR', label: 'HUR - Hora', description: 'Soporte por tiempo, asesorías' },
+    { value: 'MON', label: 'MON - Mes', description: 'Suscripciones, rentas' },
+    { value: 'ACT', label: 'ACT - Actividad', description: 'Tareas de mantenimiento o servicios por avance' },
 ];
 
 // ──────────────────────────────────────
 // Concepts management
 // ──────────────────────────────────────
 const blankItem = () => ({
-    description: '', quantity: null, unit_price: null,
-    sat_product_code: '', sat_unit_code: '', unit_name: '',
+    description: '', quantity: 1, unit_price: null,
+    sat_product_code: '', sat_unit_code: '',
     no_identificacion: '', objeto_imp: '02',
     tax_type: '002', tax_rate: 0.16, discount_amount: null,
     retained_tax_type: null, retained_tax_rate: null, retained_tax_amount: 0,
@@ -187,22 +214,103 @@ const addItem = () => form.items.push(blankItem());
 const removeItem = (index) => form.items.splice(index, 1);
 
 // ──────────────────────────────────────
+// Concept autocomplete (products & services)
+// ──────────────────────────────────────
+const productsList = computed(() => toArray(props.products));
+const servicesList = computed(() => toArray(props.services));
+
+const availableConceptItems = computed(() => [
+    ...productsList.value.map(p => ({ ...p, type: 'Producto', price: p.selling_price })),
+    ...servicesList.value.map(s => ({ ...s, type: 'Servicio', price: s.base_price })),
+]);
+
+const conceptSuggestions = ref({});
+
+const searchConceptItems = (event, index) => {
+    const query = event.query.toLowerCase().trim();
+    if (!query) {
+        conceptSuggestions.value[index] = [...availableConceptItems.value];
+    } else {
+        conceptSuggestions.value[index] = availableConceptItems.value.filter(
+            item => item.name.toLowerCase().includes(query),
+        );
+    }
+};
+
+const onConceptSelect = (event, index) => {
+    const item = form.items[index];
+    const selected = event.value;
+    if (!selected || typeof selected !== 'object') return;
+    item.description = selected.name;
+    item.unit_price = parseFloat(selected.price) || 0;
+    // Auto-fill SKU (only products have it)
+    if (selected.sku) {
+        item.no_identificacion = selected.sku;
+    }
+    // Auto-fill SAT codes from product/service
+    if (selected.sat_product_code) {
+        item.sat_product_code = selected.sat_product_code;
+    }
+    if (selected.sat_unit_code) {
+        item.sat_unit_code = selected.sat_unit_code;
+    }
+};
+
+// ──────────────────────────────────────
 // Tax calculator
 // ──────────────────────────────────────
 const { subtotal, ivaTrasladado, isrRetenido, ivaRetenido, granTotal, formatCurrency, breakdown, retentionApplies, isResico } = useInvoiceTaxes(form, fiscalProfilesList, customersList);
 
 // ──────────────────────────────────────
-// Customer auto-fill
+// Customer autocomplete (receptor)
 // ──────────────────────────────────────
-watch(() => form.customer_id, (newId) => {
-    if (!newId) return;
-    const customer = customersList.value?.find(c => c.id === newId);
+const customerSearchText = ref('');
+const customerSuggestions = ref([]);
+
+const searchCustomers = (event) => {
+    const query = event.query.toLowerCase().trim();
+    if (!query) {
+        customerSuggestions.value = [...customersList.value];
+    } else {
+        customerSuggestions.value = customersList.value.filter(
+            c => c.name.toLowerCase().includes(query)
+                || (c.company_name && c.company_name.toLowerCase().includes(query))
+                || (c.tax_id && c.tax_id.toLowerCase().includes(query)),
+        );
+    }
+};
+
+const onCustomerSelect = (event) => {
+    const selected = event.value;
+    // Guard: must be a valid object with an id
+    if (!selected || typeof selected !== 'object' || !selected.id) return;
+
+    // Always resolve from the master list by ID — never trust the suggestions
+    // array reference, which can go stale inside PrimeVue's AutoComplete
+    const customer = customersList.value.find(c => c.id === selected.id);
     if (!customer) return;
-    if (!form.receiver_rfc) form.receiver_rfc = customer.tax_id || '';
-    if (!form.receiver_legal_name) form.receiver_legal_name = customer.company_name || customer.name || '';
+
+    // Explicitly sync the display text so v-model stays consistent
+    customerSearchText.value = customer.name;
+    form.customer_id = customer.id;
+
+    // Auto-fill receiver fields from the definitive customer object
+    form.receiver_rfc = customer.tax_id || '';
+    form.receiver_legal_name = customer.company_name || customer.name || '';
+
     const fiscal = extractFiscalData(customer);
-    form.receiver_tax_regime = fiscal.tax_regime || form.receiver_tax_regime || '';
-    if (fiscal.postal_code) form.receiver_postal_code = fiscal.postal_code;
+    form.receiver_tax_regime = fiscal.tax_regime || '';
+    form.receiver_postal_code = fiscal.postal_code || '';
+    if (customer.cfdi_use) {
+        form.cfdi_use = customer.cfdi_use;
+    }
+};
+
+// Clear customer association when the user manually deletes the search text
+watch(customerSearchText, (val) => {
+    if (!val || val.trim() === '') {
+        form.customer_id = null;
+    }
 });
 
 // ──────────────────────────────────────
@@ -240,10 +348,10 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
     <!-- Onboarding guard -->
     <div v-if="!hasProfiles" class="max-w-lg mx-auto bg-gray-50 dark:bg-[#1a1a1a] border border-gray-200 dark:border-[#3a3a3a] rounded-2xl p-8 text-center mt-10">
         <i class="pi pi-exclamation-triangle !text-4xl text-amber-400 mb-4 block"></i>
-        <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-200 m-0 mb-2">Perfil fiscal requerido</h2>
-        <p class="text-sm text-gray-500 dark:text-gray-400 m-0 mb-6">No tienes perfiles fiscales. Agrega al menos un RFC emisor para facturar.</p>
+        <h2 class="text-lg font-semibold text-gray-800 dark:text-gray-200 m-0 mb-2">Emisor fiscal requerido</h2>
+        <p class="text-sm text-gray-500 dark:text-gray-400 m-0 mb-6">No tienes emisores fiscales. Agrega al menos un RFC emisor para facturar.</p>
         <a :href="route('billing.settings.index')" class="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white rounded-full text-sm font-medium transition-colors no-underline">
-            <i class="pi pi-external-link !text-sm"></i> Agregar perfil fiscal
+            <i class="pi pi-external-link !text-sm"></i> Agregar emisor fiscal
         </a>
     </div>
 
@@ -260,11 +368,11 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                     <div class="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center border border-blue-100 dark:border-blue-900/30">
                         <i class="pi pi-building !text-sm text-blue-500"></i>
                     </div>
-                    <div><h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Emisor</h2><p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Perfil fiscal</p></div>
+                    <div><h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Emisor</h2><p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">RFC de la persona física o empresa que emitirá la factura</p></div>
                 </div>
 
                 <div class="flex flex-col gap-1.5 mb-5" v-if="fiscalProfilesList.length > 1">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Perfil fiscal *</label>
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Datos del emisor *</label>
                     <Select v-model="selectedFiscalProfile" :options="fiscalProfilesList" optionLabel="razon_social" placeholder="Selecciona el RFC emisor" class="w-full" @change="() => { form.fiscal_profile_id = selectedFiscalProfile?.id ?? null; }" :pt="selectPt">
                         <template #value="s"><div v-if="s.value" class="flex items-center gap-2"><span class="text-sm font-medium">{{ s.value.rfc }}</span><span class="text-zinc-400">-</span><span class="text-sm">{{ s.value.razon_social }}</span></div></template>
                         <template #option="s"><div class="flex flex-col gap-0.5"><span class="text-sm font-medium">{{ s.option.rfc }}</span><span class="text-xs text-zinc-500">{{ s.option.razon_social }}</span></div></template>
@@ -290,13 +398,37 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                 </div>
 
                 <div class="flex flex-col gap-1.5 mb-5">
-                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Cliente</label>
-                    <Select v-model="form.customer_id" :options="customersList" optionLabel="name" optionValue="id" placeholder="Selecciona un cliente" showClear filter class="w-full" :pt="selectPt" />
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Cliente (Opcional)</label>
+                    <AutoComplete
+                        v-model="customerSearchText"
+                        :suggestions="customerSuggestions"
+                        @complete="searchCustomers"
+                        @item-select="onCustomerSelect"
+                        field="name"
+                        optionLabel="name"
+                        placeholder="Busca o escribe el nombre del cliente"
+                        class="w-full"
+                        dropdown
+                        :pt="{ root: { class: 'w-full' }, input: { root: { class: 'h-11 !bg-white dark:!bg-zinc-950 !border !border-zinc-200 dark:!border-zinc-800 focus:dark:!border-primary-500 !transition-colors !text-sm !shadow-none w-full !rounded-xl' } } }"
+                    >
+                        <template #option="slotProps">
+                            <div class="flex items-center justify-between gap-3 py-1">
+                                <div class="flex flex-col gap-0.5 min-w-0">
+                                    <span class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ slotProps.option.name }}</span>
+                                    <span v-if="slotProps.option.company_name && slotProps.option.company_name !== slotProps.option.name" class="text-[11px] text-gray-500 dark:text-gray-400 truncate">{{ slotProps.option.company_name }}</span>
+                                </div>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <Tag v-if="slotProps.option.tax_id" :value="slotProps.option.tax_id" severity="info" class="!text-[9px] !px-2 !py-0.5" />
+                                    <i v-if="slotProps.option.tax_regime" class="pi pi-check-circle !text-[11px] text-emerald-400" v-tooltip.top="'Datos fiscales completos'" />
+                                </div>
+                            </div>
+                        </template>
+                    </AutoComplete>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">RFC *</label><InputText v-model="form.receiver_rfc" placeholder="XAXX010101000" class="w-full uppercase" :pt="inputPt" /><Message v-if="form.errors.receiver_rfc" severity="error" variant="simple" size="small">{{ form.errors.receiver_rfc }}</Message></div>
-                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Razón social *</label><InputText v-model="form.receiver_legal_name" placeholder="Nombre o razón social" class="w-full" :pt="inputPt" /><Message v-if="form.errors.receiver_legal_name" severity="error" variant="simple" size="small">{{ form.errors.receiver_legal_name }}</Message></div>
+                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Razón social *</label><InputText v-model="form.receiver_legal_name" placeholder="Nombre o razón social" class="w-full" :pt="inputPt" /><p class="text-[11px] text-gray-600 dark:text-gray-500 m-0 mt-1">Ej: "Servicios" - omite el SA de CV, S de RL, SC, etc.</p><Message v-if="form.errors.receiver_legal_name" severity="error" variant="simple" size="small">{{ form.errors.receiver_legal_name }}</Message></div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Régimen fiscal *</label><Select v-model="form.receiver_tax_regime" :options="taxRegimeOptions" optionLabel="label" optionValue="value" placeholder="Selecciona" filter class="w-full" :pt="selectPt" /><Message v-if="form.errors.receiver_tax_regime" severity="error" variant="simple" size="small">{{ form.errors.receiver_tax_regime }}</Message></div>
@@ -311,7 +443,7 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                     <div class="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center border border-amber-100 dark:border-amber-900/30">
                         <i class="pi pi-credit-card !text-sm text-amber-500"></i>
                     </div>
-                    <div><h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Forma y método de pago</h2><p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Condiciones del CFDI</p></div>
+                    <div><h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Forma y método de pago</h2><p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Condiciones de la factura</p></div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Forma de pago *</label><Select v-model="form.payment_form" :options="paymentFormOptions" optionLabel="label" optionValue="value" placeholder="Selecciona" class="w-full" :pt="selectPt" /><Message v-if="form.errors.payment_form" severity="error" variant="simple" size="small">{{ form.errors.payment_form }}</Message></div>
@@ -351,15 +483,32 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                         </div>
 
                         <div class="flex flex-col gap-1.5 mb-4">
-                            <label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Descripción *</label>
-                            <InputText v-model="item.description" placeholder="Descripción del producto o servicio" class="w-full" :pt="inputPt" />
+                            <label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Descripción del producto o servicio *</label>
+                            <AutoComplete
+                                v-model="item.description"
+                                :suggestions="conceptSuggestions[index] || []"
+                                @complete="(e) => searchConceptItems(e, index)"
+                                @item-select="(e) => onConceptSelect(e, index)"
+                                field="name"
+                                optionLabel="name"
+                                placeholder="Busca o escribe un concepto..."
+                                class="w-full"
+                                dropdown
+                                :pt="{ root: { class: 'w-full' }, input: { root: { class: 'h-11 !bg-white dark:!bg-zinc-950 !border !border-zinc-200 dark:!border-zinc-800 focus:dark:!border-primary-500 !transition-colors !text-sm !shadow-none w-full !rounded-xl' } } }"
+                            >
+                                <template #option="slotProps">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-sm">{{ slotProps.option.name }}</span>
+                                        <Tag :value="slotProps.option.type" :severity="slotProps.option.type === 'Servicio' ? 'success' : 'info'" class="!text-[10px]" />
+                                    </div>
+                                </template>
+                            </AutoComplete>
                             <Message v-if="form.errors[`items.${index}.description`]" severity="error" variant="simple" size="small">{{ form.errors[`items.${index}.description`] }}</Message>
                         </div>
 
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                            <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">ClaveProdServ *</label><InputText v-model="item.sat_product_code" placeholder="01010101" maxlength="15" class="w-full" :pt="inputPt" /></div>
-                            <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">ClaveUnidad *</label><InputText v-model="item.sat_unit_code" placeholder="H87" maxlength="10" class="w-full" :pt="inputPt" /></div>
-                            <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Unidad</label><InputText v-model="item.unit_name" placeholder="Pieza, Servicio..." maxlength="50" class="w-full" :pt="inputPt" /></div>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+                            <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">ClaveProdServ *</label><InputText v-model="item.sat_product_code" placeholder="01010101" maxlength="8" class="w-full" :pt="inputPt" /></div>
+                            <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">ClaveUnidad *</label><Select v-model="item.sat_unit_code" :options="satUnitOptions" optionLabel="label" optionValue="value" placeholder="Selecciona" filter class="w-full" :pt="selectPt"><template #option="s"><div class="flex flex-col gap-0.5"><span class="text-sm font-medium">{{ s.option.label }}</span><span class="text-xs text-zinc-500">{{ s.option.description }}</span></div></template></Select></div>
                             <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">SKU / No. Ident.</label><InputText v-model="item.no_identificacion" placeholder="SKU-001" maxlength="100" class="w-full" :pt="inputPt" /></div>
                         </div>
 
@@ -370,20 +519,20 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                         </div>
 
                         <div class="grid grid-cols-2 md:grid-cols-2 gap-3 mb-4">
-                            <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Objeto imp.</label><Select v-model="item.objeto_imp" :options="objetoImpOptions" optionLabel="label" optionValue="value" class="w-full" :pt="selectPt" /></div>
-                            <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Tasa IVA</label><InputNumber :modelValue="item.tax_rate * 100" @update:modelValue="(val) => item.tax_rate = val / 100" suffix="%" :minFractionDigits="0" :maxFractionDigits="0" :min="0" :max="100" class="w-full" :pt="inputNumberPt" /></div>
+                            <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Objeto imp.</label><Select v-model="item.objeto_imp" :options="objetoImpOptions" optionLabel="label" optionValue="value" class="w-full" :pt="selectPt"><template #option="s"><div class="flex flex-col gap-0.5"><span class="text-sm font-medium">{{ s.option.label }}</span><span class="text-[10px] text-zinc-400 leading-tight">{{ s.option.description }}</span></div></template></Select></div>
+                            <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Tasa IVA</label><Select v-if="item.objeto_imp === '02'" v-model="item.tax_rate" :options="taxRateOptions" optionLabel="label" optionValue="value" class="w-full" :pt="selectPt" /><InputText v-else modelValue="No aplica" readonly class="w-full" :pt="readonlyPt" /></div>
                         </div>
 
-                        <div class="pt-3 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-6 text-xs text-zinc-400">
+                        <div class="pt-3 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-6 text-[12px] text-zinc-500">
                             <span>Subtotal: {{ formatCurrency((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)) }}</span>
-                            <span>IVA: {{ formatCurrency(((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0) - (parseFloat(item.discount_amount) || 0)) * (parseFloat(item.tax_rate) || 0)) }}</span>
+                            <span>IVA: {{ item.objeto_imp !== '02' ? formatCurrency(0) : item.tax_rate === 'Exento' ? 'Exento' : formatCurrency(((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0) - (parseFloat(item.discount_amount) || 0)) * (parseFloat(item.tax_rate) || 0)) }}</span>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- ═══ Pago (totales) ═══ -->
-            <div id="pago" class="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 lg:p-8">
+            <div id="pago">
                 <InvoiceTotals
                     :subtotal="subtotal"
                     :iva-trasladado="ivaTrasladado"
@@ -406,6 +555,9 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                     <Button type="button" label="Cancelar" severity="secondary" outlined :disabled="form.processing" @click="$inertia.visit(route('billing.invoices.show', invoice.id))" class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold" />
                 </template>
             </div>
+
+            <!-- Spacer so the "Pago" section can scroll up past the sticky buttons -->
+            <div class="h-[50vh] md:h-[40vh]" aria-hidden="true"></div>
 
         </div>
     </form>

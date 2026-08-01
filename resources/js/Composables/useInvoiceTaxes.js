@@ -120,7 +120,7 @@ export function useInvoiceTaxes(form, fiscalProfiles, customers) {
             const qty = parseFloat(item.quantity) || 0;
             const price = parseFloat(item.unit_price) || 0;
             const discount = parseFloat(item.discount_amount) || 0;
-            const taxRate = parseFloat(item.tax_rate) || 0.16;
+            const taxRate = item.tax_rate === 'Exento' ? 0 : (parseFloat(item.tax_rate) || 0.16);
             const hasTax = item.objeto_imp === '02';
 
             const lineSubtotal = qty * price;

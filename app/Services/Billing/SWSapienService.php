@@ -334,7 +334,7 @@ class SWSapienService
 
             if ($exchangeRate <= 0) {
                 throw new \RuntimeException(
-                    'El tipo de cambio es obligatorio cuando la moneda no es MXN. Captura el TipoCambio en el formulario.'
+                    'El tipo de cambio es obligatorio para facturas en moneda extranjera. Captura el tipo de cambio en el formulario.'
                 );
             }
 
@@ -394,7 +394,7 @@ class SWSapienService
 
         if (! $endpoint || ! $token) {
             throw new \RuntimeException(
-                'SW Sapien no está configurado. Define SW_SAPIEN_ENDPOINT y SW_SAPIEN_TOKEN en .env.'
+                'El servicio de timbrado no está configurado. Contacta con soporte técnico.'
             );
         }
 
@@ -431,14 +431,14 @@ class SWSapienService
                 'body'   => $response->body(),
             ]);
             throw new \RuntimeException(
-                'El PAC rechazó el timbrado (HTTP ' . $response->status() . '): ' . $errorMsg
+                'Se rechazó el timbrado: ' . $errorMsg
             );
         }
 
         $data = $response->json();
 
         if (($data['status'] ?? '') !== 'success') {
-            Log::error('SW Sapien rechazó el timbrado', [
+            Log::error('Se rechazó el timbrado', [
                 'invoice_id'    => $invoice->id,
                 'payload'       => $payload,
                 'message'       => $data['message'] ?? null,
@@ -447,7 +447,7 @@ class SWSapienService
             ]);
 
             throw new \RuntimeException(
-                'SW Sapien rechazó el timbrado: '
+                'Se rechazó el timbrado: '
                 . ($data['messageDetail'] ?? $data['message'] ?? $response->body())
             );
         }
@@ -457,7 +457,7 @@ class SWSapienService
         $pdfUrl = $data['data']['pdf'] ?? null;
 
         if (! $uuid || ! $cfdi) {
-            throw new \RuntimeException('La respuesta del PAC no contiene UUID o CFDI.');
+            throw new \RuntimeException('El factura no se timbró correctamente. Intenta de nuevo.');
         }
 
         // ── Extract RfcProvCertif from cadenaOriginalSAT ──
@@ -502,7 +502,7 @@ class SWSapienService
         $token    = config('services.swsapien.token');
 
         if (! $endpoint || ! $token) {
-            throw new \RuntimeException('SW Sapien no está configurado.');
+            throw new \RuntimeException('El servicio de timbrado no está configurado. Contacta con soporte técnico.');
         }
 
         // ── Guard: billing must be enabled on the subscription ──
@@ -541,7 +541,7 @@ class SWSapienService
                 'body'   => $response->body(),
             ]);
             throw new \RuntimeException(
-                'El PAC rechazó la cancelación: ' . ($response->json('message') ?? $response->body())
+                'Se rechazó la cancelación: ' . ($response->json('message') ?? $response->body())
             );
         }
 
@@ -550,7 +550,7 @@ class SWSapienService
         if (($data['status'] ?? '') !== 'success') {
             Log::error("SW Sapien cancellation error for invoice {$invoice->id}", ['response' => $data]);
             throw new \RuntimeException(
-                $data['message'] ?? 'Error desconocido al cancelar la factura.'
+                $data['message'] ?? 'No se pudo cancelar la factura. Intenta de nuevo.'
             );
         }
 
@@ -622,11 +622,11 @@ class SWSapienService
         $token    = config('services.swsapien.token');
 
         if (! $endpoint || ! $token) {
-            throw new \RuntimeException('SW Sapien no está configurado.');
+            throw new \RuntimeException('El servicio de timbrado no está configurado. Contacta con soporte técnico.');
         }
 
         if (! $profile->sw_user_id) {
-            throw new \RuntimeException('El perfil fiscal no tiene un sw_user_id. Aprovisiona la subcuenta primero.');
+            throw new \RuntimeException('El RFC no está vinculado al servicio de timbrado. Configura tu información fiscal e intenta de nuevo.');
         }
 
         $cerContent = file_get_contents($cerPath);
@@ -667,7 +667,7 @@ class SWSapienService
             ]);
 
             throw new \RuntimeException(
-                'El PAC rechazó los certificados (HTTP ' . $response->status() . '): '
+                'Se rechazaron los certificados: '
                 . ($response->json('message') ?? $response->body())
             );
         }
@@ -683,7 +683,7 @@ class SWSapienService
             ]);
 
             throw new \RuntimeException(
-                'El PAC rechazó los certificados: '
+                'Se rechazaron los certificados: '
                 . ($data['message'] ?? $data['data'] ?? json_encode($data))
             );
         }
@@ -713,7 +713,7 @@ class SWSapienService
             $endpoint = config('services.swsapien.endpoint');
 
             if (! $endpoint) {
-                throw new \RuntimeException('SW Sapien no está configurado.');
+                throw new \RuntimeException('El servicio de timbrado no está configurado. Contacta con soporte técnico.');
             }
 
             // The subaccount user is the email stored during provisioning
@@ -721,8 +721,8 @@ class SWSapienService
 
             if (! $subaccountUser || ! $profile->password) {
                 throw new \RuntimeException(
-                    'El perfil fiscal no tiene credenciales de subcuenta. '
-                    . 'Aprovisiona la subcuenta en el PAC primero.'
+                    'El RFC no está vinculado al servicio de timbrado. '
+                    . 'Configura tu información fiscal.'
                 );
             }
 
@@ -743,8 +743,7 @@ class SWSapienService
                 ]);
 
                 throw new \RuntimeException(
-                    'No se pudo autenticar la subcuenta en el PAC (HTTP '
-                    . $response->status() . '): ' . $response->body()
+                    'No se pudo validar tu RFC. Verifica que los certificados CSD estén vigentes y la contraseña sea correcta.'
                 );
             }
 
@@ -762,7 +761,7 @@ class SWSapienService
                 ]);
 
                 throw new \RuntimeException(
-                    'El PAC no devolvió un token de autenticación para la subcuenta.'
+                    'El servicio de validación fiscal no respondió correctamente. Intenta de nuevo.'
                 );
             }
 

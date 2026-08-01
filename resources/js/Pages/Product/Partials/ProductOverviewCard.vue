@@ -15,6 +15,7 @@ const emit = defineEmits(['print']);
 const toast = useToast();
 
 const hasOnlineStore = computed(() => usePage().props.auth.active_modules?.includes('module_online_store'));
+const hasBilling = computed(() => usePage().props.auth.active_modules?.includes('module_billing'));
 
 const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -132,6 +133,18 @@ const priceTiers = computed(() => {
                 <span class="text-[10px] block text-gray-500 uppercase font-bold tracking-wider mb-1">Proveedor</span>
                 <div class="font-medium text-gray-900 dark:text-gray-100 text-sm truncate">{{ product.provider?.name || '--' }}</div>
             </div>
+
+            <!-- SAT fiscal codes (only when billing module is active) -->
+            <template v-if="hasBilling">
+                <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                    <span class="text-[10px] block text-gray-500 uppercase font-bold tracking-wider mb-1">ClaveProdServ</span>
+                    <div class="font-mono font-medium text-gray-900 dark:text-gray-100 text-sm truncate">{{ product.sat_product_code || '—' }}</div>
+                </div>
+                <div class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700/60">
+                    <span class="text-[10px] block text-gray-500 uppercase font-bold tracking-wider mb-1">ClaveUnidad</span>
+                    <div class="font-medium text-gray-900 dark:text-gray-100 text-sm truncate">{{ product.sat_unit_code || '—' }}</div>
+                </div>
+            </template>
         </div>
 
         <!-- Detalles de Precios Avanzados -->

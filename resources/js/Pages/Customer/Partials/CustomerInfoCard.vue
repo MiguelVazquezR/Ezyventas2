@@ -49,6 +49,48 @@ const googleMapsUrl = computed(() => {
     
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(queryParts)}`;
 });
+
+// ──────────────────────────────────────
+// Fiscal / billing data
+// ──────────────────────────────────────
+const taxRegimeLabels = {
+    '601': 'General de Ley Personas Morales',
+    '603': 'Personas Morales con Fines no Lucrativos',
+    '612': 'Personas Físicas con Actividades Empresariales',
+    '616': 'Sin obligaciones fiscales',
+    '621': 'Incorporación Fiscal',
+    '626': 'Régimen Simplificado de Confianza',
+};
+
+const fiscalRegime = computed(() => {
+    const c = props.customer;
+    const fa = c.fiscal_address;
+    if (fa && typeof fa === 'object' && !Array.isArray(fa)) {
+        return fa.tax_regime || fa.regimen_fiscal || c.tax_regime || '';
+    }
+    return c.tax_regime || '';
+});
+
+const fiscalRegimeLabel = computed(() => {
+    return taxRegimeLabels[fiscalRegime.value] || fiscalRegime.value;
+});
+
+const fiscalPostalCode = computed(() => {
+    const c = props.customer;
+    const fa = c.fiscal_address;
+    if (fa && typeof fa === 'object' && !Array.isArray(fa)) {
+        return fa.zip_code || fa.postal_code || fa.cp || '';
+    }
+    const addr = c.address;
+    if (addr && typeof addr === 'object' && !Array.isArray(addr)) {
+        return addr.zip_code || addr.postal_code || '';
+    }
+    return '';
+});
+
+const hasFiscalData = computed(() => {
+    return !!(props.customer.tax_id || props.customer.company_name || fiscalRegime.value || fiscalPostalCode.value);
+});
 </script>
 
 <template>
@@ -85,15 +127,6 @@ const googleMapsUrl = computed(() => {
                     <span class="font-medium text-sm text-gray-900 dark:text-white m-0 break-all">{{ customer.email }}</span>
                 </li>
                 
-                <li v-if="customer.tax_id" class="flex items-center gap-3 pb-2">
-                    <div class="w-8 h-8 rounded-full bg-gray-50 dark:bg-[#1a1a1a] flex items-center justify-center flex-shrink-0 border border-gray-200 dark:border-[#3a3a3a]">
-                        <i class="pi pi-receipt !text-[10px] text-gray-400"></i>
-                    </div>
-                    <div class="flex flex-col">
-                        <span class="font-medium text-sm text-gray-900 dark:text-white m-0">{{ customer.tax_id }}</span>
-                        <span class="text-[10px] uppercase tracking-widest text-gray-500 m-0 mt-0.5">Identificador fiscal</span>
-                    </div>
-                </li>
             </ul>
         </div>
 
@@ -118,6 +151,55 @@ const googleMapsUrl = computed(() => {
                     <p class="text-xs text-gray-700 dark:text-gray-300 m-0 italic">{{ customer.address.cross_streets }}</p>
                 </div>
             </div>
+        </div>
+
+        <!-- Datos de facturación -->
+        <div v-if="hasFiscalData" class="pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
+            <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0 mb-4 flex items-center gap-2">
+                <i class="pi pi-receipt !text-[10px]"></i> Datos de facturación
+            </h2>
+
+            <ul class="m-0 p-0 list-none space-y-4">
+                <li v-if="customer.company_name" class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center flex-shrink-0 border border-emerald-100 dark:border-emerald-900/30">
+                        <i class="pi pi-building !text-[10px] text-emerald-500"></i>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="font-medium text-sm text-gray-900 dark:text-white m-0">{{ customer.company_name }}</span>
+                        <span class="text-[10px] uppercase tracking-widest text-gray-500 m-0 mt-0.5">Razón social</span>
+                    </div>
+                </li>
+
+                <li v-if="customer.tax_id" class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0 border border-blue-100 dark:border-blue-900/30">
+                        <i class="pi pi-hashtag !text-[10px] text-blue-500"></i>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="font-mono font-medium text-sm text-gray-900 dark:text-white m-0">{{ customer.tax_id }}</span>
+                        <span class="text-[10px] uppercase tracking-widest text-gray-500 m-0 mt-0.5">RFC</span>
+                    </div>
+                </li>
+
+                <li v-if="fiscalRegime" class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center flex-shrink-0 border border-amber-100 dark:border-amber-900/30">
+                        <i class="pi pi-book !text-[10px] text-amber-500"></i>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="font-medium text-sm text-gray-900 dark:text-white m-0">{{ fiscalRegimeLabel }}</span>
+                        <span class="text-[10px] uppercase tracking-widest text-gray-500 m-0 mt-0.5">Régimen fiscal</span>
+                    </div>
+                </li>
+
+                <li v-if="fiscalPostalCode" class="flex items-center gap-3 pb-2">
+                    <div class="w-8 h-8 rounded-full bg-rose-50 dark:bg-rose-900/20 flex items-center justify-center flex-shrink-0 border border-rose-100 dark:border-rose-900/30">
+                        <i class="pi pi-map !text-[10px] text-rose-500"></i>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="font-mono font-medium text-sm text-gray-900 dark:text-white m-0">{{ fiscalPostalCode }}</span>
+                        <span class="text-[10px] uppercase tracking-widest text-gray-500 m-0 mt-0.5">Código postal fiscal</span>
+                    </div>
+                </li>
+            </ul>
         </div>
     </div>
 </template>
