@@ -155,6 +155,38 @@ function itemRetentions(item) {
 }
 
 // ──────────────────────────────────────
+// Retention detection for PDF display
+// ──────────────────────────────────────
+const normalizeRfc = (rfc) => (rfc || '').replace(/[\s-]/g, '').toUpperCase();
+const isPersonaFisicaPdf = (rfc) => normalizeRfc(rfc).length === 13;
+const isPersonaMoralPdf = (rfc) => normalizeRfc(rfc).length === 12;
+
+const retentionApplies = computed(() => {
+    const emitterRfc = props.invoice?.fiscal_profile?.rfc;
+    const receiverRfc = props.invoice?.receiver_rfc;
+    if (!emitterRfc || !receiverRfc) return false;
+    return isPersonaFisicaPdf(emitterRfc) && isPersonaMoralPdf(receiverRfc);
+});
+
+const emitterRegime = computed(() => props.invoice?.fiscal_profile?.regimen_fiscal);
+
+const retentionMessage = computed(() => {
+    if (!retentionApplies.value) return null;
+    const regime = emitterRegime.value;
+
+    if (regime === '626') {
+        return '';
+    }
+    if (regime === '606') {
+        return '';
+    }
+    if (regime === '612') {
+        return '';
+    }
+    return '';
+});
+
+// ──────────────────────────────────────
 // Combined emitter postal code + date + time
 // ──────────────────────────────────────
 const lugarFechaEmision = computed(() => {
@@ -299,11 +331,11 @@ const lugarFechaEmision = computed(() => {
 
                                         <!-- Tax badges inline -->
                                         <span v-for="t in itemTransfers(item)" :key="t.impuesto + 'T'"
-                                            class="inline-flex items-center gap-0.5 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[8px] text-emerald-700 font-medium">
+                                            class="inline-flex items-center gap-0.5 bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded text-[8px] text-gray-700 font-medium">
                                             {{ t.impuesto === '002' ? 'IVA' : t.impuesto }} {{ (t.tasaOCuota * 100).toFixed(0) }}%: {{ formatCurrency(t.importe) }}
                                         </span>
                                         <span v-for="r in itemRetentions(item)" :key="r.impuesto + 'R'"
-                                            class="inline-flex items-center gap-0.5 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded text-[8px] text-red-700 font-medium">
+                                            class="inline-flex items-center gap-0.5 bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded text-[8px] text-gray-700 font-medium">
                                             {{ retentionLabel(r) }} {{ (r.tasaOCuota * 100).toFixed(0) }}%: −{{ formatCurrency(r.importe) }}
                                         </span>
 
@@ -331,10 +363,10 @@ const lugarFechaEmision = computed(() => {
                         <span class="font-medium text-gray-600">Moneda:</span> {{ currencyLabel(invoice.currency) }}
                     </div>
                     <div class="flex gap-1 text-gray-900">
-                        <span class="font-medium text-gray-600">Forma de pago:</span> {{ invoice.payment_form }} — {{ paymentFormLabel(invoice.payment_form) }}
+                        <span class="font-medium text-gray-600">Forma de pago:</span> {{ invoice.payment_form }} - {{ paymentFormLabel(invoice.payment_form) }}
                     </div>
                     <div class="flex gap-1 text-gray-900">
-                        <span class="font-medium text-gray-600">Método de pago:</span> {{ invoice.payment_method }} — {{ paymentMethodLabel(invoice.payment_method) }}
+                        <span class="font-medium text-gray-600">Método de pago:</span> {{ invoice.payment_method }} - {{ paymentMethodLabel(invoice.payment_method) }}
                     </div>
                 </div>
 
@@ -355,8 +387,8 @@ const lugarFechaEmision = computed(() => {
                                 <td class="py-0.5 text-right text-gray-900">{{ formatCurrency(t.importe) }}</td>
                             </tr>
                             <tr v-for="r in groupedRetentions" :key="r.impuesto" class="border-b border-gray-100">
-                                <td class="py-0.5 pr-6 text-right text-red-500 font-medium">{{ retentionLabel(r) }} retenido</td>
-                                <td class="py-0.5 text-right text-red-500">− {{ formatCurrency(r.importe) }}</td>
+                                <td class="py-0.5 pr-6 text-right text-gray-600 font-medium">{{ retentionLabel(r) }} retenido</td>
+                                <td class="py-0.5 text-right text-gray-900">− {{ formatCurrency(r.importe) }}</td>
                             </tr>
                             <tr>
                                 <td class="py-0.5 pr-6 text-right font-bold text-gray-900 text-xs">Total</td>
@@ -367,16 +399,16 @@ const lugarFechaEmision = computed(() => {
                 </div>
             </div>
 
-            <hr class="border-gray-200 mb-4">
+            <hr class="border-gray-200 mb-2">
 
             <!-- ════════════════════════════════════════
                  BLOCK 4 — Sellos + QR + Certificador (parallel)
                  ════════════════════════════════════════ -->
-            <div class="flex gap-5 mb-5">
+            <div class="flex gap-5 mb-3">
                 <!-- QR + Certifier -->
-                <div class="shrink-0 flex flex-col items-center gap-1.5">
+                <div class="shrink-0 flex flex-col items-center gap-0">
                     <img v-if="qrCodeSrc" :src="qrCodeSrc" alt="QR verificación SAT" class="w-[90px] h-[90px]" />
-                    <span class="text-[7px] text-gray-400 text-center leading-tight">Sello digital<br>del SAT</span>
+                    <span class="text-[8px] text-gray-400 text-center leading-tight">Sello digital del SAT</span>
                 </div>
 
                 <!-- Certifier data -->

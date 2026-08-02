@@ -100,6 +100,48 @@ onMounted(() => {
 const emitterRegime = ref('');
 const emitterPostalCode = ref('');
 
+// ──────────────────────────────────────
+// PAC readiness check (certificates + manifest)
+// ──────────────────────────────────────
+// A profile can only stamp when it has BOTH:
+//   1. CSD certificates uploaded (certificate_number set)
+//   2. The SAT/SW manifest signed (manifest_signed_at set)
+const canStamp = computed(() => {
+    const profile = selectedFiscalProfile.value;
+    if (!profile) return false;
+    return !!profile.certificate_number && !!profile.manifest_signed_at;
+});
+
+const profileSelected = computed(() => !!selectedFiscalProfile.value);
+
+// Which required items are missing for the selected profile.
+// Empty array means the profile is fully ready to stamp.
+const readinessMissing = computed(() => {
+    const profile = selectedFiscalProfile.value;
+    if (!profile) return [];
+    const missing = [];
+    if (!profile.certificate_number) missing.push('los certificados');
+    if (!profile.manifest_signed_at) missing.push('el manifiesto');
+    return missing;
+});
+
+// Human-readable warning message. Returns null when there is nothing to warn
+// about (profile ready, or no profile selected yet — e.g. multiple profiles
+// where the user must pick one first).
+const readinessMessage = computed(() => {
+    if (!profileSelected.value) return null;
+    const missing = readinessMissing.value;
+    if (missing.length === 0) return null;
+    return `No se puede timbrar porque a este RFC emisor le faltan ${missing.join(' y ')}. Solo puedes crear pre-facturas.`;
+});
+
+// Link target for the warning — goes straight to the selected profile's detail page.
+const profileSettingsUrl = computed(() => {
+    const profile = selectedFiscalProfile.value;
+    if (!profile) return '#';
+    return route('billing.fiscal-profiles.show', profile.id);
+});
+
 watch(selectedFiscalProfile, (profile) => {
     emitterRegime.value = profile?.regimen_fiscal || '';
     emitterPostalCode.value = profile?.postal_code || '';
@@ -123,6 +165,7 @@ const form = useForm({
     currency: isEdit ? (inv?.currency || 'MXN') : 'MXN',
     exchange_rate: isEdit && inv?.exchange_rate ? parseFloat(inv.exchange_rate) : null,
     exportacion: isEdit ? (inv?.exportacion || '01') : '01',
+    tipo_comprobante: isEdit ? (inv?.tipo_comprobante || 'I') : 'I',
     customer_id: isEdit ? (inv?.customer_id || null) : null,
     items: isEdit ? mapInvoiceItems(inv) : [],
     draft: false,
@@ -200,6 +243,40 @@ const satUnitOptions = [
 ];
 
 // ──────────────────────────────────────
+// Comprobante type (TipoDeComprobante)
+// ──────────────────────────────────────
+const comprobanteTypeOptions = [
+    { value: 'I', label: 'I - Ingreso', description: 'Factura estándar' },
+    { value: 'E', label: 'E - Egreso', description: 'Nota de crédito' },
+    { value: 'P', label: 'P - Pago', description: 'Recibo de pago de factura PPD' },
+    { value: 'N', label: 'N - Nómina', description: 'Recibo de nómina' },
+    { value: 'T', label: 'T - Traslado', description: 'Carta porte / traslado' },
+];
+
+// ──────────────────────────────────────
+// Exportación (catalogo SAT c_Exportacion)
+// ──────────────────────────────────────
+const exportacionOptions = [
+    { value: '01', label: '01 - No aplica', description: '' },
+    { value: '02', label: '02 - Definitiva con clave de pedimento A1', description: '' },
+    { value: '03', label: '03 - Temporal', description: '' },
+    { value: '04', label: '04 - Definitiva con clave de pedimento distinta a A1 o no requerida', description: '' },
+];
+
+// Lookup helpers — when using optionValue the #value slot receives the raw
+// string value, not the option object, so we resolve the label manually.
+// They also tolerate being passed the full option object (defensive).
+const getComprobanteTypeLabel = (val) => {
+    if (val && typeof val === 'object') return val.label || '';
+    return comprobanteTypeOptions.find(o => o.value === val)?.label || val || '';
+};
+
+const getExportacionLabel = (val) => {
+    if (val && typeof val === 'object') return val.label || '';
+    return exportacionOptions.find(o => o.value === val)?.label || val || '';
+};
+
+// ──────────────────────────────────────
 // Concepts management
 // ──────────────────────────────────────
 const blankItem = () => ({
@@ -259,7 +336,7 @@ const onConceptSelect = (event, index) => {
 // ──────────────────────────────────────
 // Tax calculator
 // ──────────────────────────────────────
-const { subtotal, ivaTrasladado, isrRetenido, ivaRetenido, granTotal, formatCurrency, breakdown, retentionApplies, isResico } = useInvoiceTaxes(form, fiscalProfilesList, customersList);
+const { subtotal, ivaTrasladado, isrRetenido, ivaRetenido, granTotal, formatCurrency, breakdown, retentionApplies, isResico, retentionMessage } = useInvoiceTaxes(form, fiscalProfilesList, customersList);
 
 // ──────────────────────────────────────
 // Customer autocomplete (receptor)
@@ -385,6 +462,66 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Razón social</label><InputText :modelValue="selectedFiscalProfile.razon_social" readonly class="w-full" :pt="readonlyPt" /></div>
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Régimen fiscal</label><InputText :modelValue="emitterRegime" readonly class="w-full" :pt="readonlyPt" /></div>
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">C. P.</label><InputText :modelValue="emitterPostalCode" readonly class="w-full" :pt="readonlyPt" /></div>
+                </div>
+
+                <!-- ═══ PAC readiness warning (below emitter data) ═══ -->
+                <div v-if="mode === 'create' && readinessMessage" class="flex items-start gap-2.5 px-4 py-3 mt-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/40">
+                    <i class="pi pi-exclamation-triangle !text-sm text-amber-500 mt-px shrink-0"></i>
+                    <div class="flex flex-col gap-1">
+                        <span class="text-xs text-amber-700 dark:text-amber-300 font-medium leading-relaxed">
+                            {{ readinessMessage }}
+                        </span>
+                        <a :href="profileSettingsUrl" class="text-[11px] text-primary-500 hover:text-primary-600 font-medium underline">Completar configuración del RFC emisor</a>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Tipo de comprobante *</label>
+                        <Select
+                            v-model="form.tipo_comprobante"
+                            :options="comprobanteTypeOptions"
+                            optionLabel="label"
+                            optionValue="value"
+                            placeholder="Selecciona el tipo de comprobante"
+                            filter
+                            class="w-full"
+                            :pt="selectPt"
+                        >
+                            <template #value="s">
+                                <span v-if="s.value" class="text-sm font-medium">{{ getComprobanteTypeLabel(s.value) }}</span>
+                            </template>
+                            <template #option="s">
+                                <div class="flex items-center justify-between gap-3 py-0.5 w-full">
+                                    <span class="text-sm font-medium shrink-0">{{ s.option.label }}</span>
+                                    <span class="text-[10px] text-zinc-500 leading-tight text-right min-w-0">{{ s.option.description }}</span>
+                                </div>
+                            </template>
+                        </Select>
+                        <Message v-if="form.errors.tipo_comprobante" severity="error" variant="simple" size="small">{{ form.errors.tipo_comprobante }}</Message>
+                    </div>
+
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Exportación</label>
+                        <Select
+                            v-model="form.exportacion"
+                            :options="exportacionOptions"
+                            optionLabel="label"
+                            optionValue="value"
+                            placeholder="Selecciona"
+                            filter
+                            class="w-full"
+                            :pt="selectPt"
+                        >
+                            <template #value="s">
+                                <span v-if="s.value" class="text-sm font-medium">{{ getExportacionLabel(s.value) }}</span>
+                            </template>
+                            <template #option="s">
+                                <span class="text-sm font-medium">{{ s.option.label }}</span>
+                            </template>
+                        </Select>
+                        <Message v-if="form.errors.exportacion" severity="error" variant="simple" size="small">{{ form.errors.exportacion }}</Message>
+                    </div>
                 </div>
             </div>
 
@@ -541,6 +678,7 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                     :gran-total="granTotal"
                     :retention-applies="retentionApplies"
                     :is-resico="isResico"
+                    :retention-message="retentionMessage"
                 />
             </div>
 
@@ -548,7 +686,7 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
             <div class="flex justify-start gap-3 sticky bottom-4 z-20">
                 <template v-if="mode === 'create'">
                     <Button type="button" label="Guardar como prefactura" icon="pi pi-save" severity="secondary" outlined @click="submit(true)" :loading="form.processing" class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold shadow-lg" />
-                    <Button type="submit" label="Timbrar ahora" icon="pi pi-shield" :loading="form.processing" class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold shadow-lg" />
+                    <Button type="submit" label="Timbrar ahora" icon="pi pi-shield" :loading="form.processing" :disabled="!canStamp" :class="['!rounded-full !uppercase !tracking-widest !text-xs !font-bold shadow-lg', !canStamp ? 'opacity-50 cursor-not-allowed' : '']" v-tooltip.top="!canStamp ? 'Completa los certificados y firma el manifiesto del SAT antes de poder timbrar facturas' : ''" />
                 </template>
                 <template v-else>
                     <Button type="submit" label="Guardar cambios" icon="pi pi-save" :loading="form.processing" class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold shadow-lg" />

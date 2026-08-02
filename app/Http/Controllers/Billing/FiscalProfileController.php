@@ -110,7 +110,7 @@ class FiscalProfileController extends Controller implements HasMiddleware
             ]);
 
             return redirect()->route('billing.settings.index')
-                ->with('success', '<strong>Paso 1 completado:</strong> Datos fiscales conectados.');
+                ->with('success', 'Paso 1 completado: Datos fiscales conectados.');
         } catch (\Exception $e) {
             DB::rollBack();
 

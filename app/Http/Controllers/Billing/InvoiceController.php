@@ -171,7 +171,7 @@ class InvoiceController extends Controller implements HasMiddleware
 
         // Only fetch profiles when billing is enabled and there are active profiles with PAC subaccounts
         $fiscalProfiles = $facturacionHabilitada
-            ? ($subscription?->fiscalProfiles()->active()->whereNotNull('sw_user_id')->get(['id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code']) ?? [])
+            ? ($subscription?->fiscalProfiles()->active()->whereNotNull('sw_user_id')->get(['id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code', 'manifest_signed_at', 'certificate_number']) ?? [])
             : [];
 
         $hasFiscalProfiles = $facturacionHabilitada
@@ -230,7 +230,7 @@ class InvoiceController extends Controller implements HasMiddleware
 
         $fiscalProfiles = $subscription?->fiscalProfiles()->active()
             ->whereNotNull('sw_user_id')
-            ->get(['id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code']) ?? collect();
+            ->get(['id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code', 'manifest_signed_at', 'certificate_number']) ?? collect();
 
         return Inertia::render('Billing/Invoices/Edit', [
             'invoice'          => $invoice,
@@ -443,26 +443,48 @@ class InvoiceController extends Controller implements HasMiddleware
 
     /**
      * Group retained taxes (retenciones) by Impuesto for the PDF summary.
+     *
+     * Handles both the multi-retention array (retentions JSON column)
+     * and legacy single retention fields (retained_tax_type/amount).
      */
     private function groupRetentionsByType(Invoice $invoice): array
     {
         $groups = [];
 
         foreach ($invoice->items as $item) {
-            if (! $item->retained_tax_type || (float) $item->retained_tax_amount <= 0) {
-                continue;
+            $allRetentions = [];
+
+            // Multi-retention array (new format — takes precedence)
+            if (! empty($item->retentions) && is_array($item->retentions)) {
+                foreach ($item->retentions as $ret) {
+                    $retType   = $ret['type'] ?? $ret['impuesto'] ?? null;
+                    $retAmount = (float) ($ret['amount'] ?? $ret['importe'] ?? 0);
+                    if ($retType && $retAmount > 0) {
+                        $allRetentions[] = ['impuesto' => $retType, 'importe' => $retAmount];
+                    }
+                }
             }
 
-            $key = $item->retained_tax_type;
-
-            if (! isset($groups[$key])) {
-                $groups[$key] = [
+            // Legacy single retention field — only used when no multi-retention array
+            if (empty($allRetentions) && $item->retained_tax_type && (float) $item->retained_tax_amount > 0) {
+                $allRetentions[] = [
                     'impuesto' => $item->retained_tax_type,
-                    'importe'  => 0.0,
+                    'importe'  => (float) $item->retained_tax_amount,
                 ];
             }
 
-            $groups[$key]['importe'] = round($groups[$key]['importe'] + (float) $item->retained_tax_amount, 2);
+            foreach ($allRetentions as $ret) {
+                $key = $ret['impuesto'];
+
+                if (! isset($groups[$key])) {
+                    $groups[$key] = [
+                        'impuesto' => $ret['impuesto'],
+                        'importe'  => 0.0,
+                    ];
+                }
+
+                $groups[$key]['importe'] = round($groups[$key]['importe'] + $ret['importe'], 2);
+            }
         }
 
         return array_values($groups);

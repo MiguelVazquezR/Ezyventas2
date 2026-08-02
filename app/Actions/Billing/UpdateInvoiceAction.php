@@ -50,6 +50,7 @@ class UpdateInvoiceAction
                 'receiver_postal_code' => $data['receiver_postal_code'],
                 'cfdi_use'             => $data['cfdi_use'],
                 'exportacion'          => $data['exportacion'] ?? '01',
+                'tipo_comprobante'     => $data['tipo_comprobante'] ?? 'I',
                 'payment_form'         => $data['payment_form'],
                 'payment_method'       => $data['payment_method'],
                 'currency'             => $data['currency'] ?? 'MXN',

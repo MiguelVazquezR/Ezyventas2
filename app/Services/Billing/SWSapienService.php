@@ -42,6 +42,7 @@ class SWSapienService
             'receiver_postal_code' => $data['receiver_postal_code'],
             'cfdi_use'             => $data['cfdi_use'],
             'exportacion'          => $data['exportacion'] ?? '01',
+            'tipo_comprobante'     => $data['tipo_comprobante'] ?? 'I',
             'payment_form'         => $data['payment_form'],
             'payment_method'       => $data['payment_method'],
             'currency'             => $data['currency'] ?? 'MXN',
@@ -294,7 +295,7 @@ class SWSapienService
             'Version'           => '4.0',
             'Folio'             => $invoice->folio,
             'Fecha'             => $invoice->fecha ?: now()->format('Y-m-d\TH:i:s'),
-            'TipoDeComprobante' => 'I',
+            'TipoDeComprobante' => $invoice->tipo_comprobante ?: 'I',
             'LugarExpedicion'   => $invoice->fiscalProfile->postal_code ?? '',
             'Exportacion'       => $invoice->exportacion ?: '01',
             'FormaPago'         => $invoice->payment_form,
@@ -411,6 +412,15 @@ class SWSapienService
         // ── Authenticate as the subaccount so the PAC uses that subaccount's CSD and stamp quota ──
         if (! $invoice->fiscalProfile) {
             throw new \RuntimeException('La factura no tiene un perfil fiscal asociado.');
+        }
+
+        // ── Guard: the SW Sapien manifest must be signed before stamping ──
+        // This is the third and final step to complete the PAC subaccount setup.
+        // Without a signed manifest the PAC will reject any stamping request.
+        if (! $invoice->fiscalProfile->hasSignedManifest()) {
+            throw new \RuntimeException(
+                'No se puede timbrar porque el manifiesto del SAT no ha sido firmado. Ve a Configuración > Facturación y usa la FIEL para completar el registro de tu RFC emisor.'
+            );
         }
 
         $subaccountToken = $this->authenticateSubaccount($invoice->fiscalProfile);
