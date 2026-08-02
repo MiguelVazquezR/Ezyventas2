@@ -65,42 +65,94 @@ export function useInvoiceTaxes(form, fiscalProfiles, customers) {
 
     // ──────────────────────────────────────
     // Retention regime detection
+    //
+    // Retentions apply when:
+    //  1. Emitter is Persona Física (RFC 13 chars)
+    //  2. Receiver is Persona Moral (RFC 12 chars)
+    //
+    // The receiver check uses form.receiver_rfc directly (not just
+    // the selected customer) because the customer field is optional.
     // ──────────────────────────────────────
     const retentionApplies = computed(() => {
         const emitter = selectedProfile.value;
-        const receptor = selectedCustomer.value;
-        if (!emitter?.rfc || !receptor?.tax_id) return false;
-        return isPersonaFisica(emitter.rfc) && isPersonaMoral(receptor.tax_id);
+        if (!emitter?.rfc || !isPersonaFisica(emitter.rfc)) return false;
+
+        // Check receiver RFC: try customer first, fall back to manual RFC entry
+        const receiverRfc = selectedCustomer.value?.tax_id || form.receiver_rfc;
+        if (!receiverRfc) return false;
+
+        return isPersonaMoral(receiverRfc);
     });
 
     const isResico = computed(() =>
         selectedProfile.value?.regimen_fiscal === '626',
     );
 
+    /**
+     * Human-readable retention explanation for the UI.
+     * Returns null when no retentions apply.
+     */
+    const retentionMessage = computed(() => {
+        if (!retentionApplies.value) return null;
+
+        const regime = selectedProfile.value?.regimen_fiscal;
+
+        if (regime === '626') {
+            return 'Por disposición del SAT, cuando una persona física del Régimen Simplificado de Confianza (RESICO) factura a una persona moral, esta última debe retener el 1.25 % de ISR sobre el monto del concepto.';
+        }
+
+        if (regime === '606') {
+            return 'Por disposición del SAT, cuando una persona física en régimen de Arrendamiento factura a una persona moral, esta última debe retener el 10 % de ISR y las dos terceras partes del IVA trasladado.';
+        }
+
+        // Honorarios / Servicios Profesionales
+        if (regime === '612') {
+            return 'Por disposición del SAT, cuando una persona física por servicios profesionales (honorarios) factura a una persona moral, esta última debe retener el 10 % de ISR y las dos terceras partes del IVA trasladado.';
+        }
+
+        return 'Aplican retenciones — Emisor Persona Física → Receptor Persona Moral.';
+    });
+
     // ──────────────────────────────────────
     // Per-item rate resolver
+    //
+    // Retention rates are driven by the emitter's SAT fiscal regime.
+    // concepto_tipo on the item acts as an optional override for
+    // edge cases (flete, autotransporte) and backward compatibility.
     // ──────────────────────────────────────
     function getRetentionRates(item) {
         if (!retentionApplies.value) {
             return { isrRate: 0, ivaRetentionRate: 0 };
         }
 
+        const regime = selectedProfile.value?.regimen_fiscal;
         const tipo = item.concepto_tipo;
 
-        // RESICO (626) — always 1.25% ISR; IVA retention only if "servicio"
-        if (isResico.value) {
+        // ── RESICO (626) → 1.25 % ISR always, no IVA retention ──
+        if (regime === '626') {
             return {
                 isrRate: 0.0125,
                 ivaRetentionRate: tipo === 'servicio' ? 0.106667 : 0,
             };
         }
 
-        // Honorarios / Arrendamiento → 10% ISR + 2/3 IVA
+        // ── Arrendamiento (606) → 10 % ISR + 2/3 IVA ──
+        if (regime === '606') {
+            return { isrRate: 0.10, ivaRetentionRate: 0.106667 };
+        }
+
+        // ── Honorarios / Servicios Profesionales → 10 % ISR + 2/3 IVA ──
+        // Regime 612 = Personas Físicas con Actividades Empresariales y Profesionales
+        if (regime === '612') {
+            return { isrRate: 0.10, ivaRetentionRate: 0.106667 };
+        }
+
+        // ── Fallback: concepto_tipo for backward compat ──
         if (tipo === 'honorarios' || tipo === 'arrendamiento') {
             return { isrRate: 0.10, ivaRetentionRate: 0.106667 };
         }
 
-        // Flete / Autotransporte → 0% ISR + 4% IVA
+        // Flete / Autotransporte → 0 % ISR + 4 % IVA
         if (tipo === 'flete' || tipo === 'autotransporte') {
             return { isrRate: 0, ivaRetentionRate: 0.04 };
         }
@@ -188,6 +240,7 @@ export function useInvoiceTaxes(form, fiscalProfiles, customers) {
         // Regime flags
         retentionApplies,
         isResico,
+        retentionMessage,
         // Per-item
         breakdown,
         // Aggregated

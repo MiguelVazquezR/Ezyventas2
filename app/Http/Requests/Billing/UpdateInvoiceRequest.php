@@ -19,6 +19,7 @@ class UpdateInvoiceRequest extends FormRequest
 
             // --- Global CFDI 4.0 attributes ---
             'exportacion'           => ['required', 'string', 'max:5', 'in:01,02,03,04'],
+            'tipo_comprobante'      => ['nullable', 'string', 'max:5', 'in:I,E,P,N,T'],
 
             // --- Receiver (receptor) ---
             'receiver_rfc'          => ['required', 'string'],

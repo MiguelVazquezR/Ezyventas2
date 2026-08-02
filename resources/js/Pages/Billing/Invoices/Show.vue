@@ -52,6 +52,74 @@ const statusLabel = computed(() => {
     return map[props.invoice.status] || props.invoice.status;
 });
 
+// ──────────────────────────────────────
+// Retention detection & breakdown
+// ──────────────────────────────────────
+const normalizeRfc = (rfc) => (rfc || '').replace(/[\s-]/g, '').toUpperCase();
+const isPersonaFisica = (rfc) => normalizeRfc(rfc).length === 13;
+const isPersonaMoral = (rfc) => normalizeRfc(rfc).length === 12;
+
+const retentionApplies = computed(() => {
+    const emitterRfc = props.invoice.fiscal_profile?.rfc;
+    const receiverRfc = props.invoice.receiver_rfc;
+    if (!emitterRfc || !receiverRfc) return false;
+    return isPersonaFisica(emitterRfc) && isPersonaMoral(receiverRfc);
+});
+
+const emitterRegime = computed(() => props.invoice.fiscal_profile?.regimen_fiscal);
+
+const retentionMessage = computed(() => {
+    if (!retentionApplies.value) return null;
+    const regime = emitterRegime.value;
+
+    if (regime === '626') {
+        return 'Por disposición del SAT, cuando una persona física del Régimen Simplificado de Confianza (RESICO) factura a una persona moral, esta última debe retener el 1.25 % de ISR sobre el monto del concepto.';
+    }
+    if (regime === '606') {
+        return 'Por disposición del SAT, cuando una persona física en régimen de Arrendamiento factura a una persona moral, esta última debe retener el 10 % de ISR y las dos terceras partes del IVA trasladado.';
+    }
+    if (regime === '612') {
+        return 'Por disposición del SAT, cuando una persona física por servicios profesionales (honorarios) factura a una persona moral, esta última debe retener el 10 % de ISR y las dos terceras partes del IVA trasladado.';
+    }
+    return 'Aplican retenciones — Emisor Persona Física → Receptor Persona Moral.';
+});
+
+// Group retentions by type from all items
+const groupedRetentions = computed(() => {
+    const groups = {};
+    if (!props.invoice.items) return [];
+
+    props.invoice.items.forEach(item => {
+        const allRetentions = [];
+
+        // Multi-retention array (new format)
+        if (Array.isArray(item.retentions)) {
+            allRetentions.push(...item.retentions);
+        }
+
+        // Legacy single retention
+        if (allRetentions.length === 0 && item.retained_tax_type && parseFloat(item.retained_tax_amount) > 0) {
+            allRetentions.push({
+                type: item.retained_tax_type,
+                rate: parseFloat(item.retained_tax_rate || 0),
+                amount: parseFloat(item.retained_tax_amount || 0),
+            });
+        }
+
+        allRetentions.forEach(r => {
+            const key = r.type || r.impuesto;
+            if (!key) return;
+            if (!groups[key]) groups[key] = { type: key, amount: 0, rate: 0 };
+            groups[key].amount += parseFloat(r.amount || r.importe || 0);
+            groups[key].rate = parseFloat(r.rate || r.tasaOCuota || groups[key].rate || 0);
+        });
+    });
+
+    return Object.values(groups);
+});
+
+const retentionLabel = (type) => type === '001' ? 'ISR retenido' : type === '002' ? 'IVA retenido' : `Retención ${type}`;
+
 const statusSeverity = computed(() => {
     const map = {
         borrador: 'info',
@@ -429,6 +497,26 @@ const tagPt = {
                             <span class="text-sm text-gray-500 dark:text-gray-400">IVA trasladado</span>
                             <span class="text-xl font-light tracking-tight text-gray-900 dark:text-white">
                                 {{ formatCurrency(invoice.taxes_total) }}
+                            </span>
+                        </div>
+
+                        <!-- Retention banner -->
+                        <div v-if="retentionApplies" class="flex items-start gap-2.5 px-4 py-3 my-2 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/40">
+                            <i class="pi pi-info-circle !text-sm text-amber-500 mt-px shrink-0"></i>
+                            <p class="text-xs text-amber-700 dark:text-amber-300 font-medium leading-relaxed m-0">
+                                {{ retentionMessage }}
+                            </p>
+                        </div>
+
+                        <!-- Retentions -->
+                        <div
+                            v-for="ret in groupedRetentions"
+                            :key="ret.type"
+                            class="flex items-center justify-between py-3 border-b border-amber-100 dark:border-amber-900/20"
+                        >
+                            <span class="text-sm text-amber-700 dark:text-amber-700">{{ retentionLabel(ret.type) }}</span>
+                            <span class="text-xl font-light tracking-tight text-amber-700 dark:text-amber-700">
+                                − {{ formatCurrency(ret.amount) }}
                             </span>
                         </div>
 

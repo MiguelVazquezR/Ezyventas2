@@ -35,6 +35,7 @@ class Invoice extends Model
         'receiver_postal_code',
         'cfdi_use',
         'exportacion',
+        'tipo_comprobante',
         'payment_form',
         'payment_method',
         'currency',

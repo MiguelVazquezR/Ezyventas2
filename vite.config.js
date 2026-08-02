@@ -26,7 +26,7 @@ export default defineConfig({
             ]
         })
     ],
-    // comentar los siguientes bloques si no se usa el dominio ezyventas2.test
+    //comentar los siguientes bloques si no se usa el dominio ezyventas2.test
     // server: {
     //     detectTls: 'ezyventas2.test',
     //     // 💡 Añade este bloque hmr para corregir el WebSocket de Vite:

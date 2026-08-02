@@ -65,29 +65,20 @@ watch(isSidebarActive, (newVal) => {
 
 let removeFlashListener = null;
 
-/**
- * Calculate toast duration based on message length so users have
- * enough time to read longer error/warning messages.
- *
- * Formula: 60 ms per character, with a floor of 6 s and a ceiling of 14 s.
- * ~100 chars → 6 s | ~150 chars → 9 s | 200+ chars → 12-14 s
- */
-const toastLife = (detail) => Math.max(6000, Math.min(14000, (detail || '').length * 60));
-
 const handleFlashMessages = (event) => {
     const flash = event.detail.page.props.flash;
     if (flash) {
         if (flash.success) {
-            toast.add({ severity: 'success', summary: 'Éxito', detail: flash.success, life: toastLife(flash.success) });
+            toast.add({ severity: 'success', summary: 'Éxito', detail: flash.success, life: 6000, escape: false });
         }
         if (flash.error) {
-            toast.add({ severity: 'error', summary: 'Error', detail: flash.error, life: toastLife(flash.error) });
+            toast.add({ severity: 'error', summary: 'Error', detail: flash.error, life: 6000, escape: false });
         }
         if (flash.warning) {
-            toast.add({ severity: 'warn', summary: 'Advertencia', detail: flash.warning, life: toastLife(flash.warning) });
+            toast.add({ severity: 'warn', summary: 'Advertencia', detail: flash.warning, life: 6000, escape: false });
         }
         if (flash.info) {
-            toast.add({ severity: 'info', summary: 'Información', detail: flash.info, life: toastLife(flash.info) });
+            toast.add({ severity: 'info', summary: 'Información', detail: flash.info, life: 6000, escape: false });
         }
     }
 };
@@ -237,7 +228,7 @@ watch(activeSession, (newSession, oldSession) => {
         </div>
         <div class="layout-mask animate-fadein"></div>
     </div>
-    <Toast />
+    <Toast :escape="false" />
     <ConfirmDialog class="max-w-2xl" />
 
     <!-- --- INICIO: NUEVO MODAL AÑADIDO --- -->
@@ -249,81 +240,14 @@ watch(activeSession, (newSession, oldSession) => {
     <!-- --- FIN: NUEVO MODAL AÑADIDO --- -->
 
     <!-- ── AI Chat floating trigger button ── -->
-    <div class="ai-glow-ring">
-        <button
-            class="w-12 h-12 rounded-full bg-[#1a1a1a] dark:bg-[#232323] shadow-lg hover:scale-105 active:scale-95 flex items-center justify-center transition-transform duration-200 border-0 cursor-pointer z-10"
-            @click="aiDrawerVisible = true"
-            :aria-label="'Abrir asistente IA'"
-        >
-            <i class="pi pi-sparkles !text-white !text-xl" />
-        </button>
-    </div>
+    <button
+        class="fixed bottom-2 right-2 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-200 border-0 cursor-pointer"
+        @click="aiDrawerVisible = true"
+        :aria-label="'Abrir asistente IA'"
+    >
+        <i class="pi pi-sparkles !text-white !text-xl" />
+    </button>
 
     <!-- ── AI Chat Drawer ── -->
     <AiChatDrawer v-model:visible="aiDrawerVisible" />
 </template>
-
-<style scoped>
-/* ── AI Glow Ring Animation ── */
-.ai-glow-ring {
-    position: fixed;
-    bottom: 0.5rem;
-    right: 0.5rem;
-    z-index: 50;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 50%;
-    background: conic-gradient(
-        from 0deg,
-        #f97316,
-        #f59e0b,
-        #eab308,
-        #f43f5e,
-        #f97316
-    );
-    background-size: 300% 300%;
-    background-position: 0% 0%;
-    padding: 2px;
-    animation: ai-ring-shift 4s linear infinite;
-    /* The ring colors flow around, but the div itself does NOT rotate,
-       so the button inside stays perfectly still. */
-}
-
-/* Outer glow halo that pulses in brightness */
-.ai-glow-ring::before {
-    content: '';
-    position: absolute;
-    inset: -6px;
-    border-radius: 50%;
-    background: conic-gradient(
-        from 180deg,
-        #f97316,
-        #f59e0b,
-        #eab308,
-        #f43f5e,
-        #f97316
-    );
-    background-size: 300% 300%;
-    background-position: 50% 50%;
-    filter: blur(16px);
-    opacity: 0.3;
-    z-index: -1;
-    animation: ai-glow-pulse 2.5s ease-in-out infinite;
-}
-
-/* Shift background position so the conic gradient colors flow around the ring */
-@keyframes ai-ring-shift {
-    0%   { background-position: 0% 0%; }
-    50%  { background-position: 100% 100%; }
-    100% { background-position: 0% 0%; }
-}
-
-/* Pulse the glow brightness up and down */
-@keyframes ai-glow-pulse {
-    0%, 100% { opacity: 0.2; filter: blur(16px); }
-    50%      { opacity: 0.6; filter: blur(22px); }
-}
-</style>
