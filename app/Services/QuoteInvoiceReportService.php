@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Enums\InvoiceStatus;
-use App\Models\Invoice;
+use App\Models\Billing\Invoice;
 use App\Models\Quote;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
