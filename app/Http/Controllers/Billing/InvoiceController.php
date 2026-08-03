@@ -177,11 +177,21 @@ class InvoiceController extends Controller implements HasMiddleware
         $hasFiscalProfiles = $facturacionHabilitada
             && ($subscription?->fiscalProfiles()->active()->whereNotNull('sw_user_id')->exists() ?? false);
 
+        // Facturas certificadas PPD para el buscador de "Documentos relacionados" (CFDI de pago)
+        $ppdInvoices = Invoice::forBranch($user->branch_id)
+            ->certified()
+            ->where('payment_method', 'PPD')
+            ->where('tipo_comprobante', 'I')
+            ->whereNull('canceled_at')
+            ->orderByDesc('issued_at')
+            ->get(['id', 'fiscal_profile_id', 'customer_id', 'series', 'folio', 'uuid', 'total', 'currency', 'receiver_rfc', 'receiver_legal_name', 'issued_at']);
+
         return Inertia::render('Billing/Invoices/Create', [
             'customers'            => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
             'fiscalProfiles'       => $fiscalProfiles,
             'hasFiscalProfiles'    => $hasFiscalProfiles,
             'facturacionHabilitada' => $facturacionHabilitada,
+            'ppdInvoices'          => $ppdInvoices,
             'products'             => Product::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'sku', 'selling_price', 'sat_product_code', 'sat_unit_code']),
             'services'             => Service::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'base_price', 'sat_product_code', 'sat_unit_code']),
         ]);
@@ -232,11 +242,21 @@ class InvoiceController extends Controller implements HasMiddleware
             ->whereNotNull('sw_user_id')
             ->get(['id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code', 'manifest_signed_at', 'certificate_number']) ?? collect();
 
+        // Facturas certificadas PPD para el buscador de "Documentos relacionados" (CFDI de pago)
+        $ppdInvoices = Invoice::forBranch($user->branch_id)
+            ->certified()
+            ->where('payment_method', 'PPD')
+            ->where('tipo_comprobante', 'I')
+            ->whereNull('canceled_at')
+            ->orderByDesc('issued_at')
+            ->get(['id', 'fiscal_profile_id', 'customer_id', 'series', 'folio', 'uuid', 'total', 'currency', 'receiver_rfc', 'receiver_legal_name', 'issued_at']);
+
         return Inertia::render('Billing/Invoices/Edit', [
             'invoice'          => $invoice,
             'customers'        => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
             'fiscalProfiles'   => $fiscalProfiles,
             'hasFiscalProfiles' => $fiscalProfiles->isNotEmpty(),
+            'ppdInvoices'      => $ppdInvoices,
             'products'         => Product::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'sku', 'selling_price', 'sat_product_code', 'sat_unit_code']),
             'services'         => Service::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'base_price', 'sat_product_code', 'sat_unit_code']),
         ]);

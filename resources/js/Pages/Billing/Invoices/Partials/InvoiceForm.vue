@@ -12,6 +12,7 @@ const props = defineProps({
     customers: { type: [Array, Object], default: () => [] },
     fiscalProfiles: { type: [Array, Object], default: () => [] },
     hasFiscalProfiles: { type: Boolean, default: false },
+    ppdInvoices: { type: [Array, Object], default: () => [] },
     products: { type: [Array, Object], default: () => [] },
     services: { type: [Array, Object], default: () => [] },
 });
@@ -41,19 +42,8 @@ const extractFiscalData = (customer) => {
 
 const fiscalProfilesList = computed(() => toArray(props.fiscalProfiles));
 const customersList = computed(() => toArray(props.customers));
+const ppdInvoicesList = computed(() => toArray(props.ppdInvoices));
 const hasProfiles = computed(() => props.hasFiscalProfiles || fiscalProfilesList.value.length > 0);
-
-// ──────────────────────────────────────
-// Sidebar navigation
-// ──────────────────────────────────────
-const formSections = [
-    { id: 'emisor', label: 'Emisor' },
-    { id: 'receptor', label: 'Receptor' },
-    { id: 'forma-pago', label: 'Forma y método de pago' },
-    { id: 'conceptos', label: 'Conceptos' },
-    { id: 'pago', label: 'Pago' },
-];
-const { activeSection, scrollTo } = useScrollspy(formSections.map(s => s.id));
 
 // ──────────────────────────────────────
 // Map invoice items for edit mode
@@ -147,6 +137,9 @@ watch(selectedFiscalProfile, (profile) => {
     emitterPostalCode.value = profile?.postal_code || '';
 }, { immediate: true });
 
+// "601 - General de Ley Personas Morales" (clave + nombre del catálogo SAT)
+const emitterRegimeLabel = computed(() => getRegimeLabel(emitterRegime.value));
+
 // ──────────────────────────────────────
 // Form
 // ──────────────────────────────────────
@@ -168,8 +161,52 @@ const form = useForm({
     tipo_comprobante: isEdit ? (inv?.tipo_comprobante || 'I') : 'I',
     customer_id: isEdit ? (inv?.customer_id || null) : null,
     items: isEdit ? mapInvoiceItems(inv) : [],
+    // CFDI relacionados (Tipo E — Nota de crédito)
+    tipo_relacion: isEdit ? (inv?.tipo_relacion || '') : '',
+    cfdi_relacionados: isEdit ? (inv?.cfdi_relacionados || []) : [],
+    // Detalle del pago (Tipo P — Complemento de pago 2.0)
+    pago_fecha: null,
+    pago_forma: '',
+    pago_moneda: 'MXN',
+    pago_monto: null,
+    pago_documentos: [],
     draft: false,
 });
+
+// ──────────────────────────────────────
+// Comprobante type helpers (TipoDeComprobante)
+// ──────────────────────────────────────
+const isIngreso = computed(() => form.tipo_comprobante === 'I');
+const isEgreso = computed(() => form.tipo_comprobante === 'E');
+const isPago = computed(() => form.tipo_comprobante === 'P');
+const isTraslado = computed(() => form.tipo_comprobante === 'T');
+const isNomina = computed(() => form.tipo_comprobante === 'N');
+
+// Section visibility driven by the selected comprobante type
+const showPaymentFormSection = computed(() => isIngreso.value || isEgreso.value);
+const showRelatedCfdiSection = computed(() => isEgreso.value);
+const showConceptsSection = computed(() => !isPago.value);
+const showPaymentDetailSection = computed(() => isPago.value);
+const showInvoiceTotals = computed(() => isIngreso.value || isEgreso.value);
+const showExportacionSelector = computed(() => !isPago.value);
+const isCfdiUseLocked = computed(() => isPago.value || isTraslado.value);
+
+// ──────────────────────────────────────
+// Sidebar navigation
+// ──────────────────────────────────────
+const formSections = computed(() => {
+    const sections = [
+        { id: 'emisor', label: 'Emisor' },
+        { id: 'receptor', label: 'Receptor' },
+    ];
+    if (showPaymentFormSection.value) sections.push({ id: 'forma-pago', label: 'Forma y método de pago' });
+    if (showRelatedCfdiSection.value) sections.push({ id: 'cfdi-relacionados', label: 'CFDI relacionados' });
+    if (showConceptsSection.value) sections.push({ id: 'conceptos', label: 'Conceptos' });
+    if (showPaymentDetailSection.value) sections.push({ id: 'detalle-pago', label: 'Detalle del pago' });
+    if (showInvoiceTotals.value) sections.push({ id: 'pago', label: 'Totales' });
+    return sections;
+});
+const { activeSection, scrollTo } = useScrollspy(() => formSections.value.map(s => s.id));
 
 // ──────────────────────────────────────
 // SAT catalogs
@@ -193,7 +230,17 @@ const cfdiUseOptions = [
     { label: 'D09 - Depósitos en ahorro', value: 'D09' },
     { label: 'D10 - Servicios educativos', value: 'D10' },
     { label: 'P01 - Por definir', value: 'P01' },
+    { label: 'CP01 - Pagos', value: 'CP01' },
+    { label: 'S01 - Sin efectos fiscales', value: 'S01' },
 ];
+
+// Uso de CFDI filtered per comprobante type (SAT rule)
+const availableCfdiUseOptions = computed(() => {
+    if (isPago.value) return cfdiUseOptions.filter(o => o.value === 'CP01');
+    if (isTraslado.value) return cfdiUseOptions.filter(o => o.value === 'S01');
+    if (isIngreso.value) return cfdiUseOptions.filter(o => !['CP01', 'S01'].includes(o.value));
+    return cfdiUseOptions;
+});
 
 const paymentFormOptions = [
     { label: '01 - Efectivo', value: '01' }, { label: '02 - Cheque nominativo', value: '02' },
@@ -206,14 +253,34 @@ const paymentMethodOptions = [
     { label: 'PPD - Pago en parcialidades o diferido', value: 'PPD' },
 ];
 
+// Catálogo SAT c_RegimenFiscal completo (clave → nombre)
 const taxRegimeOptions = [
-    { label: '601 - General de Ley Personas Morales', value: '601' },
-    { label: '612 - Personas Físicas con Actividades Empresariales', value: '612' },
-    { label: '616 - Sin obligaciones fiscales', value: '616' },
-    { label: '621 - Incorporación Fiscal', value: '621' },
-    { label: '626 - Régimen Simplificado de Confianza', value: '626' },
-    { label: '603 - Personas Morales con Fines no Lucrativos', value: '603' },
+    { value: '601', label: '601 - General de Ley Personas Morales' },
+    { value: '603', label: '603 - Personas Morales con Fines no Lucrativos' },
+    { value: '605', label: '605 - Sueldos y Salarios' },
+    { value: '606', label: '606 - Arrendamiento' },
+    { value: '607', label: '607 - Régimen de Enajenación o Adquisición de Bienes' },
+    { value: '608', label: '608 - Demás ingresos' },
+    { value: '609', label: '609 - Consolidación' },
+    { value: '610', label: '610 - Residentes en el Extranjero' },
+    { value: '611', label: '611 - Ingresos por Dividendos (socios y accionistas)' },
+    { value: '612', label: '612 - Personas Físicas con Actividades Empresariales y Profesionales' },
+    { value: '614', label: '614 - Ingresos por intereses' },
+    { value: '615', label: '615 - Régimen de los ingresos por obtención de premios' },
+    { value: '616', label: '616 - Sin obligaciones fiscales' },
+    { value: '621', label: '621 - Incorporación Fiscal' },
+    { value: '625', label: '625 - Régimen de las actividades empresariales con ingresos a través de Plataformas Tecnológicas' },
+    { value: '626', label: '626 - Régimen Simplificado de Confianza' },
+    { value: '628', label: '628 - Hidrocarburos' },
+    { value: '629', label: '629 - De los regímenes fiscales preferentes y de las empresas multinacionales' },
+    { value: '630', label: '630 - Enajenación de acciones en bolsa de valores' },
 ];
+
+// Resuelve "clave - nombre" (si la clave no está en el catálogo, devuelve solo la clave)
+const getRegimeLabel = (code) => {
+    if (!code) return '';
+    return taxRegimeOptions.find(o => o.value === code)?.label || code;
+};
 
 const objetoImpOptions = [
     { label: '02 - Sí objeto de impuesto', value: '02', description: 'Aplica en más del 90% de los casos. Úsalo cuando la venta o servicio esté sujeto a IVA (16%, 0% o exento) o IEPS.' },
@@ -249,7 +316,6 @@ const comprobanteTypeOptions = [
     { value: 'I', label: 'I - Ingreso', description: 'Factura estándar' },
     { value: 'E', label: 'E - Egreso', description: 'Nota de crédito' },
     { value: 'P', label: 'P - Pago', description: 'Recibo de pago de factura PPD' },
-    { value: 'N', label: 'N - Nómina', description: 'Recibo de nómina' },
     { value: 'T', label: 'T - Traslado', description: 'Carta porte / traslado' },
 ];
 
@@ -261,6 +327,24 @@ const exportacionOptions = [
     { value: '02', label: '02 - Definitiva con clave de pedimento A1', description: '' },
     { value: '03', label: '03 - Temporal', description: '' },
     { value: '04', label: '04 - Definitiva con clave de pedimento distinta a A1 o no requerida', description: '' },
+];
+
+// Catálogo c_TipoRelacion (CFDI 4.0) — solo aplica a notas de crédito (Tipo E)
+const tipoRelacionOptions = [
+    { label: '01 - Nota de crédito de los documentos relacionados', value: '01' },
+    { label: '02 - Débito de los documentos relacionados', value: '02' },
+    { label: '03 - Sustitución de los CFDI previos', value: '03' },
+    { label: '04 - Sustitución de los CFDI por un timbre fiscal digital', value: '04' },
+    { label: '05 - Sustitución de los CFDI por un CFDI de pagos', value: '05' },
+    { label: '06 - Factura de traslado', value: '06' },
+    { label: '07 - CFDI por aplicación de anticipo', value: '07' },
+    { label: '08 - Factura generada por pagos en parcialidades', value: '08' },
+    { label: '09 - Factura generada por pagos diferidos', value: '09' },
+];
+
+const pagoMonedaOptions = [
+    { label: 'MXN - Peso mexicano', value: 'MXN' },
+    { label: 'USD - Dólar estadounidense', value: 'USD' },
 ];
 
 // Lookup helpers — when using optionValue the #value slot receives the raw
@@ -287,7 +371,17 @@ const blankItem = () => ({
     retained_tax_type: null, retained_tax_rate: null, retained_tax_amount: 0,
 });
 
-const addItem = () => form.items.push(blankItem());
+const addItem = () => {
+    const item = blankItem();
+    // Carta porte (T): los conceptos no llevan importes ni impuestos.
+    if (isTraslado.value) {
+        item.objeto_imp = '01';
+        item.unit_price = 0;
+        item.discount_amount = 0;
+        item.tax_rate = 0;
+    }
+    form.items.push(item);
+};
 const removeItem = (index) => form.items.splice(index, 1);
 
 // ──────────────────────────────────────
@@ -319,7 +413,13 @@ const onConceptSelect = (event, index) => {
     const selected = event.value;
     if (!selected || typeof selected !== 'object') return;
     item.description = selected.name;
-    item.unit_price = parseFloat(selected.price) || 0;
+    // Carta porte (T): el precio unitario siempre es 0 (sin importes).
+    item.unit_price = isTraslado.value ? 0 : (parseFloat(selected.price) || 0);
+    if (isTraslado.value) {
+        item.objeto_imp = '01';
+        item.discount_amount = 0;
+        item.tax_rate = 0;
+    }
     // Auto-fill SKU (only products have it)
     if (selected.sku) {
         item.no_identificacion = selected.sku;
@@ -378,7 +478,9 @@ const onCustomerSelect = (event) => {
     const fiscal = extractFiscalData(customer);
     form.receiver_tax_regime = fiscal.tax_regime || '';
     form.receiver_postal_code = fiscal.postal_code || '';
-    if (customer.cfdi_use) {
+    // Auto-fill the Uso de CFDI only for Ingreso (I) — E, P y T tienen
+    // valores fijos o preseleccionados por reglas SAT que no deben sobreescribirse.
+    if (customer.cfdi_use && isIngreso.value) {
         form.cfdi_use = customer.cfdi_use;
     }
 };
@@ -389,6 +491,216 @@ watch(customerSearchText, (val) => {
         form.customer_id = null;
     }
 });
+
+// ──────────────────────────────────────
+// Comprobante-type reactive rules
+// ──────────────────────────────────────
+// Automated single concept required by a CFDI de Pago (Tipo P):
+// ClaveProdServ 84111506 + ClaveUnidad ACT, sin impuestos (ObjetoImp 01).
+const pagoConceptItem = () => ({
+    description: 'Pago',
+    quantity: 1,
+    unit_price: 0,
+    sat_product_code: '84111506',
+    sat_unit_code: 'ACT',
+    no_identificacion: '',
+    objeto_imp: '01',
+    tax_type: '002',
+    tax_rate: 0,
+    discount_amount: 0,
+    retained_tax_type: null,
+    retained_tax_rate: null,
+    retained_tax_amount: 0,
+});
+
+const blankPagoDocument = (isDefault = false) => ({
+    uuid: '',
+    folio: '',
+    invoice_id: null,
+    is_default: isDefault,
+    num_parcialidad: null,
+    imp_saldo_ant: null,
+    imp_pagado: null,
+    imp_saldo_insoluto: null,
+});
+
+const addPagoDocument = () => form.pago_documentos.push(blankPagoDocument(false));
+const removePagoDocument = (index) => form.pago_documentos.splice(index, 1);
+
+// ──────────────────────────────────────
+// Pago (Tipo P) — buscador de facturas PPD timbradas
+// ──────────────────────────────────────
+// Facturas certificadas con método PPD, filtradas por emisor y receptor.
+const availablePpdInvoices = computed(() => {
+    const profileId = form.fiscal_profile_id;
+    const customerId = form.customer_id;
+    const receiverRfc = (form.receiver_rfc || '').trim().toUpperCase();
+
+    return ppdInvoicesList.value.filter((inv) => {
+        // Emisor: siempre que ya se haya seleccionado un RFC emisor
+        if (profileId && inv.fiscal_profile_id && Number(inv.fiscal_profile_id) !== Number(profileId)) return false;
+
+        // Receptor: cliente seleccionado o RFC escrito a mano en el formulario
+        if (customerId) {
+            const matchByCustomer = Number(inv.customer_id) === Number(customerId);
+            const matchByRfc = !inv.customer_id && receiverRfc && (inv.receiver_rfc || '').toUpperCase() === receiverRfc;
+            if (!matchByCustomer && !matchByRfc) return false;
+        } else if (receiverRfc) {
+            if ((inv.receiver_rfc || '').toUpperCase() !== receiverRfc) return false;
+        }
+
+        return true;
+    });
+});
+
+const hasPpdInvoices = computed(() => ppdInvoicesList.value.length > 0);
+
+// Sugerencias por documento (caché por índice)
+const pagoInvoiceSuggestions = ref({});
+
+const pagoInvoiceLabel = (inv) => (inv?.series ? `${inv.series}-${inv.folio}` : String(inv?.folio ?? ''));
+
+const searchPagoInvoices = (event, index) => {
+    const query = (event.query || '').toLowerCase().trim();
+    const list = availablePpdInvoices.value;
+    pagoInvoiceSuggestions.value[index] = !query
+        ? [...list]
+        : list.filter(inv =>
+            pagoInvoiceLabel(inv).toLowerCase().includes(query)
+            || (inv.folio && String(inv.folio).toLowerCase().includes(query))
+            || (inv.uuid && inv.uuid.toLowerCase().includes(query))
+            || (inv.receiver_legal_name && inv.receiver_legal_name.toLowerCase().includes(query)),
+        );
+};
+
+const onPagoInvoiceSelect = (event, index) => {
+    const doc = form.pago_documentos[index];
+    const inv = event.value;
+    if (!inv || typeof inv !== 'object' || !inv.uuid) return;
+    doc.invoice_id = inv.id ?? null;
+    doc.folio = pagoInvoiceLabel(inv);
+    doc.uuid = inv.uuid;
+};
+
+// Si el usuario edita el folio a mano (factura fuera del sistema), se
+// desvincula la factura seleccionada para no enviar un UUID incorrecto.
+watch(
+    () => form.pago_documentos.map((d) => d.folio),
+    () => {
+        form.pago_documentos.forEach((doc) => {
+            if (!doc.invoice_id) return;
+            const linked = ppdInvoicesList.value.find(inv => Number(inv.id) === Number(doc.invoice_id));
+            const expected = linked ? pagoInvoiceLabel(linked) : '';
+            if (doc.folio !== expected) {
+                doc.invoice_id = null;
+                doc.uuid = '';
+            }
+        });
+    },
+);
+
+const formatDateShort = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+// Cuando el saldo insoluto llega a $0, la factura queda liquidada ante el SAT.
+const isFacturaLiquidada = (doc) =>
+    doc.imp_saldo_insoluto !== null
+    && doc.imp_saldo_insoluto !== undefined
+    && doc.imp_saldo_insoluto !== ''
+    && Number(doc.imp_saldo_insoluto) === 0;
+
+const addRelatedUuid = () => form.cfdi_relacionados.push('');
+const removeRelatedUuid = (index) => form.cfdi_relacionados.splice(index, 1);
+
+// Clear fields that only apply to a given comprobante type so the payload
+// never carries stale data after switching.
+const resetContextualFields = (type) => {
+    if (type !== 'E') {
+        form.cfdi_relacionados = [];
+        form.tipo_relacion = '';
+    }
+    if (type !== 'P') {
+        form.pago_fecha = null;
+        form.pago_forma = '';
+        form.pago_moneda = 'MXN';
+        form.pago_monto = null;
+        form.pago_documentos = [];
+    }
+};
+
+/**
+ * Applies SAT 4.0 rules that depend on the selected TipoDeComprobante.
+ * Runs whenever the user changes the type (and once on mount) so the
+ * form state, defaults and validations stay consistent.
+ */
+const applyComprobanteTypeRules = (type) => {
+    form.clearErrors();
+    resetContextualFields(type);
+
+    if (type === 'I' || type === 'E') {
+        // Leaving payment/traslado mode → restore editable concepts & MXN
+        if (form.currency === 'XXX') form.currency = 'MXN';
+        form.exchange_rate = null;
+        // Restore editable concepts when leaving the automated payment concept
+        if (form.items.length === 1
+            && form.items[0]?.sat_product_code === '84111506'
+            && form.items[0]?.description === 'Pago') {
+            form.items = [];
+        }
+    }
+
+    if (type === 'E') {
+        // Nota de crédito: G02 por defecto y método PUE preseleccionado.
+        if (!form.cfdi_use) form.cfdi_use = 'G02';
+        if (!form.payment_method) form.payment_method = 'PUE';
+        if (!form.tipo_relacion) form.tipo_relacion = '01';
+        if (!form.cfdi_relacionados || form.cfdi_relacionados.length === 0) {
+            form.cfdi_relacionados = [''];
+        }
+        return;
+    }
+
+    if (type === 'P') {
+        // CFDI de pago: valores fijos del encabezado (Anexo 20).
+        form.exportacion = '01';
+        form.cfdi_use = 'CP01';
+        form.currency = 'XXX';
+        form.exchange_rate = null;
+        form.payment_form = '';
+        form.payment_method = '';
+        form.items = [pagoConceptItem()];
+        // Al menos una factura relacionada es obligatoria: se siembra una por
+        // defecto (no se puede eliminar) y el usuario puede agregar más.
+        if (!form.pago_documentos || form.pago_documentos.length === 0) {
+            form.pago_documentos = [blankPagoDocument(true)];
+        }
+        return;
+    }
+
+    if (type === 'T') {
+        // Carta porte: sin efectos fiscales y sin importes a nivel concepto.
+        form.cfdi_use = 'S01';
+        form.currency = 'XXX';
+        form.exchange_rate = null;
+        form.items.forEach((item) => {
+            item.objeto_imp = '01';
+            item.unit_price = 0;
+            item.discount_amount = 0;
+            item.tax_rate = 0;
+        });
+        return;
+    }
+
+    // Tipo N (nómina) no se procesa aquí — se muestra una alerta informativa.
+};
+
+watch(() => form.tipo_comprobante, (type) => {
+    applyComprobanteTypeRules(type);
+}, { immediate: true });
 
 // ──────────────────────────────────────
 // Submit
@@ -419,6 +731,11 @@ const inputPt = { root: { class: 'h-11 !bg-white dark:!bg-zinc-950 !border !bord
 const selectPt = { root: { class: '!h-11 !bg-white dark:!bg-zinc-950 !border !border-zinc-200 dark:!border-zinc-800 focus:!border-primary-500 !transition-colors !text-sm !shadow-none flex items-center' } };
 const inputNumberPt = { root: { class: 'w-full' }, input: { root: { class: 'w-full min-w-0 h-11 !rounded-xl !bg-white dark:!bg-zinc-950 !border !border-zinc-200 dark:!border-zinc-800 focus:dark:!border-primary-500 !transition-colors !text-sm !shadow-none' } } };
 const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border !border-zinc-200 dark:!border-zinc-700 !text-zinc-500 !cursor-default !text-sm' } };
+const datePickerPt = {
+    root: { class: 'w-full' },
+    input: { root: { class: 'h-11 w-full !bg-white dark:!bg-zinc-950 !border !border-zinc-200 dark:!border-zinc-800 focus:dark:!border-primary-500 !transition-colors !text-sm !shadow-none !rounded-xl' } },
+    panel: { class: 'dark:!bg-[#232323] !border-zinc-200 dark:!border-[#3a3a3a] !rounded-2xl shadow-xl' },
+};
 </script>
 
 <template>
@@ -460,7 +777,7 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                 <div v-if="selectedFiscalProfile" class="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">RFC</label><InputText :modelValue="selectedFiscalProfile.rfc" readonly class="w-full" :pt="readonlyPt" /></div>
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Razón social</label><InputText :modelValue="selectedFiscalProfile.razon_social" readonly class="w-full" :pt="readonlyPt" /></div>
-                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Régimen fiscal</label><InputText :modelValue="emitterRegime" readonly class="w-full" :pt="readonlyPt" /></div>
+                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Régimen fiscal</label><InputText :modelValue="emitterRegimeLabel" readonly class="w-full" :pt="readonlyPt" /></div>
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">C. P.</label><InputText :modelValue="emitterPostalCode" readonly class="w-full" :pt="readonlyPt" /></div>
                 </div>
 
@@ -483,6 +800,7 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                             :options="comprobanteTypeOptions"
                             optionLabel="label"
                             optionValue="value"
+                            optionDisabled="disabled"
                             placeholder="Selecciona el tipo de comprobante"
                             filter
                             class="w-full"
@@ -499,9 +817,12 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                             </template>
                         </Select>
                         <Message v-if="form.errors.tipo_comprobante" severity="error" variant="simple" size="small">{{ form.errors.tipo_comprobante }}</Message>
+                        <Message v-if="isNomina" severity="info" variant="simple" size="small" class="mt-2">
+                            La nómina debe gestionarse desde el módulo especializado de Recursos Humanos / Nómina
+                        </Message>
                     </div>
 
-                    <div class="flex flex-col gap-1.5">
+                    <div v-if="showExportacionSelector" class="flex flex-col gap-1.5">
                         <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Exportación</label>
                         <Select
                             v-model="form.exportacion"
@@ -521,6 +842,11 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                             </template>
                         </Select>
                         <Message v-if="form.errors.exportacion" severity="error" variant="simple" size="small">{{ form.errors.exportacion }}</Message>
+                    </div>
+                    <div v-else class="flex flex-col gap-1.5">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Exportación</label>
+                        <InputText modelValue="01 - No aplica" readonly class="w-full" :pt="readonlyPt" />
+                        <p class="text-[9px] text-gray-400 m-0">En un CFDI de pago la exportación siempre es "01 - No aplica" (regla SAT).</p>
                     </div>
                 </div>
             </div>
@@ -569,13 +895,13 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Régimen fiscal *</label><Select v-model="form.receiver_tax_regime" :options="taxRegimeOptions" optionLabel="label" optionValue="value" placeholder="Selecciona" filter class="w-full" :pt="selectPt" /><Message v-if="form.errors.receiver_tax_regime" severity="error" variant="simple" size="small">{{ form.errors.receiver_tax_regime }}</Message></div>
-                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Código postal *</label><InputText v-model="form.receiver_postal_code" placeholder="12345" maxlength="5" class="w-full" :pt="inputPt" /><Message v-if="form.errors.receiver_postal_code" severity="error" variant="simple" size="small">{{ form.errors.receiver_postal_code }}</Message></div>
-                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Uso de CFDI *</label><Select v-model="form.cfdi_use" :options="cfdiUseOptions" optionLabel="label" optionValue="value" placeholder="Selecciona" filter class="w-full" :pt="selectPt" /><Message v-if="form.errors.cfdi_use" severity="error" variant="simple" size="small">{{ form.errors.cfdi_use }}</Message></div>
+                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Código postal *</label><InputText v-model="form.receiver_postal_code" placeholder="Ej. 12345" maxlength="5" class="w-full" :pt="inputPt" /><Message v-if="form.errors.receiver_postal_code" severity="error" variant="simple" size="small">{{ form.errors.receiver_postal_code }}</Message></div>
+                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Uso de CFDI *</label><Select v-model="form.cfdi_use" :options="availableCfdiUseOptions" optionLabel="label" optionValue="value" placeholder="Selecciona" filter class="w-full" :pt="selectPt" :disabled="isCfdiUseLocked" /><Message v-if="form.errors.cfdi_use" severity="error" variant="simple" size="small">{{ form.errors.cfdi_use }}</Message><Message v-if="isPago" severity="info" variant="simple" size="small">Un CFDI de pago usa obligatoriamente el uso "CP01 - Pagos" (regla SAT).</Message><Message v-else-if="isTraslado" severity="info" variant="simple" size="small">Una carta porte usa obligatoriamente el uso "S01 - Sin efectos fiscales" (regla SAT).</Message></div>
                 </div>
             </div>
 
             <!-- ═══ Forma y método de pago ═══ -->
-            <div id="forma-pago" class="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 lg:p-8">
+            <div v-if="showPaymentFormSection" id="forma-pago" class="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 lg:p-8">
                 <div class="flex items-center gap-3 mb-5">
                     <div class="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center border border-amber-100 dark:border-amber-900/30">
                         <i class="pi pi-credit-card !text-sm text-amber-500"></i>
@@ -592,8 +918,44 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                 </div>
             </div>
 
+            <!-- ═══ CFDI relacionados (Nota de crédito) ═══ -->
+            <div v-if="showRelatedCfdiSection" id="cfdi-relacionados" class="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 lg:p-8">
+                <div class="flex items-center gap-3 mb-5">
+                    <div class="w-10 h-10 rounded-full bg-violet-50 dark:bg-violet-900/20 flex items-center justify-center border border-violet-100 dark:border-violet-900/30">
+                        <i class="pi pi-link !text-sm text-violet-500"></i>
+                    </div>
+                    <div><h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">CFDI relacionados</h2><p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Requerido por el SAT en notas de crédito</p></div>
+                </div>
+
+                <div class="flex flex-col gap-1.5 mb-5">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Tipo de relación *</label>
+                    <Select v-model="form.tipo_relacion" :options="tipoRelacionOptions" optionLabel="label" optionValue="value" placeholder="Selecciona el tipo de relación" class="w-full" :pt="selectPt" />
+                    <Message v-if="form.errors.tipo_relacion" severity="error" variant="simple" size="small">{{ form.errors.tipo_relacion }}</Message>
+                </div>
+
+                <div class="flex items-center justify-between mb-3">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">UUID de las facturas relacionadas *</label>
+                    <Button type="button" icon="pi pi-plus" label="Agregar UUID" severity="secondary" text size="small" @click="addRelatedUuid" class="!rounded-full !text-xs !font-bold !uppercase !tracking-widest" />
+                </div>
+
+                <div v-if="form.cfdi_relacionados.length === 0" class="rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-800 py-8 text-center">
+                    <i class="pi pi-hashtag !text-2xl text-zinc-300 dark:text-zinc-600 mb-2 block"></i>
+                    <p class="text-xs text-zinc-400 dark:text-zinc-500 m-0">Agrega al menos un UUID de la factura que se relaciona</p>
+                </div>
+
+                <div v-else class="space-y-3">
+                    <div v-for="(uuid, index) in form.cfdi_relacionados" :key="index" class="flex items-center gap-3">
+                        <div class="flex flex-col gap-1 flex-1">
+                            <InputText v-model="form.cfdi_relacionados[index]" placeholder="UUID (ej. 123e4567-e89b-12d3-a456-426614174000)" class="w-full lowercase" :pt="inputPt" />
+                            <Message v-if="form.errors[`cfdi_relacionados.${index}`]" severity="error" variant="simple" size="small">{{ form.errors[`cfdi_relacionados.${index}`] }}</Message>
+                        </div>
+                        <Button type="button" icon="pi pi-trash" severity="danger" text rounded size="small" @click="removeRelatedUuid(index)" v-tooltip.top="'Eliminar UUID'" />
+                    </div>
+                </div>
+            </div>
+
             <!-- ═══ Conceptos ═══ -->
-            <div id="conceptos" class="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 lg:p-8">
+            <div v-if="showConceptsSection" id="conceptos" class="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 lg:p-8">
                 <div class="flex items-center justify-between mb-5">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 rounded-full bg-rose-50 dark:bg-rose-900/20 flex items-center justify-center border border-rose-100 dark:border-rose-900/30">
@@ -603,6 +965,10 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                     </div>
                     <Button type="button" icon="pi pi-plus" label="Agregar" @click="addItem" class="!rounded-full !text-xs !font-bold !uppercase !tracking-widest" />
                 </div>
+
+                <Message v-if="isTraslado" severity="info" variant="simple" size="small" class="mb-4">
+                    En una carta porte los conceptos no llevan importes ni impuestos (ObjetoImp 01).
+                </Message>
 
                 <Message v-if="form.errors.items" severity="error" variant="simple" size="small" class="mb-4">{{ form.errors.items }}</Message>
 
@@ -651,12 +1017,13 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
 
                         <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                             <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Cantidad</label><InputNumber v-model="item.quantity" placeholder="1" :minFractionDigits="2" :maxFractionDigits="4" :min="0.0001" locale="es-MX" class="w-full" :pt="inputNumberPt" /></div>
-                            <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Precio unitario</label><InputNumber v-model="item.unit_price" placeholder="$0.00" mode="currency" currency="MXN" locale="es-MX" :minFractionDigits="2" :min="0" class="w-full" :pt="inputNumberPt" /></div>
-                            <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Descuento</label><InputNumber v-model="item.discount_amount" placeholder="$0.00" mode="currency" currency="MXN" locale="es-MX" :minFractionDigits="2" :min="0" class="w-full" :pt="inputNumberPt" /></div>
+                            <div v-if="!isTraslado" class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Precio unitario</label><InputNumber v-model="item.unit_price" placeholder="$0.00" mode="currency" currency="MXN" locale="es-MX" :minFractionDigits="2" :min="0" class="w-full" :pt="inputNumberPt" /></div>
+                            <div v-else class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Precio unitario</label><InputText modelValue="$0.00" readonly class="w-full" :pt="readonlyPt" /></div>
+                            <div v-if="!isTraslado" class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Descuento</label><InputNumber v-model="item.discount_amount" placeholder="$0.00" mode="currency" currency="MXN" locale="es-MX" :minFractionDigits="2" :min="0" class="w-full" :pt="inputNumberPt" /></div>
                         </div>
 
                         <div class="grid grid-cols-2 md:grid-cols-2 gap-3 mb-4">
-                            <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Objeto imp.</label><Select v-model="item.objeto_imp" :options="objetoImpOptions" optionLabel="label" optionValue="value" class="w-full" :pt="selectPt"><template #option="s"><div class="flex flex-col gap-0.5"><span class="text-sm font-medium">{{ s.option.label }}</span><span class="text-[10px] text-zinc-400 leading-tight">{{ s.option.description }}</span></div></template></Select></div>
+                            <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Objeto imp.</label><Select v-model="item.objeto_imp" :options="objetoImpOptions" optionLabel="label" optionValue="value" :disabled="isTraslado" class="w-full" :pt="selectPt"><template #option="s"><div class="flex flex-col gap-0.5"><span class="text-sm font-medium">{{ s.option.label }}</span><span class="text-[10px] text-zinc-400 leading-tight">{{ s.option.description }}</span></div></template></Select></div>
                             <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Tasa IVA</label><Select v-if="item.objeto_imp === '02'" v-model="item.tax_rate" :options="taxRateOptions" optionLabel="label" optionValue="value" class="w-full" :pt="selectPt" /><InputText v-else modelValue="No aplica" readonly class="w-full" :pt="readonlyPt" /></div>
                         </div>
 
@@ -668,8 +1035,127 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
                 </div>
             </div>
 
+            <!-- ═══ Detalle del pago (Complemento de pago 2.0) ═══ -->
+            <div v-if="showPaymentDetailSection" id="detalle-pago" class="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 lg:p-8">
+                <div class="flex items-center gap-3 mb-5">
+                    <div class="w-10 h-10 rounded-full bg-cyan-50 dark:bg-cyan-900/20 flex items-center justify-center border border-cyan-100 dark:border-cyan-900/30">
+                        <i class="pi pi-wallet !text-sm text-cyan-500"></i>
+                    </div>
+                    <div><h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Detalle del pago</h2><p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Complemento de pago 2.0</p></div>
+                </div>
+
+                <!-- Concepto automatizado (no editable) -->
+                <div class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 p-4 mb-5">
+                    <div class="flex items-center gap-2 mb-3">
+                        <i class="pi pi-info-circle !text-sm text-cyan-500"></i>
+                        <span class="text-[10px] uppercase tracking-widest font-bold text-zinc-500">Concepto automatizado</span>
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div class="flex flex-col gap-1"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">ClaveProdServ</label><InputText modelValue="84111506" readonly class="w-full" :pt="readonlyPt" /></div>
+                        <div class="flex flex-col gap-1"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">ClaveUnidad</label><InputText modelValue="ACT" readonly class="w-full" :pt="readonlyPt" /></div>
+                        <div class="flex flex-col gap-1"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Descripción</label><InputText modelValue="Pago" readonly class="w-full" :pt="readonlyPt" /></div>
+                        <div class="flex flex-col gap-1"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Objeto imp.</label><InputText modelValue="01 - No objeto de impuesto" readonly class="w-full" :pt="readonlyPt" /></div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Fecha y hora de recepción del pago *</label>
+                        <DatePicker v-model="form.pago_fecha" showTime hourFormat="24" dateFormat="dd/mm/yy" placeholder="Selecciona fecha y hora" class="w-full" :pt="datePickerPt" />
+                        <Message v-if="form.errors.pago_fecha" severity="error" variant="simple" size="small">{{ form.errors.pago_fecha }}</Message>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Forma de pago real *</label>
+                        <Select v-model="form.pago_forma" :options="paymentFormOptions" optionLabel="label" optionValue="value" placeholder="Selecciona la forma de pago" class="w-full" :pt="selectPt" />
+                        <Message v-if="form.errors.pago_forma" severity="error" variant="simple" size="small">{{ form.errors.pago_forma }}</Message>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Moneda del pago *</label>
+                        <Select v-model="form.pago_moneda" :options="pagoMonedaOptions" optionLabel="label" optionValue="value" class="w-full" :pt="selectPt" />
+                        <Message v-if="form.errors.pago_moneda" severity="error" variant="simple" size="small">{{ form.errors.pago_moneda }}</Message>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Monto total del pago *</label>
+                        <InputNumber v-model="form.pago_monto" placeholder="$0.00" mode="currency" currency="MXN" locale="es-MX" :minFractionDigits="2" :min="0" class="w-full" :pt="inputNumberPt" />
+                        <Message v-if="form.errors.pago_monto" severity="error" variant="simple" size="small">{{ form.errors.pago_monto }}</Message>
+                    </div>
+                </div>
+
+                <!-- Documentos relacionados del pago -->
+                <div class="mt-6 pt-5 border-t border-zinc-200 dark:border-zinc-800">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Documentos relacionados</h3>
+                            <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Facturas PPD que cubre este pago</p>
+                        </div>
+                        <Button type="button" icon="pi pi-plus" label="Agregar" severity="primary" text size="small" @click="addPagoDocument" class="!rounded-full !text-xs !font-bold !uppercase !tracking-widest" />
+                    </div>
+
+                    <div v-if="form.pago_documentos.length === 0" class="rounded-2xl border-2 border-dashed border-zinc-200 dark:border-zinc-800 py-8 text-center">
+                        <i class="pi pi-file !text-2xl text-zinc-300 dark:text-zinc-600 mb-2 block"></i>
+                        <p class="text-xs text-zinc-400 dark:text-zinc-500 m-0">Agrega al menos un documento relacionado</p>
+                    </div>
+
+                    <div v-else class="space-y-4">
+                        <div v-for="(doc, index) in form.pago_documentos" :key="index" class="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-xs font-bold text-zinc-500 tracking-widest uppercase flex items-center gap-2">
+                                    Documento {{ index + 1 }}
+                                    <Tag v-if="doc.is_default" value="Obligatoria" severity="info" class="!text-[9px] !px-2 !py-0.5" />
+                                </span>
+                                <Button v-if="!doc.is_default" type="button" icon="pi pi-trash" severity="danger" text rounded size="small" @click="removePagoDocument(index)" v-tooltip.top="'Eliminar documento'" />
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div class="flex flex-col gap-1.5">
+                                    <label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Folio de Factura timbrada PPD *</label>
+                                    <AutoComplete
+                                        v-model="doc.folio"
+                                        :suggestions="pagoInvoiceSuggestions[index] || []"
+                                        @complete="(e) => searchPagoInvoices(e, index)"
+                                        @item-select="(e) => onPagoInvoiceSelect(e, index)"
+                                        field="folio"
+                                        optionLabel="folio"
+                                        placeholder="Busca o escribe el folio de la factura timbrada PPD"
+                                        class="w-full"
+                                        dropdown
+                                        :pt="{ root: { class: 'w-full' }, input: { root: { class: 'h-11 !bg-white dark:!bg-zinc-950 !border !border-zinc-200 dark:!border-zinc-800 focus:dark:!border-primary-500 !transition-colors !text-sm !shadow-none w-full !rounded-xl' } } }"
+                                    >
+                                        <template #option="slotProps">
+                                            <div class="flex flex-col gap-0.5">
+                                                <div class="flex items-center justify-between gap-3">
+                                                    <span class="text-sm font-medium flex items-center gap-1.5">
+                                                        <i class="pi pi-file !text-xs text-zinc-400"></i>
+                                                        {{ pagoInvoiceLabel(slotProps.option) }}
+                                                    </span>
+                                                    <span class="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{{ formatCurrency(parseFloat(slotProps.option.total) || 0) }}</span>
+                                                </div>
+                                                <div class="flex items-center justify-between gap-3">
+                                                    <span class="text-[10px] text-zinc-500 truncate">{{ slotProps.option.receiver_legal_name }}</span>
+                                                    <span class="text-[10px] text-zinc-400 shrink-0">{{ formatDateShort(slotProps.option.issued_at) }}</span>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </AutoComplete>
+                                    <Message v-if="hasPpdInvoices && availablePpdInvoices.length === 0" severity="info" variant="simple" size="small">No hay facturas PPD timbradas para este emisor y cliente. Puedes escribir el folio manualmente.</Message>
+                                    <p class="text-[10px] text-zinc-400 m-0">Selecciona una factura del sistema o escribe el folio si la factura se timbró fuera de la plataforma.</p>
+                                </div>
+                                <div class="flex flex-col gap-1.5">
+                                    <label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">UUID de la factura</label>
+                                    <InputText v-model="doc.uuid" placeholder="Se llena automáticamente si seleccionas la factura" class="w-full" :pt="inputPt" />
+                                    <p class="text-[10px] text-zinc-400 m-0">Identificador único del SAT. Si la factura no está en el sistema, pega aquí su UUID.</p>
+                                </div>
+                                <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Núm. parcialidad *</label><InputNumber v-model="doc.num_parcialidad" placeholder="Ej. 1" :min="1" :maxFractionDigits="0" locale="es-MX" class="w-full" :pt="inputNumberPt" /><p class="text-[10px] text-zinc-400 m-0">Número consecutivo de abono que se le está haciendo a la factura.</p></div>
+                                <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Saldo anterior *</label><InputNumber v-model="doc.imp_saldo_ant" placeholder="$0.00" mode="currency" currency="MXN" locale="es-MX" :minFractionDigits="2" :min="0" class="w-full" :pt="inputNumberPt" /><p class="text-[10px] text-zinc-400 m-0">Es el monto pendiente que tenía la factura justo antes de aplicar este pago.</p></div> 
+                                <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Importe pagado *</label><InputNumber v-model="doc.imp_pagado" placeholder="$0.00" mode="currency" currency="MXN" locale="es-MX" :minFractionDigits="2" :min="0" class="w-full" :pt="inputNumberPt" /><p class="text-[10px] text-zinc-400 m-0">Cantidad exacta de dinero que pagó el cliente.</p></div>
+                                <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-zinc-500 m-0">Saldo insoluto *</label><InputNumber v-model="doc.imp_saldo_insoluto" placeholder="$0.00" mode="currency" currency="MXN" locale="es-MX" :minFractionDigits="2" :min="0" class="w-full" :pt="inputNumberPt" /><p class="text-[10px] text-zinc-400 m-0">Monto que resta por pagar de la factura.</p><Message v-if="isFacturaLiquidada(doc)" severity="success" variant="simple" size="small">Con este pago la factura quedará liquidada ante el SAT.</Message></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- ═══ Pago (totales) ═══ -->
-            <div id="pago">
+            <div v-if="showInvoiceTotals" id="pago">
                 <InvoiceTotals
                     :subtotal="subtotal"
                     :iva-trasladado="ivaTrasladado"
@@ -685,8 +1171,8 @@ const readonlyPt = { root: { class: 'h-11 !bg-zinc-100 dark:!bg-zinc-800 !border
             <!-- ═══ Submit buttons ═══ -->
             <div class="flex justify-start gap-3 sticky bottom-4 z-20">
                 <template v-if="mode === 'create'">
-                    <Button type="button" label="Guardar como prefactura" icon="pi pi-save" severity="secondary" outlined @click="submit(true)" :loading="form.processing" class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold shadow-lg" />
-                    <Button type="submit" label="Timbrar ahora" icon="pi pi-shield" :loading="form.processing" :disabled="!canStamp" :class="['!rounded-full !uppercase !tracking-widest !text-xs !font-bold shadow-lg', !canStamp ? 'opacity-50 cursor-not-allowed' : '']" v-tooltip.top="!canStamp ? 'Completa los certificados y firma el manifiesto del SAT antes de poder timbrar facturas' : ''" />
+                    <Button type="button" label="Guardar como prefactura" icon="pi pi-file" severity="info" outlined @click="submit(true)" :loading="form.processing" class="!bg-white !rounded-full !uppercase !tracking-widest !text-[11px] !font-bold shadow-sm" />
+                    <Button type="submit" label="Timbrar ahora" icon="pi pi-shield" :loading="form.processing" :disabled="!canStamp" :class="['!rounded-full !uppercase !tracking-widest !text-xs !font-bold', !canStamp ? 'opacity-50 cursor-not-allowed' : '']" v-tooltip.top="!canStamp ? 'Carga tus certificados y firma el manifiesto del SAT para comenzar a timbrar.' : ''" />
                 </template>
                 <template v-else>
                     <Button type="submit" label="Guardar cambios" icon="pi pi-save" :loading="form.processing" class="!rounded-full !uppercase !tracking-widest !text-xs !font-bold shadow-lg" />
