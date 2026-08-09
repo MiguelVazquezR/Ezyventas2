@@ -153,6 +153,17 @@ const statusDotClass = (status) => {
     return 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]';
 };
 
+// CFDI 4.0 TipoDeComprobante badge
+const tipoComprobanteLabel = (type) => {
+    const map = { I: 'Ingreso', E: 'Egreso', P: 'Pago', T: 'Traslado', N: 'Nómina' };
+    return map[type] || type || '—';
+};
+
+const tipoComprobanteSeverity = (type) => {
+    const map = { I: 'info', E: 'warn', P: 'success', T: 'secondary', N: 'danger' };
+    return map[type] || 'secondary';
+};
+
 const rowClass = (data) => {
     if (data.status === 'cancelada') return 'opacity-60';
     if (data.status === 'cancelacion_pendiente') return 'bg-amber-50/30 dark:bg-amber-900/10';
@@ -414,6 +425,17 @@ const tagPt = {
                                     </span>
                                 </div>
                             </div>
+                        </template>
+                    </Column>
+
+                    <!-- Tipo de comprobante -->
+                    <Column field="tipo_comprobante" header="Tipo" headerStyle="width: 9rem">
+                        <template #body="{ data }">
+                            <Tag
+                                :value="tipoComprobanteLabel(data.tipo_comprobante)"
+                                :severity="tipoComprobanteSeverity(data.tipo_comprobante)"
+                                :pt="tagPt"
+                            />
                         </template>
                     </Column>
 

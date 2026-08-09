@@ -177,7 +177,12 @@ const submit = () => {
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-5">
                     <div>
                         <InputLabel for="company_name" value="Razón social" />
-                        <InputText id="company_name" v-model="form.company_name" class="mt-1 w-full" />
+                        <InputText
+                            id="company_name"
+                            :modelValue="form.company_name"
+                            @update:modelValue="(val) => form.company_name = String(val ?? '').toUpperCase()"
+                            class="mt-1 w-full uppercase"
+                        />
                     </div>
                     <div>
                         <InputLabel for="tax_id" value="RFC" />

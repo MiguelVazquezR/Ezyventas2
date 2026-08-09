@@ -24,12 +24,22 @@ function handlePrint() {
     window.print();
 }
 
-function formatCurrency(value) {
-    return new Intl.NumberFormat('es-MX', {
-        style: 'currency',
-        currency: props.invoice.currency ?? 'MXN',
-        minimumFractionDigits: 2,
-    }).format(parseFloat(value) ?? 0);
+function formatCurrency(value, currency) {
+    // CFDI de pago stores 'XXX' in the header; use the pago_moneda for amounts.
+    const cur = currency || props.invoice.currency || 'MXN';
+    try {
+        return new Intl.NumberFormat('es-MX', {
+            style: 'currency',
+            currency: cur,
+            minimumFractionDigits: 2,
+        }).format(parseFloat(value) ?? 0);
+    } catch {
+        return new Intl.NumberFormat('es-MX', {
+            style: 'currency',
+            currency: 'MXN',
+            minimumFractionDigits: 2,
+        }).format(parseFloat(value) ?? 0);
+    }
 }
 
 function formatDate(dateString) {
@@ -37,6 +47,16 @@ function formatDate(dateString) {
     try {
         const d = new Date(dateString);
         return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+    } catch { return dateString; }
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return '—';
+    try {
+        const d = new Date(String(dateString).replace(' ', 'T'));
+        return d.toLocaleDateString('es-MX', {
+            year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit',
+        });
     } catch { return dateString; }
 }
 
@@ -102,6 +122,25 @@ const currencyLabel = ((code) => {
     const map = { MXN: 'Peso mexicano', USD: 'Dólar estadounidense' };
     return map[code] || code;
 });
+
+const pagoMonedaLabel = ((code) => {
+    const map = { MXN: 'Peso mexicano', USD: 'Dólar estadounidense' };
+    return map[code] || code;
+});
+
+const tipoRelacionLabel = ((code) => {
+    const map = {
+        '01': 'Nota de crédito', '02': 'Débito', '03': 'Sustitución de los CFDI previos',
+        '04': 'Sustitución por timbre', '05': 'Sustitución por CFDI de pagos',
+        '06': 'Factura de traslado', '07': 'Aplicación de anticipo',
+        '08': 'Pagos en parcialidades', '09': 'Pagos diferidos',
+    };
+    return map[code] || code;
+});
+
+// CFDI 4.0 TipoDeComprobante helpers
+const isPago = computed(() => props.invoice?.tipo_comprobante === 'P');
+const isEgreso = computed(() => props.invoice?.tipo_comprobante === 'E');
 
 const unidadLabel = ((code) => {
     const map = { H87: 'Pieza', KGM: 'Kilogramo', LTR: 'Litro', E48: 'Servicio', MTR: 'Metro', NMB: 'Número' };
@@ -246,7 +285,7 @@ const lugarFechaEmision = computed(() => {
                 <div class="space-y-1">
                     <div class="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-0.5">Receptor</div>
                     <div class="space-y-0.5">
-                        <p class="m-0 font-semibold text-gray-900">{{ invoice.receiver_legal_name }}</p>
+                        <p class="m-0 font-semibold text-gray-900 uppercase">{{ invoice.receiver_legal_name }}</p>
                         <p class="text-[11px] m-0 text-gray-700">
                             <span class="text-[11px] font-medium text-gray-900">RFC:</span> {{ invoice.receiver_rfc }}
                         </p>
@@ -265,7 +304,7 @@ const lugarFechaEmision = computed(() => {
                 <!-- Col 3: Comprobante metadata -->
                 <div class="bg-gray-50 rounded-lg p-2.5 space-y-1">
                     <div class="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-0.5">Comprobante</div>
-                    <p class="text-[11px] m-0 text-gray-700 break-all leading-tight">
+                    <p class="text-[11px] m-0 text-gray-700 break-all leading-tight uppercase">
                         <span class="text-[11px] font-medium text-gray-900">UUID:</span> {{ timbre.uuid }}
                     </p>
                     <p class="text-[11px] m-0 text-gray-700">
@@ -359,15 +398,44 @@ const lugarFechaEmision = computed(() => {
                 <!-- Left: Payment info -->
                 <div class="space-y-0.5">
                     <div class="text-[9px] uppercase tracking-widest font-bold text-gray-400 mb-1">Condiciones de pago</div>
-                    <div class="flex gap-1 text-gray-900">
-                        <span class="font-medium text-gray-600">Moneda:</span> {{ currencyLabel(invoice.currency) }}
-                    </div>
-                    <div class="flex gap-1 text-gray-900">
-                        <span class="font-medium text-gray-600">Forma de pago:</span> {{ invoice.payment_form }} - {{ paymentFormLabel(invoice.payment_form) }}
-                    </div>
-                    <div class="flex gap-1 text-gray-900">
-                        <span class="font-medium text-gray-600">Método de pago:</span> {{ invoice.payment_method }} - {{ paymentMethodLabel(invoice.payment_method) }}
-                    </div>
+                    <template v-if="!isPago">
+                        <div class="flex gap-1 text-gray-900">
+                            <span class="font-medium text-gray-600">Moneda:</span> {{ currencyLabel(invoice.currency) }}
+                        </div>
+                        <div class="flex gap-1 text-gray-900">
+                            <span class="font-medium text-gray-600">Forma de pago:</span> {{ invoice.payment_form }} - {{ paymentFormLabel(invoice.payment_form) }}
+                        </div>
+                        <div class="flex gap-1 text-gray-900">
+                            <span class="font-medium text-gray-600">Método de pago:</span> {{ invoice.payment_method }} - {{ paymentMethodLabel(invoice.payment_method) }}
+                        </div>
+                    </template>
+                    <template v-else>
+                        <div class="flex gap-1 text-gray-900">
+                            <span class="font-medium text-gray-600">Moneda del pago:</span> {{ invoice.pago_moneda }} - {{ pagoMonedaLabel(invoice.pago_moneda) }}
+                        </div>
+                        <div class="flex gap-1 text-gray-900">
+                            <span class="font-medium text-gray-600">Forma de pago real:</span> {{ invoice.pago_forma }} - {{ paymentFormLabel(invoice.pago_forma) }}
+                        </div>
+                        <div class="flex gap-1 text-gray-900">
+                            <span class="font-medium text-gray-600">Fecha del pago:</span> {{ formatDateTime(invoice.pago_fecha) }}
+                        </div>
+                        <div class="flex gap-1 text-gray-900">
+                            <span class="font-medium text-gray-600">Monto del pago:</span> {{ formatCurrency(invoice.pago_monto, invoice.pago_moneda) }}
+                        </div>
+                        <div v-if="invoice.pago_moneda && invoice.pago_moneda !== 'MXN'" class="flex gap-1 text-gray-900">
+                            <span class="font-medium text-gray-600">Tipo de cambio del pago:</span> {{ invoice.pago_tipo_cambio }}
+                        </div>
+                    </template>
+                    <!-- CFDI relacionados (nota de crédito) -->
+                    <template v-if="isEgreso && (invoice.tipo_relacion || (invoice.cfdi_relacionados && invoice.cfdi_relacionados.length))">
+                        <div class="flex gap-1 text-gray-900 mt-1">
+                            <span class="font-medium text-gray-600">Tipo de relación:</span> {{ invoice.tipo_relacion }} - {{ tipoRelacionLabel(invoice.tipo_relacion) }}
+                        </div>
+                        <div class="flex flex-col gap-0.5 mt-1">
+                            <span class="font-medium text-gray-600">UUID relacionados:</span>
+                            <span v-for="(uuid, i) in (invoice.cfdi_relacionados || [])" :key="i" class="text-[9px] text-gray-700 break-all">{{ uuid }}</span>
+                        </div>
+                    </template>
                 </div>
 
                 <!-- Right: Totals -->
@@ -397,6 +465,35 @@ const lugarFechaEmision = computed(() => {
                         </tbody>
                     </table>
                 </div>
+            </div>
+
+            <!-- ════════════════════════════════════════
+                 BLOCK 3b — Documentos del pago (Complemento de pago 2.0)
+                 ════════════════════════════════════════ -->
+            <div v-if="isPago && (invoice.pago_documentos || []).length" class="mb-4">
+                <div class="text-[9px] uppercase tracking-widest font-bold text-gray-400 mb-1">Documentos relacionados del pago</div>
+                <table class="w-full border-collapse text-[10px]">
+                    <thead>
+                        <tr class="bg-gray-50 border-y border-gray-200">
+                            <th class="p-1.5 text-left font-semibold text-gray-500">Folio</th>
+                            <th class="p-1.5 text-left font-semibold text-gray-500">UUID</th>
+                            <th class="p-1.5 text-right font-semibold text-gray-500">Parcialidad</th>
+                            <th class="p-1.5 text-right font-semibold text-gray-500">Saldo anterior</th>
+                            <th class="p-1.5 text-right font-semibold text-gray-500">Importe pagado</th>
+                            <th class="p-1.5 text-right font-semibold text-gray-500">Saldo insoluto</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="(doc, i) in (invoice.pago_documentos || [])" :key="i" class="border-b border-gray-100">
+                            <td class="p-1.5 text-gray-900">{{ doc.folio || '—' }}</td>
+                            <td class="p-1.5 text-gray-500 text-[9px] break-all uppercase">{{ doc.uuid || '—' }}</td>
+                            <td class="p-1.5 text-right text-gray-900">{{ doc.num_parcialidad ?? '—' }}</td>
+                            <td class="p-1.5 text-right text-gray-700">{{ formatCurrency(doc.imp_saldo_ant, invoice.pago_moneda) }}</td>
+                            <td class="p-1.5 text-right text-gray-900 font-medium">{{ formatCurrency(doc.imp_pagado, invoice.pago_moneda) }}</td>
+                            <td class="p-1.5 text-right text-gray-700">{{ formatCurrency(doc.imp_saldo_insoluto, invoice.pago_moneda) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
 
             <hr class="border-gray-200 mb-2">
@@ -450,7 +547,7 @@ const lugarFechaEmision = computed(() => {
             <div class="border-t border-gray-200 pt-3 mt-4">
                 <div class="flex justify-between text-[8px] text-gray-400 mb-2">
                     <span>RFC emisor: {{ invoice.fiscal_profile?.rfc || '—' }}</span>
-                    <span>Folio fiscal: {{ timbre.uuid }}</span>
+                    <span class="uppercase">Folio fiscal: {{ timbre.uuid }}</span>
                 </div>
 
                 <div class="text-center text-[7.5px] text-gray-400 leading-relaxed space-y-0.5">

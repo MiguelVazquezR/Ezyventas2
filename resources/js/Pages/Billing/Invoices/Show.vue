@@ -154,6 +154,35 @@ const paymentMethodLabel = ((code) => {
     return map[code] || code;
 });
 
+const pagoMonedaLabel = ((code) => {
+    const map = { MXN: 'Peso mexicano', USD: 'Dólar estadounidense' };
+    return map[code] || code;
+});
+
+const tipoRelacionLabel = ((code) => {
+    const map = {
+        '01': 'Nota de crédito de los documentos relacionados',
+        '02': 'Débito de los documentos relacionados',
+        '03': 'Sustitución de los CFDI previos',
+        '04': 'Sustitución de los CFDI por un timbre fiscal digital',
+        '05': 'Sustitución de los CFDI por un CFDI de pagos',
+        '06': 'Factura de traslado',
+        '07': 'CFDI por aplicación de anticipo',
+        '08': 'Factura generada por pagos en parcialidades',
+        '09': 'Factura generada por pagos diferidos',
+    };
+    return map[code] || code;
+});
+
+// CFDI 4.0 TipoDeComprobante helpers
+const isPago = computed(() => props.invoice.tipo_comprobante === 'P');
+const isEgreso = computed(() => props.invoice.tipo_comprobante === 'E');
+
+const tipoComprobanteLabel = ((code) => {
+    const map = { I: 'Ingreso', E: 'Egreso', T: 'Traslado', N: 'Nómina', P: 'Pago' };
+    return map[code] || code;
+});
+
 const taxRegimeLabel = ((code) => {
     const map = {
         '601': 'General de Ley Personas Morales', '603': 'Fines no Lucrativos', '612': 'Actividades Empresariales',
@@ -203,6 +232,12 @@ const tagPt = {
                     </h1>
                     <div class="flex items-center gap-4 mt-3 flex-wrap">
                         <Tag :value="statusLabel" :severity="statusSeverity" :pt="tagPt" />
+                        <Tag
+                            v-if="invoice.tipo_comprobante"
+                            :value="tipoComprobanteLabel(invoice.tipo_comprobante)"
+                            severity="secondary"
+                            :pt="tagPt"
+                        />
 
                         <span class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
 
@@ -367,7 +402,7 @@ const tagPt = {
                                 </span>
                             </div>
                             <Divider class="!my-3 !border-gray-100 dark:!border-[#3a3a3a]" />
-                            <div class="grid grid-cols-2 gap-4">
+                            <div v-if="!isPago" class="grid grid-cols-2 gap-4">
                                 <div class="flex flex-col gap-1">
                                     <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Forma de pago</span>
                                     <span class="text-sm text-gray-900 dark:text-gray-200">
@@ -379,6 +414,58 @@ const tagPt = {
                                     <span class="text-sm text-gray-900 dark:text-gray-200">
                                         {{ invoice.payment_method }} - {{ paymentMethodLabel(invoice.payment_method) }}
                                     </span>
+                                </div>
+                            </div>
+                            <div v-else class="grid grid-cols-2 gap-4">
+                                <div class="flex flex-col gap-1">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Forma de pago real</span>
+                                    <span class="text-sm text-gray-900 dark:text-gray-200">
+                                        {{ invoice.pago_forma }} - {{ paymentFormLabel(invoice.pago_forma) }}
+                                    </span>
+                                </div>
+                                <div class="flex flex-col gap-1">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Moneda del pago</span>
+                                    <span class="text-sm text-gray-900 dark:text-gray-200">
+                                        {{ invoice.pago_moneda }} - {{ pagoMonedaLabel(invoice.pago_moneda) }}
+                                    </span>
+                                </div>
+                                <div class="flex flex-col gap-1">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Fecha del pago</span>
+                                    <span class="text-sm text-gray-900 dark:text-gray-200">{{ formatDate(invoice.pago_fecha) }}</span>
+                                </div>
+                                <div class="flex flex-col gap-1">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Monto del pago</span>
+                                    <span class="text-sm text-gray-900 dark:text-gray-200">{{ formatCurrency(invoice.pago_monto) }}</span>
+                                </div>
+                                <div v-if="invoice.pago_moneda && invoice.pago_moneda !== 'MXN'" class="flex flex-col gap-1">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Tipo de cambio del pago</span>
+                                    <span class="text-sm text-gray-900 dark:text-gray-200">{{ invoice.pago_tipo_cambio }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CFDI relacionados (nota de crédito) -->
+                    <div v-if="isEgreso && (invoice.tipo_relacion || (invoice.cfdi_relacionados && invoice.cfdi_relacionados.length))" class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col">
+                        <div class="mb-6 flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-full bg-violet-50 dark:bg-violet-900/20 flex items-center justify-center flex-shrink-0 border border-violet-100 dark:border-violet-900/30">
+                                <i class="pi pi-link !text-sm text-violet-500"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">CFDI relacionados</h2>
+                                <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Nota de crédito</p>
+                            </div>
+                        </div>
+                        <div class="space-y-4">
+                            <div v-if="invoice.tipo_relacion" class="flex flex-col gap-1">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Tipo de relación</span>
+                                <span class="text-sm text-gray-900 dark:text-gray-200">{{ invoice.tipo_relacion }} - {{ tipoRelacionLabel(invoice.tipo_relacion) }}</span>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">UUID relacionados</span>
+                                <div class="flex flex-col gap-1.5">
+                                    <span v-for="(uuid, i) in (invoice.cfdi_relacionados || [])" :key="i" class="text-sm text-gray-900 dark:text-gray-200 break-all font-mono">{{ uuid }}</span>
+                                    <span v-if="!invoice.cfdi_relacionados || invoice.cfdi_relacionados.length === 0" class="text-sm text-gray-400 dark:text-gray-600 italic">Sin UUIDs registrados</span>
                                 </div>
                             </div>
                         </div>
@@ -458,6 +545,59 @@ const tagPt = {
                                     <span class="text-sm font-medium text-gray-900 dark:text-white">{{ formatCurrency(data.total) }}</span>
                                 </template>
                             </Column>
+                        </DataTable>
+                    </div>
+
+                    <!-- Documentos del pago (CFDI de Pago) -->
+                    <div v-if="isPago" class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] overflow-hidden flex flex-col">
+                        <div class="p-6 lg:p-8 pb-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-cyan-50 dark:bg-cyan-900/20 flex items-center justify-center flex-shrink-0 border border-cyan-100 dark:border-cyan-900/30">
+                                    <i class="pi pi-file !text-sm text-cyan-500"></i>
+                                </div>
+                                <div>
+                                    <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Documentos relacionados del pago</h2>
+                                    <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">{{ (invoice.pago_documentos || []).length }} facturas PPD cubiertas</p>
+                                </div>
+                            </div>
+                        </div>
+                        <DataTable :value="invoice.pago_documentos || []" tableStyle="min-width: 40rem" :pt="dataTablePt">
+                            <Column field="folio" header="Folio">
+                                <template #body="{ data }">
+                                    <span class="text-sm text-gray-900 dark:text-gray-200">{{ data.folio || '—' }}</span>
+                                </template>
+                            </Column>
+                            <Column field="uuid" header="UUID">
+                                <template #body="{ data }">
+                                    <span class="text-xs text-gray-500 dark:text-gray-400 break-all">{{ data.uuid || '—' }}</span>
+                                </template>
+                            </Column>
+                            <Column field="num_parcialidad" header="Parcialidad">
+                                <template #body="{ data }">
+                                    <span class="text-sm text-gray-900 dark:text-gray-200">{{ data.num_parcialidad ?? '—' }}</span>
+                                </template>
+                            </Column>
+                            <Column field="imp_saldo_ant" header="Saldo anterior">
+                                <template #body="{ data }">
+                                    <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatCurrency(data.imp_saldo_ant) }}</span>
+                                </template>
+                            </Column>
+                            <Column field="imp_pagado" header="Importe pagado">
+                                <template #body="{ data }">
+                                    <span class="text-sm font-medium text-gray-900 dark:text-white">{{ formatCurrency(data.imp_pagado) }}</span>
+                                </template>
+                            </Column>
+                            <Column field="imp_saldo_insoluto" header="Saldo insoluto">
+                                <template #body="{ data }">
+                                    <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatCurrency(data.imp_saldo_insoluto) }}</span>
+                                </template>
+                            </Column>
+                            <template #empty>
+                                <div class="flex flex-col items-center justify-center py-10 text-center">
+                                    <i class="pi pi-inbox !text-3xl text-gray-300 dark:text-gray-600 mb-3"></i>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400">Sin documentos relacionados registrados</p>
+                                </div>
+                            </template>
                         </DataTable>
                     </div>
 

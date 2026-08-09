@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class SWSapienService
 {
@@ -43,8 +44,16 @@ class SWSapienService
             'cfdi_use'             => $data['cfdi_use'],
             'exportacion'          => $data['exportacion'] ?? '01',
             'tipo_comprobante'     => $data['tipo_comprobante'] ?? 'I',
-            'payment_form'         => $data['payment_form'],
-            'payment_method'       => $data['payment_method'],
+            'payment_form'         => $data['payment_form'] ?? null,
+            'payment_method'       => $data['payment_method'] ?? null,
+            'pago_fecha'           => $data['pago_fecha'] ?? null,
+            'pago_forma'           => $data['pago_forma'] ?? null,
+            'pago_moneda'          => $data['pago_moneda'] ?? 'MXN',
+            'pago_monto'           => $data['pago_monto'] ?? null,
+            'pago_tipo_cambio'     => $data['pago_tipo_cambio'] ?? null,
+            'pago_documentos'      => $data['pago_documentos'] ?? [],
+            'tipo_relacion'        => $data['tipo_relacion'] ?? null,
+            'cfdi_relacionados'    => $data['cfdi_relacionados'] ?? [],
             'currency'             => $data['currency'] ?? 'MXN',
             'exchange_rate'        => ($data['currency'] ?? 'MXN') !== 'MXN' ? ($data['exchange_rate'] ?? null) : null,
             'subtotal'             => 0,
@@ -165,9 +174,17 @@ class SWSapienService
             );
         }
 
+        // SAT c_Moneda: "XXX" (sin moneda — used by CFDI de Pago and carta porte)
+        // supports 0 decimals, so header and concepto amounts must be integers.
+        // Every other currency uses 2 decimals.
+        $monedaDecimals = (($invoice->currency ?? 'MXN') === 'XXX') ? 0 : 2;
+
         $fmt  = fn (float $v, int $d = 2) => number_format($v, $d, '.', '');
         $fmt6 = fn (float $v) => $fmt($v, 6);
-        $fmt4 = fn (float $v) => $fmt($v, 4);
+        $money = fn (float $v) => $fmt($v, $monedaDecimals);
+        // Cantidad / ValorUnitario: up to 4 decimals for regular currencies,
+        // integers for "XXX".
+        $fmtQty = fn (float $v) => $fmt($v, $monedaDecimals === 0 ? 0 : 4);
 
         // ── Aggregators for global Impuestos node ──
         $globalTraslados   = [];
@@ -176,7 +193,7 @@ class SWSapienService
         $totalRetenidos    = 0.0;
 
         $conceptos = $invoice->items->map(function (InvoiceItem $item) use (
-            &$globalTraslados, &$globalRetenciones, &$totalTrasladados, &$totalRetenidos, $fmt, $fmt6, $fmt4
+            &$globalTraslados, &$globalRetenciones, &$totalTrasladados, &$totalRetenidos, $fmt, $fmt6, $money, $fmtQty
         ) {
             $base = round((float) $item->subtotal - (float) $item->discount_amount, 2);
 
@@ -185,16 +202,16 @@ class SWSapienService
                 'NoIdentificacion' => $item->no_identificacion ?: null,
                 'ClaveUnidad'     => $item->sat_unit_code,
                 'Unidad'          => $item->unit_name ?: null,
-                'Cantidad'        => $fmt4((float) $item->quantity),
+                'Cantidad'        => $fmtQty((float) $item->quantity),
                 'Descripcion'     => $item->description,
-                'ValorUnitario'   => $fmt4((float) $item->unit_price),
-                'Importe'         => $fmt((float) $item->subtotal),
+                'ValorUnitario'   => $fmtQty((float) $item->unit_price),
+                'Importe'         => $money((float) $item->subtotal),
                 'ObjetoImp'       => $item->objeto_imp ?: '02',
             ];
 
             // SAT Anexo 20: Descuento is forbidden when zero — omit entirely
             if ((float) $item->discount_amount > 0) {
-                $concepto['Descuento'] = $fmt((float) $item->discount_amount);
+                $concepto['Descuento'] = $money((float) $item->discount_amount);
             }
 
             // Remove null optional keys per SAT strictness
@@ -213,11 +230,11 @@ class SWSapienService
                 $effTaxAmount = (float) $item->tax_amount;
 
                 $traslado = [
-                    'Base'       => $fmt($base),
+                    'Base'       => $money($base),
                     'Impuesto'   => $item->tax_type ?: '002',
                     'TipoFactor' => 'Tasa',
                     'TasaOCuota' => $fmt6($effTaxRate),
-                    'Importe'    => $fmt($effTaxAmount),
+                    'Importe'    => $money($effTaxAmount),
                 ];
 
                 $traslados[] = $traslado;
@@ -259,11 +276,11 @@ class SWSapienService
                 }
 
                 $retencion = [
-                    'Base'       => $fmt($base),
+                    'Base'       => $money($base),
                     'Impuesto'   => $retType,
                     'TipoFactor' => 'Tasa',
                     'TasaOCuota' => $fmt6($retRate),
-                    'Importe'    => $fmt($retAmount),
+                    'Importe'    => $money($retAmount),
                 ];
 
                 $retenciones[] = $retencion;
@@ -298,11 +315,9 @@ class SWSapienService
             'TipoDeComprobante' => $invoice->tipo_comprobante ?: 'I',
             'LugarExpedicion'   => $invoice->fiscalProfile->postal_code ?? '',
             'Exportacion'       => $invoice->exportacion ?: '01',
-            'FormaPago'         => $invoice->payment_form,
-            'MetodoPago'        => $invoice->payment_method,
             'Moneda'            => $invoice->currency,
-            'SubTotal'          => $fmt((float) $invoice->subtotal),
-            'Total'             => $fmt((float) $invoice->total),
+            'SubTotal'          => $money((float) $invoice->subtotal),
+            'Total'             => $money((float) $invoice->total),
             'Emisor' => [
                 'Rfc'           => $invoice->fiscalProfile->rfc,
                 'Nombre'        => $invoice->fiscalProfile->razon_social,
@@ -318,6 +333,38 @@ class SWSapienService
             'Conceptos' => $conceptos,
         ];
 
+        // FormaPago / MetodoPago only apply to Ingreso (I) and Egreso (E) per
+        // SAT Anexo 20. A CFDI de Pago (P) carries them inside the Pago node
+        // (Complemento de Pago 2.0) and a carta porte (T) does not carry them
+        // at all. Sending empty/forbidden values causes PAC rejection.
+        if (in_array($invoice->tipo_comprobante, ['I', 'E'], true)) {
+            $payload['FormaPago']  = $invoice->payment_form;
+            $payload['MetodoPago'] = $invoice->payment_method;
+        }
+
+        // CFDI de Pago (Tipo P): the Complemento de Pago 2.0 node is mandatory
+        // per SAT Anexo 20 — without it the PAC rejects the stamping request
+        // (CFDI140230). SW expects the namespaced "Pago20:Pagos" element inside
+        // the "Any" wrapper; its jsontoxml converter reads the prefix to declare
+        // xmlns:pago20="http://www.sat.gob.mx/Pagos20" and build the XML node.
+        if (($invoice->tipo_comprobante ?? 'I') === 'P') {
+            $pago = $this->buildPagoComplement($invoice);
+
+            $payload['Complemento'] = [
+                'Any' => [
+                    [
+                        'pago20:pagos' => [
+                            'Version'  => '2.0',
+                            'Totales'  => [
+                                'MontoTotalPagos' => $pago['Monto'],
+                            ],
+                            'Pago'     => [$pago],
+                        ],
+                    ],
+                ],
+            ];
+        }
+
         // Incluir la Serie únicamente si tiene un valor asignado (evita strings vacíos "")
         if (! empty($invoice->series)) {
             $payload['Serie'] = $invoice->series;
@@ -325,12 +372,13 @@ class SWSapienService
 
         // SAT Anexo 20: Descuento at root level only when > 0
         if ((float) $invoice->discount_total > 0) {
-            $payload['Descuento'] = $fmt((float) $invoice->discount_total);
+            $payload['Descuento'] = $money((float) $invoice->discount_total);
         }
 
-        // TipoCambio: required for non-MXN currencies per SAT Anexo 20.
-        // Uses the exchange rate captured from the invoice form, formatted to 6 decimals.
-        if (($invoice->currency ?? 'MXN') !== 'MXN') {
+        // TipoCambio: required for real foreign currencies per SAT Anexo 20.
+        // Moneda "XXX" (CFDI de pago / carta porte) must NOT carry TipoCambio.
+        $currency = $invoice->currency ?? 'MXN';
+        if (! in_array($currency, ['MXN', 'XXX'], true)) {
             $exchangeRate = (float) ($invoice->exchange_rate ?? 1);
 
             if ($exchangeRate <= 0) {
@@ -348,14 +396,14 @@ class SWSapienService
 
             if (count($globalTraslados)) {
                 $formatted = array_map(fn (array $t) => [
-                    'Base'       => $fmt($t['Base']),
+                    'Base'       => $money($t['Base']),
                     'Impuesto'   => $t['Impuesto'],
                     'TipoFactor' => $t['TipoFactor'],
                     'TasaOCuota' => $fmt6($t['TasaOCuota']),
-                    'Importe'    => $fmt($t['Importe']),
+                    'Importe'    => $money($t['Importe']),
                 ], array_values($globalTraslados));
 
-                $payload['Impuestos']['TotalImpuestosTrasladados'] = $fmt($totalTrasladados);
+                $payload['Impuestos']['TotalImpuestosTrasladados'] = $money($totalTrasladados);
                 $payload['Impuestos']['Traslados'] = $formatted;
             }
 
@@ -363,10 +411,10 @@ class SWSapienService
                 // Global retenciones only expose Impuesto + Importe per SW Sapien spec
                 $formatted = array_map(fn (array $r) => [
                     'Impuesto' => $r['Impuesto'],
-                    'Importe'  => $fmt($r['Importe']),
+                    'Importe'  => $money($r['Importe']),
                 ], array_values($globalRetenciones));
 
-                $payload['Impuestos']['TotalImpuestosRetenidos'] = $fmt($totalRetenidos);
+                $payload['Impuestos']['TotalImpuestosRetenidos'] = $money($totalRetenidos);
                 $payload['Impuestos']['Retenciones'] = $formatted;
             }
         }
@@ -380,6 +428,119 @@ class SWSapienService
         }
 
         return $payload;
+    }
+
+    /**
+     * Build the Complemento de Pago 2.0 (pago20:Pago) node for a CFDI de Pago.
+     *
+     * The invoice stores a single payment (fecha, forma, moneda, monto) with
+     * one or more related PPD documents (DoctoRelacionado). Per SAT Anexo 20
+     * (Pagos 2.0 — Revisión B) every amount is sent as a string with 2 decimals
+     * and the payment method of each related document must be "PPD".
+     *
+     * @throws \RuntimeException when the payment data is incomplete or the
+     *                           total does not match the sum of paid amounts.
+     */
+    private function buildPagoComplement(Invoice $invoice): array
+    {
+        $fmt = fn (float $v) => number_format($v, 2, '.', '');
+
+        if (! $invoice->pago_fecha || ! $invoice->pago_forma || $invoice->pago_monto === null) {
+            throw new \RuntimeException(
+                'No se puede timbrar el CFDI de pago: captura la fecha, la forma de pago y el monto del pago en el detalle del pago.'
+            );
+        }
+
+        $documentos = collect($invoice->pago_documentos ?? []);
+
+        if ($documentos->isEmpty()) {
+            throw new \RuntimeException(
+                'No se puede timbrar el CFDI de pago: agrega al menos un documento relacionado (factura PPD) con su parcialidad y saldos.'
+            );
+        }
+
+        $doctosRelacionados = [];
+        $totalPagado        = 0.0;
+
+        foreach ($documentos as $doc) {
+            $uuid            = $doc['uuid'] ?? null;
+            $numParcialidad  = $doc['num_parcialidad'] ?? null;
+            $impSaldoAnt     = $doc['imp_saldo_ant'] ?? null;
+            $impPagado       = $doc['imp_pagado'] ?? null;
+            $impSaldoInsoluto = $doc['imp_saldo_insoluto'] ?? null;
+
+            if (! $uuid || $numParcialidad === null || $impSaldoAnt === null || $impPagado === null || $impSaldoInsoluto === null) {
+                throw new \RuntimeException(
+                    'No se puede timbrar el CFDI de pago: un documento relacionado está incompleto (UUID, número de parcialidad y los tres saldos son obligatorios).'
+                );
+            }
+
+            // IdDocumento must be a real RFC 4122 UUID (pagos20.xsd pattern);
+            // otherwise the PAC rejects the CFDI with a generic error (CRP20999).
+            if (! Str::isUuid($uuid)) {
+                throw new \RuntimeException(
+                    "No se puede timbrar el CFDI de pago: el UUID '{$uuid}' de un documento relacionado no es válido. Debe tener el formato xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx."
+                );
+            }
+
+            $totalPagado = round($totalPagado + (float) $impPagado, 2);
+
+            $doctosRelacionados[] = [
+                'IdDocumento'      => $uuid,
+                'MonedaDR'         => $doc['moneda_dr'] ?? ($invoice->pago_moneda ?: 'MXN'),
+                'NumParcialidad'   => (string) (int) $numParcialidad,
+                'ImpSaldoAnt'      => $fmt((float) $impSaldoAnt),
+                'ImpPagado'        => $fmt((float) $impPagado),
+                'ImpSaldoInsoluto' => $fmt((float) $impSaldoInsoluto),
+                'EquivalenciaDR'   => '1',
+                // ObjetoImpDR "01" (no objeto de impuesto) matches SW's canonical
+                // CFDI de Pago and avoids the mandatory ImpuestosDR child node
+                // (PAC CRP20246): when ObjetoImpDR = "02" the ImpuestosDR node
+                // must exist, and this app does not capture the original
+                // invoice's tax breakdown for the partial payment.
+                'ObjetoImpDR'      => $doc['objeto_imp_dr'] ?? '01',
+                'MetodoDePagoDR'   => 'PPD',
+            ];
+        }
+
+        // SAT Anexo 20 rule: Monto must equal the sum of the ImpPagado amounts
+        // of every related document (when there are no exchange-rate differences).
+        $monto = round((float) $invoice->pago_monto, 2);
+        if ($monto !== $totalPagado) {
+            throw new \RuntimeException(
+                "No se puede timbrar el CFDI de pago: el monto del pago ({$fmt($monto)}) no coincide con la suma de los importes pagados ({$fmt($totalPagado)})."
+            );
+        }
+
+        // Version belongs to the pago20:Pagos wrapper (set in buildPayload),
+        // not to the Pago node — per pagos20.xsd.
+        $pago = [
+            'FechaPago'        => $invoice->pago_fecha->format('Y-m-d\TH:i:s'),
+            'FormaDePagoP'     => $invoice->pago_forma,
+            'MonedaP'          => $invoice->pago_moneda ?: 'MXN',
+            'Monto'            => $fmt($monto),
+            'DoctoRelacionado' => $doctosRelacionados,
+        ];
+
+        // TipoCambioP per SW/PAC (CRP20215): when MonedaP = MXN the PAC requires
+        // the exact value "1" (no decimals, no decimal point). When the payment
+        // is in foreign currency it is required and carries the exchange rate.
+        $pagoMoneda = $invoice->pago_moneda ?: 'MXN';
+        if ($pagoMoneda === 'MXN') {
+            $pago['TipoCambioP'] = '1';
+        } else {
+            $tipoCambioP = (float) ($invoice->pago_tipo_cambio ?? 0);
+
+            if ($tipoCambioP <= 0) {
+                throw new \RuntimeException(
+                    'No se puede timbrar el CFDI de pago: captura el tipo de cambio del pago para moneda extranjera.'
+                );
+            }
+
+            $pago['TipoCambioP'] = number_format($tipoCambioP, 6, '.', '');
+        }
+
+        return $pago;
     }
 
     /**

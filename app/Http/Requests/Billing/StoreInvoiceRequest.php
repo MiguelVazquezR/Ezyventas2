@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Billing;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class StoreInvoiceRequest extends FormRequest
@@ -30,8 +31,108 @@ class StoreInvoiceRequest extends FormRequest
             'cfdi_use'              => ['required', 'string', 'max:10'],
 
             // --- Payment ---
-            'payment_form'          => ['required', 'string', 'max:5'],
-            'payment_method'        => ['required', 'string', 'max:5'],
+            // Only Ingreso (I) and Egreso (E) carry FormaPago/MetodoPago in the
+            // header per SAT Anexo 20. A CFDI de Pago (P), carta porte (T) and
+            // nómina (N) do NOT — the payment details of a CFDI de pago live in
+            // the Pago node (Complemento de Pago 2.0), not in the header.
+            // `nullable` is required because ConvertEmptyStringsToNull turns the
+            // frontend's "" into null before validation.
+            'payment_form'          => [
+                'nullable',
+                Rule::requiredIf(fn () => in_array($this->input('tipo_comprobante', 'I'), ['I', 'E'], true)),
+                'string',
+                'max:5',
+            ],
+            'payment_method'        => [
+                'nullable',
+                Rule::requiredIf(fn () => in_array($this->input('tipo_comprobante', 'I'), ['I', 'E'], true)),
+                'string',
+                'max:5',
+            ],
+
+            // --- CFDI de pago (Complemento de Pago 2.0) — only for Tipo P ---
+            // When the comprobante type is P (pago) the payment detail becomes
+            // mandatory: reception date/time, real payment form, total amount
+            // and at least one related PPD document with its partiality and
+            // balances. `nullable` is required because ConvertEmptyStringsToNull
+            // turns the frontend's "" into null before validation.
+            'pago_fecha' => [
+                'nullable',
+                Rule::requiredIf(fn () => $this->input('tipo_comprobante') === 'P'),
+                'date',
+            ],
+            'pago_forma' => [
+                'nullable',
+                Rule::requiredIf(fn () => $this->input('tipo_comprobante') === 'P'),
+                'string',
+                'max:5',
+            ],
+            'pago_moneda'            => ['nullable', 'string', 'max:5'],
+            'pago_monto' => [
+                'nullable',
+                Rule::requiredIf(fn () => $this->input('tipo_comprobante') === 'P'),
+                'numeric',
+                'min:0',
+            ],
+            'pago_tipo_cambio' => [
+                'nullable',
+                Rule::requiredIf(fn () => $this->input('tipo_comprobante') === 'P' && $this->input('pago_moneda') !== 'MXN'),
+                'numeric',
+                'min:0.000001',
+            ],
+            'pago_documentos' => [
+                'nullable',
+                Rule::requiredIf(fn () => $this->input('tipo_comprobante') === 'P'),
+                'array',
+                // `min:1` must only apply to a CFDI de Pago (P): Ingreso (I),
+                // Egreso (E) and carta porte (T) send an empty array [] that
+                // must not require related PPD documents.
+                Rule::when($this->input('tipo_comprobante') === 'P', 'min:1'),
+            ],
+            'pago_documentos.*.uuid' => [
+                'nullable',
+                Rule::requiredIf(fn () => $this->input('tipo_comprobante') === 'P'),
+                'string',
+                'uuid',
+            ],
+            'pago_documentos.*.folio' => [
+                'nullable',
+                Rule::requiredIf(fn () => $this->input('tipo_comprobante') === 'P'),
+                'string',
+                'max:50',
+            ],
+            'pago_documentos.*.invoice_id'      => ['nullable', 'integer'],
+            'pago_documentos.*.is_default'      => ['nullable', 'boolean'],
+            'pago_documentos.*.num_parcialidad' => [
+                'nullable',
+                Rule::requiredIf(fn () => $this->input('tipo_comprobante') === 'P'),
+                'integer',
+                'min:1',
+            ],
+            'pago_documentos.*.imp_saldo_ant' => [
+                'nullable',
+                Rule::requiredIf(fn () => $this->input('tipo_comprobante') === 'P'),
+                'numeric',
+                'min:0',
+            ],
+            'pago_documentos.*.imp_pagado' => [
+                'nullable',
+                Rule::requiredIf(fn () => $this->input('tipo_comprobante') === 'P'),
+                'numeric',
+                'min:0',
+            ],
+            'pago_documentos.*.imp_saldo_insoluto' => [
+                'nullable',
+                Rule::requiredIf(fn () => $this->input('tipo_comprobante') === 'P'),
+                'numeric',
+                'min:0',
+            ],
+
+            // --- Nota de crédito (Tipo E) — CFDI relacionados ---
+            'tipo_relacion'          => ['nullable', 'string', 'max:5'],
+            'cfdi_relacionados'      => ['nullable', 'array'],
+            'cfdi_relacionados.*'    => ['nullable', 'string', 'max:36'],
+
             'currency'              => ['nullable', 'string', 'max:5'],
             'exchange_rate'         => ['nullable', 'numeric', 'min:0.000001'],
 
@@ -68,8 +169,8 @@ class StoreInvoiceRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'fiscal_profile_id.required'     => 'Selecciona un perfil fiscal emisor.',
-            'fiscal_profile_id.exists'       => 'El perfil fiscal seleccionado no existe.',
+            'fiscal_profile_id.required'     => 'Selecciona un emisor fiscal.',
+            'fiscal_profile_id.exists'       => 'El emisor fiscal seleccionado no existe.',
             'exportacion.required'           => 'El campo exportación es obligatorio.',
             'exportacion.in'                 => 'El valor de exportación no es válido.',
             'receiver_rfc.required'          => 'El campo RFC es obligatorio.',
@@ -80,6 +181,19 @@ class StoreInvoiceRequest extends FormRequest
             'cfdi_use.required'              => 'El uso de CFDI es obligatorio.',
             'payment_form.required'          => 'La forma de pago es obligatoria.',
             'payment_method.required'        => 'El método de pago es obligatorio.',
+            'pago_fecha.required'            => 'La fecha y hora de recepción del pago es obligatoria.',
+            'pago_forma.required'            => 'La forma de pago real es obligatoria.',
+            'pago_monto.required'            => 'El monto total del pago es obligatorio.',
+            'pago_tipo_cambio.required'      => 'El tipo de cambio del pago es obligatorio para moneda extranjera.',
+            'pago_documentos.required'       => 'Agrega al menos un documento relacionado (factura PPD).',
+            'pago_documentos.min'            => 'Agrega al menos un documento relacionado (factura PPD).',
+            'pago_documentos.*.uuid.required'            => 'El UUID de la factura es obligatorio.',
+            'pago_documentos.*.uuid.uuid'                => 'El UUID de la factura no es válido. Debe tener el formato xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.',
+            'pago_documentos.*.folio.required'           => 'El folio de la factura timbrada es obligatorio.',
+            'pago_documentos.*.num_parcialidad.required' => 'El número de parcialidad es obligatorio.',
+            'pago_documentos.*.imp_saldo_ant.required'   => 'El saldo anterior es obligatorio.',
+            'pago_documentos.*.imp_pagado.required'      => 'El importe pagado es obligatorio.',
+            'pago_documentos.*.imp_saldo_insoluto.required' => 'El saldo insoluto es obligatorio.',
             'items.required'                 => 'Agrega al menos un concepto a la factura.',
             'items.min'                      => 'Agrega al menos un concepto a la factura.',
             'items.*.description.required'   => 'La descripción del concepto es obligatoria.',
