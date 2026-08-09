@@ -8,6 +8,10 @@ const props = defineProps({
     brands: Array,
     providers: Array,
     branches: Array,
+    showCreatedAt: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 defineEmits(['open-category', 'open-brand', 'open-provider']);
@@ -103,6 +107,13 @@ const hasBilling = computed(() => usePage().props.auth.active_modules?.includes(
                 <Select id="provider" v-model="form.provider_id" :options="providers" optionLabel="name"
                     optionValue="id" placeholder="Selecciona un proveedor" filter class="w-full" showClear :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a]' } }" />
                 <Message v-if="form.errors.provider_id" severity="error" variant="simple" size="small">{{ form.errors.provider_id }}</Message>
+            </div>
+
+            <div v-if="showCreatedAt" class="col-span-full md:col-span-3 flex flex-col gap-1.5">
+                <label for="created_at" class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Fecha y hora de creación</label>
+                <DatePicker v-model="form.created_at" id="created_at" showTime hourFormat="24" dateFormat="dd/mm/yy"
+                    class="w-full" :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a]' } }" />
+                <Message v-if="form.errors.created_at" severity="error" variant="simple" size="small">{{ form.errors.created_at }}</Message>
             </div>
 
             <div class="col-span-full flex flex-col gap-1.5">

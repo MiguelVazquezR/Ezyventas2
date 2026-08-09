@@ -144,15 +144,20 @@ const drawerPt = {
             <!-- Menú Usuario (Desktop) -->
             <div class="hidden lg:block ml-1">
                 <button @click="toggleUserMenu"
-                    class="flex items-center gap-2.5 p-1 pr-4 rounded-full bg-white dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] hover:border-gray-300 dark:hover:border-gray-600 transition-all focus:outline-none focus:ring-2 focus:ring-primary-500/50">
-                    <img class="w-8 h-8 rounded-full object-cover flex-shrink-0" :src="user.profile_photo_url" :alt="user.name">
-                    <div class="text-left hidden xl:block">
-                        <p class="text-xs font-medium text-gray-900 dark:text-white m-0 tracking-tight leading-tight">{{ user.name }}</p>
-                        <p class="text-[9px] tracking-widest font-bold text-gray-500 m-0 leading-tight">{{ user.email }}</p>
-                    </div>
-                    <i class="pi pi-chevron-down !text-[10px] text-gray-400 hidden xl:block"></i>
+                    class="flex items-center justify-center w-10 h-10 rounded-full overflow-hidden ring-1 ring-gray-200 dark:ring-[#3a3a3a] hover:ring-primary-500 dark:hover:ring-primary-500 transition-all focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                    v-tooltip.bottom="user.name">
+                    <img class="w-full h-full object-cover" :src="user.profile_photo_url" :alt="user.name">
                 </button>
-                <Menu ref="userMenu" :model="userMenuItems" :popup="true" :pt="menuPt" />
+                <Menu ref="userMenu" :model="userMenuItems" :popup="true" :pt="menuPt">
+                    <template #start>
+                        <div class="flex items-center gap-3 px-3 py-3 mb-1 border-b border-gray-100 dark:border-[#3a3a3a]">
+                            <div class="min-w-0">
+                                <p class="text-sm font-medium text-gray-900 dark:text-white m-0 tracking-tight truncate">{{ user.name }}</p>
+                                <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 truncate">{{ user.email }}</p>
+                            </div>
+                        </div>
+                    </template>
+                </Menu>
             </div>
         </div>
     </div>
