@@ -8,13 +8,21 @@ import SectionCard from '@/Components/Billing/SectionCard.vue';
 const props = defineProps({
     form: { type: Object, required: true },
     ppdInvoices: { type: [Array, Object], default: () => [] },
+    multipleEmitters: { type: Boolean, default: false },
 });
 
 const ppdInvoicesList = computed(() => toArray(props.ppdInvoices));
 
+// Con varios emisores en la cuenta primero hay que elegir el RFC emisor: la
+// lista de facturas PPD se filtra por emisor y no debe poder seleccionarse
+// nada antes.
+const needsEmitter = computed(() => props.multipleEmitters && !props.form.fiscal_profile_id);
+
 // ── Pago (Tipo P) — buscador de facturas PPD timbradas ──
 // Facturas certificadas con método PPD, filtradas por emisor y receptor.
 const availablePpdInvoices = computed(() => {
+    if (needsEmitter.value) return [];
+
     const profileId = props.form.fiscal_profile_id;
     const customerId = props.form.customer_id;
     const receiverRfc = (props.form.receiver_rfc || '').trim().toUpperCase();
@@ -182,7 +190,7 @@ const formatUuid = (value, doc) => {
                     <h3 class="text-sm font-semibold tracking-wider text-slate-400 uppercase m-0">Documentos relacionados</h3>
                     <p class="text-[10px] text-slate-400/70 dark:text-neutral-500 mt-0.5 m-0">Facturas PPD que cubre este pago</p>
                 </div>
-                <Button type="button" icon="pi pi-plus" label="Agregar" severity="secondary" text size="small" @click="addPagoDocument" class="!rounded-full !px-5 !py-2 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95" />
+                <Button type="button" icon="pi pi-plus" label="Agregar" severity="secondary" text size="small" :disabled="needsEmitter" @click="addPagoDocument" class="!rounded-full !px-5 !py-2 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95" />
             </div>
 
             <Message v-if="form.errors['pago_documentos']" severity="error" variant="simple" size="small" class="w-full">{{ form.errors['pago_documentos'] }}</Message>
@@ -212,6 +220,7 @@ const formatUuid = (value, doc) => {
                                 field="folio"
                                 optionLabel="folio"
                                 placeholder="Busca o escribe el folio de la factura timbrada PPD"
+                                :disabled="needsEmitter"
                                 class="w-full"
                                 dropdown
                                 :pt="autoCompleteInputPt"
@@ -233,7 +242,8 @@ const formatUuid = (value, doc) => {
                                 </template>
                             </AutoComplete>
                             <Message v-if="form.errors[`pago_documentos.${index}.folio`]" severity="error" variant="simple" size="small">{{ form.errors[`pago_documentos.${index}.folio`] }}</Message>
-                            <Message v-if="hasPpdInvoices && availablePpdInvoices.length === 0" severity="info" variant="simple" size="small">No hay facturas PPD timbradas para este emisor y cliente. Puedes escribir el folio manualmente.</Message>
+                            <Message v-if="needsEmitter" severity="info" variant="simple" size="small">Primero selecciona el emisor para cargar sus facturas.</Message>
+                            <Message v-if="!needsEmitter && hasPpdInvoices && availablePpdInvoices.length === 0" severity="info" variant="simple" size="small">No hay facturas PPD timbradas para este emisor y cliente. Puedes escribir el folio manualmente.</Message>
                             <p class="text-[10px] text-slate-400 dark:text-neutral-500 m-0">Selecciona una factura del sistema o escribe el folio si la factura se timbró fuera de la plataforma.</p>
                         </div>
                         <div class="flex flex-col gap-1.5">

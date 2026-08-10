@@ -60,6 +60,35 @@ function formatDateTime(dateString) {
     } catch { return dateString; }
 }
 
+function formatDateMexico(dateString) {
+    if (!dateString) return '—';
+    // Remove the 'T' separator, fractional seconds, and the timezone suffix
+    // (trailing Z or ±hh:mm) so the clock time is shown as-is, in Mexico format.
+    const clean = String(dateString)
+        .trim()
+        .replace('T', ' ')
+        .replace(/\.\d+/, '')
+        .replace(/[zZ]$/, '')
+        .replace(/([+-]\d{2}):?\d{2}$/, '')
+        .trim();
+
+    try {
+        const d = new Date(clean.replace(' ', 'T'));
+        if (Number.isNaN(d.getTime())) return dateString;
+
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+
+        let hours = d.getHours();
+        const meridiem = hours >= 12 ? 'pm' : 'am';
+        hours = hours % 12 || 12;
+        const time = `${String(hours).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${meridiem}`;
+
+        return `${day}/${month}/${year}, ${time}`;
+    } catch { return dateString; }
+}
+
 // ──────────────────────────────────────
 // SAT catalog translations (reuses same labels as Create.vue)
 // ──────────────────────────────────────
@@ -74,6 +103,7 @@ const cfdiUseLabel = ((code) => {
         D06: 'Aportaciones voluntarias al SAR', D07: 'Primas por seguros de gastos médicos',
         D08: 'Gastos de transportación escolar', D09: 'Depósitos en cuentas de ahorro',
         D10: 'Pagos por servicios educativos', P01: 'Por definir',
+        CP01: 'Pagos', S01: 'Sin efectos fiscales',
     };
     return map[code] || code;
 });
@@ -160,6 +190,12 @@ function retentionLabel(r) {
     return r.impuesto === '001' ? 'ISR' : r.impuesto === '002' ? 'IVA' : `Ret. ${r.impuesto}`;
 }
 
+function retentionTotalLabel(r) {
+    const impuesto = retentionLabel(r);
+    const tasa = r.tasaOCuota ? ` ${(r.tasaOCuota * 100).toFixed(2)}%` : '';
+    return `${impuesto}${tasa}`;
+}
+
 // ──────────────────────────────────────
 // Item taxes — grouped by Impuesto + TipoFactor + Tasa for each item
 // ──────────────────────────────────────
@@ -230,8 +266,8 @@ const retentionMessage = computed(() => {
 // ──────────────────────────────────────
 const lugarFechaEmision = computed(() => {
     const cp = props.comprobante?.lugar_expedicion || props.invoice?.fiscal_profile?.postal_code || '—';
-    const fecha = props.comprobante?.fecha || '—';
-    return `${cp}, ${fecha}`;
+    const fecha = props.comprobante?.fecha ? formatDateMexico(props.comprobante.fecha) : '—';
+    return `CP: ${cp}, ${fecha}`;
 });
 </script>
 
@@ -276,7 +312,7 @@ const lugarFechaEmision = computed(() => {
                             <span class="text-[11px] font-medium text-gray-900">RFC:</span> {{ invoice.fiscal_profile?.rfc || '—' }}
                         </p>
                         <p class="text-[11px] m-0 text-gray-700">
-                            <span class="text-[11px] font-medium text-gray-900">Régimen:</span> {{ taxRegimeLabel(invoice.fiscal_profile?.regimen_fiscal) }}
+                            <span class="text-[11px] font-medium text-gray-900">Régimen fiscal:</span> {{ taxRegimeLabel(invoice.fiscal_profile?.regimen_fiscal) }}
                         </p>
                     </div>
                 </div>
@@ -290,7 +326,7 @@ const lugarFechaEmision = computed(() => {
                             <span class="text-[11px] font-medium text-gray-900">RFC:</span> {{ invoice.receiver_rfc }}
                         </p>
                         <p class="text-[11px] m-0 text-gray-700">
-                            <span class="text-[11px] font-medium text-gray-900">Régimen:</span> {{ taxRegimeLabel(invoice.receiver_tax_regime) }}
+                            <span class="text-[11px] font-medium text-gray-900">Régimen fiscal:</span> {{ taxRegimeLabel(invoice.receiver_tax_regime) }}
                         </p>
                         <p class="text-[11px] m-0 text-gray-700">
                             <span class="text-[11px] font-medium text-gray-900">CP:</span> {{ invoice.receiver_postal_code || '-' }}
@@ -304,11 +340,11 @@ const lugarFechaEmision = computed(() => {
                 <!-- Col 3: Comprobante metadata -->
                 <div class="bg-gray-50 rounded-lg p-2.5 space-y-1">
                     <div class="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-0.5">Comprobante</div>
-                    <p class="text-[11px] m-0 text-gray-700 break-all leading-tight uppercase">
-                        <span class="text-[11px] font-medium text-gray-900">UUID:</span> {{ timbre.uuid }}
+                    <p class="text-[11px] m-0 text-gray-700 break-all leading-tight">
+                        <span class="text-[11px] font-medium text-gray-900">Folio fiscal:</span> <span class="uppercase">{{ timbre.uuid }}</span>
                     </p>
                     <p class="text-[11px] m-0 text-gray-700">
-                        <span class="text-[11px] font-medium text-gray-900">CSD:</span> {{ comprobante.no_certificado }}
+                        <span class="text-[11px] font-medium text-gray-900">Serie CSD:</span> {{ comprobante.no_certificado }}
                     </p>
                     <p class="text-[11px] m-0 text-gray-700">
                         <span class="text-[11px] font-medium text-gray-900">Emisión:</span> {{ lugarFechaEmision }}
@@ -355,8 +391,8 @@ const lugarFechaEmision = computed(() => {
                                 <td class="p-1.5 text-gray-700">
                                     {{ item.sat_unit_code || '' }}{{ item.unit_name ? ' - ' + item.unit_name : '' }}{{ unidadLabel(item.sat_unit_code) && !item.unit_name ? ' - ' + unidadLabel(item.sat_unit_code) : '' }}
                                 </td>
-                                <td class="p-1.5 text-right text-gray-500">{{ parseFloat(item.discount_amount) > 0 ? formatCurrency(item.discount_amount) : '-' }}</td>
                                 <td class="p-1.5 text-right text-gray-900">{{ formatCurrency(item.unit_price) }}</td>
+                                <td class="p-1.5 text-right text-gray-500">{{ parseFloat(item.discount_amount) > 0 ? formatCurrency(item.discount_amount) : '-' }}</td>
                                 <td class="p-1.5 text-right text-gray-900 font-medium">{{ formatCurrency(parseFloat(item.subtotal || item.quantity * item.unit_price)) }}</td>
                                 <td class="p-1.5 text-[9px] text-gray-500">{{ objetoImpLabel(item.objeto_imp) }}</td>
                             </tr>
@@ -375,7 +411,7 @@ const lugarFechaEmision = computed(() => {
                                         </span>
                                         <span v-for="r in itemRetentions(item)" :key="r.impuesto + 'R'"
                                             class="inline-flex items-center gap-0.5 bg-gray-50 border border-gray-200 px-1.5 py-0.5 rounded text-[8px] text-gray-700 font-medium">
-                                            {{ retentionLabel(r) }} {{ (r.tasaOCuota * 100).toFixed(0) }}%: −{{ formatCurrency(r.importe) }}
+                                            {{ retentionLabel(r) }} {{ (r.tasaOCuota * 100).toFixed(2) }}%: −{{ formatCurrency(r.importe) }}
                                         </span>
 
                                         <!-- Pedimento / Cuenta predial (tiny, at the end) -->
@@ -397,7 +433,7 @@ const lugarFechaEmision = computed(() => {
             <div class="flex justify-between items-start gap-8 mb-5">
                 <!-- Left: Payment info -->
                 <div class="space-y-0.5">
-                    <div class="text-[9px] uppercase tracking-widest font-bold text-gray-400 mb-1">Condiciones de pago</div>
+                    <div class="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1">Condiciones de pago</div>
                     <template v-if="!isPago">
                         <div class="flex gap-1 text-gray-900">
                             <span class="font-medium text-gray-600">Moneda:</span> {{ currencyLabel(invoice.currency) }}
@@ -417,7 +453,7 @@ const lugarFechaEmision = computed(() => {
                             <span class="font-medium text-gray-600">Forma de pago real:</span> {{ invoice.pago_forma }} - {{ paymentFormLabel(invoice.pago_forma) }}
                         </div>
                         <div class="flex gap-1 text-gray-900">
-                            <span class="font-medium text-gray-600">Fecha del pago:</span> {{ formatDateTime(invoice.pago_fecha) }}
+                            <span class="font-medium text-gray-600">Fecha del pago:</span> {{ formatDateMexico(invoice.pago_fecha) }}
                         </div>
                         <div class="flex gap-1 text-gray-900">
                             <span class="font-medium text-gray-600">Monto del pago:</span> {{ formatCurrency(invoice.pago_monto, invoice.pago_moneda) }}
@@ -455,7 +491,7 @@ const lugarFechaEmision = computed(() => {
                                 <td class="py-0.5 text-right text-gray-900">{{ formatCurrency(t.importe) }}</td>
                             </tr>
                             <tr v-for="r in groupedRetentions" :key="r.impuesto" class="border-b border-gray-100">
-                                <td class="py-0.5 pr-6 text-right text-gray-600 font-medium">{{ retentionLabel(r) }} retenido</td>
+                                <td class="py-0.5 pr-6 text-right text-gray-600 font-medium">{{ retentionTotalLabel(r) }} retenido</td>
                                 <td class="py-0.5 text-right text-gray-900">− {{ formatCurrency(r.importe) }}</td>
                             </tr>
                             <tr>
@@ -509,17 +545,15 @@ const lugarFechaEmision = computed(() => {
                 </div>
 
                 <!-- Certifier data -->
-                <div class="flex-1 space-y-0.5 text-[9px]">
-                    <div class="text-[9px] uppercase tracking-widest font-bold text-gray-400 mb-1">Certificación</div>
-                    <p class="m-0 text-gray-900">
-                        <span class="font-medium text-gray-600">RFC Prov. Certif.:</span> {{ timbre.rfc_prov_certif }}
+                <div class="flex-1 space-y-0.5 text-[10px]">
+                    <div class="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1">Certificación</div>
+                    <p class=" m-0 font-semibold text-gray-800">
+                        <span class="font-medium text-gray-500">RFC Proveedor de certificación:</span> {{ timbre.rfc_prov_certif }} <span class="font-medium text-gray-400">|</span> <span class="font-medium text-gray-500">No. serie del certificado SAT:</span> {{ timbre.no_certificado_sat }} <span class="font-medium text-gray-400">|</span>  <span class="font-medium text-gray-500">Fecha y hora:</span> {{ formatDateMexico(timbre.fecha_timbrado) }}
                     </p>
-                    <p class="m-0 text-gray-900">
-                        <span class="font-medium text-gray-600">Certificado SAT:</span> {{ timbre.no_certificado_sat }}
-                    </p>
-                    <p class="m-0 text-gray-900">
-                        <span class="font-medium text-gray-600">Fecha y hora:</span> {{ timbre.fecha_timbrado }}
-                    </p>
+                    <div>
+                        <p class="mt-3 m-0 text-[8px] font-semibold text-gray-500 uppercase tracking-wider">Sello digital del CFDI</p>
+                        <p class="text-[8px] break-all m-0 text-gray-500 leading-tight">{{ timbre.sello_cfd }}</p>
+                    </div>
                 </div>
             </div>
 
@@ -527,17 +561,14 @@ const lugarFechaEmision = computed(() => {
                  BLOCK 5 — Sellos digitales (ultra-compact)
                  ════════════════════════════════════════ -->
             <div class="space-y-1.5 mb-4">
-                <div>
-                    <p class="m-0 text-[8px] font-semibold text-gray-500 uppercase tracking-wider">Sello digital del CFDI</p>
-                    <p class="text-[7px] break-all m-0 text-gray-500 leading-tight">{{ timbre.sello_cfd }}</p>
-                </div>
+                
                 <div>
                     <p class="m-0 text-[8px] font-semibold text-gray-500 uppercase tracking-wider">Sello digital del SAT</p>
-                    <p class="text-[7px] break-all m-0 text-gray-500 leading-tight">{{ timbre.sello_sat }}</p>
+                    <p class="text-[8px] break-all m-0 text-gray-500 leading-tight">{{ timbre.sello_sat }}</p>
                 </div>
                 <div>
                     <p class="m-0 text-[8px] font-semibold text-gray-500 uppercase tracking-wider">Cadena original del complemento de certificación digital del SAT</p>
-                    <p class="text-[7px] break-all m-0 text-gray-500 leading-tight">{{ timbre.cadena_original }}</p>
+                    <p class="text-[8px] break-all m-0 text-gray-500 leading-tight">{{ timbre.cadena_original }}</p>
                 </div>
             </div>
 

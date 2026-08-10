@@ -8,6 +8,8 @@ defineProps({
     form: { type: Object, required: true },
     products: { type: [Array, Object], default: () => [] },
     services: { type: [Array, Object], default: () => [] },
+    ppdInvoices: { type: [Array, Object], default: () => [] },
+    multipleEmitters: { type: Boolean, default: false },
     // Totals (computed by useInvoiceTaxes in InvoiceForm)
     subtotal: { type: Number, default: 0 },
     ivaTrasladado: { type: Number, default: 0 },
@@ -23,7 +25,7 @@ defineProps({
 <template>
     <!-- CFDI de Egreso (E): nota de crédito -->
     <PaymentSection :form="form" />
-    <RelatedCfdiSection :form="form" />
+    <RelatedCfdiSection :form="form" :ppd-invoices="ppdInvoices" :multiple-emitters="multipleEmitters" />
     <ConceptsSection :form="form" :products="products" :services="services" :is-traslado="false" />
     <InvoiceTotals
         :subtotal="subtotal"

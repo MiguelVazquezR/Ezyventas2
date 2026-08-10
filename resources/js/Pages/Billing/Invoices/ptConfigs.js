@@ -10,7 +10,7 @@
 const controlBase =
     'h-11 w-full min-w-0 !rounded-xl !bg-slate-50/50 dark:!bg-neutral-900/50 ' +
     '!border !border-slate-200 dark:!border-neutral-800 ' +
-    'focus:!border-primary-500 focus:!ring-1 focus:!ring-primary-500 ' +
+    'focus:!border-primary-100 focus:!ring-1 focus:!ring-primary-500 ' +
     '!transition-all !duration-200 !text-sm !text-slate-900 dark:!text-white ' +
     '!shadow-none !outline-none';
 

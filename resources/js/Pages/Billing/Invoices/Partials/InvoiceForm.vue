@@ -33,6 +33,10 @@ const customersList = computed(() => toArray(props.customers));
 const ppdInvoicesList = computed(() => toArray(props.ppdInvoices));
 const hasProfiles = computed(() => props.hasFiscalProfiles || fiscalProfilesList.value.length > 0);
 
+// Más de un RFC emisor en la cuenta: obliga a elegir emisor antes de usar las
+// listas de facturas relacionadas (se filtran por emisor).
+const multipleEmitters = computed(() => fiscalProfilesList.value.length > 1);
+
 const isEdit = props.mode === 'edit';
 const inv = props.invoice;
 
@@ -160,7 +164,6 @@ const showRelatedCfdiSection = computed(() => isEgreso.value);
 const showConceptsSection = computed(() => !isPago.value);
 const showPaymentDetailSection = computed(() => isPago.value);
 const showInvoiceTotals = computed(() => isIngreso.value || isEgreso.value);
-const showExportacionSelector = computed(() => !isPago.value);
 
 // ──────────────────────────────────────
 // Sidebar navigation
@@ -279,6 +282,10 @@ const { subtotal, ivaTrasladado, isrRetenido, ivaRetenido, granTotal, breakdown,
 // ──────────────────────────────────────
 const submit = (draft = false) => {
     form.draft = draft;
+
+    // La validación de "al menos un UUID" (Tipo E) la resuelve el backend en
+    // Store/UpdateInvoiceRequest, para que al guardar/timbrar aparezcan TODAS
+    // las validaciones obligatorias a la vez.
     const items = form.items;
     const bd = breakdown.value;
     for (let i = 0; i < items.length; i++) {
@@ -322,7 +329,7 @@ const submit = (draft = false) => {
                 :fiscal-profiles="fiscalProfilesList"
                 :mode="mode"
                 :is-nomina="isNomina"
-                :show-exportacion-selector="showExportacionSelector"
+                :is-pago="isPago"
                 :readiness-message="readinessMessage"
                 :profile-settings-url="profileSettingsUrl"
             />
@@ -357,6 +364,8 @@ const submit = (draft = false) => {
                 :form="form"
                 :products="products"
                 :services="services"
+                :ppd-invoices="ppdInvoicesList"
+                :multiple-emitters="multipleEmitters"
                 :subtotal="subtotal"
                 :iva-trasladado="ivaTrasladado"
                 :isr-retenido="isrRetenido"
@@ -370,6 +379,7 @@ const submit = (draft = false) => {
                 v-else-if="isPago"
                 :form="form"
                 :ppd-invoices="ppdInvoicesList"
+                :multiple-emitters="multipleEmitters"
             />
             <TrasladoForm
                 v-else-if="isTraslado"

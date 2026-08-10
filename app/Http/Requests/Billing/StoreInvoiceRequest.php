@@ -129,9 +129,22 @@ class StoreInvoiceRequest extends FormRequest
             ],
 
             // --- Nota de crédito (Tipo E) — CFDI relacionados ---
+            // A credit note must relate at least one invoice (UUID). When the
+            // comprobante is not E the frontend sends an empty array, so the
+            // required/min rules only apply to Tipo E.
             'tipo_relacion'          => ['nullable', 'string', 'max:5'],
-            'cfdi_relacionados'      => ['nullable', 'array'],
-            'cfdi_relacionados.*'    => ['nullable', 'string', 'max:36'],
+            'cfdi_relacionados'      => [
+                'nullable',
+                Rule::requiredIf(fn () => $this->input('tipo_comprobante') === 'E'),
+                'array',
+                Rule::when($this->input('tipo_comprobante') === 'E', 'min:1'),
+            ],
+            'cfdi_relacionados.*'    => [
+                'nullable',
+                Rule::requiredIf(fn () => $this->input('tipo_comprobante') === 'E'),
+                'string',
+                'uuid',
+            ],
 
             'currency'              => ['nullable', 'string', 'max:5'],
             'exchange_rate'         => ['nullable', 'numeric', 'min:0.000001'],
@@ -181,6 +194,10 @@ class StoreInvoiceRequest extends FormRequest
             'cfdi_use.required'              => 'El uso de CFDI es obligatorio.',
             'payment_form.required'          => 'La forma de pago es obligatoria.',
             'payment_method.required'        => 'El método de pago es obligatorio.',
+            'cfdi_relacionados.required'     => 'Agrega al menos un UUID de la factura a relacionar.',
+            'cfdi_relacionados.min'          => 'Agrega al menos un UUID de la factura a relacionar.',
+            'cfdi_relacionados.*.required'   => 'El UUID de la factura relacionada es obligatorio.',
+            'cfdi_relacionados.*.uuid'       => 'El UUID de la factura relacionada no es válido. Debe tener el formato xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.',
             'pago_fecha.required'            => 'La fecha y hora de recepción del pago es obligatoria.',
             'pago_forma.required'            => 'La forma de pago real es obligatoria.',
             'pago_monto.required'            => 'El monto total del pago es obligatorio.',

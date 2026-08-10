@@ -13,7 +13,7 @@ const props = defineProps({
     fiscalProfiles: { type: Array, default: () => [] },
     mode: { type: String, required: true }, // 'create' | 'edit'
     isNomina: { type: Boolean, default: false },
-    showExportacionSelector: { type: Boolean, default: true },
+    isPago: { type: Boolean, default: false },
     readinessMessage: { type: String, default: null },
     profileSettingsUrl: { type: String, default: '#' },
 });
@@ -92,8 +92,10 @@ const emitterRegimeLabel = computed(() => getRegimeLabel(emitterRegime.value));
                 </Message>
             </div>
 
-            <div v-if="showExportacionSelector" class="flex flex-col gap-1.5">
-                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-neutral-500 m-0">Exportación</label>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-neutral-500 m-0 inline-flex items-center gap-1.5">
+                    <i class="!text-xs"></i> Exportación
+                </label>
                 <Select
                     v-model="form.exportacion"
                     :options="exportacionOptions"
@@ -101,6 +103,7 @@ const emitterRegimeLabel = computed(() => getRegimeLabel(emitterRegime.value));
                     optionValue="value"
                     placeholder="Selecciona"
                     filter
+                    :disabled="true"
                     class="w-full"
                     :pt="selectPt"
                 >
@@ -112,8 +115,10 @@ const emitterRegimeLabel = computed(() => getRegimeLabel(emitterRegime.value));
                     </template>
                 </Select>
                 <Message v-if="form.errors.exportacion" severity="error" variant="simple" size="small">{{ form.errors.exportacion }}</Message>
+                <Message v-if="isPago" severity="info" variant="simple" size="small">
+                    En un CFDI de pago la exportación siempre es 01 - No aplica (regla SAT).
+                </Message>
             </div>
-            <InfoField v-else label="Exportación" value="01 - No aplica" icon="pi pi-globe" hint="En un CFDI de pago la exportación siempre es &quot;01 - No aplica&quot; (regla SAT)." />
         </div>
     </SectionCard>
 </template>

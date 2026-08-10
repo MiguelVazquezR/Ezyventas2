@@ -479,8 +479,13 @@ class InvoiceController extends Controller implements HasMiddleware
                 foreach ($item->retentions as $ret) {
                     $retType   = $ret['type'] ?? $ret['impuesto'] ?? null;
                     $retAmount = (float) ($ret['amount'] ?? $ret['importe'] ?? 0);
+                    $retRate   = (float) ($ret['rate'] ?? 0);
                     if ($retType && $retAmount > 0) {
-                        $allRetentions[] = ['impuesto' => $retType, 'importe' => $retAmount];
+                        $allRetentions[] = [
+                            'impuesto'   => $retType,
+                            'importe'    => $retAmount,
+                            'tasaOCuota' => $retRate,
+                        ];
                     }
                 }
             }
@@ -488,8 +493,9 @@ class InvoiceController extends Controller implements HasMiddleware
             // Legacy single retention field — only used when no multi-retention array
             if (empty($allRetentions) && $item->retained_tax_type && (float) $item->retained_tax_amount > 0) {
                 $allRetentions[] = [
-                    'impuesto' => $item->retained_tax_type,
-                    'importe'  => (float) $item->retained_tax_amount,
+                    'impuesto'   => $item->retained_tax_type,
+                    'importe'    => (float) $item->retained_tax_amount,
+                    'tasaOCuota' => (float) ($item->retained_tax_rate ?: 0),
                 ];
             }
 
@@ -498,8 +504,9 @@ class InvoiceController extends Controller implements HasMiddleware
 
                 if (! isset($groups[$key])) {
                     $groups[$key] = [
-                        'impuesto' => $ret['impuesto'],
-                        'importe'  => 0.0,
+                        'impuesto'   => $ret['impuesto'],
+                        'importe'    => 0.0,
+                        'tasaOCuota' => $ret['tasaOCuota'] ?? 0.0,
                     ];
                 }
 
