@@ -6,6 +6,7 @@ use App\Actions\Product\CreateProduct;
 use App\Actions\Product\UpdateProduct;
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
+use App\Http\Requests\Product\AdjustLayawayStockRequest;
 use App\Http\Requests\StoreProductRequest;
 use App\Http\Requests\UpdateProductRequest;
 use App\Models\AttributeDefinition;

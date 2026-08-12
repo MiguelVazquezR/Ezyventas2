@@ -66,6 +66,7 @@ const form = useForm({
     is_featured: props.product.is_featured ?? false,
     selling_price: props.product.selling_price ? parseFloat(props.product.selling_price) : null,
     price_tiers: props.product.price_tiers || [],
+    created_at: props.product.created_at || null,
     
     // Evaluación dinámica del tipo de producto incluyendo 'bulk' (Granel)
     product_type: props.product.is_bulk 
@@ -162,6 +163,7 @@ const submit = () => {
                         <GeneralInfo 
                             :form="form" :categories="localCategories" :brands="localBrands" 
                             :providers="localProviders" :branches="branches"
+                            :showCreatedAt="true"
                             @open-category="showCategoryModal = true" @open-brand="showBrandModal = true" @open-provider="showProviderModal = true"
                         />
                     </div>

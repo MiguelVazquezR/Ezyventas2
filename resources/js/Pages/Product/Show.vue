@@ -4,6 +4,7 @@ import { Head, router, Link, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
 import ManageStockModal from './Partials/ManageStockModal.vue';
+import AdjustLayawayStockModal from './Partials/AdjustLayawayStockModal.vue';
 import ActivityHistory from '@/Components/ActivityHistory.vue';
 import PrintModal from '@/Components/PrintModal.vue';
 import { usePermissions } from '@/Composables';
@@ -27,6 +28,7 @@ const { hasPermission } = usePermissions();
 const hasOnlineStore = computed(() => usePage().props.auth.active_modules?.includes('module_online_store'));
 
 const showManageStockModal = ref(false);
+const showAdjustLayawayModal = ref(false);
 
 // --- Lógica del Modal de Impresión ---
 const isPrintModalVisible = ref(false);
@@ -201,6 +203,7 @@ const deleteProduct = () => {
                     :activeLayaways="activeLayaways"
                     :hasManageStockPermission="hasPermission('products.manage_stock')"
                     @adjust-stock="showManageStockModal = true"
+                    @adjust-layaways="showAdjustLayawayModal = true"
                 />
 
                 <!-- Sección: Promociones -->
@@ -224,6 +227,9 @@ const deleteProduct = () => {
         <!-- Modales de la Vista -->
         <ManageStockModal v-if="product" :visible="showManageStockModal" :products="[product]"
             @update:visible="showManageStockModal = false" />
+
+        <AdjustLayawayStockModal v-if="product" :visible="showAdjustLayawayModal" :product="product"
+            @update:visible="showAdjustLayawayModal = false" />
             
         <PrintModal 
             v-if="printDataSource"

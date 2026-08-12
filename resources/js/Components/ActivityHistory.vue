@@ -229,7 +229,7 @@ const fieldTranslations = {
     'current_stock': 'Stock físico',
     'min_stock': 'Stock mínimo',
     'max_stock': 'Stock máximo',
-    'reserved_stock': 'Stock apartado',
+    'reserved_stock': 'Apartados',
     'available_stock': 'Stock disponible',
     'barcode': 'Código de barras',
     'price_tiers': 'Precios de mayoreo',
@@ -281,11 +281,35 @@ const fieldTranslations = {
     'recipient_phone': 'Teléfono del destinatario',
 };
 
+// --- MAPEO DE CAMPOS DE STOCK PARA MOVIMIENTOS ---
+const stockFieldLabels = {
+    'current_stock': 'Stock físico',
+    'reserved_stock': 'Apartados',
+    'available_stock': 'Stock disponible',
+    'layaway_adjustment': 'Apartados / disponible',
+    'simple_stock': 'Stock físico',
+    'variant_stock': 'Stock físico',
+};
+
+const getStockFieldLabel = (properties) => {
+    if (!properties) return 'Stock';
+    const field = properties.stock_field;
+    if (field && stockFieldLabels[field]) return stockFieldLabels[field];
+    return 'Stock';
+};
+
 // --- HELPERS UI ---
 const stripHtml = (html) => {
     if (!html) return '';
     const doc = new DOMParser().parseFromString(String(html), 'text/html');
     return doc.body.textContent || "";
+};
+
+// --- FORMATEO DE VALORES: BOLEANOS A SI/NO, DEMÁS COMO TEXTO ---
+const formatFieldValue = (value) => {
+    if (value === true || value === '1' || value === 1) return 'Sí';
+    if (value === false || value === '0' || value === 0) return 'No';
+    return stripHtml(value);
 };
 
 const getActivityTitle = (activity) => {
@@ -375,6 +399,7 @@ const getActivityColor = (activity) => {
                             <!-- Stock: Antes → Después (con delta) cuando hay before/after -->
                             <div v-if="activity.properties?.quantity_changed !== undefined && activity.properties?.stock_before !== undefined && activity.properties?.stock_after !== undefined"
                                 class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs border bg-gray-50 dark:bg-gray-900/30 border-gray-100 dark:border-gray-700">
+                                <span class="text-[9px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-medium mr-0.5">{{ getStockFieldLabel(activity.properties) }}:</span>
                                 <span class="text-gray-500 dark:text-gray-400 font-mono tabular-nums">{{ activity.properties.stock_before }}</span>
                                 <i class="pi pi-arrow-right text-gray-400 !text-[9px]"></i>
                                 <span class="font-semibold text-gray-900 dark:text-white font-mono tabular-nums">{{ activity.properties.stock_after }}</span>
@@ -383,6 +408,21 @@ const getActivityColor = (activity) => {
                                     {{ activity.properties.quantity_changed > 0 ? '+' : '' }}{{ activity.properties.quantity_changed }}
                                 </span>
                                 <span class="text-[9px] uppercase tracking-wider text-gray-400 font-medium">Uds</span>
+                            </div>
+
+                            <!-- Ajuste de apartados/disponible: mostrar detalle explícito -->
+                            <div v-else-if="activity.properties?.stock_field === 'layaway_adjustment'"
+                                class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs border bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800">
+                                <i class="pi pi-sliders-h text-indigo-400 !text-[10px]"></i>
+                                <span class="text-indigo-700 dark:text-indigo-300 font-medium">Apartados:</span>
+                                <span class="text-gray-500 dark:text-gray-400 font-mono tabular-nums">{{ activity.properties.reserved_before }}</span>
+                                <i class="pi pi-arrow-right text-gray-400 !text-[9px]"></i>
+                                <span class="font-semibold text-indigo-700 dark:text-indigo-300 font-mono tabular-nums">{{ activity.properties.reserved_after }}</span>
+                                <span class="text-gray-300 dark:text-gray-600 mx-0.5">|</span>
+                                <span class="text-indigo-700 dark:text-indigo-300 font-medium">Disponible:</span>
+                                <span class="text-gray-500 dark:text-gray-400 font-mono tabular-nums">{{ activity.properties.available_before }}</span>
+                                <i class="pi pi-arrow-right text-gray-400 !text-[9px]"></i>
+                                <span class="font-semibold text-indigo-700 dark:text-indigo-300 font-mono tabular-nums">{{ activity.properties.available_after }}</span>
                             </div>
 
                             <!-- Fallback: Solo delta para registros antiguos sin before/after -->
@@ -405,12 +445,12 @@ const getActivityColor = (activity) => {
                                         {{ fieldTranslations[key] || key }}
                                     </div>
                                     <div class="md:col-span-2 flex items-center gap-2">
-                                        <div v-if="activity.changes.before && activity.changes.before[key] !== undefined" class="flex-1 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 px-2 py-0.5 rounded border border-red-100 dark:border-red-900/20 line-through truncate max-w-[150px]" :title="stripHtml(activity.changes.before[key])">
-                                            {{ stripHtml(activity.changes.before[key]) }}
+                                        <div v-if="activity.changes.before && activity.changes.before[key] !== undefined" class="flex-1 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 px-2 py-0.5 rounded border border-red-100 dark:border-red-900/20 line-through truncate max-w-[150px]" :title="formatFieldValue(activity.changes.before[key])">
+                                            {{ formatFieldValue(activity.changes.before[key]) }}
                                         </div>
                                         <i v-if="activity.changes.before && activity.changes.before[key] !== undefined" class="pi pi-arrow-right text-gray-400 !text-[10px]"></i>
-                                        <div class="flex-1 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400 px-2 py-0.5 rounded border border-green-100 dark:border-green-900/20 font-medium truncate max-w-[150px]" :title="stripHtml(value)">
-                                            {{ stripHtml(value) }}
+                                        <div class="flex-1 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400 px-2 py-0.5 rounded border border-green-100 dark:border-green-900/20 font-medium truncate max-w-[150px]" :title="formatFieldValue(value)">
+                                            {{ formatFieldValue(value) }}
                                         </div>
                                     </div>
                                 </div>
