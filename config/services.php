@@ -40,6 +40,10 @@ return [
         'redirect' => env('GOOGLE_REDIRECT_URI'),
     ],
 
+    'google_ads' => [
+        'id' => env('GOOGLE_ADS_ID'),
+    ],
+
     'mercadopago' => [
         'client_id'         => env('MP_CLIENT_ID'),
         'client_secret'     => env('MP_CLIENT_SECRET'),

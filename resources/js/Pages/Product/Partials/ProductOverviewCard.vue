@@ -28,6 +28,17 @@ const formatCurrency = (value) => {
     return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
 };
 
+const formatDateTime = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return dateString;
+        return date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+        return dateString;
+    }
+};
+
 // --- LÓGICA DE UTILIDAD (PROFIT MARGIN) ---
 const baseProfit = computed(() => {
     const cost = Number(props.product.cost_price);
@@ -109,6 +120,12 @@ const priceTiers = computed(() => {
 
         <!-- Tarjetas de Información Rápida (Grid) -->
         <div class="grid grid-cols-2 gap-3">
+            <div class="bg-white dark:bg-[#232323] p-4 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
+                <span class="text-[10px] block text-gray-500 uppercase font-bold tracking-wider mb-1">Fecha de creación</span>
+                <div class="font-medium text-gray-900 dark:text-gray-100 text-sm truncate" :title="formatDateTime(product.created_at)">
+                    {{ formatDateTime(product.created_at) }}
+                </div>
+            </div>
             <div class="bg-white dark:bg-[#232323] p-4 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
                 <div class="flex justify-between items-start mb-1">
                     <span class="text-[10px] text-gray-500 uppercase font-bold tracking-wider">SKU</span>

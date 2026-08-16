@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, onMounted } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticationCardLogo from '@/Components/AuthenticationCardLogo.vue';
 
@@ -14,6 +14,20 @@ const submit = () => {
 };
 
 const verificationLinkSent = computed(() => props.status === 'verification-link-sent');
+
+function trackConversion() {
+    // Evita disparar la conversión más de una vez por sesión
+    if (sessionStorage.getItem('ga_conversion_user_registered')) return;
+    if (typeof window.gtag !== 'function') return;
+
+    window.gtag('event', 'conversion', {
+        send_to: 'AW-11551790009/oDk-CJuaxd8cELmnqYQr',
+    });
+
+    sessionStorage.setItem('ga_conversion_user_registered', '1');
+}
+
+onMounted(trackConversion);
 </script>
 
 <!-- Estilos consistentes con las otras vistas -->

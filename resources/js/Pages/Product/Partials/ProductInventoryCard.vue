@@ -10,7 +10,7 @@ const props = defineProps({
     hasManageStockPermission: Boolean
 });
 
-const emit = defineEmits(['adjust-stock']);
+const emit = defineEmits(['adjust-stock', 'adjust-layaways']);
 
 const formatCurrency = (value) => {
     if (value === null || value === undefined) return 'N/A';
@@ -142,7 +142,10 @@ const getVariantImage = (variant) => {
                 <i v-else class="pi pi-box text-blue-500"></i>
                 {{ isComposite ? 'Componentes del Kit/Combo' : 'Inventario y variantes' }}
             </h3>
-            <Button v-if="hasManageStockPermission && !isComposite" label="Ajustar stock" icon="pi pi-sort-alt" size="small" outlined @click="$emit('adjust-stock')" class="!py-1" />
+            <span v-if="hasManageStockPermission && !isComposite" class="flex items-center gap-2">
+                <Button label="Ajustar apartados" icon="pi pi-sliders-h" size="small" outlined severity="secondary" @click="$emit('adjust-layaways')" class="!py-1" />
+                <Button label="Ajustar stock" icon="pi pi-sort-alt" size="small" outlined @click="$emit('adjust-stock')" class="!py-1" />
+            </span>
         </div>
 
         <!-- SI ES PRODUCTO COMPUESTO: Mostrar Componentes en vez de Stock Físico -->
