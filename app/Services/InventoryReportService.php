@@ -542,4 +542,188 @@ class InventoryReportService
 
         return (int) $lastSale->created_at->diffInDays(now());
     }
+
+    // ─── AI Agent Tools ─────────────────────────────────────
+
+    /**
+     * Sales grouped by product or category in a date range.
+     * Only includes Product and ProductAttribute itemable types (not services).
+     */
+    public function salesByProduct(int $branchId, Carbon $startDate, Carbon $endDate, string $groupBy = 'product', int $limit = 10): array
+    {
+        $items = TransactionItem::where(function ($q) {
+                $q->where('itemable_type', Product::class)
+                  ->orWhere('itemable_type', ProductAttribute::class);
+            })
+            ->whereHas('transaction', fn ($q) => $q->where('branch_id', $branchId)
+                ->whereNotIn('status', ['cancelado', 'cambiado'])
+                ->whereBetween('created_at', [$startDate, $endDate]));
+
+        if ($groupBy === 'category') {
+            // Join to products to get category_id, then group by category
+            $aggregated = $items->join('products', function ($join) {
+                    $join->on('transactions_items.itemable_id', '=', 'products.id')
+                         ->where('transactions_items.itemable_type', Product::class);
+                })
+                ->join('categories', 'products.category_id', '=', 'categories.id')
+                ->select(
+                    'categories.id',
+                    'categories.name as group_name',
+                    DB::raw('SUM(transactions_items.quantity) as total_quantity'),
+                    DB::raw('SUM(transactions_items.line_total) as total_revenue'),
+                    DB::raw('COUNT(DISTINCT transactions_items.transaction_id) as transaction_count')
+                )
+                ->groupBy('categories.id', 'categories.name')
+                ->orderByDesc('total_revenue')
+                ->limit($limit)
+                ->get()
+                ->map(fn ($row) => [
+                    'id'                => $row->id,
+                    'name'              => $row->group_name ?? 'Sin categoría',
+                    'total_quantity'    => (float) $row->total_quantity,
+                    'total_revenue'     => round((float) $row->total_revenue, 2),
+                    'transaction_count' => (int) $row->transaction_count,
+                ]);
+
+            return [
+                'group_by' => 'category',
+                'period'   => ['start' => $startDate->toDateString(), 'end' => $endDate->toDateString()],
+                'rows'     => $aggregated->toArray(),
+            ];
+        }
+
+        // Default: group by product (itemable)
+        $aggregated = $items->select(
+                'itemable_id',
+                'itemable_type',
+                DB::raw('SUM(quantity) as total_quantity'),
+                DB::raw('SUM(line_total) as total_revenue'),
+                DB::raw('COUNT(DISTINCT transaction_id) as transaction_count')
+            )
+            ->groupBy('itemable_id', 'itemable_type')
+            ->orderByDesc('total_revenue')
+            ->limit($limit)
+            ->get()
+            ->map(function ($item) {
+                $model = $item->itemable_type::find($item->itemable_id);
+                if (! $model) {
+                    return null;
+                }
+
+                if ($model instanceof ProductAttribute) {
+                    $name = ($model->product?->name ?? 'Producto') . ' - ' . implode(' ', $model->attributes ?? []);
+                    $sku = $model->sku_suffix ?: $model->product?->sku;
+                } else {
+                    $name = $model->name;
+                    $sku = $model->sku;
+                }
+
+                return [
+                    'id'                => $model->id,
+                    'name'              => $name,
+                    'sku'               => $sku,
+                    'total_quantity'    => (float) $item->total_quantity,
+                    'total_revenue'     => round((float) $item->total_revenue, 2),
+                    'transaction_count' => (int) $item->transaction_count,
+                ];
+            })
+            ->filter()
+            ->values();
+
+        return [
+            'group_by' => 'product',
+            'period'   => ['start' => $startDate->toDateString(), 'end' => $endDate->toDateString()],
+            'rows'     => $aggregated->toArray(),
+        ];
+    }
+
+    /**
+     * Profit margin per product in a date range.
+     * Computes margin_amount = SUM((unit_price - cost_price) * quantity)
+     * and margin_percent = margin_amount / revenue.
+     * Products with null cost_price are flagged as "cost not set" and
+     * excluded from percent calculations.
+     */
+    public function productMarginReport(int $branchId, Carbon $startDate, Carbon $endDate, int $limit = 10, string $sort = 'margin_amount'): array
+    {
+        $items = TransactionItem::where(function ($q) {
+                $q->where('itemable_type', Product::class)
+                  ->orWhere('itemable_type', ProductAttribute::class);
+            })
+            ->whereHas('transaction', fn ($q) => $q->where('branch_id', $branchId)
+                ->whereNotIn('status', ['cancelado', 'cambiado'])
+                ->whereBetween('created_at', [$startDate, $endDate]))
+            ->select(
+                'itemable_id',
+                'itemable_type',
+                DB::raw('SUM(quantity) as total_quantity'),
+                DB::raw('SUM(line_total) as total_revenue'),
+                DB::raw('SUM(unit_price * quantity) as total_revenue_raw')
+            )
+            ->groupBy('itemable_id', 'itemable_type');
+
+        $items = $items->get()->map(function ($item) {
+            $model = $item->itemable_type::find($item->itemable_id);
+            if (! $model) {
+                return null;
+            }
+
+            if ($model instanceof ProductAttribute) {
+                $name = ($model->product?->name ?? 'Producto') . ' - ' . implode(' ', $model->attributes ?? []);
+                $sku = $model->sku_suffix ?: $model->product?->sku;
+                $costPrice = $model->product?->cost_price;
+            } else {
+                $name = $model->name;
+                $sku = $model->sku;
+                $costPrice = $model->cost_price;
+            }
+
+            $revenue = round((float) $item->total_revenue, 2);
+            $quantity = (float) $item->total_quantity;
+
+            $hasCost = $costPrice !== null && $costPrice > 0;
+            $totalCost = $hasCost ? round($quantity * (float) $costPrice, 2) : null;
+            $marginAmount = $hasCost ? round($revenue - $totalCost, 2) : null;
+            $marginPercent = $hasCost && $revenue > 0
+                ? round(($marginAmount / $revenue) * 100, 1)
+                : null;
+
+            return [
+                'id'             => $model->id,
+                'name'           => $name,
+                'sku'            => $sku,
+                'total_quantity' => $quantity,
+                'total_revenue'  => $revenue,
+                'total_cost'     => $totalCost,
+                'margin_amount'  => $marginAmount,
+                'margin_percent' => $marginPercent,
+                'cost_not_set'   => ! $hasCost,
+            ];
+        })->filter()->values();
+
+        // Sort
+        if ($sort === 'margin_percent') {
+            $items = $items->sortByDesc(function ($row) {
+                return $row['margin_percent'] ?? -9999;
+            });
+        } else {
+            $items = $items->sortByDesc(function ($row) {
+                return $row['margin_amount'] ?? -9999;
+            });
+        }
+
+        $items = $items->take($limit)->values();
+
+        return [
+            'period' => ['start' => $startDate->toDateString(), 'end' => $endDate->toDateString()],
+            'sort'   => $sort,
+            'rows'   => $items->toArray(),
+            'summary' => [
+                'total_revenue'     => round($items->sum('total_revenue'), 2),
+                'total_margin'      => round($items->sum(fn ($r) => $r['margin_amount'] ?? 0), 2),
+                'products_with_cost' => $items->where('cost_not_set', false)->count(),
+                'products_without_cost' => $items->where('cost_not_set', true)->count(),
+            ],
+        ];
+    }
 }

@@ -8,6 +8,7 @@ import AppTopbar from './AppTopbar.vue';
 import { useToast } from 'primevue/usetoast';
 import { Link } from '@inertiajs/vue3';
 import SessionClosedModal from '@/Components/SessionClosedModal.vue';
+import AiChatDrawer from '@/Components/AiChatDrawer.vue';
 
 defineProps({
     title: String,
@@ -49,6 +50,9 @@ provide('activeSession', computed(() => page.props.activeSession));
 const { layoutConfig, layoutState, isSidebarActive } = useLayout();
 const outsideClickListener = ref(null);
 
+// ── AI Chat Drawer ──
+const aiDrawerVisible = ref(false);
+
 const toast = useToast();
 
 watch(isSidebarActive, (newVal) => {
@@ -65,16 +69,16 @@ const handleFlashMessages = (event) => {
     const flash = event.detail.page.props.flash;
     if (flash) {
         if (flash.success) {
-            toast.add({ severity: 'success', summary: 'Éxito', detail: flash.success, life: 6000 });
+            toast.add({ severity: 'success', summary: 'Éxito', detail: flash.success, life: 6000, escape: false });
         }
         if (flash.error) {
-            toast.add({ severity: 'error', summary: 'Error', detail: flash.error, life: 6000 });
+            toast.add({ severity: 'error', summary: 'Error', detail: flash.error, life: 6000, escape: false });
         }
         if (flash.warning) {
-            toast.add({ severity: 'warn', summary: 'Advertencia', detail: flash.warning, life: 6000 });
+            toast.add({ severity: 'warn', summary: 'Advertencia', detail: flash.warning, life: 6000, escape: false });
         }
         if (flash.info) {
-            toast.add({ severity: 'info', summary: 'Información', detail: flash.info, life: 6000 });
+            toast.add({ severity: 'info', summary: 'Información', detail: flash.info, life: 6000, escape: false });
         }
     }
 };
@@ -224,7 +228,7 @@ watch(activeSession, (newSession, oldSession) => {
         </div>
         <div class="layout-mask animate-fadein"></div>
     </div>
-    <Toast />
+    <Toast :escape="false" />
     <ConfirmDialog class="max-w-2xl" />
 
     <!-- --- INICIO: NUEVO MODAL AÑADIDO --- -->
@@ -234,4 +238,16 @@ watch(activeSession, (newSession, oldSession) => {
         @update:visible="sessionClosedModalVisible = $event"
     />
     <!-- --- FIN: NUEVO MODAL AÑADIDO --- -->
+
+    <!-- ── AI Chat floating trigger button ── -->
+    <button
+        class="fixed bottom-2 right-2 z-50 w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 flex items-center justify-center transition-all duration-200 border-0 cursor-pointer"
+        @click="aiDrawerVisible = true"
+        :aria-label="'Abrir asistente IA'"
+    >
+        <i class="pi pi-sparkles !text-white !text-xl" />
+    </button>
+
+    <!-- ── AI Chat Drawer ── -->
+    <AiChatDrawer v-model:visible="aiDrawerVisible" />
 </template>

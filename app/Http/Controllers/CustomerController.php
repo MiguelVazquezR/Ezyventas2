@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
 use App\Http\Requests\StoreCustomerRequest;
+use App\Http\Requests\UpdateCustomerPhoneRequest;
 use App\Http\Requests\UpdateCustomerRequest;
 use App\Models\CashRegister;
 use App\Models\Customer;
@@ -80,6 +81,7 @@ class CustomerController extends Controller implements HasMiddleware
                 'branch_id' => Auth::user()->branch_id,
                 'balance' => 0, 
                 'address' => $request->input('address', []),
+                'fiscal_address' => $request->input('fiscal_address'),
             ]));
 
             // Usamos el nuevo método delegado al modelo
@@ -162,9 +164,27 @@ class CustomerController extends Controller implements HasMiddleware
         if ($request->has('address')) {
             $data['address'] = $request->input('address');
         }
+        if ($request->has('fiscal_address')) {
+            $data['fiscal_address'] = $request->input('fiscal_address');
+        }
 
         $customer->update($data);
         return redirect()->route('customers.index')->with('success', 'Cliente actualizado con éxito.');
+    }
+
+    /**
+     * Actualiza únicamente el teléfono del cliente (usado desde el modal
+     * de impresión para enviar el ticket por WhatsApp).
+     */
+    public function updatePhone(UpdateCustomerPhoneRequest $request, Customer $customer)
+    {
+        $customer->update(['phone' => $request->validated()['phone']]);
+
+        return response()->json([
+            'success' => true,
+            'phone' => $customer->phone,
+            'message' => 'Teléfono actualizado con éxito.',
+        ]);
     }
 
     public function adjustBalance(Request $request, Customer $customer)

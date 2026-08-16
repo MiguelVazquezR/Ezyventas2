@@ -137,7 +137,7 @@ const submit = () => {
                         <InputError :message="form.errors.deleted_media_ids" class="mt-2" />
                     </div>
 
-                    <div class="flex justify-end sticky bottom-4 z-20">
+                    <div class="flex justify-start sticky bottom-4 z-20">
                         <Button type="submit" label="Guardar cambios" icon="pi pi-check" :loading="form.processing" severity="warning" size="large" class="shadow-xl" />
                     </div>
                 </form>

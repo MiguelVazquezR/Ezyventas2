@@ -29,7 +29,9 @@ class SettingsController extends Controller implements HasMiddleware
         $branch = $user->branch;
         $subscription = $branch->subscription;
 
-        $definitions = SettingDefinition::orderBy('name')->get();
+        $definitions = SettingDefinition::where('level', '!=', 'platform')
+            ->orderBy('name')
+            ->get();
 
         // --- NUEVO: Obtener los módulos disponibles de la suscripción ---
         $availableModules = $subscription->getAvailableModuleNames();

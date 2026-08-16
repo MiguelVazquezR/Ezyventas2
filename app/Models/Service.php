@@ -24,6 +24,8 @@ class Service extends Model implements HasMedia
         'name',
         'description',
         'slug',
+        'sat_product_code',
+        'sat_unit_code',
         'base_price',
         'duration_estimate',
         'show_online',

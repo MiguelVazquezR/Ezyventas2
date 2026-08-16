@@ -6,6 +6,8 @@ use App\Enums\BillingPeriod;
 use App\Enums\PlanItemType;
 use App\Enums\SubscriptionPaymentStatus;
 use App\Enums\SubscriptionStatus;
+use App\Models\Billing\FiscalProfile;
+use App\Models\Billing\PacAccount;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -32,12 +34,16 @@ class Subscription extends Model implements HasMedia
         'slug',
         'onboarding_completed_at',
         'referrer_discount_active',
+        // LEGACY: la facturación se deriva del módulo module_billing (billingEnabled()).
+        // Columna conservada por compatibilidad; ya no se usa como gate.
+        'facturacion_habilitada',
     ];
 
     protected $casts = [
         'address' => 'array',
         'onboarding_completed_at' => 'datetime',
         'referrer_discount_active' => 'boolean',
+        'facturacion_habilitada' => 'boolean', // LEGACY — ya no se usa como gate (ver billingEnabled())
         'status' => SubscriptionStatus::class,
     ];
     
@@ -117,6 +123,19 @@ class Subscription extends Model implements HasMedia
             ->where('item_type', 'module')
             ->pluck('item_key')
             ->all();
+    }
+
+    /**
+     * Determina si la facturación está habilitada para esta suscripción.
+     *
+     * La facturación es un módulo adicional (module_billing): se activa
+     * automáticamente cuando el suscriptor tiene contratado el módulo en
+     * su versión activa. Reemplaza al antiguo flag manual
+     * `facturacion_habilitada` (legacy).
+     */
+    public function billingEnabled(): bool
+    {
+        return in_array('module_billing', $this->getActiveModuleKeys(), true);
     }
 
     public function hasReachedProductLimit(int $additionalItems = 0): bool
@@ -363,6 +382,12 @@ class Subscription extends Model implements HasMedia
 
     public function printTemplates(): HasMany { return $this->hasMany(PrintTemplate::class); }
     public function bankAccounts(): HasMany { return $this->hasMany(BankAccount::class); }
+    public function fiscalProfiles(): HasMany { return $this->hasMany(FiscalProfile::class); }
+
+    /**
+     * PAC login accounts belonging to this subscription.
+     */
+    public function pacAccounts(): HasMany { return $this->hasMany(PacAccount::class); }
     public function getRouteKeyName(): string { return 'slug'; }
     public function users(): HasManyThrough { return $this->hasManyThrough(User::class, Branch::class); }
     public function cashRegisters(): HasManyThrough { return $this->hasManyThrough(CashRegister::class, Branch::class); }
@@ -422,5 +447,67 @@ class Subscription extends Model implements HasMedia
                 $q->whereHas('versions', fn($v) => $v->where('end_date', '>=', now()->startOfDay()))
             )
             ->sum('referrer_ongoing_discount_pct');
+    }
+
+    /**
+     * Obtiene el límite y uso de tokens de IA para el mes actual.
+     * Solo aplica si la suscripción tiene activo el módulo module_ai_agent.
+     * El límite se lee de la configuración por suscripción (ai.token_limit), con fallback a 2,000,000.
+     */
+    public function getAiCreditLimitData(): array
+    {
+        $activeModules = $this->getActiveModuleKeys();
+
+        if (! in_array('module_ai_agent', $activeModules)) {
+            return [
+                'limit'      => 0,
+                'usage'      => 0,
+                'remaining'  => 0,
+                'percentage' => 0,
+            ];
+        }
+
+        $limit = (int) (\App\Models\SettingDefinition::where('key', 'ai.token_limit')->value('default_value')
+            ?: config('ai-agent.default_monthly_tokens', 2_000_000));
+
+        $usage = \App\Models\AiUsageMonthly::where('subscription_id', $this->id)
+            ->where('year', now()->year)
+            ->where('month', now()->month)
+            ->first();
+
+        $usedTokens = (int) ($usage?->total_tokens ?? 0);
+
+        return [
+            'limit'      => $limit,
+            'usage'      => $usedTokens,
+            'remaining'  => max(0, $limit - $usedTokens),
+            'percentage' => $limit > 0 ? min(100, round(($usedTokens / $limit) * 100, 1)) : 0,
+        ];
+    }
+
+    /**
+     * Get a setting value for this subscription, falling back to the definition default.
+     */
+    public function getSettingValue(string $key, mixed $default = null): mixed
+    {
+        $definition = \App\Models\SettingDefinition::where('key', $key)->first();
+
+        if (! $definition) {
+            return $default;
+        }
+
+        $value = $this->settings()
+            ->where('setting_definition_id', $definition->id)
+            ->value('value');
+
+        return $value ?? $definition->default_value ?? $default;
+    }
+
+    /**
+     * Check if this subscription has the AI Agent module active.
+     */
+    public function hasAiAgentModule(): bool
+    {
+        return in_array('module_ai_agent', $this->getActiveModuleKeys());
     }
 }

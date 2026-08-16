@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
-import { useForm } from '@inertiajs/vue3';
+import { useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
@@ -14,6 +14,8 @@ const props = defineProps({
 });
 
 const confirm = useConfirm();
+
+const hasBilling = computed(() => usePage().props.auth.active_modules?.includes('module_billing'));
 
 const home = ref({ icon: 'pi pi-home', url: route('dashboard') });
 const breadcrumbItems = ref([{ label: 'Catálogo de Servicios', url: route('services.index') }, { label: 'Editar Servicio' }]);
@@ -39,6 +41,8 @@ const form = useForm({
     duration_estimate: props.service.duration_estimate,
     show_online: props.service.show_online,
     image: null,
+    sat_product_code: props.service.sat_product_code || '',
+    sat_unit_code: props.service.sat_unit_code || '',
     branch_ids: props.service.branches.map(b => b.id),
 
     has_variants: initialHasVariants,
@@ -187,6 +191,32 @@ const submit = () => {
                     <InputLabel for="description" value="Descripción" />
                     <Editor v-model="form.description" editorStyle="height: 150px" class="mt-1" />
                 </div>
+
+                <!-- SAT fiscal fields (only when billing module is active) -->
+                <template v-if="hasBilling">
+                    <div>
+                        <InputLabel for="sat_product_code" value="Clave de Servicio (En caso de emitir factura)" />
+                        <InputText id="sat_product_code" v-model="form.sat_product_code" class="mt-1 w-full" placeholder="01010101" maxlength="8" />
+                        <InputError :message="form.errors.sat_product_code" class="mt-2" />
+                    </div>
+                    <div>
+                        <InputLabel for="sat_unit_code" value="Clave Unidad (En caso de emitir factura)" />
+                        <Select id="sat_unit_code" v-model="form.sat_unit_code" :options="[
+                            { value: 'H87', label: 'H87 - Pieza', description: 'Artículos individuales / Productos físicos' },
+                            { value: 'E48', label: 'E48 - Unidad de servicio', description: 'Servicios (consultoría, desarrollo, honorarios, comisiones)' },
+                            { value: 'KGM', label: 'KGM - Kilogramo', description: 'Materiales, alimentos a granel, peso' },
+                            { value: 'LTR', label: 'LTR - Litro', description: 'Líquidos, insumos' },
+                            { value: 'MTR', label: 'MTR - Metro', description: 'Telas, cables, construcción' },
+                            { value: 'XBX', label: 'XBX - Caja', description: 'Empaques o ventas agrupadas' },
+                            { value: 'XPK', label: 'XPK - Paquete', description: 'Kits o venta agrupada' },
+                            { value: 'DAY', label: 'DAY - Día', description: 'Arrendamiento de equipo, hospedaje' },
+                            { value: 'HUR', label: 'HUR - Hora', description: 'Soporte por tiempo, asesorías' },
+                            { value: 'MON', label: 'MON - Mes', description: 'Suscripciones, rentas' },
+                            { value: 'ACT', label: 'ACT - Actividad', description: 'Tareas de mantenimiento o servicios por avance' },
+                        ]" optionLabel="label" optionValue="value" placeholder="Selecciona" filter showClear class="mt-1 w-full" />
+                        <InputError :message="form.errors.sat_unit_code" class="mt-2" />
+                    </div>
+                </template>
 
                 <!-- SWITCH DE VARIANTES -->
                 <div class="md:col-span-2 mt-4">

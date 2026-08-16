@@ -40,6 +40,107 @@ class PrintEncoderService
     }
 
     /**
+     * Codifica una plantilla de Ticket a bytes ESC/POS crudos, devuelve Base64.
+     * Usado exclusivamente para impresión Bluetooth vía Web Bluetooth API.
+     */
+    public static function encodeEscPosToBase64(PrintTemplate $template, $dataSource, array $options = []): string
+    {
+        $config = $template->content['config'] ?? [];
+        $elements = $template->content['elements'] ?? [];
+
+        $rawBytes = '';
+
+        // Abrir cajón si se solicita
+        if (!empty($options['open_drawer'])) {
+            $rawBytes .= "\x1B" . "p" . "\x00" . "\x19" . "\xFA";
+        }
+
+        $rawBytes .= self::buildEscPosRawText($elements, $config, $dataSource);
+
+        return base64_encode($rawBytes);
+    }
+
+    /**
+     * Construye una representación HTML simple del ticket para vista previa / PDF / AirPrint.
+     * Usado como fallback para iOS/Safari que no soportan Web Bluetooth.
+     */
+    public static function encodeTicketToHtml(PrintTemplate $template, $dataSource, array $options = []): string
+    {
+        $config = $template->content['config'] ?? [];
+        $elements = $template->content['elements'] ?? [];
+
+        $widthChars = ($config['paperWidth'] ?? '80mm') === '80mm' ? 48 : 32;
+        $rows = [];
+
+        foreach ($elements as $element) {
+            $align = $element['data']['align'] ?? 'left';
+            $alignStyle = match ($align) {
+                'center' => 'text-align:center;',
+                'right' => 'text-align:right;',
+                default => 'text-align:left;',
+            };
+
+            switch ($element['type']) {
+                case 'text':
+                    $text = self::replacePlaceholders($element['data']['text'], $dataSource);
+                    $rows[] = "<div style=\"{$alignStyle} white-space:pre-wrap; font-family:'Courier New',monospace;\">" . htmlspecialchars($text) . "</div>";
+                    break;
+                case 'separator':
+                    $rows[] = '<div style="text-align:center; font-family:\'Courier New\',monospace;">' . str_repeat('-', $widthChars) . '</div>';
+                    break;
+                case 'line_break':
+                    $rows[] = '<div style="height:0.5em;"></div>';
+                    break;
+                case 'sales_table':
+                    $rows[] = '<div style="font-family:\'Courier New\',monospace; font-size:11px; border-top:1px dashed #999; border-bottom:1px dashed #999; padding:4px 0; margin:4px 0;">';
+                    $rows[] = '<div style="display:flex; justify-content:space-between; font-weight:bold;">';
+                    $rows[] = '<span>Cant</span><span>Concepto</span><span>Total</span>';
+                    $rows[] = '</div>';
+                    if (method_exists($dataSource, 'items') && $dataSource->items()->exists()) {
+                        foreach ($dataSource->items as $item) {
+                            $name = htmlspecialchars(substr($item->description, 0, 25));
+                            $total = '$' . number_format($item->line_total, 2);
+                            $rows[] = '<div style="display:flex; justify-content:space-between;">';
+                            $rows[] = "<span>{$item->quantity}</span><span>{$name}</span><span style=\"text-align:right;\">{$total}</span>";
+                            $rows[] = '</div>';
+                        }
+                    }
+                    $rows[] = '</div>';
+                    break;
+                case 'image':
+                case 'local_image':
+                    if (!empty($element['data']['url'])) {
+                        $rows[] = '<div style="text-align:center;"><img src="' . htmlspecialchars($element['data']['url']) . '" style="max-width:100%; height:auto;" /></div>';
+                    }
+                    break;
+                case 'qr':
+                    $qrData = self::replacePlaceholders($element['data']['value'], $dataSource);
+                    $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' . urlencode($qrData);
+                    $rows[] = '<div style="text-align:center;"><img src="' . $qrUrl . '" style="width:120px; height:120px;" /></div>';
+                    break;
+                case 'barcode':
+                    $barcodeData = self::replacePlaceholders($element['data']['value'], $dataSource);
+                    $rows[] = '<div style="text-align:center; font-family:\'Courier New\',monospace; letter-spacing:3px;">*' . htmlspecialchars($barcodeData) . '*</div>';
+                    break;
+            }
+        }
+
+        // Footer
+        $rows[] = '<div style="text-align:center; font-family:\'Courier New\',monospace; font-weight:bold; margin-top:1em;">** ezyventas.com **</div>';
+
+        $rows[] = str_repeat('<br>', $config['feedLines'] ?? 0);
+
+        $paperWidth = ($config['paperWidth'] ?? '80mm') === '80mm' ? '80mm' : '58mm';
+
+        $html = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ticket</title></head>';
+        $html .= '<body style="margin:0; padding:8px; font-size:12px; color:#000; background:#fff; width:' . $paperWidth . '; max-width:100%; margin:0 auto;">';
+        $html .= implode("\n", $rows);
+        $html .= '</body></html>';
+
+        return $html;
+    }
+
+    /**
      * Codifica una plantilla de Etiqueta (TSPL)
      */
     private static function encodeTspl(PrintTemplate $template, $dataSource, array $options = []): array
@@ -195,6 +296,13 @@ class PrintEncoderService
                     break;
             }
         }
+
+        // Footer / Publicidad de marca — centrado y en negritas
+        $fullText .= $alignCenter;
+        $fullText .= $boldOn;
+        $fullText .= "\n** ezyventas.com **\n";
+        $fullText .= $boldOff;
+        $fullText .= $alignLeft;
 
         $fullText .= str_repeat("\n", $config['feedLines'] ?? 0);
         $fullText .= $cutPaper;

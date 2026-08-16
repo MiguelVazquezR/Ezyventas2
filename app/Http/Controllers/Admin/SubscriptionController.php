@@ -10,11 +10,16 @@ use App\Models\SettingDefinition;
 use App\Http\Requests\Admin\UpdateSubscriptionVersionRequest;
 use App\Http\Requests\Admin\UpdateVersionItemsRequest;
 use App\Http\Requests\Admin\StoreVersionWithPaymentRequest;
+use App\Http\Requests\Admin\Subscriptions\StoreSubscriptionRequest;
 use App\Actions\Admin\Subscriptions\UpdateSubscriptionVersionAction;
 use App\Actions\Admin\Subscriptions\UpdateVersionItemsAction;
 use App\Actions\Admin\Subscriptions\CreateVersionWithPaymentAction;
+use App\Actions\Admin\Subscriptions\CreateSubscriptionAction;
 use App\Actions\Admin\Subscriptions\DeleteVersionAction;
+use App\Actions\Admin\Subscriptions\DeleteSubscriptionAction;
 use App\Actions\Admin\Subscriptions\UpdateEntitySettingsAction;
+use App\Models\Billing\StampPurchase;
+use App\Services\SW\SWUserService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -69,6 +74,30 @@ class SubscriptionController extends Controller
             'subscriptions' => $subscriptions,
             'filters' => $filters,
         ]);
+    }
+
+    /**
+     * Muestra el formulario para crear una nueva suscripción.
+     */
+    public function create()
+    {
+        $planItems = PlanItem::where('is_active', true)->get();
+
+        return Inertia::render('Admin/Subscriptions/Create', [
+            'planItems' => $planItems,
+        ]);
+    }
+
+    /**
+     * Almacena una nueva suscripción creada manualmente por el superadmin.
+     */
+    public function store(StoreSubscriptionRequest $request, CreateSubscriptionAction $action)
+    {
+        $subscription = $action->execute($request->validated());
+
+        return redirect()
+            ->route('admin.subscriptions.show', $subscription->id)
+            ->with('success', 'La suscripción ha sido creada exitosamente.');
     }
 
     /**
@@ -135,6 +164,8 @@ class SubscriptionController extends Controller
             'limit_print_templates' => $subscription->print_templates_count,
         ];
 
+        // 8. AI agent usage (read-only, limit is platform-wide)
+
         // Fallbacks visuales si un límite no trae un ícono definido en su columna 'meta'
         $defaultIcons = [
             'limit_branches' => 'pi pi-building',
@@ -181,6 +212,88 @@ class SubscriptionController extends Controller
         $planValue = $subscription->getCurrentMonthlyCost();
         $referrerActiveDiscountPct = $subscription->getReferrerActiveDiscountPct();
 
+        // 8. AI agent usage (read-only, limit is platform-wide)
+        $aiData = $subscription->getAiCreditLimitData();
+
+        // 10. Fiscal profiles with live stamp balances for the superadmin stamp section
+        $fiscalProfiles = $subscription->fiscalProfiles()
+            ->with(['pacAccount', 'stampPurchases' => fn ($q) => $q->latest()->limit(50)])
+            ->get();
+
+        $swUserService = app(SWUserService::class);
+        $fiscalProfilesData = $fiscalProfiles->map(function ($profile) use ($swUserService) {
+            $balance = null;
+            $balanceError = null;
+            $pacAccount = $profile->pacAccount;
+
+            if ($pacAccount && $pacAccount->isActive()) {
+                try {
+                    if ($pacAccount->isSubaccount()) {
+                        $balance = $swUserService->getStampsBalance($pacAccount->sw_user_id);
+                    } elseif ($pacAccount->isShared()) {
+                        // Wallet local del RFC — nunca el saldo real del PAC.
+                        $balance = ['stampsBalance' => app(\App\Services\Billing\WalletService::class)->availableBalance($profile->id)];
+                    } else {
+                        $balance = $swUserService->getOwnBalance($pacAccount);
+                    }
+                } catch (\Exception $e) {
+                    $balanceError = 'No se pudo consultar el saldo.';
+                }
+            }
+
+            return [
+                'id'             => $profile->id,
+                'rfc'            => $profile->rfc,
+                'razon_social'   => $profile->razon_social,
+                'sw_user_id'     => $pacAccount?->sw_user_id,
+                'account_type'   => $pacAccount?->account_type?->value,
+                'account_status' => $pacAccount?->status?->value,
+                'is_active'      => $profile->is_active,
+                'balance'        => $balance,
+                'balanceError'   => $balanceError,
+                'purchases'      => $profile->stampPurchases,
+            ];
+        });
+
+        // Combined stamp purchase history for all profiles
+        $allStampPurchases = StampPurchase::whereIn('fiscal_profile_id', $fiscalProfiles->pluck('id'))
+            ->with(['fiscalProfile', 'requestedBy', 'reviewedBy'])
+            ->latest()
+            ->limit(100)
+            ->get();
+
+        // Cuenta compartida (Conectia) ligada a los perfiles de la suscripción:
+        // saldo real del PAC + RFCs vinculados (de todas las suscripciones).
+        $sharedAccountData = null;
+        $sharedPac = $fiscalProfiles->pluck('pacAccount')
+            ->filter(fn ($a) => $a?->isShared() && $a->isActive())
+            ->first();
+
+        if ($sharedPac) {
+            $realBalance = null;
+            try {
+                $realBalance = $swUserService->getOwnBalance($sharedPac);
+            } catch (\Exception $e) {
+                // best effort
+            }
+
+            $sharedAccountData = [
+                'id'            => $sharedPac->id,
+                'login_email'   => $sharedPac->login_email,
+                'real_balance'  => $realBalance,
+                'balance_error' => $realBalance === null,
+                'rfc_count'     => $sharedPac->fiscalProfiles()->count(),
+                'rfcs'          => $sharedPac->fiscalProfiles()->with('subscription')->get()->map(fn ($p) => [
+                    'id'                => $p->id,
+                    'rfc'               => $p->rfc,
+                    'razon_social'      => $p->razon_social,
+                    'subscription_id'   => $p->subscription_id,
+                    'subscription_name' => $p->subscription?->commercial_name,
+                    'local_balance'     => app(\App\Services\Billing\WalletService::class)->availableBalance($p->id),
+                ]),
+            ];
+        }
+
         return Inertia::render('Admin/Subscriptions/Show', [
             'subscription' => $subscription,
             'planItems' => $planItems,
@@ -192,6 +305,12 @@ class SubscriptionController extends Controller
             'planValue' => $planValue,
             'referrerActiveDiscountPct' => (float) $referrerActiveDiscountPct,
             'subscriptionCost' => (float) $planValue,
+            'aiUsage' => $aiData['usage'],
+            'aiPercentage' => $aiData['percentage'],
+            'hasAiAgentModule' => $subscription->hasAiAgentModule(),
+            'fiscalProfiles' => $fiscalProfilesData,
+            'allStampPurchases' => $allStampPurchases,
+            'sharedAccount' => $sharedAccountData,
         ]);
     }
 
@@ -245,6 +364,20 @@ class SubscriptionController extends Controller
     }
 
     /**
+     * Elimina una suscripción y todos sus recursos relacionados en cascada.
+     */
+    public function destroy($id, DeleteSubscriptionAction $action)
+    {
+        $subscription = Subscription::findOrFail($id);
+        $commercialName = $subscription->commercial_name;
+        $action->execute($subscription);
+
+        return redirect()
+            ->route('admin.subscriptions.index')
+            ->with('success', "La suscripción \"{$commercialName}\" y todos sus recursos han sido eliminados permanentemente.");
+    }
+
+    /**
      * Actualiza las configuraciones de una entidad específica (suscripción, sucursal o usuario).
      */
     public function updateSettings(Request $request, UpdateEntitySettingsAction $action)
@@ -271,7 +404,7 @@ class SubscriptionController extends Controller
      */
     private function buildSettingsData(Subscription $subscription): array
     {
-        $definitions = SettingDefinition::orderBy('name')->get();
+        $definitions = SettingDefinition::where('level', '!=', 'platform')->orderBy('name')->get();
 
         // Cargar sucursales con sus usuarios y settings (reutiliza la relación ya cargada)
         $branches = $subscription->branches->load(['users' => fn($q) => $q->with('settings'), 'settings']);

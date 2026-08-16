@@ -136,7 +136,7 @@ watch(activeSession, (newSession) => {
                         <InputError :message="form.errors.initial_evidence_images" class="mt-2" />
                     </div>
 
-                    <div class="flex justify-end sticky bottom-4 z-20">
+                    <div class="flex justify-start sticky bottom-4 z-20">
                         <Button type="submit" label="Crear orden" icon="pi pi-check" :loading="form.processing" severity="primary" size="large" class="shadow-xl" />
                     </div>
                 </form>

@@ -303,7 +303,9 @@ class TransactionPaymentService
 
             if ($itemModel) {
                 $isReservation = in_array($status, [TransactionStatus::ON_LAYAWAY, TransactionStatus::TO_DELIVER]);
-                $description = "Actualización de stock por " . ($isReservation ? 'reserva/apartado' : 'venta') . " {$transaction->folio}";
+                $description = $isReservation
+                    ? "Reserva de apartados {$transaction->folio}"
+                    : "Venta y baja de stock {$transaction->folio}";
 
                 if ($isReservation) {
                     $itemModel->reserveStock($branchId, $item['quantity'], $user, $description);

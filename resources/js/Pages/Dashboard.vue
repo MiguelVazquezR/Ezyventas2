@@ -555,7 +555,7 @@ const getExpirationSeverity = (days) => {
             <!-- Empty State minimalista -->
             <div v-else class="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
                 <div class="w-24 h-24 bg-gray-50 dark:bg-[#1a1a1a] rounded-full flex items-center justify-center mb-6 border border-gray-100 dark:border-[#3a3a3a]">
-                    <i class="pi pi-sparkles !text-3xl text-primary-500"></i>
+                    <i class="pi pi-gauge !text-3xl text-primary-500"></i>
                 </div>
                 <h2 class="text-3xl font-light text-gray-900 dark:text-white tracking-tight">Bienvenido, {{ $page.props.auth.user.name }}</h2>
                 <p class="text-gray-500 mt-3 text-sm max-w-md">Sistema inicializado. Aún no hay datos estadísticos para mostrar en este momento.</p>

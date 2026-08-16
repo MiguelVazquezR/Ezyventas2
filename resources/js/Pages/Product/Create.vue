@@ -40,6 +40,8 @@ const form = useForm({
     name: '',
     description: '',
     sku: '',
+    sat_product_code: '',
+    sat_unit_code: '',
     location: '', 
     branch_ids: [props.current_branch_id],
     category_id: null,
@@ -176,7 +178,7 @@ const submit = () => {
                         />
                     </div>
 
-                    <div class="flex justify-end sticky bottom-4 z-20">
+                    <div class="flex justify-start sticky bottom-4 z-20">
                         <Button type="submit" label="Crear producto" icon="pi pi-check" severity="primary" size="large" :loading="form.processing" class="shadow-xl" />
                     </div>
                 </form>

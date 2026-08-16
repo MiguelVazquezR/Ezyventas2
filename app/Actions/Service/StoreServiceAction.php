@@ -24,6 +24,9 @@ class StoreServiceAction
             if (!empty($data['has_variants'])) {
                 $serviceData['base_price'] = 0;
                 $serviceData['duration_estimate'] = null;
+            } else {
+                // Fallback: si no hay variantes y el precio es null, usar 0 para evitar error de integridad
+                $serviceData['base_price'] = $data['base_price'] ?? 0;
             }
 
             $service = Service::create($serviceData);

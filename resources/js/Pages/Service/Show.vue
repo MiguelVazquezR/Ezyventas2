@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { router, Head, Link } from '@inertiajs/vue3';
+import { router, Head, Link, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import ActivityHistory from '@/Components/ActivityHistory.vue';
 import { useConfirm } from "primevue/useconfirm";
@@ -22,6 +22,8 @@ const props = defineProps({
 
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
+
+const hasBilling = computed(() => usePage().props.auth.active_modules?.includes('module_billing'));
 
 const deleteService = () => {
     confirm.require({
@@ -192,6 +194,18 @@ const tagPt = {
                                             <span v-if="!service.branches || service.branches.length === 0" class="text-xs text-gray-400 italic font-medium m-0">No configurado para venta</span>
                                         </div>
                                     </li>
+
+                                    <!-- SAT fiscal codes (only when billing module is active and service has codes) -->
+                                    <template v-if="hasBilling && (service.sat_product_code || service.sat_unit_code)">
+                                        <li class="flex items-center justify-between border-b border-gray-100 dark:border-[#2a2a2a] pb-4">
+                                            <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Clave de Servicio (SAT)</span>
+                                            <span class="font-mono text-sm font-medium text-gray-900 dark:text-white">{{ service.sat_product_code || '—' }}</span>
+                                        </li>
+                                        <li class="flex items-center justify-between border-b border-gray-100 dark:border-[#2a2a2a] pb-4">
+                                            <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Clave Unidad (SAT)</span>
+                                            <span class="font-mono text-sm font-medium text-gray-900 dark:text-white">{{ service.sat_unit_code || '—' }}</span>
+                                        </li>
+                                    </template>
                                 </ul>
                             </div>
                             

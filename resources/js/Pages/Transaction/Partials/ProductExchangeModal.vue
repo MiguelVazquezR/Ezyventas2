@@ -812,7 +812,7 @@ const nextStep3 = (activateCallback) => { if (validateStep3()) activateCallback(
                                     </div>
                                 </div>
 
-                                <OverlayPanel ref="op" appendTo="body" showCloseIcon>
+                                <Popover ref="op" appendTo="body" showCloseIcon>
                                     <div class="w-80 p-1">
                                         <div v-if="isLoadingDebtDetails" class="flex justify-center p-4">
                                             <i class="pi pi-spin pi-spinner text-2xl text-blue-500"></i>
@@ -837,7 +837,7 @@ const nextStep3 = (activateCallback) => { if (validateStep3()) activateCallback(
                                             </div>
                                         </div>
                                     </div>
-                                </OverlayPanel>
+                                </Popover>
 
                                 <!-- Lógica de Remanente (Saldo o Caja) -->
                                 <div v-if="remainingSurplusAfterDebts > 0.01" class="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800 dark:border-gray-700">

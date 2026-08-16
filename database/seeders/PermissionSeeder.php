@@ -56,6 +56,25 @@ class PermissionSeeder extends Seeder
                 'expenses.change_status' => 'Cambiar status de gastos (pendiente, pagado)',
                 'expenses.manage_categories' => 'Administrar categorías de gastos',
             ],
+            'Facturación' => [
+                'invoices.access' => 'Acceder al listado de facturas',
+                'invoices.see_details' => 'Ver detalles de facturas',
+                'invoices.create' => 'Crear nuevas facturas',
+                'invoices.edit' => 'Editar facturas existentes',
+                'invoices.delete' => 'Eliminar prefacturas',
+                'invoices.stamp' => 'Timbrar facturas ante el PAC',
+                'invoices.cancel' => 'Cancelar facturas',
+                'invoices.download_xml' => 'Descargar XML de facturas',
+                'invoices.download_pdf' => 'Ver y descargar representación impresa (PDF)',
+                'invoices.dashboard.access' => 'Acceder al dashboard de facturación',
+                'invoices.settings.access' => 'Acceder a la configuración de facturación',
+                'invoices.settings.manage_fiscal_profiles' => 'Crear y editar perfiles fiscales',
+                'invoices.settings.upload_csd' => 'Subir certificados CSD (sello digital)',
+                'invoices.settings.manage_logo' => 'Subir y eliminar logotipos de perfiles fiscales',
+                'invoices.settings.delete_fiscal_profiles' => 'Eliminar perfiles fiscales',
+                'invoices.settings.toggle' => 'Activar o desactivar facturación electrónica',
+                'stamps.purchase' => 'Comprar timbres para perfiles fiscales',
+            ],
             'Clientes' => [
                 'customers.access' => 'Ver listado de clientes',
                 'customers.see_details' => 'Ver detalles de clientes',
@@ -128,10 +147,6 @@ class PermissionSeeder extends Seeder
             'Tienda en línea' => [
                 'online_store.config.access' => 'Acceder a la configuración de la tienda en línea',
                 'online_store.config.edit' => 'Editar la configuración de la tienda en línea',
-                // 'online_store.products.access' => 'Ver productos de la tienda en línea',
-                // 'online_store.products.create' => 'Agregar productos a la tienda en línea',
-                // 'online_store.products.edit' => 'Editar productos de la tienda en línea',
-                // 'online_store.products.delete' => 'Eliminar productos de la tienda en línea',
                 'online_store.orders.access' => 'Ver pedidos de la tienda en línea',
                 'online_store.orders.see_details' => 'Ver detalles de pedidos',
                 'online_store.orders.change_status' => 'Cambiar estado de pedidos',
@@ -144,6 +159,10 @@ class PermissionSeeder extends Seeder
                 'dashboard.see_orders' => 'Inicio: Ver panel de pedidos',
                 'dashboard.see_outstanding_balances' => 'Inicio: Ver panel de saldos por cobrar',
                 'dashboard.see_inventory_details' => 'Inicio: Ver detalles de inventario',
+            ],
+            'Agente IA' => [
+                'ai_agent.access' => 'Usar el asistente de IA para hacer preguntas y consultas',
+                'ai_agent.export' => 'Solicitar al asistente de IA la generación de archivos (Excel, PDF)',
             ],
         ];
 

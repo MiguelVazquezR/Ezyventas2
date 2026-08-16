@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Billing\Invoice;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -18,26 +19,36 @@ class InvoiceItem extends Model
         'description',
         'quantity',
         'sat_unit_code',
+        'unit_name',
         'unit_price',
         'subtotal',
         'discount_amount',
         'tax_amount',
         'total',
         'sat_product_code',
+        'no_identificacion',
+        'objeto_imp',
         'tax_type',
         'tax_rate',
+        'retained_tax_type',
+        'retained_tax_rate',
+        'retained_tax_amount',
+        'retentions',
     ];
 
     protected function casts(): array
     {
         return [
-            'quantity'        => 'decimal:4',
-            'unit_price'      => 'decimal:4',
-            'subtotal'        => 'decimal:2',
-            'discount_amount' => 'decimal:2',
-            'tax_amount'      => 'decimal:2',
-            'total'           => 'decimal:2',
-            'tax_rate'        => 'decimal:4',
+            'quantity'            => 'decimal:4',
+            'unit_price'          => 'decimal:4',
+            'subtotal'            => 'decimal:2',
+            'discount_amount'     => 'decimal:2',
+            'tax_amount'          => 'decimal:2',
+            'total'               => 'decimal:2',
+            'tax_rate'            => 'decimal:6',
+            'retained_tax_rate'   => 'decimal:6',
+            'retained_tax_amount' => 'decimal:2',
+            'retentions'          => 'array',
         ];
     }
 

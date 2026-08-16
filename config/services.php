@@ -40,6 +40,10 @@ return [
         'redirect' => env('GOOGLE_REDIRECT_URI'),
     ],
 
+    'google_ads' => [
+        'id' => env('GOOGLE_ADS_ID'),
+    ],
+
     'mercadopago' => [
         'client_id'         => env('MP_CLIENT_ID'),
         'client_secret'     => env('MP_CLIENT_SECRET'),
@@ -48,6 +52,18 @@ return [
         'test_access_token' => env('MP_TEST_ACCESS_TOKEN'),
         'webhook_secret'    => env('MP_WEBHOOK_SECRET'),
         'env'               => env('MP_ENV', 'sandbox'),
+    ],
+
+    'swsapien' => [
+        'endpoint'               => env('SW_SAPIEN_ENDPOINT', 'https://services.test.sw.com.mx'),
+        'token'                  => env('SW_SAPIEN_TOKEN'),
+        'management_endpoint'    => env('SW_SAPIEN_MANAGEMENT_ENDPOINT'),
+        'management_users_path'  => env('SW_SAPIEN_MANAGEMENT_USERS_PATH', '/management/v2/api/dealers/users'),
+        'default_stamps'         => env('SW_SAPIEN_DEFAULT_STAMPS', 10),
+        'mock'                   => env('SW_SAPIEN_MOCK', false),
+        'low_balance_threshold'  => env('SW_SAPIEN_LOW_BALANCE_THRESHOLD', 500),
+        // Mínimo de compra para cuentas "normal" (el revendedor asigna por fuera).
+        'normal_min_purchase'    => env('SW_SAPIEN_NORMAL_MIN_PURCHASE', 100),
     ],
 
 ];

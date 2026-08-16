@@ -1,7 +1,5 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
-// Importamos axios para conectar con la base de datos
-import axios from 'axios';
 
 // Importamos los componentes personalizados
 import DashboardGraph from '@/Components/DashboardGraph.vue';
@@ -81,43 +79,6 @@ const toggleFaq = (index) => {
     faqs.value[index].open = !faqs.value[index].open;
 };
 
-// --- EZY RESTAURANT WAITING LIST LOGIC (CONECTADO A BD) ---
-const restaurantEmail = ref('');
-const isSubmittingRestaurant = ref(false);
-const showRestaurantSuccess = ref(false);
-
-const submitRestaurantEmail = async () => {
-    // 1. Validación básica
-    if (!restaurantEmail.value || !restaurantEmail.value.includes('@')) {
-        alert("Por favor ingresa un correo válido.");
-        return;
-    }
-    
-    isSubmittingRestaurant.value = true;
-    
-    try {
-        // 2. Llamada real a la API Laravel
-        await axios.post('/unirse-lista', {
-            email: restaurantEmail.value
-        });
-
-        // 3. Éxito
-        showRestaurantSuccess.value = true;
-        restaurantEmail.value = '';
-        
-    } catch (error) {
-        // Manejo de errores (ej. correo duplicado)
-        if (error.response && error.response.status === 422) {
-            alert('¡Este correo ya está registrado en la lista de espera!');
-        } else {
-            console.error(error);
-            alert('Hubo un error al guardar. Intenta de nuevo.');
-        }
-    } finally {
-        isSubmittingRestaurant.value = false;
-    }
-};
-
 // --- DATOS MOCK PARA INVENTARIO INTERACTIVO (STOCK REAL AGREGADO) ---
 const inventoryMock = [
     { name: 'Tenis', pieces: 124, icon: '👟', hoverClass: 'hover:shadow-green-200 hover:border-green-300', dotClass: 'bg-green-500' },
@@ -137,7 +98,9 @@ const modules = ref([
     { id: 'clientes', name: 'Clientes', price: 30, active: false, description: 'Cuentas por cobrar, apartados, servicios realizados.' }, 
     { id: 'servicios', name: 'Servicios', price: 50, active: false, description: 'Órdenes de servicio, estatus, listado de servicios.', subItems: ['Catálogo', 'Órdenes'] }, 
     { id: 'cotizaciones', name: 'Cotizaciones', price: 35, active: false, description: 'Personaliza tus cotizaciones y envía propuestas profesionales.' },
-    // { id: 'ecommerce', name: 'Tienda en línea', price: 99, active: false, description: 'Vende tus productos en internet sincronizado.' },
+    { id: 'facturacion', name: 'Facturación', price: 0, active: false, description: 'CFDI 4.0 con timbres a tu medida. Pre-facturas, plantillas personalizables, XML, PDF y mas.' },
+    { id: 'tienda', name: 'Tienda en línea', price: 50, active: false, description: 'Catalogo sincronizado, precios especiales, Mercado Pago, pago contra entrega, gestion de pedidos.' },
+    { id: 'ia', name: 'Asistente IA', price: 0, active: false, description: 'Chatbot para productos, ventas, clientes y servicios. Modo escritura para registrar y modificar datos. Gratis por tiempo limitado.' },
 ]);
 
 const features = ref([
@@ -461,7 +424,10 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                     <div class="absolute -bottom-6 left-1/2 -translate-x-1/2 w-[60%] h-16 bg-black/20 blur-[50px] rounded-full"></div>
                     <img 
                         src="/imagesLanding/hero-phone.webp" 
-                        alt="App Ezy Ventas" 
+                        alt="App Ezy Ventas"
+                        width="320"
+                        height="643"
+                        fetchpriority="high"
                         class="w-[200px] md:w-[280px] lg:w-[320px] object-contain drop-shadow-2xl mx-auto"
                     >
                     <div class="absolute top-10 -left-16 md:-left-24 hidden md:block" :style="floatingWidgetStyle(-30, -15)" data-aos="fade-right" data-aos-delay="200">
@@ -489,7 +455,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                      <div class="absolute bottom-40 -left-12 md:-left-16 hidden md:block" :style="floatingWidgetStyle(-15, 20)" data-aos="fade-up-right" data-aos-delay="500">
                         <div class="premium-widget p-3 flex items-center gap-6 pr-6">
                             <div class="bg-gray-100 p-3 rounded-xl">
-                                <img src="/imagesLanding/feature-reader.webp" alt="Scanner" class="w-10 h-10 object-contain">
+                                <img src="/imagesLanding/feature-reader.webp" alt="Lector de código de barras conectado" loading="lazy" decoding="async" class="w-10 h-10 object-contain">
                             </div>
                             <div>
                                 <p class="text-lg font-bold text-gray-800">Escáner</p>
@@ -534,7 +500,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                         
                         <!-- Imagen: Superior Izquierda -->
                         <div class="absolute top-4 left-4 w-24 h-24 bg-gray-50/50 rounded-2xl flex items-center justify-center p-2 group-hover:scale-105 transition-transform duration-500">
-                             <img :src="biz.image" :alt="biz.alt" class="w-full h-full object-contain mix-blend-multiply">
+                             <img :src="biz.image" :alt="biz.alt" loading="lazy" decoding="async" class="w-full h-full object-contain mix-blend-multiply">
                         </div>
 
                         <!-- Contenido: Inferior Izquierda -->
@@ -544,9 +510,9 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                         </div>
 
                         <!-- Flecha: Inferior Derecha -->
-                        <div class="absolute bottom-6 right-6 w-10 h-10 rounded-full bg-black text-white flex items-center justify-center shadow-lg group-hover:bg-[#F68C0F] transition-colors duration-300">
+                        <button type="button" :aria-label="'Ver beneficios de ' + biz.title" class="absolute bottom-6 right-6 w-10 h-10 rounded-full bg-black text-white flex items-center justify-center shadow-lg group-hover:bg-[#F68C0F] transition-colors duration-300">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
-                        </div>
+                        </button>
                     </div>
                 </div>
             </section>
@@ -615,7 +581,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                                 <p class="text-gray-600">Si hay mucha gente, permite que multiples vendedores cobren simultáneamente desde cualquier dispositivo, colaborando en una misma sesión de caja o gestionando cajas independientes.</p>
                             </div>
                             <div class="relative h-64 flex justify-center items-end">
-                                <img src="/imagesLanding/solution-old-register.webp" alt="Multi-usuario" class="w-3/4 object-contain drop-shadow-xl transition-transform duration-500 hover:-translate-y-4">
+                                <img src="/imagesLanding/solution-old-register.webp" alt="Múltiples usuarios en caja registradora" loading="lazy" decoding="async" class="w-3/4 object-contain drop-shadow-xl transition-transform duration-500 hover:-translate-y-4">
                             </div>
                         </div>
                     </div>
@@ -860,7 +826,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                             </svg>
                         </div>
                         
-                        <h4 class="text-2xl md:text-3xl font-bold text-white mb-3">¿Aún tienes dudas?</h4>
+                        <h3 class="text-2xl md:text-3xl font-bold text-white mb-3">¿Aún tienes dudas?</h3>
                         <p class="text-gray-400 mb-8 max-w-md mx-auto text-sm md:text-base">Nuestro equipo de expertos está listo para resolver tus inquietudes y ayudarte a configurar tu cuenta.</p>
                         
                         <a href="https://api.whatsapp.com/send?phone=523321705650" target="_blank" 
@@ -873,66 +839,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
             </section>
         </main>
 
-                    <!-- NUEVA SECCIÓN: BANNER EZY RESTAURANT -->
-            <section class="py-12 px-6 md:px-12 max-w-7xl mx-auto">
-                <div class="coming-soon-wrapper relative py-12 px-8 md:px-20 text-center flex flex-col items-center justify-center min-h-[300px]" data-aos="zoom-in">
-                    <div class="coming-soon-glow"></div>
-                    <div class="relative z-10 max-w-3xl mx-auto space-y-6">
-                        <div class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-gray-700 bg-gray-900/50 backdrop-blur-sm">
-                            <span class="relative flex h-2 w-2">
-                              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#F68C0F] opacity-75"></span>
-                              <span class="relative inline-flex rounded-full h-2 w-2 bg-[#F68C0F]"></span>
-                            </span>
-                            <span class="text-xs font-bold text-gray-300 tracking-widest uppercase">En Desarrollo</span>
-                        </div>
-                        <div>
-                            <p class="text-xl md:text-2xl text-gray-400 font-light mb-2 tracking-wide">Algo delicioso se está cocinando.</p>
-                            <h2 class="text-5xl md:text-7xl font-bold tracking-tighter text-white drop-shadow-2xl">
-                                Ezy <span class="text-transparent bg-clip-text bg-gradient-to-r from-gray-200 via-white to-gray-400">Restaurant</span>
-                            </h2>
-                        </div>
-                        <p class="text-lg md:text-xl text-gray-400 max-w-xl mx-auto leading-relaxed">
-                            La gestión de mesas, comandas y cocina reinventada. <br class="hidden md:block">Únete a la lista de espera y sé el primero en probarlo.
-                        </p>
-                        
-                        <div v-if="!showRestaurantSuccess" class="flex justify-center w-full pt-4">
-                            <div class="glass-input-container w-full max-w-md p-1.5 flex items-center">
-                                <input 
-                                    v-model="restaurantEmail"
-                                    type="email" 
-                                    placeholder="Tu correo electrónico" 
-                                    class="glass-input flex-1"
-                                    @keyup.enter="submitRestaurantEmail"
-                                />
-                                <button 
-                                    @click="submitRestaurantEmail" 
-                                    class="btn-glow flex items-center justify-center min-w-[120px]"
-                                    :disabled="isSubmittingRestaurant || !restaurantEmail"
-                                >
-                                    <span v-if="!isSubmittingRestaurant">Notifíquenme</span>
-                                    <svg v-else class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div v-else class="flex flex-col items-center justify-center pt-4 animate-fadeIn">
-                            <div class="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mb-3">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-8 h-8 text-green-400">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                                </svg>
-                            </div>
-                            <h3 class="text-xl font-bold text-white mb-1">¡Estás en la lista!</h3>
-                            <p class="text-gray-400">Te notificaremos en cuanto estemos listos.</p>
-                        </div>
-
-                    </div>
-                </div>
-            </section>
-
-        <!-- FOOTER MODERNO INTEGRADO -->
+                    <!-- FOOTER MODERNO INTEGRADO -->
         <ModernFooter />
 
         <!-- MODAL DE DETALLE DE NEGOCIO -->
@@ -943,7 +850,7 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                     <transition name="modal-content" appear>
                         <div class="relative bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col md:flex-row overflow-hidden">
                             
-                            <button @click="closeBusinessModal" class="absolute top-4 right-4 z-20 bg-white/50 hover:bg-white p-2 rounded-full transition-all">
+                            <button @click="closeBusinessModal" aria-label="Cerrar modal" class="absolute top-4 right-4 z-20 bg-white/50 hover:bg-white p-2 rounded-full transition-all">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
                             </button>
 
@@ -952,6 +859,8 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
                                 <img 
                                     :src="selectedBusiness.image" 
                                     :alt="selectedBusiness.alt" 
+                                    loading="lazy"
+                                    decoding="async"
                                     class="h-full w-auto md:w-full md:h-auto object-contain drop-shadow-xl max-h-full"
                                 >
                             </div>

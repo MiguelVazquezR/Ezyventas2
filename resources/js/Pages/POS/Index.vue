@@ -506,7 +506,7 @@ const currentCartTotal = computed(() => {
                                 El sistema requiere inicializar una sesión de caja para comenzar a procesar ventas.
                             </span>
                             <span v-else>
-                                No hay cajas disponibles para operar en esta sucursal. Contacta al administrador para que registre una nueva caja.
+                                No hay cajas disponibles para operar en esta sucursal. Registra una nueva caja desde el botón de abajo.
                             </span>
                         </p>
 
@@ -528,8 +528,8 @@ const currentCartTotal = computed(() => {
                         <div v-if="!joinableSessions?.length && !availableCashRegisters?.length"
                             class="mt-8 pt-6 border-t border-gray-100 dark:border-[#3a3a3a]">
                             <Button @click="$inertia.visit(route('cash-registers.create'))" 
-                                label="Configurar nueva caja"
-                                icon="pi pi-cog" 
+                                label="Crear nueva caja"
+                                icon="pi pi-inbox" 
                                 text 
                                 severity="secondary"
                                 class="!rounded-xl !uppercase !tracking-widest !text-[10px] !font-bold" />

@@ -13,7 +13,29 @@ const model = ref([
             { label: 'Productos', icon: 'pi pi-barcode', to: route('products.index'), routeName: 'products.*', permission: 'products.access' },
             { label: 'Gastos', icon: 'pi pi-arrow-up-right', to: route('expenses.index'), routeName: 'expenses.*', permission: 'expenses.access' },
             { label: 'Clientes', icon: 'pi pi-users', to: route('customers.index'), routeName: 'customers.*', permission: 'customers.access' },
-            { label: 'Facturación', icon: 'pi pi-file', to: route('invoices.index'), routeName: 'invoices.*', permission: 'invoices.access' },
+            {
+                label: 'Facturación', icon: 'pi pi-file', routeName: 'billing.*', permission: 'invoices.access',
+                items: [
+                    {
+                        label: 'Resumen',
+                        icon: 'pi pi-chart-bar',
+                        to: route('billing.dashboard'),
+                        routeName: 'billing.dashboard',
+                    },
+                    {
+                        label: 'Facturas',
+                        icon: 'pi pi-receipt',
+                        to: route('billing.invoices.index'),
+                        routeName: 'billing.invoices.*',
+                    },
+                    {
+                        label: 'Configuración fiscal',
+                        icon: 'pi pi-cog',
+                        to: route('billing.settings.index'),
+                        routeName: 'billing.settings.*',
+                    },
+                ],
+            },
             {
                 label: 'Servicios', icon: 'pi pi-wrench', module: 'module_services',
                 items: [
@@ -179,6 +201,36 @@ const adminModel = ref([
                 routeName: 'admin.subscriptions.*'
             },
             {
+                label: 'Timbres',
+                icon: 'pi pi-ticket',
+                items: [
+                    {
+                        label: 'Panel de timbres',
+                        icon: 'pi pi-chart-bar',
+                        to: route('admin.stamps.index'),
+                        routeName: 'admin.stamps.*'
+                    },
+                    {
+                        label: 'Bandeja de revisión',
+                        icon: 'pi pi-inbox',
+                        to: route('admin.stamps.review-queue'),
+                        routeName: 'admin.stamps.review-queue'
+                    },
+                    {
+                        label: 'Revisión manual de timbrado',
+                        icon: 'pi pi-exclamation-triangle',
+                        to: route('admin.stamp-reservations.index'),
+                        routeName: 'admin.stamp-reservations.*'
+                    },
+                    {
+                        label: 'Cuentas PAC',
+                        icon: 'pi pi-key',
+                        to: route('admin.pac-accounts.index'),
+                        routeName: 'admin.pac-accounts.*'
+                    },
+                ]
+            },
+            {
                 label: 'Ítems de planes',
                 icon: 'pi pi-box', 
                 to: route('admin.plan-items.index'),
@@ -186,9 +238,15 @@ const adminModel = ref([
             },
             {
                 label: 'Novedades',
-                icon: 'pi pi-sparkles',
+                icon: 'pi pi-megaphone',
                 to: route('admin.release-notes.index'),
                 routeName: 'admin.release-notes.*'
+            },
+            {
+                label: 'Sugerencias',
+                icon: 'pi pi-lightbulb',
+                to: route('admin.suggestions.index'),
+                routeName: 'admin.suggestions.*'
             },
             {
                 label: 'Referidos',

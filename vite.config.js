@@ -7,7 +7,9 @@ import { PrimeVueResolver } from '@primevue/auto-import-resolver';
 export default defineConfig({
     plugins: [
         laravel({
-            input: 'resources/js/app.js',
+            input: [
+                'resources/js/app.js',
+            ],
             refresh: true,
         }),
         vue({
@@ -24,10 +26,13 @@ export default defineConfig({
             ]
         })
     ],
-    server: {
-        host: '0.0.0.0',
-        hmr: {
-            host: 'localhost',
-        },
-    },
+    //comentar los siguientes bloques si no se usa el dominio ezyventas2.test
+    // server: {
+    //     detectTls: 'ezyventas2.test',
+    //     // 💡 Añade este bloque hmr para corregir el WebSocket de Vite:
+    //     hmr: {
+    //         host: 'ezyventas2.test',
+    //         protocol: 'wss',
+    //     },
+    // },
 });

@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from 'vue';
-import { useForm } from '@inertiajs/vue3';
+import { ref, watch, computed } from 'vue';
+import { useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
@@ -11,27 +11,81 @@ const breadcrumbItems = ref([
     { label: 'Crear Cliente' }
 ]);
 
+const emptyAddress = () => ({
+    street: '',
+    exterior_number: '',
+    interior_number: '',
+    neighborhood: '',
+    zip_code: '',
+    city: '',
+    state: '',
+    cross_streets: '',
+    notes: ''
+});
+
+const copyAddress = (src) => ({
+    street: src.street || '',
+    exterior_number: src.exterior_number || '',
+    interior_number: src.interior_number || '',
+    neighborhood: src.neighborhood || '',
+    zip_code: src.zip_code || '',
+    city: src.city || '',
+    state: src.state || '',
+});
+
 const form = useForm({
     name: '',
     company_name: '',
     email: '',
     phone: '',
     tax_id: '',
+    tax_regime: '',
     credit_limit: 0,
     initial_balance: 0,
-    // Estructura para el campo JSON de dirección
-    address: {
-        street: '',
-        exterior_number: '',
-        interior_number: '',
-        neighborhood: '',
-        zip_code: '',
-        city: '',
-        state: '',
-        cross_streets: '', // Entre calles
-        notes: ''          // Referencias adicionales
+    address: emptyAddress(),
+    fiscal_address: emptyAddress(),
+});
+
+// ──────────────────────────────────────
+// Billing module gate
+// ──────────────────────────────────────
+const hasBilling = computed(() => usePage().props.auth.active_modules?.includes('module_billing'));
+
+// ──────────────────────────────────────
+// Fiscal address toggle
+// ──────────────────────────────────────
+const sameAddress = ref(true);
+
+watch(sameAddress, (val) => {
+    if (val) {
+        form.fiscal_address = copyAddress(form.address);
+    } else {
+        form.fiscal_address = emptyAddress();
     }
 });
+
+watch(() => form.address, (addr) => {
+    if (sameAddress.value) {
+        form.fiscal_address = copyAddress(addr);
+    }
+}, { deep: true });
+
+// ──────────────────────────────────────
+// SAT tax regime options
+// ──────────────────────────────────────
+const taxRegimeOptions = [
+    { label: '601 — General de Ley Personas Morales', value: '601' },
+    { label: '603 — Personas Morales con Fines no Lucrativos', value: '603' },
+    { label: '605 — Sueldos y Salarios', value: '605' },
+    { label: '606 — Arrendamiento', value: '606' },
+    { label: '608 — Demás ingresos', value: '608' },
+    { label: '612 — Personas Físicas con Actividades Empresariales', value: '612' },
+    { label: '616 — Sin obligaciones fiscales', value: '616' },
+    { label: '620 — Sociedades Cooperativas', value: '620' },
+    { label: '621 — Incorporación Fiscal', value: '621' },
+    { label: '622 — Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras', value: '622' },
+    { label: '626 — Régimen Simplificado de Confianza', value: '626' },
+];
 
 // Estado para controlar la dirección del saldo visualmente
 const balanceDirection = ref('credit'); // 'credit' (+) o 'debit' (-)
@@ -43,10 +97,8 @@ const balanceDirectionOptions = [
 
 const submit = () => {
     form.transform((data) => {
-        // Aseguramos que el monto base sea positivo
         let finalBalance = Math.abs(Number(data.initial_balance));
 
-        // Aplicamos el signo negativo si es deuda
         if (balanceDirection.value === 'debit') {
             finalBalance = -finalBalance;
         }
@@ -77,10 +129,6 @@ const submit = () => {
                         <InputError :message="form.errors.name" class="mt-2" />
                     </div>
                     <div>
-                        <InputLabel for="company_name" value="Nombre de la empresa" />
-                        <InputText id="company_name" v-model="form.company_name" class="mt-1 w-full" placeholder="Ej. Abarrotes del Centro" />
-                    </div>
-                    <div>
                         <InputLabel for="phone" value="Teléfono" />
                         <InputText id="phone" v-model="form.phone" class="mt-1 w-full" placeholder="Ej. 55 1234 5678" />
                     </div>
@@ -89,20 +137,16 @@ const submit = () => {
                         <InputText id="email" v-model="form.email" type="email" class="mt-1 w-full" placeholder="cliente@correo.com" />
                         <InputError :message="form.errors.email" class="mt-2" />
                     </div>
-                    <div>
+                    <div v-if="!hasBilling">
                         <InputLabel for="tax_id" value="RFC" />
-                        <InputText id="tax_id" v-model="form.tax_id" class="mt-1 w-full" />
+                        <InputText id="tax_id" v-model="form.tax_id" class="mt-1 w-full" placeholder="XAXX010101000" />
+                        <InputError :message="form.errors.tax_id" class="mt-2" />
                     </div>
                 </div>
             </div>
 
-            <!-- SECCIÓN 2: DIRECCIÓN (NUEVO) -->
-            <div class="mb-6">
-                <div class="flex items-center justify-between border-b pb-2 mb-4">
-                    <h2 class="text-lg font-semibold text-gray-700">Domicilio / Dirección</h2>
-                    <small class="text-gray-500">Útil para envíos y localización en mapa</small>
-                </div>
-                
+            <!-- SECCIÓN 2: DIRECCIÓN -->
+            <Panel header="Domicilio / Dirección" :toggleable="true" :collapsed="false" class="mb-6 !rounded-2xl !border !border-gray-200" :pt="{ header: { class: '!bg-gray-50 !rounded-t-2xl !py-3 !px-4 !text-sm !font-semibold !text-gray-700 !border-none' }, content: { class: '!bg-white !p-4 !rounded-b-2xl' }, toggler: { class: '!text-gray-500' } }">
                 <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
                     <div class="md:col-span-4">
                         <InputLabel for="street" value="Calle" />
@@ -116,7 +160,6 @@ const submit = () => {
                         <InputLabel for="int_num" value="No. Interior" />
                         <InputText id="int_num" v-model="form.address.interior_number" class="mt-1 w-full" />
                     </div>
-
                     <div class="md:col-span-2">
                         <InputLabel for="neighborhood" value="Colonia" />
                         <InputText id="neighborhood" v-model="form.address.neighborhood" class="mt-1 w-full" />
@@ -133,15 +176,90 @@ const submit = () => {
                         <InputLabel for="zip_code" value="C.P." />
                         <InputText id="zip_code" v-model="form.address.zip_code" class="mt-1 w-full" />
                     </div>
-                    
                     <div class="md:col-span-6">
                         <InputLabel for="cross_streets" value="Entre calles y referencias" />
                         <Textarea id="cross_streets" v-model="form.address.cross_streets" rows="2" class="mt-1 w-full" placeholder="Entre Calle A y Calle B, fachada color..." />
                     </div>
                 </div>
-            </div>
+            </Panel>
 
-            <!-- SECCIÓN 3: CRÉDITO Y SALDO -->
+            <!-- SECCIÓN 3: DATOS PARA FACTURACIÓN -->
+            <Panel v-if="hasBilling" header="Datos para Facturación" :toggleable="true" :collapsed="false" class="mb-6 !rounded-2xl !border !border-gray-200" :pt="{ header: { class: '!bg-gray-50 !rounded-t-2xl !py-3 !px-4 !text-sm !font-semibold !text-gray-700 !border-none' }, content: { class: '!bg-white !p-4 !rounded-b-2xl' }, toggler: { class: '!text-gray-500' } }">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-5">
+                    <div>
+                        <InputLabel for="company_name" value="Razón social" />
+                        <InputText
+                            id="company_name"
+                            :modelValue="form.company_name"
+                            @update:modelValue="(val) => form.company_name = String(val ?? '').toUpperCase()"
+                            class="mt-1 w-full uppercase"
+                            placeholder="Ej. Abarrotes del Centro S.A. de C.V."
+                        />
+                    </div>
+                    <div>
+                        <InputLabel for="tax_id" value="RFC" />
+                        <InputText id="tax_id" v-model="form.tax_id" class="mt-1 w-full" placeholder="XAXX010101000" />
+                    </div>
+                    <div>
+                        <InputLabel for="tax_regime" value="Régimen fiscal" />
+                        <Select
+                            id="tax_regime"
+                            v-model="form.tax_regime"
+                            :options="taxRegimeOptions"
+                            optionLabel="label"
+                            optionValue="value"
+                            placeholder="Selecciona el régimen fiscal"
+                            filter
+                            class="w-full mt-1"
+                            :pt="{ root: { class: '!rounded-xl !bg-gray-50 !border-gray-200' } }"
+                        />
+                        <InputError :message="form.errors.tax_regime" class="mt-2" />
+                    </div>
+                </div>
+
+                <!-- Toggle: same fiscal address -->
+                <div class="flex items-center gap-3 mb-4 bg-gray-50 p-3 rounded-xl">
+                    <Checkbox v-model="sameAddress" :binary="true" inputId="sameAddress" />
+                    <label for="sameAddress" class="text-sm text-gray-700 cursor-pointer select-none">
+                        El domicilio fiscal es el mismo que el domicilio principal
+                    </label>
+                </div>
+
+                <!-- Fiscal address fields (always editable, data copied when sameAddress is true) -->
+                <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
+                    <div class="md:col-span-4">
+                        <InputLabel for="fiscal_street" value="Calle fiscal" />
+                        <InputText id="fiscal_street" v-model="form.fiscal_address.street" class="mt-1 w-full" />
+                    </div>
+                    <div class="md:col-span-1">
+                        <InputLabel for="fiscal_ext_num" value="No. Exterior" />
+                        <InputText id="fiscal_ext_num" v-model="form.fiscal_address.exterior_number" class="mt-1 w-full" />
+                    </div>
+                    <div class="md:col-span-1">
+                        <InputLabel for="fiscal_int_num" value="No. Interior" />
+                        <InputText id="fiscal_int_num" v-model="form.fiscal_address.interior_number" class="mt-1 w-full" />
+                    </div>
+                    <div class="md:col-span-2">
+                        <InputLabel for="fiscal_neighborhood" value="Colonia" />
+                        <InputText id="fiscal_neighborhood" v-model="form.fiscal_address.neighborhood" class="mt-1 w-full" />
+                    </div>
+                    <div class="md:col-span-2">
+                        <InputLabel for="fiscal_city" value="Ciudad / Municipio" />
+                        <InputText id="fiscal_city" v-model="form.fiscal_address.city" class="mt-1 w-full" />
+                    </div>
+                    <div class="md:col-span-1">
+                        <InputLabel for="fiscal_state" value="Estado" />
+                        <InputText id="fiscal_state" v-model="form.fiscal_address.state" class="mt-1 w-full" />
+                    </div>
+                    <div class="md:col-span-1">
+                        <InputLabel for="fiscal_zip_code" value="C.P." />
+                        <InputText id="fiscal_zip_code" v-model="form.fiscal_address.zip_code" class="mt-1 w-full" />
+                    </div>
+                </div>
+                <InputError :message="form.errors.fiscal_address" class="mt-2" />
+            </Panel>
+
+            <!-- SECCIÓN 4: CRÉDITO Y SALDO -->
             <div class="mb-6">
                 <h2 class="text-lg font-semibold text-gray-700 border-b pb-2 mb-4">Configuración Financiera</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
