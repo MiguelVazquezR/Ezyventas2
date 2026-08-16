@@ -5,6 +5,7 @@ import { useInvoiceTaxes } from '@/Composables/useInvoiceTaxes';
 import FormNavigationSidebar from '@/Components/FormNavigationSidebar.vue';
 import { useScrollspy } from '@/Composables/useScrollspy';
 import EmisorSection from './EmisorSection.vue';
+import SaleSection from './SaleSection.vue';
 import ReceptorSection from './ReceptorSection.vue';
 import IngresoForm from './IngresoForm.vue';
 import EgresoForm from './EgresoForm.vue';
@@ -64,6 +65,9 @@ const form = useForm({
     exportacion: isEdit ? (inv?.exportacion || '01') : '01',
     tipo_comprobante: isEdit ? (inv?.tipo_comprobante || 'I') : 'I',
     customer_id: isEdit ? (inv?.customer_id || null) : null,
+    // Venta del punto de venta relacionada (1:1) y modo "precios con IVA incluido"
+    transaction_id: isEdit ? (inv?.transaction_id || null) : null,
+    prices_include_iva: isEdit ? !!(inv?.prices_include_iva) : false,
     items: isEdit ? mapInvoiceItems(inv) : [],
     // CFDI relacionados (Tipo E — Nota de crédito)
     tipo_relacion: isEdit ? (inv?.tipo_relacion || '') : '',
@@ -108,15 +112,18 @@ const initialCustomerName = computed(() =>
 );
 
 // ──────────────────────────────────────
-// PAC readiness check (certificates + manifest)
+// PAC readiness check (certificates [+ manifest for subaccounts])
 // ──────────────────────────────────────
-// A profile can only stamp when it has BOTH:
-//   1. CSD certificates uploaded (certificate_number set)
-//   2. The SAT/SW manifest signed (manifest_signed_at set)
+// A profile can stamp when it has CSD certificates uploaded
+// (certificate_number set). The SAT/SW manifest is only required for
+// profiles linked to a subaccount (requires_manifest); shared accounts
+// do not need it — they only need their CSD.
 const canStamp = computed(() => {
     const profile = selectedFiscalProfile.value;
     if (!profile) return false;
-    return !!profile.certificate_number && !!profile.manifest_signed_at;
+    if (!profile.certificate_number) return false;
+    if (profile.requires_manifest && !profile.manifest_signed_at) return false;
+    return true;
 });
 
 const profileSelected = computed(() => !!selectedFiscalProfile.value);
@@ -128,7 +135,7 @@ const readinessMissing = computed(() => {
     if (!profile) return [];
     const missing = [];
     if (!profile.certificate_number) missing.push('los certificados');
-    if (!profile.manifest_signed_at) missing.push('el manifiesto');
+    if (profile.requires_manifest && !profile.manifest_signed_at) missing.push('el manifiesto');
     return missing;
 });
 
@@ -147,6 +154,15 @@ const profileSettingsUrl = computed(() => {
     const profile = selectedFiscalProfile.value;
     if (!profile) return '#';
     return route('billing.fiscal-profiles.show', profile.id);
+});
+
+// Tooltip for the "Timbrar ahora" button when the profile is not ready.
+const stampButtonTooltip = computed(() => {
+    const profile = selectedFiscalProfile.value;
+    if (!profile) return 'Selecciona un emisor para timbrar.';
+    let tip = 'Carga tus certificados';
+    if (profile.requires_manifest) tip += ' y firma el manifiesto del SAT';
+    return tip + ' para comenzar a timbrar.';
 });
 
 // ──────────────────────────────────────
@@ -171,8 +187,9 @@ const showInvoiceTotals = computed(() => isIngreso.value || isEgreso.value);
 const formSections = computed(() => {
     const sections = [
         { id: 'emisor', label: 'Emisor' },
-        { id: 'receptor', label: 'Receptor' },
     ];
+    if (isIngreso.value) sections.push({ id: 'venta', label: 'Venta relacionada' });
+    sections.push({ id: 'receptor', label: 'Receptor' });
     if (showPaymentFormSection.value) sections.push({ id: 'forma-pago', label: 'Forma y método de pago' });
     if (showRelatedCfdiSection.value) sections.push({ id: 'cfdi-relacionados', label: 'CFDI relacionados' });
     if (showConceptsSection.value) sections.push({ id: 'conceptos', label: 'Conceptos' });
@@ -191,6 +208,10 @@ const resetContextualFields = (type) => {
     if (type !== 'E') {
         form.cfdi_relacionados = [];
         form.tipo_relacion = '';
+    }
+    // La venta relacionada solo aplica a facturas de ingreso (I).
+    if (type !== 'I') {
+        form.transaction_id = null;
     }
     if (type !== 'P') {
         form.pago_fecha = null;
@@ -278,6 +299,49 @@ watch(() => form.tipo_comprobante, (type) => {
 const { subtotal, ivaTrasladado, isrRetenido, ivaRetenido, granTotal, breakdown, retentionApplies, isResico, retentionMessage } = useInvoiceTaxes(form, fiscalProfilesList, customersList);
 
 // ──────────────────────────────────────
+// Payload transform (runs only at submission time)
+// ──────────────────────────────────────
+// The editable form always holds the gross charged prices. When the
+// "precios con IVA incluido" mode is on, the payload swaps unit_price for
+// the SAT base (6 decimals) so the backend computes the same IVA and line
+// totals. Retentions are attached here as well.
+//
+// Using form.transform() instead of mutating form.items keeps the form
+// intact after a failed validation round-trip: previously the base price
+// was written back into the reactive state and, on re-submit, it was
+// divided by 1.16 again — drifting the total down on every failed attempt.
+form.transform((data) => {
+    const bd = breakdown.value;
+
+    return {
+        ...data,
+        items: data.items.map((item, i) => {
+            const entry = bd[i];
+            if (!entry) return item;
+
+            const transformed = { ...item };
+
+            if (form.prices_include_iva && entry.hasTax && entry.rates.taxRate > 0) {
+                const qty = parseFloat(item.quantity) || 1;
+                transformed.unit_price = Number((entry.base / qty).toFixed(6));
+            }
+
+            const retentions = [];
+            if (entry.isrRetention > 0) retentions.push({ type: '001', rate: entry.rates.isrRate, amount: entry.isrRetention });
+            if (entry.ivaRetention > 0) retentions.push({ type: '002', rate: entry.rates.ivaRetentionRate, amount: entry.ivaRetention });
+            transformed.retentions = retentions.length > 0 ? retentions : null;
+            if (retentions.length > 0) {
+                transformed.retained_tax_type = retentions[0].type;
+                transformed.retained_tax_rate = retentions[0].rate;
+                transformed.retained_tax_amount = retentions[0].amount;
+            }
+
+            return transformed;
+        }),
+    };
+});
+
+// ──────────────────────────────────────
 // Submit
 // ──────────────────────────────────────
 const submit = (draft = false) => {
@@ -286,20 +350,6 @@ const submit = (draft = false) => {
     // La validación de "al menos un UUID" (Tipo E) la resuelve el backend en
     // Store/UpdateInvoiceRequest, para que al guardar/timbrar aparezcan TODAS
     // las validaciones obligatorias a la vez.
-    const items = form.items;
-    const bd = breakdown.value;
-    for (let i = 0; i < items.length; i++) {
-        const entry = bd[i]; if (!entry) continue;
-        const retentions = [];
-        if (entry.isrRetention > 0) retentions.push({ type: '001', rate: entry.rates.isrRate, amount: entry.isrRetention });
-        if (entry.ivaRetention > 0) retentions.push({ type: '002', rate: entry.rates.ivaRetentionRate, amount: entry.ivaRetention });
-        items[i].retentions = retentions.length > 0 ? retentions : null;
-        if (retentions.length > 0) {
-            items[i].retained_tax_type = retentions[0].type;
-            items[i].retained_tax_rate = retentions[0].rate;
-            items[i].retained_tax_amount = retentions[0].amount;
-        }
-    }
     emit('submit', { form, mode: props.mode });
 };
 </script>
@@ -332,6 +382,13 @@ const submit = (draft = false) => {
                 :is-pago="isPago"
                 :readiness-message="readinessMessage"
                 :profile-settings-url="profileSettingsUrl"
+            />
+
+            <!-- ═══ Venta relacionada (solo ingreso) ═══ -->
+            <SaleSection
+                v-if="isIngreso"
+                :form="form"
+                :linked-sale="isEdit ? (invoice?.transaction || null) : null"
             />
 
             <!-- ═══ Receptor (shared) ═══ -->
@@ -393,7 +450,7 @@ const submit = (draft = false) => {
                 <div class="inline-flex items-center gap-3 rounded-full p-2 border border-slate-100 dark:border-neutral-800 bg-white/80 dark:bg-[#121212]/80 backdrop-blur-xl shadow-lg shadow-slate-200/40 dark:shadow-black/40">
                     <template v-if="mode === 'create'">
                         <Button type="submit" label="Guardar como prefactura" icon="pi pi-file" severity="primary" outlined @click="submit(true)" :loading="form.processing" class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !bg-white dark:!bg-transparent" />
-                        <Button type="submit" label="Timbrar ahora" icon="pi pi-shield" :loading="form.processing" :disabled="!canStamp" :class="['!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95', !canStamp ? 'opacity-50 cursor-not-allowed' : '']" v-tooltip.top="!canStamp ? 'Carga tus certificados y firma el manifiesto del SAT para comenzar a timbrar.' : ''" />
+                        <Button type="submit" label="Timbrar ahora" icon="pi pi-shield" :loading="form.processing" :disabled="!canStamp" :class="['!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95', !canStamp ? 'opacity-50 cursor-not-allowed' : '']" v-tooltip.top="!canStamp ? stampButtonTooltip : ''" />
                     </template>
                     <template v-else>
                         <Button type="submit" label="Guardar cambios" icon="pi pi-save" :loading="form.processing" class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95" />

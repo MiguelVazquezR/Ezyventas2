@@ -9,13 +9,14 @@ use App\Http\Requests\Billing\AcceptManifestTextRequest;
 use App\Http\Requests\Billing\FetchManifestLegendRequest;
 use App\Http\Requests\Billing\SignManifestRequest;
 use App\Http\Requests\Billing\StoreFiscalProfileRequest;
-use App\Enums\StampPaymentMethod;
-use App\Enums\StampPurchaseStatus;
+use App\Enums\PacAccountStatus;
+use App\Enums\PacAccountType;
 use App\Models\Billing\FiscalProfile;
 use App\Models\Billing\Invoice;
-use App\Models\Billing\StampPurchase;
+use App\Models\Billing\PacAccount;
 use App\Models\BankAccount;
 use App\Services\Billing\SWSapienService;
+use App\Services\Billing\StampMovementService;
 use App\Services\SW\SWUserService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
@@ -25,7 +26,6 @@ use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -39,12 +39,17 @@ class FiscalProfileController extends Controller implements HasMiddleware
     }
 
     /**
-     * Create a new fiscal profile for the subscription and provision
-     * a SW Sapien sub-user account automatically.
+     * Create a new fiscal profile for the subscription.
+     *
+     * New fiscal profiles use an external "normal" PAC account: the first
+     * RFC of the subscription triggers a pending_request (an admin activates
+     * it with the reseller's credentials); additional RFCs reuse the already
+     * active normal account of the subscription without a new request.
      */
     public function storeFiscalProfile(
         StoreFiscalProfileRequest $request,
         SWUserService $swUserService,
+        StampMovementService $stampMovementService,
     ): RedirectResponse {
         $user = Auth::user();
         $subscription = $user->branch?->subscription;
@@ -54,9 +59,9 @@ class FiscalProfileController extends Controller implements HasMiddleware
                 ->with('error', 'No se encontró una suscripción activa asociada a tu cuenta.');
         }
 
-        if (! $subscription->facturacion_habilitada) {
+        if (! $subscription->billingEnabled()) {
             return redirect()->route('billing.settings.index')
-                ->with('error', 'Activa la facturación antes de agregar perfiles fiscales.');
+                ->with('error', 'Contrata el módulo de facturación para poder agregar perfiles fiscales.');
         }
 
         $validated = $request->validated();
@@ -70,51 +75,57 @@ class FiscalProfileController extends Controller implements HasMiddleware
                 'regimen_fiscal'  => $validated['regimen_fiscal'],
                 'postal_code'     => $validated['postal_code'],
                 'email'           => $validated['email'],
-                'password'        => Str::random(16),
                 'is_active'       => true,
             ]);
 
-            // Auto-provision the PAC sub-user account
-            $swUserService->createSubaccountForProfile(
-                $profile,
-                $profile->email,
-                $profile->password,
-            );
+            // Reuse an already active normal account when available (second RFC);
+            // otherwise fall back to the platform shared account; and only if
+            // neither exists, request a new one (pending_request for the admin).
+            $activeAccount = $subscription->pacAccounts()
+                ->where('account_type', PacAccountType::SHARED)
+                ->where('status', PacAccountStatus::ACTIVE)
+                ->first();
 
-            // Record the initial stamp deposit as a StampPurchase audit trail.
-            $defaultStamps = (int) config('services.swsapien.default_stamps', 10);
+            if (! $activeAccount) {
+                $activeAccount = PacAccount::query()->sharedActive()->latest('id')->first();
+            }
 
-            if ($defaultStamps > 0) {
-                StampPurchase::create([
-                    'fiscal_profile_id'    => $profile->id,
-                    'requested_by_user_id' => $user->id,
-                    'stamp_quantity'       => $defaultStamps,
-                    'unit_price'           => 0,
-                    'amount_total'         => 0,
-                    'payment_method'       => StampPaymentMethod::MANUAL_ADJUSTMENT,
-                    'status'               => StampPurchaseStatus::STAMPS_APPLIED,
-                    'adjustment_type'      => 'add',
-                    'admin_note'           => 'Depósito inicial por apertura de cuenta',
-                    'stamps_applied_at'    => now(),
+            $accountForProfile = $activeAccount;
+
+            if ($accountForProfile) {
+                $profile->update(['pac_account_id' => $accountForProfile->id]);
+
+                Log::info('Fiscal profile linked to existing active PAC account', [
+                    'fiscal_profile_id' => $profile->id,
+                    'pac_account_id'    => $accountForProfile->id,
+                    'rfc'               => $profile->rfc,
+                    'subscription_id'   => $subscription->id,
                 ]);
+            } else {
+                $accountForProfile = $swUserService->requestSharedAccount($profile, $user->id);
+
+                Log::info('Fiscal profile created and normal PAC account requested', [
+                    'fiscal_profile_id' => $profile->id,
+                    'pac_account_id'    => $profile->pac_account_id,
+                    'rfc'               => $profile->rfc,
+                    'subscription_id'   => $subscription->id,
+                ]);
+            }
+
+            // Timbres de regalo de bienvenida: solo en cuentas compartidas (la
+            // wallet local es el bloqueo al timbrar). Idempotente por perfil.
+            if ($accountForProfile?->isShared()) {
+                $stampMovementService->grantWelcomeStamps($profile);
             }
 
             DB::commit();
 
-            Log::info('Fiscal profile created and PAC subaccount provisioned', [
-                'fiscal_profile_id' => $profile->id,
-                'rfc'               => $profile->rfc,
-                'email'             => $profile->email,
-                'subscription_id'   => $subscription->id,
-                'initial_stamps'    => $defaultStamps,
-            ]);
-
             return redirect()->route('billing.settings.index')
-                ->with('success', 'Paso 1 completado: Datos fiscales conectados.');
+                ->with('success', 'Paso 1 completado: Datos fiscales registrados. Un administrador activará tu cuenta para comenzar a facturar.');
         } catch (\Exception $e) {
             DB::rollBack();
 
-            Log::error('PAC subaccount provisioning failed — local profile rolled back', [
+            Log::error('Fiscal profile creation failed — local profile rolled back', [
                 'rfc'               => $validated['rfc'],
                 'email'             => $validated['email'],
                 'error'             => $e->getMessage(),
@@ -161,9 +172,9 @@ class FiscalProfileController extends Controller implements HasMiddleware
 
         $profile = FiscalProfile::findOrFail($validated['fiscal_profile_id']);
 
-        if (! $profile->sw_user_id) {
+        if (! $profile->isLinkedToPac()) {
             return back()
-                ->with('error', 'Este RFC aún no tiene una cuenta. Espera a que se complete el aprovisionamiento.');
+                ->with('error', 'Este RFC aún no tiene una cuenta activa. Espera a que se complete la activación.');
         }
 
         try {
@@ -233,20 +244,17 @@ class FiscalProfileController extends Controller implements HasMiddleware
             abort(403);
         }
 
-        // Load the logo relation
-        $fiscalProfile->load('media');
+        // Load the logo relation and the PAC account (account type is
+        // administrative — hidden from the client payload).
+        $fiscalProfile->load('media', 'pacAccount');
 
-        // Live PAC balance
-        $balance = null;
-        $balanceError = null;
-
-        if ($fiscalProfile->sw_user_id) {
-            try {
-                $balance = $swUserService->getStampsBalance($fiscalProfile->sw_user_id);
-            } catch (\Exception $e) {
-                $balanceError = 'No se pudo consultar el saldo en este momento.';
-            }
+        if ($fiscalProfile->pacAccount) {
+            $fiscalProfile->pacAccount->makeHidden(['account_type']);
         }
+
+        // Live balance — branches by account type (model).
+        // Subcuentas → saldo real del PAC. Cuentas compartidas → wallet local.
+        [$balance, $balanceError] = $fiscalProfile->stampBalance($swUserService);
 
         // Invoice KPIs for this fiscal profile
         $invoiceQuery = Invoice::where('branch_id', $user->branch_id)
@@ -297,10 +305,34 @@ class FiscalProfileController extends Controller implements HasMiddleware
     {
         $hasInvoices = Invoice::where('fiscal_profile_id', $fiscalProfile->id)->exists();
 
-        // ── Deactivate subaccount in SW Sapien PAC ──
-        if ($fiscalProfile->sw_user_id) {
+        // ── Deactivate the PAC account (only dealer subaccounts have an API) ──
+        $pacAccount = $fiscalProfile->pacAccount;
+
+        if ($pacAccount && $pacAccount->isActive() && $pacAccount->isSubaccount() && $pacAccount->sw_user_id) {
             $swUserService = app(SWUserService::class);
-            $swUserService->deactivateSubaccount($fiscalProfile);
+
+            try {
+                $swUserService->deactivateSubaccount($pacAccount);
+            } catch (\RuntimeException $e) {
+                Log::warning('SW Sapien subaccount deactivation failed on profile destroy', [
+                    'fiscal_profile_id' => $fiscalProfile->id,
+                    'pac_account_id'    => $pacAccount->id,
+                    'error'             => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // A shared account has no deactivation API — if no other active
+        // profile uses it, mark it inactive locally.
+        if ($pacAccount && $pacAccount->isActive() && $pacAccount->isShared()) {
+            $otherActiveProfiles = $pacAccount->fiscalProfiles()
+                ->where('id', '!=', $fiscalProfile->id)
+                ->where('is_active', true)
+                ->exists();
+
+            if (! $otherActiveProfiles) {
+                $pacAccount->update(['status' => PacAccountStatus::INACTIVE]);
+            }
         }
 
         if (! $hasInvoices) {
@@ -397,6 +429,10 @@ class FiscalProfileController extends Controller implements HasMiddleware
         FetchManifestLegendRequest $request,
         FetchManifestLegendAction $action,
     ): RedirectResponse {
+        if (! $fiscalProfile->requiresManifest()) {
+            return back()->with('error', 'Este perfil no requiere firmar el manifiesto.');
+        }
+
         $cerFile = $request->file('cer_file');
         $cerContent = file_get_contents($cerFile->getRealPath());
 
@@ -416,6 +452,10 @@ class FiscalProfileController extends Controller implements HasMiddleware
         FiscalProfile $fiscalProfile,
         AcceptManifestTextRequest $request,
     ): RedirectResponse {
+        if (! $fiscalProfile->requiresManifest()) {
+            return back()->with('error', 'Este perfil no requiere firmar el manifiesto.');
+        }
+
         $fiscalProfile->update([
             'manifest_text_accepted_at' => now(),
         ]);
@@ -434,6 +474,10 @@ class FiscalProfileController extends Controller implements HasMiddleware
         SignManifestRequest $request,
         SignManifestAction $action,
     ): RedirectResponse {
+        if (! $fiscalProfile->requiresManifest()) {
+            return back()->with('error', 'Este perfil no requiere firmar el manifiesto.');
+        }
+
         $result = $action->execute($fiscalProfile, [
             'cer_file' => $request->file('cer_file'),
             'key_file' => $request->file('key_file'),
@@ -453,6 +497,10 @@ class FiscalProfileController extends Controller implements HasMiddleware
      */
     public function downloadManifest(FiscalProfile $fiscalProfile): \Symfony\Component\HttpFoundation\BinaryFileResponse|\Illuminate\Http\RedirectResponse
     {
+        if (! $fiscalProfile->requiresManifest()) {
+            return back()->with('error', 'Este perfil no requiere firmar el manifiesto.');
+        }
+
         if (! $fiscalProfile->manifest_pdf_path) {
             return back()->with('error', 'Este perfil aún no tiene un manifiesto firmado.');
         }

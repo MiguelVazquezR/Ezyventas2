@@ -217,17 +217,25 @@ class SubscriptionController extends Controller
 
         // 10. Fiscal profiles with live stamp balances for the superadmin stamp section
         $fiscalProfiles = $subscription->fiscalProfiles()
-            ->with(['stampPurchases' => fn ($q) => $q->latest()->limit(50)])
+            ->with(['pacAccount', 'stampPurchases' => fn ($q) => $q->latest()->limit(50)])
             ->get();
 
         $swUserService = app(SWUserService::class);
         $fiscalProfilesData = $fiscalProfiles->map(function ($profile) use ($swUserService) {
             $balance = null;
             $balanceError = null;
+            $pacAccount = $profile->pacAccount;
 
-            if ($profile->sw_user_id) {
+            if ($pacAccount && $pacAccount->isActive()) {
                 try {
-                    $balance = $swUserService->getStampsBalance($profile->sw_user_id);
+                    if ($pacAccount->isSubaccount()) {
+                        $balance = $swUserService->getStampsBalance($pacAccount->sw_user_id);
+                    } elseif ($pacAccount->isShared()) {
+                        // Wallet local del RFC — nunca el saldo real del PAC.
+                        $balance = ['stampsBalance' => app(\App\Services\Billing\WalletService::class)->availableBalance($profile->id)];
+                    } else {
+                        $balance = $swUserService->getOwnBalance($pacAccount);
+                    }
                 } catch (\Exception $e) {
                     $balanceError = 'No se pudo consultar el saldo.';
                 }
@@ -237,7 +245,9 @@ class SubscriptionController extends Controller
                 'id'             => $profile->id,
                 'rfc'            => $profile->rfc,
                 'razon_social'   => $profile->razon_social,
-                'sw_user_id'     => $profile->sw_user_id,
+                'sw_user_id'     => $pacAccount?->sw_user_id,
+                'account_type'   => $pacAccount?->account_type?->value,
+                'account_status' => $pacAccount?->status?->value,
                 'is_active'      => $profile->is_active,
                 'balance'        => $balance,
                 'balanceError'   => $balanceError,
@@ -251,6 +261,38 @@ class SubscriptionController extends Controller
             ->latest()
             ->limit(100)
             ->get();
+
+        // Cuenta compartida (Conectia) ligada a los perfiles de la suscripción:
+        // saldo real del PAC + RFCs vinculados (de todas las suscripciones).
+        $sharedAccountData = null;
+        $sharedPac = $fiscalProfiles->pluck('pacAccount')
+            ->filter(fn ($a) => $a?->isShared() && $a->isActive())
+            ->first();
+
+        if ($sharedPac) {
+            $realBalance = null;
+            try {
+                $realBalance = $swUserService->getOwnBalance($sharedPac);
+            } catch (\Exception $e) {
+                // best effort
+            }
+
+            $sharedAccountData = [
+                'id'            => $sharedPac->id,
+                'login_email'   => $sharedPac->login_email,
+                'real_balance'  => $realBalance,
+                'balance_error' => $realBalance === null,
+                'rfc_count'     => $sharedPac->fiscalProfiles()->count(),
+                'rfcs'          => $sharedPac->fiscalProfiles()->with('subscription')->get()->map(fn ($p) => [
+                    'id'                => $p->id,
+                    'rfc'               => $p->rfc,
+                    'razon_social'      => $p->razon_social,
+                    'subscription_id'   => $p->subscription_id,
+                    'subscription_name' => $p->subscription?->commercial_name,
+                    'local_balance'     => app(\App\Services\Billing\WalletService::class)->availableBalance($p->id),
+                ]),
+            ];
+        }
 
         return Inertia::render('Admin/Subscriptions/Show', [
             'subscription' => $subscription,
@@ -268,6 +310,7 @@ class SubscriptionController extends Controller
             'hasAiAgentModule' => $subscription->hasAiAgentModule(),
             'fiscalProfiles' => $fiscalProfilesData,
             'allStampPurchases' => $allStampPurchases,
+            'sharedAccount' => $sharedAccountData,
         ]);
     }
 

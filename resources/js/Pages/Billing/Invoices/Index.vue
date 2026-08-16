@@ -29,6 +29,7 @@ const statusOptions = [
     { label: 'Pre-factura', value: 'Pre-factura' },
     { label: 'Pendiente', value: 'pendiente' },
     { label: 'Timbrada', value: 'Timbrada' },
+    { label: 'En verificación', value: 'en_verificacion' },
     { label: 'Cancelación pendiente', value: 'cancelacion_pendiente' },
     { label: 'Cancelada', value: 'cancelada' },
 ];
@@ -123,6 +124,7 @@ const statusSeverity = (status) => {
         borrador: 'info',
         pendiente: 'secondary',
         certificada: 'success',
+        en_verificacion: 'warn',
         cancelacion_pendiente: 'warn',
         cancelada: 'danger',
         no_solicitada: 'secondary',
@@ -137,6 +139,7 @@ const statusLabel = (status) => {
         borrador: 'Pre-factura',
         pendiente: 'Pendiente',
         certificada: 'Timbrada',
+        en_verificacion: 'En verificación',
         cancelacion_pendiente: 'Cancelación pendiente',
         cancelada: 'Cancelada',
         no_solicitada: 'No solicitada',

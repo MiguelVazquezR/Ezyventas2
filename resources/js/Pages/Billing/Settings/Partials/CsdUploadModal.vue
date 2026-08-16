@@ -157,7 +157,7 @@ const tagPt = {
                 <div class="flex items-start gap-3">
                     <i class="pi pi-shield !text-sm text-amber-500 mt-0.5"></i>
                     <div>
-                        <h1 class="text-sm font-semibold text-amber-700 dark:text-amber-400 m-0 mb-1">Paso 2 de 3</h1>
+                        <h1 class="text-sm font-semibold text-amber-700 dark:text-amber-400 m-0 mb-1">{{ profile?.requires_manifest ? 'Paso 2 de 3' : 'Paso 2 de 2' }}</h1>
                         <p class="text-[12px] font-medium text-amber-700 dark:text-amber-400 m-0 mb-0.5">Certificados oficiales del SAT</p>
                         <p class="text-[12px] text-amber-600/90 dark:text-amber-400/70 m-0 leading-relaxed">
                             Los archivos .cer y .key son emitidos por el SAT. Se enviarán de forma segura al PAC (Proveedor de Timbrado). Estos archivos se requieren para la generación de comprobantes fiscales.

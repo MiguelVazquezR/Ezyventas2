@@ -74,11 +74,13 @@ class StampMovementObserver
         // Build a human-readable description
         $description = $this->buildPurchaseDescription($purchase);
 
-        $quantity = $purchase->adjustment_type === 'remove'
-            ? $purchase->stamp_quantity  // will be treated as negative below
-            : $purchase->stamp_quantity;
+        // adjustment_type is cast to StampAdjustmentType — compare the enum
+        // value, never the enum instance, against the raw string.
+        $isRemoval = $purchase->adjustment_type?->value === 'remove';
 
-        $type = $purchase->adjustment_type === 'remove' ? 'exit' : 'entry';
+        $quantity = $purchase->stamp_quantity;
+
+        $type = $isRemoval ? 'exit' : 'entry';
 
         $balanceAfter = $this->calculateNextBalance(
             $purchase->fiscal_profile_id,

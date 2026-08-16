@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermissions, taxRegimeLabel } from '@/Composables';
@@ -13,11 +13,11 @@ import CsdUploadModal from './Partials/CsdUploadModal.vue';
 const props = defineProps({
     fiscalProfiles: Object,
     filters: Object,
-    facturacionHabilitada: Boolean,
     ourBankAccounts: {
         type: Array,
         default: () => [],
     },
+    usesSharedAccount: Boolean,
 });
 
 const { hasPermission } = usePermissions();
@@ -97,7 +97,7 @@ const toggleMenu = (event, profile) => {
     const options = [];
 
     // Logo
-    if (profile.sw_user_id) {
+    if (isAccountActive(profile)) {
         options.push({
             label: profile.logo_url ? 'Cambiar logotipo' : 'Agregar logotipo',
             icon: 'pi pi-image',
@@ -106,7 +106,7 @@ const toggleMenu = (event, profile) => {
     }
 
     // Certificados CSD
-    if (profile.sw_user_id) {
+    if (isAccountActive(profile)) {
         options.push({
             label: profile.certificate_number ? 'Actualizar certificados' : 'Agregar certificados',
             icon: 'pi pi-key',
@@ -114,8 +114,8 @@ const toggleMenu = (event, profile) => {
         });
     }
 
-    // Firmar manifiesto
-    if (profile.sw_user_id) {
+    // Firmar manifiesto (solo subcuentas)
+    if (isAccountActive(profile) && profile.requires_manifest) {
         options.push({
             label: profile.manifest_signed_at ? 'Volver a firmar manifiesto' : 'Firmar manifiesto',
             icon: 'pi pi-pen-to-square',
@@ -124,7 +124,7 @@ const toggleMenu = (event, profile) => {
     }
 
     // Comprar timbres
-    if (profile.sw_user_id) {
+    if (isAccountActive(profile)) {
         options.push({
             label: 'Comprar timbres',
             icon: 'pi pi-ticket',
@@ -166,16 +166,20 @@ const onRowClick = (event) => {
 // ──────────────────────────────────────
 // Helpers
 // ──────────────────────────────────────
+// Whether the profile's PAC account is active. Backward compatible with the
+// legacy sw_user_id for profiles provisioned before the pac_accounts table.
+const isAccountActive = (profile) => profile.pac_account?.status === 'active' || !!profile.sw_user_id;
+
 const getStatusSeverity = (profile) => {
     if (!profile.is_active) return 'secondary';
-    if (profile.sw_user_id) return 'success';
+    if (isAccountActive(profile)) return 'success';
     return 'warn';
 };
 
 const getStatusLabel = (profile) => {
     if (!profile.is_active) return 'Inactivo';
-    if (profile.sw_user_id) return 'Activo';
-    return 'Pendiente PAC';
+    if (isAccountActive(profile)) return 'Activo';
+    return 'Pendiente de activación';
 };
 
 const getCsdSeverity = (profile) => {
@@ -189,16 +193,25 @@ const getCsdLabel = (profile) => {
 };
 
 const getManifestSeverity = (profile) => {
+    if (!profile.requires_manifest) return 'secondary';
     if (profile.manifest_signed_at) return 'success';
-    if (profile.sw_user_id) return 'warn';
+    if (isAccountActive(profile)) return 'warn';
     return 'secondary';
 };
 
 const getManifestLabel = (profile) => {
+    if (!profile.requires_manifest) return '—';
     if (profile.manifest_signed_at) return 'Firmado';
-    if (profile.sw_user_id) return 'Pendiente';
+    if (isAccountActive(profile)) return 'Pendiente';
     return '—';
 };
+
+// Whether the Manifiesto column should be shown at all. Only profiles linked
+// to a subaccount require the manifest; for shared accounts the column is
+// hidden entirely (no '—' placeholders).
+const showManifestColumn = computed(() =>
+    (props.fiscalProfiles?.data ?? []).some((p) => p.requires_manifest)
+);
 
 const formatStamps = (val) => {
     if (val === null || val === undefined) return 'No disponible';
@@ -361,10 +374,11 @@ const tagPt = {
                         </template>
                     </Column>
 
-                    <!-- Manifiesto -->
-                    <Column field="manifest_signed_at" header="Manifiesto" sortable>
+                    <!-- Manifiesto (solo subcuentas) -->
+                    <Column v-if="showManifestColumn" field="manifest_signed_at" header="Manifiesto" sortable>
                         <template #body="{ data }">
-                            <Tag
+                            <span v-if="!data.requires_manifest" class="text-xs text-gray-400 dark:text-gray-600">—</span>
+                            <Tag v-else
                                 :value="getManifestLabel(data)"
                                 :severity="getManifestSeverity(data)"
                                 :pt="tagPt"
@@ -373,8 +387,8 @@ const tagPt = {
                     </Column>
 
 
-                    <!-- Timbres disponibles -->
-                    <Column header="Timbres disponibles" sortable>
+                    <!-- Timbres (Disponibles) -->
+                    <Column header="Timbres">
                         <template #body="{ data }">
                             <span
                                 v-if="data.stamps_available !== null && data.stamps_available !== undefined"
@@ -412,6 +426,7 @@ const tagPt = {
 
         <FiscalProfileFormModal
             ref="fiscalProfileFormModalRef"
+            :uses-shared-account="props.usesSharedAccount"
             @success="router.reload()"
         />
 

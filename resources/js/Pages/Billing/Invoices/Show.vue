@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermissions } from '@/Composables';
 import CancelInvoiceModal from './Partials/CancelInvoiceModal.vue';
@@ -46,6 +46,7 @@ const statusLabel = computed(() => {
         borrador: 'Pre-factura',
         pendiente: 'Pendiente',
         certificada: 'Timbrada',
+        en_verificacion: 'En verificación',
         cancelacion_pendiente: 'Cancelación pendiente',
         cancelada: 'Cancelada',
     };
@@ -125,6 +126,7 @@ const statusSeverity = computed(() => {
         borrador: 'info',
         pendiente: 'warn',
         certificada: 'success',
+        en_verificacion: 'warn',
         cancelacion_pendiente: 'warn',
         cancelada: 'danger',
     };
@@ -197,6 +199,20 @@ const taxRegimeLabel = ((code) => {
 const cancelModalRef = ref(null);
 
 // ──────────────────────────────────────
+// Stamp a draft invoice directly from the detail page
+// ──────────────────────────────────────
+const stamping = ref(false);
+
+function stampInvoice() {
+    if (stamping.value) return;
+    stamping.value = true;
+    router.post(route('billing.invoices.stamp', props.invoice.id), {}, {
+        preserveScroll: true,
+        onFinish: () => { stamping.value = false; },
+    });
+}
+
+// ──────────────────────────────────────
 // Tesla UI Pass-Through
 // ──────────────────────────────────────
 const dataTablePt = {
@@ -238,6 +254,19 @@ const tagPt = {
                             severity="secondary"
                             :pt="tagPt"
                         />
+                        <Tag
+                            v-if="invoice.prices_include_iva"
+                            value="Precios con IVA incluido"
+                            severity="secondary"
+                            :pt="tagPt"
+                        />
+                        <Link
+                            v-if="invoice.transaction"
+                            :href="route('transactions.show', invoice.transaction.id)"
+                            class="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold text-primary dark:text-primary-400 no-underline hover:underline"
+                        >
+                            <i class="pi pi-shopping-bag !text-[10px]"></i> Venta {{ invoice.transaction.folio }}
+                        </Link>
 
                         <span class="text-gray-300 dark:text-gray-700 hidden sm:block">|</span>
 
@@ -252,6 +281,16 @@ const tagPt = {
 
                 <!-- Action buttons -->
                 <div class="w-full sm:w-auto shrink-0 flex gap-2">
+                    <Button
+                        v-if="invoice.status === 'borrador' || invoice.status === 'pendiente'"
+                        label="Timbrar factura"
+                        icon="pi pi-shield"
+                        severity="success"
+                        :loading="stamping"
+                        :disabled="stamping"
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto"
+                        @click="stampInvoice"
+                    />
                     <Link
                         v-if="invoice.status === 'borrador'"
                         :href="route('billing.invoices.edit', invoice.id)"

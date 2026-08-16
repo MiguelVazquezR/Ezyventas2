@@ -4,6 +4,8 @@ namespace App\Models\Billing;
 
 use App\Models\Billing\StampMovement;
 use App\Models\Subscription;
+use App\Services\Billing\WalletService;
+use App\Services\SW\SWUserService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -30,11 +32,14 @@ class FiscalProfile extends Model implements HasMedia
 
     protected $fillable = [
         'subscription_id',
+        'pac_account_id',
         'rfc',
         'razon_social',
         'regimen_fiscal',
         'postal_code',
         'email',
+        // LEGACY — keep for now; removed in a later migration after every
+        // active profile has pac_account_id populated.
         'password',
         'sw_user_id',
         'sw_account_email',
@@ -71,7 +76,7 @@ class FiscalProfile extends Model implements HasMedia
         ];
     }
 
-    protected $appends = ['logo_url'];
+    protected $appends = ['logo_url', 'requires_manifest'];
 
     /*
     |--------------------------------------------------------------------------
@@ -109,6 +114,16 @@ class FiscalProfile extends Model implements HasMedia
     }
 
     /**
+     * The PAC account that hosts this RFC.
+     *
+     * A single account may host multiple fiscal profiles (RFCs).
+     */
+    public function pacAccount(): BelongsTo
+    {
+        return $this->belongsTo(PacAccount::class);
+    }
+
+    /**
      * Stamp purchase history for this fiscal profile.
      */
     public function stampPurchases(): HasMany
@@ -130,6 +145,14 @@ class FiscalProfile extends Model implements HasMedia
         return $this->hasMany(Invoice::class);
     }
 
+    /**
+     * Stamp reservations for this fiscal profile.
+     */
+    public function stampReservations(): HasMany
+    {
+        return $this->hasMany(StampReservation::class);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Scopes
@@ -144,6 +167,30 @@ class FiscalProfile extends Model implements HasMedia
         return $query->where('is_active', true);
     }
 
+    /**
+     * Scope to fiscal profiles usable as CFDI emitters: active AND linked
+     * to an active PAC account (or legacy sw_user_id before backfill).
+     */
+    public function scopeReadyForInvoicing(Builder $query): Builder
+    {
+        return $query->active()->where(function (Builder $q) {
+            $q->whereHas('pacAccount', function (Builder $pq) {
+                $pq->where('status', \App\Enums\PacAccountStatus::ACTIVE);
+            })->orWhereNotNull('sw_user_id');
+        });
+    }
+
+    /**
+     * Scope to fiscal profiles hosted by a subaccount-type PAC account
+     * (dealer accounts with their own per-user stamp balance).
+     */
+    public function scopeOnSubaccount(Builder $query): Builder
+    {
+        return $query->whereHas('pacAccount', function (Builder $pq) {
+            $pq->where('account_type', \App\Enums\PacAccountType::SUBACCOUNT);
+        });
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Helpers
@@ -151,8 +198,11 @@ class FiscalProfile extends Model implements HasMedia
     */
 
     /**
-     * Whether this profile has been successfully linked to a SW Sapien
-     * sub-user account.
+     * Whether this profile has been successfully linked to a PAC account.
+     *
+     * Prefers the new pac_account relation; falls back to the legacy
+     * sw_user_id column so already-provisioned profiles keep working
+     * before the backfill command has run.
      */
     public function hasSwSubaccount(): bool
     {
@@ -160,12 +210,60 @@ class FiscalProfile extends Model implements HasMedia
     }
 
     /**
+     * Whether this profile is linked to an ACTIVE PAC account.
+     *
+     * A linked account that is still pending activation is NOT ready
+     * for invoicing.
+     */
+    public function hasActivePacAccount(): bool
+    {
+        return $this->pacAccount?->isActive() ?? false;
+    }
+
+    /**
+     * Whether this profile is linked to the PAC at all — either through
+     * an active PacAccount or a legacy sw_user_id (pre-backfill).
+     */
+    public function isLinkedToPac(): bool
+    {
+        return $this->hasActivePacAccount() || $this->hasSwSubaccount();
+    }
+
+    /**
+     * Resolve the PAC login credentials for this profile.
+     *
+     * Prefers the new pac_account; falls back to the legacy
+     * sw_account_email / email + password columns so already-provisioned
+     * profiles keep working before the backfill has run.
+     *
+     * @return array{login_email: string|null, password: string|null}
+     */
+    public function resolvePacCredentials(): array
+    {
+        if ($this->pacAccount && $this->pacAccount->hasCredentials()) {
+            return [
+                'login_email' => $this->pacAccount->login_email,
+                'password'    => $this->pacAccount->password,
+            ];
+        }
+
+        return [
+            'login_email' => $this->sw_account_email ?? $this->email,
+            'password'    => $this->password,
+        ];
+    }
+
+    /**
      * Whether this profile is ready to be used as an emitter in a CFDI.
-     * Requires the profile to be active and linked to a PAC subaccount.
+     * Requires the profile to be active and linked to a PAC account.
+     *
+     * Backward compatible: before the pac_accounts backfill runs, a
+     * legacy sw_user_id also counts as ready.
      */
     public function isReadyForInvoicing(): bool
     {
-        return $this->is_active && $this->hasSwSubaccount();
+        return $this->is_active
+            && ($this->hasActivePacAccount() || $this->hasSwSubaccount());
     }
 
     /**
@@ -174,6 +272,86 @@ class FiscalProfile extends Model implements HasMedia
     public function hasSignedManifest(): bool
     {
         return ! empty($this->manifest_signed_at);
+    }
+
+    /**
+     * Whether this profile must sign the SAT/SW manifest before stamping.
+     *
+     * Only dealer subaccounts require the manifest. Shared accounts (the
+     * platform's own subscription account) host RFCs locally and do not need it.
+     */
+    public function requiresManifest(): bool
+    {
+        return ! ($this->pacAccount && $this->pacAccount->isShared());
+    }
+
+    /**
+     * Serialized flag for the frontend (Show, Index, InvoiceForm).
+     */
+    public function getRequiresManifestAttribute(): bool
+    {
+        return $this->requiresManifest();
+    }
+
+    /**
+     * Live stamp balance for this profile, branched by account type.
+     *
+     * - Subcuenta → saldo real del PAC (getStampsBalance).
+     * - Compartida → wallet local (Disponibles/Asignados/Usados); el saldo
+     *   real del PAC nunca se expone al suscriptor.
+     *
+     * @return array{0: array|null, 1: string|null} [balance, error]
+     */
+    public function stampBalance(SWUserService $swUserService): array
+    {
+        $pacAccount = $this->pacAccount;
+
+        if (! $pacAccount || ! $pacAccount->isActive()) {
+            return [null, null];
+        }
+
+        try {
+            if ($pacAccount->isSubaccount()) {
+                return [$swUserService->getStampsBalance($pacAccount->sw_user_id), null];
+            }
+
+            if ($pacAccount->isShared()) {
+                return [$this->localWalletBalance(), null];
+            }
+
+            return [null, null];
+        } catch (\Exception $e) {
+            return [null, 'No se pudo consultar el saldo en este momento.'];
+        }
+    }
+
+    /**
+     * Balance object for a shared account built from the local wallet.
+     * Never exposes the real PAC balance to the subscriber.
+     *
+     * Disponibles = saldo disponible (entradas − salidas − reservas held/ambiguous);
+     * Asignados   = total entradas (incluye los 5 de regalo); Usados = total salidas.
+     */
+    private function localWalletBalance(): array
+    {
+        // Asignados = total entradas confirmadas (excluye compras pendientes de
+        // transferencia hasta que el admin las apruebe).
+        $assigned = (int) $this->stampMovements()
+            ->walletConfirmed()
+            ->where('type', 'entry')
+            ->sum('quantity');
+
+        $used = (int) $this->stampMovements()
+            ->where('type', 'exit')
+            ->sum('quantity');
+
+        return [
+            'stampsBalance'  => app(WalletService::class)->availableBalance($this->id),
+            'stampsAssigned' => $assigned,
+            'stampsUsed'     => $used,
+            'isUnlimited'    => false,
+            'local'          => true,
+        ];
     }
 
     /**

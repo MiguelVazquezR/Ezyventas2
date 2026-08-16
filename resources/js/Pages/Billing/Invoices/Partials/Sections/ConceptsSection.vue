@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { satUnitOptions, objetoImpOptions, taxRateOptions } from '../../satCatalogs';
 import { inputPt, selectPt, inputNumberPt, readonlyPt, autoCompleteInputPt } from '../../ptConfigs';
-import { toArray, blankItem, formatCurrency } from '../../formHelpers';
+import { toArray, blankItem, formatCurrency, fuzzySearchCollection } from '../../formHelpers';
 import SectionCard from '@/Components/Billing/SectionCard.vue';
 
 const props = defineProps({
@@ -22,15 +22,28 @@ const availableConceptItems = computed(() => [
 ]);
 
 const conceptSuggestions = ref({});
+// Full match list per concept row (capped), revealed in chunks of 10.
+const conceptMatches = ref({});
 
 const searchConceptItems = (event, index) => {
-    const query = event.query.toLowerCase().trim();
-    if (!query) {
-        conceptSuggestions.value[index] = [...availableConceptItems.value];
-    } else {
-        conceptSuggestions.value[index] = availableConceptItems.value.filter(
-            item => item.name.toLowerCase().includes(query),
-        );
+    const query = String(event.query || '').trim();
+    const matches = fuzzySearchCollection(
+        availableConceptItems.value,
+        query,
+        (item) => [item.name, item.sku, item.sat_product_code],
+        200,
+    );
+    conceptMatches.value[index] = matches;
+    conceptSuggestions.value[index] = matches.slice(0, 10);
+};
+
+// Progressive loading on scroll per concept row (virtual scroller lazy).
+const onConceptLazyLoad = (event, index) => {
+    const matches = conceptMatches.value[index] || [];
+    const visible = conceptSuggestions.value[index] || [];
+    const target = (event?.last ?? 0) + 10;
+    if (visible.length < matches.length) {
+        conceptSuggestions.value[index] = matches.slice(0, target);
     }
 };
 
@@ -39,6 +52,10 @@ const onConceptSelect = (event, index) => {
     const selected = event.value;
     if (!selected || typeof selected !== 'object') return;
     item.description = selected.name;
+    // Track the catalog record so SAT codes filled manually can be persisted
+    // back to the product/service when the invoice is saved.
+    item.itemable_id = selected.id ?? null;
+    item.itemable_type = selected.type === 'Servicio' ? 'service' : 'product';
     // Carta porte (T): el precio unitario siempre es 0 (sin importes).
     item.unit_price = props.isTraslado ? 0 : (parseFloat(selected.price) || 0);
     if (props.isTraslado) {
@@ -72,6 +89,28 @@ const addItem = () => {
     props.form.items.push(item);
 };
 const removeItem = (index) => props.form.items.splice(index, 1);
+
+// ── "Precios con IVA incluido" per-line breakdown ──
+const lineGross = (item) =>
+    ((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)) - (parseFloat(item.discount_amount) || 0);
+
+const lineBase = (item) => {
+    const rate = parseFloat(item.tax_rate) || 0;
+    const gross = lineGross(item);
+    return rate > 0 ? Math.round((gross / (1 + rate)) * 100) / 100 : gross;
+};
+
+const lineIva = (item) => Math.round((lineGross(item) - lineBase(item)) * 100) / 100;
+
+const hasIncludedIvaBreakdown = (item) =>
+    !!props.form.prices_include_iva
+    && item.objeto_imp === '02'
+    && item.tax_rate !== 'Exento'
+    && (parseFloat(item.tax_rate) || 0) > 0;
+
+const needsZeroTaxWarning = (item) =>
+    !!props.form.prices_include_iva
+    && (item.objeto_imp !== '02' || item.tax_rate === 'Exento' || (parseFloat(item.tax_rate) || 0) === 0);
 </script>
 
 <template>
@@ -86,6 +125,15 @@ const removeItem = (index) => props.form.items.splice(index, 1);
         </Message>
 
         <Message v-if="form.errors.items" severity="error" variant="simple" size="small">{{ form.errors.items }}</Message>
+
+        <!-- Precios con IVA incluido (modo de cálculo flexible por factura) -->
+        <div v-if="!isTraslado" class="flex items-start gap-3 rounded-2xl border border-slate-100 dark:border-neutral-800 bg-slate-50/50 dark:bg-neutral-900/50 px-4 py-3.5">
+            <Checkbox v-model="form.prices_include_iva" :binary="true" inputId="pricesIncludeIva" class="mt-0.5" />
+            <div class="flex flex-col gap-0.5">
+                <label for="pricesIncludeIva" class="text-xs font-semibold text-slate-700 dark:text-neutral-200 cursor-pointer">Los precios ya incluyen IVA</label>
+                <p class="text-[11px] text-slate-500 dark:text-neutral-400 m-0 leading-relaxed">El sistema separa la base y el IVA de cada precio para que el total de la factura coincida con lo cobrado. El importe por concepto no cambia.</p>
+            </div>
+        </div>
 
         <div v-if="form.items.length === 0" class="rounded-2xl border-2 border-dashed border-slate-200 dark:border-neutral-800 py-12 text-center">
             <i class="pi pi-inbox !text-3xl text-slate-300 dark:text-neutral-600 mb-3 block"></i>
@@ -113,6 +161,7 @@ const removeItem = (index) => props.form.items.splice(index, 1);
                         class="w-full"
                         dropdown
                         :pt="autoCompleteInputPt"
+                        :virtualScrollerOptions="{ lazy: true, itemSize: 48, onLazyLoad: (e) => onConceptLazyLoad(e, index) }"
                     >
                         <template #option="slotProps">
                             <div class="flex items-center gap-2">
@@ -125,8 +174,8 @@ const removeItem = (index) => props.form.items.splice(index, 1);
                 </div>
 
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-neutral-500 m-0">ClaveProdServ *</label><InputText v-model="item.sat_product_code" placeholder="01010101" maxlength="8" class="w-full" :pt="inputPt" /></div>
-                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-neutral-500 m-0">ClaveUnidad *</label><Select v-model="item.sat_unit_code" :options="satUnitOptions" optionLabel="label" optionValue="value" placeholder="Selecciona" filter class="w-full" :pt="selectPt"><template #option="s"><div class="flex flex-col gap-0.5"><span class="text-sm font-medium">{{ s.option.label }}</span><span class="text-xs text-slate-500 dark:text-neutral-400">{{ s.option.description }}</span></div></template></Select></div>
+                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-neutral-500 m-0">ClaveProdServ *</label><InputText v-model="item.sat_product_code" placeholder="01010101" maxlength="8" class="w-full" :class="{ '!border-red-400': form.errors[`items.${index}.sat_product_code`] }" :pt="inputPt" /><Message v-if="form.errors[`items.${index}.sat_product_code`]" severity="error" variant="simple" size="small">{{ form.errors[`items.${index}.sat_product_code`] }}</Message></div>
+                    <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-neutral-500 m-0">ClaveUnidad *</label><Select v-model="item.sat_unit_code" :options="satUnitOptions" optionLabel="label" optionValue="value" placeholder="Selecciona" filter class="w-full" :class="{ '!border-red-400': form.errors[`items.${index}.sat_unit_code`] }" :pt="selectPt"><template #option="s"><div class="flex flex-col gap-0.5"><span class="text-sm font-medium">{{ s.option.label }}</span><span class="text-xs text-slate-500 dark:text-neutral-400">{{ s.option.description }}</span></div></template></Select><Message v-if="form.errors[`items.${index}.sat_unit_code`]" severity="error" variant="simple" size="small">{{ form.errors[`items.${index}.sat_unit_code`] }}</Message></div>
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-neutral-500 m-0">SKU / No. Ident.</label><InputText v-model="item.no_identificacion" placeholder="SKU-001" maxlength="100" class="w-full" :pt="inputPt" /></div>
                 </div>
 
@@ -142,9 +191,20 @@ const removeItem = (index) => props.form.items.splice(index, 1);
                     <div class="flex flex-col gap-1.5"><label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-neutral-500 m-0">Tasa IVA</label><Select v-if="item.objeto_imp === '02'" v-model="item.tax_rate" :options="taxRateOptions" optionLabel="label" optionValue="value" class="w-full" :pt="selectPt" /><InputText v-else modelValue="No aplica" readonly class="w-full" :pt="readonlyPt" /></div>
                 </div>
 
-                <div class="pt-3 border-t border-slate-100 dark:border-neutral-800 flex justify-end gap-6 text-[12px] text-slate-500 dark:text-neutral-400">
-                    <span>Subtotal: {{ formatCurrency((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)) }}</span>
-                    <span>IVA: {{ item.objeto_imp !== '02' ? formatCurrency(0) : item.tax_rate === 'Exento' ? 'Exento' : formatCurrency(((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0) - (parseFloat(item.discount_amount) || 0)) * (parseFloat(item.tax_rate) || 0)) }}</span>
+                <Message v-if="needsZeroTaxWarning(item)" severity="warn" variant="simple" size="small">
+                    Este concepto no desglosará IVA. Úsalo solo si el producto o servicio es tasa 0 % o exento.
+                </Message>
+
+                <div class="pt-3 border-t border-slate-100 dark:border-neutral-800 flex flex-wrap justify-end gap-x-6 gap-y-1 text-[12px] text-slate-500 dark:text-neutral-400">
+                    <template v-if="hasIncludedIvaBreakdown(item)">
+                        <span>Base: {{ formatCurrency(lineBase(item)) }}</span>
+                        <span>IVA incluido: {{ formatCurrency(lineIva(item)) }}</span>
+                        <span>Importe: {{ formatCurrency(lineGross(item)) }}</span>
+                    </template>
+                    <template v-else>
+                        <span>Subtotal: {{ formatCurrency((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)) }}</span>
+                        <span>IVA: {{ item.objeto_imp !== '02' ? formatCurrency(0) : item.tax_rate === 'Exento' ? 'Exento' : formatCurrency(((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0) - (parseFloat(item.discount_amount) || 0)) * (parseFloat(item.tax_rate) || 0)) }}</span>
+                    </template>
                 </div>
             </div>
         </div>

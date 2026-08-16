@@ -10,7 +10,7 @@ class StoreInvoiceRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->can('create.invoices');
+        return $this->user()->can('invoices.create');
     }
 
     public function rules(): array
@@ -158,6 +158,8 @@ class StoreInvoiceRequest extends FormRequest
             'items.*.sat_unit_code' => ['required', 'string', 'max:10'],
             'items.*.unit_name'     => ['nullable', 'string', 'max:50'],
             'items.*.no_identificacion' => ['nullable', 'string', 'max:100'],
+            'items.*.itemable_id'   => ['nullable', 'integer'],
+            'items.*.itemable_type' => ['nullable', 'string', 'in:product,service'],
             'items.*.objeto_imp'    => ['required', 'string', 'max:5', 'in:01,02,03'],
             'items.*.concepto_tipo' => ['nullable', 'string', 'max:30'],
             'items.*.tax_type'      => ['nullable', 'string', 'max:5'],
@@ -173,6 +175,15 @@ class StoreInvoiceRequest extends FormRequest
             'items.*.retentions.*.rate'         => ['required_with:items.*.retentions', 'numeric', 'min:0', 'max:1'],
             'items.*.retentions.*.amount'       => ['required_with:items.*.retentions', 'numeric', 'min:0'],
 
+            // --- Linked POS sale (optional 1:1 relation) ---
+            'transaction_id'        => [
+                'nullable',
+                'integer',
+                Rule::exists('transactions', 'id')
+                    ->where(fn ($query) => $query->where('branch_id', $this->user()->branch_id)),
+            ],
+            'prices_include_iva'    => ['nullable', 'boolean'],
+
             // --- Optional relations ---
             'customer_id'           => ['nullable', 'integer', 'exists:customers,id'],
             'series'                => ['nullable', 'string', 'max:10'],
@@ -184,6 +195,7 @@ class StoreInvoiceRequest extends FormRequest
         return [
             'fiscal_profile_id.required'     => 'Selecciona un emisor fiscal.',
             'fiscal_profile_id.exists'       => 'El emisor fiscal seleccionado no existe.',
+            'transaction_id.exists'          => 'La venta seleccionada no existe o no pertenece a esta sucursal.',
             'exportacion.required'           => 'El campo exportación es obligatorio.',
             'exportacion.in'                 => 'El valor de exportación no es válido.',
             'receiver_rfc.required'          => 'El campo RFC es obligatorio.',

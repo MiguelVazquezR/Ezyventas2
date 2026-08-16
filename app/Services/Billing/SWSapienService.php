@@ -3,10 +3,17 @@
 namespace App\Services\Billing;
 
 use App\Enums\InvoiceStatus;
+use App\Exceptions\Billing\PacDuplicateContentException;
+use App\Exceptions\Billing\PacTimeoutOrAmbiguousException;
+use App\Exceptions\Billing\PacValidationException;
 use App\Models\Customer;
 use App\Models\Billing\FiscalProfile;
 use App\Models\Billing\Invoice;
+use App\Models\Billing\InvoiceFolioCounter;
 use App\Models\InvoiceItem;
+use App\Models\Product;
+use App\Models\Service;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -34,8 +41,10 @@ class SWSapienService
             'branch_id'           => $branchId,
             'fiscal_profile_id'   => $data['fiscal_profile_id'] ?? null,
             'customer_id'         => $data['customer_id'] ?? null,
+            'transaction_id'      => $data['transaction_id'] ?? null,
+            'prices_include_iva'  => (bool) ($data['prices_include_iva'] ?? false),
             'series'              => $data['series'] ?? null,
-            'folio'               => $this->generateFolio($branchId),
+            'folio'               => (string) $this->reserveNextFolio($branchId, $data['series'] ?? null),
             'status'              => InvoiceStatus::DRAFT,
             'receiver_rfc'        => $data['receiver_rfc'],
             'receiver_legal_name'  => $data['receiver_legal_name'],
@@ -546,10 +555,21 @@ class SWSapienService
     /**
      * Stamp the invoice via SW Sapien HTTP API.
      *
-     * @throws \RuntimeException when config is missing, billing is disabled,
-     *                           or the PAC rejects the request.
+     * Returns the PAC response 'data' array WITHOUT persisting anything —
+     * the caller (StampInvoiceAction) decides how to persist it based on the
+     * outcome (confirmed / released / ambiguous).
+     *
+     * @param  Invoice       $invoice  The invoice to stamp.
+     * @param  string|null   $customid Idempotency key sent to the PAC (never reused).
+     * @return array The 'data' payload: uuid, cfdi (XML), pdf, fechaTimbrado, sellos, qrCode...
+     *
+     * @throws \RuntimeException              When config is missing, billing is disabled,
+     *                                        or the manifest is not signed.
+     * @throws PacValidationException         Clear CFDI validation error (not ambiguous).
+     * @throws PacDuplicateContentException   Previous stamp recovered (307 / CFDI3307).
+     * @throws PacTimeoutOrAmbiguousException Timeout / network error, outcome unknown.
      */
-    public function stamp(Invoice $invoice): void
+    public function stamp(Invoice $invoice, ?string $customid = null): array
     {
         $endpoint = config('services.swsapien.endpoint');
         $token    = config('services.swsapien.token');
@@ -560,80 +580,122 @@ class SWSapienService
             );
         }
 
-        // ── Guard: billing must be enabled on the subscription ──
+        // ── Guard: billing must be enabled on the subscription (module) ──
         $subscription = $invoice->branch?->subscription;
-        if (! $subscription || ! $subscription->facturacion_habilitada) {
+        if (! $subscription || ! $subscription->billingEnabled()) {
             throw new \RuntimeException(
-                'La facturación no está habilitada para esta cuenta. Actívala en Configuración > Facturación.'
+                'La facturación no está habilitada para esta cuenta. Contrata el módulo de facturación.'
             );
         }
 
-        $payload = $this->buildPayload($invoice);
-
-        // ── Authenticate as the subaccount so the PAC uses that subaccount's CSD and stamp quota ──
         if (! $invoice->fiscalProfile) {
             throw new \RuntimeException('La factura no tiene un perfil fiscal asociado.');
         }
 
         // ── Guard: the SW Sapien manifest must be signed before stamping ──
-        // This is the third and final step to complete the PAC subaccount setup.
-        // Without a signed manifest the PAC will reject any stamping request.
-        if (! $invoice->fiscalProfile->hasSignedManifest()) {
+        // Only required for dealer subaccounts; shared accounts host RFCs locally.
+        if ($invoice->fiscalProfile->requiresManifest() && ! $invoice->fiscalProfile->hasSignedManifest()) {
             throw new \RuntimeException(
                 'No se puede timbrar porque el manifiesto del SAT no ha sido firmado. Ve a Configuración > Facturación y usa la FIEL para completar el registro de tu RFC emisor.'
             );
         }
 
-        $subaccountToken = $this->authenticateSubaccount($invoice->fiscalProfile);
+        $payload = $this->buildPayload($invoice);
 
-        $response = Http::withToken($subaccountToken)
-            ->withHeaders([
-                'Content-Type' => 'application/jsontoxml',
-            ])
-            ->post($endpoint . '/v3/cfdi33/issue/json/v4', $payload);
+        $start = microtime(true);
+        $pacAccountToken = $this->authenticatePacAccount($invoice->fiscalProfile);
+
+        $headers = ['Content-Type' => 'application/jsontoxml'];
+        if ($customid) {
+            $headers['customid'] = $customid;
+        }
+
+        try {
+            $response = Http::withToken($pacAccountToken)
+                ->withHeaders($headers)
+                ->timeout(20)
+                ->connectTimeout(5)
+                ->post($endpoint . '/v3/cfdi33/issue/json/v4', $payload);
+        } catch (ConnectionException $e) {
+            $this->logPacCall($invoice, 'stamp', $customid, $payload, null, null, $start);
+
+            throw new PacTimeoutOrAmbiguousException(
+                'No se recibió respuesta del Proveedor de timbrado a tiempo. La factura quedó en verificación y se reintentará automáticamente.',
+                null,
+                0,
+                $e,
+            );
+        }
+
+        $durationMs = (int) round((microtime(true) - $start) * 1000);
 
         if ($response->failed()) {
+            $this->logPacCall($invoice, 'stamp', $customid, $payload, $response->status(), $response->json(), $start);
+
             $errorMsg = $response->json('message')
                 ?? $response->json('messageDetail')
                 ?? $response->body();
 
             Log::error("SW Sapien stamping failed for invoice {$invoice->id}", [
-                'status' => $response->status(),
-                'body'   => $response->body(),
+                'status'   => $response->status(),
+                'customid' => $customid,
+                'body'     => $response->body(),
             ]);
-            throw new \RuntimeException(
-                'Se rechazó el timbrado: ' . $errorMsg
-            );
+
+            throw $this->classifyPacFailure($response->status(), $response->json(), $errorMsg);
         }
 
         $data = $response->json();
 
         if (($data['status'] ?? '') !== 'success') {
+            $this->logPacCall($invoice, 'stamp', $customid, $payload, $response->status(), $data, $start);
+
             Log::error('Se rechazó el timbrado', [
                 'invoice_id'    => $invoice->id,
+                'customid'      => $customid,
                 'payload'       => $payload,
                 'message'       => $data['message'] ?? null,
                 'messageDetail' => $data['messageDetail'] ?? null,
                 'http_status'   => $response->status(),
             ]);
 
-            throw new \RuntimeException(
-                'Se rechazó el timbrado: '
-                . ($data['messageDetail'] ?? $data['message'] ?? $response->body())
-            );
+            throw $this->classifyPacFailure($response->status(), $data, ($data['messageDetail'] ?? $data['message'] ?? $response->body()));
         }
 
-        $cfdi   = $data['data']['cfdi'] ?? null;
-        $uuid   = $data['data']['uuid'] ?? $data['data']['tfd']['UUID'] ?? null;
-        $pdfUrl = $data['data']['pdf'] ?? null;
+        $this->logPacCall($invoice, 'stamp', $customid, $payload, $response->status(), $data, $start);
+
+        $result = $data['data'] ?? [];
+
+        $uuid = $result['uuid'] ?? $result['tfd']['UUID'] ?? null;
+        $cfdi = $result['cfdi'] ?? null;
 
         if (! $uuid || ! $cfdi) {
-            throw new \RuntimeException('El factura no se timbró correctamente. Intenta de nuevo.');
+            throw new \RuntimeException('La factura no se timbró correctamente. Intenta de nuevo.');
+        }
+
+        return $result;
+    }
+
+    /**
+     * Persist a successful stamp response onto the invoice.
+     *
+     * Stores the real CFDI XML, extracts the certificate provider RFC from the
+     * cadenaOriginalSAT and updates the invoice to CERTIFIED. Used both for the
+     * normal success path and the "307 previous stamp" recovery path.
+     */
+    public function persistStampedInvoice(Invoice $invoice, array $data): void
+    {
+        $cfdi   = $data['cfdi'] ?? null;
+        $uuid   = $data['uuid'] ?? $data['tfd']['UUID'] ?? null;
+        $pdfUrl = $data['pdf'] ?? null;
+
+        if (! $uuid || ! $cfdi) {
+            throw new \RuntimeException('La factura no se timbró correctamente. Intenta de nuevo.');
         }
 
         // ── Extract RfcProvCertif from cadenaOriginalSAT ──
         // Format: ||1.1|UUID|FechaTimbrado|RfcProvCertif|SelloCFD|NoCertificadoSAT||
-        $cadenaOriginal = $data['data']['cadenaOriginalSAT'] ?? '';
+        $cadenaOriginal = $data['cadenaOriginalSAT'] ?? '';
         $cadenaParts = explode('|', $cadenaOriginal);
         $rfcProvCertif = $cadenaParts[5] ?? null; // index 5 because [0] and [1] are empty (leading ||)
 
@@ -645,16 +707,112 @@ class SWSapienService
             'uuid'                => $uuid,
             'xml_url'             => $xmlPath,
             'pdf_url'             => $pdfUrl,
-            'fecha_timbrado'      => $data['data']['fechaTimbrado'] ?? null,
-            'sello_cfdi'           => $data['data']['selloCFDI'] ?? null,
-            'sello_sat'            => $data['data']['selloSAT'] ?? null,
-            'no_certificado_sat'   => $data['data']['noCertificadoSAT'] ?? null,
+            'fecha_timbrado'      => $data['fechaTimbrado'] ?? null,
+            'sello_cfdi'           => $data['selloCFDI'] ?? null,
+            'sello_sat'            => $data['selloSAT'] ?? null,
+            'no_certificado_sat'   => $data['noCertificadoSAT'] ?? null,
             'rfc_prov_certif'      => $rfcProvCertif,
             'cadena_original_sat'  => $cadenaOriginal ?: null,
-            'qr_code_base64'       => $data['data']['qrCode'] ?? null,
+            'qr_code_base64'       => $data['qrCode'] ?? null,
             'status'               => InvoiceStatus::CERTIFIED,
             'issued_at'            => now(),
         ]);
+    }
+
+    /**
+     * Classify a failed PAC response into a specific exception.
+     *
+     *  - HTTP 400 with code "307" (or message containing "timbre previo") → PacDuplicateContentException.
+     *  - Code "CFDI3307" (customid duplicated) → PacDuplicateContentException.
+     *  - Anything else → PacValidationException (clear validation error, NOT ambiguous).
+     */
+    private function classifyPacFailure(int $httpStatus, ?array $json, string $message): \RuntimeException
+    {
+        $json = is_array($json) ? $json : [];
+        $code = data_get($json, 'data.code')
+            ?? data_get($json, 'code')
+            ?? data_get($json, 'data.message')
+            ?? null;
+
+        $lowerMessage = mb_strtolower((string) $message) . ' ' . mb_strtolower((string) $code);
+
+        // "307 — El comprobante contiene un timbre previo": full recovery.
+        if ($code === '307' || str_contains($lowerMessage, 'timbre previo')) {
+            return new PacDuplicateContentException(
+                'El comprobante ya contenía un timbre previo. Se recuperó la factura original.',
+                $json,
+            );
+        }
+
+        // "CFDI3307 — Timbre duplicado. El customId proporcionado está duplicado": partial recovery.
+        if (str_contains((string) $code, 'CFDI3307') || str_contains($lowerMessage, 'customid')) {
+            return new PacDuplicateContentException(
+                'El customId ya fue utilizado. La respuesta del PAC es parcial — requiere revisión.',
+                $json,
+            );
+        }
+
+        // HTTP 5xx / gateway timeouts could be ambiguous, but the request was answered —
+        // treat them as validation errors only if the PAC explicitly rejected; otherwise
+        // the caller's timeout handling covers the network side.
+        return new PacValidationException(
+            'Se rechazó el timbrado: ' . $message,
+            $json,
+        );
+    }
+
+    /**
+     * Write a sanitized audit row to pac_call_logs.
+     *
+     * SECURITY: only safe metadata is stored — never the PAC password nor
+     * binary CSD/private key content.
+     */
+    private function logPacCall(
+        Invoice $invoice,
+        string $operation,
+        ?string $customid,
+        array $payload,
+        ?int $statusCode,
+        ?array $response,
+        float $startMicrotime,
+    ): void {
+        try {
+            \App\Models\Billing\PacCallLog::create([
+                'fiscal_profile_id'     => $invoice->fiscal_profile_id,
+                'pac_account_id'        => $invoice->fiscalProfile?->pac_account_id,
+                'operation'             => $operation,
+                'customid'              => $customid,
+                'request_payload'       => $this->sanitizePayload($payload),
+                'response_status_code'  => $statusCode,
+                'response_body'         => $response,
+                'duration_ms'           => (int) round((microtime(true) - $startMicrotime) * 1000),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to write pac_call_logs row', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Keep only safe metadata from the stamping payload (RFC, serie, folio,
+     * montos, customid) — drop any binary/sensitive field.
+     */
+    private function sanitizePayload(array $payload): array
+    {
+        $safe = [
+            'Serie'       => $payload['Serie'] ?? null,
+            'Folio'       => $payload['Folio'] ?? null,
+            'Fecha'       => $payload['Fecha'] ?? null,
+            'TipoDeComprobante' => $payload['TipoDeComprobante'] ?? null,
+            'MetodoPago'  => $payload['MetodoPago'] ?? null,
+            'SubTotal'    => $payload['SubTotal'] ?? null,
+            'Total'       => $payload['Total'] ?? null,
+            'Moneda'      => $payload['Moneda'] ?? null,
+            'Emisor.Rfc'  => data_get($payload, 'Emisor.Rfc'),
+            'Receptor.Rfc' => data_get($payload, 'Receptor.Rfc'),
+            'Conceptos.count' => is_countable($payload['Conceptos'] ?? null) ? count($payload['Conceptos']) : null,
+        ];
+
+        return array_filter($safe, fn ($v) => $v !== null);
     }
 
     /**
@@ -676,11 +834,11 @@ class SWSapienService
             throw new \RuntimeException('El servicio de timbrado no está configurado. Contacta con soporte técnico.');
         }
 
-        // ── Guard: billing must be enabled on the subscription ──
+        // ── Guard: billing must be enabled on the subscription (module) ──
         $subscription = $invoice->branch?->subscription;
-        if (! $subscription || ! $subscription->facturacion_habilitada) {
+        if (! $subscription || ! $subscription->billingEnabled()) {
             throw new \RuntimeException(
-                'La facturación no está habilitada para esta cuenta. Actívala en Configuración > Facturación.'
+                'La facturación no está habilitada para esta cuenta. Contrata el módulo de facturación.'
             );
         }
 
@@ -690,14 +848,14 @@ class SWSapienService
             . $reason . '/'
             . ($substitutionUuid ?? '');
 
-        // ── Authenticate as the subaccount so the PAC uses that subaccount's CSD ──
+        // ── Authenticate as the PAC account so the PAC uses that account's CSD ──
         if (! $invoice->fiscalProfile) {
             throw new \RuntimeException('La factura no tiene un perfil fiscal asociado.');
         }
 
-        $subaccountToken = $this->authenticateSubaccount($invoice->fiscalProfile);
+        $pacAccountToken = $this->authenticatePacAccount($invoice->fiscalProfile);
 
-        $response = Http::withToken($subaccountToken)
+        $response = Http::withToken($pacAccountToken)
             ->withHeaders(['Content-Type' => 'application/json'])
             ->post(rtrim($url, '/'), [
                 'rfc'              => $emitterRfc,
@@ -765,6 +923,42 @@ class SWSapienService
     }
 
     /**
+     * Persist SAT catalog codes filled on invoice concepts back to the
+     * Product/Service catalog records when they are still empty, so the
+     * next time the product or service is selected in the invoice form
+     * the codes come pre-filled (no need to type them again).
+     */
+    public function syncConceptCatalogData(array $items): void
+    {
+        foreach ($items as $item) {
+            $type = $item['itemable_type'] ?? null;
+            $id   = (int) ($item['itemable_id'] ?? 0);
+
+            if (! $id || ! in_array($type, ['product', 'service'], true)) {
+                continue;
+            }
+
+            $model = $type === 'product' ? Product::find($id) : Service::find($id);
+            if (! $model) {
+                continue;
+            }
+
+            $updates = [];
+
+            if (! empty($item['sat_product_code']) && empty($model->sat_product_code)) {
+                $updates['sat_product_code'] = $item['sat_product_code'];
+            }
+            if (! empty($item['sat_unit_code']) && empty($model->sat_unit_code)) {
+                $updates['sat_unit_code'] = $item['sat_unit_code'];
+            }
+
+            if (! empty($updates)) {
+                $model->update($updates);
+            }
+        }
+    }
+
+    /**
      * Upload CSD certificates (.cer and .key) for a fiscal profile's
      * sub-user account in SW Sapien.
      *
@@ -796,7 +990,7 @@ class SWSapienService
             throw new \RuntimeException('El servicio de timbrado no está configurado. Contacta con soporte técnico.');
         }
 
-        if (! $profile->sw_user_id) {
+        if (! $profile->isLinkedToPac()) {
             throw new \RuntimeException('El RFC no está vinculado al servicio de timbrado. Configura tu información fiscal e intenta de nuevo.');
         }
 
@@ -818,10 +1012,10 @@ class SWSapienService
             'type'     => 'stamp',
         ];
 
-        // ── Authenticate as the subaccount (not the dealer) ──
-        $subaccountToken = $this->authenticateSubaccount($profile);
+        // ── Authenticate as the PAC account (not the dealer) ──
+        $pacAccountToken = $this->authenticatePacAccount($profile);
 
-        $response = Http::withToken($subaccountToken)
+        $response = Http::withToken($pacAccountToken)
             ->withHeaders([
                 'Content-Type' => 'application/json',
             ])
@@ -831,7 +1025,7 @@ class SWSapienService
             Log::error('SW Sapien CSD upload rejected (HTTP error)', [
                 'fiscal_profile_id' => $profile->id,
                 'rfc'               => $profile->rfc,
-                'sw_user_id'        => $profile->sw_user_id,
+                'sw_user_id'        => $profile->pacAccount?->sw_user_id,
                 'http_status'       => $response->status(),
                 'response_json'     => $response->json(),
                 'response_body'     => $response->body(),
@@ -849,7 +1043,7 @@ class SWSapienService
             Log::error('SW Sapien CSD upload rejected (status != success)', [
                 'fiscal_profile_id' => $profile->id,
                 'rfc'               => $profile->rfc,
-                'sw_user_id'        => $profile->sw_user_id,
+                'sw_user_id'        => $profile->pacAccount?->sw_user_id,
                 'response'          => $data,
             ]);
 
@@ -864,21 +1058,25 @@ class SWSapienService
     }
 
     /**
-     * Authenticate as a subaccount and return a time-limited token.
+     * Authenticate a PAC account and return a time-limited token.
      *
-     * SW Sapien Esquema 2 (subaccounts with their own stamp quota) requires
-     * authenticating as the specific subaccount before uploading CSDs or
+     * SW Sapien Esquema 2 (accounts with their own stamp quota) requires
+     * authenticating as the specific account before uploading CSDs or
      * stamping invoices. The dealer token cannot be used for these operations.
+     *
+     * Credentials are resolved from the profile's PacAccount
+     * (login_email / password) — this works for both dealer subaccounts
+     * and external "normal" accounts, since both authenticate the same way.
      *
      * Tokens are cached for 110 minutes (the PAC grants 2-hour validity)
      * to avoid unnecessary authentication round-trips.
      *
-     * @throws \RuntimeException When the subaccount credentials are missing
+     * @throws \RuntimeException When the account credentials are missing
      *                           or the PAC rejects authentication.
      */
-    protected function authenticateSubaccount(FiscalProfile $profile): string
+    protected function authenticatePacAccount(FiscalProfile $profile): string
     {
-        $cacheKey = "sw_subaccount_token_{$profile->id}";
+        $cacheKey = "sw_pac_account_token_{$profile->id}";
 
         return Cache::remember($cacheKey, now()->addMinutes(110), function () use ($profile) {
             $endpoint = config('services.swsapien.endpoint');
@@ -887,28 +1085,42 @@ class SWSapienService
                 throw new \RuntimeException('El servicio de timbrado no está configurado. Contacta con soporte técnico.');
             }
 
-            // The subaccount user is the email stored during provisioning
-            $subaccountUser = $profile->sw_account_email ?? $profile->email;
+            $credentials = $profile->resolvePacCredentials();
+            $accountUser = $credentials['login_email'];
+            $accountPass = $credentials['password'];
 
-            if (! $subaccountUser || ! $profile->password) {
+            if (! $accountUser || ! $accountPass) {
                 throw new \RuntimeException(
                     'El RFC no está vinculado al servicio de timbrado. '
                     . 'Configura tu información fiscal.'
                 );
             }
 
-            $response = Http::withHeaders([
-                    'Content-Type' => 'application/json',
-                ])
-                ->post($endpoint . '/v2/security/authenticate', [
-                    'user'     => $subaccountUser,
-                    'password' => $profile->password,
-                ]);
+            try {
+                $response = Http::withHeaders([
+                        'Content-Type' => 'application/json',
+                    ])
+                    ->timeout(20)
+                    ->connectTimeout(5)
+                    ->post($endpoint . '/v2/security/authenticate', [
+                        'user'     => $accountUser,
+                        'password' => $accountPass,
+                    ]);
+            } catch (ConnectionException $e) {
+                // A timeout during authentication has the same ambiguous semantics
+                // as during stamping — the caller must resolve it without assuming.
+                throw new PacTimeoutOrAmbiguousException(
+                    'No se pudo autenticar con el Proveedor de timbrado a tiempo. La factura quedó en verificación y se reintentará automáticamente.',
+                    null,
+                    0,
+                    $e,
+                );
+            }
 
             if (! $response->successful()) {
-                Log::error('SW Sapien subaccount authentication failed', [
+                Log::error('SW Sapien PAC account authentication failed', [
                     'fiscal_profile_id' => $profile->id,
-                    'sw_user_id'        => $profile->sw_user_id,
+                    'sw_user_id'        => $profile->pacAccount?->sw_user_id,
                     'http_status'       => $response->status(),
                     'response_body'     => $response->body(),
                 ]);
@@ -926,7 +1138,7 @@ class SWSapienService
                 ?? null;
 
             if (! $token) {
-                Log::error('SW Sapien subaccount auth response missing token', [
+                Log::error('SW Sapien PAC account auth response missing token', [
                     'fiscal_profile_id' => $profile->id,
                     'response'          => $authData,
                 ]);
@@ -936,9 +1148,9 @@ class SWSapienService
                 );
             }
 
-            Log::info('SW Sapien subaccount authenticated', [
+            Log::info('SW Sapien PAC account authenticated', [
                 'fiscal_profile_id' => $profile->id,
-                'sw_user_id'        => $profile->sw_user_id,
+                'sw_user_id'        => $profile->pacAccount?->sw_user_id,
             ]);
 
             return $token;
@@ -978,7 +1190,7 @@ class SWSapienService
         Log::info('SW Sapien CSD uploaded and certificate data persisted', [
             'fiscal_profile_id'  => $profile->id,
             'rfc'                => $profile->rfc,
-            'sw_user_id'         => $profile->sw_user_id,
+            'sw_user_id'         => $profile->pacAccount?->sw_user_id,
             'certificate_number' => $certInfo['certificate_number'],
         ]);
 
@@ -1072,14 +1284,42 @@ class SWSapienService
     }
 
     /**
-     * Generate the next consecutive folio for a branch.
+     * Reserve the next consecutive folio for a (branch, series) atomically.
+     *
+     * Uses the dedicated invoice_folio_counters table with a row lock
+     * (lockForUpdate). MUST be called inside the same DB transaction that
+     * creates the invoice (and, in Fase 2.9, reserves the stamp) so that two
+     * concurrent creations in the same branch+series never get the same folio.
+     *
+     * When no counter exists yet it is seeded from the highest existing folio
+     * of that branch+series, so folio numbering continues without collisions.
      */
-    private function generateFolio(int $branchId): string
+    public function reserveNextFolio(int $branchId, ?string $series): int
     {
-        $lastInvoice = Invoice::where('branch_id', $branchId)
-            ->orderByDesc('id')
+        $counter = InvoiceFolioCounter::where('branch_id', $branchId)
+            ->where('series', $series)
+            ->lockForUpdate()
             ->first();
 
-        return (string) (($lastInvoice ? ((int) $lastInvoice->folio) + 1 : 1));
+        if (! $counter) {
+            $maxFolio = (int) (Invoice::where('branch_id', $branchId)
+                ->where('series', $series)
+                ->max('folio') ?? 0);
+
+            $counter = InvoiceFolioCounter::firstOrCreate(
+                ['branch_id' => $branchId, 'series' => $series],
+                ['next_folio' => $maxFolio + 1],
+            );
+
+            // Re-lock after creation to serialize concurrent first-time inserts.
+            $counter = InvoiceFolioCounter::where('id', $counter->id)
+                ->lockForUpdate()
+                ->first();
+        }
+
+        $folio = (int) $counter->next_folio;
+        $counter->increment('next_folio');
+
+        return $folio;
     }
 }

@@ -21,9 +21,12 @@ class Invoice extends Model
         'branch_id',
         'fiscal_profile_id',
         'customer_id',
+        'transaction_id',
+        'prices_include_iva',
         'series',
         'folio',
         'status',
+        'requires_manual_review',
         'uuid',
         'xml_url',
         'pdf_url',
@@ -73,6 +76,9 @@ class Invoice extends Model
     {
         return [
             'status'               => InvoiceStatus::class,
+            'requires_manual_review' => 'boolean',
+            'transaction_id'       => 'integer',
+            'prices_include_iva'   => 'boolean',
             'issued_at'            => 'datetime',
             'fecha_timbrado'       => 'datetime',
             'pago_fecha'           => 'datetime',
@@ -140,9 +146,25 @@ class Invoice extends Model
         return $this->belongsTo(\App\Models\Customer::class);
     }
 
+    /**
+     * The POS sale (transaction) this invoice was generated from (1:1).
+     */
+    public function transaction(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Transaction::class);
+    }
+
     public function items(): HasMany
     {
         return $this->hasMany(\App\Models\InvoiceItem::class);
+    }
+
+    /**
+     * Stamp reservations referencing this invoice.
+     */
+    public function stampReservations(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    {
+        return $this->morphMany(StampReservation::class, 'reference');
     }
 
     /*

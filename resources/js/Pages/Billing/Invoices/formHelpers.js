@@ -30,23 +30,35 @@ export const extractFiscalData = (customer) => {
 };
 
 // Map persisted invoice items back into the editable form shape (edit mode).
+// In included-IVA mode the stored unit_price is the SAT base, so it is
+// re-inflated to the gross charged price for editing.
 export const mapInvoiceItems = (invoice) => {
     if (!invoice?.items) return [];
-    return invoice.items.map(item => ({
-        description: item.description || '',
-        quantity: parseFloat(item.quantity) || 1,
-        unit_price: parseFloat(item.unit_price) || 0,
-        sat_product_code: item.sat_product_code || '',
-        sat_unit_code: item.sat_unit_code || '',
-        no_identificacion: item.no_identificacion || '',
-        objeto_imp: item.objeto_imp || '02',
-        tax_type: item.tax_type || '002',
-        tax_rate: parseFloat(item.tax_rate) || 0.16,
-        discount_amount: parseFloat(item.discount_amount) || 0,
-        retained_tax_type: item.retained_tax_type || null,
-        retained_tax_rate: item.retained_tax_rate ? parseFloat(item.retained_tax_rate) : null,
-        retained_tax_amount: parseFloat(item.retained_tax_amount) || 0,
-    }));
+    const pricesIncludeIva = !!invoice?.prices_include_iva;
+
+    return invoice.items.map((item) => {
+        const storedPrice = parseFloat(item.unit_price) || 0;
+        const storedRate = parseFloat(item.tax_rate) || 0;
+        const unitPrice = (pricesIncludeIva && item.objeto_imp === '02' && storedRate > 0)
+            ? Math.round(storedPrice * (1 + storedRate) * 100) / 100
+            : storedPrice;
+
+        return {
+            description: item.description || '',
+            quantity: parseFloat(item.quantity) || 1,
+            unit_price: unitPrice,
+            sat_product_code: item.sat_product_code || '',
+            sat_unit_code: item.sat_unit_code || '',
+            no_identificacion: item.no_identificacion || '',
+            objeto_imp: item.objeto_imp || '02',
+            tax_type: item.tax_type || '002',
+            tax_rate: parseFloat(item.tax_rate) || 0.16,
+            discount_amount: parseFloat(item.discount_amount) || 0,
+            retained_tax_type: item.retained_tax_type || null,
+            retained_tax_rate: item.retained_tax_rate ? parseFloat(item.retained_tax_rate) : null,
+            retained_tax_amount: parseFloat(item.retained_tax_amount) || 0,
+        };
+    });
 };
 
 // Map persisted pago_documentos back into the editable form shape (edit mode).
@@ -119,3 +131,166 @@ export const formatDateShort = (value) => {
 // MXN currency formatter used across the form sections.
 export const formatCurrency = (value) =>
     new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value || 0);
+
+// ──────────────────────────────────────────────────────────────
+// Linked POS sale → invoice form mapping
+// ──────────────────────────────────────────────────────────────
+
+// POS payment method → SAT FormaPago code (only mappable methods).
+export const paymentMethodSatMap = {
+    efectivo: { code: '01', label: '01 - Efectivo' },
+    transferencia: { code: '03', label: '03 - Transferencia electrónica de fondos' },
+    tarjeta: { code: '04', label: '04 - Tarjeta de crédito' },
+};
+
+// Map sale line items into the editable concept shape. Tax rate defaults to
+// 16 % (same default the manual builder applies). Line discounts are carried
+// over so the invoice totals match the charged amounts.
+export const mapSaleItems = (sale) => {
+    if (!sale?.items || !Array.isArray(sale.items)) return [];
+
+    return sale.items.map((item) => ({
+        description: item.description || '',
+        quantity: parseFloat(item.quantity) || 1,
+        unit_price: parseFloat(item.unit_price) || 0,
+        sat_product_code: item.sat_product_code || '',
+        sat_unit_code: item.sat_unit_code || 'H87',
+        no_identificacion: item.sku || item.no_identificacion || '',
+        itemable_id: item.catalog_id ?? null,
+        itemable_type: item.catalog_type ?? null,
+        objeto_imp: '02',
+        tax_type: '002',
+        tax_rate: 0.16,
+        discount_amount: parseFloat(item.discount_amount) || 0,
+        retained_tax_type: null,
+        retained_tax_rate: null,
+        retained_tax_amount: 0,
+    }));
+};
+
+/**
+ * Pick the SAT FormaPago from the sale payments:
+ *  - the highest-amount payment with a mappable method wins
+ *  - returns { code, label, multipleMethods } for the UI note.
+ */
+export const mapSalePaymentForm = (payments = []) => {
+    const list = Array.isArray(payments) ? payments : [];
+    const mapped = list
+        .filter((p) => paymentMethodSatMap[p.method])
+        .sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount));
+
+    if (mapped.length === 0) {
+        return { code: null, label: null, multipleMethods: false };
+    }
+
+    const distinctMethods = new Set(list.map((p) => p.method)).size;
+
+    return {
+        code: paymentMethodSatMap[mapped[0].method].code,
+        label: paymentMethodSatMap[mapped[0].method].label,
+        multipleMethods: distinctMethods > 1,
+    };
+};
+
+/**
+ * Apply a selected POS sale to the invoice form: receiver, concepts and
+ * payment form. Every field remains editable afterwards.
+ *
+ * Returns an object with the payment-form note for the UI
+ * ({ multiplePaymentMethods, selectedFormaLabel }).
+ */
+export const applySaleToForm = (form, sale) => {
+    form.transaction_id = sale.id ?? null;
+
+    const customer = sale.customer || null;
+    if (customer) {
+        form.customer_id = customer.id ?? null;
+        form.receiver_rfc = customer.tax_id || '';
+        form.receiver_legal_name = (customer.company_name || customer.name || '').toUpperCase();
+        const fiscal = extractFiscalData(customer);
+        form.receiver_tax_regime = fiscal.tax_regime || '';
+        form.receiver_postal_code = fiscal.postal_code || '';
+    }
+
+    form.items = mapSaleItems(sale);
+
+    const payment = mapSalePaymentForm(sale.payments || []);
+    if (payment.code) {
+        form.payment_form = payment.code;
+        // Fully paid sale → single payment (PUE) is the correct method.
+        if (!form.payment_method) form.payment_method = 'PUE';
+    }
+
+    return {
+        multiplePaymentMethods: payment.multipleMethods,
+        selectedFormaLabel: payment.label,
+    };
+};
+
+// ──────────────────────────────────────────────────────────────
+// Fuzzy search helpers (búsqueda por coincidencias)
+// ──────────────────────────────────────────────────────────────
+
+// Lowercase + accent-insensitive normalization.
+export const normalizeSearchText = (value) =>
+    String(value ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+/**
+ * Score how well `query` matches `text`:
+ *  - substring match → highest score (2+)
+ *  - letter-subsequence match (letters in order) → lower score (0.5+)
+ *  - no match → 0
+ */
+export const fuzzyScore = (query, text) => {
+    const q = normalizeSearchText(query).trim();
+    const t = normalizeSearchText(text);
+    if (!q || !t) return 0;
+
+    if (t.includes(q)) {
+        return 2 + q.length / Math.max(t.length, 1);
+    }
+
+    let qi = 0;
+    let consec = 0;
+    let score = 0;
+    for (let ti = 0; ti < t.length && qi < q.length; ti += 1) {
+        if (t[ti] === q[qi]) {
+            qi += 1;
+            consec += 1;
+            score += 1 + consec * 0.1;
+        } else {
+            consec = 0;
+        }
+    }
+
+    return qi === q.length ? 0.5 + score / Math.max(t.length, 1) : 0;
+};
+
+// Best fuzzy score across several text fields of an item.
+export const fuzzyMatchItem = (query, fields = []) => {
+    if (!query || !String(query).trim()) return 0;
+    let best = 0;
+    for (const field of fields) {
+        best = Math.max(best, fuzzyScore(query, field));
+    }
+    return best;
+};
+
+/**
+ * Filter + sort a collection by fuzzy match, capped at `limit` items.
+ * An empty query returns the first `limit` items as-is.
+ */
+export const fuzzySearchCollection = (collection, query, getFields, limit = 200) => {
+    const q = String(query ?? '').trim();
+    const items = Array.isArray(collection) ? collection : [];
+    if (!q) return items.slice(0, limit);
+
+    const scored = [];
+    for (const item of items) {
+        const score = fuzzyMatchItem(q, getFields(item));
+        if (score > 0) scored.push({ item, score });
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, limit).map((entry) => entry.item);
+};

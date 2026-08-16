@@ -191,6 +191,15 @@ function confirmReject() {
                             />
                         </template>
                     </Column>
+                    <Column header="Cuenta">
+                        <template #body="{ data }">
+                            <Tag
+                                :value="data.fiscal_profile?.pac_account?.account_type === 'shared' ? 'Compartida' : 'Subcuenta'"
+                                :severity="data.fiscal_profile?.pac_account?.account_type === 'shared' ? 'info' : 'secondary'"
+                                :pt="tagPt"
+                            />
+                        </template>
+                    </Column>
                     <Column header="Suscriptor">
                         <template #body="{ data }">
                             <div class="flex flex-col">

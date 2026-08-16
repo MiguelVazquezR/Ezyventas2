@@ -2,7 +2,11 @@
 
 namespace App\Services\SW;
 
+use App\Enums\PacAccountStatus;
 use App\Models\Billing\FiscalProfile;
+use App\Models\Billing\PacAccount;
+use App\Models\Billing\StampPurchase;
+use App\Enums\StampPurchaseStatus;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
@@ -11,27 +15,30 @@ use Illuminate\Support\Facades\Log;
 /**
  * SWUserService
  *
- * Manages sub-user accounts in SW Sapien PAC (Management V2).
+ * Manages PAC accounts in SW Sapien (Management V2).
  *
- * Each RFC (FiscalProfile) that issues CFDI invoices must exist as a
- * sub-user in the PAC. This service handles:
- *  - Creating sub-users via POST /management/v2/api/dealers/users
- *  - Mapping local FiscalProfile data to SW Sapien payloads
- *  - Storing the returned sw_user_id and account email on the profile
- *  - Deactivating subaccounts when a profile is removed
+ * Two account types are supported:
+ *  - 'subaccount': dealer subaccounts provisioned under our master
+ *    account. Stamps are assigned via the dealer API with a dealer token.
+ *  - 'shared': external accounts provided by the reseller (Conectia).
+ *    Stamps are managed locally (wallet per RFC).
+ *    No self-service creation API; activation is manual and stamp
+ *    assignment happens outside the system. Balance is queried by
+ *    authenticating as the account itself (no dealer token).
  *
  * The permanent dealer token is injected from services.swsapien.token config.
  */
 class SWUserService
 {
     /**
-     * Create a SW Sapien sub-user account for the given fiscal profile.
+     * Create a SW Sapien sub-user account for the given PAC account.
      *
-     * The sub-user is tied to the RFC and razón social stored in the
-     * FiscalProfile. On success the profile's sw_user_id and
-     * sw_account_email are persisted automatically.
+     * The sub-user is tied to the RFC and razón social of the fiscal
+     * profile. On success the account's sw_user_id and login_email are
+     * persisted automatically.
      *
-     * @param FiscalProfile $profile  The local fiscal profile to link.
+     * @param PacAccount    $account  The dealer subaccount to link.
+     * @param FiscalProfile $profile  The fiscal profile providing taxId/name.
      * @param string        $email    Email for the subaccount login.
      * @param string        $password Password for the subaccount.
      *
@@ -39,7 +46,8 @@ class SWUserService
      * @throws \RuntimeException When the PAC rejects the request (e.g. duplicate RFC).
      * @throws ConnectionException  When the PAC endpoint is unreachable.
      */
-    public function createSubaccountForProfile(
+    public function createSubaccountForAccount(
+        PacAccount $account,
         FiscalProfile $profile,
         string $email,
         string $password,
@@ -84,6 +92,7 @@ class SWUserService
                 ?? (is_string($json) ? $json : null);
 
             Log::error('SW Sapien sub-user creation rejected', [
+                'pac_account_id'    => $account->id,
                 'fiscal_profile_id' => $profile->id,
                 'rfc'               => $profile->rfc,
                 'endpoint'          => $url,
@@ -111,6 +120,7 @@ class SWUserService
 
         if (! $swUserId) {
             Log::error('SW Sapien response missing user ID', [
+                'pac_account_id'    => $account->id,
                 'fiscal_profile_id' => $profile->id,
                 'response'          => $data,
             ]);
@@ -120,12 +130,14 @@ class SWUserService
             );
         }
 
-        $profile->update([
-            'sw_user_id'       => (string) $swUserId,
-            'sw_account_email' => $email,
+        $account->update([
+            'sw_user_id'  => (string) $swUserId,
+            'login_email' => $email,
+            'status'      => PacAccountStatus::ACTIVE,
         ]);
 
         Log::info('SW Sapien sub-user created', [
+            'pac_account_id'    => $account->id,
             'fiscal_profile_id' => $profile->id,
             'rfc'               => $profile->rfc,
             'sw_user_id'        => $swUserId,
@@ -173,16 +185,18 @@ class SWUserService
     }
 
     /**
-     * Deactivate a sub-user account in SW Sapien when a fiscal profile
-     * is removed or soft-deactivated locally.
+     * Deactivate a dealer subaccount in SW Sapien when it is removed
+     * or soft-deactivated locally.
      *
      * Uses PATCH /management/v2/api/dealers/users/{userId} with
      * {"isActive": false} per the official API. DELETE would
      * permanently remove the account.
      *
+     * Only applies to subaccount-type accounts.
+     *
      * @throws \RuntimeException When the PAC endpoint is unreachable or rejects.
      */
-    public function deactivateSubaccount(FiscalProfile $profile): void
+    public function deactivateSubaccount(PacAccount $account): void
     {
         $endpoint = $this->resolveManagementEndpoint();
         $token    = config('services.swsapien.token');
@@ -191,12 +205,12 @@ class SWUserService
             throw new \RuntimeException('El servicio de facturación no está configurado. Contacta con soporte técnico.');
         }
 
-        if (! $profile->sw_user_id) {
+        if (! $account->sw_user_id) {
             return;
         }
 
         $managementPath = config('services.swsapien.management_users_path', '/management/v2/api/dealers/users');
-        $url            = rtrim($endpoint, '/') . '/' . ltrim($managementPath, '/') . '/' . $profile->sw_user_id;
+        $url            = rtrim($endpoint, '/') . '/' . ltrim($managementPath, '/') . '/' . $account->sw_user_id;
 
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . $token,
@@ -208,11 +222,11 @@ class SWUserService
 
         if ($response->failed()) {
             Log::error('SW Sapien subaccount deactivation failed', [
-                'fiscal_profile_id' => $profile->id,
-                'sw_user_id'        => $profile->sw_user_id,
-                'endpoint'          => $url,
-                'http_status'       => $response->status(),
-                'body'              => $response->body(),
+                'pac_account_id' => $account->id,
+                'sw_user_id'     => $account->sw_user_id,
+                'endpoint'       => $url,
+                'http_status'    => $response->status(),
+                'body'           => $response->body(),
             ]);
 
             throw new \RuntimeException(
@@ -220,9 +234,13 @@ class SWUserService
             );
         }
 
+        $account->update([
+            'status' => PacAccountStatus::INACTIVE,
+        ]);
+
         Log::info('SW Sapien subaccount deactivated', [
-            'fiscal_profile_id' => $profile->id,
-            'sw_user_id'        => $profile->sw_user_id,
+            'pac_account_id' => $account->id,
+            'sw_user_id'     => $account->sw_user_id,
         ]);
     }
 
@@ -451,6 +469,229 @@ class SWUserService
 
             throw new \RuntimeException(
                 'No se pudo consultar el saldo de timbres en este momento. Intenta de nuevo.'
+            );
+        }
+
+        $data = $response->json();
+
+        return $data['data'] ?? [];
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | External "normal" accounts (reseller-provided, no dealer API)
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Request a new "normal" PAC account for a fiscal profile.
+     *
+     * There is no self-service API to create a normal account — the
+     * reseller (Conectia) provisions it externally. This method only
+     * creates (or reuses) the local PacAccount record in
+     * 'pending_request' status and links the profile to it, leaving the
+     * activation to an admin.
+     *
+     * @return PacAccount The account the profile is now linked to.
+     */
+    public function requestSharedAccount(FiscalProfile $profile, ?int $requestedByUserId = null): PacAccount
+    {
+        // Reuse an existing normal account of the subscription that is not
+        // fully closed — covers the "add a second RFC to the same account" case.
+        $account = PacAccount::where('subscription_id', $profile->subscription_id)
+            ->where('account_type', \App\Enums\PacAccountType::SHARED)
+            ->whereIn('status', [
+                PacAccountStatus::PENDING_REQUEST,
+                PacAccountStatus::PENDING_ACTIVATION,
+                PacAccountStatus::ACTIVE,
+            ])
+            ->latest('id')
+            ->first();
+
+        // If the subscription has no account of its own, link the profile to
+        // the platform shared account (multiple subscribers, shared stamp pool).
+        if (! $account) {
+            $account = PacAccount::query()->sharedActive()->latest('id')->first();
+        }
+
+        if (! $account) {
+            $account = PacAccount::create([
+                'subscription_id'       => $profile->subscription_id,
+                'provider'              => 'sw_sapien',
+                'account_type'          => \App\Enums\PacAccountType::SHARED,
+                'status'                => PacAccountStatus::PENDING_REQUEST,
+                'requested_by_user_id'  => $requestedByUserId,
+                'requested_at'          => now(),
+            ]);
+        }
+
+        $profile->update(['pac_account_id' => $account->id]);
+
+        Log::info('Normal PAC account requested', [
+            'pac_account_id'    => $account->id,
+            'fiscal_profile_id' => $profile->id,
+            'rfc'               => $profile->rfc,
+            'subscription_id'   => $profile->subscription_id,
+            'status'            => $account->status->value,
+        ]);
+
+        return $account;
+    }
+
+    /**
+     * Activate a "normal" PAC account with the credentials provided by
+     * the reseller.
+     *
+     * 1. Performs a test authentication against the PAC.
+     * 2. On failure, throws the PAC error as-is and saves nothing.
+     * 3. On success, persists login_email (encrypted password),
+     *    sw_user_id from the balance response, status = active and
+     *    activated_at.
+     *
+     * @throws \RuntimeException When the credentials are rejected by the PAC.
+     */
+    public function activateSharedAccount(
+        PacAccount $account,
+        string $email,
+        string $password,
+        ?int $activatedByUserId = null,
+    ): PacAccount {
+        // Test the credentials before persisting anything.
+        $token = $this->authenticateWithCredentials($email, $password);
+        $balance = $this->getBalanceWithToken($token);
+
+        $account->update([
+            'login_email'           => $email,
+            'password'              => $password,
+            'sw_user_id'            => $balance['idUser'] ?? null,
+            'status'                => PacAccountStatus::ACTIVE,
+            'activated_by_user_id'  => $activatedByUserId,
+            'activated_at'          => now(),
+        ]);
+
+        Log::info('Normal PAC account activated', [
+            'pac_account_id'  => $account->id,
+            'sw_user_id'      => $account->sw_user_id,
+            'login_email'     => $email,
+            'by_user_id'      => $activatedByUserId,
+        ]);
+
+        return $account;
+    }
+
+    /**
+     * Consultar el saldo de timbres de una cuenta "normal" autenticándose
+     * como la propia cuenta (SIN token dealer).
+     *
+     * GET {management}/management/v2/api/users/balance
+     *
+     * @return array The 'data' payload: idUser, stampsBalance, stampsUsed,
+     *               stampsAssigned, isUnlimited, expirationDate.
+     *
+     * @throws \RuntimeException When the account has no credentials or the PAC rejects.
+     */
+    public function getOwnBalance(PacAccount $account): array
+    {
+        if (! $account->hasCredentials()) {
+            throw new \RuntimeException('La cuenta no tiene credenciales configuradas.');
+        }
+
+        $token = $this->authenticateWithCredentials($account->login_email, $account->password);
+
+        return $this->getBalanceWithToken($token);
+    }
+
+    /**
+     * Authenticate with arbitrary PAC credentials and return the token.
+     *
+     * POST {endpoint}/v2/security/authenticate {user, password}
+     *
+     * @throws \RuntimeException When authentication fails (the PAC message is kept as-is).
+     */
+    private function authenticateWithCredentials(string $email, string $password): string
+    {
+        $endpoint = config('services.swsapien.endpoint');
+
+        if (! $endpoint) {
+            throw new \RuntimeException('El servicio de facturación no está configurado. Contacta con soporte técnico.');
+        }
+
+        $response = Http::withHeaders([
+            'Content-Type' => 'application/json',
+            'Accept'       => 'application/json',
+        ])->post($endpoint . '/v2/security/authenticate', [
+            'user'     => $email,
+            'password' => $password,
+        ]);
+
+        if ($response->failed()) {
+            $message = $response->json('message')
+                ?? $response->json('messageDetail')
+                ?? $response->body();
+
+            Log::error('SW Sapien account authentication failed', [
+                'login_email'  => $email,
+                'http_status'  => $response->status(),
+                'response'     => $response->body(),
+            ]);
+
+            throw new \RuntimeException(
+                'No se pudo validar la cuenta: ' . ($message ?: 'revisa las credenciales e inténtalo de nuevo.')
+            );
+        }
+
+        $data = $response->json();
+
+        $token = $data['data']['token'] ?? $data['token'] ?? null;
+
+        if (! $token) {
+            Log::error('SW Sapien auth response missing token', [
+                'login_email' => $email,
+                'response'    => $data,
+            ]);
+
+            throw new \RuntimeException(
+                'El servicio de validación fiscal no respondió correctamente. Intenta de nuevo.'
+            );
+        }
+
+        return $token;
+    }
+
+    /**
+     * Query the account balance using an already-obtained account token
+     * (no dealer token).
+     *
+     * GET {management}/management/v2/api/users/balance
+     *
+     * @return array The 'data' payload (idUser, stampsBalance, ...).
+     *
+     * @throws \RuntimeException When the PAC rejects the balance query.
+     */
+    private function getBalanceWithToken(string $token): array
+    {
+        $endpoint = $this->resolveManagementEndpoint();
+
+        if (! $endpoint) {
+            throw new \RuntimeException('El servicio de facturación no está configurado. Contacta con soporte técnico.');
+        }
+
+        $url = rtrim($endpoint, '/') . '/management/v2/api/users/balance';
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+            'Accept'        => 'application/json',
+        ])->timeout(15)->connectTimeout(5)->get($url);
+
+        if ($response->failed()) {
+            Log::error('SW Sapien account balance query failed', [
+                'endpoint'    => $url,
+                'http_status' => $response->status(),
+                'response'    => $response->body(),
+            ]);
+
+            throw new \RuntimeException(
+                'No se pudo consultar el saldo de timbres en este momento.'
             );
         }
 

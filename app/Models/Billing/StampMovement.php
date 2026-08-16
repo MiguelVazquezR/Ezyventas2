@@ -2,7 +2,9 @@
 
 namespace App\Models\Billing;
 
+use App\Enums\StampPurchaseStatus;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -73,6 +75,38 @@ class StampMovement extends Model
     public function reference(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Scopes
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Scope: only movements that count toward the local wallet.
+     *
+     * Movements not tied to a stamp purchase always count (gift stamps,
+     * invoice exits, manual entries, ...). Movements tied to a StampPurchase
+     * only count once that purchase has reached stamps_applied — pending bank
+     * transfers (awaiting review) must NOT inflate the balance/assigned until
+     * the admin approves them.
+     */
+    public function scopeWalletConfirmed(Builder $query): Builder
+    {
+        return $query->where(function ($q) {
+            $q->where(function ($q1) {
+                $q1->where('reference_type', '!=', StampPurchase::class)
+                   ->orWhereNull('reference_type');
+            })->orWhere(function ($q2) {
+                $q2->where('reference_type', StampPurchase::class)
+                   ->whereIn('reference_id', function ($sub) {
+                       $sub->select('id')
+                           ->from('stamp_purchases')
+                           ->where('status', StampPurchaseStatus::STAMPS_APPLIED->value);
+                   });
+            });
+        });
     }
 
     /*

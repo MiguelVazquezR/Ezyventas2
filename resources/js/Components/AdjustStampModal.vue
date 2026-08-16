@@ -57,6 +57,9 @@ const selectedProfile = computed(() => {
     return props.fiscalProfiles.find(p => p.id === form.fiscal_profile_id) ?? null;
 });
 
+// ── Account type: shared → wallet local; subaccount → PAC ──
+const isSharedProfile = computed(() => selectedProfile.value?.account_type === 'shared');
+
 // ── Stamp balance ──────────────────────────────────────────
 const stampBalance = ref(null);
 const balanceLoading = ref(false);
@@ -220,7 +223,7 @@ const dpt = {
                     <i v-if="balanceLoading" class="pi pi-spin pi-spinner !text-xs text-gray-400" />
                     <span v-else-if="stampBalance !== null"
                         class="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-900/20 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                        <i class="pi pi-ticket !text-[10px]" />{{ fmtNum(stampBalance) }} disponibles
+                        <i class="pi pi-ticket !text-[10px]" />{{ fmtNum(stampBalance) }} disponibles{{ isSharedProfile ? ' (local)' : '' }}
                     </span>
                     <span v-else-if="balanceError" class="text-[10px] text-red-500">{{ balanceError }}</span>
                 </div>
@@ -322,17 +325,27 @@ const dpt = {
                 <i class="pi pi-info-circle !text-sm text-blue-500 mt-0.5" />
                 <div>
                     <p class="text-xs text-blue-700 dark:text-blue-300 m-0 leading-relaxed">
-                        <template v-if="form.adjustment_type === 'add'"><strong>Agregar timbres:</strong> descuenta de la cuenta maestra y acredita al perfil fiscal.</template>
-                        <template v-else><strong>Retirar timbres:</strong> devuelve timbres del perfil fiscal a la cuenta maestra.</template>
+                        <template v-if="form.adjustment_type === 'add'">
+                            <strong>Agregar timbres:</strong>
+                            <template v-if="isSharedProfile">se suman a la <strong>wallet local</strong> del RFC (sin conectar al PAC).</template>
+                            <template v-else>descuenta de la cuenta maestra y acredita al perfil fiscal.</template>
+                        </template>
+                        <template v-else>
+                            <strong>Retirar timbres:</strong>
+                            <template v-if="isSharedProfile">se restan de la <strong>wallet local</strong> del RFC (sin conectar al PAC).</template>
+                            <template v-else>devuelve timbres del perfil fiscal a la cuenta maestra.</template>
+                        </template>
                     </p>
-                    <p class="text-xs text-blue-600 dark:text-blue-400 m-0 mt-2">La cuenta maestra debe tener saldo suficiente para agregar timbres. Los cambios se aplican de inmediato y se reflejan en el PAC en breve.</p>
+                    <p v-if="isSharedProfile" class="text-xs text-blue-600 dark:text-blue-400 m-0 mt-2">Los cambios se aplican de inmediato y solo afectan la wallet local del RFC.</p>
+                    <p v-else class="text-xs text-blue-600 dark:text-blue-400 m-0 mt-2">La cuenta maestra debe tener saldo suficiente para agregar timbres. Los cambios se aplican de inmediato y se reflejan en el PAC en breve.</p>
                 </div>
             </div>
             <div v-if="opMode === 'purchase'" class="flex items-start gap-3 p-4 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800">
                 <i class="pi pi-info-circle !text-sm text-amber-500 mt-0.5" />
                 <div>
                     <p class="text-xs text-amber-700 dark:text-amber-300 m-0 leading-relaxed"><strong>Compra de timbres:</strong> se cobrar&aacute; el monto total calculado seg&uacute;n el tramo de precio aplicado. El comprobante de pago quedar&aacute; almacenado como respaldo.</p>
-                    <p class="text-xs text-amber-600 dark:text-amber-400 m-0 mt-2">Los timbres se acreditar&aacute;n al perfil fiscal inmediatamente despu&eacute;s de confirmar la operaci&oacute;n.</p>
+                    <p v-if="isSharedProfile" class="text-xs text-amber-600 dark:text-amber-400 m-0 mt-2">Al confirmar, los timbres se agregar&aacute;n a la <strong>wallet local</strong> del RFC (sin conectar al PAC).</p>
+                    <p v-else class="text-xs text-amber-600 dark:text-amber-400 m-0 mt-2">Los timbres se acreditar&aacute;n al perfil fiscal inmediatamente despu&eacute;s de confirmar la operaci&oacute;n.</p>
                 </div>
             </div>
         </form>

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { cfdiUseOptions, taxRegimeOptions } from '../satCatalogs';
 import { inputPt, selectPt, autoCompleteInputPt } from '../ptConfigs';
-import { toArray, extractFiscalData } from '../formHelpers';
+import { toArray, extractFiscalData, fuzzySearchCollection } from '../formHelpers';
 import CfdiUseHelp from './Sections/CfdiUseHelp.vue';
 import SectionCard from '@/Components/Billing/SectionCard.vue';
 
@@ -21,6 +21,7 @@ const customersList = computed(() => toArray(props.customers));
 
 const customerSearchText = ref('');
 const customerSuggestions = ref([]);
+const customerMatches = ref([]);
 
 onMounted(() => {
     if (props.initialCustomerName) {
@@ -29,15 +30,24 @@ onMounted(() => {
 });
 
 const searchCustomers = (event) => {
-    const query = event.query.toLowerCase().trim();
-    if (!query) {
-        customerSuggestions.value = [...customersList.value];
-    } else {
-        customerSuggestions.value = customersList.value.filter(
-            c => c.name.toLowerCase().includes(query)
-                || (c.company_name && c.company_name.toLowerCase().includes(query))
-                || (c.tax_id && c.tax_id.toLowerCase().includes(query)),
-        );
+    const query = String(event.query || '').trim();
+
+    // Full match list for the current query (capped), revealed in the
+    // dropdown in chunks of 10 as the user scrolls.
+    customerMatches.value = fuzzySearchCollection(
+        customersList.value,
+        query,
+        (customer) => [customer.name, customer.company_name, customer.tax_id],
+        200,
+    );
+    customerSuggestions.value = customerMatches.value.slice(0, 10);
+};
+
+// Progressive loading on scroll (virtual scroller lazy).
+const onCustomerLazyLoad = (event) => {
+    const target = (event?.last ?? 0) + 10;
+    if (customerSuggestions.value.length < customerMatches.value.length) {
+        customerSuggestions.value = customerMatches.value.slice(0, target);
     }
 };
 
@@ -77,6 +87,15 @@ watch(customerSearchText, (val) => {
     }
 });
 
+// When a linked sale (or any external flow) sets customer_id programmatically,
+// reflect the customer name in the search box.
+watch(() => props.form.customer_id, (id) => {
+    if (!id) return;
+    if (customerSearchText.value && customerSearchText.value.trim() !== '') return;
+    const customer = customersList.value.find(c => c.id === id);
+    if (customer) customerSearchText.value = customer.name;
+});
+
 // ── Uso de CFDI filtered per comprobante type (SAT rule) ──
 const availableCfdiUseOptions = computed(() => {
     if (props.isPago) return cfdiUseOptions.filter(o => o.value === 'CP01');
@@ -105,6 +124,7 @@ const isCfdiUseLocked = computed(() => props.isPago || props.isTraslado);
                 class="w-full"
                 dropdown
                 :pt="autoCompleteInputPt"
+                :virtualScrollerOptions="{ lazy: true, itemSize: 58, onLazyLoad: onCustomerLazyLoad }"
             >
                 <template #option="slotProps">
                     <div class="flex items-center justify-between gap-3 py-1">
