@@ -7,6 +7,7 @@ use App\Enums\PlanItemType;
 use App\Enums\SubscriptionPaymentStatus;
 use App\Enums\SubscriptionStatus;
 use App\Models\Billing\FiscalProfile;
+use App\Models\Billing\PacAccount;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -33,6 +34,8 @@ class Subscription extends Model implements HasMedia
         'slug',
         'onboarding_completed_at',
         'referrer_discount_active',
+        // LEGACY: la facturación se deriva del módulo module_billing (billingEnabled()).
+        // Columna conservada por compatibilidad; ya no se usa como gate.
         'facturacion_habilitada',
     ];
 
@@ -40,7 +43,7 @@ class Subscription extends Model implements HasMedia
         'address' => 'array',
         'onboarding_completed_at' => 'datetime',
         'referrer_discount_active' => 'boolean',
-        'facturacion_habilitada' => 'boolean',
+        'facturacion_habilitada' => 'boolean', // LEGACY — ya no se usa como gate (ver billingEnabled())
         'status' => SubscriptionStatus::class,
     ];
     
@@ -120,6 +123,19 @@ class Subscription extends Model implements HasMedia
             ->where('item_type', 'module')
             ->pluck('item_key')
             ->all();
+    }
+
+    /**
+     * Determina si la facturación está habilitada para esta suscripción.
+     *
+     * La facturación es un módulo adicional (module_billing): se activa
+     * automáticamente cuando el suscriptor tiene contratado el módulo en
+     * su versión activa. Reemplaza al antiguo flag manual
+     * `facturacion_habilitada` (legacy).
+     */
+    public function billingEnabled(): bool
+    {
+        return in_array('module_billing', $this->getActiveModuleKeys(), true);
     }
 
     public function hasReachedProductLimit(int $additionalItems = 0): bool
@@ -367,6 +383,11 @@ class Subscription extends Model implements HasMedia
     public function printTemplates(): HasMany { return $this->hasMany(PrintTemplate::class); }
     public function bankAccounts(): HasMany { return $this->hasMany(BankAccount::class); }
     public function fiscalProfiles(): HasMany { return $this->hasMany(FiscalProfile::class); }
+
+    /**
+     * PAC login accounts belonging to this subscription.
+     */
+    public function pacAccounts(): HasMany { return $this->hasMany(PacAccount::class); }
     public function getRouteKeyName(): string { return 'slug'; }
     public function users(): HasManyThrough { return $this->hasManyThrough(User::class, Branch::class); }
     public function cashRegisters(): HasManyThrough { return $this->hasManyThrough(CashRegister::class, Branch::class); }

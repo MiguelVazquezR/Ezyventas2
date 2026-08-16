@@ -174,14 +174,27 @@ export function useInvoiceTaxes(form, fiscalProfiles, customers) {
             const discount = parseFloat(item.discount_amount) || 0;
             const taxRate = item.tax_rate === 'Exento' ? 0 : (parseFloat(item.tax_rate) || 0.16);
             const hasTax = item.objeto_imp === '02';
+            const includesIva = !!form.prices_include_iva;
 
-            const lineSubtotal = qty * price;
+            const lineSubtotal = qty * price; // gross charged amount
             const lineDiscount = Math.min(discount, lineSubtotal);
-            const base = lineSubtotal - lineDiscount;
+            const taxable = lineSubtotal - lineDiscount;
 
             const { isrRate, ivaRetentionRate } = getRetentionRates(item);
 
-            const ivaTransfer = hasTax ? round(base * taxRate) : 0;
+            let base;
+            let ivaTransfer;
+
+            if (includesIva && hasTax && taxRate > 0) {
+                // "Precios con IVA incluido": derive the SAT base from the gross
+                // amount so the line total stays equal to the charged amount.
+                base = round(taxable / (1 + taxRate));
+                ivaTransfer = round(taxable - base);
+            } else {
+                base = round(taxable);
+                ivaTransfer = hasTax ? round(base * taxRate) : 0;
+            }
+
             const isrRetention = hasTax ? round(base * isrRate) : 0;
             const ivaRetention = hasTax ? round(base * ivaRetentionRate) : 0;
 
@@ -195,6 +208,7 @@ export function useInvoiceTaxes(form, fiscalProfiles, customers) {
                 lineTotal: round(base + ivaTransfer - isrRetention - ivaRetention),
                 rates: { taxRate, isrRate, ivaRetentionRate },
                 hasTax,
+                includesIva,
                 concepto_tipo: item.concepto_tipo || null,
             };
         });

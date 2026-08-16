@@ -9,7 +9,7 @@ class CancelInvoiceRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->can('cancel invoices');
+        return $this->user()->can('invoices.cancel');
     }
 
     public function rules(): array

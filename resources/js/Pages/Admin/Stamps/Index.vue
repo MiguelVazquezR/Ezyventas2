@@ -21,6 +21,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    sharedAccounts: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 // ──────────────────────────────────────
@@ -246,6 +250,21 @@ function paymentMethodLabel(method) {
     return labels[method] || method;
 }
 
+function accountTypeLabel(type) {
+    const labels = { 'subaccount': 'Subcuenta · Legacy', 'shared': 'Cuenta compartida' };
+    return labels[type] || type || '—';
+}
+
+function accountStatusLabel(status) {
+    const labels = {
+        'pending_request': 'Pendiente de solicitud',
+        'pending_activation': 'Pendiente de activación',
+        'active': 'Activa',
+        'inactive': 'Inactiva',
+    };
+    return labels[status] || status || '—';
+}
+
 // ──────────────────────────────────────
 // Lifecycle
 // ──────────────────────────────────────
@@ -312,10 +331,10 @@ const dialogPt = {
                     <p v-else class="text-sm text-gray-400 m-0">Cargando...</p>
                 </div>
 
-                <!-- Timbres Distribuidos (sum of all subaccounts) -->
+                <!-- Timbres Distribuidos (sum of all subaccounts — legacy) -->
                 <div class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
                     <div class="flex items-center justify-between mb-2">
-                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Timbres distribuidos</p>
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Timbres distribuidos <span class="text-gray-400">(legacy)</span></p>
                         <button @click="refreshMasterBalance" class="bg-transparent border-none cursor-pointer p-0 text-gray-400 hover:text-primary-500 transition-colors" :disabled="masterBalanceRefreshing">
                             <i class="pi pi-refresh" :class="{ 'animate-spin': masterBalanceRefreshing }" :style="{ fontSize: '12px' }"></i>
                         </button>
@@ -332,13 +351,41 @@ const dialogPt = {
                     <p v-else class="text-sm text-gray-400 m-0">Cargando...</p>
                 </div>
 
-                <!-- Subcuentas (live count from DB) -->
+                <!-- Subcuentas (live count from DB — legacy) -->
                 <div class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
-                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">Subcuentas</p>
+                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">Subcuentas <span class="text-gray-400">(legacy)</span></p>
                     <p class="text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0">
                         {{ formatNumber(totalSubaccounts) }}
                     </p>
-                    <p class="text-xs text-gray-400 mt-1 m-0">Perfiles fiscales activos en el PAC</p>
+                    <p class="text-xs text-gray-400 mt-1 m-0">Perfiles fiscales activos en el PAC (legacy — migrar a cuenta compartida)</p>
+                </div>
+            </div>
+
+            <!-- ════════════════ Cuenta compartida (Conectia) ════════════════ -->
+            <div v-if="sharedAccounts.length" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div
+                    v-for="shared in sharedAccounts"
+                    :key="shared.id"
+                    class="bg-white dark:bg-[#232323] p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]"
+                >
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Cuenta compartida</p>
+                        <span class="text-[9px] uppercase tracking-widest text-gray-400">{{ shared.rfc_count }} RFCs compartidos</span>
+                    </div>
+                    <p v-if="shared.balance_error" class="text-xs text-red-500 m-0">No se pudo consultar el saldo del PAC</p>
+                    <p v-else class="text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0">
+                        {{ formatNumber(shared.real_balance?.stampsBalance ?? 0) }}
+                    </p>
+                    <p class="text-xs text-gray-400 mt-1 m-0">Timbres disponibles en el PAC (Conectia)</p>
+                    <div v-if="shared.rfcs?.length" class="mt-3 space-y-1.5">
+                        <div v-for="rfc in shared.rfcs" :key="rfc.id" class="flex items-center justify-between text-xs">
+                            <span class="text-gray-600 dark:text-gray-300">
+                                {{ rfc.rfc }} <span class="text-gray-400">· {{ rfc.razon_social }}</span>
+                            </span>
+                            <span class="font-medium text-gray-900 dark:text-white">{{ rfc.local_balance }} timbres</span>
+                        </div>
+                    </div>
+                    <p v-else class="text-xs text-gray-400 mt-2 m-0">Sin RFCs vinculados</p>
                 </div>
             </div>
 
@@ -429,6 +476,18 @@ const dialogPt = {
                                 <div class="flex flex-col">
                                     <span class="text-sm font-medium text-gray-900 dark:text-white">{{ data.razon_social }}</span>
                                     <span class="text-xs text-gray-400">RFC: {{ data.rfc }}</span>
+                                </div>
+                            </template>
+                        </Column>
+                        <Column header="Cuenta PAC">
+                            <template #body="{ data }">
+                                <div class="flex flex-col gap-1">
+                                    <span class="text-[9px] uppercase tracking-widest font-bold text-gray-500">
+                                        {{ accountTypeLabel(data.account_type) }}
+                                    </span>
+                                    <span class="text-[9px] uppercase tracking-widest text-gray-400">
+                                        {{ accountStatusLabel(data.account_status) }}
+                                    </span>
                                 </div>
                             </template>
                         </Column>

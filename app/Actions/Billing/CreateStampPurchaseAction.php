@@ -26,26 +26,38 @@ class CreateStampPurchaseAction
      * Execute the stamp purchase creation.
      *
      * @return array{purchase: StampPurchase, mp_preference: array|null}
+     *
+     * @throws \RuntimeException When the quantity is below the minimum for
+     *                           a shared account or the master balance is insufficient.
      */
     public function execute(array $data): array
     {
         // Recalculate price server-side — never trust client price
         $pricing = $this->stampPurchaseService->calculatePrice($data['stamp_quantity']);
 
+        // Resolve the fiscal profile / PAC account to apply account-type rules.
+        $profile = \App\Models\Billing\FiscalProfile::with('pacAccount')
+            ->find($data['fiscal_profile_id']);
+        $pacAccount = $profile?->pacAccount;
+        $isSharedAccount = $pacAccount?->isShared() ?? false;
+
         // Determine if this Mercado Pago purchase exceeds the review threshold
         $threshold = $this->getLargePurchaseThreshold();
         $reviewReason = null;
 
         if ($data['payment_method'] === 'mercadopago') {
-            // Check master account balance before allowing the purchase.
-            $balanceCheck = $this->stampPurchaseService->checkMasterBalance($data['stamp_quantity']);
+            // Check master account balance before allowing the purchase —
+            // only for subaccount purchases (shared accounts are supplied by the reseller).
+            if (! $isSharedAccount) {
+                $balanceCheck = $this->stampPurchaseService->checkMasterBalance($data['stamp_quantity']);
 
-            if (! $balanceCheck['sufficient']) {
-                throw new \RuntimeException(
-                    "En este momento no podemos procesar esta cantidad de timbres. "
-                    . "Tu cuenta maestra tiene {$balanceCheck['stampsBalance']} timbres disponibles. "
-                    . "Intenta con una cantidad menor o contacta a soporte."
-                );
+                if (! $balanceCheck['sufficient']) {
+                    throw new \RuntimeException(
+                        "En este momento no podemos procesar esta cantidad de timbres. "
+                        . "Tu cuenta maestra tiene {$balanceCheck['stampsBalance']} timbres disponibles. "
+                        . "Intenta con una cantidad menor o contacta a soporte."
+                    );
+                }
             }
 
             // If quantity meets or exceeds the threshold, flag for manual review

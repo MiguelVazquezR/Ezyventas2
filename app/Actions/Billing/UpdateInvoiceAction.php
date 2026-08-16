@@ -4,6 +4,7 @@ namespace App\Actions\Billing;
 
 use App\Models\Billing\Invoice;
 use App\Models\InvoiceItem;
+use App\Models\Transaction;
 use App\Models\User;
 use App\Services\Billing\SWSapienService;
 use Illuminate\Support\Facades\DB;
@@ -33,6 +34,8 @@ class UpdateInvoiceAction
         }
 
         return DB::transaction(function () use ($data, $invoice, $user) {
+            $oldTransactionId = $invoice->transaction_id;
+
             // 1. Update header
             $subtotal      = 0;
             $discountTotal = 0;
@@ -43,6 +46,8 @@ class UpdateInvoiceAction
             $invoice->update([
                 'fiscal_profile_id'   => $data['fiscal_profile_id'] ?? $invoice->fiscal_profile_id,
                 'customer_id'         => $data['customer_id'] ?? $invoice->customer_id,
+                'transaction_id'      => $data['transaction_id'] ?? null,
+                'prices_include_iva'  => (bool) ($data['prices_include_iva'] ?? false),
                 'series'              => $data['series'] ?? $invoice->series,
                 'receiver_rfc'        => $data['receiver_rfc'],
                 'receiver_legal_name'  => $data['receiver_legal_name'],
@@ -51,8 +56,16 @@ class UpdateInvoiceAction
                 'cfdi_use'             => $data['cfdi_use'],
                 'exportacion'          => $data['exportacion'] ?? '01',
                 'tipo_comprobante'     => $data['tipo_comprobante'] ?? 'I',
-                'payment_form'         => $data['payment_form'],
-                'payment_method'       => $data['payment_method'],
+                'payment_form'         => $data['payment_form'] ?? $invoice->payment_form,
+                'payment_method'       => $data['payment_method'] ?? $invoice->payment_method,
+                'pago_fecha'           => $data['pago_fecha'] ?? $invoice->pago_fecha,
+                'pago_forma'           => $data['pago_forma'] ?? $invoice->pago_forma,
+                'pago_moneda'          => $data['pago_moneda'] ?? 'MXN',
+                'pago_monto'           => $data['pago_monto'] ?? $invoice->pago_monto,
+                'pago_tipo_cambio'     => $data['pago_tipo_cambio'] ?? $invoice->pago_tipo_cambio,
+                'pago_documentos'      => $data['pago_documentos'] ?? $invoice->pago_documentos,
+                'tipo_relacion'        => $data['tipo_relacion'] ?? $invoice->tipo_relacion,
+                'cfdi_relacionados'    => $data['cfdi_relacionados'] ?? $invoice->cfdi_relacionados,
                 'currency'             => $data['currency'] ?? 'MXN',
                 'exchange_rate'        => ($data['currency'] ?? 'MXN') !== 'MXN' ? ($data['exchange_rate'] ?? null) : null,
                 'subtotal'             => 0,
@@ -147,6 +160,20 @@ class UpdateInvoiceAction
             // 5. Sync customer fiscal data
             if (! empty($data['customer_id'])) {
                 $this->swService->syncCustomerFiscalData($data['customer_id'], $data);
+            }
+
+            // 5b. Persist SAT codes filled on the concepts back to the product
+            // / service catalog when they are still empty.
+            $this->swService->syncConceptCatalogData($data['items'] ?? []);
+
+            // 6. Keep the POS sale invoiced flag in sync when the linked sale changes
+            if ((int) $oldTransactionId !== (int) $invoice->transaction_id) {
+                if ($oldTransactionId) {
+                    Transaction::where('id', $oldTransactionId)->update(['invoiced' => false]);
+                }
+                if ($invoice->transaction_id) {
+                    Transaction::where('id', $invoice->transaction_id)->update(['invoiced' => true]);
+                }
             }
 
             return $invoice->fresh('items');

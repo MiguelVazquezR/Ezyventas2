@@ -20,6 +20,18 @@ const props = defineProps({
     canRetryManifestSigning: Boolean,
 });
 
+// Whether the profile's PAC account is active. Backward compatible with the
+// legacy sw_user_id for profiles provisioned before the pac_accounts table.
+const isAccountActive = () =>
+    props.fiscalProfile?.pac_account?.status === 'active' || !!props.fiscalProfile?.sw_user_id;
+
+// Generic status label for the client UI (never exposes the account type).
+const accountStatusLabel = () => {
+    if (!props.fiscalProfile?.is_active) return 'Inactivo';
+    if (isAccountActive()) return 'Activo';
+    return 'Pendiente de activación';
+};
+
 // ──────────────────────────────────────
 // Rejection reason popover
 // ──────────────────────────────────────
@@ -69,10 +81,13 @@ const manifestBtnRef = ref(null);
 
 function startTutorial() {
     tutorialDismissed.value = false;
+    // El tutorial de CSD/manifiesto solo aplica cuando la cuenta PAC está activa.
+    if (!isAccountActive()) {
+        tutorialStep.value = null;
+        return;
+    }
     if (!props.fiscalProfile.certificate_number) {
         tutorialStep.value = 'csd';
-    } else if (!props.fiscalProfile.manifest_signed_at) {
-        tutorialStep.value = 'manifest';
     } else {
         tutorialStep.value = null;
     }
@@ -108,7 +123,7 @@ watch(tutorialStep, async (val) => {
 
 function goToNextTutorialStep() {
     if (tutorialStep.value === 'csd') {
-        tutorialStep.value = props.fiscalProfile.manifest_signed_at ? null : 'manifest';
+        tutorialStep.value = props.fiscalProfile.requires_manifest && !props.fiscalProfile.manifest_signed_at ? 'manifest' : null;
     } else {
         tutorialStep.value = null;
     }
@@ -280,7 +295,7 @@ const rejectionPopoverPt = {
                             <div class="flex items-center gap-2 shrink-0">
                                 <Button
                                     ref="csdBtnRef"
-                                    v-if="fiscalProfile.sw_user_id"
+                                    v-if="isAccountActive()"
                                     icon="pi pi-key"
                                     :label="fiscalProfile.certificate_number ? 'Certificado activo' : 'Configurar CSD'"
                                     :severity="fiscalProfile.certificate_number ? 'success' : 'primary'"
@@ -291,6 +306,17 @@ const rejectionPopoverPt = {
                                     @click="openCsdDialog"
                                     v-tooltip.top="fiscalProfile.certificate_number ? 'Ver o actualizar certificado CSD' : 'Cargar certificados CSD (.cer y .key)'"
                                 />
+                                <span v-else-if="fiscalProfile.is_active" v-tooltip.top="'Disponible cuando tu emisor esté activo'">
+                                    <Button
+                                        icon="pi pi-key"
+                                        label="Configurar CSD"
+                                        severity="secondary"
+                                        outlined
+                                        size="small"
+                                        disabled
+                                        class="!rounded-full !bg-white dark:!bg-[#232323] !opacity-50 !cursor-not-allowed"
+                                    />
+                                </span>
                                 <Button
                                     v-if="canPurchaseStamps && fiscalProfile.is_active"
                                     icon="pi pi-ticket"
@@ -335,7 +361,7 @@ const rejectionPopoverPt = {
                                     <i class="pi pi-key !text-sm !text-white"></i>
                                 </div>
                                 <div>
-                                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Paso 2 de 3</p>
+                                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Paso {{ fiscalProfile.requires_manifest ? '2 de 3' : '2 de 2' }}</p>
                                     <p class="text-sm font-semibold text-gray-900 dark:text-white m-0 leading-tight">Configurar CSD</p>
                                 </div>
                             </div>
@@ -349,8 +375,16 @@ const rejectionPopoverPt = {
                                     Saltar tutorial
                                 </button>
                                 <div class="flex items-center gap-2">
-                                    <span class="text-[10px] text-gray-400">2/3</span>
+                                    <span class="text-[10px] text-gray-400">{{ fiscalProfile.requires_manifest ? '2/3' : '2/2' }}</span>
                                     <Button
+                                        v-if="!fiscalProfile.requires_manifest"
+                                        label="Entendido"
+                                        class="!rounded-full !text-xs"
+                                        size="small"
+                                        @click="dismissTutorial"
+                                    />
+                                    <Button
+                                        v-else
                                         icon="pi pi-arrow-right"
                                         class="!rounded-full !w-8 !h-8 !p-0"
                                         severity="secondary"
@@ -414,8 +448,8 @@ const rejectionPopoverPt = {
                 </div>
             </Teleport>
 
-            <!-- ═══════════════════════════════ MANIFEST SAT ═══════════════════════════════ -->
-            <div class="rounded-3xl bg-white dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] p-6">
+            <!-- ═══════════════════════════════ MANIFEST SAT (solo subcuentas) ═══════════════════════════════ -->
+            <div v-if="fiscalProfile.requires_manifest" class="rounded-3xl bg-white dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] p-6">
                 <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-4">Manifiesto SAT</h2>
 
                 <div v-if="fiscalProfile.manifest_signed_at" class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -540,7 +574,9 @@ const rejectionPopoverPt = {
             <!-- ═══════════════════════════════ STAMP BALANCE (live) ═══════════════════════════════ -->
             <div class="rounded-3xl bg-white dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] p-6">
                 <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Saldo de timbres</h2>
+                    <div class="flex items-center gap-2">
+                        <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Saldo de timbres</h2>
+                    </div>
                     <Link
                         v-if="$page.props.auth.user?.is_super_admin"
                         :href="route('admin.stamps.index')"
@@ -557,29 +593,30 @@ const rejectionPopoverPt = {
                     <span class="text-sm">{{ balanceError }}</span>
                     <Button label="Reintentar" size="small" severity="secondary" class="!rounded-full" @click="router.reload()" />
                 </div>
-                <div v-else-if="!balance && fiscalProfile.sw_user_id" class="flex items-center gap-3 text-gray-400">
+                <div v-else-if="!fiscalProfile.is_active" class="text-sm text-gray-500">
+                    Este emisor está inactivo. Actívalo para continuar gestionando sus timbres.
+                </div>
+                <div v-else-if="!isAccountActive()" class="text-sm text-gray-500">
+                    Este emisor está pendiente de activación. Un administrador completará la activación para que puedas comenzar a facturar.
+                </div>
+                <div v-else-if="!balance" class="flex items-center gap-3 text-gray-400">
                     <i class="pi pi-spin pi-spinner" />
                     <span class="text-sm">Consultando saldo...</span>
                 </div>
-                <div v-else-if="!fiscalProfile.sw_user_id" class="text-sm text-gray-500">
-                    Este emisor aún no tiene una subcuenta PAC vinculada.
-                </div>
-                <div v-else class="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                <div v-else class="flex flex-wrap items-center gap-x-5 gap-y-4">
                     <div class="flex flex-col gap-1">
-                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Disponibles</span>
-                        <span class="text-3xl font-light tracking-tight text-gray-900 dark:text-white">{{ balance?.stampsBalance ?? '—' }}</span>
+                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Adquiridos</span>
+                        <span class="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">{{ balance?.stampsAssigned ?? '—' }}</span>
                     </div>
+                    <span class="text-3xl font-light text-gray-400 select-none pb-1">−</span>
                     <div class="flex flex-col gap-1">
                         <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Usados</span>
-                        <span class="text-3xl font-light tracking-tight text-gray-900 dark:text-white">{{ balance?.stampsUsed ?? '—' }}</span>
+                        <span class="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">{{ balance?.stampsUsed ?? '—' }}</span>
                     </div>
+                    <span class="text-3xl font-light text-gray-400 select-none pb-1">=</span>
                     <div class="flex flex-col gap-1">
-                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Asignados</span>
-                        <span class="text-3xl font-light tracking-tight text-gray-900 dark:text-white">{{ balance?.stampsAssigned ?? '—' }}</span>
-                    </div>
-                    <div class="flex flex-col gap-1">
-                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Ilimitado</span>
-                        <span class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ balance?.isUnlimited ? 'Sí' : 'No' }}</span>
+                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Disponibles</span>
+                        <span class="text-3xl font-bold tracking-tight text-gray-900 dark:text-white">{{ balance?.stampsBalance ?? '—' }}</span>
                     </div>
                 </div>
             </div>

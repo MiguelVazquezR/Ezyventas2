@@ -13,6 +13,7 @@ use App\Models\Billing\FiscalProfile;
 use App\Models\Billing\Invoice;
 use App\Models\Billing\StampPurchase;
 use App\Services\Billing\StampPurchaseService;
+use App\Services\Billing\WalletService;
 use App\Services\SW\SWUserService;
 use App\Enums\StampPaymentMethod;
 use App\Enums\StampPurchaseStatus;
@@ -45,6 +46,7 @@ class AdminStampPurchaseController extends Controller
 
         $purchases = StampPurchase::with([
                 'fiscalProfile.subscription',
+                'fiscalProfile.pacAccount',
                 'requestedBy',
             ])
             ->awaitingReview()
@@ -70,18 +72,24 @@ class AdminStampPurchaseController extends Controller
             return back()->with('info', 'Esta compra ya fue aprobada.');
         }
 
-        // Check master account balance BEFORE approving — block if insufficient.
-        // The PAC will reject the assignment if the dealer lacks stamps, so we
-        // prevent the approval upfront rather than letting the async job fail.
-        $balanceCheck = $stampPurchaseService->checkMasterBalance($purchase->stamp_quantity);
+        // Shared accounts manage stamps locally — the dealer master-balance
+        // check does not apply to them.
+        $isSharedAccount = $purchase->fiscalProfile?->pacAccount?->isShared() ?? false;
 
-        if (! $balanceCheck['sufficient']) {
-            return back()->with(
-                'error',
-                "No puedes aprobar esta compra. Tu cuenta maestra tiene {$balanceCheck['stampsBalance']} timbres disponibles "
-                . "y esta compra requiere {$purchase->stamp_quantity}. Recarga tu cuenta maestra en el portal de SW "
-                . "antes de aprobar."
-            );
+        if (! $isSharedAccount) {
+            // Check master account balance BEFORE approving — block if insufficient.
+            // The PAC will reject the assignment if the dealer lacks stamps, so we
+            // prevent the approval upfront rather than letting the async job fail.
+            $balanceCheck = $stampPurchaseService->checkMasterBalance($purchase->stamp_quantity);
+
+            if (! $balanceCheck['sufficient']) {
+                return back()->with(
+                    'error',
+                    "No puedes aprobar esta compra. Tu cuenta maestra tiene {$balanceCheck['stampsBalance']} timbres disponibles "
+                    . "y esta compra requiere {$purchase->stamp_quantity}. Recarga tu cuenta maestra en el portal de SW "
+                    . "antes de aprobar."
+                );
+            }
         }
 
         try {
@@ -93,7 +101,11 @@ class AdminStampPurchaseController extends Controller
             );
         }
 
-        return back()->with('success', 'Compra aprobada. Los timbres se acreditaron al perfil fiscal.');
+        $successMessage = $isSharedAccount
+            ? 'Compra aprobada. Los timbres se agregaron a la wallet local del RFC.'
+            : 'Compra aprobada. Los timbres se acreditaron al perfil fiscal.';
+
+        return back()->with('success', $successMessage);
     }
 
     /**
@@ -155,24 +167,33 @@ class AdminStampPurchaseController extends Controller
         StoreManualStampAdjustmentRequest $request,
         CreateManualStampAdjustmentAction $adjustmentAction,
         StampPurchaseService $stampPurchaseService,
+        WalletService $walletService,
     ): RedirectResponse {
         $user = Auth::user();
         $data = $request->validated();
         $mode = $data['mode'] ?? 'manual';
         $stampQuantity = (int) $data['stamp_quantity'];
 
+        // Shared accounts manage stamps locally — the dealer master
+        // balance check does not apply to them.
+        $isSharedAccount = FiscalProfile::with('pacAccount')
+            ->find($data['fiscal_profile_id'])
+            ?->pacAccount?->isShared() ?? false;
+
         // ── Mode: purchase ──────────────────────────────────────
         if ($mode === 'purchase') {
-            // Check master balance
-            $balanceCheck = $stampPurchaseService->checkMasterBalance($stampQuantity, false);
+            if (! $isSharedAccount) {
+                // Check master balance
+                $balanceCheck = $stampPurchaseService->checkMasterBalance($stampQuantity, false);
 
-            if (! $balanceCheck['sufficient']) {
-                return back()->with(
-                    'error',
-                    "Tu cuenta maestra tiene {$balanceCheck['stampsBalance']} timbres disponibles "
-                    . "y esta operación requiere {$stampQuantity}. Recarga tu cuenta maestra en el portal de SW "
-                    . "antes de intentar de nuevo."
-                );
+                if (! $balanceCheck['sufficient']) {
+                    return back()->with(
+                        'error',
+                        "Tu cuenta maestra tiene {$balanceCheck['stampsBalance']} timbres disponibles "
+                        . "y esta operación requiere {$stampQuantity}. Recarga tu cuenta maestra en el portal de SW "
+                        . "antes de intentar de nuevo."
+                    );
+                }
             }
             // Recalculate price server-side for security
             $price = $stampPurchaseService->calculatePrice($stampQuantity);
@@ -227,8 +248,23 @@ class AdminStampPurchaseController extends Controller
         $isRemoval = ($data['adjustment_type'] ?? 'add') === 'remove';
         $stampQuantity = (int) $data['stamp_quantity'];
 
-        // Block "add" adjustments if master balance is insufficient.
-        if (! $isRemoval) {
+        // Block removals that exceed the local wallet balance (shared accounts
+        // have no PAC-side balance to validate against — the wallet is the
+        // source of truth and must never go negative).
+        if ($isRemoval && $isSharedAccount) {
+            $available = $walletService->availableBalance((int) $data['fiscal_profile_id']);
+
+            if ($stampQuantity > $available) {
+                return back()->with(
+                    'error',
+                    "No se pueden retirar {$stampQuantity} timbres: el perfil solo tiene {$available} disponibles."
+                );
+            }
+        }
+
+        // Block "add" adjustments if master balance is insufficient
+        // (shared accounts are exempt — stamps are managed locally).
+        if (! $isRemoval && ! $isSharedAccount) {
             $balanceCheck = $stampPurchaseService->checkMasterBalance($stampQuantity, false);
 
             if (! $balanceCheck['sufficient']) {
@@ -263,12 +299,21 @@ class AdminStampPurchaseController extends Controller
      */
     public function balance(FiscalProfile $fiscalProfile, SWUserService $swUserService): \Illuminate\Http\JsonResponse
     {
-        if (! $fiscalProfile->sw_user_id) {
-            return response()->json(['error' => 'Este perfil no tiene subcuenta PAC.'], 400);
+        $pacAccount = $fiscalProfile->pacAccount;
+
+        if (! $fiscalProfile->isLinkedToPac()) {
+            return response()->json(['error' => 'Este perfil no tiene una cuenta PAC activa.'], 400);
         }
 
         try {
-            $balance = $swUserService->getStampsBalance($fiscalProfile->sw_user_id);
+            if ($pacAccount?->isSubaccount()) {
+                $balance = $swUserService->getStampsBalance($pacAccount->sw_user_id);
+            } elseif ($pacAccount->isShared()) {
+                // Saldo local de la wallet del RFC — nunca el saldo real del PAC.
+                $balance = ['stampsBalance' => app(\App\Services\Billing\WalletService::class)->availableBalance($fiscalProfile->id)];
+            } else {
+                $balance = $swUserService->getOwnBalance($pacAccount);
+            }
 
             return response()->json(['balance' => $balance]);
         } catch (\Exception $e) {
@@ -296,11 +341,20 @@ class AdminStampPurchaseController extends Controller
         // ── Get the live PAC balance as the anchor ──────────────
         $currentBalance = null;
         $balanceError   = null;
+        $pacAccount = $fiscalProfile->pacAccount;
 
-        if ($fiscalProfile->sw_user_id) {
+        if ($pacAccount && $pacAccount->isActive()) {
             try {
-                $pacData        = $swUserService->getStampsBalance($fiscalProfile->sw_user_id);
-                $currentBalance = (int) ($pacData['stampsBalance'] ?? 0);
+                if ($pacAccount->isSubaccount()) {
+                    $pacData = $swUserService->getStampsBalance($pacAccount->sw_user_id);
+                    $currentBalance = (int) ($pacData['stampsBalance'] ?? 0);
+                } elseif ($pacAccount->isShared()) {
+                    // Saldo local de la wallet del RFC — nunca el saldo real del PAC.
+                    $currentBalance = app(\App\Services\Billing\WalletService::class)->availableBalance($fiscalProfile->id);
+                } else {
+                    $pacData = $swUserService->getOwnBalance($pacAccount);
+                    $currentBalance = (int) ($pacData['stampsBalance'] ?? 0);
+                }
             } catch (\Exception $e) {
                 $balanceError = 'No se pudo consultar el saldo actual. Inténtalo más tarde.';
             }

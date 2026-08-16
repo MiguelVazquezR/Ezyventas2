@@ -5,6 +5,8 @@ use App\Http\Controllers\Admin\AdminStampPurchaseController;
 use App\Http\Controllers\Admin\AdminStampPricingController;
 use App\Http\Controllers\Admin\AdminSubscriptionPaymentController;
 use App\Http\Controllers\Admin\AiAgentSettingsController;
+use App\Http\Controllers\Admin\AdminPacAccountController;
+use App\Http\Controllers\Admin\AdminStampReservationController;
 use App\Http\Controllers\Admin\PlanItemController;
 use App\Http\Controllers\Admin\SubscriptionController;
 use App\Http\Controllers\Admin\ReportController;
@@ -46,11 +48,23 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
     Route::get('stamps/balance/{fiscalProfile}', [AdminStampPurchaseController::class, 'balance'])->name('stamps.balance');
     Route::get('stamps/history/{fiscalProfile}', [AdminStampPurchaseController::class, 'history'])->name('stamps.history');
 
+    // ──── Revisión manual de reservas de timbrado ──────────
+    Route::get('stamp-reservations', [AdminStampReservationController::class, 'index'])->name('stamp-reservations.index');
+    Route::post('stamp-reservations/{stampReservation}/confirm', [AdminStampReservationController::class, 'confirm'])->name('stamp-reservations.confirm');
+    Route::post('stamp-reservations/{stampReservation}/release', [AdminStampReservationController::class, 'release'])->name('stamp-reservations.release');
+
     // ──── Precios de Timbres (CRUD de tramos) ──────────────
     Route::get('stamps/pricing-tiers', [AdminStampPricingController::class, 'index'])->name('stamps.pricing.index');
     Route::post('stamps/pricing-tiers', [AdminStampPricingController::class, 'store'])->name('stamps.pricing.store');
     Route::put('stamps/pricing-tiers/{tier}', [AdminStampPricingController::class, 'update'])->name('stamps.pricing.update');
     Route::delete('stamps/pricing-tiers/{tier}', [AdminStampPricingController::class, 'destroy'])->name('stamps.pricing.destroy');
+
+    // ──── Cuentas PAC (solicitudes y activación manual) ────
+    Route::get('pac-accounts', [AdminPacAccountController::class, 'index'])->name('pac-accounts.index');
+    Route::post('pac-accounts/{pacAccount}/activate', [AdminPacAccountController::class, 'activate'])->name('pac-accounts.activate');
+    Route::put('pac-accounts/{pacAccount}/credentials', [AdminPacAccountController::class, 'updateCredentials'])->name('pac-accounts.credentials');
+    Route::put('pac-accounts/{pacAccount}/notes', [AdminPacAccountController::class, 'updateNotes'])->name('pac-accounts.notes');
+    Route::post('pac-accounts/{pacAccount}/deactivate', [AdminPacAccountController::class, 'deactivate'])->name('pac-accounts.deactivate');
 
     // --- Ítems de Planes (Módulos y Límites del SaaS) ---
     Route::resource('plan-items', PlanItemController::class)->names([

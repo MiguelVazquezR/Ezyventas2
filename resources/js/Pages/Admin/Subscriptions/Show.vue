@@ -27,6 +27,7 @@ const props = defineProps({
     hasAiAgentModule: Boolean,
     fiscalProfiles: Array,
     allStampPurchases: Array,
+    sharedAccount: [Object, null],
 });
 
 // --- ESTADOS DE MODALES ---
@@ -200,6 +201,24 @@ function stampPaymentMethodLabel(method) {
         'manual_adjustment': 'Ajuste manual',
     };
     return labels[method] || method;
+}
+
+function accountTypeLabel(type) {
+    const labels = {
+        'subaccount': 'Subcuenta · Legacy',
+        'shared': 'Cuenta compartida',
+    };
+    return labels[type] || type;
+}
+
+function accountStatusLabel(status) {
+    const labels = {
+        'pending_request': 'Pendiente de solicitud',
+        'pending_activation': 'Pendiente de activación',
+        'active': 'Activa',
+        'inactive': 'Inactiva',
+    };
+    return labels[status] || status;
 }
 </script>
 
@@ -441,6 +460,43 @@ function stampPaymentMethodLabel(method) {
                         </Link>
                     </div>
 
+                    <!-- Cuenta compartida (Conectia) — saldo PAC real + RFCs -->
+                    <div
+                        v-if="sharedAccount"
+                        class="mb-6 p-5 rounded-2xl bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a]"
+                    >
+                        <div class="flex items-center justify-between mb-3">
+                            <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
+                                Cuenta compartida
+                            </p>
+                            <span class="text-[9px] uppercase tracking-widest text-gray-400">
+                                {{ sharedAccount.rfc_count }} RFCs compartidos
+                            </span>
+                        </div>
+                        <div class="flex flex-wrap gap-6">
+                            <div>
+                                <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Timbres disponibles en el PAC</p>
+                                <p v-if="sharedAccount.balance_error" class="text-sm text-red-500 m-0">No se pudo consultar</p>
+                                <p v-else class="text-2xl font-light tracking-tight text-gray-900 dark:text-white m-0">
+                                    {{ (sharedAccount.real_balance?.stampsBalance ?? 0).toLocaleString() }}
+                                </p>
+                            </div>
+                            <div class="flex-1 min-w-[14rem]">
+                                <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-2">RFCs vinculados</p>
+                                <div v-if="sharedAccount.rfcs?.length" class="space-y-1.5">
+                                    <div v-for="rfc in sharedAccount.rfcs" :key="rfc.id" class="flex items-center justify-between text-xs">
+                                        <span class="text-gray-600 dark:text-gray-300">
+                                            {{ rfc.rfc }} <span class="text-gray-400">· {{ rfc.razon_social }}</span>
+                                            <span v-if="rfc.subscription_name" class="text-gray-400">· {{ rfc.subscription_name }}</span>
+                                        </span>
+                                        <span class="font-medium text-gray-900 dark:text-white">{{ rfc.local_balance }} timbres</span>
+                                    </div>
+                                </div>
+                                <p v-else class="text-xs text-gray-400 m-0">Sin RFCs vinculados</p>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Fiscal profiles cards -->
                     <div v-if="fiscalProfiles && fiscalProfiles.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                         <div
@@ -452,12 +508,26 @@ function stampPaymentMethodLabel(method) {
                                 <div>
                                     <p class="text-sm font-medium text-gray-900 dark:text-white m-0">{{ profile.razon_social }}</p>
                                     <p class="text-xs text-gray-400 m-0">RFC: {{ profile.rfc }}</p>
+                                    <div class="flex items-center gap-1.5 mt-2">
+                                        <Tag
+                                            :value="profile.is_active ? 'Activo' : 'Inactivo'"
+                                            :severity="profile.is_active ? 'success' : 'secondary'"
+                                            class="!rounded-full"
+                                        />
+                                        <Tag
+                                            v-if="profile.account_type"
+                                            :value="accountTypeLabel(profile.account_type)"
+                                            severity="secondary"
+                                            class="!rounded-full"
+                                        />
+                                        <Tag
+                                            v-if="profile.account_status"
+                                            :value="accountStatusLabel(profile.account_status)"
+                                            :severity="profile.account_status === 'active' ? 'success' : 'warn'"
+                                            class="!rounded-full"
+                                        />
+                                    </div>
                                 </div>
-                                <Tag
-                                    :value="profile.is_active ? 'Activo' : 'Inactivo'"
-                                    :severity="profile.is_active ? 'success' : 'secondary'"
-                                    class="!rounded-full"
-                                />
                             </div>
 
                             <!-- Balance -->
@@ -479,7 +549,7 @@ function stampPaymentMethodLabel(method) {
                                 </div>
                             </div>
                             <div v-else class="text-xs text-gray-400 mb-3">
-                                Sin subcuenta PAC vinculada.
+                                Sin cuenta PAC activa.
                             </div>
 
                             <Button

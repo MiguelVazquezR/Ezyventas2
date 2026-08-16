@@ -62,6 +62,8 @@ return [
         'default_stamps'         => env('SW_SAPIEN_DEFAULT_STAMPS', 10),
         'mock'                   => env('SW_SAPIEN_MOCK', false),
         'low_balance_threshold'  => env('SW_SAPIEN_LOW_BALANCE_THRESHOLD', 500),
+        // Mínimo de compra para cuentas "normal" (el revendedor asigna por fuera).
+        'normal_min_purchase'    => env('SW_SAPIEN_NORMAL_MIN_PURCHASE', 100),
     ],
 
 ];

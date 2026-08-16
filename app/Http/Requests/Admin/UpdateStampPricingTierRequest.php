@@ -8,7 +8,7 @@ class UpdateStampPricingTierRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->isSuperAdmin() ?? false;
+        return true; // CheckSuperAdmin middleware handles access
     }
 
     public function rules(): array

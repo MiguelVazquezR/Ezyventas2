@@ -19,7 +19,7 @@ const emit = defineEmits(['success']);
 // State
 // ──────────────────────────────────────
 const visible = ref(false);
-const quantity = ref(100);
+const quantity = ref(1);
 const quoteLoading = ref(false);
 const quotedPrice = ref(null);
 const pricingTiers = ref([]);
@@ -38,7 +38,7 @@ const pricingRows = computed(() => {
 
 const purchaseForm = useForm({
     fiscal_profile_id: props.fiscalProfileId,
-    stamp_quantity: 100,
+    stamp_quantity: 1,
     payment_method: 'bank_transfer',
     proof_file: null,
 });
@@ -110,7 +110,7 @@ function submitPurchase() {
 // Public API
 // ──────────────────────────────────────
 function open() {
-    quantity.value = 100;
+    quantity.value = 1;
     quotedPrice.value = null;
     pricingTiers.value = [];
     paymentMethod.value = 'bank_transfer';
@@ -311,17 +311,18 @@ const isButtonDisabled = computed(() => {
                         <i class="pi pi-building-columns !text-xs" />
                         Transferencia
                     </button>
-                    <button
-                        type="button"
-                        @click="paymentMethod = 'mercadopago'"
-                        class="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-medium transition-all duration-200"
-                        :class="paymentMethod === 'mercadopago'
-                            ? 'bg-white dark:bg-[#1a1a1a] text-gray-900 dark:text-white shadow-sm'
-                            : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'"
-                    >
-                        <img src="/images/Mercado_Pago_logo.webp" alt="MP" class="w-4 h-4 object-contain" />
-                        Mercado Pago
-                    </button>
+                    <!-- Mercado Pago: próximamente (deshabilitado) -->
+                    <span v-tooltip.top="'Próximamente'" class="flex-1">
+                        <button
+                            type="button"
+                            disabled
+                            class="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 text-gray-400 dark:text-gray-600 opacity-45 cursor-not-allowed select-none"
+                        >
+                            <img src="/images/Mercado_Pago_logo.webp" alt="MP" class="w-4 h-4 object-contain grayscale opacity-99" />
+                            Mercado Pago
+                            <span class="text-[8px] uppercase tracking-widest font-bold bg-gray-200 dark:bg-[#2e2e2e] text-gray-700 dark:text-gray-400 px-1.5 py-0.5 rounded-full">Próximamente</span>
+                        </button>
+                    </span>
                 </div>
             </div>
 
