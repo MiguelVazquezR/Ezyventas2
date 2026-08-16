@@ -8,6 +8,7 @@ import InputLabel from './InputLabel.vue';
 // --- Importar Composables ---
 import { usePrintPlugin } from '@/Composables/usePrintPlugin';
 import { useBluetoothPrinter } from '@/Composables/useBluetoothPrinter';
+import { useWhatsAppTicket } from '@/Composables/useWhatsAppTicket';
 
 // --- Props y Emits ---
 const props = defineProps({
@@ -50,6 +51,109 @@ const {
     sendRawCommands: btSendRaw,
     disconnect: btDisconnect,
 } = useBluetoothPrinter();
+
+// WhatsApp (ticket por wa.me)
+const {
+    enviarTicketWhatsApp,
+} = useWhatsAppTicket();
+
+// --- Estado de envío por WhatsApp ---
+const isWhatsAppModalVisible = ref(false);
+const isSendingWhatsApp = ref(false);
+const isSavingWhatsAppPhone = ref(false);
+const whatsappTicketData = ref(null);
+const whatsappCustomerId = ref(null);
+const whatsappPhone = ref('');
+const whatsappPhoneError = ref(null);
+
+const canSendWhatsApp = computed(() => {
+    return props.dataSource && ['pos', 'transaction'].includes(props.dataSource.type);
+});
+
+const hasWhatsAppCustomer = computed(() => !!whatsappCustomerId.value);
+
+// --- Enviar ticket por WhatsApp ---
+const handleSendWhatsApp = async () => {
+    if (!props.dataSource) return;
+
+    isSendingWhatsApp.value = true;
+    whatsappPhoneError.value = null;
+
+    try {
+        const response = await axios.post(route('print.whatsapp-ticket'), {
+            data_source_type: props.dataSource.type,
+            data_source_id: props.dataSource.id,
+        });
+
+        const { ticket, customer_phone, customer_id } = response.data;
+
+        if (!ticket) {
+            toast.add({
+                severity: 'warn',
+                summary: 'Sin datos',
+                detail: 'No se encontró una venta para enviar por WhatsApp.',
+                life: 4000,
+            });
+            return;
+        }
+
+        whatsappTicketData.value = ticket;
+        whatsappCustomerId.value = customer_id;
+
+        if (customer_phone) {
+            openWhatsAppWithTicket(customer_phone);
+        } else {
+            whatsappPhone.value = '';
+            isWhatsAppModalVisible.value = true;
+        }
+    } catch (e) {
+        toast.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'No se pudo generar el ticket para WhatsApp.',
+            life: 5000,
+        });
+    } finally {
+        isSendingWhatsApp.value = false;
+    }
+};
+
+const openWhatsAppWithTicket = (phone) => {
+    const win = enviarTicketWhatsApp(phone, whatsappTicketData.value);
+    if (!win) {
+        toast.add({
+            severity: 'warn',
+            summary: 'Ventana bloqueada',
+            detail: 'Permite las ventanas emergentes para abrir WhatsApp.',
+            life: 5000,
+        });
+    }
+};
+
+const submitWhatsAppPhone = async () => {
+    if (!whatsappPhone.value.replace(/\D/g, '')) {
+        whatsappPhoneError.value = 'Ingresa un número de teléfono.';
+        return;
+    }
+
+    isSavingWhatsAppPhone.value = true;
+    whatsappPhoneError.value = null;
+
+    try {
+        if (hasWhatsAppCustomer.value) {
+            await axios.post(route('customers.phone', whatsappCustomerId.value), {
+                phone: whatsappPhone.value,
+            });
+        }
+
+        isWhatsAppModalVisible.value = false;
+        openWhatsAppWithTicket(whatsappPhone.value);
+    } catch (e) {
+        whatsappPhoneError.value = e.response?.data?.message || 'No se pudo guardar el teléfono.';
+    } finally {
+        isSavingWhatsAppPhone.value = false;
+    }
+};
 
 // --- Estado del Modal ---
 const printJobs = ref([]);
@@ -352,6 +456,8 @@ const closeModal = () => {
     showPreview.value = false;
     ticketHtml.value = '';
     generalError.value = null;
+    isWhatsAppModalVisible.value = false;
+    whatsappPhoneError.value = null;
 };
 
 // --- Auto-selección de plantillas ---
@@ -860,6 +966,17 @@ const getTemplateTypeSeverity = (type) => {
                 <div v-else />
 
                 <div class="flex gap-2">
+                    <Button
+                        v-if="canSendWhatsApp"
+                        label="Enviar por WhatsApp"
+                        icon="pi pi-whatsapp"
+                        severity="success"
+                        outlined
+                        :loading="isSendingWhatsApp"
+                        :disabled="isSendingWhatsApp"
+                        @click="handleSendWhatsApp"
+                        v-tooltip.top="'Envía el ticket de la venta al WhatsApp del cliente'"
+                    />
                     <Button label="Cancelar" text severity="secondary" @click="closeModal" />
                     <Button
                         label="Imprimir"
@@ -871,6 +988,43 @@ const getTemplateTypeSeverity = (type) => {
                     />
                 </div>
             </div>
+        </template>
+    </Dialog>
+
+    <!-- ===== MODAL: TELÉFONO DEL CLIENTE PARA WHATSAPP ===== -->
+    <Dialog v-model:visible="isWhatsAppModalVisible" modal header="Teléfono del cliente"
+        :style="{ width: '28rem' }" :breakpoints="{ '640px': '95vw' }">
+        <div class="flex flex-col gap-3">
+            <p class="text-sm text-gray-600 dark:text-gray-300 m-0">
+                <template v-if="hasWhatsAppCustomer">
+                    Este cliente no tiene teléfono registrado. Agrégalo para enviarle el ticket por WhatsApp; se guardará en su ficha.
+                </template>
+                <template v-else>
+                    Esta venta no tiene un cliente asociado. Ingresa el teléfono al que deseas enviar el ticket por WhatsApp.
+                </template>
+            </p>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Teléfono *</label>
+                <InputText
+                    v-model="whatsappPhone"
+                    placeholder="Ej. 33 1234 5678"
+                    class="w-full"
+                    :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a]' } }"
+                />
+                <Message v-if="whatsappPhoneError" severity="error" variant="simple" size="small">
+                    {{ whatsappPhoneError }}
+                </Message>
+            </div>
+        </div>
+        <template #footer>
+            <Button label="Cancelar" text severity="secondary" @click="isWhatsAppModalVisible = false" />
+            <Button
+                :label="hasWhatsAppCustomer ? 'Guardar y enviar' : 'Enviar'"
+                icon="pi pi-whatsapp"
+                severity="success"
+                :loading="isSavingWhatsAppPhone"
+                @click="submitWhatsAppPhone"
+            />
         </template>
     </Dialog>
 </template>

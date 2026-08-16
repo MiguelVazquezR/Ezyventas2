@@ -27,6 +27,8 @@ Route::middleware(['auth', 'verified'])->prefix('billing')->name('billing.')->gr
         Route::get('/', [InvoiceController::class, 'index'])->name('index');
         Route::get('/create', [InvoiceController::class, 'create'])->name('create');
         Route::post('/', [InvoiceController::class, 'store'])->name('store');
+        Route::get('/sales/search', [InvoiceController::class, 'salesSearch'])->name('sales.search');
+        Route::get('/sales/{transaction}', [InvoiceController::class, 'salesShow'])->name('sales.show');
         Route::get('/{invoice}/edit', [InvoiceController::class, 'edit'])->name('edit');
         Route::put('/{invoice}', [InvoiceController::class, 'update'])->name('update');
         Route::get('/{invoice}/pdf', [InvoiceController::class, 'pdf'])->name('pdf');
@@ -57,7 +59,6 @@ Route::middleware(['auth', 'verified'])->prefix('billing')->name('billing.')->gr
     // ── Settings (Fiscal profiles & CSD) ───────────────────
     Route::prefix('settings')->name('settings.')->group(function () {
         Route::get('/', [InvoiceController::class, 'settings'])->name('index');
-        Route::post('/toggle-facturacion', [InvoiceController::class, 'toggleFacturacion'])->name('toggleFacturacion');
         Route::post('/fiscal-profiles', [FiscalProfileController::class, 'storeFiscalProfile'])->name('storeFiscalProfile');
         Route::post('/fiscal-profiles/upload-csd', [FiscalProfileController::class, 'uploadCsd'])->name('uploadCsd');
         Route::delete('/fiscal-profiles/{fiscalProfile}', [FiscalProfileController::class, 'destroy'])->name('destroyFiscalProfile');

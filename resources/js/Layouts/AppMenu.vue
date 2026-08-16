@@ -201,6 +201,36 @@ const adminModel = ref([
                 routeName: 'admin.subscriptions.*'
             },
             {
+                label: 'Timbres',
+                icon: 'pi pi-ticket',
+                items: [
+                    {
+                        label: 'Panel de timbres',
+                        icon: 'pi pi-chart-bar',
+                        to: route('admin.stamps.index'),
+                        routeName: 'admin.stamps.*'
+                    },
+                    {
+                        label: 'Bandeja de revisión',
+                        icon: 'pi pi-inbox',
+                        to: route('admin.stamps.review-queue'),
+                        routeName: 'admin.stamps.review-queue'
+                    },
+                    {
+                        label: 'Revisión manual de timbrado',
+                        icon: 'pi pi-exclamation-triangle',
+                        to: route('admin.stamp-reservations.index'),
+                        routeName: 'admin.stamp-reservations.*'
+                    },
+                    {
+                        label: 'Cuentas PAC',
+                        icon: 'pi pi-key',
+                        to: route('admin.pac-accounts.index'),
+                        routeName: 'admin.pac-accounts.*'
+                    },
+                ]
+            },
+            {
                 label: 'Ítems de planes',
                 icon: 'pi pi-box', 
                 to: route('admin.plan-items.index'),

@@ -5,12 +5,14 @@ namespace App\Models;
 use App\Traits\HasSubscription;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -133,9 +135,24 @@ class Transaction extends Model
     public function cashRegisterSession(): BelongsTo { return $this->belongsTo(CashRegisterSession::class); }
     public function items(): HasMany { return $this->hasMany(TransactionItem::class); }
     public function payments(): HasMany { return $this->hasMany(Payment::class); }
+    public function invoice(): HasOne { return $this->hasOne(\App\Models\Billing\Invoice::class, 'transaction_id'); }
     public function promotions(): BelongsToMany {
         return $this->belongsToMany(Promotion::class, 'promotion_transaction')
             ->withPivot('discount_applied')->withTimestamps();
     }
     public function customerBalanceMovements(): HasMany { return $this->hasMany(CustomerBalanceMovement::class); }
+
+    /*
+    |--------------------------------------------------------------------------
+    | SCOPES
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Sales still available for invoicing (no linked invoice).
+     */
+    public function scopeUninvoiced(Builder $query): Builder
+    {
+        return $query->where(fn (Builder $q) => $q->where('invoiced', false)->orWhereNull('invoiced'));
+    }
 }

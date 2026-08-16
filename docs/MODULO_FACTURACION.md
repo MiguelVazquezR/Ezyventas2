@@ -2,8 +2,8 @@
 
 > **Proyecto:** EzyVentas  
 > **Stack:** Laravel 12 (PHP 8.3+) + Vue 3 (Composition API `<script setup>`) + Inertia.js 2 + PrimeVue 4 + Tailwind CSS  
-> **PAC:** SW Sapien — Esquema Multi-RFC con subcuentas (Management V2)  
-> **Fecha del análisis:** 2026-07-18  
+> **PAC:** SW Sapien — Dos tipos de cuenta: **subcuenta propia** (dealer, legacy) y **cuenta compartida** (externa, Conectia)  
+> **Fecha del análisis:** 2026-07-18 · **Última actualización:** 2026-08-15 (cuenta compartida + timbres locales)  
 
 ---
 
@@ -18,9 +18,12 @@
 | **Cancelación de facturas** | ✅ Implementado | Cancelación UUID-based con los 4 motivos SAT (`01`–`04`) y UUID de sustitución. |
 | **PDF / representación impresa** | ✅ Implementado | Vista Inertia renderizada como PDF vía navegador (Ctrl+P). Incluye timbre fiscal, comprobante, QR, logo de empresa, desglose de impuestos. |
 | **Descarga de XML** | ✅ Implementado | Descarga del CFDI XML timbrado desde storage. |
-| **Subcuentas PAC (multi-RFC)** | ✅ Implementado | Cada `FiscalProfile` se provisiona automáticamente como sub-usuario en SW Sapien Management V2. |
+| **Cuentas PAC (`pac_accounts`)** | ✅ Implementado | Entidad separada que representa la cuenta de login en el PAC. Una cuenta puede alojar **varios RFC** (`fiscal_profiles`). Dos tipos: `subaccount` (dealer, legacy) y `shared` (**cuenta compartida** externa de Conectia). La cuenta compartida puede alojar RFCs de **varias suscripciones**. |
+| **Onboarding con cuenta compartida** | ✅ Implementado | Al crear un perfil fiscal, el RFC se vincula **automáticamente** a la cuenta compartida activa de la plataforma (Conectia); si no existe, se crea una `pending_request` que el admin activa con las credenciales del revendedor. Al vincularse, el RFC recibe **5 timbres de regalo** en su wallet local. |
 | **Perfiles fiscales** | ✅ Implementado | CRUD completo: crear, subir CSD (.cer + .key), subir logo, desactivar/eliminar. Varios RFC por suscripción. |
-| **Dashboard de facturación** | ✅ Parcial | KPIs: total comprobantes, facturas certificadas (="timbres usados"), canceladas, total facturado. Tabla de perfiles fiscales con estado PAC. |
+| **Compra y ajuste de timbres (100% local)** | ✅ Implementado | Compra por Mercado Pago o transferencia y ajustes manuales del admin. Los timbres se aplican **localmente** a la wallet del RFC (`stamp_movements`): al aprobar una compra o hacer un ajuste, se suman/restan sin tocar el PAC. Si la wallet llega a 0, no se puede timbrar. |
+| **Panel admin de cuentas PAC** | ✅ Implementado | `admin/pac-accounts`: solicitudes, activación con validación contra el PAC, actualización de credenciales y bitácora. |
+| **Dashboard de facturación** | ✅ Parcial | KPIs: total comprobantes, facturas certificadas (="timbres usados"), canceladas, total facturado. Tabla de perfiles fiscales con estado genérico (Activo/Pendiente de activación). |
 | **Toggle facturación** | ✅ Implementado | Activar/desactivar facturación a nivel suscripción. Al desactivar, todos los endpoints de PAC retornan safe defaults. |
 | **Sincronización fiscal de clientes** | ✅ Implementado | Auto-actualiza RFC, razón social, régimen fiscal y CP del modelo `Customer` al facturar. |
 | **Multi-retención** | ✅ Implementado | Soporte para array JSON de retenciones (ISR + IVA retenido) por concepto. |
@@ -30,17 +33,11 @@
 | Hallazgo | Ubicación | Detalle |
 |---|---|---|
 | **TODO: Exportación del dashboard** | `Dashboard/Index.vue:75` | `// TODO: implement export logic` — el botón "Exportar" del dashboard no hace nada. |
-| **Sin conteo real de timbres** | Dashboard (`InvoiceController::dashboard()`) | `totalStampsUsed` = conteo de facturas `certificadas` en BD. **No consulta al PAC** cuántos timbres contratados/disponibles tiene la subcuenta. |
-| **Sin columna `timbres_contratados` en BD** | `fiscal_profiles` / `subscriptions` | No existe campo para almacenar el saldo/paquete de timbres contratados por suscripción o perfil fiscal. |
-| **Sin panel admin de gestión de timbres** | `routes/web/super-admin.php` | No hay rutas ni vistas para que el superadmin asigne timbres, vea consumo por suscriptor, o administre paquetes. |
-| **Sin historial de compras de timbres** | Todo el proyecto | No hay modelo/tabla para registrar compras de paquetes de timbres por suscripción. |
-| **Sin alertas de saldo bajo** | Todo el proyecto | No hay notificación ni webhook que avise cuando una subcuenta se queda sin timbres. |
-| **Sin plan de precios de timbres** | Todo el proyecto | No existe modelo `StampPlan` o `StampPackage`. Los timbres se asignan con valor fijo `default_stamps = 10` al crear la subcuenta. |
-| **Sin consulta de saldo al PAC** | `SWSapienService` | No existe método para consultar `GET /management/v2/api/dealers/users/{id}/stamps` u obtener saldo de timbres del PAC. |
-| **Sin reintentos ni queue** | `SWSapienService::stamp()` | El timbrado es síncrono. Si el PAC falla, la factura queda en `borrador`. No hay job queue para reintentos. |
-| **BillingSetting legacy sin uso real** | Modelo `BillingSetting`, migración `2026_06_12_000008` | La tabla y modelo existen pero el sistema migró a `FiscalProfile`. El `SaveBillingSettingsAction` referencia `BillingSetting` pero no se usa desde ningún controller. |
-| **Sin facturación global (suscripción)** | `InvoiceStatus::NOT_REQUESTED/REQUESTED/GENERATED` | Estados legacy del sistema de facturación de suscripciones que no están integrados con el módulo CFDI 4.0. |
+| **Sin conteo de timbres por perfil en el dashboard de cliente** | Dashboard (`InvoiceController::dashboard()`) | El dashboard de cliente usa conteo local (facturas certificadas). Para cuentas compartidas el saldo disponible por RFC es la **wallet local** (`WalletService::availableBalance`); el saldo real del PAC solo lo ve el admin. |
+| **Reserva de timbres / CustomID** | ✅ Implementado (Fase 2.8–2.13) | `stamp_reservations` con `customid`, folios atómicos (`invoice_folio_counters`), `pac_call_logs` sanitizado, `ResolveAmbiguousStampJob` y panel de revisión manual. |
+| **Flujo de revendedor (`awaiting_reseller`)** | ✅ Eliminado (2026-08-15) | Ya no existe asignación por revendedor: los timbres se aplican **localmente** a la wallet del RFC al aprobar/ajustar, sin conexión al PAC. |
 | **Sin webhook de cancelación** | Todo el proyecto | No se reciben notificaciones del PAC cuando una cancelación es aceptada/rechazada asíncronamente. |
+| **BillingSetting legacy sin uso real** | Modelo `BillingSetting`, migración `2026_06_12_000008` | La tabla y modelo existen pero el sistema migró a `FiscalProfile`. El `SaveBillingSettingsAction` referencia `BillingSetting` pero no se usa desde ningún controller. |
 
 ---
 
@@ -51,17 +48,29 @@
 ```
 app/
 ├── Actions/Billing/
+│   ├── ActivatePacAccountAction.php       — Orquestador de activación de cuentas compartidas (valida contra el PAC)
+│   ├── ApproveStampPurchaseAction.php     — Aprueba compra y aplica timbres (localmente)
 │   ├── CancelInvoiceAction.php            — Orquestador de cancelación de CFDI
-│   ├── CreateFiscalSubaccountAction.php   — Orquestador de vinculación FiscalProfile ↔ PAC
+│   ├── CreateFiscalSubaccountAction.php   — Orquestador de vinculación de subcuenta (dealer, legacy)
 │   ├── CreateInvoiceAction.php            — Orquestador de creación + timbrado de CFDI
+│   ├── CreateStampPurchaseAction.php      — Creación de compra de timbres (mínimo para cuentas compartidas)
 │   └── SaveBillingSettingsAction.php      — Legacy: upsert de BillingSetting (sin uso activo)
 │
 ├── Enums/
-│   └── InvoiceStatus.php                  — Estados: borrador, pendiente, certificada, cancelada (+ legacy suscripción)
+│   ├── InvoiceStatus.php                  — Estados: borrador, pendiente, certificada, cancelada (+ legacy suscripción)
+│   ├── PacAccountType.php                 — subaccount | shared
+│   ├── PacAccountStatus.php               — pending_request | pending_activation | active | inactive
+│   └── StampPurchaseStatus.php            — pending, awaiting_review, approved, rejected, failed, stamps_applied (awaiting_reseller legacy sin uso)
 │
 ├── Http/Controllers/Billing/
-│   ├── FiscalProfileController.php        — CRUD de perfiles fiscales, upload CSD, upload logo, delete
-│   └── InvoiceController.php              — Dashboard, CRUD facturas, timbrado, cancelación, PDF, XML, toggle facturación
+│   ├── FiscalProfileController.php        — CRUD de perfiles fiscales, onboarding (cuenta compartida), upload CSD, upload logo, delete
+│   ├── InvoiceController.php              — Dashboard, CRUD facturas, timbrado, cancelación, PDF, XML, toggle facturación
+│   └── StampPurchaseController.php        — Compra de timbres (quote, store, return Mercado Pago)
+│
+├── Http/Controllers/Admin/
+│   ├── AdminPacAccountController.php      — Panel de cuentas PAC (solicitudes, activación, credenciales, notas)
+│   ├── AdminStampDashboardController.php  — Panel global de timbres (saldo maestro, KPIs, emisores)
+│   └── AdminStampPurchaseController.php   — Bandeja de revisión + ajustes manuales (100% local para compartidas)
 │
 ├── Http/Requests/Billing/
 │   ├── CancelInvoiceRequest.php           — Validación motivo cancelación + UUID sustitución
@@ -69,21 +78,29 @@ app/
 │   ├── StoreFiscalProfileRequest.php      — Validación RFC, razón social, régimen, CP, email
 │   └── StoreInvoiceRequest.php            — Validación completa de CFDI 4.0 (emisor, receptor, conceptos, impuestos, retenciones)
 │
+├── Http/Requests/Admin/
+│   └── ActivatePacAccountRequest.php      — Validación login_email/password para activar cuenta compartida
+│
 ├── Models/Billing/
-│   ├── FiscalProfile.php                  — RFC emisor vinculado a subcuenta PAC
+│   ├── FiscalProfile.php                  — RFC emisor; pertenece a un PacAccount (N:1)
+│   ├── PacAccount.php                     — Cuenta de login en el PAC (subaccount o shared); password cifrado; is_shared
+│   ├── StampPurchase.php                  — Compra/ajuste de timbres (auditoría + estado)
+│   ├── StampMovement.php                  — Ledger de movimientos de timbres por perfil
 │   └── Invoice.php                        — CFDI 4.0 con todos los campos SAT y timbre fiscal
 │
 ├── Models/
 │   ├── InvoiceItem.php                    — Partidas/conceptos del CFDI
 │   ├── Customer.php                       — Cliente (campos fiscales: tax_id, tax_regime, fiscal_address)
-│   ├── Subscription.php                   — Suscripción (facturacion_habilitada, fiscalProfiles())
+│   ├── Subscription.php                   — Suscripción (facturacion_habilitada, fiscalProfiles(), pacAccounts())
 │   └── Branch.php                         — Sucursal (billingSetting() legacy)
 │
 ├── Services/Billing/
-│   └── SWSapienService.php                — Servicio central: createInvoice, buildPayload, stamp, cancel, uploadCsd, syncCustomerFiscalData, authenticateSubaccount
+│   ├── SWSapienService.php                — Servicio central: createInvoice, buildPayload, stamp, cancel, uploadCsd, authenticatePacAccount, syncCustomerFiscalData
+│   ├── StampPurchaseService.php           — Precios y aplicación de timbres (local para cuentas compartidas)
+│   └── StampMovementService.php           — Backfill del ledger + grantWelcomeStamps (5 timbres de regalo)
 │
 └── Services/SW/
-    └── SWUserService.php                  — Administración de subcuentas PAC: createSubaccountForProfile, listSubaccounts, deactivateSubaccount
+    └── SWUserService.php                  — Cuentas PAC: createSubaccountForAccount, activateSharedAccount, getOwnBalance, getStampsBalance, add/removeStamps, requestSharedAccount
 ```
 
 ### 2.2 Frontend
@@ -128,8 +145,23 @@ database/migrations/
 ├── 2026_06_29_000001_add_cfdi_exportacion_and_retentions_to_invoices_and_items.php — exportacion, retenciones
 ├── 2026_06_29_000002_add_unit_name_and_sku_to_invoice_items.php — unit_name, no_identificacion
 ├── 2026_07_04_000001_add_exchange_rate_and_retentions_json.php  — exchange_rate, retentions JSON
-└── 2026_07_09_000001_add_timbre_fiscal_columns_to_invoices.php  — Timbre fiscal: fecha_timbrado, sello_cfdi, sello_sat, no_certificado_sat, rfc_prov_certif, cadena_original_sat, qr_code_base64
+├── 2026_07_09_000001_add_timbre_fiscal_columns_to_invoices.php  — Timbre fiscal: fecha_timbrado, sello_cfdi, sello_sat, no_certificado_sat, rfc_prov_certif, cadena_original_sat, qr_code_base64
+├── 2026_07_18_000001_create_stamp_pricing_tiers_table.php       — Tramos de precio de timbres
+├── 2026_07_18_000002_create_stamp_purchases_table.php           — Compras/ajustes de timbres
+├── 2026_07_18_000004_add_manifest_columns_to_fiscal_profiles.php — Manifiesto SAT (firma)
+├── 2026_07_22_000002_create_stamp_global_stats_snapshots_table.php — Snapshots de KPIs globales
+├── 2026_07_24_000001_create_stamp_movements_table.php           — Ledger de movimientos de timbres
+├── 2026_08_12_000001_create_pac_accounts_table.php              — Cuentas PAC (subaccount | normal → luego shared)
+├── 2026_08_12_000002_add_pac_account_id_to_fiscal_profiles_table.php — FK pac_account_id en fiscal_profiles
+├── 2026_08_13_000001_create_invoice_folio_counters_table.php     — Contadores atómicos de folio por (branch, serie)
+├── 2026_08_13_000002_create_stamp_reservations_table.php         — Reservas de timbres con customid
+├── 2026_08_13_000003_create_pac_call_logs_table.php              — Auditoría de llamadas al PAC (sanitizada)
+├── 2026_08_13_000004_add_reservation_fields_to_invoices_table.php — requires_manual_review + unique folio
+├── 2026_08_13_000005_make_pac_accounts_shared.php                — subscription_id nullable + is_shared
+└── 2026_08_15_000001_rename_pac_account_type_normal_to_shared.php — normal → shared (enum + datos)
 ```
+
+> **Backfill:** `php artisan pac-accounts:backfill` (idempotente, con `--dry-run` y `--profile=`) crea un `pac_account` tipo `subaccount` por cada `fiscal_profile` con `sw_user_id` legacy y lo vincula. Se ejecutó en dev; en TEST debe correrse antes de la validación end-to-end.
 
 ---
 
@@ -140,10 +172,28 @@ database/migrations/
 ```mermaid
 erDiagram
     Subscription ||--o{ FiscalProfile : "tiene (1:N)"
+    Subscription ||--o{ PacAccount : "tiene (1:N)"
     Subscription ||--o{ Branch : "tiene (1:N)"
     Subscription {
         bigint id PK
         boolean facturacion_habilitada
+    }
+    PacAccount ||--o{ FiscalProfile : "aloja RFCs (1:N)"
+    PacAccount {
+        bigint id PK
+        bigint subscription_id FK "nullable — la compartida no pertenece a una sola suscripción"
+        boolean is_shared "legacy"
+        string provider "sw_sapien"
+        string account_type "subaccount | shared"
+        string sw_user_id "idUser del PAC (si se tiene)"
+        string login_email "credencial de login"
+        string password "(encrypted)"
+        string status "pending_request | pending_activation | active | inactive"
+        bigint requested_by_user_id FK
+        bigint activated_by_user_id FK
+        timestamp requested_at
+        timestamp activated_at
+        text admin_notes
     }
     Branch ||--o{ Invoice : "emite (1:N)"
     Branch {
@@ -154,14 +204,15 @@ erDiagram
     FiscalProfile {
         bigint id PK
         bigint subscription_id FK
+        bigint pac_account_id FK
         string rfc
         string razon_social
         string regimen_fiscal
         string postal_code
         string email
-        string password "(encrypted)"
-        string sw_user_id "ID en SW Sapien"
-        string sw_account_email
+        string password "(encrypted) LEGACY — se eliminará"
+        string sw_user_id "LEGACY — se eliminará"
+        string sw_account_email "LEGACY — se eliminará"
         string certificate_number
         timestamp valid_from
         timestamp valid_to
@@ -207,6 +258,59 @@ erDiagram
         timestamp issued_at
         timestamp canceled_at
     }
+    FiscalProfile ||--o{ StampPurchase : "compra timbres (1:N)"
+    StampPurchase {
+        bigint id PK
+        bigint fiscal_profile_id FK
+        unsigned_integer stamp_quantity
+        decimal unit_price
+        decimal amount_total
+        string status "pending | awaiting_review | approved | rejected | failed | stamps_applied"
+        json pac_stamps_response_raw "snapshot balance_before/expected_balance"
+        timestamp stamps_applied_at
+    }
+    FiscalProfile ||--o{ StampMovement : "ledger (1:N)"
+    StampMovement {
+        bigint id PK
+        bigint fiscal_profile_id FK
+        string type "entry | exit"
+        string description
+        integer quantity
+        integer balance_after
+    }
+    FiscalProfile ||--o{ StampReservation : "reserva timbres (1:N)"
+    StampReservation {
+        bigint id PK
+        bigint fiscal_profile_id FK
+        string reference_type "Invoice (morph)"
+        bigint reference_id
+        string customid "UUID, unique"
+        integer quantity
+        string status "held | confirmed | released | ambiguous | manual_review"
+        unsigned_tinyint attempts
+        json last_pac_response
+        timestamp confirmed_at
+        timestamp released_at
+    }
+    FiscalProfile ||--o{ PacCallLog : "auditoría (1:N)"
+    PacCallLog {
+        bigint id PK
+        bigint fiscal_profile_id FK
+        bigint pac_account_id FK
+        string operation "stamp | reconcile | ..."
+        string customid
+        json request_payload "SANITIZADO (sin password/CSD)"
+        json response_body
+        unsigned_smallint response_status_code
+        unsigned_integer duration_ms
+    }
+    Branch ||--o{ InvoiceFolioCounter : "contador de folio (1:N)"
+    InvoiceFolioCounter {
+        bigint id PK
+        bigint branch_id FK
+        string series "nullable"
+        bigint next_folio
+    }
     InvoiceItem {
         bigint id PK
         bigint invoice_id FK
@@ -246,7 +350,12 @@ erDiagram
 | Origen | Destino | Tipo | Descripción |
 |---|---|---|---|
 | `Subscription` | `FiscalProfile` | HasMany | Una suscripción puede facturar bajo múltiples RFC |
+| `Subscription` | `PacAccount` | HasMany | Una suscripción puede tener una o varias cuentas PAC |
+| `PacAccount` | `FiscalProfile` | HasMany | **Una cuenta PAC aloja varios RFC** (relación N:1 desde el perfil) |
+| `FiscalProfile` | `PacAccount` | BelongsTo | Cada perfil fiscal pertenece a una cuenta PAC |
 | `FiscalProfile` | `Subscription` | BelongsTo | Cada perfil fiscal pertenece a una suscripción |
+| `FiscalProfile` | `StampPurchase` | HasMany | Compras/ajustes de timbres del perfil |
+| `FiscalProfile` | `StampMovement` | HasMany | Ledger de movimientos de timbres |
 | `Invoice` | `Branch` | BelongsTo | Cada factura se emite desde una sucursal |
 | `Invoice` | `FiscalProfile` | BelongsTo | RFC emisor de la factura |
 | `Invoice` | `Customer` | BelongsTo | Cliente receptor (nullable) |
@@ -265,39 +374,51 @@ erDiagram
 
 ## 4. Integración con el PAC (SW Sapien)
 
+### 4.0 Dos tipos de cuenta
+
+| Tipo | Quién la crea | Timbres | Saldo | Activación |
+|---|---|---|---|---|
+| `subaccount` | Nosotros (API dealer, `POST /management/v2/api/dealers/users`) | Se asignan vía API dealer (`addStampsToSubaccount`) | Por usuario (`GET /management/v2/api/dealers/balance/users/{id}` con token dealer) | Automática |
+| `shared` | El revendedor (Conectia), por fuera del sistema | Se gestionan **100% localmente** (wallet por RFC: 5 de regalo + compras + ajustes del admin) | Compartido / pozo — el saldo real (`GET /management/v2/api/users/balance` con token de la propia cuenta, **sin** dealer) **solo lo ve el admin** | Manual por admin (`activateSharedAccount`, valida credenciales contra el PAC) |
+
+**Regla clave:** el timbrado/CSD/cancelación funciona **igual** para ambos tipos — solo cambia **de dónde salen las credenciales** (`PacAccount.login_email/password`) y **cómo se administra el saldo** (subcuentas → PAC en vivo; compartidas → wallet local por RFC). El tipo de cuenta es información administrativa: **nunca se muestra en la UI de cliente** (el cliente solo ve su wallet local).
+
 ### 4.1 Superficies de API
 
 | Superficie | Host (test) | Autenticación | Propósito |
 |---|---|---|---|
-| **Timbrado/Cancelación/CSD** | `services.test.sw.com.mx` | Token de subcuenta (temporal, 2h) | Timbrar CFDI, cancelar, subir CSD |
-| **Management V2** | `api.test.sw.com.mx` | Token dealer (permanente) | Crear/desactivar subcuentas |
+| **Timbrado/Cancelación/CSD** | `services.test.sw.com.mx` | Token de la cuenta PAC (temporal, 2h) | Timbrar CFDI, cancelar, subir CSD |
+| **Management V2** | `api.test.sw.com.mx` | Token dealer (permanente) **o** token de la cuenta (compartida) | Crear/desactivar subcuentas, saldo de la cuenta |
 
 ### 4.2 Autenticación
 
 #### Token dealer (cuenta maestra)
 - Configurado en `SW_SAPIEN_TOKEN` (.env)
-- Se usa **solo** para Management V2 (crear/desactivar subcuentas)
+- Se usa para Management V2 de **subcuentas** (crear/desactivar/asignar timbres)
 - Es permanente, no expira
 
-#### Token de subcuenta
-- Se obtiene autenticando como el sub-usuario: `POST /v2/security/authenticate` con `{user, password}`
-- El `user` es `sw_account_email` (o `email` del `FiscalProfile`)
-- El `password` está encriptado en `fiscal_profiles.password`
+#### Token de cuenta PAC (subcuenta o compartida)
+- Se obtiene autenticando como la cuenta: `POST /v2/security/authenticate` con `{user, password}`
+- El `user` es `pac_account.login_email` (antes `sw_account_email` / `email` del perfil)
+- El `password` está cifrado en `pac_accounts.password` (antes en `fiscal_profiles.password`)
 - Se cachea en Laravel Cache por 110 minutos (el PAC otorga 2h de validez)
-- Se usa para timbrar, cancelar y subir CSD
-- **Clave:** cada subcuenta timbra con su propio CSD y consume sus propios timbres
+- Se usa para timbrar, cancelar y subir CSD — **ambos tipos de cuenta**
+- **Clave:** cada cuenta timbra con el CSD cargado bajo ella; una cuenta compartida comparte el saldo entre todos sus RFCs
 
 ### 4.3 Endpoints del PAC consumidos
 
 | Endpoint | Método | Autenticación | Archivo | Propósito |
 |---|---|---|---|---|
-| `/v3/cfdi33/issue/json/v4` | POST | Subcuenta | `SWSapienService::stamp()` | Timbrar CFDI 4.0 → retorna UUID, XML, QR, sellos |
-| `/cfdi33/cancel/{rfc}/{uuid}/{motivo}/{folioSustitucion}` | POST | Subcuenta | `SWSapienService::cancel()` | Cancelar CFDI |
-| `/certificates/save` | POST | Subcuenta | `SWSapienService::uploadCsd()` | Subir .cer + .key para una subcuenta |
-| `/v2/security/authenticate` | POST | Ninguna (login) | `SWSapienService::authenticateSubaccount()` | Login de subcuenta → obtener token temporal |
-| `/management/v2/api/dealers/users` | POST | Dealer | `SWUserService::createSubaccountForProfile()` | Crear sub-usuario (subcuenta) |
+| `/v3/cfdi33/issue/json/v4` | POST | Cuenta PAC | `SWSapienService::stamp()` | Timbrar CFDI 4.0 → retorna UUID, XML, QR, sellos |
+| `/cfdi33/cancel/{rfc}/{uuid}/{motivo}/{folioSustitucion}` | POST | Cuenta PAC | `SWSapienService::cancel()` | Cancelar CFDI |
+| `/certificates/save` | POST | Cuenta PAC | `SWSapienService::uploadCsd()` | Subir .cer + .key para la cuenta |
+| `/v2/security/authenticate` | POST | Ninguna (login) | `SWSapienService::authenticatePacAccount()` / `SWUserService::authenticateWithCredentials()` | Login de cuenta → token temporal |
+| `/management/v2/api/dealers/users` | POST | Dealer | `SWUserService::createSubaccountForAccount()` | Crear sub-usuario (subcuenta) |
 | `/management/v2/api/dealers/users` | GET | Dealer | `SWUserService::listSubaccounts()` | Listar subcuentas (debug/reconciliación) |
 | `/management/v2/api/dealers/users/{userId}` | PATCH | Dealer | `SWUserService::deactivateSubaccount()` | Desactivar sub-usuario |
+| `/management/v2/api/dealers/users/{userId}/stamps` | POST/DELETE | Dealer | `SWUserService::addStampsToSubaccount()` / `removeStampsFromSubaccount()` | Asignar/retirar timbres (solo subcuentas) |
+| `/management/v2/api/dealers/balance/users/{userId}` | GET | Dealer | `SWUserService::getStampsBalance()` | Saldo de una subcuenta |
+| `/management/v2/api/users/balance` | GET | Token de la cuenta | `SWUserService::getOwnBalance()` | Saldo de una cuenta compartida (sin dealer) |
 
 ### 4.4 Configuración (.env)
 
@@ -307,37 +428,41 @@ SW_SAPIEN_TOKEN=<token_dealer_permanente>
 SW_SAPIEN_MANAGEMENT_ENDPOINT=https://api.test.sw.com.mx
 SW_SAPIEN_MANAGEMENT_USERS_PATH=/management/v2/api/dealers/users
 SW_SAPIEN_DEFAULT_STAMPS=10
+SW_SAPIEN_NORMAL_MIN_PURCHASE=100
 SW_SAPIEN_MOCK=false
 ```
 
 ### 4.5 Conteo de timbres
 
-**Actualmente NO existe conteo local de timbres.** Así funciona hoy:
+**Según el tipo de cuenta:**
 
-1. Al crear una subcuenta en el PAC, se envía `"stamps": 10` (valor fijo de `SW_SAPIEN_DEFAULT_STAMPS`).
-2. El PAC internamente gestiona el saldo de timbres de cada subcuenta. Cuando se acaban, el PAC rechaza el timbrado.
-3. EzyVentas **no consulta** el saldo del PAC en ningún momento.
-4. El dashboard muestra como "Timbres usados" el conteo de facturas `certificadas` en BD local, que **no necesariamente coincide** con el consumo real en el PAC (cancelaciones no descuentan timbre, pero una factura cancelada localmente ya no está `certificada`).
+- **Subcuenta:** el saldo vive en el PAC por usuario. Se consulta con `getStampsBalance(sw_user_id)` (token dealer). El ledger local `stamp_movements` es solo auditoría.
+- **Cuenta compartida (Conectia):** el saldo se administra **100% localmente** por RFC: `stamp_movements` es la **wallet** que bloquea el timbrado (`WalletService::availableBalance` = entradas − salidas − reservas held/ambiguous). El saldo real del PAC (`getOwnBalance()`, token de la cuenta) **solo lo ve el admin**, a nivel de cuenta.
 
-**No existe:**
-- Tabla local de créditos/timbres
-- Endpoint de consulta de saldo al PAC
-- Asignación manual de timbres por suscripción
-- Historial de compras/recargas de timbres
+**Flujo de timbres (cuenta compartida):**
+1. Al registrar un RFC se le otorgan **5 timbres de regalo** (`StampMovementService::grantWelcomeStamps`, idempotente, `metadata.source = 'gift'`).
+2. El suscriptor compra timbres (Mercado Pago o transferencia) o el admin ajusta (agregar/quitar) — mínimo `SW_SAPIEN_NORMAL_MIN_PURCHASE` (100).
+3. Al **aprobar** la compra o aplicar un ajuste manual, `applyStampsToPac()` marca `stamps_applied` → el `StampMovementObserver` crea el movimiento local (entry/exit). **No se llama al PAC ni existe flujo de revendedor.**
+4. Al timbrar, `StampInvoiceAction` verifica la wallet; si no hay timbres → `InsufficientStampsException` (no se puede timbrar). La reserva (`stamp_reservations` + `customid`) asegura que **solo se descuenta 1 timbre si el timbrado fue exitoso**.
+
+**Ya implementado (Fase 2.8–2.13):**
+- Reserva de timbres con `customid`, folios atómicos (`invoice_folio_counters`), `pac_call_logs` sanitizado, `ResolveAmbiguousStampJob`, panel de revisión manual.
+- Reconciliación diaria (`ReconcileSharedAccountBalancesJob`, 04:00): compara `Σ wallet local − regalos` vs saldo real del PAC.
 
 ---
 
 ## 5. Flujo funcional actual (paso a paso)
 
-### 5.1 Alta de suscriptor → subcuenta → perfil fiscal → CSD
+### 5.1 Alta de suscriptor → cuenta PAC (compartida) → perfil fiscal → CSD
 
 ```mermaid
 sequenceDiagram
     actor Usuario
+    actor Admin
     participant Controller as InvoiceController
     participant ProfileCtrl as FiscalProfileController
     participant SWUser as SWUserService
-    participant PAC as SW Sapien Management V2
+    participant PAC as SW Sapien (auth/balance)
     participant SWSapien as SWSapienService
     participant DB as Base de Datos
 
@@ -346,20 +471,35 @@ sequenceDiagram
     Controller->>DB: UPDATE subscriptions SET facturacion_habilitada = true
     Controller-->>Usuario: "Facturación activada"
 
-    Note over Usuario,DB: Paso 2 — Crear perfil fiscal (RFC emisor)
-    Usuario->>ProfileCtrl: POST /billing/settings/fiscal-profiles
+    Note over Usuario,DB: Paso 2 — Crear perfil fiscal (RFC emisor) → se vincula a la cuenta compartida
+    Usuario->>ProfileCtrl: POST /billing/settings/fiscal-profiles (rfc, razon_social, regimen_fiscal, postal_code, email)
     ProfileCtrl->>DB: BEGIN TRANSACTION
-    ProfileCtrl->>DB: INSERT INTO fiscal_profiles (rfc, razon_social, regimen_fiscal, postal_code, email, password)
-    ProfileCtrl->>SWUser: createSubaccountForProfile(profile, email, password)
-    SWUser->>PAC: POST /management/v2/api/dealers/users {taxId, name, email, password, stamps: 10}
-    PAC-->>SWUser: {idUser: "xxx"}
-    SWUser->>DB: UPDATE fiscal_profiles SET sw_user_id, sw_account_email
+    ProfileCtrl->>DB: INSERT INTO fiscal_profiles (sin sw_user_id)
+    alt Existe cuenta compartida ACTIVA (propia o de la plataforma)
+        ProfileCtrl->>DB: fiscal_profiles.pac_account_id = cuenta compartida activa
+    else No hay cuenta compartida activa
+        ProfileCtrl->>SWUser: requestSharedAccount(profile, userId)
+        SWUser->>DB: INSERT INTO pac_accounts (account_type=shared, status=pending_request)
+        SWUser->>DB: fiscal_profiles.pac_account_id = nueva cuenta
+    end
+    ProfileCtrl->>ProfileCtrl: grantWelcomeStamps(profile) → entrada +5 timbres de regalo (metadata.source='gift')
     ProfileCtrl->>DB: COMMIT
-    ProfileCtrl-->>Usuario: "Perfil fiscal creado y vinculado al PAC"
+    ProfileCtrl-->>Usuario: "Paso 1 completado: Datos fiscales registrados. Recibiste 5 timbres de regalo..."
 
-    Note over Usuario,DB: Paso 3 — Subir CSD (opcional, necesario para timbrar)
+    Note over Admin,DB: Paso 3 — El admin coordina con Conectia y activa la cuenta
+    Admin->>PAC: (fuera del sistema) Conectia crea la cuenta y entrega user/password
+    Admin->>Admin: POST admin/pac-accounts/{id}/activate (login_email, password)
+    Admin->>SWUser: activateSharedAccount(account, email, password)
+    SWUser->>PAC: POST /v2/security/authenticate {user, password}
+    PAC-->>SWUser: {token: "jwt..."}
+    SWUser->>PAC: GET /management/v2/api/users/balance (Bearer token cuenta)
+    PAC-->>SWUser: {idUser, stampsBalance, ...}
+    SWUser->>DB: UPDATE pac_accounts SET login_email, password (cifrada), sw_user_id, status=active, activated_at
+    Admin-->>Usuario: (el perfil queda listo para subir CSD)
+
+    Note over Usuario,DB: Paso 4 — Subir CSD (necesario para timbrar)
     Usuario->>ProfileCtrl: POST /billing/settings/fiscal-profiles/upload-csd {.cer, .key, password}
-    ProfileCtrl->>SWSapien: authenticateSubaccount(profile)
+    ProfileCtrl->>SWSapien: authenticatePacAccount(profile) → credenciales de pac_account
     SWSapien->>PAC: POST /v2/security/authenticate {user, password}
     PAC-->>SWSapien: {token: "jwt..."}
     SWSapien->>PAC: POST /certificates/save {b64Cer, b64Key, password, type: "stamp"}
@@ -399,7 +539,7 @@ sequenceDiagram
     Note over Action,PAC: 3. Timbrar
     Action->>Service: stamp(invoice)
     Service->>Service: buildPayload(invoice) → JSON CFDI 4.0
-    Service->>Service: authenticateSubaccount(fiscalProfile)
+    Service->>Service: authenticatePacAccount(fiscalProfile) → credenciales de pac_account
     Service->>PAC: POST /v2/security/authenticate {user, password}
     PAC-->>Service: {token: "jwt..."}
     Service->>PAC: POST /v3/cfdi33/issue/json/v4 (JSON CFDI 4.0)
@@ -432,7 +572,7 @@ sequenceDiagram
     Action->>Action: Validar: invoice.isCertified() → true
     Action->>Action: Cargar invoice.fiscalProfile
     Action->>Service: cancel(invoice, emitterRfc, reason, substitutionUuid)
-    Service->>Service: authenticateSubaccount(fiscalProfile)
+    Service->>Service: authenticatePacAccount(fiscalProfile)
     Service->>PAC: POST /v2/security/authenticate {user, password}
     PAC-->>Service: {token: "jwt..."}
     Service->>PAC: POST /cfdi33/cancel/{rfc}/{uuid}/{motivo}/{folioSustitucion}
@@ -484,23 +624,22 @@ sequenceDiagram
 | Funcionalidad | Ruta | Descripción |
 |---|---|---|
 | Lista de suscriptores | `GET /admin/subscriptions` | Vista admin con todos los suscriptores, filtro por status (activo/expirado/suspendido) |
-| Detalle de suscriptor | `GET /admin/subscriptions/{id}` | Versiones, pagos, usuarios, sucursales, módulos |
-| Editar versión | `PUT /admin/subscriptions/versions/{id}` | Cambiar fechas, precios, items de una versión |
-| Crear versión con pago | `POST /admin/subscriptions/{id}/versions` | Nueva versión con registro de pago |
-| Settings del suscriptor | `POST /admin/subscriptions/{id}/settings` | Actualizar configuración general de la suscripción |
+| Detalle de suscriptor | `GET /admin/subscriptions/{id}` | Versiones, pagos, usuarios, sucursales, módulos + **perfiles fiscales con wallet local y tipo de cuenta** + **tarjeta de cuenta compartida** (saldo PAC real + RFCs vinculados) |
+| Panel global de timbres | `GET /admin/stamps` | Saldo maestro, timbres distribuidos (subcuentas), KPIs, tabla de emisores con wallet local + **tarjeta de cuenta compartida** (saldo PAC real + RFCs) |
+| Bandeja de revisión | `GET /admin/stamps/review-queue` | Compras pendientes de revisión (transferencias, montos grandes) — aprobar/rechazar |
+| Cuentas PAC | `GET /admin/pac-accounts` | Solicitudes de cuentas compartidas, activación con credenciales (valida contra el PAC), actualización de credenciales, notas |
+| Ajustes manuales de timbres | `POST /admin/stamps/manual-adjustment` | Agregar/retirar timbres de un perfil (**100% local** para cuentas compartidas) o registrar compra |
+| Precios de timbres | `GET /admin/stamps/pricing-tiers` | CRUD de tramos de precio por cantidad |
 
-### 7.2 Lo que NO existe
+### 7.2 Lo que NO existe (o está pendiente)
 
 | Funcionalidad | Prioridad | Notas |
 |---|---|---|
-| **Asignar timbres a una suscripción** | 🔴 Crítica | No hay UI ni API para que el admin otorgue/recargue timbres a un suscriptor |
-| **Ver consumo de timbres por suscriptor** | 🔴 Crítica | El admin no puede ver cuántos timbres ha usado cada suscriptor, ni su saldo |
-| **Historial de compras de paquetes de timbres** | 🔴 Alta | No hay modelo/tabla para registrar transacciones de timbres |
-| **Alertas de saldo bajo** | 🟡 Media | No hay notificaciones cuando una subcuenta se acerca a 0 timbres |
-| **Panel de configuración de precios de timbres** | 🟡 Media | No hay plans de timbres (ej: 100 timbres/$X, 1000 timbres/$Y) |
-| **Integración con MercadoPago para compra de timbres** | 🟡 Media | El sistema ya tiene MercadoPago integrado para suscripciones; podría extenderse |
-| **Dashboard admin de facturación global** | 🟡 Media | Vista consolidada de todos los suscriptores: timbres totales, consumo, ingresos por timbres |
-| **Bloqueo automático al agotar timbres** | 🟡 Media | Actualmente el PAC rechaza el timbrado y el error se muestra al usuario, pero no hay bloqueo proactivo |
+| **Alertas de saldo bajo** | 🟡 Media | No hay notificaciones cuando una cuenta se acerca a 0 timbres |
+| **Reserva de timbres / reintentos por timeout** | ✅ Implementado | Fase 2.8–2.13: `stamp_reservations`, `ResolveAmbiguousStampJob`, panel de revisión manual |
+| **Conteo local por perfil (cuentas compartidas)** | ✅ Implementado | `WalletService::availableBalance()` |
+| **Reconciliación periódica cuenta compartida vs PAC** | ✅ Implementado | `ReconcileSharedAccountBalancesJob` diario (04:00): compara wallet local (sin regalos) vs `getOwnBalance()` |
+| **Bloqueo automático al agotar timbres** | ✅ Implementado | `InsufficientStampsException` en `StampInvoiceAction` si la wallet llega a 0 |
 | **Reporte de facturación por suscriptor** | 🟢 Baja | Exportable de facturas emitidas por período |
 
 ---
@@ -511,11 +650,17 @@ sequenceDiagram
 
 ```
 Subscription (1)
-  └── FiscalProfile (N)  — múltiples RFC por suscripción
-        └── SW Sapien Subaccount (1:1)  — cada RFC = una subcuenta en el PAC
-              └── CSD (1:1)  — un par .cer/.key por subcuenta
-              └── Stamps (quota)  — gestionado por el PAC, no localmente
+  ├── PacAccount (N)  — cuentas de login en el PAC (subaccount | shared)
+  │     └── FiscalProfile (N)  — una cuenta aloja VARIOS RFCs (la compartida puede alojar RFCs de varias suscripciones)
+  │           └── CSD (1:1)  — un par .cer/.key por RFC
+  │           └── StampPurchase (N)  — compras/ajustes de timbres
+  │           └── StampMovement (N)  — ledger de movimientos (wallet local)
+  │
+  └── FiscalProfile (N)  — múltiples RFC por suscripción (sin cuenta, legacy/backfill)
 ```
+
+**Antes (Fase 1):** `FiscalProfile (1:1) ── SW Sapien Subaccount` — un RFC = una subcuenta.
+**Ahora (Fase 2):** `PacAccount (1:N) FiscalProfile` — una cuenta puede alojar varios RFC. La **cuenta compartida** (Conectia) puede alojar RFCs de **varias suscripciones** (pool compartido). Las columnas legacy `sw_user_id`, `sw_account_email`, `password` de `fiscal_profiles` **se conservan temporalmente** y se eliminarán en una migración posterior cuando el 100% de los perfiles activos tengan `pac_account_id`.
 
 ### 8.2 Restricciones y validaciones
 
@@ -526,11 +671,14 @@ Subscription (1)
 | RFC: 12-13 caracteres, uppercase | `prepareForValidation()` → `strtoupper()` |
 | CP: exactamente 5 dígitos | `size:5` |
 | Régimen fiscal: catálogo SAT (10 chars máx) | Validación `max:10` |
-| Solo perfiles con `sw_user_id` pueden facturar | `isReadyForInvoicing()` + guard en `create()` |
+| Un `fiscal_profile` puede ligarse a la **cuenta compartida de la plataforma** (RFCs de varias suscripciones) o a una subcuenta de su propia suscripción | Lógica en `storeFiscalProfile`/`requestSharedAccount` + test automatizado |
+| Solo perfiles con cuenta PAC **activa** (o legacy `sw_user_id`) pueden facturar | `scopeReadyForInvoicing()` + guard en `create()`/`edit()` |
 | Solo perfiles activos aparecen en selector de facturación | `scopeActive()` |
 | Si un perfil tiene facturas asociadas → soft-delete (is_active=false) | `FiscalProfileController::destroy()` |
 | Si no tiene facturas → hard-delete | `FiscalProfileController::destroy()` |
-| CSD solo se puede subir si `sw_user_id` existe | Guard en `uploadCsd()` |
+| CSD solo se puede subir si la cuenta PAC está activa | Guard en `uploadCsd()` (`isLinkedToPac()`) |
+| Mínimo de compra de timbres para cuentas compartidas | `CreateStampPurchaseAction` (`SW_SAPIEN_NORMAL_MIN_PURCHASE`, default 100) |
+| Ajustes de timbres (agregar/quitar) en cuentas compartidas son **100% locales** | `manualAdjustment`/`applyStampsToPac` → movimiento en la wallet del RFC (sin PAC) |
 
 ### 8.3 Permisos Spatie
 
@@ -580,7 +728,7 @@ HTTP Request POST /billing/invoices
             └─ SWSapienService::stamp()
                 ├─ SWSapienService::buildPayload()
                 │   └─ Invoice (Model) + InvoiceItem (Model) + FiscalProfile (Model)
-                ├─ SWSapienService::authenticateSubaccount()
+                ├─ SWSapienService::authenticatePacAccount()
                 │   ├─ Cache::remember()           (Laravel Cache)
                 │   └─ Http::post('/v2/security/authenticate')  (HTTP → PAC)
                 ├─ Http::withToken()->post('/v3/cfdi33/issue/json/v4')  (HTTP → PAC)
@@ -588,7 +736,7 @@ HTTP Request POST /billing/invoices
                 └─ Invoice::update()               (uuid, xml_url, sellos, QR, status=certificada)
 ```
 
-### 9.2 Mapa de llamadas — Creación de perfil fiscal + subcuenta
+### 9.2 Mapa de llamadas — Creación de perfil fiscal (cuenta compartida)
 
 ```
 HTTP Request POST /billing/settings/fiscal-profiles
@@ -601,11 +749,25 @@ HTTP Request POST /billing/settings/fiscal-profiles
        │   ├─ $subscription->fiscalProfiles()->create()
        │   │   └─ FiscalProfile (Model)
        │   │
-       │   └─ SWUserService::createSubaccountForProfile()
-       │       ├─ Http::withToken(dealer)->post('/management/v2/api/dealers/users')
-       │       └─ $profile->update(['sw_user_id', 'sw_account_email'])
+       │   ├─ ¿Existe PacAccount compartida ACTIVA (propia o de la plataforma)?
+       │   │   ├─ SÍ → $profile->update(['pac_account_id' => cuenta compartida])
+       │   │   └─ NO → SWUserService::requestSharedAccount(profile, userId)
+       │   │         └─ PacAccount::create(status='pending_request') + link
+       │   │
+       │   ├─ StampMovementService::grantWelcomeStamps(profile) → +5 timbres de regalo
+       │   │
+       │   └─ DB::commit()
        │
-       └─ DB::commit()
+       └─ redirect: "Datos fiscales registrados. Un administrador activará tu cuenta..."
+
+Activación (panel admin) → POST admin/pac-accounts/{id}/activate
+  │
+  └─ AdminPacAccountController::activate()
+       └─ ActivatePacAccountAction::execute()
+            └─ SWUserService::activateSharedAccount()
+                 ├─ Http::post('/v2/security/authenticate')   (valida credenciales)
+                 ├─ Http::withToken(account)->get('/management/v2/api/users/balance')
+                 └─ $account->update([login_email, password, sw_user_id, status='active'])
 ```
 
 ### 9.3 Mapa de llamadas — Subida de CSD
@@ -617,9 +779,9 @@ HTTP Request POST /billing/settings/fiscal-profiles/upload-csd
        │
        └─ SWSapienService::uploadCsd()
             ├─ SWSapienService::extractDerFromPem()       (PEM → DER)
-            ├─ SWSapienService::authenticateSubaccount()
+            ├─ SWSapienService::authenticatePacAccount()   (credenciales de pac_account)
             │   └─ Http::post('/v2/security/authenticate')
-            ├─ Http::withToken(subaccount)->post('/certificates/save')
+            ├─ Http::withToken(account)->post('/certificates/save')
             └─ SWSapienService::processCsdResponse()
                 ├─ SWSapienService::extractCertificateData()
                 │   └─ openssl_x509_parse()               (PHP nativo)
@@ -647,35 +809,35 @@ HTTP Request GET /billing/dashboard
 
 ### 10.1 Gestión de timbres (paquetes, cobro, descuento)
 
-| # | Pregunta | Impacto |
-|---|---|---|
-| 1 | **¿Cómo se venden los timbres?** ¿Por paquete (100, 500, 1000)? ¿Por plan mensual con timbres incluidos? ¿Pay-as-you-go? | Define el modelo de negocio completo del módulo |
-| 2 | **¿Dónde se almacena el saldo de timbres?** ¿Tabla local `stamp_balances` con reconciliación periódica contra el PAC? ¿O se consulta al PAC en tiempo real? | Define la arquitectura de datos y la tolerancia a fallos del PAC |
-| 3 | **¿Quién asigna timbres?** ¿El superadmin manualmente? ¿Automático al pagar una suscripción? ¿Auto-recarga al llegar a N timbres? | Define el flujo de administración y la UX del suscriptor |
-| 4 | **¿Se descuentan timbres al cancelar?** El SAT no devuelve timbres por cancelación. ¿El sistema lo refleja? Actualmente el dashboard descuenta porque la factura deja de estar `certificada`. | Infla artificialmente el conteo de "timbres disponibles" |
-| 5 | **¿Cómo se integra con MercadoPago?** ¿La compra de timbres es un producto separado en MercadoPago? ¿Se usa el mismo `PlatformMercadoPagoService`? | Define la integración de pagos |
-| 6 | **¿El parámetro `stamps: 10` en el alta de subcuenta debe ser configurable?** Actualmente es `SW_SAPIEN_DEFAULT_STAMPS=10`. ¿Debería ser por plan? | Afecta el aprovisionamiento inicial |
+| # | Pregunta | Impacto | Estado |
+|---|---|---|---|
+| 1 | **¿Cómo se venden los timbres?** ¿Por paquete (100, 500, 1000)? ¿Por plan mensual con timbres incluidos? ¿Pay-as-you-go? | Define el modelo de negocio completo del módulo | ✅ Implementado (compra por cantidad con tramos de precio + Mercado Pago / transferencia) |
+| 2 | **¿Dónde se almacena el saldo de timbres?** | Define la arquitectura de datos | ✅ Resuelto: subcuentas → saldo en el PAC en tiempo real; cuentas compartidas → **wallet local por RFC** (`stamp_movements` + `WalletService`); el saldo real del PAC solo lo ve el admin |
+| 3 | **¿Quién asigna timbres?** | Define el flujo de administración y la UX del suscriptor | ✅ Resuelto: subcuentas → automático al aprobar; cuentas compartidas → **el admin agrega/quita localmente** (sin revendedor ni PAC) |
+| 4 | **¿Se descuentan timbres al cancelar?** | Infla artificialmente el conteo de "timbres disponibles" | 🟡 Sin cambios (el SAT no devuelve timbres) |
+| 5 | **¿Cómo se integra con MercadoPago?** | Define la integración de pagos | ✅ Implementado (`CreateStampPurchaseAction` + webhook) |
+| 6 | **¿El parámetro `stamps: 10` en el alta de subcuenta debe ser configurable?** | Afecta el aprovisionamiento inicial | ✅ `SW_SAPIEN_DEFAULT_STAMPS` configurable; para cuentas compartidas el mínimo es `SW_SAPIEN_NORMAL_MIN_PURCHASE` |
 
 ### 10.2 Dashboard y reporting
 
-| # | Pregunta | Impacto |
-|---|---|---|
-| 7 | El selector de fechas del dashboard no filtra nada actualmente. ¿Debe implementarse un filtro real con `start_date`/`end_date`? | La UI insinúa funcionalidad que no existe |
-| 8 | ¿Hace falta un dashboard administrativo global (superadmin) que muestre consumo de timbres por suscriptor? | Influye en las rutas `admin.*` y queries |
+| # | Pregunta | Impacto | Estado |
+|---|---|---|---|
+| 7 | El selector de fechas del dashboard no filtra nada actualmente. ¿Debe implementarse un filtro real con `start_date`/`end_date`? | La UI insinúa funcionalidad que no existe | 🟡 Pendiente |
+| 8 | ¿Hace falta un dashboard administrativo global (superadmin) que muestre consumo de timbres por suscriptor? | Influye en las rutas `admin.*` y queries | ✅ Implementado (`Admin/Stamps/Index.vue` + emisores) |
 
 ### 10.3 Robustez del timbrado
 
-| # | Pregunta | Impacto |
-|---|---|---|
-| 9 | ¿Se necesita job queue con reintentos para el timbrado? Si el PAC está caído, la factura queda en `borrador` sin intentos automáticos posteriores. | Define la resiliencia del sistema |
-| 10 | ¿Se necesita webhook de cancelación? Actualmente la cancelación es síncrona, pero el SAT puede rechazar cancelaciones asíncronamente. | Define si el status `cancelada` es confiable |
+| # | Pregunta | Impacto | Estado |
+|---|---|---|---|
+| 9 | ¿Se necesita job queue con reintentos para el timbrado? | Define la resiliencia del sistema | 🔴 Pendiente — Fase 2.8+ (`fase2-reserva-timbres-customid.md`): `stamp_reservations`, `ResolveAmbiguousStampJob`, `customid` |
+| 10 | ¿Se necesita webhook de cancelación? | Define si el status `cancelada` es confiable | 🟡 Pendiente |
 
-### 10.4 Multi-RFC y subcuentas
+### 10.4 Multi-RFC y cuentas PAC
 
-| # | Pregunta | Impacto |
-|---|---|---|
-| 11 | ¿Hay límite de perfiles fiscales por suscripción? Actualmente no. | Puede requerir validación adicional |
-| 12 | ¿Un mismo RFC puede estar en dos suscripciones distintas? Actualmente el unique constraint es `(subscription_id, rfc)`, así que sí. ¿Es correcto? | Podría causar conflictos en el PAC |
+| # | Pregunta | Impacto | Estado |
+|---|---|---|---|
+| 11 | ¿Hay límite de perfiles fiscales por suscripción? Actualmente no. | Puede requerir validación adicional | 🟡 Pendiente (la cuenta compartida de prueba tenía 145 CSDs; confirmar tope comercial con Conectia) |
+| 12 | ¿Un mismo RFC puede estar en dos suscripciones distintas? Actualmente el unique constraint es `(subscription_id, rfc)`, así que sí. ¿Es correcto? | Podría causar conflictos en el PAC | 🟡 Sin cambios |
 
 ### 10.5 Monetización
 
@@ -686,4 +848,4 @@ HTTP Request GET /billing/dashboard
 
 ---
 
-> **Nota:** Este documento refleja el estado del código al 2026-07-18. Cualquier modificación posterior debe actualizar este archivo.
+> **Nota:** Este documento refleja el estado del código al 2026-08-15 (cuenta compartida + timbres locales). Cualquier modificación posterior debe actualizar este archivo.

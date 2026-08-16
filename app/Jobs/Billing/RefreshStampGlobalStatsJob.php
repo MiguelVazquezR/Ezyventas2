@@ -35,8 +35,14 @@ class RefreshStampGlobalStatsJob implements ShouldQueue
 
     public function handle(SWUserService $swUserService): void
     {
+        // Global stats aggregate dealer subaccounts only — "normal" accounts
+        // have a shared balance that cannot be attributed per profile here.
         $profiles = FiscalProfile::where('is_active', true)
-            ->whereNotNull('sw_user_id')
+            ->whereHas('pacAccount', function ($q) {
+                $q->where('account_type', \App\Enums\PacAccountType::SUBACCOUNT)
+                  ->where('status', \App\Enums\PacAccountStatus::ACTIVE);
+            })
+            ->with('pacAccount')
             ->get();
 
         $totalAssigned = 0;
@@ -46,7 +52,7 @@ class RefreshStampGlobalStatsJob implements ShouldQueue
 
         foreach ($profiles as $profile) {
             try {
-                $balance = $swUserService->getStampsBalance($profile->sw_user_id);
+                $balance = $swUserService->getStampsBalance($profile->pacAccount->sw_user_id);
 
                 $totalAssigned += (int) ($balance['stampsAssigned'] ?? 0);
                 $totalUsed += (int) ($balance['stampsUsed'] ?? 0);
@@ -55,7 +61,7 @@ class RefreshStampGlobalStatsJob implements ShouldQueue
                 $failCount++;
                 Log::warning('RefreshStampGlobalStats: failed to query balance for profile', [
                     'fiscal_profile_id' => $profile->id,
-                    'sw_user_id'        => $profile->sw_user_id,
+                    'sw_user_id'        => $profile->pacAccount?->sw_user_id,
                     'error'             => $e->getMessage(),
                 ]);
                 // Continue with the rest — don't let one failure break the whole job

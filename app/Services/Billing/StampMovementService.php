@@ -19,6 +19,46 @@ use Illuminate\Support\Facades\DB;
 class StampMovementService
 {
     /**
+     * Grant the welcome (gift) stamps for a new fiscal profile.
+     *
+     * Idempotent: a profile only receives the gift once. Gift movements are
+     * flagged with metadata.source = 'gift' so they can be excluded from the
+     * PAC reconciliation (they do not exist in the real account balance —
+     * they are local wallet stamps so the RFC can test the module).
+     *
+     * @return StampMovement|null Null when the profile already has the gift
+     *                            or when the quantity is not positive.
+     */
+    public function grantWelcomeStamps(FiscalProfile $profile, int $quantity = 5): ?StampMovement
+    {
+        if ($quantity <= 0) {
+            return null;
+        }
+
+        // Idempotent — one gift per profile, ever.
+        $alreadyGranted = StampMovement::where('fiscal_profile_id', $profile->id)
+            ->where('metadata->source', 'gift')
+            ->exists();
+
+        if ($alreadyGranted) {
+            return null;
+        }
+
+        $lastBalance = StampMovement::where('fiscal_profile_id', $profile->id)
+            ->latest('id')
+            ->value('balance_after') ?? 0;
+
+        return StampMovement::create([
+            'fiscal_profile_id' => $profile->id,
+            'type'              => 'entry',
+            'description'       => 'Timbres de regalo de bienvenida',
+            'quantity'          => $quantity,
+            'balance_after'     => $lastBalance + $quantity,
+            'metadata'          => ['source' => 'gift'],
+        ]);
+    }
+
+    /**
      * Backfill stamp_movements for all fiscal profiles.
      * Idempotent — skips profiles that already have movements.
      */
@@ -90,11 +130,11 @@ class StampMovementService
 
                 if ($event['type'] === 'purchase') {
                     /** @var StampPurchase $model */
-                    $qty = $model->adjustment_type === 'remove'
-                        ? $model->stamp_quantity
-                        : $model->stamp_quantity;
+                    $qty = $model->stamp_quantity;
 
-                    $movementType = $model->adjustment_type === 'remove' ? 'exit' : 'entry';
+                    // adjustment_type is cast to StampAdjustmentType — compare
+                    // the enum value, never the enum instance, against the string.
+                    $movementType = $model->adjustment_type?->value === 'remove' ? 'exit' : 'entry';
 
                     if ($movementType === 'exit') {
                         $runningBalance -= $qty;

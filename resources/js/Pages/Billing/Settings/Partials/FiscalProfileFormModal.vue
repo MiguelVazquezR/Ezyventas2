@@ -2,6 +2,10 @@
 import { ref } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 
+const props = defineProps({
+    usesSharedAccount: Boolean,
+});
+
 const emit = defineEmits(['success']);
 
 const visible = ref(false);
@@ -92,7 +96,7 @@ const selectPt = {
                     <i class="pi pi-info-circle !text-sm text-blue-500 mt-0.5"></i>
                     <div>
                         <p class="text-[12px] font-medium text-blue-700 dark:text-blue-400 m-0 mb-0.5">
-                            Paso 1 de 3: Vinculación fiscal
+                            {{ props.usesSharedAccount ? 'Paso 1 de 2: Vinculación fiscal' : 'Paso 1 de 3: Vinculación fiscal' }}
                         </p>
                         <p class="text-[12px] text-blue-600/90 dark:text-blue-400/70 m-0 leading-relaxed">
                             Registra tus datos fiscales básicos para conectar tu RFC con nuestro sistema. En el siguiente paso subirás tus Certificados (CSD) para comenzar a emitir facturas.

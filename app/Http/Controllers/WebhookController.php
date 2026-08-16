@@ -136,26 +136,31 @@ class WebhookController extends Controller
 
             // Normal purchase: auto-approve and dispatch PAC job.
             // Double-check master balance in case stamps were depleted between
-            // purchase creation and payment confirmation.
+            // purchase creation and payment confirmation — except for "normal"
+            // accounts, whose stamps are supplied by the reseller externally.
             $stampPurchaseService = app(\App\Services\Billing\StampPurchaseService::class);
-            $balanceCheck = $stampPurchaseService->checkMasterBalance($stampPurchase->stamp_quantity);
+            $isSharedAccount = $stampPurchase->fiscalProfile?->pacAccount?->isShared() ?? false;
 
-            if (! $balanceCheck['sufficient']) {
-                // Master balance insufficient — escalate to admin review instead of
-                // auto-approving so the admin can handle it when balance is replenished.
-                $stampPurchase->update([
-                    'status'        => StampPurchaseStatus::AWAITING_REVIEW,
-                    'review_reason' => 'large_quantity',
-                ]);
+            if (! $isSharedAccount) {
+                $balanceCheck = $stampPurchaseService->checkMasterBalance($stampPurchase->stamp_quantity);
 
-                Log::warning('MP webhook: stamp purchase set to awaiting review — master balance insufficient', [
-                    'stamp_purchase_id' => $stampPurchase->id,
-                    'mp_payment_id'     => $mpPaymentId,
-                    'quantity'          => $stampPurchase->stamp_quantity,
-                    'master_balance'    => $balanceCheck['stampsBalance'],
-                ]);
+                if (! $balanceCheck['sufficient']) {
+                    // Master balance insufficient — escalate to admin review instead of
+                    // auto-approving so the admin can handle it when balance is replenished.
+                    $stampPurchase->update([
+                        'status'        => StampPurchaseStatus::AWAITING_REVIEW,
+                        'review_reason' => 'large_quantity',
+                    ]);
 
-                return response()->json(['status' => 'ok', 'reason' => 'awaiting review — insufficient master balance']);
+                    Log::warning('MP webhook: stamp purchase set to awaiting review — master balance insufficient', [
+                        'stamp_purchase_id' => $stampPurchase->id,
+                        'mp_payment_id'     => $mpPaymentId,
+                        'quantity'          => $stampPurchase->stamp_quantity,
+                        'master_balance'    => $balanceCheck['stampsBalance'],
+                    ]);
+
+                    return response()->json(['status' => 'ok', 'reason' => 'awaiting review — insufficient master balance']);
+                }
             }
 
             $stampPurchase->update([

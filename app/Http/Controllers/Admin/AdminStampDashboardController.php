@@ -60,17 +60,28 @@ class AdminStampDashboardController extends Controller
         $threshold = (int) (\App\Models\SettingDefinition::where('key', 'stamp_large_purchase_threshold')
             ->value('default_value') ?? 1000);
 
-        // Total subaccounts (active fiscal profiles linked to SW Sapien)
-        $totalSubaccounts = FiscalProfile::active()->whereNotNull('sw_user_id')->count();
+        // Total subaccounts (active fiscal profiles linked to an active subaccount-type PAC account)
+        $totalSubaccounts = FiscalProfile::active()
+            ->whereHas('pacAccount', function ($q) {
+                $q->where('account_type', \App\Enums\PacAccountType::SUBACCOUNT)
+                  ->where('status', \App\Enums\PacAccountStatus::ACTIVE);
+            })
+            ->count();
 
         // Sum stampsAssigned across all active subaccounts for the "Timbres distribuidos" KPI
         $totalAssignedFromSubaccounts = null;
         try {
             $totalAssignedFromSubaccounts = 0;
-            $profiles = FiscalProfile::active()->whereNotNull('sw_user_id')->get();
+            $profiles = FiscalProfile::active()
+                ->whereHas('pacAccount', function ($q) {
+                    $q->where('account_type', \App\Enums\PacAccountType::SUBACCOUNT)
+                      ->where('status', \App\Enums\PacAccountStatus::ACTIVE);
+                })
+                ->with('pacAccount')
+                ->get();
             foreach ($profiles as $profile) {
                 try {
-                    $subBalance = $swUserService->getStampsBalance($profile->sw_user_id);
+                    $subBalance = $swUserService->getStampsBalance($profile->pacAccount->sw_user_id);
                     $totalAssignedFromSubaccounts += (int) ($subBalance['stampsAssigned'] ?? 0);
                 } catch (\Exception $e) {
                     continue;
@@ -81,7 +92,7 @@ class AdminStampDashboardController extends Controller
         }
 
         // Fiscal profiles for the Adjust Stamp modal
-        $fiscalProfiles = FiscalProfile::with('subscription')
+        $fiscalProfiles = FiscalProfile::with(['subscription', 'pacAccount'])
             ->active()
             ->get()
             ->map(fn ($profile) => [
@@ -89,6 +100,7 @@ class AdminStampDashboardController extends Controller
                 'rfc'               => $profile->rfc,
                 'razon_social'      => $profile->razon_social,
                 'email'             => $profile->email,
+                'account_type'      => $profile->pacAccount?->account_type?->value,
                 'subscription_name' => $profile->subscription?->business_name,
                 'subscription_email' => $profile->subscription?->contact_email,
             ])
@@ -110,6 +122,41 @@ class AdminStampDashboardController extends Controller
 
         $pendingReviewCount = StampPurchase::where('status', StampPurchaseStatus::AWAITING_REVIEW)->count();
 
+        // Cuentas compartidas (Conectia): saldo real del PAC + RFCs vinculados.
+        $sharedAccounts = [];
+        try {
+            $sharedPacAccounts = \App\Models\Billing\PacAccount::where('account_type', \App\Enums\PacAccountType::SHARED)
+                ->where('status', \App\Enums\PacAccountStatus::ACTIVE)
+                ->with('fiscalProfiles')
+                ->get();
+
+            foreach ($sharedPacAccounts as $sharedAccount) {
+                $realBalance = null;
+                try {
+                    $realBalance = $swUserService->getOwnBalance($sharedAccount);
+                } catch (\Exception $e) {
+                    // best effort
+                }
+
+                $sharedAccounts[] = [
+                    'id'            => $sharedAccount->id,
+                    'login_email'   => $sharedAccount->login_email,
+                    'real_balance'  => $realBalance,
+                    'balance_error' => $realBalance === null,
+                    'rfc_count'     => $sharedAccount->fiscalProfiles->count(),
+                    'rfcs'          => $sharedAccount->fiscalProfiles->map(fn ($p) => [
+                        'id'              => $p->id,
+                        'rfc'             => $p->rfc,
+                        'razon_social'    => $p->razon_social,
+                        'subscription_id' => $p->subscription_id,
+                        'local_balance'   => app(\App\Services\Billing\WalletService::class)->availableBalance($p->id),
+                    ]),
+                ];
+            }
+        } catch (\Throwable $e) {
+            // best effort
+        }
+
         return Inertia::render('Admin/Stamps/Index', [
             'masterBalance'      => $masterBalance,
             'masterBalanceError' => $masterBalanceError,
@@ -123,6 +170,7 @@ class AdminStampDashboardController extends Controller
             'totalStampsSold'    => (int) $revenueStats->total_stamps_sold,
             'pendingReviewCount' => $pendingReviewCount,
             'fiscalProfiles'     => $fiscalProfiles,
+            'sharedAccounts'     => $sharedAccounts,
         ]);
     }
 
@@ -144,12 +192,16 @@ class AdminStampDashboardController extends Controller
 
             try {
                 $profiles = FiscalProfile::active()
-                    ->whereNotNull('sw_user_id')
+                    ->whereHas('pacAccount', function ($q) {
+                        $q->where('account_type', \App\Enums\PacAccountType::SUBACCOUNT)
+                          ->where('status', \App\Enums\PacAccountStatus::ACTIVE);
+                    })
+                    ->with('pacAccount')
                     ->get();
 
                 foreach ($profiles as $profile) {
                     try {
-                        $subBalance = $swUserService->getStampsBalance($profile->sw_user_id);
+                        $subBalance = $swUserService->getStampsBalance($profile->pacAccount->sw_user_id);
                         $totalAssignedFromSubaccounts += (int) ($subBalance['stampsAssigned'] ?? 0);
                         $subaccountCount++;
                     } catch (\Exception $e) {
@@ -228,7 +280,7 @@ class AdminStampDashboardController extends Controller
         $perPage = min((int) $request->input('per_page', 15), 50);
         $search  = $request->input('search', '');
 
-        $query = FiscalProfile::with(['subscription', 'stampPurchases' => fn ($q) => $q->latest()->limit(1)])
+        $query = FiscalProfile::with(['subscription', 'pacAccount', 'stampPurchases' => fn ($q) => $q->latest()->limit(1)])
             ->where('is_active', true);
 
         if ($search) {
@@ -244,10 +296,18 @@ class AdminStampDashboardController extends Controller
         $profiles = $paginator->getCollection()->map(function ($profile) use ($swUserService) {
             $balance = null;
             $balanceError = null;
+            $pacAccount = $profile->pacAccount;
 
-            if ($profile->sw_user_id) {
+            if ($pacAccount && $pacAccount->isActive()) {
                 try {
-                    $balance = $swUserService->getStampsBalance($profile->sw_user_id);
+                    if ($pacAccount->isSubaccount()) {
+                        $balance = $swUserService->getStampsBalance($pacAccount->sw_user_id);
+                    } elseif ($pacAccount->isShared()) {
+                        // Wallet local del RFC — nunca el saldo real del PAC.
+                        $balance = ['stampsBalance' => app(\App\Services\Billing\WalletService::class)->availableBalance($profile->id)];
+                    } else {
+                        $balance = $swUserService->getOwnBalance($pacAccount);
+                    }
                 } catch (\Exception $e) {
                     $balanceError = 'No se pudo consultar';
                 }
@@ -259,7 +319,9 @@ class AdminStampDashboardController extends Controller
                 'id'                 => $profile->id,
                 'rfc'                => $profile->rfc,
                 'razon_social'       => $profile->razon_social,
-                'sw_user_id'         => $profile->sw_user_id,
+                'sw_user_id'         => $pacAccount?->sw_user_id,
+                'account_type'       => $pacAccount?->account_type?->value,
+                'account_status'     => $pacAccount?->status?->value,
                 'is_active'          => $profile->is_active,
                 'subscription_name'  => $profile->subscription?->commercial_name,
                 'subscription_id'    => $profile->subscription_id,

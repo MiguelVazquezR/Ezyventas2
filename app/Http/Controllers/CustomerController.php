@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
 use App\Http\Requests\StoreCustomerRequest;
+use App\Http\Requests\UpdateCustomerPhoneRequest;
 use App\Http\Requests\UpdateCustomerRequest;
 use App\Models\CashRegister;
 use App\Models\Customer;
@@ -169,6 +170,21 @@ class CustomerController extends Controller implements HasMiddleware
 
         $customer->update($data);
         return redirect()->route('customers.index')->with('success', 'Cliente actualizado con éxito.');
+    }
+
+    /**
+     * Actualiza únicamente el teléfono del cliente (usado desde el modal
+     * de impresión para enviar el ticket por WhatsApp).
+     */
+    public function updatePhone(UpdateCustomerPhoneRequest $request, Customer $customer)
+    {
+        $customer->update(['phone' => $request->validated()['phone']]);
+
+        return response()->json([
+            'success' => true,
+            'phone' => $customer->phone,
+            'message' => 'Teléfono actualizado con éxito.',
+        ]);
     }
 
     public function adjustBalance(Request $request, Customer $customer)

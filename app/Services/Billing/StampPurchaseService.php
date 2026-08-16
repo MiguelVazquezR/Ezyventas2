@@ -82,10 +82,13 @@ class StampPurchaseService
     }
 
     /**
-     * Apply stamps to the PAC subaccount for a given purchase.
+     * Apply stamps to the PAC for a given purchase.
      *
-     * For manual_adjustment with adjustment_type = 'remove', calls removeStampsFromSubaccount.
-     * For all other cases (purchases, manual add), calls addStampsToSubaccount.
+     * - For subaccount-type accounts: applies via the dealer API
+     *   (addStampsToSubaccount / removeStampsFromSubaccount), exactly as today.
+     * - For shared-type accounts: stamps are managed locally (wallet).
+     *   The purchase is marked as stamps_applied and the
+     *   StampMovementObserver records the entry/exit locally.
      *
      * This method is idempotent: if the purchase is already stamps_applied, it returns early.
      *
@@ -102,24 +105,39 @@ class StampPurchaseService
         }
 
         $fiscalProfile = $purchase->fiscalProfile;
+        $pacAccount    = $fiscalProfile?->pacAccount;
 
-        if (! $fiscalProfile || ! $fiscalProfile->sw_user_id) {
+        if (! $fiscalProfile || ! $pacAccount || ! $pacAccount->isActive()) {
             throw new \RuntimeException(
                 'El RFC no está vinculado al servicio de timbrado. Sincroniza tu información fiscal primero.'
             );
         }
 
+        // Shared accounts: stamps are managed locally (wallet). Marking the
+        // purchase as stamps_applied lets the StampMovementObserver record
+        // the movement — no PAC call, no reseller assignment.
+        if ($pacAccount->isShared()) {
+            $purchase->update([
+                'status'                  => \App\Enums\StampPurchaseStatus::STAMPS_APPLIED,
+                'stamps_applied_at'       => now(),
+                'pac_stamps_response_raw' => ['local' => true, 'applied_at' => now()->toISOString()],
+            ]);
+
+            return;
+        }
+
+        // Subaccount path (unchanged behavior, but reads sw_user_id from the account)
         $comment = $this->buildPacComment($purchase);
 
         if ($purchase->isManualAdjustment() && $purchase->adjustment_type?->value === 'remove') {
             $response = $this->swUserService->removeStampsFromSubaccount(
-                $fiscalProfile->sw_user_id,
+                $pacAccount->sw_user_id,
                 $purchase->stamp_quantity,
                 $comment,
             );
         } else {
             $response = $this->swUserService->addStampsToSubaccount(
-                $fiscalProfile->sw_user_id,
+                $pacAccount->sw_user_id,
                 $purchase->stamp_quantity,
                 $comment,
             );
@@ -134,6 +152,7 @@ class StampPurchaseService
         Log::info('Stamps applied to PAC', [
             'stamp_purchase_id'  => $purchase->id,
             'fiscal_profile_id'  => $fiscalProfile->id,
+            'pac_account_id'     => $pacAccount->id,
             'quantity'           => $purchase->stamp_quantity,
             'adjustment_type'    => $purchase->adjustment_type?->value,
         ]);

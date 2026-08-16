@@ -9,17 +9,11 @@ const props = defineProps({
     certifiedInvoices: { type: Number, default: 0 },
     cancelationPendingInvoices: { type: Number, default: 0 },
     canceledInvoices: { type: Number, default: 0 },
-    filters: { type: Object, default: () => ({}) },
-    facturacionHabilitada: { type: Boolean, default: false },
 });
 
 // --- HELPERS ---
 const formatNumber = (value) =>
     new Intl.NumberFormat('es-MX').format(value || 0);
-
-const tagPt = {
-    root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' },
-};
 </script>
 
 <template>
@@ -28,34 +22,8 @@ const tagPt = {
         <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
 
             <!-- ════════════════════════════════════════
-                 Disabled state
+                 Header
                  ════════════════════════════════════════ -->
-            <div
-                v-if="!facturacionHabilitada"
-                class="bg-white dark:bg-[#232323] p-8 lg:p-10 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col items-center text-center"
-            >
-                <div class="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center mb-5 border border-amber-100 dark:border-amber-900/30">
-                    <i class="pi pi-exclamation-triangle !text-2xl text-amber-500"></i>
-                </div>
-                <h1 class="text-2xl md:text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0 mb-3">
-                    Facturación no activada
-                </h1>
-                <p class="text-sm text-gray-500 dark:text-gray-400 m-0 max-w-md mb-8">
-                    Agrega un emisor fiscal para poder generar facturas y llevar un control de tus timbres fiscales.
-                </p>
-                <Link
-                    :href="route('billing.settings.index')"
-                    class="inline-flex items-center gap-2 !rounded-full !px-8 !text-sm !font-bold !bg-primary-500 !text-white !py-3 no-underline hover:!bg-primary-600 transition-colors"
-                >
-                    <i class="pi pi-cog !text-sm"></i>
-                    Ir a configuración de facturación
-                </Link>
-            </div>
-
-            <!-- ════════════════════════════════════════
-                 Header (only when billing is enabled)
-                 ════════════════════════════════════════ -->
-            <div v-if="facturacionHabilitada">
             <div class="mb-6">
                 <h1 class="text-4xl md:text-5xl font-light tracking-tight text-gray-900 dark:text-white m-0">
                     Facturación
@@ -146,16 +114,16 @@ const tagPt = {
                         </div>
                         <div v-else-if="profile.balance" class="grid grid-cols-3 gap-3 p-3 rounded-2xl bg-gray-50 dark:bg-[#1a1a1a]">
                             <div class="text-center">
-                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Timbres disponibles</p>
-                                <p class="text-xl font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsBalance ?? '—' }}</p>
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Timbres adquiridos</p>
+                                <p class="text-xl font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsAssigned ?? '—' }}</p>
                             </div>
                             <div class="text-center">
                                 <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Timbres usados</p>
                                 <p class="text-xl font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsUsed ?? '—' }}</p>
                             </div>
                             <div class="text-center">
-                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Timbres asignados</p>
-                                <p class="text-xl font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsAssigned ?? '—' }}</p>
+                                <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Timbres disponibles</p>
+                                <p class="text-xl font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsBalance ?? '—' }}</p>
                             </div>
                         </div>
 
@@ -190,60 +158,6 @@ const tagPt = {
                     </div>
                 </div>
             </div>
-
-            <!-- Legacy table (fallback — now hidden in favor of cards above) -->
-            <div v-if="false" class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a]">
-                <DataTable
-                    :value="fiscalProfiles"
-                    stripedRows
-                    class="!border-none !bg-transparent"
-                    :pt="{
-                        root: { class: '!bg-transparent !border-none' },
-                        thead: { class: '!bg-transparent' },
-                        th: { class: '!bg-gray-50 dark:!bg-[#1a1a1a] !border-none !py-3 !px-5 !text-[10px] !uppercase !tracking-widest !font-bold !text-gray-500 first:!rounded-l-2xl last:!rounded-r-2xl' },
-                        td: { class: '!border-b !border-gray-50 dark:!border-[#2a2a2a] !py-4 !px-5 !text-sm !text-gray-900 dark:!text-gray-100' },
-                        tbody: { class: '!border-none' },
-                    }"
-                >
-                    <Column field="rfc" header="RFC">
-                        <template #body="{ data }">
-                            <span class="font-medium text-gray-900 dark:text-white">{{ data.rfc }}</span>
-                        </template>
-                    </Column>
-                    <Column field="razon_social" header="Razón social">
-                        <template #body="{ data }">
-                            <span class="font-medium">{{ data.razon_social }}</span>
-                        </template>
-                    </Column>
-                    <Column field="regimen_fiscal" header="Régimen fiscal">
-                        <template #body="{ data }">
-                            <span class="text-gray-500 dark:text-gray-400">{{ data.regimen_fiscal }}</span>
-                        </template>
-                    </Column>
-                    <Column header="Estado PAC">
-                        <template #body="{ data }">
-                            <Tag
-                                :value="data.sw_user_id ? 'Activo' : 'Pendiente'"
-                                :severity="data.sw_user_id ? 'success' : 'warn'"
-                                :pt="tagPt"
-                            />
-                        </template>
-                    </Column>
-                    <Column header="Acciones">
-                        <template #body>
-                            <Link
-                                :href="route('billing.settings.index')"
-                                class="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-primary-500 transition-colors no-underline"
-                            >
-                                <i class="pi pi-cog !text-[10px]"></i>
-                                Administrar
-                            </Link>
-                        </template>
-                    </Column>
-                </DataTable>
-            </div>
-
-            </div> <!-- closes v-if="facturacionHabilitada" -->
 
         </div>
     </AppLayout>

@@ -5,15 +5,20 @@ namespace App\Http\Controllers\Billing;
 use App\Actions\Billing\CancelInvoiceAction;
 use App\Actions\Billing\CreateInvoiceAction;
 use App\Actions\Billing\UpdateInvoiceAction;
+use App\Enums\TransactionChannel;
+use App\Enums\TransactionStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\CancelInvoiceRequest;
 use App\Http\Requests\Billing\StoreInvoiceRequest;
 use App\Http\Requests\Billing\UpdateInvoiceRequest;
 use App\Models\Billing\Invoice;
 use App\Models\Product;
+use App\Models\ProductAttribute;
 use App\Models\Service;
+use App\Models\Transaction;
 use App\Services\Billing\SatConsultationService;
 use App\Services\SW\SWUserService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -28,7 +33,7 @@ class InvoiceController extends Controller implements HasMiddleware
     {
         return [
             new Middleware('can:invoices.access', only: ['index']),
-            new Middleware('can:invoices.create', only: ['create', 'store']),
+            new Middleware('can:invoices.create', only: ['create', 'store', 'salesSearch', 'salesShow']),
             new Middleware('can:invoices.see_details', only: ['show']),
             new Middleware('can:invoices.edit', only: ['edit', 'update']),
             new Middleware('can:invoices.cancel', only: ['cancel']),
@@ -44,22 +49,8 @@ class InvoiceController extends Controller implements HasMiddleware
         $user = Auth::user();
         $subscription = $user->branch?->subscription;
 
-        $facturacionHabilitada = $subscription?->facturacion_habilitada ?? false;
-
-        // If billing is not enabled, return safe defaults — no PAC calls needed
-        if (! $facturacionHabilitada) {
-            return Inertia::render('Billing/Dashboard/Index', [
-                'fiscalProfiles'             => collect(),
-                'draftInvoices'              => 0,
-                'certifiedInvoices'          => 0,
-                'cancelationPendingInvoices' => 0,
-                'canceledInvoices'           => 0,
-                'facturacionHabilitada'      => false,
-            ]);
-        }
-
         $fiscalProfiles = $subscription
-            ? $subscription->fiscalProfiles()->orderBy('created_at', 'desc')->get()
+            ? $subscription->fiscalProfiles()->with('pacAccount')->orderBy('created_at', 'desc')->get()
             : collect();
 
         $draftInvoices = Invoice::where('branch_id', $user->branch_id)->draft()->count();
@@ -72,16 +63,7 @@ class InvoiceController extends Controller implements HasMiddleware
         // Per-fiscal-profile KPIs with live stamp balances
         $swUserService = app(SWUserService::class);
         $fiscalProfilesData = $fiscalProfiles->map(function ($profile) use ($swUserService, $user, $request) {
-            $balance = null;
-            $balanceError = null;
-
-            if ($profile->sw_user_id) {
-                try {
-                    $balance = $swUserService->getStampsBalance($profile->sw_user_id);
-                } catch (\Exception $e) {
-                    $balanceError = 'No se pudo consultar el saldo en este momento.';
-                }
-            }
+            [$balance, $balanceError] = $profile->stampBalance($swUserService);
 
             $invoiceQuery = Invoice::where('branch_id', $user->branch_id)
                 ->where('fiscal_profile_id', $profile->id);
@@ -90,6 +72,8 @@ class InvoiceController extends Controller implements HasMiddleware
                 'id'                      => $profile->id,
                 'rfc'                     => $profile->rfc,
                 'razon_social'            => $profile->razon_social,
+                'is_active'               => $profile->is_active,
+                'account_status'          => $profile->isLinkedToPac() ? 'active' : 'pending',
                 'balance'                 => $balance,
                 'balanceError'            => $balanceError,
                 'draftCount'              => (clone $invoiceQuery)->draft()->count(),
@@ -105,7 +89,6 @@ class InvoiceController extends Controller implements HasMiddleware
             'certifiedInvoices'          => $certifiedInvoices,
             'cancelationPendingInvoices' => $cancelationPendingInvoices,
             'canceledInvoices'           => $canceledInvoices,
-            'facturacionHabilitada'      => true,
         ]);
     }
 
@@ -167,21 +150,31 @@ class InvoiceController extends Controller implements HasMiddleware
         $user = Auth::user();
         $subscription = $user->branch?->subscription;
 
-        $facturacionHabilitada = $subscription?->facturacion_habilitada ?? false;
+        $billingEnabled = $subscription?->billingEnabled() ?? false;
 
-        // Only fetch profiles when billing is enabled and there are active profiles with PAC subaccounts
-        $fiscalProfiles = $facturacionHabilitada
-            ? ($subscription?->fiscalProfiles()->active()->whereNotNull('sw_user_id')->get(['id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code']) ?? [])
+        // Only fetch profiles when billing is enabled and there are profiles
+        // ready for invoicing (linked to an active PAC account).
+        $fiscalProfiles = $billingEnabled
+            ? ($subscription?->fiscalProfiles()->with('pacAccount:id,account_type')->readyForInvoicing()->get(['id', 'pac_account_id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code', 'manifest_signed_at', 'certificate_number']) ?? [])
             : [];
 
-        $hasFiscalProfiles = $facturacionHabilitada
-            && ($subscription?->fiscalProfiles()->active()->whereNotNull('sw_user_id')->exists() ?? false);
+        $hasFiscalProfiles = $billingEnabled
+            && ($subscription?->fiscalProfiles()->readyForInvoicing()->exists() ?? false);
+
+        // Facturas certificadas PPD para el buscador de "Documentos relacionados" (CFDI de pago)
+        $ppdInvoices = Invoice::forBranch($user->branch_id)
+            ->certified()
+            ->where('payment_method', 'PPD')
+            ->where('tipo_comprobante', 'I')
+            ->whereNull('canceled_at')
+            ->orderByDesc('issued_at')
+            ->get(['id', 'fiscal_profile_id', 'customer_id', 'series', 'folio', 'uuid', 'total', 'currency', 'receiver_rfc', 'receiver_legal_name', 'issued_at']);
 
         return Inertia::render('Billing/Invoices/Create', [
             'customers'            => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
             'fiscalProfiles'       => $fiscalProfiles,
             'hasFiscalProfiles'    => $hasFiscalProfiles,
-            'facturacionHabilitada' => $facturacionHabilitada,
+            'ppdInvoices'          => $ppdInvoices,
             'products'             => Product::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'sku', 'selling_price', 'sat_product_code', 'sat_unit_code']),
             'services'             => Service::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'base_price', 'sat_product_code', 'sat_unit_code']),
         ]);
@@ -223,20 +216,29 @@ class InvoiceController extends Controller implements HasMiddleware
                 ->with('error', 'Solo las prefacturas pueden editarse. Una factura timbrada no se puede modificar.');
         }
 
-        $invoice->load(['items', 'customer', 'fiscalProfile']);
+        $invoice->load(['items', 'customer', 'fiscalProfile', 'transaction.customer']);
 
         $user = Auth::user();
         $subscription = $user->branch?->subscription;
 
-        $fiscalProfiles = $subscription?->fiscalProfiles()->active()
-            ->whereNotNull('sw_user_id')
-            ->get(['id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code']) ?? collect();
+        $fiscalProfiles = $subscription?->fiscalProfiles()->with('pacAccount:id,account_type')->readyForInvoicing()
+            ->get(['id', 'pac_account_id', 'rfc', 'razon_social', 'regimen_fiscal', 'postal_code', 'manifest_signed_at', 'certificate_number']) ?? collect();
+
+        // Facturas certificadas PPD para el buscador de "Documentos relacionados" (CFDI de pago)
+        $ppdInvoices = Invoice::forBranch($user->branch_id)
+            ->certified()
+            ->where('payment_method', 'PPD')
+            ->where('tipo_comprobante', 'I')
+            ->whereNull('canceled_at')
+            ->orderByDesc('issued_at')
+            ->get(['id', 'fiscal_profile_id', 'customer_id', 'series', 'folio', 'uuid', 'total', 'currency', 'receiver_rfc', 'receiver_legal_name', 'issued_at']);
 
         return Inertia::render('Billing/Invoices/Edit', [
             'invoice'          => $invoice,
             'customers'        => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
             'fiscalProfiles'   => $fiscalProfiles,
             'hasFiscalProfiles' => $fiscalProfiles->isNotEmpty(),
+            'ppdInvoices'      => $ppdInvoices,
             'products'         => Product::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'sku', 'selling_price', 'sat_product_code', 'sat_unit_code']),
             'services'         => Service::whereHas('branches', fn($q) => $q->where('branches.id', $user->branch_id))->orderBy('name')->get(['id', 'name', 'base_price', 'sat_product_code', 'sat_unit_code']),
         ]);
@@ -264,10 +266,149 @@ class InvoiceController extends Controller implements HasMiddleware
      */
     public function show(Invoice $invoice): Response
     {
-        $invoice->load(['items', 'customer', 'branch', 'fiscalProfile']);
+        $invoice->load(['items', 'customer', 'branch', 'fiscalProfile', 'transaction:id,folio,status']);
 
         return Inertia::render('Billing/Invoices/Show', [
             'invoice' => $invoice,
+        ]);
+    }
+
+    /**
+     * Search POS sales available for invoicing (JSON — used by the invoice form).
+     *
+     * Only completed or delivered-unpaid sales that are fully paid, belong to
+     * the current branch and have no linked invoice are returned.
+     */
+    public function salesSearch(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+        $search = trim((string) $request->input('search', ''));
+
+        // Progressive loading: the form requests pages of 10 rows.
+        $limit = (int) $request->input('limit', 10);
+        $limit = min(max($limit, 1), 50);
+        $offset = (int) $request->input('offset', 0);
+
+        $sales = Transaction::query()
+            ->where('branch_id', $user->branch_id)
+            ->whereIn('status', [TransactionStatus::COMPLETED, TransactionStatus::DELIVERED_UNPAID])
+            ->where('channel', '!=', TransactionChannel::BALANCE_PAYMENT)
+            ->uninvoiced()
+            ->with(['customer:id,name'])
+            ->withSum('payments as total_paid_sum', 'amount')
+            ->when($search !== '', function ($query) use ($search) {
+                // Tokenized matching: every word must match the folio or the
+                // customer name, so partial/typo queries still find sales.
+                $terms = preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY) ?: [$search];
+                $query->where(function ($query) use ($terms) {
+                    foreach ($terms as $term) {
+                        $query->where(function ($sub) use ($term) {
+                            $sub->where('folio', 'LIKE', "%{$term}%")
+                                ->orWhereHas('customer', fn ($q) => $q->where('name', 'LIKE', "%{$term}%"));
+                        });
+                    }
+                });
+            })
+            ->orderByDesc('created_at')
+            ->skip($offset)
+            ->take($limit)
+            ->get()
+            ->filter(fn (Transaction $transaction) => (float) $transaction->total - (float) $transaction->total_paid_sum <= 0.01)
+            ->map(fn (Transaction $transaction) => [
+                'id'            => $transaction->id,
+                'folio'         => $transaction->folio,
+                'total'         => (float) $transaction->total,
+                'customer_name' => $transaction->customer?->name,
+                'created_at'    => $transaction->created_at?->toIso8601String(),
+            ])
+            ->values();
+
+        return response()->json($sales);
+    }
+
+    /**
+     * Full POS sale detail in the shape the invoice form needs (JSON).
+     *
+     * Items come with SAT catalog codes resolved from the itemable
+     * (Product, Service or ProductAttribute), and payments carry the
+     * payment method for the FormaPago auto-fill.
+     */
+    public function salesShow(Transaction $transaction): JsonResponse
+    {
+        $user = Auth::user();
+
+        if ($transaction->branch_id !== $user->branch_id) {
+            abort(404);
+        }
+
+        if (! in_array($transaction->status, [TransactionStatus::COMPLETED, TransactionStatus::DELIVERED_UNPAID], true)) {
+            abort(422, 'Esta venta no se puede facturar porque no está completada.');
+        }
+
+        if ($transaction->invoiced) {
+            abort(422, 'Esta venta ya tiene una factura relacionada.');
+        }
+
+        if ($transaction->remaining_due > 0.01) {
+            abort(422, 'Esta venta tiene pagos pendientes y no se puede facturar.');
+        }
+
+        $transaction->load([
+            'customer:id,name,company_name,tax_id,tax_regime,address,fiscal_address',
+            'items.itemable',
+            'payments',
+        ]);
+
+        $items = $transaction->items->map(function ($item) {
+            $itemable = $item->itemable;
+            $catalogId = null;
+            $catalogType = null;
+
+            // Variants (ProductAttribute) inherit the SAT codes from their parent product.
+            if ($itemable instanceof ProductAttribute) {
+                $itemable = $itemable->product;
+            }
+
+            if ($itemable instanceof Product) {
+                $catalogId = $itemable->id;
+                $catalogType = 'product';
+            } elseif ($itemable instanceof Service) {
+                $catalogId = $itemable->id;
+                $catalogType = 'service';
+            }
+
+            return [
+                'description'       => $item->description,
+                'quantity'          => (float) $item->quantity,
+                'unit_price'        => (float) $item->unit_price,
+                'discount_amount'   => (float) ($item->discount_amount ?? 0),
+                'sat_product_code'  => (string) ($itemable->sat_product_code ?? ''),
+                'sat_unit_code'     => (string) ($itemable->sat_unit_code ?? 'H87'),
+                'sku'               => $itemable->sku ?? null,
+                'catalog_id'        => $catalogId,
+                'catalog_type'      => $catalogType,
+            ];
+        });
+
+        return response()->json([
+            'id'         => $transaction->id,
+            'folio'      => $transaction->folio,
+            'total'      => (float) $transaction->total,
+            'created_at' => $transaction->created_at?->toIso8601String(),
+            'customer'   => $transaction->customer ? [
+                'id'             => $transaction->customer->id,
+                'name'           => $transaction->customer->name,
+                'company_name'   => $transaction->customer->company_name,
+                'tax_id'         => $transaction->customer->tax_id,
+                'tax_regime'     => $transaction->customer->tax_regime,
+                'fiscal_address' => $transaction->customer->fiscal_address,
+                'address'        => $transaction->customer->address,
+            ] : null,
+            'items'      => $items->values(),
+            'payments'   => $transaction->payments->map(fn ($payment) => [
+                'method' => $payment->payment_method->value ?? (string) $payment->payment_method,
+                'amount' => (float) $payment->amount,
+            ])->values(),
         ]);
     }
 
@@ -443,26 +584,55 @@ class InvoiceController extends Controller implements HasMiddleware
 
     /**
      * Group retained taxes (retenciones) by Impuesto for the PDF summary.
+     *
+     * Handles both the multi-retention array (retentions JSON column)
+     * and legacy single retention fields (retained_tax_type/amount).
      */
     private function groupRetentionsByType(Invoice $invoice): array
     {
         $groups = [];
 
         foreach ($invoice->items as $item) {
-            if (! $item->retained_tax_type || (float) $item->retained_tax_amount <= 0) {
-                continue;
+            $allRetentions = [];
+
+            // Multi-retention array (new format — takes precedence)
+            if (! empty($item->retentions) && is_array($item->retentions)) {
+                foreach ($item->retentions as $ret) {
+                    $retType   = $ret['type'] ?? $ret['impuesto'] ?? null;
+                    $retAmount = (float) ($ret['amount'] ?? $ret['importe'] ?? 0);
+                    $retRate   = (float) ($ret['rate'] ?? 0);
+                    if ($retType && $retAmount > 0) {
+                        $allRetentions[] = [
+                            'impuesto'   => $retType,
+                            'importe'    => $retAmount,
+                            'tasaOCuota' => $retRate,
+                        ];
+                    }
+                }
             }
 
-            $key = $item->retained_tax_type;
-
-            if (! isset($groups[$key])) {
-                $groups[$key] = [
-                    'impuesto' => $item->retained_tax_type,
-                    'importe'  => 0.0,
+            // Legacy single retention field — only used when no multi-retention array
+            if (empty($allRetentions) && $item->retained_tax_type && (float) $item->retained_tax_amount > 0) {
+                $allRetentions[] = [
+                    'impuesto'   => $item->retained_tax_type,
+                    'importe'    => (float) $item->retained_tax_amount,
+                    'tasaOCuota' => (float) ($item->retained_tax_rate ?: 0),
                 ];
             }
 
-            $groups[$key]['importe'] = round($groups[$key]['importe'] + (float) $item->retained_tax_amount, 2);
+            foreach ($allRetentions as $ret) {
+                $key = $ret['impuesto'];
+
+                if (! isset($groups[$key])) {
+                    $groups[$key] = [
+                        'impuesto'   => $ret['impuesto'],
+                        'importe'    => 0.0,
+                        'tasaOCuota' => $ret['tasaOCuota'] ?? 0.0,
+                    ];
+                }
+
+                $groups[$key]['importe'] = round($groups[$key]['importe'] + $ret['importe'], 2);
+            }
         }
 
         return array_values($groups);
@@ -477,18 +647,7 @@ class InvoiceController extends Controller implements HasMiddleware
         $user = Auth::user();
         $subscription = $user->branch?->subscription;
 
-        $facturacionHabilitada = $subscription?->facturacion_habilitada ?? false;
-
-        if (! $facturacionHabilitada) {
-            return Inertia::render('Billing/Settings/Index', [
-                'fiscalProfiles'        => ['data' => [], 'total' => 0, 'per_page' => 20],
-                'filters'               => [],
-                'facturacionHabilitada' => false,
-                'ourBankAccounts'       => [],
-            ]);
-        }
-
-        $query = $subscription->fiscalProfiles();
+        $query = $subscription->fiscalProfiles()->with('pacAccount');
 
         // Search across RFC and razón social
         if ($request->filled('search')) {
@@ -514,13 +673,20 @@ class InvoiceController extends Controller implements HasMiddleware
         foreach ($paginated as $profile) {
             $profile->csd_status = $profile->certificate_number ? 'Activo' : 'Faltante';
             $profile->stamps_available = null;
-            if ($profile->sw_user_id) {
-                try {
-                    $balance = $swUserService->getStampsBalance($profile->sw_user_id);
-                    $profile->stamps_available = $balance['stampsBalance'] ?? 0;
-                } catch (\Exception $e) {
-                    $profile->stamps_available = null;
-                }
+            $profile->stamps_assigned  = null;
+            $profile->stamps_used      = null;
+            $profile->stamps_local     = false;
+            $pacAccount = $profile->pacAccount;
+
+            // The account type is administrative — hidden from the client payload.
+            $pacAccount?->makeHidden(['account_type']);
+
+            [$balance] = $profile->stampBalance($swUserService);
+            if ($balance) {
+                $profile->stamps_available = $balance['stampsBalance'] ?? null;
+                $profile->stamps_assigned  = $balance['stampsAssigned'] ?? null;
+                $profile->stamps_used      = $balance['stampsUsed'] ?? null;
+                $profile->stamps_local     = (bool) ($balance['local'] ?? false);
             }
         }
 
@@ -528,11 +694,21 @@ class InvoiceController extends Controller implements HasMiddleware
             $q->where('branch_id', 1)->where('is_favorite', true);
         })->get();
 
+        // New fiscal profiles are always linked to a shared PAC account, so
+        // the step wizard shows 2 steps (no manifest) for shared accounts.
+        $usesSharedAccount = (bool) (
+            $subscription->pacAccounts()
+                ->where('account_type', \App\Enums\PacAccountType::SHARED)
+                ->where('status', \App\Enums\PacAccountStatus::ACTIVE)
+                ->exists()
+            || \App\Models\Billing\PacAccount::query()->sharedActive()->exists()
+        );
+
         return Inertia::render('Billing/Settings/Index', [
             'fiscalProfiles'        => $paginated,
             'filters'               => $request->only(['search', 'sortField', 'sortOrder']),
-            'facturacionHabilitada' => true,
             'ourBankAccounts'       => $ourBankAccounts,
+            'usesSharedAccount'     => $usesSharedAccount,
         ]);
     }
 
@@ -580,6 +756,13 @@ class InvoiceController extends Controller implements HasMiddleware
 
             $message = $messages[$result] ?? 'Estatus de cancelación actualizado.';
 
+            if ($result === 'canceled') {
+                // Release the linked POS sale so it can be invoiced again.
+                if ($invoice->transaction_id) {
+                    Transaction::where('id', $invoice->transaction_id)->update(['invoiced' => false]);
+                }
+            }
+
             if ($result === 'canceled' || $result === 'rejected') {
                 return redirect()->route('billing.invoices.show', $invoice->id)
                     ->with($result === 'canceled' ? 'success' : 'warning', $message);
@@ -595,7 +778,7 @@ class InvoiceController extends Controller implements HasMiddleware
     }
 
     /**
-     * Stamp a draft/pending invoice via SW Sapien.
+     * Stamp a draft/pending invoice via SW Sapien (reservation flow).
      */
     public function stamp(Invoice $invoice): RedirectResponse
     {
@@ -604,8 +787,10 @@ class InvoiceController extends Controller implements HasMiddleware
         }
 
         try {
-            $swService = app(\App\Services\Billing\SWSapienService::class);
-            $swService->stamp($invoice);
+            $stampAction = app(\App\Actions\Billing\StampInvoiceAction::class);
+            $stampAction->execute($invoice);
+        } catch (\App\Exceptions\Billing\InsufficientStampsException $e) {
+            return redirect()->back()->with('warning', $e->getMessage());
         } catch (\RuntimeException $e) {
             return redirect()->back()->with('warning', $e->getMessage());
         }
@@ -623,6 +808,11 @@ class InvoiceController extends Controller implements HasMiddleware
             return redirect()->back()->with('error', 'Solo se pueden eliminar facturas en estado borrador o pendiente.');
         }
 
+        // Release the linked POS sale so it can be invoiced again.
+        if ($invoice->transaction_id) {
+            Transaction::where('id', $invoice->transaction_id)->update(['invoiced' => false]);
+        }
+
         $invoice->items()->delete();
         $invoice->delete();
 
@@ -630,35 +820,4 @@ class InvoiceController extends Controller implements HasMiddleware
             ->with('success', 'Prefactura eliminada correctamente.');
     }
 
-    /**
-     * Toggle CFDI invoicing (facturación) on or off for the subscription.
-     *
-     * When enabled for the first time, the user can later create fiscal
-     * profiles which will be auto-provisioned as SW Sapien subaccounts.
-     * When disabled, all PAC operations are skipped and the billing UI
-     * shows a safe "not configured" state.
-     */
-    public function toggleFacturacion(Request $request): RedirectResponse
-    {
-        $user = Auth::user();
-        $subscription = $user->branch?->subscription;
-
-        if (! $subscription) {
-            return redirect()->back()
-                ->with('error', 'No se encontró una suscripción activa.');
-        }
-
-        $nuevoEstado = ! $subscription->facturacion_habilitada;
-
-        $subscription->update([
-            'facturacion_habilitada' => $nuevoEstado,
-        ]);
-
-        $mensaje = $nuevoEstado
-            ? 'Facturación activada. Ahora puedes agregar perfiles fiscales y comenzar a facturar.'
-            : 'Facturación desactivada. Tus perfiles fiscales e historial se conservan, pero no podrás emitir nuevas facturas hasta que la actives de nuevo.';
-
-        return redirect()->route('billing.settings.index')
-            ->with($nuevoEstado ? 'success' : 'info', $mensaje);
-    }
 }

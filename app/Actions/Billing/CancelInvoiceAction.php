@@ -4,6 +4,7 @@ namespace App\Actions\Billing;
 
 use App\Enums\InvoiceStatus;
 use App\Models\Billing\Invoice;
+use App\Models\Transaction;
 use App\Services\Billing\SWSapienService;
 use Illuminate\Support\Facades\Log;
 
@@ -52,6 +53,11 @@ class CancelInvoiceAction
                 'canceled_at'         => now(),
                 'cancelation_status'  => $statusCancelation,
             ]);
+
+            // Release the linked POS sale so it can be invoiced again.
+            if ($invoice->transaction_id) {
+                Transaction::where('id', $invoice->transaction_id)->update(['invoiced' => false]);
+            }
 
             Log::info('CFDI canceled immediately', [
                 'invoice_id' => $invoice->id,

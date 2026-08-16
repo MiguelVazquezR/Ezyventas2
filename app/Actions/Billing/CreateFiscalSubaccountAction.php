@@ -3,14 +3,15 @@
 namespace App\Actions\Billing;
 
 use App\Models\Billing\FiscalProfile;
+use App\Models\Billing\PacAccount;
 use App\Services\SW\SWUserService;
 use Illuminate\Http\Client\ConnectionException;
 
 /**
  * CreateFiscalSubaccountAction
  *
- * Thin orchestrator that links a FiscalProfile to a SW Sapien
- * sub-user account so the RFC can start issuing CFDI invoices.
+ * Thin orchestrator that provisions a dealer subaccount in SW Sapien
+ * for a PacAccount record and links a FiscalProfile to it.
  *
  * Failures (network errors, duplicate RFC, PAC validation) are
  * caught and returned as a structured result — the caller (controller
@@ -27,22 +28,26 @@ class CreateFiscalSubaccountAction
      *
      * @return array{success: bool, message: string, sw_user_id?: string}
      */
-    public function execute(FiscalProfile $profile, string $email, string $password): array
-    {
-        if ($profile->hasSwSubaccount()) {
+    public function execute(
+        PacAccount $account,
+        FiscalProfile $profile,
+        string $email,
+        string $password,
+    ): array {
+        if ($account->isActive() && $account->sw_user_id) {
             return [
                 'success' => false,
-                'message' => 'Este RFC ya tiene una cuenta vinculada con el Proveedor de timbrado. Contacta con soporte.',
+                'message' => 'Esta cuenta ya está vinculada con el Proveedor de timbrado. Contacta con soporte.',
             ];
         }
 
         try {
-            $this->swUserService->createSubaccountForProfile($profile, $email, $password);
+            $this->swUserService->createSubaccountForAccount($account, $profile, $email, $password);
 
             return [
                 'success'    => true,
-                'message'    => 'Se completo exitosamente la vinculación fiscal.',
-                'sw_user_id' => $profile->sw_user_id,
+                'message'    => 'Se completó exitosamente la vinculación fiscal.',
+                'sw_user_id' => $account->sw_user_id,
             ];
         } catch (ConnectionException $e) {
             return [

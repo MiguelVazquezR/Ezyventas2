@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, watch, onMounted, onUnmounted } from 'vue';
 
 /**
  * Scroll-based scrollspy composable.
@@ -12,13 +12,19 @@ import { ref, onMounted, onUnmounted } from 'vue';
  * This matches user expectation: the section heading they're reading is the one
  * whose top just scrolled past the sticky header.
  *
- * @param {string[]} sectionIds  - Ordered list of section element IDs (top → bottom).
- * @param {Object}   options     - { offset: number } — px from viewport top where
- *                                 a section is considered "active" (default: 120).
+ * @param {string[]|Function} sectionIds - Ordered list of section element IDs
+ *        (top → bottom). A getter function may be passed instead so the section
+ *        list can change at runtime (e.g. dynamic form sections).
+ * @param {Object} options - { offset: number } — px from viewport top where
+ *        a section is considered "active" (default: 120).
  */
 export function useScrollspy(sectionIds, options = {}) {
     const offset = options.offset ?? 120;
-    const activeSection = ref(sectionIds[0]);
+
+    // Support both a static array and a reactive getter (function).
+    const resolveIds = () => (typeof sectionIds === 'function' ? sectionIds() : sectionIds);
+
+    const activeSection = ref(resolveIds()[0] || null);
 
     let ticking = false;
     let isManualScrolling = false;
@@ -26,13 +32,16 @@ export function useScrollspy(sectionIds, options = {}) {
 
     // ── Determine which section is currently in view ──
     const updateActive = () => {
+        const ids = resolveIds();
+        if (ids.length === 0) return;
+
         const scrollY = window.scrollY + offset;
         const docHeight = document.documentElement.scrollHeight;
         const viewBottom = window.scrollY + window.innerHeight;
 
-        let current = sectionIds[0];
+        let current = ids[0];
 
-        for (const id of sectionIds) {
+        for (const id of ids) {
             const el = document.getElementById(id);
             if (!el) continue;
             // A section is "active" if its top edge is at or above the offset line
@@ -47,7 +56,7 @@ export function useScrollspy(sectionIds, options = {}) {
         // may still not have its top above the offset line (if it's short).
         // If we're within 2px of the bottom, force the last section active.
         if (viewBottom >= docHeight - 2) {
-            current = sectionIds[sectionIds.length - 1];
+            current = ids[ids.length - 1];
         }
 
         activeSection.value = current;
@@ -81,6 +90,14 @@ export function useScrollspy(sectionIds, options = {}) {
             isManualScrolling = false;
         }, 900);
     };
+
+    // Re-evaluate the active section when the section list changes at runtime
+    // (only needed when a reactive getter was passed instead of a static array).
+    if (typeof sectionIds === 'function') {
+        watch(sectionIds, () => {
+            updateActive();
+        }, { flush: 'post' });
+    }
 
     onMounted(() => {
         window.addEventListener('scroll', onScroll, { passive: true });
