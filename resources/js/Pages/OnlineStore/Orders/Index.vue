@@ -1,7 +1,10 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
+import { useConfirm } from 'primevue/useconfirm';
 import AppLayout from '@/Layouts/AppLayout.vue';
+
+const confirm = useConfirm();
 
 const props = defineProps({
     orders: Object,
@@ -37,6 +40,20 @@ const statusSeverityMap = {
 const filterByStatus = (status) => {
     activeStatus.value = status;
     router.get(route('online-store.orders.index'), { status: status || undefined }, { preserveState: true, preserveScroll: true, replace: true });
+};
+
+const confirmDeleteOrder = (order) => {
+    confirm.require({
+        message: `¿Estás seguro de que quieres eliminar el pedido #${order.formatted_order_number}? Esta acción no se puede deshacer y repondrá el stock de sus productos.`,
+        header: 'Confirmar eliminación',
+        icon: 'pi pi-exclamation-triangle',
+        acceptClass: 'p-button-danger',
+        acceptLabel: 'Sí, eliminar',
+        rejectLabel: 'Cancelar',
+        accept: () => {
+            router.delete(route('online-store.orders.destroy', order.id), { preserveScroll: true });
+        }
+    });
 };
 
 const totalPending = computed(() => props.counts?.pending || 0);
@@ -97,6 +114,19 @@ const totalPending = computed(() => props.counts?.pending || 0);
                             <span class="text-xs text-gray-500">{{ new Date(data.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }}</span>
                         </template>
                     </Column>
+                    <Column field="actions" header="" :exportable="false" style="width: 60px">
+                        <template #body="{ data }">
+                            <Button icon="pi pi-trash" severity="danger" text rounded size="small"
+                                class="!text-sm hover:!bg-red-50 dark:hover:!bg-red-500/10"
+                                :aria-label="`Eliminar pedido #${data.formatted_order_number}`"
+                                @click.stop="confirmDeleteOrder(data)" />
+                        </template>
+                    </Column>
+                     <template #empty>
+                    <div class="text-center p-4 text-gray-500">
+                        No se ha encontrado ningún pedido.
+                    </div>
+                </template>
                 </DataTable>
             </div>
         </div>

@@ -11,6 +11,7 @@ use App\Models\Product;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -85,6 +86,21 @@ class OrderController extends Controller
         $order->logStatusChange($oldStatus, $newStatus, $validated['note'] ?? null, Auth::id());
 
         return back()->with('success', "Order status changed to '{$newStatus->label()}'.");
+    }
+
+    public function destroy(Order $order): RedirectResponse
+    {
+        $this->authorizeOrder($order);
+
+        DB::transaction(function () use ($order) {
+            $this->restoreOrderStock($order);
+
+            $order->saleTransaction?->delete();
+
+            $order->delete();
+        });
+
+        return back()->with('success', 'Pedido eliminado correctamente.');
     }
 
     private function authorizeOrder(Order $order): void

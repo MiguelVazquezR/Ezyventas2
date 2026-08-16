@@ -97,6 +97,7 @@ class CreateStoreTransactionAction
                 'amount'          => $order->total,
                 'payment_method'  => PaymentMethod::CASH->value,
                 'status'          => PaymentStatus::COMPLETED->value,
+                'payment_date'    => now(),
                 'notes'           => "Pago en efectivo — pedido en línea #{$order->formatted_order_number}",
             ]);
         } elseif ($isMercadoPago) {
@@ -104,6 +105,7 @@ class CreateStoreTransactionAction
                 'amount'          => $order->total,
                 'payment_method'  => PaymentMethod::CARD->value,
                 'status'          => PaymentStatus::PROCESSING->value,
+                'payment_date'    => now(),
                 'notes'           => "Pago con Mercado Pago (pendiente) — pedido en línea #{$order->formatted_order_number}",
             ]);
         }
