@@ -197,6 +197,39 @@ const deleteOrder = () => {
     });
 };
 
+// --- FACTURACIÓN (CFDI) ---
+// La venta generada por esta orden es facturable si está completada, pagada
+// en su totalidad y aún no tiene factura.
+const canInvoice = computed(() => {
+    const t = props.serviceOrder.transaction;
+    if (!t) return false;
+    if (!['completado', 'entregado_por_pagar'].includes(t.status)) return false;
+    if (t.invoiced) return false;
+    return (parseFloat(t.remaining_due ?? t.total ?? 0) <= 0.01);
+});
+
+// Navega a la creación de factura con la venta pre-seleccionada para que
+// el formulario se llene automáticamente con los datos de la orden.
+const goToInvoice = () => {
+    router.get(route('billing.invoices.create', { transaction: props.serviceOrder.transaction.id }));
+};
+
+// Una orden ya facturada muestra un enlace a su factura: "Ver factura" si ya
+// fue timbrada (certificada) o "Ver prefactura" si aún es borrador/pendiente.
+const PREFACTURA_STATUSES = ['borrador', 'pendiente'];
+const invoiceLinkInfo = (invoice) => {
+    if (!invoice) return null;
+    const isPrefactura = PREFACTURA_STATUSES.includes(invoice?.status);
+    return {
+        label: isPrefactura ? 'Ver prefactura' : 'Ver factura',
+        icon: isPrefactura ? 'pi pi-file-edit' : 'pi pi-file-pdf',
+    };
+};
+const goToInvoiceShow = (invoice) => {
+    if (!invoice?.id) return;
+    router.get(route('billing.invoices.show', invoice.id));
+};
+
 // --- LÓGICA DE MENÚ ACCIONES ---
 const menu = ref();
 const toggleMenu = (event) => {
@@ -208,6 +241,13 @@ const actionItems = computed(() => [
     { label: 'Editar orden', icon: 'pi pi-pencil', command: () => router.get(route('service-orders.edit', props.serviceOrder.id)), visible: hasPermission('services.orders.edit') },
     { label: 'Registrar diagnóstico y evidencia', icon: 'pi pi-file-edit', command: openDiagnosisModal, visible: !isCancelled.value && hasPermission('services.orders.edit') },
     { label: 'Registrar pago', icon: 'pi pi-dollar', command: openPaymentModal, visible: amountDue.value > 0.01 && props.serviceOrder.final_total > 0 },
+    { label: 'Facturar venta', icon: 'pi pi-file-edit', command: goToInvoice, visible: hasPermission('invoices.create') && canInvoice.value },
+    {
+        label: invoiceLinkInfo(props.serviceOrder.transaction?.invoice)?.label ?? 'Ver factura',
+        icon: invoiceLinkInfo(props.serviceOrder.transaction?.invoice)?.icon ?? 'pi pi-file-pdf',
+        command: () => goToInvoiceShow(props.serviceOrder.transaction?.invoice),
+        visible: !!props.serviceOrder.transaction?.invoice
+    },
     { label: 'Ver PDF / Imprimir', icon: 'pi pi-print', command: handlePrintAction },
     { label: 'Imprimir', icon: 'pi pi-print', command: openPrintModal },
     { separator: true },

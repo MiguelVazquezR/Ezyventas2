@@ -7,6 +7,11 @@ import CancelInvoiceModal from './Partials/CancelInvoiceModal.vue';
 
 const props = defineProps({
     invoice: Object,
+    // Factura PPD → CFDI de Pago relacionados + saldo restante por pagar.
+    relatedPayments: { type: Array, default: () => [] },
+    remainingToPay: { type: Number, default: null },
+    // CFDI de Pago → facturas PPD relacionadas (resueltas por invoice_id).
+    relatedPpdInvoices: { type: Array, default: () => [] },
 });
 
 const { hasPermission } = usePermissions();
@@ -178,6 +183,14 @@ const tipoRelacionLabel = ((code) => {
 
 // CFDI 4.0 TipoDeComprobante helpers
 const isPago = computed(() => props.invoice.tipo_comprobante === 'P');
+const isPpd = computed(() => props.invoice.tipo_comprobante === 'I' && props.invoice.payment_method === 'PPD');
+
+// Enlaza un documento del pago con su factura PPD registrada (por UUID).
+const ppdLinkForDoc = (doc) => {
+    const list = props.relatedPpdInvoices || [];
+    const found = list.find((r) => r.doc?.uuid && r.doc.uuid === (doc.uuid || ''));
+    return found?.invoice || null;
+};
 const isEgreso = computed(() => props.invoice.tipo_comprobante === 'E');
 
 const tipoComprobanteLabel = ((code) => {
@@ -211,6 +224,84 @@ function stampInvoice() {
         onFinish: () => { stamping.value = false; },
     });
 }
+
+// ──────────────────────────────────────
+// Menú de acciones ("Opciones")
+// ──────────────────────────────────────
+const actionsMenu = ref();
+const toggleActionsMenu = (event) => actionsMenu.value.toggle(event);
+
+// Crea un CFDI de Pago (Tipo P) relacionado a esta factura PPD: el formulario
+// abre con la venta y la PPD pre-seleccionadas (todo lo relacionado).
+const goToCreatePago = () => {
+    router.get(route('billing.invoices.create', { tipo: 'P', ppd: props.invoice.id }));
+};
+
+const actionMenuItems = computed(() => {
+    const items = [];
+
+    if (['borrador', 'pendiente'].includes(props.invoice.status)) {
+        items.push({ label: 'Emitir factura', icon: 'pi pi-shield', command: stampInvoice });
+    }
+
+    if (props.invoice.status === 'borrador') {
+        items.push({
+            label: 'Editar prefactura',
+            icon: 'pi pi-pencil',
+            command: () => router.get(route('billing.invoices.edit', props.invoice.id)),
+        });
+    }
+
+    if (isPpd.value && props.invoice.uuid) {
+        items.push({ label: 'Facturar pago', icon: 'pi pi-wallet', command: goToCreatePago });
+    }
+
+    // ── Relacionados ──
+    if (props.invoice.transaction) {
+        items.push({
+            label: `Ver venta ${props.invoice.transaction.folio}`,
+            icon: 'pi pi-shopping-bag',
+            command: () => router.get(route('transactions.show', props.invoice.transaction.id)),
+        });
+    }
+
+    const firstPpd = (props.relatedPpdInvoices || []).find((r) => r.invoice);
+    if (props.invoice.tipo_comprobante === 'P' && firstPpd?.invoice) {
+        items.push({
+            label: `Ver factura PPD ${firstPpd.invoice.series ? `${firstPpd.invoice.series}-${firstPpd.invoice.folio}` : firstPpd.invoice.folio}`,
+            icon: 'pi pi-file',
+            command: () => router.get(route('billing.invoices.show', firstPpd.invoice.id)),
+        });
+    }
+
+    if (props.invoice.status === 'certificada' && hasPermission('invoices.cancel')) {
+        items.push({ separator: true });
+        items.push({
+            label: 'Solicitar cancelación',
+            icon: 'pi pi-times-circle',
+            class: 'text-red-500',
+            command: () => cancelModalRef?.open(),
+        });
+    }
+
+    if (props.invoice.status === 'cancelacion_pendiente') {
+        items.push({ separator: true });
+        items.push({
+            label: 'Verificar estatus',
+            icon: 'pi pi-refresh',
+            command: () => router.post(route('billing.invoices.checkCancelation', props.invoice.id)),
+        });
+    }
+
+    return items;
+});
+
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl !p-2 !shadow-2xl mt-1' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' },
+};
 
 // ──────────────────────────────────────
 // Tesla UI Pass-Through
@@ -279,50 +370,15 @@ const tagPt = {
                     </div>
                 </div>
 
-                <!-- Action buttons -->
+                <!-- Action menu -->
                 <div class="w-full sm:w-auto shrink-0 flex gap-2">
-                    <Button
-                        v-if="invoice.status === 'borrador' || invoice.status === 'pendiente'"
-                        label="Timbrar factura"
-                        icon="pi pi-shield"
-                        severity="success"
-                        :loading="stamping"
-                        :disabled="stamping"
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto"
-                        @click="stampInvoice"
-                    />
-                    <Link
-                        v-if="invoice.status === 'borrador'"
-                        :href="route('billing.invoices.edit', invoice.id)"
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-primary-500 hover:bg-primary-600 text-white no-underline transition-colors"
-                    >
-                        <i class="pi pi-pencil !text-xs"></i> Editar prefactura
-                    </Link>
-                    <Button
-                        v-if="invoice.status === 'certificada' && hasPermission('invoices.cancel')"
-                        label="Solicitar cancelación"
-                        icon="pi pi-times-circle"
-                        severity="danger"
-                        outlined
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto"
-                        @click="cancelModalRef?.open()"
-                    />
-                    <Button
-                        v-if="invoice.status === 'cancelacion_pendiente'"
-                        label="Verificar estatus"
-                        icon="pi pi-refresh"
-                        severity="warn"
-                        outlined
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto"
-                        @click="router.post(route('billing.invoices.checkCancelation', invoice.id))"
-                    />
                     <Button
                         v-if="invoice.xml_url"
                         icon="pi pi-file-excel !text-sm"
                         label="XML"
                         severity="secondary"
                         outlined
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold"
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold hover:!text-primary-500 dark:hover:!text-primary-400 hover:!border-primary-500 dark:hover:!border-primary-400 hover:!bg-primary-500/10 transition-colors"
                         @click="downloadFile(route('billing.invoices.xml', invoice.id))"
                     />
                     <Button
@@ -330,9 +386,20 @@ const tagPt = {
                         label="PDF"
                         severity="secondary"
                         outlined
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold"
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold hover:!text-primary-500 dark:hover:!text-primary-400 hover:!border-primary-500 dark:hover:!border-primary-400 hover:!bg-primary-500/10 transition-colors"
                         @click="openUrl(route('billing.invoices.pdf', invoice.id))"
                     />
+                    <Button
+                        type="button"
+                        label="Opciones"
+                        icon="pi pi-chevron-down"
+                        iconPos="right"
+                        severity="secondary"
+                        outlined
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto"
+                        @click="toggleActionsMenu"
+                    />
+                    <Menu ref="actionsMenu" :model="actionMenuItems" :popup="true" :pt="menuPt" />
                 </div>
             </div>
             <!-- Cancelation pending info -->
@@ -606,6 +673,18 @@ const tagPt = {
                                     <span class="text-sm text-gray-900 dark:text-gray-200">{{ data.folio || '—' }}</span>
                                 </template>
                             </Column>
+                            <Column header="Factura PPD">
+                                <template #body="{ data }">
+                                    <span v-if="ppdLinkForDoc(data)">
+                                        <Link :href="route('billing.invoices.show', ppdLinkForDoc(data).id)" class="text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1.5 no-underline">
+                                            {{ ppdLinkForDoc(data).series ? `${ppdLinkForDoc(data).series}-${ppdLinkForDoc(data).folio}` : ppdLinkForDoc(data).folio }}
+                                            <i class="pi pi-external-link !text-[10px]"></i>
+                                        </Link>
+                                        <span class="block text-[10px] text-gray-400 dark:text-gray-500">{{ formatCurrency(ppdLinkForDoc(data).total) }}</span>
+                                    </span>
+                                    <span v-else class="text-sm text-gray-400 dark:text-gray-600">—</span>
+                                </template>
+                            </Column>
                             <Column field="uuid" header="UUID">
                                 <template #body="{ data }">
                                     <span class="text-xs text-gray-500 dark:text-gray-400 break-all">{{ data.uuid || '—' }}</span>
@@ -638,6 +717,72 @@ const tagPt = {
                                 </div>
                             </template>
                         </DataTable>
+                    </div>
+
+                    <!-- Pagos relacionados (factura PPD) -->
+                    <div v-if="isPpd" class="bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] overflow-hidden flex flex-col">
+                        <div class="p-6 lg:p-8 pb-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-cyan-50 dark:bg-cyan-900/20 flex items-center justify-center flex-shrink-0 border border-cyan-100 dark:border-cyan-900/30">
+                                    <i class="pi pi-wallet !text-sm text-cyan-500"></i>
+                                </div>
+                                <div>
+                                    <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Pagos relacionados</h2>
+                                    <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">CFDI de Pago que cubren esta factura</p>
+                                </div>
+                            </div>
+                        </div>
+                        <DataTable :value="relatedPayments || []" tableStyle="min-width: 40rem" :pt="dataTablePt">
+                            <Column field="folio" header="CFDI de Pago">
+                                <template #body="{ data }">
+                                    <Link :href="route('billing.invoices.show', data.id)" class="text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1.5 no-underline">
+                                        {{ data.folio || '—' }}
+                                        <i class="pi pi-external-link !text-[10px]"></i>
+                                    </Link>
+                                </template>
+                            </Column>
+                            <Column field="pago_fecha" header="Fecha">
+                                <template #body="{ data }">
+                                    <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatDate(data.pago_fecha) }}</span>
+                                </template>
+                            </Column>
+                            <Column field="pago_monto" header="Monto del pago">
+                                <template #body="{ data }">
+                                    <span class="text-sm font-medium text-gray-900 dark:text-white">{{ formatCurrency(data.pago_monto) }}</span>
+                                </template>
+                            </Column>
+                            <Column header="Parcialidades">
+                                <template #body="{ data }">
+                                    <span class="text-sm text-gray-700 dark:text-gray-300">
+                                        {{ (data.documentos || []).map((d) => `#${d.num_parcialidad ?? '—'}`).join(', ') || '—' }}
+                                    </span>
+                                </template>
+                            </Column>
+                            <template #empty>
+                                <div class="flex flex-col items-center justify-center py-10 text-center">
+                                    <i class="pi pi-inbox !text-3xl text-gray-300 dark:text-gray-600 mb-3"></i>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400">Sin pagos registrados todavía</p>
+                                </div>
+                            </template>
+                        </DataTable>
+                        <div class="px-6 lg:px-8 pb-6 pt-4 border-t border-gray-100 dark:border-[#3a3a3a] flex items-center justify-between gap-4">
+                            <div class="flex flex-col gap-0.5">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Total de la factura</span>
+                                <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatCurrency(invoice.total) }}</span>
+                            </div>
+                            <div class="flex flex-col gap-0.5 text-right">
+                                <template v-if="(remainingToPay ?? invoice.total) <= 0.01">
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-emerald-500 m-0">Estado del pago</span>
+                                    <span class="text-2xl font-light tracking-tight text-emerald-500 flex items-center gap-2 justify-end">
+                                        <i class="pi pi-check-circle !text-sm"></i> Pagado por completo
+                                    </span>
+                                </template>
+                                <template v-else>
+                                    <span class="text-[10px] uppercase tracking-widest font-bold text-amber-500 m-0">Saldo restante por pagar</span>
+                                    <span class="text-3xl font-light tracking-tight text-amber-500">{{ formatCurrency(remainingToPay ?? invoice.total) }}</span>
+                                </template>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Financial breakdown -->

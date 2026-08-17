@@ -2,6 +2,7 @@
 
 namespace App\Actions\Billing;
 
+use App\Exceptions\Billing\InsufficientStampsException;
 use App\Models\Billing\Invoice;
 use App\Models\Transaction;
 use App\Models\User;
@@ -52,11 +53,19 @@ class CreateInvoiceAction
             return $invoice;
         });
 
-        // 3. Stamp via the reservation flow — skip if draft mode
+        $invoice = $invoice->fresh('items');
+
+        // 3. Stamp via the reservation flow — skip if draft mode.
+        // Falta de timbres NO es un error: la factura queda guardada como
+        // prefactura y el controlador muestra el aviso correspondiente.
         if (! $draft) {
-            $this->stampInvoiceAction->execute($invoice);
+            try {
+                $this->stampInvoiceAction->execute($invoice);
+            } catch (InsufficientStampsException $e) {
+                $invoice->stamp_blocked = $e->getMessage();
+            }
         }
 
-        return $invoice->fresh('items');
+        return $invoice;
     }
 }

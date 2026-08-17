@@ -364,8 +364,11 @@ const lugarFechaEmision = computed(() => {
                  BLOCK 2 — Conceptos (ultra-compact)
                  ════════════════════════════════════════ -->
             <div class="mb-4">
-                <div class="flex items-center gap-2 mb-2">
+                <div class="flex items-center justify-between gap-2 mb-2">
                     <span class="text-[10px] uppercase tracking-widest font-bold text-gray-400">Conceptos</span>
+                    <span v-if="invoice.transaction?.folio" class="text-[10px] uppercase tracking-widest font-bold text-gray-500">
+                        Folio Venta: {{ invoice.transaction.folio }}
+                    </span>
                 </div>
 
                 <table class="w-full border-collapse text-[10px]">

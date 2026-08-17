@@ -889,6 +889,126 @@ class SWSapienService
     }
 
     /**
+     * Accept or reject a CFDI cancelation request on behalf of a receiver RFC
+     * via SW Sapien HTTP API (UUID-based, CSDs precargados).
+     *
+     * The fiscal profile determines both the receiver RFC and the PAC account
+     * (whose token holds the pre-loaded CSD that SW uses to sign the request).
+     *
+     * @return array The full 'data' payload from the PAC response
+     *               (acuse + folios[] with uuid/estatusUUID/respuesta).
+     *
+     * @throws \RuntimeException
+     */
+    public function acceptReject(FiscalProfile $profile, string $uuid, string $action): array
+    {
+        $endpoint = config('services.swsapien.endpoint');
+
+        if (! $endpoint) {
+            throw new \RuntimeException('El servicio de timbrado no está configurado. Contacta con soporte técnico.');
+        }
+
+        if (! in_array($action, ['Aceptacion', 'Rechazo'], true)) {
+            throw new \RuntimeException('La acción de respuesta no es válida.');
+        }
+
+        // ── Guard: billing must be enabled on the subscription (module) ──
+        $subscription = $profile->subscription;
+        if (! $subscription || ! $subscription->billingEnabled()) {
+            throw new \RuntimeException(
+                'La facturación no está habilitada para esta cuenta. Contrata el módulo de facturación.'
+            );
+        }
+
+        $token = $this->authenticatePacAccount($profile);
+
+        $url = rtrim($endpoint, '/') . '/acceptreject/'
+            . $profile->rfc . '/'
+            . $uuid . '/'
+            . $action;
+
+        try {
+            $response = Http::withToken($token)
+                ->timeout(20)
+                ->connectTimeout(5)
+                ->post($url);
+        } catch (ConnectionException $e) {
+            Log::error('SW Sapien accept/reject connection error', [
+                'rfc'    => $profile->rfc,
+                'uuid'   => $uuid,
+                'action' => $action,
+                'error'  => $e->getMessage(),
+            ]);
+
+            throw new \RuntimeException('No se pudo conectar con el proveedor de timbrado. Intenta de nuevo más tarde.');
+        }
+
+        if ($response->failed()) {
+            Log::error("SW Sapien accept/reject failed for {$profile->rfc}", [
+                'uuid'   => $uuid,
+                'action' => $action,
+                'status' => $response->status(),
+                'body'   => $response->body(),
+            ]);
+
+            $rawMessage = $response->json('message') ?? $response->body();
+
+            throw new \RuntimeException($this->translateAcceptRejectError($rawMessage));
+        }
+
+        $data = $response->json();
+
+        if (($data['status'] ?? '') !== 'success') {
+            Log::error("SW Sapien accept/reject error for {$profile->rfc}", [
+                'uuid'     => $uuid,
+                'action'   => $action,
+                'response' => $data,
+            ]);
+
+            $pacMessage = $data['message'] ?? null;
+
+            throw new \RuntimeException(
+                $pacMessage ? $this->translateAcceptRejectError($pacMessage)
+                            : 'No se pudo enviar la respuesta. Intenta de nuevo.'
+            );
+        }
+
+        return $data['data'] ?? $data;
+    }
+
+    /**
+     * Translate a SW Sapien accept/reject error message into a friendly,
+     * actionable message for the end user.
+     *
+     * SW returns generic codes (e.g. "CACFDI33 - Error no controlado") that in
+     * this endpoint almost always mean the folio was not found or there is no
+     * pending cancelation request for the given UUID/RFC. The raw PAC detail is
+     * still logged server-side for support/debugging.
+     */
+    private function translateAcceptRejectError(string $message): string
+    {
+        $lower = mb_strtolower($message);
+
+        $patterns = [
+            // Generic uncontrolled PAC error — most common cause for accept/reject.
+            ['cacfdi33', 'No se encontró la factura relacionada o no existe una solicitud de cancelación pendiente para ese UUID. Verifica el RFC receptor y el UUID e inténtalo de nuevo.'],
+            ['no se encontr', 'No se encontró la factura relacionada. Verifica el UUID e inténtalo de nuevo.'],
+            ['not found', 'No se encontró la factura relacionada. Verifica el UUID e inténtalo de nuevo.'],
+            ['no existe', 'No se encontró la factura relacionada o no existe una solicitud de cancelación pendiente para ese UUID.'],
+            ['no se localiz', 'No se encontró la factura relacionada. Verifica el UUID e inténtalo de nuevo.'],
+            ['sin solicitud', 'No existe una solicitud de cancelación pendiente para ese UUID.'],
+        ];
+
+        foreach ($patterns as [$needle, $friendly]) {
+            if (str_contains($lower, $needle)) {
+                return $friendly;
+            }
+        }
+
+        return 'Se rechazó la solicitud: ' . $message;
+    }
+
+    /**
      * Auto-update the Customer model with fiscal data from the invoice form
      * when the data differs or was previously missing.
      */

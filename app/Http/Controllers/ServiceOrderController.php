@@ -51,7 +51,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
         
         $query = ServiceOrder::query()
             ->where('branch_id', $user->branch_id)
-            ->with('branch:id,name', 'transaction.payments');
+            ->with('branch:id,name', 'transaction.payments', 'transaction.invoice');
 
         if ($request->has('search')) {
             $searchTerm = $request->input('search');
@@ -84,7 +84,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 Service::class => [],
                 \App\Models\ServiceVariant::class => [],
             ]);
-        }, 'media', 'transaction.payments.bankAccount']);
+        }, 'media', 'transaction.payments.bankAccount', 'transaction.invoice']);
 
         $subscriptionId = Auth::user()->branch->subscription_id;
         

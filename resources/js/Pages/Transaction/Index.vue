@@ -65,6 +65,40 @@ const isDrawerVisible = ref(false);
 const drawerTransaction = ref(null);
 const isCancellationModalVisible = ref(false);
 
+// Una venta es facturable si está completada, entregada por pagar o a crédito
+// (pendiente), no es un abono a saldo y aún no tiene factura. Las ventas a
+// crédito se facturan como PPD aunque no estén liquidadas.
+const canInvoiceTransaction = (transaction) => {
+    if (!transaction) return false;
+    if (!['completado', 'entregado_por_pagar', 'pendiente'].includes(transaction.status)) return false;
+    if (transaction.channel === 'abono_a_saldo') return false;
+    if (transaction.invoiced) return false;
+    if (transaction.status === 'pendiente') return true;
+    return (parseFloat(transaction.remaining_due ?? transaction.total ?? 0) <= 0.01);
+};
+
+// Navega a la creación de factura con la venta pre-seleccionada para que
+// el formulario se llene automáticamente con los datos de la venta.
+const goToInvoice = (transaction) => {
+    router.get(route('billing.invoices.create', { transaction: transaction.id }));
+};
+
+// Una venta ya facturada muestra un enlace a su factura: "Ver factura" si ya
+// fue timbrada (certificada) o "Ver prefactura" si aún es borrador/pendiente.
+const PREFACTURA_STATUSES = ['borrador', 'pendiente'];
+const invoiceLinkInfo = (invoice) => {
+    if (!invoice) return null;
+    const isPrefactura = PREFACTURA_STATUSES.includes(invoice?.status);
+    return {
+        label: isPrefactura ? 'Ver prefactura' : 'Ver factura',
+        icon: isPrefactura ? 'pi pi-file-edit' : 'pi pi-file-pdf',
+    };
+};
+const goToInvoiceShow = (invoice) => {
+    if (!invoice?.id) return;
+    router.get(route('billing.invoices.show', invoice.id));
+};
+
 // --- MENÚ DE ACCIONES ---
 const menuItems = computed(() => {
     const transaction = selectedTransactionForMenu.value;
@@ -87,6 +121,18 @@ const menuItems = computed(() => {
             icon: 'pi pi-print',
             command: () => openPrintModal(selectedTransactionForMenu.value),
             visible: hasPermission('pos.access')
+        },
+        {
+            label: 'Facturar',
+            icon: 'pi pi-file-edit',
+            command: () => goToInvoice(selectedTransactionForMenu.value),
+            visible: hasPermission('invoices.create') && canInvoiceTransaction(selectedTransactionForMenu.value)
+        },
+        {
+            label: invoiceLinkInfo(selectedTransactionForMenu.value.invoice)?.label ?? 'Ver factura',
+            icon: invoiceLinkInfo(selectedTransactionForMenu.value.invoice)?.icon ?? 'pi pi-file-pdf',
+            command: () => goToInvoiceShow(selectedTransactionForMenu.value.invoice),
+            visible: !!selectedTransactionForMenu.value.invoice
         },
         { separator: true },
         {
