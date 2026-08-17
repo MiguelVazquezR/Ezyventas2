@@ -135,7 +135,11 @@ class Transaction extends Model
     public function cashRegisterSession(): BelongsTo { return $this->belongsTo(CashRegisterSession::class); }
     public function items(): HasMany { return $this->hasMany(TransactionItem::class); }
     public function payments(): HasMany { return $this->hasMany(Payment::class); }
-    public function invoice(): HasOne { return $this->hasOne(\App\Models\Billing\Invoice::class, 'transaction_id'); }
+    public function invoice(): HasOne {
+        // latestOfMany: si hay varias facturas ligadas a la venta (p. ej. una
+        // prefactura abandonada + la definitiva), se toma la más reciente.
+        return $this->hasOne(\App\Models\Billing\Invoice::class, 'transaction_id')->latestOfMany();
+    }
     public function promotions(): BelongsToMany {
         return $this->belongsToMany(Promotion::class, 'promotion_transaction')
             ->withPivot('discount_applied')->withTimestamps();

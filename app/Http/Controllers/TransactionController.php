@@ -57,7 +57,7 @@ class TransactionController extends Controller implements HasMiddleware
             ->leftJoin('users', 'transactions.user_id', '=', 'users.id')
             ->where('transactions.branch_id', $branchId)
             ->where('transactions.channel', '!=', TransactionChannel::BALANCE_PAYMENT)
-            ->with(['customer:id,name', 'user:id,name', 'payments.bankAccount', 'items'])
+            ->with(['customer:id,name', 'user:id,name', 'payments.bankAccount', 'items', 'invoice'])
             ->select('transactions.*');
 
         if ($request->has('search')) {
@@ -125,6 +125,7 @@ class TransactionController extends Controller implements HasMiddleware
             'customer:id,name,balance,credit_limit',
             'user:id,name',
             'branch:id,name',
+            'invoice',
             'items.itemable' => function (MorphTo $morphTo) {
                 $morphTo->morphWith([
                     Product::class => [],

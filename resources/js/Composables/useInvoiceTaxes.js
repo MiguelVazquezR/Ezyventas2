@@ -186,10 +186,12 @@ export function useInvoiceTaxes(form, fiscalProfiles, customers) {
             let ivaTransfer;
 
             if (includesIva && hasTax && taxRate > 0) {
-                // "Precios con IVA incluido": derive the SAT base from the gross
-                // amount so the line total stays equal to the charged amount.
+                // "Precios con IVA incluido": se deriva la base SAT del monto
+                // cobrado. El IVA se calcula igual que el backend (base × tasa)
+                // para que el total mostrado coincida con el que se guarda; por
+                // el redondeo por producto puede diferir en centavos del cobrado.
                 base = round(taxable / (1 + taxRate));
-                ivaTransfer = round(taxable - base);
+                ivaTransfer = round(base * taxRate);
             } else {
                 base = round(taxable);
                 ivaTransfer = hasTax ? round(base * taxRate) : 0;

@@ -36,6 +36,8 @@ Route::middleware(['auth', 'verified'])->prefix('billing')->name('billing.')->gr
         Route::get('/{invoice}', [InvoiceController::class, 'show'])->name('show');
         Route::post('/{invoice}/cancel', [InvoiceController::class, 'cancel'])->name('cancel');
         Route::post('/{invoice}/check-cancelation', [InvoiceController::class, 'checkCancelationStatus'])->name('checkCancelation');
+        Route::post('/accept-reject', [InvoiceController::class, 'acceptReject'])->name('acceptReject');
+        Route::get('/accept-reject/history', [InvoiceController::class, 'acceptRejectHistory'])->name('acceptRejectHistory');
         Route::post('/{invoice}/stamp', [InvoiceController::class, 'stamp'])->name('stamp');
         Route::delete('/{invoice}', [InvoiceController::class, 'destroy'])->name('destroy');
     });

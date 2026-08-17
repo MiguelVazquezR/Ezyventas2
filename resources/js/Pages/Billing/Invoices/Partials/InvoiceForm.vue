@@ -6,6 +6,7 @@ import FormNavigationSidebar from '@/Components/FormNavigationSidebar.vue';
 import { useScrollspy } from '@/Composables/useScrollspy';
 import EmisorSection from './EmisorSection.vue';
 import SaleSection from './SaleSection.vue';
+import PpdSaleSection from './Sections/PpdSaleSection.vue';
 import ReceptorSection from './ReceptorSection.vue';
 import IngresoForm from './IngresoForm.vue';
 import EgresoForm from './EgresoForm.vue';
@@ -63,7 +64,9 @@ const form = useForm({
     currency: isEdit ? (inv?.currency || 'MXN') : 'MXN',
     exchange_rate: isEdit && inv?.exchange_rate ? parseFloat(inv.exchange_rate) : null,
     exportacion: isEdit ? (inv?.exportacion || '01') : '01',
-    tipo_comprobante: isEdit ? (inv?.tipo_comprobante || 'I') : 'I',
+    tipo_comprobante: isEdit
+        ? (inv?.tipo_comprobante || 'I')
+        : (new URLSearchParams(window.location.search).get('tipo') || 'I'),
     customer_id: isEdit ? (inv?.customer_id || null) : null,
     // Venta del punto de venta relacionada (1:1) y modo "precios con IVA incluido"
     transaction_id: isEdit ? (inv?.transaction_id || null) : null,
@@ -105,11 +108,27 @@ onMounted(() => {
     } else if (fiscalProfilesList.value.length === 1) {
         selectedFiscalProfile.value = fiscalProfilesList.value[0];
     }
+
+    // "Facturar pago" desde el Show de una factura PPD (?tipo=P&ppd=<id>):
+    // preselecciona el emisor fiscal de esa PPD para que el flujo sea directo.
+    if (props.mode === 'create') {
+        const ppdParam = new URLSearchParams(window.location.search).get('ppd');
+        if (ppdParam) {
+            const ppd = ppdInvoicesList.value.find(inv => Number(inv.id) === Number(ppdParam));
+            const profile = ppd?.fiscal_profile_id
+                ? fiscalProfilesList.value.find(p => Number(p.id) === Number(ppd.fiscal_profile_id))
+                : null;
+            if (profile) selectedFiscalProfile.value = profile;
+        }
+    }
 });
 
 const initialCustomerName = computed(() =>
     props.mode === 'edit' ? (props.invoice?.customer?.name || '') : '',
 );
+
+// Total de la venta relacionada (para el aviso de diferencia en el desglose).
+const selectedSaleTotal = ref(null);
 
 // ──────────────────────────────────────
 // PAC readiness check (certificates [+ manifest for subaccounts])
@@ -189,6 +208,7 @@ const formSections = computed(() => {
         { id: 'emisor', label: 'Emisor' },
     ];
     if (isIngreso.value) sections.push({ id: 'venta', label: 'Venta relacionada' });
+    if (isPago.value) sections.push({ id: 'venta-ppd', label: 'Venta relacionada' });
     sections.push({ id: 'receptor', label: 'Receptor' });
     if (showPaymentFormSection.value) sections.push({ id: 'forma-pago', label: 'Forma y método de pago' });
     if (showRelatedCfdiSection.value) sections.push({ id: 'cfdi-relacionados', label: 'CFDI relacionados' });
@@ -384,11 +404,18 @@ const submit = (draft = false) => {
                 :profile-settings-url="profileSettingsUrl"
             />
 
-            <!-- ═══ Venta relacionada (solo ingreso) ═══ -->
+            <!-- ═══ Venta relacionada (ingreso / pago) ═══ -->
             <SaleSection
                 v-if="isIngreso"
                 :form="form"
                 :linked-sale="isEdit ? (invoice?.transaction || null) : null"
+                @sale-total-change="(total) => (selectedSaleTotal = total)"
+            />
+            <PpdSaleSection
+                v-if="isPago"
+                :form="form"
+                :ppd-invoices="ppdInvoicesList"
+                :multiple-emitters="multipleEmitters"
             />
 
             <!-- ═══ Receptor (shared) ═══ -->
@@ -412,6 +439,7 @@ const submit = (draft = false) => {
                 :isr-retenido="isrRetenido"
                 :iva-retenido="ivaRetenido"
                 :gran-total="granTotal"
+                :sale-total="selectedSaleTotal"
                 :retention-applies="retentionApplies"
                 :is-resico="isResico"
                 :retention-message="retentionMessage"

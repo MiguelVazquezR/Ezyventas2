@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mockup — Responder solicitud de cancelación</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { darkMode: 'class', theme: { extend: { colors: { primary: { 400:'#F68C0F', 500:'#F68C0F', 600:'#D97A0B' } } } } };
+</script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  [x-cloak] { display:none !important; }
+</style>
+</head>
+<body class="bg-[#121212] min-h-screen p-8 flex items-start justify-center">
+
+  <!-- Botón que abre el modal (simulado) -->
+  <div class="w-full max-w-md">
+    <div class="rounded-3xl bg-[#232323] border border-[#3a3a3a] p-6 flex items-center justify-between">
+      <div>
+        <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Facturación</p>
+        <h2 class="text-lg font-light text-white m-0 mt-1">Cancelaciones recibidas</h2>
+      </div>
+      <button onclick="document.getElementById('modal').classList.remove('hidden')"
+        class="rounded-xl bg-primary-500 hover:bg-primary-600 text-white px-5 py-2.5 text-[10px] uppercase tracking-widest font-bold transition-colors">
+        Responder cancelación
+      </button>
+    </div>
+  </div>
+
+  <!-- ── MODAL ── -->
+  <div id="modal" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+    <div class="w-full max-w-2xl bg-[#232323] border border-[#3a3a3a] rounded-3xl shadow-2xl overflow-hidden">
+
+      <!-- Header -->
+      <div class="px-6 py-5 border-b border-[#3a3a3a] flex items-center gap-4">
+        <div class="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 flex items-center justify-center flex-shrink-0">
+          <i class="pi pi-exclamation-triangle text-amber-500 text-sm"></i>
+        </div>
+        <div class="flex-1">
+          <h2 class="text-xl font-light tracking-tight text-white m-0 leading-tight">Responder solicitud de cancelación</h2>
+          <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1">Acepta o rechaza ante el SAT</p>
+        </div>
+        <button onclick="document.getElementById('modal').classList.add('hidden')" class="w-8 h-8 rounded-full hover:bg-[#1a1a1a] flex items-center justify-center text-gray-400 transition-colors">
+          ✕
+        </button>
+      </div>
+
+      <!-- Body -->
+      <div class="p-6 lg:p-8 space-y-6">
+
+        <!-- Toggle UUID / XML -->
+        <div class="flex items-center gap-3">
+          <button onclick="setTab('uuid')" id="tab-uuid"
+            class="flex-1 rounded-2xl border px-4 py-3 text-sm font-semibold transition-colors text-white border-primary-500 bg-primary-500/10">
+            Por UUID
+          </button>
+          <button onclick="setTab('xml')" id="tab-xml"
+            class="flex-1 rounded-2xl border border-gray-700 text-gray-400 px-4 py-3 text-sm font-semibold transition-colors hover:text-white hover:border-gray-500">
+            Por XML
+          </button>
+        </div>
+
+        <!-- ═══ PANEL UUID ═══ -->
+        <div id="panel-uuid" class="space-y-5">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">RFC receptor (tu RFC) *</label>
+            <select class="w-full h-11 rounded-2xl bg-[#1a1a1a] border border-[#3a3a3a] text-white text-sm px-4 focus:border-primary-500 outline-none transition-colors">
+              <option>EKU9003173C9 — ESCUELA KEMPER URGATE (mi perfil fiscal)</option>
+              <option>XAXX010101000 — RFC genérico</option>
+              <option>Otro RFC…</option>
+            </select>
+            <p class="text-xs text-gray-500 m-0">Debe ser el RFC con el que apareces como <b>receptor</b> en la factura del proveedor.</p>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">UUID de la factura recibida *</label>
+            <input type="text" value="6424c644-abfd-4065-957f-78371ec66dbb"
+              class="mono w-full h-11 rounded-2xl bg-[#1a1a1a] border border-[#3a3a3a] text-white text-sm px-4 focus:border-primary-500 outline-none transition-colors" />
+          </div>
+
+          <!-- Decisión -->
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Tu decisión *</label>
+            <div class="grid grid-cols-2 gap-3">
+              <button onclick="setDecision('aceptar')" id="dec-aceptar"
+                class="rounded-2xl border border-gray-700 p-4 text-left transition-colors hover:border-emerald-500/60">
+                <div class="flex items-center gap-2.5">
+                  <span class="w-9 h-9 rounded-full bg-emerald-500/15 text-emerald-400 flex items-center justify-center flex-shrink-0">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+                  </span>
+                  <span class="text-sm font-semibold text-white">Aceptar</span>
+                </div>
+                <p class="text-[11px] text-gray-500 m-0 mt-2 leading-relaxed">La factura se cancela definitivamente ante el SAT.</p>
+              </button>
+              <button onclick="setDecision('rechazar')" id="dec-rechazar"
+                class="rounded-2xl border border-gray-700 p-4 text-left transition-colors hover:border-red-500/60">
+                <div class="flex items-center gap-2.5">
+                  <span class="w-9 h-9 rounded-full bg-red-500/15 text-red-400 flex items-center justify-center flex-shrink-0">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  </span>
+                  <span class="text-sm font-semibold text-white">Rechazar</span>
+                </div>
+                <p class="text-[11px] text-gray-500 m-0 mt-2 leading-relaxed">La factura sigue vigente y podrás deducirla.</p>
+              </button>
+            </div>
+          </div>
+
+          <!-- Info legal -->
+          <div class="flex items-start gap-2.5 px-4 py-3 rounded-2xl bg-blue-500/10 border border-blue-500/20">
+            <span class="text-blue-400 mt-0.5 text-xs">ⓘ</span>
+            <p class="text-xs text-blue-300 m-0 leading-relaxed">
+              El proveedor solicitó cancelar este CFDI. Si aceptas, la cancelación se procesa de inmediato ante el SAT y no podrás revertirla.
+            </p>
+          </div>
+        </div>
+
+        <!-- ═══ PANEL XML ═══ -->
+        <div id="panel-xml" class="space-y-5 hidden">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">XML de la solicitud *</label>
+            <textarea rows="8"
+              class="mono w-full rounded-2xl bg-[#1a1a1a] border border-[#3a3a3a] text-white text-[11px] p-4 focus:border-primary-500 outline-none transition-colors resize-none"
+              placeholder='&lt;SolicitudAceptacionRechazo Fecha="…" RfcPacEnviaSolicitud="…" RfcReceptor="EKU9003173C9" xmlns="http://cancelacfd.sat.gob.mx"&gt;
+  &lt;Folios&gt;&lt;UUID&gt;6424c644-abfd-4065-957f-78371ec66dbb&lt;/UUID&gt;&lt;Respuesta&gt;Aceptacion&lt;/Respuesta&gt;&lt;/Folios&gt;
+&lt;/SolicitudAceptacionRechazo&gt;'></textarea>
+            <div class="flex items-center justify-between">
+              <p class="text-xs text-gray-500 m-0">Pega el XML firmado que te proporcionó tu proveedor o PAC.</p>
+              <button class="text-[10px] uppercase tracking-widest font-bold text-primary-400 hover:text-primary-500 transition-colors">Subir archivo</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="flex justify-end items-center gap-3 w-full px-6 pb-6 pt-2 border-t border-[#3a3a3a]">
+        <button onclick="document.getElementById('modal').classList.add('hidden')"
+          class="rounded-xl text-gray-400 hover:text-white px-5 py-2.5 text-xs uppercase tracking-widest font-bold transition-colors">
+          Cancelar
+        </button>
+        <button id="btn-submit"
+          class="rounded-xl px-6 py-2.5 text-xs uppercase tracking-widest font-bold text-white transition-colors bg-emerald-500 hover:bg-emerald-600">
+          Enviar respuesta
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function setTab(tab) {
+      const uuid = tab === 'uuid';
+      document.getElementById('tab-uuid').className = uuid
+        ? 'flex-1 rounded-2xl border px-4 py-3 text-sm font-semibold transition-colors text-white border-primary-500 bg-primary-500/10'
+        : 'flex-1 rounded-2xl border border-gray-700 text-gray-400 px-4 py-3 text-sm font-semibold transition-colors hover:text-white hover:border-gray-500';
+      document.getElementById('tab-xml').className = uuid
+        ? 'flex-1 rounded-2xl border border-gray-700 text-gray-400 px-4 py-3 text-sm font-semibold transition-colors hover:text-white hover:border-gray-500'
+        : 'flex-1 rounded-2xl border px-4 py-3 text-sm font-semibold transition-colors text-white border-primary-500 bg-primary-500/10';
+      document.getElementById('panel-uuid').classList.toggle('hidden', !uuid);
+      document.getElementById('panel-xml').classList.toggle('hidden', uuid);
+    }
+    function setDecision(dec) {
+      const aceptar = dec === 'aceptar';
+      document.getElementById('dec-aceptar').className = 'rounded-2xl border p-4 text-left transition-colors ' + (aceptar ? 'border-emerald-500/70 bg-emerald-500/10' : 'border-gray-700 hover:border-emerald-500/60');
+      document.getElementById('dec-rechazar').className = 'rounded-2xl border p-4 text-left transition-colors ' + (!aceptar ? 'border-red-500/70 bg-red-500/10' : 'border-gray-700 hover:border-red-500/60');
+      const btn = document.getElementById('btn-submit');
+      btn.className = 'rounded-xl px-6 py-2.5 text-xs uppercase tracking-widest font-bold text-white transition-colors ' + (aceptar ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-red-500 hover:bg-red-600');
+      btn.textContent = aceptar ? 'Enviar respuesta (aceptar)' : 'Enviar respuesta (rechazar)';
+    }
+  </script>
+</body>
+</html>

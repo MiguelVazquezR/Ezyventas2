@@ -17,7 +17,6 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
-    usesSharedAccount: Boolean,
 });
 
 const { hasPermission } = usePermissions();
@@ -426,7 +425,6 @@ const tagPt = {
 
         <FiscalProfileFormModal
             ref="fiscalProfileFormModalRef"
-            :uses-shared-account="props.usesSharedAccount"
             @success="router.reload()"
         />
 

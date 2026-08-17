@@ -11,6 +11,9 @@ const props = defineProps({
     linkedSale: { type: Object, default: null },
 });
 
+// Notifica el total de la venta seleccionada para el aviso del desglose.
+const emit = defineEmits(['sale-total-change']);
+
 // ── State ──
 const selectedSale = ref(null);
 const searchText = ref('');
@@ -25,10 +28,47 @@ const saleHasMore = ref(false);
 // UI note returned by applySaleToForm (payment-form auto-fill info).
 const saleNote = ref(null);
 
-onMounted(() => {
+// ── Load a full sale detail and apply it to the form ──
+// Shared by the search select and the "Facturar venta" button that
+// pre-selects the sale (?transaction=<id> query param).
+const loadSale = async (saleId) => {
+    if (!saleId) return false;
+
+    searchLoading.value = true;
+    errorMessage.value = '';
+
+    try {
+        const { data } = await axios.get(route('billing.invoices.sales.show', saleId));
+        selectedSale.value = data;
+        searchText.value = data.folio || '';
+        saleNote.value = applySaleToForm(props.form, data);
+        // Notifica el total de la venta para el aviso del desglose financiero.
+        emit('sale-total-change', data.total);
+        return true;
+    } catch (error) {
+        errorMessage.value = error?.response?.data?.message || 'No se pudo cargar la venta seleccionada.';
+        searchText.value = '';
+        selectedSale.value = null;
+        return false;
+    } finally {
+        searchLoading.value = false;
+    }
+};
+
+onMounted(async () => {
+    // Edit mode: the sale is already linked to the invoice.
     if (props.linkedSale?.id) {
         selectedSale.value = props.linkedSale;
         searchText.value = props.linkedSale.folio || '';
+        emit('sale-total-change', props.linkedSale?.total ?? null);
+        return;
+    }
+
+    // Create mode: pre-select the sale when arriving from the sale pages
+    // ("Facturar venta" button) via ?transaction=<id>.
+    const preselectId = new URLSearchParams(window.location.search).get('transaction');
+    if (preselectId) {
+        await loadSale(preselectId);
     }
 });
 
@@ -77,22 +117,7 @@ const onSalesLazyLoad = async (event) => {
 const onSaleSelect = async (event) => {
     const sale = event.value;
     if (!sale || typeof sale !== 'object' || !sale.id) return;
-
-    searchLoading.value = true;
-    errorMessage.value = '';
-
-    try {
-        const { data } = await axios.get(route('billing.invoices.sales.show', sale.id));
-        selectedSale.value = data;
-        searchText.value = data.folio || '';
-        saleNote.value = applySaleToForm(props.form, data);
-    } catch (error) {
-        errorMessage.value = error?.response?.data?.message || 'No se pudo cargar la venta seleccionada.';
-        searchText.value = '';
-        selectedSale.value = null;
-    } finally {
-        searchLoading.value = false;
-    }
+    await loadSale(sale.id);
 };
 
 // ── Detach the sale (keeps the auto-filled data editable) ──
@@ -102,6 +127,7 @@ const removeSale = () => {
     searchText.value = '';
     saleNote.value = null;
     errorMessage.value = '';
+    emit('sale-total-change', null);
 };
 </script>
 
@@ -133,6 +159,11 @@ const removeSale = () => {
                     El cliente y los conceptos se prellenaron desde la venta. Puedes editarlos libremente.
                     Si tus precios ya incluyen IVA, activa "Los precios ya incluyen IVA" en la sección Conceptos
                     para que el total de la factura coincida con el de la venta.
+                </Message>
+                <Message v-if="saleNote?.creditSale" severity="warn" variant="simple" size="small">
+                    Esta venta es a crédito y aún no se ha liquidado (saldo pendiente: {{ formatCurrency(saleNote.remainingDue) }}).
+                    Se seleccionó automáticamente el método "PPD - Pago en parcialidades o diferido" con forma de pago
+                    "99 - Por definir". Puedes cambiarlos si ya se pagó.
                 </Message>
                 <Message v-if="saleNote?.multiplePaymentMethods" severity="warn" variant="simple" size="small">
                     La venta se pagó con más de una forma de pago. El SAT solo permite una en la factura: se seleccionó
@@ -170,7 +201,8 @@ const removeSale = () => {
             </AutoComplete>
             <Message v-if="errorMessage" severity="error" variant="simple" size="small">{{ errorMessage }}</Message>
             <p class="text-[11px] text-slate-500 dark:text-neutral-400 m-0">
-                Solo se muestran ventas completadas y pagadas en su totalidad que aún no tienen factura.
+                Se muestran ventas completadas, entregadas por pagar o a crédito que aún no tienen factura.
+                Las ventas a crédito se facturan como PPD con forma de pago "Por definir".
             </p>
         </div>
     </SectionCard>

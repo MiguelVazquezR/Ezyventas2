@@ -172,6 +172,42 @@ const canExchange = computed(() => {
 
 const canExtendExpiration = computed(() => ['apartado', 'on_layaway', 'pendiente'].includes(localTransaction.value.status));
 
+// --- Facturación (CFDI) ---
+// Una venta es facturable si está completada, entregada por pagar o a crédito
+// (pendiente), no es un abono a saldo y aún no tiene factura. Las ventas a
+// crédito se facturan como PPD aunque no estén liquidadas.
+const canInvoice = computed(() => {
+    const t = localTransaction.value;
+    if (!t) return false;
+    if (!['completado', 'entregado_por_pagar', 'pendiente'].includes(t.status)) return false;
+    if (t.channel === 'abono_a_saldo') return false;
+    if (t.invoiced) return false;
+    if (t.status === 'pendiente') return true;
+    return (parseFloat(t.remaining_due ?? t.total ?? 0) <= 0.01);
+});
+
+// Navega a la creación de factura con la venta pre-seleccionada para que
+// el formulario se llene automáticamente con los datos de la venta.
+const goToInvoice = () => {
+    router.get(route('billing.invoices.create', { transaction: localTransaction.value.id }));
+};
+
+// Una venta ya facturada muestra un enlace a su factura: "Ver factura" si ya
+// fue timbrada (certificada) o "Ver prefactura" si aún es borrador/pendiente.
+const PREFACTURA_STATUSES = ['borrador', 'pendiente'];
+const invoiceLinkInfo = (invoice) => {
+    if (!invoice) return null;
+    const isPrefactura = PREFACTURA_STATUSES.includes(invoice?.status);
+    return {
+        label: isPrefactura ? 'Ver prefactura' : 'Ver factura',
+        icon: isPrefactura ? 'pi pi-file-edit' : 'pi pi-file-pdf',
+    };
+};
+const goToInvoiceShow = (invoice) => {
+    if (!invoice?.id) return;
+    router.get(route('billing.invoices.show', invoice.id));
+};
+
 // --- Lógica de Pagos y Cancelación ---
 const openPaymentModal = () => {
     if (!activeSession.value) {
@@ -230,6 +266,13 @@ const actionItems = computed(() => [
     { label: 'Abonar / Liquidar', icon: 'pi pi-dollar', command: openPaymentModal, disabled: !canAddPayment.value, visible: hasPermission('transactions.add_payment') },
     { label: (localTransaction.value.status === 'apartado' || localTransaction.value.status === 'on_layaway') ? 'Modificar Apartado' : 'Intercambiar producto', icon: 'pi pi-sync', command: openExchangeModal, disabled: !canExchange.value, visible: hasPermission('transactions.exchange') },
     { label: 'Extender Vencimiento', icon: 'pi pi-calendar-plus', command: openExtendLayawayModal, visible: canExtendExpiration.value },
+    { label: 'Facturar venta', icon: 'pi pi-file-edit', command: goToInvoice, visible: hasPermission('invoices.create') && canInvoice.value },
+    {
+        label: invoiceLinkInfo(localTransaction.value.invoice)?.label ?? 'Ver factura',
+        icon: invoiceLinkInfo(localTransaction.value.invoice)?.icon ?? 'pi pi-file-pdf',
+        command: () => goToInvoiceShow(localTransaction.value.invoice),
+        visible: !!localTransaction.value.invoice
+    },
     { separator: true },
     { label: 'Imprimir ticket', icon: 'pi pi-print', command: openPrintModal, visible: hasPermission('pos.access') },
     { separator: true },
@@ -296,6 +339,24 @@ const menuPt = {
                     <Button type="button" label="Opciones" icon="pi pi-chevron-down" iconPos="right" @click="toggleActionsMenu" severity="secondary" outlined class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto" />
                     <Menu ref="actionsMenu" :model="actionItems" :popup="true" :pt="menuPt" />
                 </div>
+            </div>
+
+            <!-- Enlace a la factura relacionada -->
+            <div v-if="localTransaction.value.invoice" class="bg-white dark:bg-[#232323] p-4 lg:p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex items-center justify-between gap-4">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center shrink-0">
+                        <i class="pi pi-file-pdf !text-sm text-emerald-500"></i>
+                    </div>
+                    <div class="flex flex-col min-w-0">
+                        <span class="text-sm font-semibold text-gray-900 dark:text-white m-0">
+                            {{ localTransaction.value.invoice.series ? `${localTransaction.value.invoice.series}-${localTransaction.value.invoice.folio}` : localTransaction.value.invoice.folio }}
+                        </span>
+                        <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
+                            {{ invoiceLinkInfo(localTransaction.value.invoice)?.label }}
+                        </span>
+                    </div>
+                </div>
+                <Button type="button" :label="invoiceLinkInfo(localTransaction.value.invoice)?.label" :icon="invoiceLinkInfo(localTransaction.value.invoice)?.icon" severity="secondary" outlined class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold shrink-0" @click="goToInvoiceShow(localTransaction.value.invoice)" />
             </div>
 
             <!-- Contenedor Principal (Grid Layout) -->

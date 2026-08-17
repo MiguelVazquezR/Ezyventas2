@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { router, usePage, Head } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from "primevue/useconfirm";
@@ -98,13 +98,60 @@ const deleteSelectedOrders = () => {
     });
 };
 
-const menuItems = ref([
+// --- FACTURACIÓN (CFDI) ---
+// La venta generada por la orden es facturable si está completada, pagada en
+// su totalidad y aún no tiene factura.
+const canInvoiceOrder = (serviceOrder) => {
+    const t = serviceOrder?.transaction;
+    if (!t) return false;
+    if (!['completado', 'entregado_por_pagar'].includes(t.status)) return false;
+    if (t.invoiced) return false;
+    return (parseFloat(t.remaining_due ?? t.total ?? 0) <= 0.01);
+};
+
+// Navega a la creación de factura con la venta pre-seleccionada para que
+// el formulario se llene automáticamente con los datos de la orden.
+const goToInvoice = (serviceOrder) => {
+    router.get(route('billing.invoices.create', { transaction: serviceOrder.transaction.id }));
+};
+
+// Una orden ya facturada muestra un enlace a su factura: "Ver factura" si ya
+// fue timbrada (certificada) o "Ver prefactura" si aún es borrador/pendiente.
+const PREFACTURA_STATUSES = ['borrador', 'pendiente'];
+const invoiceLinkInfo = (invoice) => {
+    if (!invoice) return null;
+    const isPrefactura = PREFACTURA_STATUSES.includes(invoice?.status);
+    return {
+        label: isPrefactura ? 'Ver prefactura' : 'Ver factura',
+        icon: isPrefactura ? 'pi pi-file-edit' : 'pi pi-file-pdf',
+    };
+};
+const goToInvoiceShow = (invoice) => {
+    if (!invoice?.id) return;
+    router.get(route('billing.invoices.show', invoice.id));
+};
+
+// Computed (no ref): la visibilidad de cada ítem (p. ej. "Facturar") depende
+// de selectedOrderForMenu, que cambia al abrir el menú; un ref la congelaría.
+const menuItems = computed(() => [
     { label: 'Ver detalles', icon: 'pi pi-eye', command: () => router.get(route('service-orders.show', selectedOrderForMenu.value.id)), visible: hasPermission('services.orders.see_details') },
     { label: 'Editar orden', icon: 'pi pi-pencil', command: () => router.get(route('service-orders.edit', selectedOrderForMenu.value.id)), visible: hasPermission('services.orders.edit') },
     {
         label: 'Imprimir',
         icon: 'pi pi-print',
         command: () => openPrintModal(selectedOrderForMenu.value),
+    },
+    {
+        label: 'Facturar',
+        icon: 'pi pi-file-edit',
+        command: () => goToInvoice(selectedOrderForMenu.value),
+        visible: hasPermission('invoices.create') && canInvoiceOrder(selectedOrderForMenu.value)
+    },
+    {
+        label: invoiceLinkInfo(selectedOrderForMenu.value?.transaction?.invoice)?.label ?? 'Ver factura',
+        icon: invoiceLinkInfo(selectedOrderForMenu.value?.transaction?.invoice)?.icon ?? 'pi pi-file-pdf',
+        command: () => goToInvoiceShow(selectedOrderForMenu.value?.transaction?.invoice),
+        visible: !!selectedOrderForMenu.value?.transaction?.invoice
     },
     { separator: true },
     { label: 'Eliminar', icon: 'pi pi-trash', class: 'text-red-500', command: deleteSingleOrder, visible: hasPermission('services.orders.delete') },
