@@ -16,6 +16,8 @@ defineProps({
     retentionApplies: { type: Boolean, default: false },
     isResico: { type: Boolean, default: false },
     retentionMessage: { type: String, default: null },
+    // Total de la venta relacionada (aviso de diferencia en el desglose).
+    saleTotal: { type: Number, default: null },
 });
 </script>
 
@@ -29,6 +31,7 @@ defineProps({
         :isr-retenido="isrRetenido"
         :iva-retenido="ivaRetenido"
         :gran-total="granTotal"
+        :sale-total="saleTotal"
         :retention-applies="retentionApplies"
         :is-resico="isResico"
         :retention-message="retentionMessage"

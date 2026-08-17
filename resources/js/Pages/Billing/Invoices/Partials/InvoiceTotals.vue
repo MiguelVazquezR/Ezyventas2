@@ -1,7 +1,8 @@
 <script setup>
+import { computed } from 'vue';
 import SectionCard from '@/Components/Billing/SectionCard.vue';
 
-defineProps({
+const props = defineProps({
     subtotal:       { type: Number, required: true },
     ivaTrasladado:  { type: Number, required: true },
     isrRetenido:    { type: Number, required: true },
@@ -10,10 +11,21 @@ defineProps({
     retentionApplies: { type: Boolean, default: false },
     isResico:       { type: Boolean, default: false },
     retentionMessage: { type: String, default: null },
+    // Total de la venta relacionada (si hay); si difiere del total de la
+    // factura se muestra un aviso de redondeo por producto.
+    saleTotal:      { type: Number, default: null },
 });
 
 const formatCurrency = (value) =>
     new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value || 0);
+
+// Diferencia entre el total calculado de la factura y el de la venta
+// relacionada (por redondeo de centavos al calcular el IVA por producto).
+const saleTotalDiff = computed(() => {
+    if (props.saleTotal === null || props.saleTotal === undefined) return null;
+    return (parseFloat(props.granTotal) || 0) - parseFloat(props.saleTotal);
+});
+const saleAmountChanged = computed(() => saleTotalDiff.value !== null && Math.abs(saleTotalDiff.value) > 0.005);
 </script>
 
 <template>
@@ -71,6 +83,14 @@ const formatCurrency = (value) =>
                     {{ formatCurrency(granTotal) }}
                 </span>
             </div>
+
+            <!-- ── Aviso: el total difiere del de la venta relacionada ── -->
+            <Message v-if="saleAmountChanged" severity="warn" variant="simple" size="small" class="mt-4">
+                El monto de la factura ({{ formatCurrency(granTotal) }}) difiere del total de la venta
+                ({{ formatCurrency(saleTotal) }}) por {{ formatCurrency(Math.abs(saleTotalDiff)) }}. Esto es
+                normal: al calcular el IVA de cada producto por separado, el redondeo puede variar el total en centavos.
+                Revisa los conceptos antes de timbrar.
+            </Message>
         </div>
     </SectionCard>
 </template>

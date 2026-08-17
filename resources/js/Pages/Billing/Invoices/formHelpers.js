@@ -120,6 +120,25 @@ export const blankPagoDocument = (isDefault = false) => ({
 export const pagoInvoiceLabel = (inv) =>
     (inv?.series ? `${inv.series}-${inv.folio}` : String(inv?.folio ?? ''));
 
+/**
+ * Auto-completa un documento del CFDI de Pago con los datos de una factura
+ * PPD del sistema: UUID/folio, siguiente parcialidad, saldo anterior (lo que
+ * resta por pagar) e importe pagado = monto del pago; el saldo insoluto se
+ * calcula. Todo queda editable.
+ */
+export const applyPpdToPagoDocument = (doc, ppd, pagoMonto) => {
+    const saldoAnterior = parseFloat(ppd?.remaining ?? ppd?.total ?? 0) || 0;
+    const importePagado = parseFloat(pagoMonto ?? 0) || 0;
+
+    doc.invoice_id = ppd?.id ?? null;
+    doc.folio = pagoInvoiceLabel(ppd);
+    doc.uuid = ppd?.uuid || '';
+    doc.num_parcialidad = ppd?.num_parcialidad ?? 1;
+    doc.imp_saldo_ant = saldoAnterior;
+    doc.imp_pagado = importePagado;
+    doc.imp_saldo_insoluto = Math.max(0, saldoAnterior - importePagado);
+};
+
 // Compact es-MX date formatter.
 export const formatDateShort = (value) => {
     if (!value) return '';
@@ -196,11 +215,16 @@ export const mapSalePaymentForm = (payments = []) => {
  * Apply a selected POS sale to the invoice form: receiver, concepts and
  * payment form. Every field remains editable afterwards.
  *
+ * The POS does not compute taxes (total_tax=0), so "precios con IVA incluido"
+ * is turned on by default — the invoice total then matches the sale amount
+ * and the user can review that the IVA is already included.
+ *
  * Returns an object with the payment-form note for the UI
- * ({ multiplePaymentMethods, selectedFormaLabel }).
+ * ({ multiplePaymentMethods, selectedFormaLabel, creditSale, remainingDue }).
  */
 export const applySaleToForm = (form, sale) => {
     form.transaction_id = sale.id ?? null;
+    form.prices_include_iva = true;
 
     const customer = sale.customer || null;
     if (customer) {
@@ -215,7 +239,13 @@ export const applySaleToForm = (form, sale) => {
     form.items = mapSaleItems(sale);
 
     const payment = mapSalePaymentForm(sale.payments || []);
-    if (payment.code) {
+    // Venta a crédito no liquidada → MétodoPago PPD + FormaPago "Por definir".
+    // Ambos campos quedan editables; el usuario puede cambiarlos si ya se pagó.
+    const isCreditSale = sale.status === 'pendiente';
+    if (isCreditSale) {
+        form.payment_method = 'PPD';
+        form.payment_form = '99';
+    } else if (payment.code) {
         form.payment_form = payment.code;
         // Fully paid sale → single payment (PUE) is the correct method.
         if (!form.payment_method) form.payment_method = 'PUE';
@@ -224,6 +254,8 @@ export const applySaleToForm = (form, sale) => {
     return {
         multiplePaymentMethods: payment.multipleMethods,
         selectedFormaLabel: payment.label,
+        creditSale: isCreditSale,
+        remainingDue: parseFloat(sale.remaining_due ?? 0),
     };
 };
 

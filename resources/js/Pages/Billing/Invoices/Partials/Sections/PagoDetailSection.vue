@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { paymentFormOptions, pagoMonedaOptions } from '../../satCatalogs';
 import { inputPt, selectPt, inputNumberPt, readonlyPt, datePickerPt, autoCompleteInputPt } from '../../ptConfigs';
-import { toArray, blankPagoDocument, pagoInvoiceLabel, formatDateShort, formatCurrency } from '../../formHelpers';
+import { toArray, blankPagoDocument, pagoInvoiceLabel, applyPpdToPagoDocument, formatDateShort, formatCurrency } from '../../formHelpers';
 import SectionCard from '@/Components/Billing/SectionCard.vue';
 
 const props = defineProps({
@@ -66,9 +66,9 @@ const onPagoInvoiceSelect = (event, index) => {
     const doc = props.form.pago_documentos[index];
     const inv = event.value;
     if (!inv || typeof inv !== 'object' || !inv.uuid) return;
-    doc.invoice_id = inv.id ?? null;
-    doc.folio = pagoInvoiceLabel(inv);
-    doc.uuid = inv.uuid;
+    // Autocompleta el documento: saldo anterior = lo que resta de la PPD,
+    // importe pagado = monto del pago y saldo insoluto calculado.
+    applyPpdToPagoDocument(doc, inv, props.form.pago_monto);
 };
 
 // Si el usuario edita el folio a mano (factura fuera del sistema), se
@@ -85,6 +85,22 @@ watch(
                 doc.uuid = '';
             }
         });
+    },
+);
+
+// Cuando el monto total del pago cambia, se sincroniza el importe pagado del
+// PRIMER documento vinculado a una factura PPD (el que se autocompletó) y se
+// recalcula su saldo insoluto. Los demás documentos quedan intactos para que
+// el usuario los ajuste libremente (la suma de importes pagados = Monto total).
+watch(
+    () => props.form.pago_monto,
+    (monto) => {
+        if (monto === null || monto === undefined) return;
+        const importePagado = parseFloat(monto) || 0;
+        const firstLinked = props.form.pago_documentos.find((doc) => !!doc.invoice_id);
+        if (!firstLinked) return;
+        firstLinked.imp_pagado = importePagado;
+        firstLinked.imp_saldo_insoluto = Math.max(0, (parseFloat(firstLinked.imp_saldo_ant) || 0) - importePagado);
     },
 );
 
@@ -237,6 +253,10 @@ const formatUuid = (value, doc) => {
                                         <div class="flex items-center justify-between gap-3">
                                             <span class="text-[10px] text-slate-500 dark:text-neutral-400 truncate">{{ slotProps.option.receiver_legal_name }}</span>
                                             <span class="text-[10px] text-slate-400 dark:text-neutral-500 shrink-0">{{ formatDateShort(slotProps.option.issued_at) }}</span>
+                                        </div>
+                                        <div class="flex items-center justify-between gap-3">
+                                            <span class="text-[10px] text-slate-400 dark:text-neutral-500 truncate">{{ slotProps.option.sale_folio ? `Venta ${slotProps.option.sale_folio}` : '' }}</span>
+                                            <span class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 shrink-0">Resta: {{ formatCurrency(parseFloat(slotProps.option.remaining) || 0) }} · Parcialidad #{{ slotProps.option.num_parcialidad ?? 1 }}</span>
                                         </div>
                                     </div>
                                 </template>

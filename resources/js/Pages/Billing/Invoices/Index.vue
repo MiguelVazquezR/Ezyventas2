@@ -4,6 +4,7 @@ import { Head, router, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermissions } from '@/Composables';
 import { useConfirm } from 'primevue/useconfirm';
+import AcceptRejectModal from './Partials/AcceptRejectModal.vue';
 import CancelInvoiceModal from './Partials/CancelInvoiceModal.vue';
 
 const props = defineProps({
@@ -197,6 +198,32 @@ const menuRef = ref(null);
 const selectedInvoice = ref(null);
 const items = ref([]);
 const cancelModalRef = ref(null);
+const acceptRejectModalRef = ref(null);
+
+// ──────────────────────────────────────
+// Header dropdown (Configuración fiscal ▾ / Responder cancelación)
+// ──────────────────────────────────────
+const headerMenu = ref(null);
+const toggleHeaderMenu = (event) => headerMenu.value?.toggle(event);
+const headerMenuItems = computed(() => {
+    const menuItems = [
+        {
+            label: 'Configuración fiscal',
+            icon: 'pi pi-cog',
+            command: () => router.get(route('billing.settings.index')),
+        },
+    ];
+
+    if (hasPermission('invoices.cancel')) {
+        menuItems.push({
+            label: 'Responder cancelación',
+            icon: 'pi pi-inbox',
+            command: () => acceptRejectModalRef.value?.open(),
+        });
+    }
+
+    return menuItems;
+});
 
 const toggleMenu = (event, invoice) => {
     selectedInvoice.value = invoice;
@@ -298,6 +325,13 @@ const tagPt = {
     root: { class: '!rounded-full !px-3 !py-1 !text-[10px] !uppercase !tracking-widest !font-bold' },
     icon: { class: '!text-[10px] !mr-1.5' },
 };
+
+const menuPt = {
+    root: { class: 'dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] !rounded-2xl !p-2 !shadow-2xl mt-1' },
+    content: { class: 'dark:hover:!bg-[#1a1a1a] !rounded-xl !transition-colors' },
+    label: { class: 'text-sm font-medium text-gray-900 dark:!text-gray-200' },
+    icon: { class: 'dark:!text-gray-400 !text-sm mr-3' },
+};
 </script>
 
 <template>
@@ -325,13 +359,15 @@ const tagPt = {
                     <!-- Header actions -->
                     <div class="flex items-center gap-3 shrink-0">
                         <Button
-                            label="Configuración fiscal"
-                            icon="pi pi-cog"
+                            label="Opciones"
+                            icon="pi pi-chevron-down"
+                            iconPos="right"
                             outlined
                             severity="secondary"
-                            @click="router.get(route('billing.settings.index'))"
+                            @click="toggleHeaderMenu"
                             class="!rounded-xl !text-xs !uppercase !tracking-wider !bg-transparent !border-gray-300 dark:!border-[#3a3a3a] !text-gray-500 dark:!text-gray-400 hover:!bg-gray-50 dark:hover:!bg-[#1a1a1a]"
                         />
+                        <Menu ref="headerMenu" :model="headerMenuItems" :popup="true" :pt="menuPt" />
                         <Button
                             v-if="hasPermission('invoices.create')"
                             label="Emitir factura"
@@ -561,6 +597,11 @@ const tagPt = {
             ref="cancelModalRef"
             :invoice="selectedInvoice"
             @success="router.reload()"
+        />
+
+        <AcceptRejectModal
+            ref="acceptRejectModalRef"
+            :fiscal-profiles="fiscalProfiles"
         />
 
     </AppLayout>
