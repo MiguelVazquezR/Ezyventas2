@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, computed, onMounted } from 'vue';
+import { ref, watch, computed } from 'vue';
 import axios from 'axios';
 import { useToast } from 'primevue/usetoast';
 import { router } from '@inertiajs/vue3';
@@ -177,12 +177,9 @@ const pluginUnavailable = computed(() => {
     return !isMobile.value && !isLoadingPluginPrinters.value && pluginPrinters.value.length === 0 && !pluginError.value;
 });
 
-// --- Cargar impresoras al montar ---
-onMounted(() => {
-    if (!isMobile.value) {
-        fetchPluginPrinters();
-    }
-});
+// Las impresoras se cargan únicamente cuando el modal se abre
+// (ver watch de props.visible más abajo), para evitar peticiones
+// innecesarias cuando el componente está montado pero oculto.
 
 // --- Lógica de Trabajos ---
 const addJob = (template) => {
