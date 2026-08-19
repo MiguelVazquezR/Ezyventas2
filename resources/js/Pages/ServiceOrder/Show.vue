@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, provide } from 'vue';
+import axios from 'axios';
 import { router, usePage, useForm, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useConfirm } from 'primevue/useconfirm';
@@ -62,7 +63,27 @@ const openPrintWindow = () => {
 };
 
 const openPrintModal = () => isPrintModalVisible.value = true;
-const openPaymentModal = () => isPaymentModalVisible.value = true;
+const openPaymentModal = async () => {
+    // El pago se registra sobre la venta (transacción) asociada a la orden.
+    // Las órdenes antiguas pueden no tener venta: la creamos al vuelo.
+    if (!props.serviceOrder.transaction) {
+        try {
+            await axios.post(route('service-orders.ensureTransaction', props.serviceOrder.id));
+        } catch (e) {
+            toast.add({ severity: 'error', summary: 'Error', detail: 'No se pudo crear la venta asociada para registrar el pago.', life: 5000 });
+            return;
+        }
+        // Recargamos la orden para obtener la transacción creada y abrimos el modal.
+        router.reload({
+            only: ['serviceOrder'],
+            onSuccess: () => {
+                isPaymentModalVisible.value = true;
+            },
+        });
+        return;
+    }
+    isPaymentModalVisible.value = true;
+};
 const openDiagnosisModal = () => {
     diagnosisForm.technician_diagnosis = props.serviceOrder.technician_diagnosis || '';
     diagnosisForm.closing_evidence_images = [];
@@ -466,9 +487,9 @@ const tagPt = {
             :client="serviceOrder.customer" :loading="isPaymentProcessing" payment-mode="flexible"
             @submit="handlePaymentSubmit" @update:visible="(val) => { if (!val) handlePaymentModalClosed(); }" />
             
-        <PrintModal v-if="serviceOrder" v-model:visible="isPrintModalVisible"
+        <PrintModal v-if="serviceOrder && isPrintModalVisible" v-model:visible="isPrintModalVisible"
             :data-source="{ type: 'service_order', id: serviceOrder.id }" :available-templates="availableTemplates"
-            @hide="handlePrintModalClosed" />
+            @update:visible="(val) => { if (!val) handlePrintModalClosed(); }" />
 
         <Dialog v-model:visible="isDiagnosisModalVisible" modal class="w-full max-w-lg mx-4" :pt="dialogPt">
             <template #header>

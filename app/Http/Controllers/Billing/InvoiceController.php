@@ -110,14 +110,18 @@ class InvoiceController extends Controller implements HasMiddleware
             ->where('branch_id', $user->branch_id)
             ->with(['customer:id,name,company_name', 'fiscalProfile:id,razon_social,rfc']);
 
-        // Search across folio, receiver name, receiver RFC, and UUID
+        // Search across folio, receiver name, receiver RFC, UUID, and customer
         if ($request->has('search')) {
             $searchTerm = $request->input('search');
             $query->where(function ($q) use ($searchTerm) {
                 $q->where('folio', 'LIKE', "%{$searchTerm}%")
                   ->orWhere('receiver_legal_name', 'LIKE', "%{$searchTerm}%")
                   ->orWhere('receiver_rfc', 'LIKE', "%{$searchTerm}%")
-                  ->orWhere('uuid', 'LIKE', "%{$searchTerm}%");
+                  ->orWhere('uuid', 'LIKE', "%{$searchTerm}%")
+                  ->orWhereHas('customer', function ($cq) use ($searchTerm) {
+                      $cq->where('name', 'LIKE', "%{$searchTerm}%")
+                         ->orWhere('company_name', 'LIKE', "%{$searchTerm}%");
+                  });
             });
         }
 
@@ -126,9 +130,9 @@ class InvoiceController extends Controller implements HasMiddleware
             $query->where('status', $request->input('status'));
         }
 
-        // Filter by fiscal profile if provided
-        if ($request->filled('fiscal_profile_id')) {
-            $query->where('fiscal_profile_id', $request->input('fiscal_profile_id'));
+        // Filter by payment method (PUE / PPD) if provided
+        if ($request->filled('payment_method')) {
+            $query->where('payment_method', $request->input('payment_method'));
         }
 
         $query->orderBy(
@@ -142,7 +146,7 @@ class InvoiceController extends Controller implements HasMiddleware
 
         return Inertia::render('Billing/Invoices/Index', [
             'invoices'           => $query->paginate($request->input('rows', 20))->withQueryString(),
-            'filters'            => $request->only(['search', 'status', 'fiscal_profile_id', 'sortField', 'sortOrder']),
+            'filters'            => $request->only(['search', 'status', 'fiscal_profile_id', 'payment_method', 'sortField', 'sortOrder']),
             'fiscalProfiles'     => $fiscalProfiles,
             'hasFiscalProfiles'  => $subscription?->fiscalProfiles()->active()->exists() ?? false,
         ]);
@@ -998,10 +1002,18 @@ class InvoiceController extends Controller implements HasMiddleware
     /**
      * Stamp a draft/pending invoice via SW Sapien (reservation flow).
      */
-    public function stamp(Invoice $invoice): RedirectResponse
+    public function stamp(Request $request, Invoice $invoice): RedirectResponse
     {
         if (! in_array($invoice->status->value, ['borrador', 'pendiente'])) {
             return redirect()->back()->with('error', 'Solo se pueden timbrar facturas en estado borrador o pendiente.');
+        }
+
+        // Un borrador con más de 72 horas ya no puede timbrarse con su fecha de
+        // emisión original (regla del SAT). Si el usuario confirmó el cambio de
+        // fecha, el CFDI se emite con la fecha y hora actuales.
+        if ($request->boolean('change_date') && $invoice->created_at->diffInHours(now()) > 72) {
+            $invoice->issued_at = now();
+            $invoice->save();
         }
 
         try {

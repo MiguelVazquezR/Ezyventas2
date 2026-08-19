@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Actions\ServiceOrders\ChangeServiceOrderStatusAction;
 use App\Actions\ServiceOrders\CreateServiceOrderAction;
+use App\Actions\ServiceOrders\EnsureServiceOrderTransactionAction;
 use App\Actions\ServiceOrders\UpdateServiceOrderAction;
 use App\Enums\ServiceOrderStatus;
 use App\Enums\TemplateContextType;
@@ -18,6 +19,7 @@ use App\Models\Service;
 use App\Models\ServiceOrder;
 use App\Models\Transaction;
 use App\Services\ActivityLogService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -103,6 +105,17 @@ class ServiceOrderController extends Controller implements HasMiddleware
                 ->where('module', 'service_orders')
                 ->get(),
         ]);
+    }
+
+    /**
+     * Crea la venta (transacción) asociada a la orden si aún no existe,
+     * para poder registrar pagos en órdenes antiguas sin venta vinculada.
+     */
+    public function ensureTransaction(ServiceOrder $serviceOrder, EnsureServiceOrderTransactionAction $action): JsonResponse
+    {
+        $transaction = $action->execute($serviceOrder, (int) Auth::id());
+
+        return response()->json(['transaction_id' => $transaction->id]);
     }
 
     public function print(Request $request, ServiceOrder $serviceOrder): Response

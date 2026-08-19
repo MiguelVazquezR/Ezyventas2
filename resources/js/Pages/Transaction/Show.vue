@@ -342,21 +342,21 @@ const menuPt = {
             </div>
 
             <!-- Enlace a la factura relacionada -->
-            <div v-if="localTransaction.value.invoice" class="bg-white dark:bg-[#232323] p-4 lg:p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex items-center justify-between gap-4">
+            <div v-if="localTransaction.invoice" class="bg-white dark:bg-[#232323] p-4 lg:p-5 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex items-center justify-between gap-4">
                 <div class="flex items-center gap-3 min-w-0">
                     <div class="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center shrink-0">
                         <i class="pi pi-file-pdf !text-sm text-emerald-500"></i>
                     </div>
                     <div class="flex flex-col min-w-0">
                         <span class="text-sm font-semibold text-gray-900 dark:text-white m-0">
-                            {{ localTransaction.value.invoice.series ? `${localTransaction.value.invoice.series}-${localTransaction.value.invoice.folio}` : localTransaction.value.invoice.folio }}
+                            {{ localTransaction.invoice.series ? `${localTransaction.invoice.series}-${localTransaction.invoice.folio}` : localTransaction.invoice.folio }}
                         </span>
                         <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
-                            {{ invoiceLinkInfo(localTransaction.value.invoice)?.label }}
+                            {{ invoiceLinkInfo(localTransaction.invoice)?.label }}
                         </span>
                     </div>
                 </div>
-                <Button type="button" :label="invoiceLinkInfo(localTransaction.value.invoice)?.label" :icon="invoiceLinkInfo(localTransaction.value.invoice)?.icon" severity="secondary" outlined class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold shrink-0" @click="goToInvoiceShow(localTransaction.value.invoice)" />
+                <Button type="button" :label="invoiceLinkInfo(localTransaction.invoice)?.label" :icon="invoiceLinkInfo(localTransaction.invoice)?.icon" severity="secondary" outlined class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold shrink-0" @click="goToInvoiceShow(localTransaction.invoice)" />
             </div>
 
             <!-- Contenedor Principal (Grid Layout) -->

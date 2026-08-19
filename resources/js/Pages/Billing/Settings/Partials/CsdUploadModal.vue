@@ -7,6 +7,7 @@ const emit = defineEmits(['success']);
 const visible = ref(false);
 const isUpdating = ref(false);
 const profile = ref(null);
+const showPassword = ref(false);
 
 const csdForm = useForm({
     fiscal_profile_id: null,
@@ -21,6 +22,7 @@ function open(p) {
     csdForm.clearErrors();
     csdForm.fiscal_profile_id = p.id;
     isUpdating.value = !p.certificate_number;
+    showPassword.value = false;
     visible.value = true;
 }
 
@@ -57,7 +59,7 @@ const tagPt = {
         modal
         class="w-full max-w-lg mx-4"
         :pt="dialogPt"
-        @hide="isUpdating = false"
+        @hide="isUpdating = false; showPassword = false"
     >
         <template #header>
             <div class="flex items-center gap-4">
@@ -140,15 +142,24 @@ const tagPt = {
             </div>
             <div class="flex flex-col gap-1.5">
                 <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Contraseña del CSD *</label>
-                <InputText
-                    v-model="csdForm.password"
-                    type="password"
-                    toggleMask
-                    placeholder="Contraseña de la llave privada"
-                    class="w-full"
-                    :class="{ '!border-red-500': csdForm.errors.password }"
-                    :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !text-sm' } }"
-                />
+                <div class="relative w-full">
+                    <InputText
+                        v-model="csdForm.password"
+                        :type="showPassword ? 'text' : 'password'"
+                        placeholder="Contraseña de la llave privada"
+                        class="w-full !pr-11"
+                        :class="{ '!border-red-500': csdForm.errors.password }"
+                        :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 !transition-colors !py-3 !text-sm !w-full !pr-11' } }"
+                    />
+                    <button
+                        type="button"
+                        :aria-label="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+                        @click="showPassword = !showPassword"
+                        class="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                    >
+                        <i class="pi !text-sm" :class="showPassword ? 'pi-eye-slash' : 'pi-eye'"></i>
+                    </button>
+                </div>
                 <Message v-if="csdForm.errors.password" severity="error" variant="simple" size="small">
                     {{ csdForm.errors.password }}
                 </Message>
