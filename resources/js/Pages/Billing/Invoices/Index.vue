@@ -24,6 +24,7 @@ const confirm = useConfirm();
 const searchTerm = ref(props.filters?.search || '');
 const statusFilter = ref(props.filters?.status || null);
 const fiscalProfileFilter = ref(props.filters?.fiscal_profile_id || null);
+const paymentMethodFilter = ref(props.filters?.payment_method || null);
 
 const statusOptions = [
     { label: 'Todos', value: null },
@@ -33,6 +34,13 @@ const statusOptions = [
     { label: 'En verificación', value: 'en_verificacion' },
     { label: 'Cancelación pendiente', value: 'cancelacion_pendiente' },
     { label: 'Cancelada', value: 'cancelada' },
+];
+
+// Payment method (CFDI 4.0 MetodoPago) options
+const paymentMethodOptions = [
+    { label: 'Todos los métodos', value: null },
+    { label: 'PUE — Pago en una sola exhibición', value: 'PUE' },
+    { label: 'PPD — Pago en parcialidades o diferido', value: 'PPD' },
 ];
 
 // Build fiscal profile dropdown options
@@ -47,38 +55,41 @@ const fiscalProfileOptions = computed(() => {
     ];
 });
 
+// Build the current filter query params (shared by all watch/pagination/sort triggers)
+const filtersQuery = () => ({
+    search: searchTerm.value || null,
+    status: statusFilter.value,
+    fiscal_profile_id: fiscalProfileFilter.value,
+    payment_method: paymentMethodFilter.value,
+});
+
 let searchTimeout = null;
-watch(searchTerm, (val) => {
+watch(searchTerm, () => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-        router.get(route('billing.invoices.index'), {
-            search: val || null,
-            status: statusFilter.value,
-            fiscal_profile_id: fiscalProfileFilter.value,
-        }, {
+        router.get(route('billing.invoices.index'), filtersQuery(), {
             preserveState: true,
             replace: true,
         });
     }, 400);
 });
 
-watch(statusFilter, (val) => {
-    router.get(route('billing.invoices.index'), {
-        search: searchTerm.value || null,
-        status: val,
-        fiscal_profile_id: fiscalProfileFilter.value,
-    }, {
+watch(statusFilter, () => {
+    router.get(route('billing.invoices.index'), filtersQuery(), {
         preserveState: true,
         replace: true,
     });
 });
 
-watch(fiscalProfileFilter, (val) => {
-    router.get(route('billing.invoices.index'), {
-        search: searchTerm.value || null,
-        status: statusFilter.value,
-        fiscal_profile_id: val,
-    }, {
+watch(fiscalProfileFilter, () => {
+    router.get(route('billing.invoices.index'), filtersQuery(), {
+        preserveState: true,
+        replace: true,
+    });
+});
+
+watch(paymentMethodFilter, () => {
+    router.get(route('billing.invoices.index'), filtersQuery(), {
         preserveState: true,
         replace: true,
     });
@@ -91,9 +102,7 @@ const onPage = (event) => {
     router.get(route('billing.invoices.index'), {
         page: event.page + 1,
         rows: event.rows,
-        search: searchTerm.value || null,
-        status: statusFilter.value,
-        fiscal_profile_id: fiscalProfileFilter.value,
+        ...filtersQuery(),
         sortField: props.filters?.sortField,
         sortOrder: props.filters?.sortOrder,
     }, { preserveState: true });
@@ -103,9 +112,7 @@ const onSort = (event) => {
     router.get(route('billing.invoices.index'), {
         sortField: event.sortField,
         sortOrder: event.sortOrder === 1 ? 'asc' : 'desc',
-        search: searchTerm.value || null,
-        status: statusFilter.value,
-        fiscal_profile_id: fiscalProfileFilter.value,
+        ...filtersQuery(),
     }, { preserveState: true });
 };
 
@@ -168,6 +175,11 @@ const tipoComprobanteSeverity = (type) => {
     return map[type] || 'secondary';
 };
 
+const paymentMethodSeverity = (method) => {
+    const map = { PUE: 'info', PPD: 'warn' };
+    return map[method] || 'secondary';
+};
+
 const rowClass = (data) => {
     if (data.status === 'cancelada') return 'opacity-60';
     if (data.status === 'cancelacion_pendiente') return 'bg-amber-50/30 dark:bg-amber-900/10';
@@ -225,6 +237,14 @@ const headerMenuItems = computed(() => {
     return menuItems;
 });
 
+// A draft older than 72h can no longer be stamped with its original issue
+// date (SAT rule). If confirmed, the CFDI is re-issued with today's date.
+const isOldDraft = (invoice) => {
+    const createdAt = new Date(invoice.created_at);
+    if (Number.isNaN(createdAt.getTime())) return false;
+    return (Date.now() - createdAt.getTime()) / (1000 * 60 * 60) > 72;
+};
+
 const toggleMenu = (event, invoice) => {
     selectedInvoice.value = invoice;
 
@@ -254,6 +274,20 @@ const toggleMenu = (event, invoice) => {
             label: 'Timbrar factura',
             icon: 'pi pi-check-circle',
             command: () => {
+                if (isOldDraft(invoice)) {
+                    confirm.require({
+                        message: 'Han pasado más de 72 horas desde la fecha de emisión de esta prefactura. El SAT ya no permite timbrar un comprobante con esa fecha. Si continúas, el CFDI se emitirá con la fecha y hora de hoy.',
+                        header: 'Fecha de emisión vencida',
+                        icon: 'pi pi-exclamation-triangle',
+                        acceptLabel: 'Timbrar con fecha de hoy',
+                        rejectLabel: 'Cancelar',
+                        rejectClass: 'p-button-outlined',
+                        acceptClass: 'p-button-warning',
+                        accept: () => router.post(route('billing.invoices.stamp', invoice.id), { change_date: true }),
+                    });
+                    return;
+                }
+
                 confirm.require({
                     message: '¿Timbrar factura? La factura se registrará y validará ante el SAT.',
                     header: 'Timbrar factura',
@@ -385,13 +419,23 @@ const menuPt = {
                         <InputIcon class="pi pi-search !text-sm text-gray-400 dark:text-gray-500" />
                         <InputText
                             v-model="searchTerm"
-                            placeholder="Buscar por folio, razón social, RFC o UUID..."
+                            placeholder="Buscar por folio, cliente, razón social, RFC o UUID..."
                             :pt="inputPt"
                             class="!pl-10"
                         />
                     </IconField>
 
-                    <div class="flex items-center gap-3 w-full md:w-auto">
+                    <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                        <!-- Payment method filter (PUE / PPD) -->
+                        <Select
+                            v-model="paymentMethodFilter"
+                            :options="paymentMethodOptions"
+                            optionLabel="label"
+                            optionValue="value"
+                            placeholder="Método de pago"
+                            class="w-full sm:w-48 md:w-52"
+                            :pt="selectPt"
+                        />
                         <!-- Fiscal profile filter (hidden if only one profile) -->
                         <Select
                             v-if="fiscalProfiles && fiscalProfiles.length > 1"
@@ -400,7 +444,7 @@ const menuPt = {
                             optionLabel="label"
                             optionValue="value"
                             placeholder="Emisor fiscal"
-                            class="w-full md:w-56"
+                            class="w-full sm:w-48 md:w-56"
                             :pt="selectPt"
                         />
                         <!-- Status filter -->
@@ -410,7 +454,7 @@ const menuPt = {
                             optionLabel="label"
                             optionValue="value"
                             placeholder="Filtrar por estado"
-                            class="w-full md:w-48"
+                            class="w-full sm:w-44 md:w-48"
                             :pt="selectPt"
                         />
                     </div>
@@ -467,19 +511,27 @@ const menuPt = {
                         </template>
                     </Column>
 
-                    <!-- Tipo de comprobante -->
-                    <Column field="tipo_comprobante" header="Tipo" headerStyle="width: 9rem">
+                    <!-- Tipo de comprobante + método de pago (PPD / PUE) -->
+                    <Column field="tipo_comprobante" header="Tipo" headerStyle="width: 12rem">
                         <template #body="{ data }">
-                            <Tag
-                                :value="tipoComprobanteLabel(data.tipo_comprobante)"
-                                :severity="tipoComprobanteSeverity(data.tipo_comprobante)"
-                                :pt="tagPt"
-                            />
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <Tag
+                                    :value="tipoComprobanteLabel(data.tipo_comprobante)"
+                                    :severity="tipoComprobanteSeverity(data.tipo_comprobante)"
+                                    :pt="tagPt"
+                                />
+                                <Tag
+                                    v-if="data.tipo_comprobante === 'I' && data.payment_method"
+                                    :value="data.payment_method"
+                                    :severity="paymentMethodSeverity(data.payment_method)"
+                                    :pt="tagPt"
+                                />
+                            </div>
                         </template>
                     </Column>
 
                     <!-- Cliente (Razón Social) -->
-                    <Column field="receiver_legal_name" header="Cliente" sortable>
+                    <Column field="receiver_legal_name" header="Razón Social/Cliente" sortable>
                         <template #body="{ data }">
                             <div class="flex flex-col">
                                 <span class="font-medium text-gray-900 dark:text-gray-100">
@@ -516,7 +568,7 @@ const menuPt = {
                     </Column>
 
                     <!-- UUID -->
-                    <Column field="uuid" header="UUID">
+                    <Column field="uuid" header="UUID (Folio fiscal)" sortable>
                         <template #body="{ data }">
                             <span
                                 v-if="data.uuid"

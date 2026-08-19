@@ -101,10 +101,13 @@ class Invoice extends Model
 
     /**
      * SAT-compliant ISO 8601 timestamp (Y-m-d\TH:i:s).
+     *
+     * Uses the real issue date (issued_at) when available, falling back to the
+     * creation date (created_at) for drafts that haven't been stamped yet.
      */
     public function getFechaAttribute(): string
     {
-        return $this->created_at->format('Y-m-d\TH:i:s');
+        return ($this->issued_at ?? $this->created_at)->format('Y-m-d\TH:i:s');
     }
 
     public function getActivitylogOptions(): LogOptions

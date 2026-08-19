@@ -123,27 +123,34 @@ function submitActivation() {
     const url = isActiveAccount
         ? route('admin.pac-accounts.credentials', activeAccount.value.id)
         : route('admin.pac-accounts.activate', activeAccount.value.id);
-    const method = isActiveAccount ? router.put : router.post;
 
-    method(
-        url,
-        {
-            login_email: activationForm.value.login_email,
-            password: activationForm.value.password,
+    const payload = {
+        login_email: activationForm.value.login_email,
+        password: activationForm.value.password,
+    };
+
+    const options = {
+        preserveScroll: true,
+        preserveState: false,
+        onSuccess: () => {
+            activationDialog.value = false;
+            activeAccount.value = null;
+            activationProcessing.value = false;
         },
-        {
-            preserveScroll: true,
-            preserveState: false,
-            onSuccess: () => {
-                activationDialog.value = false;
-                activeAccount.value = null;
-                activationProcessing.value = false;
-            },
-            onError: () => {
-                activationProcessing.value = false;
-            },
-        }
-    );
+        onError: () => {
+            activationProcessing.value = false;
+        },
+    };
+
+    // Llamar directamente al método del router: extraerlo a una variable
+    // (const method = router.post) pierde el contexto `this` y en Inertia v2
+    // los métodos usan `this.visit()` internamente, causando
+    // "Cannot read properties of undefined (reading 'visit')".
+    if (isActiveAccount) {
+        router.put(url, payload, options);
+    } else {
+        router.post(url, payload, options);
+    }
 }
 
 // ──────────────────────────────────────

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermissions } from '@/Composables';
+import { useConfirm } from 'primevue/useconfirm';
 import CancelInvoiceModal from './Partials/CancelInvoiceModal.vue';
 
 const props = defineProps({
@@ -15,6 +16,7 @@ const props = defineProps({
 });
 
 const { hasPermission } = usePermissions();
+const confirm = useConfirm();
 
 // ──────────────────────────────────────
 // Helpers
@@ -216,8 +218,38 @@ const cancelModalRef = ref(null);
 // ──────────────────────────────────────
 const stamping = ref(false);
 
+// A draft older than 72h can no longer be stamped with its original issue
+// date (SAT rule). If confirmed, the CFDI is re-issued with today's date.
+const isOldDraft = computed(() => {
+    if (props.invoice.status !== 'borrador') return false;
+    const createdAt = new Date(props.invoice.created_at);
+    if (Number.isNaN(createdAt.getTime())) return false;
+    return (Date.now() - createdAt.getTime()) / (1000 * 60 * 60) > 72;
+});
+
 function stampInvoice() {
     if (stamping.value) return;
+
+    if (isOldDraft.value) {
+        confirm.require({
+            message: 'Han pasado más de 72 horas desde la fecha de emisión de esta prefactura. El SAT ya no permite timbrar un comprobante con esa fecha. Si continúas, el CFDI se emitirá con la fecha y hora de hoy.',
+            header: 'Fecha de emisión vencida',
+            icon: 'pi pi-exclamation-triangle',
+            acceptLabel: 'Timbrar con fecha de hoy',
+            rejectLabel: 'Cancelar',
+            rejectClass: 'p-button-outlined',
+            acceptClass: 'p-button-warning',
+            accept: () => {
+                stamping.value = true;
+                router.post(route('billing.invoices.stamp', props.invoice.id), { change_date: true }, {
+                    preserveScroll: true,
+                    onFinish: () => { stamping.value = false; },
+                });
+            },
+        });
+        return;
+    }
+
     stamping.value = true;
     router.post(route('billing.invoices.stamp', props.invoice.id), {}, {
         preserveScroll: true,
@@ -240,8 +272,19 @@ const goToCreatePago = () => {
 const actionMenuItems = computed(() => {
     const items = [];
 
+    // "Emitir nueva factura" lleva al formulario para crear un nuevo CFDI.
     if (['borrador', 'pendiente'].includes(props.invoice.status)) {
-        items.push({ label: 'Emitir factura', icon: 'pi pi-shield', command: stampInvoice });
+        items.push({
+            label: 'Emitir nueva factura',
+            icon: 'pi pi-plus',
+            command: () => router.get(route('billing.invoices.create')),
+        });
+    }
+
+    // Las facturas en "pendiente" (timbrado en curso / reintentable) pueden
+    // reintentar el timbrado desde aquí.
+    if (props.invoice.status === 'pendiente') {
+        items.push({ label: 'Reintentar timbrado', icon: 'pi pi-refresh', command: stampInvoice });
     }
 
     if (props.invoice.status === 'borrador') {
@@ -254,15 +297,6 @@ const actionMenuItems = computed(() => {
 
     if (isPpd.value && props.invoice.uuid) {
         items.push({ label: 'Facturar pago', icon: 'pi pi-wallet', command: goToCreatePago });
-    }
-
-    // ── Relacionados ──
-    if (props.invoice.transaction) {
-        items.push({
-            label: `Ver venta ${props.invoice.transaction.folio}`,
-            icon: 'pi pi-shopping-bag',
-            command: () => router.get(route('transactions.show', props.invoice.transaction.id)),
-        });
     }
 
     const firstPpd = (props.relatedPpdInvoices || []).find((r) => r.invoice);
@@ -389,6 +423,7 @@ const tagPt = {
                         class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold hover:!text-primary-500 dark:hover:!text-primary-400 hover:!border-primary-500 dark:hover:!border-primary-400 hover:!bg-primary-500/10 transition-colors"
                         @click="openUrl(route('billing.invoices.pdf', invoice.id))"
                     />
+                    
                     <Button
                         type="button"
                         label="Opciones"
@@ -398,6 +433,14 @@ const tagPt = {
                         outlined
                         class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto"
                         @click="toggleActionsMenu"
+                    />
+                    <Button
+                        v-if="invoice.status === 'borrador'"
+                        label="Timbrar factura"
+                        icon="pi pi-check-circle"
+                        :loading="stamping"
+                        @click="stampInvoice"
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-5 shadow-sm"
                     />
                     <Menu ref="actionsMenu" :model="actionMenuItems" :popup="true" :pt="menuPt" />
                 </div>
@@ -456,6 +499,16 @@ const tagPt = {
                             </div>
                         </div>
                         <div class="space-y-4">
+                            <div v-if="invoice.customer" class="flex flex-col gap-1">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Cliente</span>
+                                <Link
+                                    :href="route('customers.show', invoice.customer.id)"
+                                    class="text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1.5 no-underline"
+                                >
+                                    {{ invoice.customer.name || invoice.customer.company_name }}
+                                    <i class="pi pi-external-link !text-[10px]"></i>
+                                </Link>
+                            </div>
                             <div class="flex flex-col gap-1">
                                 <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">RFC</span>
                                 <span class="text-sm text-gray-900 dark:text-gray-200">{{ invoice.receiver_rfc }}</span>
@@ -490,7 +543,7 @@ const tagPt = {
                         </div>
                         <div class="space-y-4">
                             <div class="flex flex-col gap-1">
-                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">UUID</span>
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">UUID (Folio fiscal)</span>
                                 <span
                                     v-if="invoice.uuid"
                                     class="text-sm text-gray-900 dark:text-gray-200 break-all"
