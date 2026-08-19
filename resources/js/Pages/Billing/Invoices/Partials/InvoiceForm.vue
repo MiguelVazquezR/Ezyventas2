@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
-import { useForm } from '@inertiajs/vue3';
+import { useForm, router } from '@inertiajs/vue3';
+import { useConfirm } from 'primevue/useconfirm';
 import { useInvoiceTaxes } from '@/Composables/useInvoiceTaxes';
 import FormNavigationSidebar from '@/Components/FormNavigationSidebar.vue';
 import { useScrollspy } from '@/Composables/useScrollspy';
@@ -26,6 +27,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['submit']);
+
+const confirm = useConfirm();
 
 // ──────────────────────────────────────
 // Normalize collections
@@ -362,6 +365,60 @@ form.transform((data) => {
 });
 
 // ──────────────────────────────────────
+// Timbrar desde edición (prefactura)
+// Primero guarda los cambios del formulario y, al guardar, timbra con ellos.
+// ──────────────────────────────────────
+const stampPhase = ref(null); // null | 'saving' | 'stamping'
+
+// Un borrador con más de 72 horas ya no puede timbrarse con su fecha de
+// emisión original (regla del SAT). Si se confirma, el CFDI se emite con la
+// fecha y hora de hoy.
+const isOldDraft = computed(() => {
+    if (!props.invoice || props.invoice.status !== 'borrador') return false;
+    const createdAt = new Date(props.invoice.created_at);
+    if (Number.isNaN(createdAt.getTime())) return false;
+    return (Date.now() - createdAt.getTime()) / (1000 * 60 * 60) > 72;
+});
+
+function stampInvoice() {
+    if (stampPhase.value || form.processing) return;
+
+    if (isOldDraft.value) {
+        confirm.require({
+            message: 'Han pasado más de 72 horas desde la fecha de emisión de esta prefactura. El SAT ya no permite timbrar un comprobante con esa fecha. Si continúas, se guardarán los cambios y el CFDI se emitirá con la fecha y hora de hoy.',
+            header: 'Fecha de emisión vencida',
+            icon: 'pi pi-exclamation-triangle',
+            acceptLabel: 'Timbrar con fecha de hoy',
+            rejectLabel: 'Cancelar',
+            rejectClass: 'p-button-outlined',
+            acceptClass: 'p-button-warning',
+            accept: () => saveThenStamp(true),
+        });
+        return;
+    }
+
+    saveThenStamp(false);
+}
+
+// Guarda el formulario y, al terminar, timbra la prefactura con los datos guardados.
+function saveThenStamp(changeDate) {
+    stampPhase.value = 'saving';
+    form.put(route('billing.invoices.update', props.invoice.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            stampPhase.value = 'stamping';
+            router.post(route('billing.invoices.stamp', props.invoice.id), changeDate ? { change_date: true } : {}, {
+                preserveScroll: true,
+                onFinish: () => { stampPhase.value = null; },
+            });
+        },
+        onError: () => {
+            stampPhase.value = null;
+        },
+    });
+}
+
+// ──────────────────────────────────────
 // Submit
 // ──────────────────────────────────────
 const submit = (draft = false) => {
@@ -482,7 +539,17 @@ const submit = (draft = false) => {
                     </template>
                     <template v-else>
                         <Button type="submit" label="Guardar cambios" icon="pi pi-save" :loading="form.processing" class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95" />
-                        <Button type="button" label="Cancelar" severity="secondary" outlined :disabled="form.processing" @click="$inertia.visit(route('billing.invoices.show', invoice.id))" class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95" />
+                        <Button
+                            type="button"
+                            :label="stampPhase === 'saving' ? 'Guardando cambios...' : stampPhase === 'stamping' ? 'Timbrando factura...' : 'Timbrar factura'"
+                            icon="pi pi-check-circle"
+                            severity="primary"
+                            outlined
+                            :loading="!!stampPhase"
+                            :disabled="form.processing || !!stampPhase"
+                            @click="stampInvoice"
+                            class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !bg-white dark:!bg-transparent"
+                        />
                     </template>
                 </div>
             </div>
