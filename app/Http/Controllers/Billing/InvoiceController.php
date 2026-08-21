@@ -1011,7 +1011,9 @@ class InvoiceController extends Controller implements HasMiddleware
         // Un borrador con más de 72 horas ya no puede timbrarse con su fecha de
         // emisión original (regla del SAT). Si el usuario confirmó el cambio de
         // fecha, el CFDI se emite con la fecha y hora actuales.
-        if ($request->boolean('change_date') && $invoice->created_at->diffInHours(now()) > 72) {
+        $effectiveDate = $invoice->issued_at ?? $invoice->created_at;
+
+        if ($request->boolean('change_date') && $effectiveDate->diffInHours(now()) > 72) {
             $invoice->issued_at = now();
             $invoice->save();
         }

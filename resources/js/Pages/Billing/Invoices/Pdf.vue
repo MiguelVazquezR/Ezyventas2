@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted } from 'vue';
 import { Head } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -23,6 +23,37 @@ const props = defineProps({
 function handlePrint() {
     window.print();
 }
+
+// ──────────────────────────────────────
+// Default PDF filename — browsers use document.title as the suggested
+// filename when saving as PDF.
+//  - Factura timbrada → CFDI UUID (igual que la descarga del XML).
+//  - Pre-factura      → "Pre-factura <folio> - <cliente>" (sin el nombre de la app).
+// Inertia aplica su <title> en una actualización DOM debounced (~1 ms) y le
+// añade el nombre de la app, así que fijamos document.title después del montaje.
+// ──────────────────────────────────────
+const customerName = computed(
+    () => props.invoice.customer?.name || props.invoice.customer?.company_name || '',
+);
+
+const pdfTitle = computed(() =>
+    props.invoice.uuid
+        ? props.invoice.uuid
+        : `Pre-factura ${props.invoice.folio} - ${customerName.value}`.trim(),
+);
+
+onMounted(() => {
+    const apply = () => {
+        if (document.title !== pdfTitle.value) {
+            document.title = pdfTitle.value;
+        }
+    };
+
+    apply();
+    // Re-aplica tras la actualización debounced de Inertia para garantizar el nombre.
+    const timer = setTimeout(apply, 100);
+    onBeforeUnmount(() => clearTimeout(timer));
+});
 
 function formatCurrency(value, currency) {
     // CFDI de pago stores 'XXX' in the header; use the pago_moneda for amounts.
@@ -62,18 +93,20 @@ function formatDateTime(dateString) {
 
 function formatDateMexico(dateString) {
     if (!dateString) return '—';
-    // Remove the 'T' separator, fractional seconds, and the timezone suffix
-    // (trailing Z or ±hh:mm) so the clock time is shown as-is, in Mexico format.
-    const clean = String(dateString)
-        .trim()
-        .replace('T', ' ')
-        .replace(/\.\d+/, '')
-        .replace(/[zZ]$/, '')
-        .replace(/([+-]\d{2}):?\d{2}$/, '')
-        .trim();
+
+    const raw = String(dateString).trim();
+    if (!raw || raw === '—') return '—';
+
+    // Strings that carry timezone info (trailing Z or ±hh:mm) represent an
+    // absolute instant: let JS convert them to the viewer's local time, exactly
+    // like the Show view does with new Date(). Naive strings (e.g. the XML Fecha
+    // attribute, already in Mexico time) are shown as-is.
+    const hasTimezone = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(raw);
 
     try {
-        const d = new Date(clean.replace(' ', 'T'));
+        const d = hasTimezone
+            ? new Date(raw)
+            : new Date(raw.replace(' ', 'T').replace(/\.\d+/, ''));
         if (Number.isNaN(d.getTime())) return dateString;
 
         const day = String(d.getDate()).padStart(2, '0');
@@ -272,7 +305,7 @@ const lugarFechaEmision = computed(() => {
 </script>
 
 <template>
-    <Head :title="`Factura ${invoice.series ?? ''}${invoice.folio}`" />
+    <Head :title="invoice.uuid ? invoice.uuid : `Pre-factura ${invoice.folio} - ${customerName}`" />
 
     <div class="min-h-screen bg-gray-200 print:bg-white">
         <!-- ════════════════════════════════════════

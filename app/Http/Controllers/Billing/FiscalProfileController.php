@@ -9,6 +9,7 @@ use App\Http\Requests\Billing\AcceptManifestTextRequest;
 use App\Http\Requests\Billing\FetchManifestLegendRequest;
 use App\Http\Requests\Billing\SignManifestRequest;
 use App\Http\Requests\Billing\StoreFiscalProfileRequest;
+use App\Http\Requests\Billing\UpdateFiscalProfileRequest;
 use App\Enums\PacAccountStatus;
 use App\Enums\PacAccountType;
 use App\Models\Billing\FiscalProfile;
@@ -136,6 +137,48 @@ class FiscalProfileController extends Controller implements HasMiddleware
             return redirect()->route('billing.settings.index')
                 ->with('error', 'Se rechazó la creación de la cuenta: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Update the data of an existing fiscal profile.
+     *
+     * Only the data fields are editable (razón social, régimen, CP, email).
+     * The RFC is immutable: it is the identity that links the profile to its
+     * PAC account and CSD certificates, so it is never updated here and the
+     * PAC account is NOT re-linked — this only updates the local data.
+     */
+    public function updateFiscalProfile(
+        UpdateFiscalProfileRequest $request,
+        FiscalProfile $fiscalProfile,
+    ): RedirectResponse {
+        $user = Auth::user();
+        $subscription = $user->branch?->subscription;
+
+        if (! $subscription || $fiscalProfile->subscription_id !== $subscription->id) {
+            return redirect()->route('billing.settings.index')
+                ->with('error', 'Este emisor fiscal no pertenece a tu cuenta.');
+        }
+
+        $validated = $request->validated();
+
+        $data = [
+            'razon_social'   => $validated['razon_social'],
+            'regimen_fiscal' => $validated['regimen_fiscal'],
+            'postal_code'    => $validated['postal_code'],
+            'email'          => $validated['email'],
+        ];
+
+        // El RFC solo puede cambiarse si el perfil aún NO tiene certificados
+        // CSD cargados. Una vez subidos, el RFC queda inmovible: el CSD está
+        // registrado ante el PAC y vinculado a ese RFC.
+        if (! $fiscalProfile->certificate_number) {
+            $data['rfc'] = strtoupper(trim($validated['rfc']));
+        }
+
+        $fiscalProfile->update($data);
+
+        return redirect()->route('billing.settings.index')
+            ->with('success', 'Datos del emisor fiscal actualizados correctamente.');
     }
 
     /**
@@ -303,6 +346,16 @@ class FiscalProfileController extends Controller implements HasMiddleware
      */
     public function destroy(FiscalProfile $fiscalProfile): RedirectResponse
     {
+        // Los emisores con certificados CSD cargados no pueden eliminarse: el
+        // CSD quedó registrado ante el PAC y está vinculado al RFC. Solo se
+        // permite darlos de baja (inactivar).
+        if ($fiscalProfile->certificate_number) {
+            $fiscalProfile->update(['is_active' => false]);
+
+            return redirect()->route('billing.settings.index')
+                ->with('warning', 'Este emisor tiene certificados CSD cargados y no puede eliminarse; se dio de baja (inactivado) en su lugar.');
+        }
+
         $hasInvoices = Invoice::where('fiscal_profile_id', $fiscalProfile->id)->exists();
 
         // ── Deactivate the PAC account (only dealer subaccounts have an API) ──

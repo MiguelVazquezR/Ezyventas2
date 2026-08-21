@@ -3,8 +3,8 @@ import { ref, computed } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { usePermissions } from '@/Composables';
-import { useConfirm } from 'primevue/useconfirm';
 import CancelInvoiceModal from './Partials/CancelInvoiceModal.vue';
+import StampOldDateDialog from './Partials/StampOldDateDialog.vue';
 
 const props = defineProps({
     invoice: Object,
@@ -16,7 +16,6 @@ const props = defineProps({
 });
 
 const { hasPermission } = usePermissions();
-const confirm = useConfirm();
 
 // ──────────────────────────────────────
 // Helpers
@@ -217,36 +216,22 @@ const cancelModalRef = ref(null);
 // Stamp a draft invoice directly from the detail page
 // ──────────────────────────────────────
 const stamping = ref(false);
+const showOldStampDialog = ref(false);
 
 // A draft older than 72h can no longer be stamped with its original issue
-// date (SAT rule). If confirmed, the CFDI is re-issued with today's date.
+// date (SAT rule). Uses the effective issue date (issued_at ?? created_at).
 const isOldDraft = computed(() => {
     if (props.invoice.status !== 'borrador') return false;
-    const createdAt = new Date(props.invoice.created_at);
-    if (Number.isNaN(createdAt.getTime())) return false;
-    return (Date.now() - createdAt.getTime()) / (1000 * 60 * 60) > 72;
+    const d = new Date(props.invoice.issued_at || props.invoice.created_at);
+    if (Number.isNaN(d.getTime())) return false;
+    return (Date.now() - d.getTime()) / (1000 * 60 * 60) > 72;
 });
 
 function stampInvoice() {
     if (stamping.value) return;
 
     if (isOldDraft.value) {
-        confirm.require({
-            message: 'Han pasado más de 72 horas desde la fecha de emisión de esta prefactura. El SAT ya no permite timbrar un comprobante con esa fecha. Si continúas, el CFDI se emitirá con la fecha y hora de hoy.',
-            header: 'Fecha de emisión vencida',
-            icon: 'pi pi-exclamation-triangle',
-            acceptLabel: 'Timbrar con fecha de hoy',
-            rejectLabel: 'Cancelar',
-            rejectClass: 'p-button-outlined',
-            acceptClass: 'p-button-warning',
-            accept: () => {
-                stamping.value = true;
-                router.post(route('billing.invoices.stamp', props.invoice.id), { change_date: true }, {
-                    preserveScroll: true,
-                    onFinish: () => { stamping.value = false; },
-                });
-            },
-        });
+        showOldStampDialog.value = true;
         return;
     }
 
@@ -255,6 +240,23 @@ function stampInvoice() {
         preserveScroll: true,
         onFinish: () => { stamping.value = false; },
     });
+}
+
+// "Timbrar con fecha de hoy" desde el modal de fecha vencida.
+function stampWithToday() {
+    if (stamping.value) return;
+    showOldStampDialog.value = false;
+    stamping.value = true;
+    router.post(route('billing.invoices.stamp', props.invoice.id), { change_date: true }, {
+        preserveScroll: true,
+        onFinish: () => { stamping.value = false; },
+    });
+}
+
+// "Editar fecha" desde el modal → manda a la edición de la prefactura.
+function goToEditDraft() {
+    showOldStampDialog.value = false;
+    router.get(route('billing.invoices.edit', props.invoice.id));
 }
 
 // ──────────────────────────────────────
@@ -360,7 +362,7 @@ const tagPt = {
             <!-- Breadcrumb / Back link -->
             <div class="flex items-center">
                 <Link :href="route('billing.invoices.index')" class="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
-                    <i class="pi pi-arrow-left !text-[10px]"></i> Volver a facturación
+                    <i class="pi pi-arrow-left !text-[10px]"></i> Volver a lista de facturas
                 </Link>
             </div>
 
@@ -921,6 +923,13 @@ const tagPt = {
             ref="cancelModalRef"
             :invoice="invoice"
             @success="router.reload()"
+        />
+
+        <!-- Modal: fecha de emisión vencida (>72 h) → timbrar hoy / editar fecha -->
+        <StampOldDateDialog
+            v-model:visible="showOldStampDialog"
+            @stamp-today="stampWithToday"
+            @edit="goToEditDraft"
         />
     </AppLayout>
 </template>

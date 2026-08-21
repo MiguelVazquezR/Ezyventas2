@@ -6,6 +6,7 @@ import { usePermissions } from '@/Composables';
 import { useConfirm } from 'primevue/useconfirm';
 import AcceptRejectModal from './Partials/AcceptRejectModal.vue';
 import CancelInvoiceModal from './Partials/CancelInvoiceModal.vue';
+import StampOldDateDialog from './Partials/StampOldDateDialog.vue';
 
 const props = defineProps({
     invoices: Object,
@@ -17,6 +18,25 @@ const props = defineProps({
 
 const { hasPermission } = usePermissions();
 const confirm = useConfirm();
+
+// Modal único de "fecha de emisión vencida" (>72 h) — compartido con Show y
+// la edición de la prefactura. Abre con la factura seleccionada.
+const showOldStampDialog = ref(false);
+const stampTargetInvoice = ref(null);
+
+function stampTargetWithToday() {
+    const invoice = stampTargetInvoice.value;
+    if (!invoice) return;
+    showOldStampDialog.value = false;
+    router.post(route('billing.invoices.stamp', invoice.id), { change_date: true });
+}
+
+function editStampTargetDraft() {
+    const invoice = stampTargetInvoice.value;
+    if (!invoice) return;
+    showOldStampDialog.value = false;
+    router.get(route('billing.invoices.edit', invoice.id));
+}
 
 // ──────────────────────────────────────
 // Search & filters
@@ -238,11 +258,11 @@ const headerMenuItems = computed(() => {
 });
 
 // A draft older than 72h can no longer be stamped with its original issue
-// date (SAT rule). If confirmed, the CFDI is re-issued with today's date.
+// date (SAT rule). Uses the effective issue date (issued_at ?? created_at).
 const isOldDraft = (invoice) => {
-    const createdAt = new Date(invoice.created_at);
-    if (Number.isNaN(createdAt.getTime())) return false;
-    return (Date.now() - createdAt.getTime()) / (1000 * 60 * 60) > 72;
+    const d = new Date(invoice.issued_at || invoice.created_at);
+    if (Number.isNaN(d.getTime())) return false;
+    return (Date.now() - d.getTime()) / (1000 * 60 * 60) > 72;
 };
 
 const toggleMenu = (event, invoice) => {
@@ -275,16 +295,8 @@ const toggleMenu = (event, invoice) => {
             icon: 'pi pi-check-circle',
             command: () => {
                 if (isOldDraft(invoice)) {
-                    confirm.require({
-                        message: 'Han pasado más de 72 horas desde la fecha de emisión de esta prefactura. El SAT ya no permite timbrar un comprobante con esa fecha. Si continúas, el CFDI se emitirá con la fecha y hora de hoy.',
-                        header: 'Fecha de emisión vencida',
-                        icon: 'pi pi-exclamation-triangle',
-                        acceptLabel: 'Timbrar con fecha de hoy',
-                        rejectLabel: 'Cancelar',
-                        rejectClass: 'p-button-outlined',
-                        acceptClass: 'p-button-warning',
-                        accept: () => router.post(route('billing.invoices.stamp', invoice.id), { change_date: true }),
-                    });
+                    stampTargetInvoice.value = invoice;
+                    showOldStampDialog.value = true;
                     return;
                 }
 
@@ -654,6 +666,13 @@ const menuPt = {
         <AcceptRejectModal
             ref="acceptRejectModalRef"
             :fiscal-profiles="fiscalProfiles"
+        />
+
+        <!-- Modal único: fecha de emisión vencida (>72 h) → timbrar hoy / editar fecha -->
+        <StampOldDateDialog
+            v-model:visible="showOldStampDialog"
+            @stamp-today="stampTargetWithToday"
+            @edit="editStampTargetDraft"
         />
 
     </AppLayout>

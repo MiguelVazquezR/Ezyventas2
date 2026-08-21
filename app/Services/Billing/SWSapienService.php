@@ -53,6 +53,7 @@ class SWSapienService
             'cfdi_use'             => $data['cfdi_use'],
             'exportacion'          => $data['exportacion'] ?? '01',
             'tipo_comprobante'     => $data['tipo_comprobante'] ?? 'I',
+            'issued_at'            => $data['issued_at'] ?? null,
             'payment_form'         => $data['payment_form'] ?? null,
             'payment_method'       => $data['payment_method'] ?? null,
             'pago_fecha'           => $data['pago_fecha'] ?? null,
@@ -715,7 +716,9 @@ class SWSapienService
             'cadena_original_sat'  => $cadenaOriginal ?: null,
             'qr_code_base64'       => $data['qrCode'] ?? null,
             'status'               => InvoiceStatus::CERTIFIED,
-            'issued_at'            => now(),
+            // Conserva la fecha de emisión elegida en la prefactura (si el
+            // usuario la fijó); solo se usa la fecha actual si no había una.
+            'issued_at'            => $invoice->issued_at ?? now(),
         ]);
     }
 
@@ -1125,6 +1128,18 @@ class SWSapienService
         $cerDer = $this->extractDerFromPem($cerContent, 'CERTIFICATE');
         $keyDer = $this->extractDerFromPem($keyContent, 'PRIVATE KEY');
 
+        // ── Validación local (defensa adicional): el CSD debe pertenecer al RFC ──
+        // El PAC también lo valida, pero aquí damos un error claro y temprano
+        // antes de enviar los certificados.
+        $certRfc = $this->extractCertificateRfc($cerDer);
+
+        if ($certRfc && strtoupper($certRfc) !== strtoupper(trim($profile->rfc))) {
+            throw new \RuntimeException(
+                'El certificado (.cer) pertenece al RFC ' . $certRfc
+                . ' y no coincide con el RFC del emisor (' . $profile->rfc . '). Verifica que subas el CSD correcto.'
+            );
+        }
+
         $payload = [
             'b64Key'   => base64_encode($keyDer),
             'b64Cer'   => base64_encode($cerDer),
@@ -1364,6 +1379,54 @@ class SWSapienService
             'valid_from'         => \Carbon\Carbon::createFromTimestamp($certData['validFrom_time_t']),
             'valid_to'           => \Carbon\Carbon::createFromTimestamp($certData['validTo_time_t']),
         ];
+    }
+
+    /**
+     * Best-effort extraction of the certificate holder's RFC from the .cer.
+     *
+     * Mexican CSD certificates usually carry the RFC in the subject's
+     * serialNumber field (sometimes as "RFC:XXXX..."), but some put it in
+     * another subject field. Returns null when no clean RFC-like token is
+     * found, in which case the check is skipped (the PAC still validates).
+     *
+     * @return string|null Normalized uppercase RFC (12-13 chars), or null.
+     */
+    protected function extractCertificateRfc(string $cerDer): ?string
+    {
+        $pem = "-----BEGIN CERTIFICATE-----\n"
+             . chunk_split(base64_encode($cerDer), 64, "\n")
+             . "-----END CERTIFICATE-----\n";
+
+        $certData = openssl_x509_parse($pem);
+
+        if (! $certData) {
+            return null;
+        }
+
+        $subject    = $certData['subject'] ?? [];
+        $candidates = [];
+
+        if (! empty($subject['serialNumber'])) {
+            $candidates[] = $subject['serialNumber'];
+        }
+
+        // Fallback: escanear el subject por un token con forma de RFC mexicano
+        // (3-4 letras + 6 dígitos + 3 caracteres de homoclave).
+        foreach ($subject as $value) {
+            if (is_string($value) && preg_match('/\b[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}\b/', strtoupper($value), $match)) {
+                $candidates[] = $match[0];
+            }
+        }
+
+        foreach ($candidates as $candidate) {
+            $clean = strtoupper(preg_replace('/[^A-Z0-9Ñ&]/', '', preg_replace('/^RFC\s*:?\s*/i', '', trim((string) $candidate))));
+
+            if (preg_match('/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/', $clean)) {
+                return $clean;
+            }
+        }
+
+        return null;
     }
 
     /**

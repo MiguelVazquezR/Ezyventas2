@@ -33,12 +33,64 @@ const props = defineProps({
     userBankAccounts: Array,
     activeLayaways: Array,
     availableTemplates: Array,
+    customerInvoices: Array,
 });
 
 const confirm = useConfirm();
 const { hasPermission } = usePermissions();
 const page = usePage();
 const toast = useToast();
+
+// --- MÓDULO DE FACTURACIÓN (CFDI) ---
+// La sección de facturas solo se muestra a suscriptores con el módulo activo.
+const hasBilling = computed(() => page.props.auth?.active_modules?.includes('module_billing'));
+
+const expandedInvoiceRows = ref({});
+
+const statusLabel = (status) => {
+    const map = {
+        borrador: 'Pre-factura',
+        pendiente: 'Pendiente',
+        certificada: 'Timbrada',
+        en_verificacion: 'En verificación',
+        cancelacion_pendiente: 'Cancelación pendiente',
+        cancelada: 'Cancelada',
+        no_solicitada: 'No solicitada',
+        solicitada: 'Solicitada',
+        generada: 'Generada',
+    };
+    return map[status] || status;
+};
+
+const statusSeverity = (status) => {
+    const map = {
+        borrador: 'info',
+        pendiente: 'secondary',
+        certificada: 'success',
+        en_verificacion: 'warn',
+        cancelacion_pendiente: 'warn',
+        cancelada: 'danger',
+        no_solicitada: 'secondary',
+        solicitada: 'info',
+        generada: 'success',
+    };
+    return map[status] || 'secondary';
+};
+
+const tipoComprobanteLabel = (type) => {
+    const map = { I: 'Ingreso', E: 'Egreso', P: 'Pago', T: 'Traslado', N: 'Nómina' };
+    return map[type] || type || '—';
+};
+
+const paymentMethodLabel = (method) => {
+    const map = { PUE: 'Pago en una sola exhibición', PPD: 'Pago en parcialidades o diferido' };
+    return map[method] || method || '—';
+};
+
+const formatQuantity = (value) => {
+    if (value === null || value === undefined) return '—';
+    return Number(value).toLocaleString('es-MX', { maximumFractionDigits: 4 });
+};
 
 // --- LÓGICA DE SESIÓN ---
 const activeSession = computed(() => page.props.activeSession);
@@ -552,6 +604,182 @@ const textareaPt = {
                                     <i class="pi pi-sort-alt !text-3xl text-gray-400 mb-3"></i>
                                     <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin movimientos</p>
                                     <p class="text-xs text-gray-400 mt-1">El saldo del cliente no ha tenido actividad.</p>
+                                </div>
+                            </template>
+                        </DataTable>
+                    </div>
+
+                    <!-- Tabla de Facturas (CFDI) — solo visible con el módulo de facturación -->
+                    <div v-if="hasBilling" class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col">
+                        <div class="mb-6 flex justify-between items-start">
+                            <div>
+                                <h2 class="text-xs font-bold text-gray-400 dark:text-gray-500 tracking-widest uppercase m-0">Facturas (CFDI)</h2>
+                                <p class="text-[10px] text-gray-500 uppercase tracking-widest mt-1 m-0">Comprobantes fiscales del cliente</p>
+                            </div>
+                            <div class="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center flex-shrink-0 border border-indigo-100 dark:border-indigo-900/30">
+                                <i class="pi pi-receipt !text-sm text-indigo-500"></i>
+                            </div>
+                        </div>
+
+                        <DataTable
+                            v-model:expandedRows="expandedInvoiceRows"
+                            :value="customerInvoices"
+                            dataKey="id"
+                            responsiveLayout="scroll"
+                            :paginator="customerInvoices?.length > 5"
+                            :rows="5"
+                            sortField="created_at"
+                            :sortOrder="-1"
+                            :pt="dataTablePt"
+                        >
+                            <Column expander style="width: 3rem" />
+                            <Column field="folio" header="Folio">
+                                <template #body="{ data }">
+                                    <div class="flex flex-col gap-1 items-start">
+                                        <Link
+                                            :href="route('billing.invoices.show', data.id)"
+                                            class="text-primary-600 dark:text-primary-400 font-medium hover:underline"
+                                        >
+                                            {{ data.series ? data.series + ' ' : '' }}{{ data.folio }}
+                                        </Link>
+                                        <span class="text-[9px] uppercase tracking-widest font-bold bg-gray-100 dark:bg-[#3a3a3a] text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded">
+                                            {{ tipoComprobanteLabel(data.tipo_comprobante) }}
+                                        </span>
+                                    </div>
+                                </template>
+                            </Column>
+                            <Column field="issued_at" header="Fecha emisión" sortable>
+                                <template #body="{ data }">
+                                    <span class="text-xs">{{ formatDateOnly(data.issued_at || data.created_at) }}</span>
+                                </template>
+                            </Column>
+                            <Column field="payment_method" header="Método de pago">
+                                <template #body="{ data }">
+                                    <span
+                                        v-if="data.payment_method"
+                                        class="text-[10px] uppercase tracking-widest font-bold"
+                                        :class="data.payment_method === 'PPD' ? 'text-amber-500' : 'text-sky-500'"
+                                    >
+                                        {{ data.payment_method }}
+                                    </span>
+                                    <span v-else class="text-gray-300 dark:text-gray-600 text-xs italic">—</span>
+                                </template>
+                            </Column>
+                            <Column field="total" header="Total">
+                                <template #body="{ data }">
+                                    <span class="font-mono text-gray-900 dark:text-white">{{ formatCurrency(data.total) }}</span>
+                                </template>
+                            </Column>
+                            <Column field="status" header="Estado">
+                                <template #body="{ data }">
+                                    <Tag :value="statusLabel(data.status)" :severity="statusSeverity(data.status)" :pt="tagPt" />
+                                </template>
+                            </Column>
+
+                            <template #expansion="slotProps">
+                                <div class="p-4 mx-4 my-2 bg-gray-50 dark:bg-[#1a1a1a] rounded-2xl border border-gray-100 dark:border-[#2a2a2a]">
+                                    <div class="flex flex-wrap justify-between items-center gap-2 mb-4 border-b border-gray-200 dark:border-[#3a3a3a] pb-3">
+                                        <h4 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">
+                                            Detalles del comprobante
+                                        </h4>
+                                        <div class="flex items-center gap-4">
+                                            <span class="text-[10px] uppercase tracking-widest text-gray-500 flex items-center gap-1">
+                                                <i class="pi pi-building !text-[9px]"></i> {{ slotProps.data.fiscal_profile?.razon_social || '—' }}
+                                            </span>
+                                            <Link
+                                                :href="route('billing.invoices.show', slotProps.data.id)"
+                                                class="text-[10px] uppercase tracking-widest font-bold text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1"
+                                            >
+                                                <i class="pi pi-external-link !text-[9px]"></i> Ver factura
+                                            </Link>
+                                        </div>
+                                    </div>
+
+                                    <!-- Datos del comprobante -->
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
+                                        <div class="flex flex-col gap-1">
+                                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 block m-0">UUID (folio fiscal)</span>
+                                            <span v-if="slotProps.data.uuid" class="font-mono text-xs text-gray-700 dark:text-gray-300 break-all m-0">
+                                                {{ slotProps.data.uuid }}
+                                            </span>
+                                            <span v-else class="text-xs italic text-gray-400 m-0">Pendiente de timbrado</span>
+                                        </div>
+                                        <div class="flex flex-col gap-1">
+                                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 block m-0">RFC receptor</span>
+                                            <span class="font-mono text-xs text-gray-700 dark:text-gray-300 m-0">{{ slotProps.data.receiver_rfc || '—' }}</span>
+                                        </div>
+                                        <div class="flex flex-col gap-1">
+                                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 block m-0">Régimen fiscal</span>
+                                            <span class="text-xs text-gray-700 dark:text-gray-300 m-0">{{ slotProps.data.receiver_tax_regime || '—' }}</span>
+                                        </div>
+                                        <div class="flex flex-col gap-1">
+                                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 block m-0">Uso de CFDI</span>
+                                            <span class="font-mono text-xs text-gray-700 dark:text-gray-300 m-0">{{ slotProps.data.cfdi_use || '—' }}</span>
+                                        </div>
+                                        <div class="flex flex-col gap-1">
+                                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 block m-0">Forma de pago</span>
+                                            <span class="text-xs text-gray-700 dark:text-gray-300 m-0">
+                                                {{ slotProps.data.payment_form || '—' }}
+                                                <span v-if="slotProps.data.payment_method" class="text-gray-400"> · {{ paymentMethodLabel(slotProps.data.payment_method) }}</span>
+                                            </span>
+                                        </div>
+                                        <div class="flex flex-col gap-1">
+                                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 block m-0">Fecha de timbrado</span>
+                                            <span class="text-xs text-gray-700 dark:text-gray-300 m-0">
+                                                {{ slotProps.data.fecha_timbrado ? formatDateOnly(slotProps.data.fecha_timbrado) : '—' }}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Desglose de montos -->
+                                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+                                        <div class="bg-white dark:bg-[#232323] rounded-xl border border-gray-100 dark:border-[#3a3a3a] p-3">
+                                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 block m-0">Subtotal</span>
+                                            <span class="font-mono text-sm text-gray-900 dark:text-white m-0">{{ formatCurrency(slotProps.data.subtotal) }}</span>
+                                        </div>
+                                        <div class="bg-white dark:bg-[#232323] rounded-xl border border-gray-100 dark:border-[#3a3a3a] p-3">
+                                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 block m-0">Descuento</span>
+                                            <span class="font-mono text-sm text-red-500 m-0">{{ formatCurrency(slotProps.data.discount_total) }}</span>
+                                        </div>
+                                        <div class="bg-white dark:bg-[#232323] rounded-xl border border-gray-100 dark:border-[#3a3a3a] p-3">
+                                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 block m-0">IVA</span>
+                                            <span class="font-mono text-sm text-gray-900 dark:text-white m-0">{{ formatCurrency(slotProps.data.taxes_total) }}</span>
+                                        </div>
+                                        <div class="bg-white dark:bg-[#232323] rounded-xl border border-indigo-100 dark:border-indigo-900/40 p-3">
+                                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 block m-0">Total</span>
+                                            <span class="font-mono text-sm font-bold text-indigo-600 dark:text-indigo-400 m-0">{{ formatCurrency(slotProps.data.total) }}</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Conceptos -->
+                                    <h4 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-3">Conceptos</h4>
+                                    <DataTable :value="slotProps.data.items" :pt="subDataTablePt">
+                                        <Column field="sat_product_code" header="Clave SAT" style="width: 8rem">
+                                            <template #body="{ data: item }"><span class="font-mono text-xs">{{ item.sat_product_code || '—' }}</span></template>
+                                        </Column>
+                                        <Column field="quantity" header="Cant." style="width: 5rem">
+                                            <template #body="{ data: item }"><span class="font-mono text-xs">{{ formatQuantity(item.quantity) }}</span></template>
+                                        </Column>
+                                        <Column field="description" header="Descripción">
+                                            <template #body="{ data: item }"><span class="font-medium text-gray-900 dark:text-gray-100">{{ item.description }}</span></template>
+                                        </Column>
+                                        <Column field="unit_price" header="P. Unit" class="text-right">
+                                            <template #body="{ data: item }"><span class="font-mono text-xs">{{ formatCurrency(item.unit_price) }}</span></template>
+                                        </Column>
+                                        <Column field="total" header="Importe" class="text-right">
+                                            <template #body="{ data: item }"><span class="font-mono text-xs font-medium text-gray-900 dark:text-white">{{ formatCurrency(item.total) }}</span></template>
+                                        </Column>
+                                        <template #empty>
+                                            <div class="text-center text-gray-500 py-3 text-xs italic">No hay conceptos registrados para este comprobante.</div>
+                                        </template>
+                                    </DataTable>
+                                </div>
+                            </template>
+                            <template #empty>
+                                <div class="flex flex-col items-center justify-center text-center py-8 opacity-60">
+                                    <i class="pi pi-receipt !text-3xl text-gray-400 mb-3"></i>
+                                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sin facturas</p>
+                                    <p class="text-xs text-gray-400 mt-1">Este cliente no tiene comprobantes fiscales.</p>
                                 </div>
                             </template>
                         </DataTable>

@@ -18,7 +18,7 @@ function handleSubmit({ form }) {
 
 <template>
     <AppLayout title="Nueva factura">
-        <Breadcrumb :home="{ icon: 'pi pi-home', url: route('dashboard') }" :model="[{ label: 'Facturación', url: route('billing.invoices.index') }, { label: 'Nueva factura' }]" class="!bg-transparent !p-0 !mb-1" />
+        <Breadcrumb :home="{ icon: 'pi pi-home', url: route('dashboard') }" :model="[{ label: 'Lista de facturas', url: route('billing.invoices.index') }, { label: 'Nueva factura' }]" class="!bg-transparent !p-0 !mb-1" />
 
         <div class="flex items-center justify-between mt-2 mb-6">
             <div>
