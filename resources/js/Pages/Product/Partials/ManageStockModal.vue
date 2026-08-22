@@ -81,6 +81,7 @@ const form = useForm({
     register_expense: false,
     expense_amount_type: 'calculated',
     expense_amount: null,
+    expense_date: null,
     payment_method: 'efectivo',
     take_from_cash_register: false,
     bank_account_id: null,
@@ -136,6 +137,7 @@ watch(() => props.visible, (newVal) => {
         operation.value = 'entry';
         form.operation = 'entry';
         form.reason = entryReasons[0];
+        form.expense_date = new Date();
 
         if (isSingleMode.value) {
             form.products = [];
@@ -338,6 +340,15 @@ const submit = () => {
                         <InputNumber v-model="form.expense_amount" mode="currency" currency="MXN" locale="es-MX"
                             class="w-full mt-1" :min="0" />
                         <InputError :message="form.errors.expense_amount" class="mt-1" />
+                    </div>
+
+                    <!-- Fecha de compra / del gasto -->
+                    <div>
+                        <InputLabel value="Fecha de compra / del gasto" />
+                        <DatePicker v-model="form.expense_date" dateFormat="dd/mm/yy" :maxDate="new Date()"
+                            showIcon class="w-full mt-1"
+                            :pt="{ root: { class: '!rounded-2xl !bg-gray-50 dark:!bg-[#1a1a1a] !border-gray-100 dark:!border-[#3a3a3a]' } }" />
+                        <InputError :message="form.errors.expense_date" class="mt-1" />
                     </div>
 
                     <!-- Método de Pago -->
