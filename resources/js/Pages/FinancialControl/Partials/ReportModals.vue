@@ -45,14 +45,51 @@ const getOriginLabel = (expense) => {
 
 const getPaymentMethodDetails = (method) => {
     const details = {
-        efectivo: { name: 'Efectivo', icon: 'pi pi-money-bill', color: 'bg-green-500', textColor: 'text-green-500' },
-        tarjeta: { name: 'Tarjeta', icon: 'pi pi-credit-card', color: 'bg-blue-500', textColor: 'text-blue-500' },
-        transferencia: { name: 'Transferencia', icon: 'pi pi-arrows-h', color: 'bg-orange-400', textColor: 'text-orange-400' },
-        saldo: { name: 'Saldo a favor', icon: 'pi pi-wallet', color: 'bg-purple-500', textColor: 'text-purple-500' },
-        default: { name: method || 'Otro', icon: 'pi pi-question-circle', color: 'bg-gray-500', textColor: 'text-gray-500' }
+        efectivo: {
+            name: 'Efectivo', icon: 'pi pi-money-bill', color: 'bg-green-500', textColor: 'text-green-500',
+            cardClass: 'bg-green-50 dark:bg-green-900/10 border-green-100 dark:border-green-900/30'
+        },
+        tarjeta: {
+            name: 'Tarjeta', icon: 'pi pi-credit-card', color: 'bg-blue-500', textColor: 'text-blue-500',
+            cardClass: 'bg-blue-50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-900/30'
+        },
+        transferencia: {
+            name: 'Transferencia', icon: 'pi pi-arrows-h', color: 'bg-orange-400', textColor: 'text-orange-400',
+            cardClass: 'bg-orange-50 dark:bg-orange-900/10 border-orange-100 dark:border-orange-900/30'
+        },
+        saldo: {
+            name: 'Saldo a favor', icon: 'pi pi-wallet', color: 'bg-purple-500', textColor: 'text-purple-500',
+            cardClass: 'bg-purple-50 dark:bg-purple-900/10 border-purple-100 dark:border-purple-900/30'
+        },
+        default: {
+            name: method || 'Otro', icon: 'pi pi-question-circle', color: 'bg-gray-500', textColor: 'text-gray-500',
+            cardClass: 'bg-gray-50 dark:bg-[#1a1a1a] border-gray-100 dark:border-[#3a3a3a]'
+        }
     };
     return details[method] || details.default;
 };
+
+// Totales por método de pago para el modal de pagos
+const paymentMethodTotals = computed(() => {
+    const preferredOrder = ['efectivo', 'tarjeta', 'transferencia'];
+
+    const totals = props.detailedPayments.reduce((acc, payment) => {
+        const method = payment.payment_method || 'default';
+        acc[method] = (acc[method] || 0) + parseFloat(payment.amount);
+        return acc;
+    }, {});
+
+    return Object.entries(totals)
+        .map(([method, total]) => ({ method, total, ...getPaymentMethodDetails(method) }))
+        .sort((a, b) => {
+            const aIndex = preferredOrder.indexOf(a.method);
+            const bIndex = preferredOrder.indexOf(b.method);
+            if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+            if (aIndex !== -1) return -1;
+            if (bIndex !== -1) return 1;
+            return b.total - a.total;
+        });
+});
 
 const getChannelDetails = (channel) => {
     const details = {
@@ -149,6 +186,19 @@ const tagPt = {
 
     <!-- MODAL: Detalle de Pagos -->
     <Dialog v-model:visible="isPaymentsVisible" header="Detalle de pagos recibidos" modal class="w-full max-w-5xl mx-4" :pt="dialogPt">
+        <!-- Indicadores: total por método de pago -->
+        <div v-if="paymentMethodTotals.length > 0" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 mb-6">
+            <div v-for="item in paymentMethodTotals" :key="item.method"
+                class="border rounded-2xl p-5 flex flex-col gap-2"
+                :class="item.cardClass">
+                <div class="flex items-center gap-2">
+                    <i :class="`${item.icon} ${item.textColor} !text-sm`"></i>
+                    <span class="text-[10px] uppercase tracking-widest font-bold m-0" :class="item.textColor">{{ item.name }}</span>
+                </div>
+                <p class="text-3xl font-light tracking-tight m-0" :class="item.textColor">{{ formatCurrency(item.total) }}</p>
+            </div>
+        </div>
+
         <DataTable :value="detailedPayments" paginator :rows="15" sortMode="multiple"
             :multiSortMeta="[{ field: 'payment_date', order: -1 }]" responsiveLayout="scroll" :pt="dataTablePt">
             <Column field="payment_date" header="Fecha" sortable> 
