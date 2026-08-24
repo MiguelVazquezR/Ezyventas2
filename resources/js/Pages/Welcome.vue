@@ -22,6 +22,19 @@ defineProps({
 const isNavVisible = ref(true);
 const isScrolled = ref(false);
 
+// --- VIDEO SPOT (CLICK-TO-PLAY: el src solo se asigna al primer clic) ---
+const videoEl = ref(null);
+const hasVideoStarted = ref(false);
+
+const playSpotVideo = () => {
+    if (!videoEl.value) return;
+    if (!hasVideoStarted.value) {
+        videoEl.value.src = '/videos/spot_landing.mp4';
+        hasVideoStarted.value = true;
+    }
+    videoEl.value.play().catch(() => {});
+};
+
 // --- HERO PARALLAX LOGIC ---
 const heroContainer = ref(null);
 const mouseX = ref(0);
@@ -480,6 +493,48 @@ const closeBusinessModal = () => { isModalOpen.value = false; setTimeout(() => {
         </header>
 
         <main class="flex-1">
+            <!-- SECCIÓN: VIDEO SPOT (SE CARGA SOLO AL DAR PLAY) -->
+            <section class="py-24 px-6 md:px-12 max-w-[1400px] mx-auto">
+                <div class="text-center mb-12 md:mb-16 space-y-4" data-aos="fade-up">
+                    <h2 class="text-3xl md:text-5xl font-bold text-gray-900 tracking-tight">Mira Ezy Ventas en acción</h2>
+                    <p class="text-lg text-gray-500 max-w-2xl mx-auto">Dale play y descubre en menos de un minuto todo lo que puedes lograr con tu negocio.</p>
+                </div>
+
+                <div class="relative w-full max-w-6xl mx-auto aspect-video rounded-3xl overflow-hidden bg-black shadow-2xl group" data-aos="zoom-in" data-aos-delay="100">
+                    <!-- Poster estático (se muestra hasta el primer play) -->
+                    <div v-if="!hasVideoStarted" class="absolute inset-0 z-10">
+                        <img src="/imagesLanding/cover_spot.png" alt="Ezy Ventas en acción" loading="lazy" decoding="async" class="w-full h-full object-cover">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-black/10"></div>
+                    </div>
+
+                    <!-- Botón de play personalizado -->
+                    <button
+                        v-if="!hasVideoStarted"
+                        type="button"
+                        aria-label="Reproducir video"
+                        @click="playSpotVideo"
+                        class="absolute inset-0 z-20 flex items-center justify-center cursor-pointer transition-colors duration-300 group-hover:bg-black/10"
+                    >
+                        <span class="relative flex items-center justify-center w-20 h-20 md:w-24 md:h-24 rounded-full bg-white/95 shadow-2xl transition-transform duration-300 group-hover:scale-110">
+                            <span class="absolute inset-0 rounded-full bg-[#F68C0F]/20 animate-ping-pause"></span>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#F68C0F" class="w-9 h-9 md:w-10 md:h-10 ml-1" aria-hidden="true">
+                                <path d="M8 5v14l11-7z" />
+                            </svg>
+                        </span>
+                    </button>
+
+                    <!-- Video real: el src solo se asigna al primer clic -->
+                    <video
+                        ref="videoEl"
+                        v-show="hasVideoStarted"
+                        controls
+                        playsinline
+                        preload="none"
+                        class="w-full h-full object-cover bg-black"
+                    ></video>
+                </div>
+            </section>
+
             <!-- SECCIÓN 2: TIPOS DE NEGOCIO (AJUSTADA PARA MÓVIL) -->
             <section id="features" class="py-24 px-6 md:px-12 max-w-[1450px] mx-auto bg-gray-50/50">
                 <div class="text-center mb-10 md:mb-16 space-y-4" data-aos="fade-up">
