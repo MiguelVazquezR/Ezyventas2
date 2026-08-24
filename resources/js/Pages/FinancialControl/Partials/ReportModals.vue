@@ -69,15 +69,9 @@ const getPaymentMethodDetails = (method) => {
     return details[method] || details.default;
 };
 
-// Totales por método de pago para el modal de pagos
-const paymentMethodTotals = computed(() => {
+// Ordena y enriquece los totales agrupados por método de pago
+const orderPaymentMethodTotals = (totals) => {
     const preferredOrder = ['efectivo', 'tarjeta', 'transferencia'];
-
-    const totals = props.detailedPayments.reduce((acc, payment) => {
-        const method = payment.payment_method || 'default';
-        acc[method] = (acc[method] || 0) + parseFloat(payment.amount);
-        return acc;
-    }, {});
 
     return Object.entries(totals)
         .map(([method, total]) => ({ method, total, ...getPaymentMethodDetails(method) }))
@@ -89,6 +83,35 @@ const paymentMethodTotals = computed(() => {
             if (bIndex !== -1) return 1;
             return b.total - a.total;
         });
+};
+
+// Totales por método de pago para el modal de pagos
+const paymentMethodTotals = computed(() => {
+    const totals = props.detailedPayments.reduce((acc, payment) => {
+        const method = payment.payment_method || 'default';
+        acc[method] = (acc[method] || 0) + parseFloat(payment.amount);
+        return acc;
+    }, {});
+
+    return orderPaymentMethodTotals(totals);
+});
+
+// Desglose por método de pago según el origen del dinero para el modal de gastos
+const expensesByMethod = computed(() => {
+    const internal = {};
+    const external = {};
+
+    props.detailedExpenses.forEach(expense => {
+        const method = expense.payment_method || 'default';
+        const amount = parseFloat(expense.amount);
+        const target = expense.is_external ? external : internal;
+        target[method] = (target[method] || 0) + amount;
+    });
+
+    return {
+        internal: orderPaymentMethodTotals(internal),
+        external: orderPaymentMethodTotals(external),
+    };
 });
 
 const getChannelDetails = (channel) => {
@@ -241,19 +264,37 @@ const tagPt = {
     <Dialog v-model:visible="isExpensesVisible" header="Detalle de gastos totales" modal class="w-full max-w-5xl mx-4" :pt="dialogPt">
         <!-- Resumen por origen del dinero -->
         <div class="grid grid-cols-2 gap-4 mb-6">
-            <div class="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 rounded-2xl p-5 flex flex-col gap-2">
-                <div class="flex items-center gap-2">
+            <div class="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-900/30 rounded-2xl p-5">
+                <div class="flex items-center gap-2 mb-2">
                     <i class="pi pi-building !text-sm text-green-600 dark:text-green-400"></i>
                     <span class="text-[10px] uppercase tracking-widest font-bold text-green-700 dark:text-green-400 m-0">Gastos de dinero del negocio</span>
                 </div>
-                <p class="text-3xl font-light tracking-tight text-green-700 dark:text-green-300 m-0">{{ formatCurrency(internalExpensesTotal) }}</p>
+                <p class="text-3xl font-light tracking-tight text-green-700 dark:text-green-300 m-0 mb-3">{{ formatCurrency(internalExpensesTotal) }}</p>
+                <div v-if="expensesByMethod.internal.length > 0" class="border-t border-green-200 dark:border-green-900/30 pt-3 space-y-2">
+                    <div v-for="item in expensesByMethod.internal" :key="item.method" class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <i :class="`${item.icon} ${item.textColor} !text-xs`"></i>
+                            <span class="text-[10px] uppercase tracking-widest font-bold text-gray-600 dark:text-gray-400 m-0">{{ item.name }}</span>
+                        </div>
+                        <span class="text-sm font-medium tracking-tight text-gray-900 dark:text-white whitespace-nowrap">{{ formatCurrency(item.total) }}</span>
+                    </div>
+                </div>
             </div>
-            <div class="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl p-5 flex flex-col gap-2">
-                <div class="flex items-center gap-2">
+            <div class="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-2xl p-5">
+                <div class="flex items-center gap-2 mb-2">
                     <i class="pi pi-wallet !text-sm text-blue-600 dark:text-blue-400"></i>
                     <span class="text-[10px] uppercase tracking-widest font-bold text-blue-700 dark:text-blue-400 m-0">Gastos de dinero externo</span>
                 </div>
-                <p class="text-3xl font-light tracking-tight text-blue-700 dark:text-blue-300 m-0">{{ formatCurrency(externalExpensesTotal) }}</p>
+                <p class="text-3xl font-light tracking-tight text-blue-700 dark:text-blue-300 m-0 mb-3">{{ formatCurrency(externalExpensesTotal) }}</p>
+                <div v-if="expensesByMethod.external.length > 0" class="border-t border-blue-200 dark:border-blue-900/30 pt-3 space-y-2">
+                    <div v-for="item in expensesByMethod.external" :key="item.method" class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <i :class="`${item.icon} ${item.textColor} !text-xs`"></i>
+                            <span class="text-[10px] uppercase tracking-widest font-bold text-gray-600 dark:text-gray-400 m-0">{{ item.name }}</span>
+                        </div>
+                        <span class="text-sm font-medium tracking-tight text-gray-900 dark:text-white whitespace-nowrap">{{ formatCurrency(item.total) }}</span>
+                    </div>
+                </div>
             </div>
         </div>
 
