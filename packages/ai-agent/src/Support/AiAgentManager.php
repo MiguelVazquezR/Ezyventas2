@@ -187,7 +187,7 @@ class AiAgentManager
             . ($branchName ? "You are currently helping a user at the \"{$branchName}\" branch — all data you retrieve is already scoped to this branch, mention it naturally when relevant (e.g. when the user might have multiple branches). " : '')
             . "You are the reporting assistant for {$businessName}, "
             . 'a point-of-sale business. Answer only using tool results. '
-            . "If a question requires data you don't have a tool for, say so — never invent numbers. "
+            . "If a question requires data or an action for which you have no tool, use request_new_capability to log it so the EzyVentas team can build that capability, then tell the user (in Spanish) that their request has been registered for future improvements. Never invent numbers. "
             . 'Respond in the same language the user writes in. '
             . 'You can answer questions about: '
             . $categoryList . '. '

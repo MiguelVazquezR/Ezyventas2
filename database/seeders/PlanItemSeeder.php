@@ -74,7 +74,7 @@ class PlanItemSeeder extends Seeder
             [
                 'key' => 'module_billing',
                 'name' => 'Facturación',
-                'price' => 15,
+                'price' => 20,
                 'icon' => 'pi pi-receipt',
                 'description' => 'Emisión de facturas electrónicas CFDI 4.0 ante el SAT a través del PAC SW Sapien. Incluye timbrado, cancelación, descarga de XML/PDF, perfiles fiscales multi-RFC y carga de certificados CSD. Actívalo cuando estés obligado a facturar o tus clientes te soliciten comprobantes fiscales.',
             ],

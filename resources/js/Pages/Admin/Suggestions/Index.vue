@@ -34,6 +34,7 @@ const categoryOptions = [
     { label: 'Funcionalidad', value: 'feature' },
     { label: 'Error', value: 'bug' },
     { label: 'Mejora', value: 'improvement' },
+    { label: 'Capacidad faltante', value: 'capability_request' },
     { label: 'Otro', value: 'other' },
 ];
 
@@ -114,6 +115,7 @@ const getCategoryIcon = (category) => {
         case 'feature': return 'pi pi-star';
         case 'bug': return 'pi pi-exclamation-triangle';
         case 'improvement': return 'pi pi-pencil';
+        case 'capability_request': return 'pi pi-cog';
         default: return 'pi pi-ellipsis-h';
     }
 };
@@ -123,6 +125,7 @@ const getCategoryLabel = (category) => {
         case 'feature': return 'Funcionalidad';
         case 'bug': return 'Error';
         case 'improvement': return 'Mejora';
+        case 'capability_request': return 'Capacidad faltante';
         default: return 'Otro';
     }
 };
@@ -132,6 +135,7 @@ const getCategorySeverity = (category) => {
         case 'feature': return 'info';
         case 'bug': return 'danger';
         case 'improvement': return 'warn';
+        case 'capability_request': return 'secondary';
         default: return 'secondary';
     }
 };

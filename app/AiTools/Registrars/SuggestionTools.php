@@ -47,6 +47,36 @@ class SuggestionTools implements ToolRegistrar
             [
                 'permission' => null,
                 'category'   => 'suggestions',
+                'tool'       => (new Tool)->as('request_new_capability')
+                    ->for('Registrar una solicitud de capacidad faltante. Usa esta herramienta cuando el usuario pida hacer algo que no se puede resolver con las herramientas disponibles, por ejemplo un reporte, una acción o una consulta que el asistente no puede ejecutar. Esto permite al equipo de EzyVentas conocer las capacidades que los usuarios necesitan y priorizar su desarrollo.')
+                    ->withStringParameter('title', 'Título breve de la solicitud: la capacidad o funcionalidad que el usuario desea')
+                    ->withStringParameter('description', 'Descripción detallada: qué pidió el usuario, en qué contexto, y qué se requeriría para resolverlo')
+                    ->using(function (string $title, string $description) use ($branchId, $user) {
+                        $suggestion = Suggestion::create([
+                            'branch_id'   => $branchId,
+                            'user_id'     => $user->id,
+                            'category'    => 'capability_request',
+                            'title'       => $title,
+                            'description' => $description,
+                            'status'      => 'pending',
+                            'priority'    => 'medium',
+                        ]);
+
+                        return json_encode([
+                            'message' => 'Tu solicitud ha sido registrada para que el equipo de EzyVentas considere agregar esta capacidad al asistente.',
+                            'suggestion' => [
+                                'id'       => $suggestion->id,
+                                'category' => $suggestion->category,
+                                'title'    => $suggestion->title,
+                                'status'   => $suggestion->status,
+                            ],
+                        ], JSON_PRETTY_PRINT);
+                    }),
+            ],
+
+            [
+                'permission' => null,
+                'category'   => 'suggestions',
                 'tool'       => (new Tool)->as('list_my_suggestions')
                     ->for('Consultar las sugerencias y comentarios que has enviado previamente, con su estado actual')
                     ->withStringParameter('status', 'Filtrar por estado: "pending", "reviewed", "planned", "implemented", "declined" (opcional)')

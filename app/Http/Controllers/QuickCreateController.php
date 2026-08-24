@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Product\CreateProduct;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\Customer;
@@ -98,7 +99,7 @@ class QuickCreateController extends Controller
         return response()->json($customerData);
     }
 
-    public function storeProduct(Request $request)
+    public function storeProduct(Request $request, CreateProduct $createProduct)
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
@@ -107,12 +108,20 @@ class QuickCreateController extends Controller
             'sku' => 'nullable|string|max:255|unique:products,sku',
         ]);
 
-        $product = Product::create(array_merge($validated, [
-            'branch_id' => Auth::user()->branch_id,
-            // Puedes añadir otros valores por defecto aquí si es necesario
-        ]));
+        $user = Auth::user();
 
-        return response()->json($product);
+        // El action CreateProduct sincroniza automáticamente la sucursal en el pivot
+        // branch_product (necesario para que el producto aparezca en el POS y el catálogo),
+        // maneja el slug, el stock inicial y los defaults de show_in_pos / show_online.
+        $product = $createProduct->execute(
+            array_merge($validated, ['product_type' => 'simple']),
+            [],                    // Sin componentes (Kit/Combo)
+            [$user->branch_id],    // Sincronizar únicamente la sucursal actual
+            $user,
+            []                     // Sin imágenes
+        );
+
+        return response()->json($product->load('branches'));
     }
 
     public function storeRole(Request $request)

@@ -150,7 +150,7 @@ class AdjustProductStockAction
             'branch_id' => $branchId,
             'amount' => $amount,
             'expense_category_id' => $category->id,
-            'expense_date' => now(),
+            'expense_date' => $validated['expense_date'] ?? now(),
             'status' => ExpenseStatus::PAID,
             'description' => $description,
             'payment_method' => $validated['payment_method'],
