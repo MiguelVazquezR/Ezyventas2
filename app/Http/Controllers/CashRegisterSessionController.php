@@ -134,6 +134,19 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         }
 
         DB::transaction(function () use ($request, $validated, $cashRegister, $user) {
+            // 1. Aplicar PRIMERO los saldos confirmados por el cajero en el modal.
+            //    Así el snapshot (opening_bank_balances) coincide con lo declarado
+            //    al abrir la caja y no con el valor anterior a la corrección.
+            if ($request->has('bank_accounts')) {
+                foreach ($request->input('bank_accounts') as $accountData) {
+                    $bankAccount = BankAccount::find($accountData['id'] ?? null);
+                    if ($bankAccount) {
+                        $bankAccount->update(['balance' => (float) $accountData['balance']]);
+                    }
+                }
+            }
+
+            // 2. Construir el snapshot de saldos DESPUÉS de aplicar las correcciones.
             $allBranchAccounts = BankAccount::whereHas('branches', function ($query) use ($cashRegister) {
                 $query->where('branch_id', $cashRegister->branch_id);
             })->get();
@@ -146,15 +159,6 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
                     'balance' => (float) $account->balance,
                 ];
             });
-
-            if ($request->has('bank_accounts')) {
-                foreach ($request->input('bank_accounts') as $accountData) {
-                    $bankAccount = BankAccount::find($accountData['id']);
-                    if ($bankAccount) {
-                        $bankAccount->update(['balance' => $accountData['balance']]);
-                    }
-                }
-            }
 
             $session = $cashRegister->sessions()->create([
                 'user_id' => $user->id,
