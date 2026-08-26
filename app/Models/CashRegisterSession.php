@@ -134,6 +134,25 @@ class CashRegisterSession extends Model
             ->get()
             ->keyBy('bank_account_id');
 
+        // 2b. Obtener TRANSFERENCIAS entre cuentas durante esta sesión.
+        //     Estas no pasan por payments ni expenses, pero sí afectan el balance real.
+        $sessionStart = $this->opened_at?->toDateString();
+        $sessionEnd = $this->closed_at?->toDateString() ?? now()->toDateString();
+
+        $transfersIn = BankAccountTransfer::whereIn('to_account_id', $accountIdsInSession)
+            ->whereBetween('transfer_date', [$sessionStart, $sessionEnd])
+            ->select('to_account_id', DB::raw('SUM(amount) as total_transferred_in'))
+            ->groupBy('to_account_id')
+            ->get()
+            ->keyBy('to_account_id');
+
+        $transfersOut = BankAccountTransfer::whereIn('from_account_id', $accountIdsInSession)
+            ->whereBetween('transfer_date', [$sessionStart, $sessionEnd])
+            ->select('from_account_id', DB::raw('SUM(amount) as total_transferred_out'))
+            ->groupBy('from_account_id')
+            ->get()
+            ->keyBy('from_account_id');
+
         // 3. Filtrar por permisos del usuario que está viendo el reporte
         $allowedAccountIds = $isOwner ? $accountIdsInSession : $user->bankAccounts()->pluck('id');
 
@@ -142,15 +161,21 @@ class CashRegisterSession extends Model
             if ($allowedAccountIds->contains($openingData['id'])) {
                 $received = $paymentsToAccounts->get($openingData['id'])?->total_received ?? 0;
                 $spent = $expensesFromAccounts->get($openingData['id'])?->total_spent ?? 0;
+                $transferredIn = $transfersIn->get($openingData['id'])?->total_transferred_in ?? 0;
+                $transferredOut = $transfersOut->get($openingData['id'])?->total_transferred_out ?? 0;
                 $initialBalance = (float) $openingData['balance'];
-                
-                $finalBalance = $initialBalance + $received - $spent;
+
+                $finalBalance = $initialBalance + $received - $spent + $transferredIn - $transferredOut;
 
                 $summary[] = [
                     'id' => $openingData['id'],
                     'account_name' => $openingData['account_name'],
                     'bank_name' => $openingData['bank_name'],
                     'initial_balance' => $initialBalance,
+                    'received' => (float) $received,
+                    'spent' => (float) $spent,
+                    'transferred_in' => (float) $transferredIn,
+                    'transferred_out' => (float) $transferredOut,
                     'final_balance' => $finalBalance,
                 ];
             }
