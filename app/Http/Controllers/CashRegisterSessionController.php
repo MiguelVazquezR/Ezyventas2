@@ -42,7 +42,12 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
                 $q->where('id', $branchId);
             })
             ->with(['opener:id,name', 'cashRegister:id,name'])
-            ->select('cash_register_sessions.*');
+            ->select('cash_register_sessions.*')
+            ->withSum([
+                'cashPayments as total_cash_sales',
+                'inflowMovements as total_inflows',
+                'outflowMovements as total_outflows',
+            ], 'amount');
 
         if ($request->has('search')) {
             $searchTerm = $request->input('search');

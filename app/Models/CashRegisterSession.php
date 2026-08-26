@@ -235,4 +235,32 @@ class CashRegisterSession extends Model
     {
         return $this->hasMany(Payment::class);
     }
+
+    /**
+     * Pagos en efectivo completados: efectivo que ingresó a la caja por ventas.
+     */
+    public function cashPayments(): HasMany
+    {
+        return $this->payments()
+            ->where('payment_method', PaymentMethod::CASH)
+            ->where('status', PaymentStatus::COMPLETED);
+    }
+
+    /**
+     * Movimientos manuales de ingreso de efectivo a la caja.
+     */
+    public function inflowMovements(): HasMany
+    {
+        return $this->cashMovements()
+            ->where('type', SessionCashMovementType::INFLOW);
+    }
+
+    /**
+     * Movimientos manuales de retiro de efectivo de la caja.
+     */
+    public function outflowMovements(): HasMany
+    {
+        return $this->cashMovements()
+            ->where('type', SessionCashMovementType::OUTFLOW);
+    }
 }
