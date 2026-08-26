@@ -201,7 +201,7 @@ class FinancialReportService
     {
         return Expense::where('branch_id', $this->branchId)
             ->where('status', ExpenseStatus::PAID)
-            ->whereBetween('created_at', [$this->startDate, $this->endDate])
+            ->whereBetween('expense_date', [$this->startDate, $this->endDate])
             ->with('category:id,name')
             ->groupBy('expense_category_id')
             ->select('expense_category_id', DB::raw('SUM(amount) as total'))
