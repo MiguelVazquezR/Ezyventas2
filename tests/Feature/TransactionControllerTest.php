@@ -382,4 +382,72 @@ class TransactionControllerTest extends TestCase
         
         $response->assertForbidden(); 
     }
+
+    #[Test]
+    public function it_reconciles_the_bank_balance_when_editing_a_payment(): void
+    {
+        // Arrange: cuenta bancaria de la misma suscripción con saldo de $1,000.00
+        $bankAccount = \App\Models\BankAccount::factory()->create([
+            'subscription_id' => $this->branch->subscription_id,
+            'balance' => 1000.00,
+        ]);
+
+        // Transacción pagada por tarjeta por $6,232.46
+        $transaction = Transaction::factory()->create([
+            'branch_id' => $this->branch->id,
+            'user_id' => $this->user->id,
+            'cash_register_session_id' => $this->session->id,
+            'status' => TransactionStatus::COMPLETED,
+            'subtotal' => 6232.46,
+            'total_discount' => 0,
+            'total_tax' => 0,
+        ]);
+
+        $payment = Payment::factory()->create([
+            'transaction_id' => $transaction->id,
+            'cash_register_session_id' => $this->session->id,
+            'bank_account_id' => $bankAccount->id,
+            'amount' => 6232.46,
+            'payment_method' => \App\Enums\PaymentMethod::CARD,
+            'status' => PaymentStatus::COMPLETED,
+        ]);
+
+        // Efecto de creación del pago (PaymentService::processPayments)
+        $bankAccount->increment('balance', 6232.46);
+        $this->assertEquals(7232.46, (float) $bankAccount->fresh()->balance);
+
+        // Act: editar el pago de $6,232.46 a $932.46 (misma cuenta y método)
+        $this->put(route('transactions.updatePayment', [
+            'transaction' => $transaction->id,
+            'payment' => $payment->id,
+        ]), [
+            'amount' => 932.46,
+            'payment_method' => 'tarjeta',
+            'bank_account_id' => $bankAccount->id,
+            'notes' => 'Corrección de monto',
+        ])->assertRedirect();
+
+        // Assert: el pago refleja el nuevo monto...
+        $this->assertDatabaseHas('payments', [
+            'id' => $payment->id,
+            'amount' => 932.46,
+        ]);
+
+        // ...y el balance quedó en $1,000 + $932.46 (se revirtió el delta de $5,300)
+        $this->assertEquals(1932.46, (float) $bankAccount->fresh()->balance);
+
+        // Act 2: cambiar el pago a efectivo debe REVERTIR por completo el efecto bancario
+        $this->put(route('transactions.updatePayment', [
+            'transaction' => $transaction->id,
+            'payment' => $payment->id,
+        ]), [
+            'amount' => 932.46,
+            'payment_method' => 'efectivo',
+            'bank_account_id' => null,
+            'notes' => 'Cambio a efectivo',
+        ])->assertRedirect();
+
+        // Assert 2: el balance regresa al valor original
+        $this->assertEquals(1000.00, (float) $bankAccount->fresh()->balance);
+    }
 }
