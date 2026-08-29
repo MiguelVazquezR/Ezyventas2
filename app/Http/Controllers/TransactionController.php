@@ -529,12 +529,33 @@ class TransactionController extends Controller implements HasMiddleware
                 $validated['bank_account_id'] = null;
             }
 
+            // --- Conciliación de saldo bancario ---
+            // La creación de un pago tarjeta/transferencia incrementa el balance de la cuenta
+            // (PaymentService::processPayments) y su eliminación lo decrementa (destroyPayment).
+            // Al EDITAR un pago también se debe revertir el efecto anterior y aplicar el nuevo;
+            // de lo contrario el balance queda desfasado (montos inflados o reducidos).
+            $oldAmount = (float) $payment->amount;
+            $oldMethod = $payment->payment_method instanceof PaymentMethod
+                ? $payment->payment_method->value
+                : $payment->payment_method;
+            $oldBankAccountId = $payment->bank_account_id;
+
+            // 1. Revertir el efecto bancario del pago anterior.
+            if ($oldBankAccountId && in_array($oldMethod, [PaymentMethod::CARD->value, PaymentMethod::TRANSFER->value])) {
+                BankAccount::find($oldBankAccountId)?->decrement('balance', $oldAmount);
+            }
+
             $payment->update([
                 'amount' => $validated['amount'],
                 'payment_method' => $validated['payment_method'],
                 'bank_account_id' => $validated['bank_account_id'],
                 'notes' => $validated['notes'],
             ]);
+
+            // 2. Aplicar el efecto bancario del nuevo pago.
+            if ($validated['bank_account_id'] && in_array($validated['payment_method'], [PaymentMethod::CARD->value, PaymentMethod::TRANSFER->value])) {
+                BankAccount::find($validated['bank_account_id'])?->increment('balance', (float) $validated['amount']);
+            }
 
             $totalPaid = $transaction->payments()->where('status', \App\Enums\PaymentStatus::COMPLETED)->sum('amount');
 

@@ -49,6 +49,10 @@ const formatDate = (dateString) => {
     return date.toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
 };
 
+// Desglose del "dinero en caja esperado": efectivo ingresado − efectivo retirado de caja
+const getCashReceived = (data) => (parseFloat(data.total_cash_sales) || 0) + (parseFloat(data.total_inflows) || 0);
+const getCashWithdrawn = (data) => parseFloat(data.total_outflows) || 0;
+
 const onRowClick = (event) => {
     const target = event.originalEvent.target;
     if (target.closest('button') || target.closest('.p-button') || target.closest('.p-checkbox')) {
@@ -151,9 +155,17 @@ const inputPt = {
                         </template>
                     </Column>
                     
-                     <Column field="calculated_cash_total" header="Total calculado" sortable>
+                     <Column field="calculated_cash_total" header="Dinero en caja esperado" sortable>
                         <template #body="{ data }"> 
-                            <span class="font-light tracking-tight text-lg text-gray-900 dark:text-white">{{ formatCurrency(data.calculated_cash_total) }}</span> 
+                            <div class="flex flex-col gap-1">
+                                <span class="font-light tracking-tight text-lg text-gray-900 dark:text-white leading-tight m-0">{{ formatCurrency(data.calculated_cash_total) }}</span>
+                                <div v-tooltip.bottom="'Fondo inicial + efectivo ingresado − efectivo retirado de caja'"
+                                    class="flex items-center gap-1.5 text-[9px] font-mono whitespace-nowrap cursor-help">
+                                    <span class="text-green-500 font-semibold">Ingresos +{{ formatCurrency(getCashReceived(data)) }}</span>
+                                    <span class="text-gray-300 dark:text-gray-600">·</span>
+                                    <span class="text-red-500 font-semibold">Retiros −{{ formatCurrency(getCashWithdrawn(data)) }}</span>
+                                </div>
+                            </div>
                         </template>
                     </Column>
                     

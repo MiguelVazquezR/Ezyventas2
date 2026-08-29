@@ -37,6 +37,7 @@ class FinancialReportService
             'paymentMethods' => $this->getPaymentMethodsDistribution(),
             'salesByChannel' => $this->getSalesByChannel(),
             'expensesByCategory' => $this->getExpensesByCategory(),
+            'expensesByMethod' => $this->getExpensesByOriginAndMethod(),
             'bankAccounts' => $this->getBankAccounts(),
             'filters' => ['startDate' => $this->startDate->toDateString(), 'endDate' => $this->endDate->toDateString()]
         ];
@@ -201,7 +202,7 @@ class FinancialReportService
     {
         return Expense::where('branch_id', $this->branchId)
             ->where('status', ExpenseStatus::PAID)
-            ->whereBetween('created_at', [$this->startDate, $this->endDate])
+            ->whereBetween('expense_date', [$this->startDate, $this->endDate])
             ->with('category:id,name')
             ->groupBy('expense_category_id')
             ->select('expense_category_id', DB::raw('SUM(amount) as total'))
@@ -212,6 +213,45 @@ class FinancialReportService
                     'total' => $expense->total,
                 ];
             });
+    }
+
+    /**
+     * Expense totals grouped by money origin and payment method.
+     *
+     * Computed over the full set of paid expenses for the period (no row
+     * limit) so the values always match the KPIs. The expenses modal must
+     * not derive its totals from the detailed list because that list is
+     * truncated to the latest 1000 rows for performance.
+     */
+    public function getExpensesByOriginAndMethod(): array
+    {
+        $rows = Expense::where('branch_id', $this->branchId)
+            ->where('status', ExpenseStatus::PAID)
+            ->whereBetween('expense_date', [$this->startDate, $this->endDate])
+            ->groupBy('is_external', 'payment_method')
+            ->select('is_external', 'payment_method', DB::raw('SUM(amount) as total'))
+            ->get();
+
+        $internal = [];
+        $external = [];
+
+        foreach ($rows as $row) {
+            $item = [
+                'method' => $row->payment_method?->value ?? 'default',
+                'total' => (float) $row->total,
+            ];
+
+            if ($row->is_external) {
+                $external[] = $item;
+            } else {
+                $internal[] = $item;
+            }
+        }
+
+        return [
+            'internal' => $internal,
+            'external' => $external,
+        ];
     }
 
     private function getBankAccounts()
