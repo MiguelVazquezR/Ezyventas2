@@ -142,7 +142,9 @@ class ExpenseController extends Controller implements HasMiddleware
         $newStatus = $expense->status === ExpenseStatus::PAID ? ExpenseStatus::PENDING : ExpenseStatus::PAID;
 
         DB::transaction(function () use ($expense, $newStatus) {
-            if ($expense->bank_account_id) {
+            // Solo los gastos INTERNOS pagan desde el saldo bancario (ver StoreExpenseAction).
+            // Los gastos externos nunca deben tocar BankAccount.balance.
+            if (! $expense->is_external && $expense->bank_account_id) {
                 // REFACTOR: Usar deposit/withdraw del modelo BankAccount
                 if ($newStatus === ExpenseStatus::PAID) {
                     BankAccount::find($expense->bank_account_id)?->withdraw($expense->amount);
