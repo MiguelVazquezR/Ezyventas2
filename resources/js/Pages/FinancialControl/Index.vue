@@ -16,6 +16,7 @@ const props = defineProps({
     paymentMethods: Array,
     salesByChannel: Array,
     expensesByCategory: Array,
+    expensesByMethod: Object,
     detailedExpenses: Array,
     detailedTransactions: Array,
     detailedPayments: Array,
@@ -334,6 +335,8 @@ const getExpenseCategoryIcon = (categoryName) => {
             :detailed-transactions="detailedTransactions"
             :detailed-payments="detailedPayments"
             :detailed-expenses="detailedExpenses"
+            :payment-methods="paymentMethods"
+            :expenses-by-method="expensesByMethod"
         />
 
     </AppLayout>

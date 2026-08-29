@@ -6,6 +6,8 @@ const props = defineProps({
     detailedTransactions: Array,
     detailedPayments: Array,
     detailedExpenses: Array,
+    paymentMethods: { type: Array, default: () => [] },
+    expensesByMethod: { type: Object, default: () => ({ internal: [], external: [] }) },
 });
 
 const isSalesVisible = defineModel('isSalesVisible', { type: Boolean });
@@ -17,17 +19,17 @@ const formatCurrency = (value) => new Intl.NumberFormat('es-MX', { style: 'curre
 const formatDate = (dateString) => format(new Date(dateString), 'dd/MM/yyyy');
 const formatDateTime = (dateString) => format(new Date(dateString), 'dd/MM/yyyy HH:mm');
 
-// Totales por origen para el modal de gastos
+// Totals by money origin for the expenses modal. Derived from the backend
+// aggregates (expensesByMethod), which have no row limit, so they always
+// match the KPI values even when the detail list is truncated.
 const internalExpensesTotal = computed(() => {
-    return props.detailedExpenses
-        .filter(e => !e.is_external)
-        .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+    return (props.expensesByMethod.internal || [])
+        .reduce((sum, item) => sum + parseFloat(item.total), 0);
 });
 
 const externalExpensesTotal = computed(() => {
-    return props.detailedExpenses
-        .filter(e => e.is_external)
-        .reduce((sum, e) => sum + parseFloat(e.amount), 0);
+    return (props.expensesByMethod.external || [])
+        .reduce((sum, item) => sum + parseFloat(item.total), 0);
 });
 
 const getOriginLabel = (expense) => {
@@ -87,30 +89,31 @@ const orderPaymentMethodTotals = (totals) => {
 
 // Totales por método de pago para el modal de pagos
 const paymentMethodTotals = computed(() => {
-    const totals = props.detailedPayments.reduce((acc, payment) => {
-        const method = payment.payment_method || 'default';
-        acc[method] = (acc[method] || 0) + parseFloat(payment.amount);
+    const totals = (props.paymentMethods || []).reduce((acc, payment) => {
+        const method = payment.method || 'default';
+        acc[method] = (acc[method] || 0) + parseFloat(payment.total);
         return acc;
     }, {});
 
     return orderPaymentMethodTotals(totals);
 });
 
-// Desglose por método de pago según el origen del dinero para el modal de gastos
+// Breakdown by payment method and money origin for the expenses modal.
+// Uses the backend aggregates (no row limit) instead of the detailed list
+// (truncated to 1000 rows) so the totals always match the KPIs.
 const expensesByMethod = computed(() => {
-    const internal = {};
-    const external = {};
-
-    props.detailedExpenses.forEach(expense => {
-        const method = expense.payment_method || 'default';
-        const amount = parseFloat(expense.amount);
-        const target = expense.is_external ? external : internal;
-        target[method] = (target[method] || 0) + amount;
-    });
+    const toTotalsObject = (items) => {
+        const totals = {};
+        (items || []).forEach((item) => {
+            const method = item.method || 'default';
+            totals[method] = (totals[method] || 0) + parseFloat(item.total);
+        });
+        return totals;
+    };
 
     return {
-        internal: orderPaymentMethodTotals(internal),
-        external: orderPaymentMethodTotals(external),
+        internal: orderPaymentMethodTotals(toTotalsObject(props.expensesByMethod.internal)),
+        external: orderPaymentMethodTotals(toTotalsObject(props.expensesByMethod.external)),
     };
 });
 

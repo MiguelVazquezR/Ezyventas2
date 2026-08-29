@@ -137,28 +137,45 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
             // 1. Aplicar PRIMERO los saldos confirmados por el cajero en el modal.
             //    Así el snapshot (opening_bank_balances) coincide con lo declarado
             //    al abrir la caja y no con el valor anterior a la corrección.
-            if ($request->has('bank_accounts')) {
-                foreach ($request->input('bank_accounts') as $accountData) {
-                    $bankAccount = BankAccount::find($accountData['id'] ?? null);
-                    if ($bankAccount) {
-                        $bankAccount->update(['balance' => (float) $accountData['balance']]);
-                    }
+            $declaredAccountIds = [];
+            $declaredAccounts = $request->input('bank_accounts', []);
+
+            foreach ($declaredAccounts as $accountData) {
+                $bankAccount = BankAccount::find($accountData['id'] ?? null);
+                if ($bankAccount) {
+                    $declaredAccountIds[] = $bankAccount->id;
+                    $bankAccount->update(['balance' => (float) $accountData['balance']]);
                 }
             }
 
-            // 2. Construir el snapshot de saldos DESPUÉS de aplicar las correcciones.
+            // 2. Para las cuentas de la sucursal que el cajero NO declaró en el modal
+            //    (por ejemplo, cuentas que no tiene permitido gestionar), heredar el
+            //    saldo del último corte cerrado de esta caja. Así la sesión arranca
+            //    con el cierre anterior y no con un balance crudo sin conciliar.
+            $lastClosedSession = $cashRegister->sessions()
+                ->where('status', CashRegisterSessionStatus::CLOSED)
+                ->latest('closed_at')
+                ->first();
+
+            $previousBankBalances = collect($lastClosedSession?->closing_bank_balances ?? [])->keyBy('id');
+
+            // 3. Construir el snapshot de saldos.
             $allBranchAccounts = BankAccount::whereHas('branches', function ($query) use ($cashRegister) {
                 $query->where('branch_id', $cashRegister->branch_id);
             })->get();
 
-            $openingBankBalances = $allBranchAccounts->map(function ($account) {
+            $openingBankBalances = $allBranchAccounts->map(function ($account) use ($previousBankBalances, $declaredAccountIds) {
+                $previous = $previousBankBalances->get($account->id);
+
                 return [
                     'id' => $account->id,
                     'account_name' => $account->account_name,
                     'bank_name' => $account->bank_name,
-                    'balance' => (float) $account->balance,
+                    'balance' => in_array($account->id, $declaredAccountIds)
+                        ? (float) $account->balance
+                        : (float) ($previous['balance'] ?? $account->balance),
                 ];
-            });
+            })->values()->all();
 
             $session = $cashRegister->sessions()->create([
                 'user_id' => $user->id,
@@ -232,7 +249,7 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
         $cashRegisterId = $request->input('cash_register_id');
         $originalOpenerId = $request->input('original_opener_id');
 
-        if ($user->cashRegisterSessions()->where('status', 'abierta')->exists()) {
+        if ($user->cashRegisterSessions()->where('status', CashRegisterSessionStatus::OPEN->value)->exists()) {
             return redirect()->back()->with('error', 'Ya tienes una sesión activa.');
         }
 
@@ -248,23 +265,35 @@ class CashRegisterSessionController extends Controller implements HasMiddleware
 
         $opener = User::findOrFail($originalOpenerId);
 
+        // Heredar los saldos del último corte cerrado de esta caja: así la nueva
+        // sesión arranca con el cierre anterior y no con valores sin conciliar.
+        $lastClosedSession = $cashRegister->sessions()
+            ->where('status', CashRegisterSessionStatus::CLOSED)
+            ->latest('closed_at')
+            ->first();
+
+        $openingCashBalance = $lastClosedSession?->closing_cash_balance ?? 0.00;
+        $previousBankBalances = collect($lastClosedSession?->closing_bank_balances ?? [])->keyBy('id');
+
         $allBranchAccounts = BankAccount::whereHas('branches', function ($query) use ($cashRegister) {
             $query->where('branch_id', $cashRegister->branch_id);
         })->get();
 
-        $openingBankBalances = $allBranchAccounts->map(function ($account) {
+        $openingBankBalances = $allBranchAccounts->map(function ($account) use ($previousBankBalances) {
+            $previous = $previousBankBalances->get($account->id);
+
             return [
                 'id' => $account->id,
                 'account_name' => $account->account_name,
                 'bank_name' => $account->bank_name,
-                'balance' => (float) $account->balance, 
+                'balance' => (float) ($previous['balance'] ?? $account->balance),
             ];
-        });
+        })->values()->all();
 
-        $session = DB::transaction(function () use ($cashRegister, $opener, $user, $openingBankBalances) {
+        $session = DB::transaction(function () use ($cashRegister, $opener, $user, $openingCashBalance, $openingBankBalances) {
             $newSession = $cashRegister->sessions()->create([
                 'user_id' => $opener->id,
-                'opening_cash_balance' => 0.00,
+                'opening_cash_balance' => $openingCashBalance,
                 'opening_bank_balances' => $openingBankBalances,
                 'status' => CashRegisterSessionStatus::OPEN,
                 'opened_at' => now(),
