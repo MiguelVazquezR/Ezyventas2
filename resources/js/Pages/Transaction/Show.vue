@@ -59,6 +59,16 @@ const openPrintModal = () => {
     isPrintModalVisible.value = true;
 };
 
+// Abre el PrintModal automáticamente cuando el backend envía print_data
+// (p. ej. tras registrar un abono, mostrando el ticket de abono).
+watch(() => page.props.flash.print_data, (newPrintData) => {
+    if (newPrintData) {
+        printDataSource.value = newPrintData;
+        isPrintModalVisible.value = true;
+        page.props.flash.print_data = null;
+    }
+}, { immediate: true });
+
 // --- Modales de Funcionalidades Específicas (Control de Visibilidad) ---
 const isCancellationModalVisible = ref(false);
 const isPaymentModalVisible = ref(false);
@@ -231,9 +241,9 @@ const handlePaymentSubmit = (paymentData) => {
     const payload = { ...paymentData, cash_register_session_id: activeSession.value.id };
 
     router.post(route('transactions.addPayment', props.transaction.id), payload, {
+        // El PrintModal se abre solo con el print_data que envía el backend.
         onSuccess: () => {
             isPaymentModalVisible.value = false;
-            openPrintModal();
         },
         onFinish: () => isPaymentProcessing.value = false,
         preserveScroll: true,

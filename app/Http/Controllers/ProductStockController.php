@@ -38,7 +38,7 @@ class ProductStockController extends Controller
 
         $action->execute($validated, auth()->user());
 
-        return redirect()->route('products.index')->with('success', 'Stock actualizado con éxito en la sucursal.');
+        return redirect()->back()->with('success', 'Stock actualizado con éxito en la sucursal.');
     }
 
     /**
@@ -70,6 +70,6 @@ class ProductStockController extends Controller
 
         $action->execute($validated, auth()->user());
 
-        return redirect()->route('products.index')->with('success', 'Stock actualizado con éxito en la sucursal para los productos seleccionados.');
+        return redirect()->back()->with('success', 'Stock actualizado con éxito en la sucursal para los productos seleccionados.');
     }
 }

@@ -112,6 +112,16 @@ const openPrintModal = () => {
     isPrintModalVisible.value = true;
 };
 
+// Abre el PrintModal automáticamente cuando el backend envía print_data
+// (p. ej. tras registrar un abono, mostrando el ticket de abono).
+watch(() => page.props.flash.print_data, (newPrintData) => {
+    if (newPrintData) {
+        printDataSource.value = newPrintData;
+        isPrintModalVisible.value = true;
+        page.props.flash.print_data = null;
+    }
+}, { immediate: true });
+
 // --- Lógica para modal de ajuste ---
 const isAdjustModalVisible = ref(false);
 
@@ -200,11 +210,11 @@ const handleBalancePaymentSubmit = (paymentData) => {
     isPaymentProcessing.value = true;
 
     router.post(route('customers.payments.store', props.customer.id), payload, {
+        // El PrintModal se abre solo con el print_data que envía el backend.
         onSuccess: () => {
             isPaymentModalVisible.value = false;
-            openPrintModal();
         },
-        onFinish: () => { 
+        onFinish: () => {
             isPaymentProcessing.value = false;
         },
         preserveScroll: true,

@@ -190,14 +190,20 @@ class TransactionPaymentService
         });
     }
 
-    public function applyPaymentToCustomerBalance(Customer $customer, array $validatedData, int $sessionId, User $user): void
+    public function applyPaymentToCustomerBalance(Customer $customer, array $validatedData, int $sessionId, User $user): array
     {
-        DB::transaction(function () use ($customer, $validatedData, $sessionId, $user) {
+        return DB::transaction(function () use ($customer, $validatedData, $sessionId, $user) {
             $now = now();
             $pendingTransactions = $customer->transactions()->whereIn('status', [TransactionStatus::PENDING, TransactionStatus::ON_LAYAWAY])->orderBy('created_at', 'asc')->get();
 
             $baseTimestamp = $now->copy();
             $delayCounter = 0;
+
+            // Seguimiento para el ticket de abono general.
+            $appliedByTransaction = [];
+            $affectedIds = [];
+            $totalAbonado = 0.0;
+            $balanceCredit = 0.0;
 
             foreach ($validatedData['payments'] as $paymentData) {
                 $amountToApply = (float) $paymentData['amount'];
@@ -224,6 +230,11 @@ class TransactionPaymentService
                     }
 
                     $customer->payDebt($amountForThisTransaction, $transaction->id, "Abono a la venta #{$transaction->folio} (" . $paymentData['method'] . "). " . ($validatedData['notes'] ?? ''), $baseTimestamp->copy()->addSeconds($delayCounter++));
+
+                    $totalAbonado += $amountForThisTransaction;
+                    $appliedByTransaction[$transaction->id] = ($appliedByTransaction[$transaction->id] ?? 0) + $amountForThisTransaction;
+                    $affectedIds[$transaction->id] = $transaction->id;
+
                     $amountToApply -= $amountForThisTransaction;
                 }
 
@@ -248,8 +259,43 @@ class TransactionPaymentService
                     ]], $sessionId);
 
                     $customer->addRefund($amountToApply, $balanceTransaction->id, "Abono a saldo a favor. " . ($validatedData['notes'] ?? ''), $baseTimestamp->copy()->addSeconds($delayCounter++));
+                    $balanceCredit += $amountToApply;
                 }
             }
+
+            // --- Resumen para el ticket de abono general ---
+            $affectedTransactions = Transaction::whereIn('id', array_values($affectedIds))->get();
+
+            $breakdown = $affectedTransactions->map(function (Transaction $transaction) use ($appliedByTransaction) {
+                $remaining = (float) $transaction->remaining_due;
+
+                return [
+                    'folio' => $transaction->folio,
+                    'abonado' => round($appliedByTransaction[$transaction->id] ?? 0, 2),
+                    'restante' => max(0, round($remaining, 2)),
+                    'liquidada' => $remaining <= 0.01,
+                ];
+            })->values()->all();
+
+            // Restante total y próximo vencimiento de las ventas aún pendientes.
+            $stillPending = $customer->transactions()
+                ->whereIn('status', [TransactionStatus::PENDING, TransactionStatus::ON_LAYAWAY])
+                ->get();
+
+            $totalRemaining = round($stillPending->sum(fn (Transaction $t) => (float) $t->remaining_due), 2);
+            $nextExpiration = $stillPending
+                ->pluck('layaway_expiration_date')
+                ->filter()
+                ->min();
+            $nextExpiration = $nextExpiration ? Carbon::parse($nextExpiration)->format('d/m/Y') : null;
+
+            return [
+                'total_abonado' => round($totalAbonado, 2),
+                'balance_credit' => round($balanceCredit, 2),
+                'breakdown' => $breakdown,
+                'total_remaining' => $totalRemaining,
+                'next_expiration' => $nextExpiration,
+            ];
         });
     }
 
