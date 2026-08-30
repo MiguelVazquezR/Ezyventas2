@@ -19,7 +19,7 @@ function handleSubmit({ form }) {
 
 <template>
     <AppLayout title="Editar prefactura">
-        <Breadcrumb :home="{ icon: 'pi pi-home', url: route('dashboard') }" :model="[{ label: 'Facturación', url: route('billing.invoices.index') }, { label: 'Editar prefactura' }]" class="!bg-transparent !p-0 !mb-1" />
+        <Breadcrumb :home="{ icon: 'pi pi-home', url: route('dashboard') }" :model="[{ label: 'Lista de facturas', url: route('billing.invoices.index') }, { label: 'Editar prefactura' }]" class="!bg-transparent !p-0 !mb-1" />
 
         <div class="flex items-center justify-between mt-2 mb-6">
             <div>

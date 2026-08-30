@@ -1,11 +1,11 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import { useForm, router } from '@inertiajs/vue3';
-import { useConfirm } from 'primevue/useconfirm';
 import { useInvoiceTaxes } from '@/Composables/useInvoiceTaxes';
 import FormNavigationSidebar from '@/Components/FormNavigationSidebar.vue';
 import { useScrollspy } from '@/Composables/useScrollspy';
 import EmisorSection from './EmisorSection.vue';
+import StampOldDateDialog from './StampOldDateDialog.vue';
 import SaleSection from './SaleSection.vue';
 import PpdSaleSection from './Sections/PpdSaleSection.vue';
 import ReceptorSection from './ReceptorSection.vue';
@@ -27,8 +27,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['submit']);
-
-const confirm = useConfirm();
 
 // ──────────────────────────────────────
 // Normalize collections
@@ -71,6 +69,11 @@ const form = useForm({
         ? (inv?.tipo_comprobante || 'I')
         : (new URLSearchParams(window.location.search).get('tipo') || 'I'),
     customer_id: isEdit ? (inv?.customer_id || null) : null,
+    // Fecha de emisión del CFDI (editable; regla SAT: máximo 72 horas). En
+    // edit se muestra la fecha con la que se guardó (issued_at ?? created_at).
+    issued_at: isEdit
+        ? (parsePagoFecha(inv?.issued_at) || parsePagoFecha(inv?.created_at) || new Date())
+        : new Date(),
     // Venta del punto de venta relacionada (1:1) y modo "precios con IVA incluido"
     transaction_id: isEdit ? (inv?.transaction_id || null) : null,
     prices_include_iva: isEdit ? !!(inv?.prices_include_iva) : false,
@@ -369,31 +372,26 @@ form.transform((data) => {
 // Primero guarda los cambios del formulario y, al guardar, timbra con ellos.
 // ──────────────────────────────────────
 const stampPhase = ref(null); // null | 'saving' | 'stamping'
+const showOldStampDialog = ref(false);
 
 // Un borrador con más de 72 horas ya no puede timbrarse con su fecha de
-// emisión original (regla del SAT). Si se confirma, el CFDI se emite con la
-// fecha y hora de hoy.
+// emisión original (regla del SAT). Se evalúa sobre la fecha de emisión
+// actual del formulario (la que se enviaría al timbrar).
 const isOldDraft = computed(() => {
     if (!props.invoice || props.invoice.status !== 'borrador') return false;
-    const createdAt = new Date(props.invoice.created_at);
-    if (Number.isNaN(createdAt.getTime())) return false;
-    return (Date.now() - createdAt.getTime()) / (1000 * 60 * 60) > 72;
+    const source = form.issued_at
+        || parsePagoFecha(props.invoice.issued_at)
+        || parsePagoFecha(props.invoice.created_at);
+    const d = new Date(source);
+    if (Number.isNaN(d.getTime())) return false;
+    return (Date.now() - d.getTime()) / (1000 * 60 * 60) > 72;
 });
 
 function stampInvoice() {
     if (stampPhase.value || form.processing) return;
 
     if (isOldDraft.value) {
-        confirm.require({
-            message: 'Han pasado más de 72 horas desde la fecha de emisión de esta prefactura. El SAT ya no permite timbrar un comprobante con esa fecha. Si continúas, se guardarán los cambios y el CFDI se emitirá con la fecha y hora de hoy.',
-            header: 'Fecha de emisión vencida',
-            icon: 'pi pi-exclamation-triangle',
-            acceptLabel: 'Timbrar con fecha de hoy',
-            rejectLabel: 'Cancelar',
-            rejectClass: 'p-button-outlined',
-            acceptClass: 'p-button-warning',
-            accept: () => saveThenStamp(true),
-        });
+        showOldStampDialog.value = true;
         return;
     }
 
@@ -558,5 +556,12 @@ const submit = (draft = false) => {
             <div class="h-[50vh] md:h-[5vh]" aria-hidden="true"></div>
 
         </div>
+
+        <!-- Modal: fecha de emisión vencida (>72 h) → timbrar hoy / editar fecha -->
+        <StampOldDateDialog
+            v-model:visible="showOldStampDialog"
+            @stamp-today="saveThenStamp(true)"
+            @edit="showOldStampDialog = false; scrollTo('emisor')"
+        />
     </form>
 </template>

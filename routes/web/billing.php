@@ -62,6 +62,7 @@ Route::middleware(['auth', 'verified'])->prefix('billing')->name('billing.')->gr
     Route::prefix('settings')->name('settings.')->group(function () {
         Route::get('/', [InvoiceController::class, 'settings'])->name('index');
         Route::post('/fiscal-profiles', [FiscalProfileController::class, 'storeFiscalProfile'])->name('storeFiscalProfile');
+        Route::put('/fiscal-profiles/{fiscalProfile}', [FiscalProfileController::class, 'updateFiscalProfile'])->name('updateFiscalProfile');
         Route::post('/fiscal-profiles/upload-csd', [FiscalProfileController::class, 'uploadCsd'])->name('uploadCsd');
         Route::delete('/fiscal-profiles/{fiscalProfile}', [FiscalProfileController::class, 'destroy'])->name('destroyFiscalProfile');
         Route::post('/fiscal-profiles/{fiscalProfile}/toggle-active', [FiscalProfileController::class, 'toggleActive'])->name('toggleFiscalProfileActive');

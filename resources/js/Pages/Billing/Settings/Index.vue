@@ -95,6 +95,13 @@ const toggleMenu = (event, profile) => {
     selectedProfileForModal.value = profile;
     const options = [];
 
+    // Editar los datos del emisor (razón social, régimen, CP, email)
+    options.push({
+        label: 'Editar datos fiscales',
+        icon: 'pi pi-pencil',
+        command: () => fiscalProfileFormModalRef.value?.open(profile),
+    });
+
     // Logo
     if (isAccountActive(profile)) {
         options.push({
@@ -150,6 +157,26 @@ const toggleMenu = (event, profile) => {
             });
         },
     });
+
+    // Eliminar emisor (solo cuando NO tiene certificados CSD cargados)
+    if (!profile.certificate_number) {
+        options.push({
+            label: 'Eliminar emisor',
+            icon: 'pi pi-trash',
+            class: 'text-red-500',
+            command: () => {
+                confirm.require({
+                    message: '¿Eliminar este emisor fiscal? Se eliminarán sus datos de forma permanente. Esta acción no se puede deshacer.',
+                    header: 'Eliminar emisor fiscal',
+                    icon: 'pi pi-exclamation-triangle',
+                    acceptLabel: 'Eliminar',
+                    rejectLabel: 'Cancelar',
+                    acceptClass: 'p-button-danger',
+                    accept: () => router.delete(route('billing.settings.destroyFiscalProfile', profile.id)),
+                });
+            },
+        });
+    }
 
     items.value = options;
     menuRef.value?.toggle(event);

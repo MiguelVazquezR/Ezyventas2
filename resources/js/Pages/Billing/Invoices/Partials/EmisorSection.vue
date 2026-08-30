@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue';
 import { comprobanteTypeOptions, exportacionOptions, getComprobanteTypeLabel, getExportacionLabel, getRegimeLabel } from '../satCatalogs';
-import { selectPt } from '../ptConfigs';
+import { selectPt, datePickerPt } from '../ptConfigs';
 import SectionCard from '@/Components/Billing/SectionCard.vue';
 import InfoField from '@/Components/Billing/InfoField.vue';
 
@@ -29,6 +29,20 @@ watch(model, (profile) => {
 
 // "601 - General de Ley Personas Morales" (clave + nombre del catálogo SAT)
 const emitterRegimeLabel = computed(() => getRegimeLabel(emitterRegime.value));
+
+// Límite mínimo de la fecha de emisión: el SAT permite hasta 72 horas atrás,
+// pero dejamos un margen de ~2 horas (70 h) para que unos minutos de demora
+// al timbrar no invaliden la fecha elegida.
+const minIssueDate = computed(() => new Date(Date.now() - 70 * 60 * 60 * 1000));
+
+// Aviso en edición cuando la fecha guardada ya superó las 72 horas.
+const isIssueDateExpired = computed(() => {
+    const value = props.form.issued_at;
+    if (!value) return false;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return false;
+    return (Date.now() - d.getTime()) / (1000 * 60 * 60) > 72;
+});
 </script>
 
 <template>
@@ -117,6 +131,28 @@ const emitterRegimeLabel = computed(() => getRegimeLabel(emitterRegime.value));
                 <Message v-if="form.errors.exportacion" severity="error" variant="simple" size="small">{{ form.errors.exportacion }}</Message>
                 <Message v-if="isPago" severity="info" variant="simple" size="small">
                     En un CFDI de pago la exportación siempre es 01 - No aplica (regla SAT).
+                </Message>
+            </div>
+
+            <!-- ═══ Fecha de emisión (una columna, como tipo de comprobante) ═══ -->
+            <div class="flex flex-col gap-1.5">
+                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 dark:text-neutral-500 m-0">Fecha de emisión *</label>
+                <DatePicker
+                    v-model="form.issued_at"
+                    showTime
+                    hourFormat="24"
+                    dateFormat="dd/mm/yy"
+                    :minDate="minIssueDate"
+                    placeholder="Selecciona fecha y hora"
+                    class="w-full"
+                    :pt="datePickerPt"
+                />
+                <Message v-if="form.errors.issued_at" severity="error" variant="simple" size="small">{{ form.errors.issued_at }}</Message>
+                <Message severity="info" variant="simple" size="small">
+                    El SAT no permite timbrar con una fecha de emisión de hace más de 72 horas; se permiten hasta 3 días atrás con margen.
+                </Message>
+                <Message v-if="mode === 'edit' && isIssueDateExpired" severity="warn" variant="simple" size="small">
+                    Esta fecha tiene más de 72 horas y el SAT ya no permitiría timbrar la factura con ella. Cámbiala a una fecha más reciente para poder timbrar.
                 </Message>
             </div>
         </div>

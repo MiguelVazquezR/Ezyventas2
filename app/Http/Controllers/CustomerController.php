@@ -7,6 +7,7 @@ use App\Enums\TemplateType;
 use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerPhoneRequest;
 use App\Http\Requests\UpdateCustomerRequest;
+use App\Models\Billing\Invoice;
 use App\Models\CashRegister;
 use App\Models\Customer;
 use Illuminate\Http\Request;
@@ -113,6 +114,19 @@ class CustomerController extends Controller implements HasMiddleware
         ]);
 
         $user = Auth::user();
+        $subscription = $user->branch?->subscription;
+
+        // Facturas CFDI del cliente — solo se cargan cuando el suscriptor tiene
+        // contratado el módulo de facturación (module_billing).
+        $customerInvoices = collect();
+
+        if ($subscription?->billingEnabled()) {
+            $customerInvoices = Invoice::forBranch($user->branch_id)
+                ->forCustomer($customer->id)
+                ->with(['fiscalProfile:id,razon_social,rfc', 'items'])
+                ->orderByDesc('created_at')
+                ->get();
+        }
         
         $availableTemplates = $user->branch->printTemplates()
             ->whereIn('type', [TemplateType::SALE_TICKET, TemplateType::LABEL])
@@ -148,6 +162,7 @@ class CustomerController extends Controller implements HasMiddleware
             'userBankAccounts' => $userBankAccounts,
             'activeLayaways' => $formattedLayaways, 
             'availableTemplates' => $availableTemplates,
+            'customerInvoices' => $customerInvoices,
         ]);
     }
 

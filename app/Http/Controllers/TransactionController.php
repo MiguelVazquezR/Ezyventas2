@@ -19,6 +19,7 @@ use App\Models\Product;
 use App\Models\ProductAttribute;
 use App\Models\Transaction;
 use App\Services\TransactionPaymentService;
+use App\Services\WhatsAppTicketService;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -31,7 +32,10 @@ use Inertia\Response;
 
 class TransactionController extends Controller implements HasMiddleware
 {
-    public function __construct(protected TransactionPaymentService $transactionPaymentService) {}
+    public function __construct(
+        protected TransactionPaymentService $transactionPaymentService,
+        protected WhatsAppTicketService $whatsAppTicketService,
+    ) {}
 
     public static function middleware(): array
     {
@@ -347,8 +351,31 @@ class TransactionController extends Controller implements HasMiddleware
         }
 
         try {
+            // Capturar el saldo pendiente ANTES de aplicar el abono (para el ticket).
+            $previousDue = (float) $transaction->remaining_due;
+            $customer = $transaction->customer;
+            $usedBalance = (!empty($validated['use_balance']) && $customer)
+                ? min((float) $customer->balance, $previousDue)
+                : 0.0;
+
             $this->transactionPaymentService->applyPaymentToTransaction($transaction, $validated, $validated['cash_register_session_id']);
-            return redirect()->back()->with('success', 'Abono registrado con éxito.');
+
+            $payload = $this->whatsAppTicketService->buildTransactionAbonoPayload(
+                $transaction,
+                $previousDue,
+                $validated['payments'] ?? [],
+                $usedBalance
+            );
+
+            return redirect()->back()
+                ->with('success', 'Abono registrado con éxito.')
+                ->with('print_data', [
+                    'type' => 'abono',
+                    'payload' => $payload,
+                    'transaction_id' => $transaction->id,
+                    'customer_phone' => $customer?->phone ?: null,
+                    'customer_id' => $customer?->id ?: null,
+                ]);
         } catch (\Exception $e) {
             Log::error("Error al registrar abono en transacción {$transaction->id}: " . $e->getMessage());
             return redirect()->back()->with(['error' => 'Error: ' . $e->getMessage()]);
