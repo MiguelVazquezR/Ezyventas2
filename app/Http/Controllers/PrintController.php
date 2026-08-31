@@ -11,11 +11,14 @@ use App\Models\Product;
 use App\Models\ServiceOrder;
 use App\Models\Transaction;
 use App\Services\PrintEncoderService;
+use App\Services\WhatsAppTicketService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class PrintController extends Controller
 {
+    public function __construct(protected WhatsAppTicketService $whatsAppTicketService) {}
+
     public function generatePayload(Request $request)
     {
         $validated = $request->validate([
@@ -174,6 +177,19 @@ class PrintController extends Controller
         $subscription = $dataSource->branch?->subscription;
         $customer = $dataSource->customer;
 
+        // Pedidos (creados en POS como "por entregar"): ticket de pedido con su estado actual.
+        if ($dataSource->isOrder()) {
+            $ticket = $this->whatsAppTicketService->buildOrderPayload($dataSource);
+            $contactInfo = $dataSource->contact_info;
+            $contactPhone = is_array($contactInfo) ? ($contactInfo['phone'] ?? null) : null;
+
+            return response()->json([
+                'ticket' => $ticket,
+                'customer_phone' => $contactPhone ?: ($customer?->phone ?: null),
+                'customer_id' => $customer?->id ?: null,
+            ]);
+        }
+
         $items = $dataSource->items->map(fn ($item) => [
             'cantidad' => (float) $item->quantity,
             'descripcion' => $item->description,
@@ -301,7 +317,7 @@ class PrintController extends Controller
                 })->firstOrFail();
         }
 
-        if (in_array($type, ['transaction', 'pos', 'general'])) {
+        if (in_array($type, ['transaction', 'pos', 'general', 'order'])) {
             $source = Transaction::with(['customer', 'items.itemable'])->find($id);
             if (!$source || $source->branch->subscription_id !== $user->branch->subscription_id) {
                 abort(404);

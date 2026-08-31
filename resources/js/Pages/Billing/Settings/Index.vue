@@ -293,12 +293,12 @@ const tagPt = {
                     </div>
 
                     <!-- Header actions -->
-                    <div class="flex items-center gap-3 shrink-0">
+                    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto shrink-0">
                         <Button
                             label="Agregar emisor fiscal"
                             icon="pi pi-plus"
                             @click="fiscalProfileFormModalRef?.open()"
-                            class="!rounded-xl !text-xs !uppercase !tracking-wider"
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider !justify-center w-full sm:w-auto"
                         />
                     </div>
                 </div>
@@ -320,8 +320,81 @@ const tagPt = {
                 </div>
 
                 <!-- ════════════════════════════════════════
-                     DataTable
+                     Mobile card list (phones & small tablets)
                      ════════════════════════════════════════ -->
+                <div class="md:hidden space-y-3">
+                    <div
+                        v-for="profile in fiscalProfiles.data"
+                        :key="profile.id"
+                        class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] p-4 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-[#1a1a1a]"
+                        :class="rowClass(profile)"
+                        @click="onRowClick({ data: profile })"
+                    >
+                        <!-- Top: RFC + status -->
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex flex-col gap-1 min-w-0">
+                                <span class="font-mono text-sm font-bold text-gray-900 dark:text-gray-100">{{ profile.rfc }}</span>
+                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{{ profile.razon_social }}</span>
+                            </div>
+                            <Tag :value="getStatusLabel(profile)" :severity="getStatusSeverity(profile)" :pt="tagPt" class="shrink-0" />
+                        </div>
+
+                        <!-- Régimen fiscal -->
+                        <div class="mt-3 flex items-center justify-between gap-3">
+                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 m-0 shrink-0">Régimen fiscal</span>
+                            <span class="text-xs text-gray-600 dark:text-gray-400 text-right truncate min-w-0">{{ profile.regimen_fiscal }} - {{ taxRegimeLabel(profile.regimen_fiscal) }}</span>
+                        </div>
+
+                        <!-- CSD + Manifesto + Timbres -->
+                        <div class="mt-3 flex flex-wrap items-center gap-1.5">
+                            <Tag :value="`CSD: ${getCsdLabel(profile)}`" :severity="getCsdSeverity(profile)" :pt="tagPt" />
+                            <Tag v-if="showManifestColumn" :value="`Manifiesto: ${getManifestLabel(profile)}`" :severity="getManifestSeverity(profile)" :pt="tagPt" />
+                            <Tag
+                                v-if="profile.stamps_available !== null && profile.stamps_available !== undefined"
+                                :value="`Timbres: ${formatStamps(profile.stamps_available)}`"
+                                severity="info"
+                                :pt="tagPt"
+                            />
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="mt-3 pt-3 border-t border-gray-100 dark:border-[#3a3a3a] flex items-center justify-end" @click.stop>
+                            <Button
+                                icon="pi pi-ellipsis-v"
+                                text
+                                rounded
+                                @click.stop="toggleMenu($event, profile)"
+                                class="!w-9 !h-9 !text-gray-500 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors"
+                                aria-label="Más acciones"
+                            />
+                        </div>
+                    </div>
+
+                    <!-- Empty state (mobile) -->
+                    <div v-if="!fiscalProfiles.data || fiscalProfiles.data.length === 0" class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col items-center justify-center py-12 px-4 text-center">
+                        <i class="pi pi-building !text-4xl text-gray-300 dark:text-gray-600 mb-4"></i>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 max-w-md leading-relaxed">
+                            No se encontraron emisores fiscales. Agrega tu primer RFC para comenzar a facturar.
+                        </p>
+                    </div>
+
+                    <!-- Pagination (mobile) -->
+                    <Paginator
+                        v-if="fiscalProfiles.total > fiscalProfiles.per_page"
+                        :rows="fiscalProfiles.per_page"
+                        :totalRecords="fiscalProfiles.total"
+                        :first="(fiscalProfiles.current_page - 1) * fiscalProfiles.per_page"
+                        :rowsPerPageOptions="[10, 20, 50]"
+                        @page="onPage"
+                        template="PrevPageLink PageLinks NextPageLink"
+                        class="!rounded-2xl !border !border-gray-100 dark:!border-[#3a3a3a] !bg-white dark:!bg-[#232323]"
+                    />
+                </div>
+
+                <!-- ════════════════════════════════════════
+                     DataTable (md+)
+                     ════════════════════════════════════════ -->
+                <div class="hidden md:block">
                 <DataTable
                     :value="fiscalProfiles.data"
                     lazy
@@ -444,6 +517,7 @@ const tagPt = {
                         </template>
                     </Column>
                 </DataTable>
+                </div>
             </div>
         </div>
 

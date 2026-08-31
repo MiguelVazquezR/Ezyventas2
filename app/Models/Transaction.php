@@ -96,6 +96,16 @@ class Transaction extends Model
         return $this->remaining_due <= 0.01;
     }
 
+    /**
+     * Indica si la transacción es un PEDIDO (creado en el POS con entrega).
+     * Todo pedido exige delivery_date, por lo que es un discriminador confiable.
+     */
+    public function isOrder(): bool
+    {
+        return $this->delivery_date !== null
+            || in_array($this->status, [TransactionStatus::TO_DELIVER, TransactionStatus::IN_TRANSIT, TransactionStatus::DELIVERED_UNPAID], true);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | GENERADORES DE FOLIO (Movidos desde el Service)

@@ -403,7 +403,7 @@ const menuPt = {
                     </div>
 
                     <!-- Header actions -->
-                    <div class="flex items-center gap-3 shrink-0">
+                    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto shrink-0">
                         <Button
                             label="Opciones"
                             icon="pi pi-chevron-down"
@@ -411,7 +411,7 @@ const menuPt = {
                             outlined
                             severity="secondary"
                             @click="toggleHeaderMenu"
-                            class="!rounded-xl !text-xs !uppercase !tracking-wider !bg-transparent !border-gray-300 dark:!border-[#3a3a3a] !text-gray-500 dark:!text-gray-400 hover:!bg-gray-50 dark:hover:!bg-[#1a1a1a]"
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider !bg-transparent !border-gray-300 dark:!border-[#3a3a3a] !text-gray-500 dark:!text-gray-400 hover:!bg-gray-50 dark:hover:!bg-[#1a1a1a] !justify-center w-full sm:w-auto"
                         />
                         <Menu ref="headerMenu" :model="headerMenuItems" :popup="true" :pt="menuPt" />
                         <Button
@@ -419,7 +419,7 @@ const menuPt = {
                             label="Emitir factura"
                             icon="pi pi-plus"
                             @click="router.get(route('billing.invoices.create'))"
-                            class="!rounded-xl !text-xs !uppercase !tracking-wider"
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider !justify-center w-full sm:w-auto"
                         />
                     </div>
                 </div>
@@ -473,8 +473,118 @@ const menuPt = {
                 </div>
 
                 <!-- ════════════════════════════════════════
-                     DataTable
+                     Mobile card list (phones & small tablets)
                      ════════════════════════════════════════ -->
+                <div class="md:hidden space-y-3">
+                    <div
+                        v-for="inv in invoices.data"
+                        :key="inv.id"
+                        class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] p-4 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-[#1a1a1a]"
+                        :class="rowClass(inv)"
+                        @click="router.get(route('billing.invoices.show', inv.id))"
+                    >
+                        <!-- Top: status dot + folio + status badge -->
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span class="w-2 h-2 rounded-full animate-pulse shrink-0" :class="statusDotClass(inv.status)"></span>
+                                <div class="flex flex-col min-w-0">
+                                    <span class="font-mono font-bold text-gray-900 dark:text-gray-100 truncate">
+                                        {{ inv.series ? inv.series + ' ' : '' }}{{ inv.folio }}
+                                    </span>
+                                    <span class="text-[9px] uppercase tracking-widest text-gray-400 dark:text-gray-500 truncate">
+                                        {{ inv.receiver_legal_name || 'Sin razón social' }}
+                                    </span>
+                                </div>
+                            </div>
+                            <Tag :value="statusLabel(inv.status)" :severity="statusSeverity(inv.status)" :pt="tagPt" class="shrink-0" />
+                        </div>
+
+                        <!-- RFC + tipo de comprobante -->
+                        <div class="mt-3 flex items-center justify-between gap-3">
+                            <div class="flex flex-col gap-1 min-w-0">
+                                <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 m-0">RFC</span>
+                                <span class="font-mono text-xs text-gray-600 dark:text-gray-400">{{ inv.receiver_rfc || '—' }}</span>
+                            </div>
+                            <div class="flex items-center gap-1.5 flex-wrap justify-end shrink-0">
+                                <Tag :value="tipoComprobanteLabel(inv.tipo_comprobante)" :severity="tipoComprobanteSeverity(inv.tipo_comprobante)" :pt="tagPt" />
+                                <Tag v-if="inv.tipo_comprobante === 'I' && inv.payment_method" :value="inv.payment_method" :severity="paymentMethodSeverity(inv.payment_method)" :pt="tagPt" />
+                            </div>
+                        </div>
+
+                        <!-- Emisor (only when multiple fiscal profiles exist) -->
+                        <div v-if="fiscalProfiles && fiscalProfiles.length > 1" class="mt-3 flex items-center justify-between gap-3">
+                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 m-0 shrink-0">Emisor</span>
+                            <span class="text-xs text-gray-700 dark:text-gray-300 text-right truncate min-w-0">{{ inv.fiscal_profile?.razon_social || '—' }}</span>
+                        </div>
+
+                        <!-- UUID -->
+                        <div class="mt-3 flex items-center justify-between gap-3">
+                            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 m-0 shrink-0">UUID</span>
+                            <span v-if="inv.uuid" class="font-mono text-xs text-gray-500 dark:text-gray-400 text-right min-w-0">{{ truncateUuid(inv.uuid) }}</span>
+                            <span v-else class="text-xs text-gray-300 dark:text-gray-600 italic text-right">Pendiente de timbrado</span>
+                        </div>
+
+                        <!-- Total + actions -->
+                        <div class="mt-3 pt-3 border-t border-gray-100 dark:border-[#3a3a3a] flex items-center justify-between gap-3">
+                            <div class="flex flex-col gap-0.5 min-w-0">
+                                <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 m-0">Total</span>
+                                <span class="text-xl font-light tracking-tight text-gray-900 dark:text-white">{{ formatCurrency(inv.total) }}</span>
+                            </div>
+                            <div class="flex items-center gap-1 shrink-0" @click.stop>
+                                <Button
+                                    icon="pi pi-file-pdf"
+                                    text
+                                    rounded
+                                    @click.stop="openUrl(route('billing.invoices.pdf', inv.id))"
+                                    class="!w-9 !h-9 !text-red-500 hover:!bg-red-50 dark:hover:!bg-red-900/20 !transition-colors"
+                                    aria-label="Ver PDF"
+                                />
+                                <Button
+                                    v-if="inv.xml_url"
+                                    icon="pi pi-download"
+                                    text
+                                    rounded
+                                    @click.stop="downloadFile(route('billing.invoices.xml', inv.id))"
+                                    class="!w-9 !h-9 !text-green-600 hover:!bg-green-50 dark:hover:!bg-green-900/20 !transition-colors"
+                                    aria-label="Descargar XML"
+                                />
+                                <Button
+                                    icon="pi pi-ellipsis-v"
+                                    text
+                                    rounded
+                                    @click.stop="toggleMenu($event, inv)"
+                                    class="!w-9 !h-9 !text-gray-500 hover:!bg-gray-200 dark:hover:!bg-[#2a2a2a] !transition-colors"
+                                    aria-label="Más acciones"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Empty state (mobile) -->
+                    <div v-if="!invoices.data || invoices.data.length === 0" class="bg-white dark:bg-[#232323] rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col items-center justify-center py-12 px-4 text-center">
+                        <i class="pi pi-receipt !text-4xl text-gray-300 dark:text-gray-600 mb-4"></i>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 max-w-md leading-relaxed">
+                            No se encontraron facturas emitidas. Asegúrate de tener configurada tu información fiscal antes de generar un nuevo comprobante.
+                        </p>
+                    </div>
+
+                    <!-- Pagination (mobile) -->
+                    <Paginator
+                        v-if="invoices.total > invoices.per_page"
+                        :rows="invoices.per_page"
+                        :totalRecords="invoices.total"
+                        :first="(invoices.current_page - 1) * invoices.per_page"
+                        :rowsPerPageOptions="[20, 50, 100]"
+                        @page="onPage"
+                        template="PrevPageLink PageLinks NextPageLink"
+                        class="!rounded-2xl !border !border-gray-100 dark:!border-[#3a3a3a] !bg-white dark:!bg-[#232323]"
+                    />
+                </div>
+
+                <!-- ════════════════════════════════════════
+                     DataTable (md+)
+                     ════════════════════════════════════════ -->
+                <div class="hidden md:block">
                 <DataTable
                     :value="invoices.data"
                     lazy
@@ -650,6 +760,7 @@ const menuPt = {
                         </template>
                     </Column>
                 </DataTable>
+                </div>
             </div>
         </div>
 

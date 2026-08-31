@@ -705,6 +705,51 @@ const textareaPt = {
                                         </div>
                                     </div>
 
+                                    <!-- Venta relacionada (transacción POS de la que se generó la factura) -->
+                                    <div v-if="slotProps.data.transaction" class="mb-5 p-4 bg-white dark:bg-[#232323] rounded-xl border border-gray-100 dark:border-[#3a3a3a]">
+                                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                            <div class="flex items-start gap-3 min-w-0">
+                                                <div class="w-9 h-9 rounded-full bg-emerald-50 dark:bg-emerald-900/20 flex items-center justify-center shrink-0 border border-emerald-100 dark:border-emerald-900/30">
+                                                    <i class="pi pi-shopping-bag !text-sm text-emerald-500"></i>
+                                                </div>
+                                                <div class="flex flex-col gap-0.5 min-w-0">
+                                                    <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 m-0">Venta relacionada</span>
+                                                    <Link
+                                                        :href="route('transactions.show', slotProps.data.transaction.id)"
+                                                        class="text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1.5 no-underline"
+                                                    >
+                                                        #{{ slotProps.data.transaction.folio }}
+                                                        <i class="pi pi-external-link !text-[10px]"></i>
+                                                    </Link>
+                                                    <span class="text-[11px] text-gray-500 dark:text-gray-400 m-0">
+                                                        {{ formatDate(slotProps.data.transaction.created_at) }}
+                                                        <template v-if="slotProps.data.transaction.user?.name">
+                                                            <span class="text-gray-300 dark:text-gray-600"> · </span>
+                                                            <i class="pi pi-user !text-[9px] mr-0.5"></i>{{ slotProps.data.transaction.user.name }}
+                                                        </template>
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div class="flex flex-col gap-0.5 sm:items-end shrink-0">
+                                                <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 m-0">Total de la venta</span>
+                                                <span class="text-lg font-light tracking-tight text-gray-900 dark:text-white">{{ formatCurrency(slotProps.data.transaction.total) }}</span>
+                                            </div>
+                                        </div>
+
+                                        <div class="mt-3 pt-3 border-t border-gray-100 dark:border-[#3a3a3a] flex flex-wrap items-center gap-x-3 gap-y-2">
+                                            <Tag
+                                                :value="slotProps.data.transaction.status.replace('_', ' ')"
+                                                :severity="getTransactionStatusSeverity(slotProps.data.transaction.status)"
+                                                class="capitalize"
+                                                :pt="tagPt"
+                                            />
+                                            <span v-if="slotProps.data.transaction.remaining_due !== undefined && slotProps.data.transaction.remaining_due !== null" class="text-[11px] text-gray-500 dark:text-gray-400">
+                                                <span class="font-semibold text-emerald-600 dark:text-emerald-400">Pagado {{ formatCurrency(slotProps.data.transaction.total_paid) }}</span>
+                                                <span v-if="slotProps.data.transaction.remaining_due > 0.01" class="ml-1">· Resta <span class="font-semibold text-amber-600 dark:text-amber-400">{{ formatCurrency(slotProps.data.transaction.remaining_due) }}</span></span>
+                                            </span>
+                                        </div>
+                                    </div>
+
                                     <!-- Datos del comprobante -->
                                     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
                                         <div class="flex flex-col gap-1">

@@ -369,7 +369,7 @@ const tagPt = {
             <!-- Header Principal -->
             <div class="bg-white dark:bg-[#232323] p-6 lg:p-8 rounded-3xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
                 <div>
-                    <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0 flex items-center gap-4">
+                    <h1 class="text-2xl sm:text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0 flex flex-wrap items-center gap-3">
                         Factura {{ invoice.series ? invoice.series + ' ' : '' }}{{ invoice.folio }}
                         <span v-if="invoice.series && !invoice.uuid" class="text-[10px] uppercase tracking-widest font-bold text-gray-400 bg-gray-100 dark:bg-[#1a1a1a] px-3 py-1 rounded-full">Serie {{ invoice.series }}</span>
                     </h1>
@@ -407,14 +407,14 @@ const tagPt = {
                 </div>
 
                 <!-- Action menu -->
-                <div class="w-full sm:w-auto shrink-0 flex gap-2">
+                <div class="w-full sm:w-auto shrink-0 grid grid-cols-2 sm:flex sm:items-center gap-2">
                     <Button
                         v-if="invoice.xml_url"
                         icon="pi pi-file-excel !text-sm"
                         label="XML"
                         severity="secondary"
                         outlined
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold hover:!text-primary-500 dark:hover:!text-primary-400 hover:!border-primary-500 dark:hover:!border-primary-400 hover:!bg-primary-500/10 transition-colors"
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold hover:!text-primary-500 dark:hover:!text-primary-400 hover:!border-primary-500 dark:hover:!border-primary-400 hover:!bg-primary-500/10 transition-colors !justify-center w-full sm:w-auto"
                         @click="downloadFile(route('billing.invoices.xml', invoice.id))"
                     />
                     <Button
@@ -422,7 +422,7 @@ const tagPt = {
                         label="PDF"
                         severity="secondary"
                         outlined
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold hover:!text-primary-500 dark:hover:!text-primary-400 hover:!border-primary-500 dark:hover:!border-primary-400 hover:!bg-primary-500/10 transition-colors"
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold hover:!text-primary-500 dark:hover:!text-primary-400 hover:!border-primary-500 dark:hover:!border-primary-400 hover:!bg-primary-500/10 transition-colors !justify-center w-full sm:w-auto"
                         @click="openUrl(route('billing.invoices.pdf', invoice.id))"
                     />
                     
@@ -433,7 +433,7 @@ const tagPt = {
                         iconPos="right"
                         severity="secondary"
                         outlined
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto"
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold w-full sm:w-auto !justify-center"
                         @click="toggleActionsMenu"
                     />
                     <Button
@@ -442,7 +442,7 @@ const tagPt = {
                         icon="pi pi-check-circle"
                         :loading="stamping"
                         @click="stampInvoice"
-                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-5 shadow-sm"
+                        class="!rounded-xl !uppercase !tracking-widest !text-xs !font-bold px-5 shadow-sm !justify-center w-full sm:w-auto col-span-2 sm:col-span-1"
                     />
                     <Menu ref="actionsMenu" :model="actionMenuItems" :popup="true" :pt="menuPt" />
                 </div>
@@ -563,7 +563,7 @@ const tagPt = {
                                 </span>
                             </div>
                             <Divider class="!my-3 !border-gray-100 dark:!border-[#3a3a3a]" />
-                            <div v-if="!isPago" class="grid grid-cols-2 gap-4">
+                            <div v-if="!isPago" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div class="flex flex-col gap-1">
                                     <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Forma de pago</span>
                                     <span class="text-sm text-gray-900 dark:text-gray-200">
@@ -577,7 +577,7 @@ const tagPt = {
                                     </span>
                                 </div>
                             </div>
-                            <div v-else class="grid grid-cols-2 gap-4">
+                            <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div class="flex flex-col gap-1">
                                     <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Forma de pago real</span>
                                     <span class="text-sm text-gray-900 dark:text-gray-200">
@@ -676,9 +676,10 @@ const tagPt = {
                                 </div>
                             </div>
                         </div>
+                        <div class="overflow-x-auto">
                         <DataTable
                             :value="invoice.items"
-                            tableStyle="min-width: 40rem"
+                            tableStyle="min-width: 28rem"
                             :pt="dataTablePt"
                         >
                             <Column field="quantity" header="Cant.">
@@ -686,7 +687,7 @@ const tagPt = {
                                     <span class="text-sm text-gray-900 dark:text-gray-200">{{ parseFloat(data.quantity) }}</span>
                                 </template>
                             </Column>
-                            <Column field="sat_product_code" header="Clave SAT">
+                            <Column field="sat_product_code" header="Clave SAT" class="hidden sm:table-cell" bodyClass="hidden sm:table-cell">
                                 <template #body="{ data }">
                                     <span class="text-xs text-gray-500 dark:text-gray-400">{{ data.sat_product_code || '—' }}</span>
                                 </template>
@@ -707,6 +708,7 @@ const tagPt = {
                                 </template>
                             </Column>
                         </DataTable>
+                        </div>
                     </div>
 
                     <!-- Documentos del pago (CFDI de Pago) -->
@@ -722,7 +724,8 @@ const tagPt = {
                                 </div>
                             </div>
                         </div>
-                        <DataTable :value="invoice.pago_documentos || []" tableStyle="min-width: 40rem" :pt="dataTablePt">
+                        <div class="overflow-x-auto">
+                        <DataTable :value="invoice.pago_documentos || []" tableStyle="min-width: 38rem" :pt="dataTablePt">
                             <Column field="folio" header="Folio">
                                 <template #body="{ data }">
                                     <span class="text-sm text-gray-900 dark:text-gray-200">{{ data.folio || '—' }}</span>
@@ -772,6 +775,7 @@ const tagPt = {
                                 </div>
                             </template>
                         </DataTable>
+                        </div>
                     </div>
 
                     <!-- Pagos relacionados (factura PPD) -->
@@ -787,7 +791,8 @@ const tagPt = {
                                 </div>
                             </div>
                         </div>
-                        <DataTable :value="relatedPayments || []" tableStyle="min-width: 40rem" :pt="dataTablePt">
+                        <div class="overflow-x-auto">
+                        <DataTable :value="relatedPayments || []" tableStyle="min-width: 34rem" :pt="dataTablePt">
                             <Column field="folio" header="CFDI de Pago">
                                 <template #body="{ data }">
                                     <Link :href="route('billing.invoices.show', data.id)" class="text-sm font-semibold text-primary-600 dark:text-primary-400 hover:underline inline-flex items-center gap-1.5 no-underline">
@@ -820,6 +825,7 @@ const tagPt = {
                                 </div>
                             </template>
                         </DataTable>
+                        </div>
                         <div class="px-6 lg:px-8 pb-6 pt-4 border-t border-gray-100 dark:border-[#3a3a3a] flex items-center justify-between gap-4">
                             <div class="flex flex-col gap-0.5">
                                 <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Total de la factura</span>

@@ -277,7 +277,7 @@ function buildAbonoMessage(payload) {
     }
 
     const closing = liquidated
-        ? '¡Gracias por tu abono! Tu venta quedó liquidada.'
+        ? '¡Gracias por tu abono! Tu compra quedó liquidada.'
         : '¡Gracias por tu abono!';
 
     lines.push('', `» ${closing} «`);
@@ -324,14 +324,201 @@ function enviarAbonoWhatsApp(phone, payload) {
     return window.open(url, '_blank');
 }
 
+// --- Datos de prueba (hardcoded) para el ticket de pedido ---
+const demoOrderTicket = {
+    kind: 'order',
+    businessName: 'Mi Negocio',
+    date: '29/08/2026 - 14:35',
+    folio: 'V-00492',
+    statusLabel: 'Por entregar', // 'Por entregar' | 'Pagado' | ...
+    customer: 'Juan Pérez', // nombre del contacto si no hay cliente ligado
+    items: [
+        { cantidad: 2, descripcion: 'Agua Ciel 1L', total: '$30.00' },
+        { cantidad: 1, descripcion: 'Galletas Choc', total: '$22.50' },
+    ],
+    subtotal: '$52.50 MXN',
+    shippingCost: '$25.00 MXN',
+    total: '$77.50 MXN',
+    paymentMethod: null, // solo se muestra cuando el pedido está pagado
+    finalMessage: '¡Gracias por tu pedido!',
+};
+
+/**
+ * Construye el mensaje del TICKET DE PEDIDO formateado para WhatsApp.
+ * Incluye el estado actual del pedido; el método de pago solo aparece
+ * cuando el pedido está liquidado (pagado).
+ *
+ * @param {Object} payload - Datos del ticket de pedido (ver demoOrderTicket).
+ * @returns {string} Mensaje listo para encodeURIComponent.
+ */
+function buildOrderMessage(payload) {
+    const {
+        businessName,
+        date,
+        folio,
+        statusLabel,
+        customer,
+        items,
+        subtotal,
+        shippingCost,
+        total,
+        totalPaid,
+        remainingDue,
+        paymentMethod,
+        finalMessage = '¡Gracias por tu pedido!',
+    } = payload;
+
+    // --- Columnas del bloque de código (Cant | Producto | Total) ---
+    const MAX_DESC_LENGTH = 24;
+    const descripciones = items.map((i) =>
+        i.descripcion.length > MAX_DESC_LENGTH
+            ? `${i.descripcion.slice(0, MAX_DESC_LENGTH - 1)}…`
+            : i.descripcion
+    );
+
+    const cantWidth = Math.max(4, ...items.map((i) => String(i.cantidad).length));
+    const descWidth = Math.max(8, ...descripciones.map((d) => d.length));
+    const totalWidth = Math.max(5, ...items.map((i) => i.total.length));
+
+    const header = `${'Cant'.padEnd(cantWidth)} ${'Producto'.padEnd(descWidth)} ${'Total'.padStart(totalWidth)}`;
+    const itemLines = items
+        .map((i, idx) => {
+            const cantidad = String(i.cantidad).padEnd(cantWidth);
+            const descripcion = descripciones[idx].padEnd(descWidth);
+            const total = i.total.padStart(totalWidth);
+            return `${cantidad} ${descripcion} ${total}`;
+        })
+        .join('\n');
+
+    const lines = [
+        '» *TICKET DE PEDIDO* «',
+        `• *${businessName}*`,
+        `• Estado del pedido: *${statusLabel}*`,
+        `• Fecha: *${date}*`,
+        `• Folio: *${folio}*`,
+        `• Cliente: *${customer}*`,
+        '',
+        '» *Detalle del pedido* «',
+        '```',
+        header,
+        itemLines,
+        '```',
+        `• Subtotal: *${subtotal}*`,
+        `• Envío: *${shippingCost}*`,
+        `• Total del pedido: *${total}*`,
+    ];
+
+    // Reenvío con pago: si el pedido ya tiene pagos se incluyen sus datos.
+    if (totalPaid) lines.push(`• Monto pagado: *${totalPaid}*`);
+    if (paymentMethod) lines.push(`• Método de pago: *${paymentMethod}*`);
+    if (remainingDue) lines.push(`• Restante a pagar: *${remainingDue}*`);
+
+    lines.push('', `» ${finalMessage} «`);
+
+    return lines.join('\n');
+}
+
+/**
+ * Genera y abre el ticket de pedido en WhatsApp (nueva pestaña).
+ *
+ * @param {string} phone - Teléfono del cliente que recibirá el ticket.
+ * @param {Object} payload - Datos del ticket de pedido.
+ * @returns {Window|null} Referencia de la ventana abierta, o null si fue bloqueada.
+ */
+function enviarOrderWhatsApp(phone, payload) {
+    const message = buildOrderMessage(payload);
+    const url = buildWhatsAppUrl(phone, message);
+
+    return window.open(url, '_blank');
+}
+
+// --- Datos de prueba (hardcoded) para el ticket de pago de pedido ---
+const demoOrderPaymentTicket = {
+    kind: 'order_payment',
+    businessName: 'Mi Negocio',
+    date: '30/08/2026 - 14:35',
+    folio: 'V-00492',
+    estado: 'Completado', // 'Completado' | 'Pendiente'
+    customer: 'Juan Pérez',
+    total: '$40.00 MXN',
+    previousDue: '$20.00 MXN',
+    abonado: '$20.00 MXN',
+    paymentMethod: 'Efectivo: $20.00',
+    remainingDue: '$0.00 MXN', // siempre se muestra (0.00 si está liquidado)
+    finalMessage: '¡Gracias por tu pedido! Ya ha sido completado.',
+};
+
+/**
+ * Construye el mensaje de PAGO de un pedido formateado para WhatsApp.
+ * Se usa cuando se abona o liquida un pedido (separado del ticket de abono).
+ *
+ * @param {Object} payload - Datos del ticket (ver demoOrderPaymentTicket).
+ * @returns {string} Mensaje listo para encodeURIComponent.
+ */
+function buildOrderPaymentMessage(payload) {
+    const {
+        businessName,
+        date,
+        folio,
+        estado,
+        customer,
+        total,
+        previousDue,
+        abonado,
+        paymentMethod,
+        remainingDue,
+        finalMessage = '¡Gracias por tu pedido!',
+    } = payload;
+
+    const lines = [
+        '» *TICKET DE PEDIDO* «',
+        `• *${businessName}*`,
+        `• Estado del pedido: *${estado}*`,
+        `• Fecha: *${date}*`,
+        `• Folio: *${folio}*`,
+        `• Cliente: *${customer}*`,
+        '',
+        '» *Detalle del pedido* «',
+        `• Total de la venta: *${total}*`,
+    ];
+    if (previousDue) lines.push(`• Monto anterior: *${previousDue}*`);
+    if (abonado) lines.push(`• Abonado: *${abonado}*`);
+    if (paymentMethod) lines.push(`• Método de pago: *${paymentMethod}*`);
+    if (remainingDue) lines.push(`• Restante a pagar: *${remainingDue}*`);
+
+    lines.push('', `» ${finalMessage} «`);
+
+    return lines.join('\n');
+}
+
+/**
+ * Genera y abre el ticket de pago de pedido en WhatsApp (nueva pestaña).
+ *
+ * @param {string} phone - Teléfono del cliente que recibirá el ticket.
+ * @param {Object} payload - Datos del ticket de pago de pedido.
+ * @returns {Window|null} Referencia de la ventana abierta, o null si fue bloqueada.
+ */
+function enviarOrderPaymentWhatsApp(phone, payload) {
+    const message = buildOrderPaymentMessage(payload);
+    const url = buildWhatsAppUrl(phone, message);
+
+    return window.open(url, '_blank');
+}
+
 export function useWhatsAppTicket() {
     return {
         demoTicket,
         demoAbonoTicket,
+        demoOrderTicket,
+        demoOrderPaymentTicket,
         buildTicketMessage,
         buildAbonoMessage,
+        buildOrderMessage,
+        buildOrderPaymentMessage,
         buildWhatsAppUrl,
         enviarTicketWhatsApp,
         enviarAbonoWhatsApp,
+        enviarOrderWhatsApp,
+        enviarOrderPaymentWhatsApp,
     };
 }

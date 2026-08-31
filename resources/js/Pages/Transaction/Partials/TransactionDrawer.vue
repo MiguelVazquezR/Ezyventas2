@@ -66,6 +66,23 @@ const formatStatusLabel = (status) => {
     return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
 };
 
+// Etiqueta Comanda/Pedido según el tipo guardado (con fallback por entrega/estado).
+const orderLabel = (transaction) => {
+    const type = transaction.contact_info?.type;
+    if (type === 'comanda') return 'Comanda';
+    if (type === 'pedido') return 'Pedido';
+
+    const pedidoStatuses = ['por_entregar', 'en_ruta', 'entregado_por_pagar'];
+    if (pedidoStatuses.includes(transaction.status) || transaction.delivery_date) return 'Pedido';
+    return 'Comanda';
+};
+
+const isOrderLike = (transaction) => {
+    return transaction.delivery_date
+        || ['por_entregar', 'en_ruta', 'entregado_por_pagar'].includes(transaction.status)
+        || !!transaction.contact_info?.type;
+};
+
 const getMethodKey = (method) => typeof method === 'object' ? method.value : (method || 'efectivo');
 
 // --- Helpers Matemáticos ---
@@ -133,10 +150,10 @@ const drawerPt = {
                     <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Cliente</span>
                     <div class="flex flex-col items-end">
                         <span v-if="transaction.customer" class="font-medium text-sm text-gray-900 dark:text-white truncate max-w-[180px]" :title="transaction.customer.name">
-                            {{ transaction.customer.name }}
+                            {{ transaction.customer.name }} <Tag v-if="isOrderLike(transaction)" severity="info" :value="orderLabel(transaction)" class="!text-[9px] !px-1.5 !py-0.5 ml-1" />
                         </span>
                         <span v-else-if="transaction.contact_info && transaction.contact_info.name" class="font-medium text-sm text-gray-900 dark:text-white truncate max-w-[180px]" :title="transaction.contact_info.name">
-                            {{ transaction.contact_info.name }} <Tag v-if="transaction.channel !== 'tienda_en_linea'" severity="info" value="Comanda" class="!text-[9px] !px-1.5 !py-0.5 ml-1" />
+                            {{ transaction.contact_info.name }} <Tag v-if="transaction.channel !== 'tienda_en_linea'" severity="info" :value="orderLabel(transaction)" class="!text-[9px] !px-1.5 !py-0.5 ml-1" />
                         </span>
                         <span v-else class="text-gray-500 italic text-sm truncate max-w-[180px]" title="Público en general">
                             Público general
