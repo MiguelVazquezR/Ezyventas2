@@ -289,9 +289,22 @@ const formatStatusLabel = (status) => {
     return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
 };
 
-const getOrderTagLabel = (status) => {
+const getOrderTagLabel = (data) => {
+    const type = data.contact_info?.type;
+    if (type === 'comanda') return 'Comanda';
+    if (type === 'pedido') return 'Pedido';
+
+    // Fallback para registros anteriores al guardado del tipo.
     const pedidoStatuses = ['por_entregar', 'en_ruta', 'entregado_por_pagar'];
-    return pedidoStatuses.includes(status) ? 'Pedido' : 'Comanda';
+    if (pedidoStatuses.includes(data.status) || data.delivery_date) return 'Pedido';
+    return 'Comanda';
+};
+
+// Indica si la transacción es un pedido/comanda (para mostrar su etiqueta).
+const isOrderLike = (data) => {
+    return data.delivery_date
+        || ['por_entregar', 'en_ruta', 'entregado_por_pagar'].includes(data.status)
+        || !!data.contact_info?.type;
 };
 
 const formatDate = (dateString) => {
@@ -411,12 +424,15 @@ const tagPt = {
                     
                     <Column field="customer.name" header="Cliente" sortable>
                         <template #body="{ data }">
-                            <Link v-if="data.customer" :href="route('customers.show', data.customer.id)" class="font-medium text-gray-900 dark:text-gray-100 hover:text-primary-500 transition-colors m-0 block w-max">
-                                {{ data.customer.name }}
-                            </Link>
+                            <div v-if="data.customer" class="flex items-center gap-2 m-0">
+                                <Link :href="route('customers.show', data.customer.id)" class="font-medium text-gray-900 dark:text-gray-100 hover:text-primary-500 transition-colors m-0 block w-max">
+                                    {{ data.customer.name }}
+                                </Link>
+                                <Tag v-if="isOrderLike(data)" severity="info" :value="getOrderTagLabel(data)" class="!text-[9px] !px-1.5 !py-0.5" />
+                            </div>
                             <div v-else-if="data.contact_info && data.contact_info.name" class="flex items-center gap-2 m-0">
                                 <span class="font-medium text-gray-900 dark:text-gray-100">{{ data.contact_info.name }}</span>
-                                <Tag v-if="data.channel !== 'tienda_en_linea'" severity="info" :value="getOrderTagLabel(data.status)" class="!text-[9px] !px-1.5 !py-0.5" />
+                                <Tag v-if="data.channel !== 'tienda_en_linea'" severity="info" :value="getOrderTagLabel(data)" class="!text-[9px] !px-1.5 !py-0.5" />
                             </div>
                             <span v-else class="text-gray-500 italic m-0">Público en general</span>
                         </template>

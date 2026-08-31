@@ -56,6 +56,8 @@ const {
 const {
     enviarTicketWhatsApp,
     enviarAbonoWhatsApp,
+    enviarOrderWhatsApp,
+    enviarOrderPaymentWhatsApp,
 } = useWhatsAppTicket();
 
 // --- Estado de envío por WhatsApp ---
@@ -70,10 +72,13 @@ const whatsappPhoneError = ref(null);
 // Un dataSource tipo 'abono' trae el payload del ticket de abono ya listo.
 const isAbono = computed(() => props.dataSource?.type === 'abono');
 
+// Pago de pedido: el ticket (TICKET DE PEDIDO con pago) llega en el payload.
+const isOrderPayment = computed(() => props.dataSource?.type === 'order_payment');
+
 // Fuente de datos para imprimir: los abonos se resuelven a la venta (abono a
 // una venta) o a la ficha del cliente (abono general).
 const printSource = computed(() => {
-    if (isAbono.value) {
+    if (isAbono.value || isOrderPayment.value) {
         return props.dataSource?.transaction_id
             ? { type: 'transaction', id: props.dataSource.transaction_id }
             : { type: 'customer', id: props.dataSource?.customer_id };
@@ -82,7 +87,7 @@ const printSource = computed(() => {
 });
 
 const canSendWhatsApp = computed(() => {
-    return props.dataSource && ['pos', 'transaction', 'abono'].includes(props.dataSource.type);
+    return props.dataSource && ['pos', 'transaction', 'abono', 'order', 'order_payment'].includes(props.dataSource.type);
 });
 
 const hasWhatsAppCustomer = computed(() => !!whatsappCustomerId.value);
@@ -99,8 +104,8 @@ const handleSendWhatsApp = async () => {
         let customer_phone = null;
         let customer_id = null;
 
-        if (props.dataSource.type === 'abono') {
-            // El payload del ticket de abono ya viene listo desde el backend.
+        if (['abono', 'order_payment'].includes(props.dataSource.type)) {
+            // El payload del ticket ya viene listo desde el backend.
             ticket = props.dataSource.payload;
             customer_phone = props.dataSource.customer_phone || null;
             customer_id = props.dataSource.customer_id || null;
@@ -147,9 +152,19 @@ const handleSendWhatsApp = async () => {
 };
 
 const openWhatsAppWithTicket = (phone) => {
-    const win = isAbono.value
-        ? enviarAbonoWhatsApp(phone, whatsappTicketData.value)
-        : enviarTicketWhatsApp(phone, whatsappTicketData.value);
+    // Se elige el builder según el tipo real del ticket (kind), no según el
+    // dataSource, para que los reenvíos de pedidos también usen el correcto.
+    const kind = whatsappTicketData.value?.kind;
+    let win;
+    if (kind === 'abono') {
+        win = enviarAbonoWhatsApp(phone, whatsappTicketData.value);
+    } else if (kind === 'order_payment') {
+        win = enviarOrderPaymentWhatsApp(phone, whatsappTicketData.value);
+    } else if (kind === 'order') {
+        win = enviarOrderWhatsApp(phone, whatsappTicketData.value);
+    } else {
+        win = enviarTicketWhatsApp(phone, whatsappTicketData.value);
+    }
     if (!win) {
         toast.add({
             severity: 'warn',

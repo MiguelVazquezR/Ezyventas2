@@ -123,7 +123,14 @@ class CustomerController extends Controller implements HasMiddleware
         if ($subscription?->billingEnabled()) {
             $customerInvoices = Invoice::forBranch($user->branch_id)
                 ->forCustomer($customer->id)
-                ->with(['fiscalProfile:id,razon_social,rfc', 'items'])
+                ->with([
+                    'fiscalProfile:id,razon_social,rfc',
+                    'items',
+                    // Venta (transacción) de la que se generó la factura (1:1).
+                    // total / total_paid / remaining_due son accesores añadidos.
+                    'transaction:id,folio,customer_id,branch_id,user_id,status,channel,subtotal,shipping_cost,total_discount,total_tax,currency,notes,created_at,transactionable_id,transactionable_type,layaway_expiration_date',
+                    'transaction.user:id,name',
+                ])
                 ->orderByDesc('created_at')
                 ->get();
         }

@@ -292,7 +292,7 @@ const rejectionPopoverPt = {
                                     <span v-if="fiscalProfile.postal_code" class="ml-2">· CP {{ fiscalProfile.postal_code }}</span>
                                 </p>
                             </div>
-                            <div class="flex items-center gap-2 shrink-0">
+                            <div class="flex flex-wrap items-center gap-2 shrink-0">
                                 <Button
                                     ref="csdBtnRef"
                                     v-if="isAccountActive()"
@@ -624,6 +624,7 @@ const rejectionPopoverPt = {
             <!-- ═══════════════════════════════ STAMP MOVEMENT LEDGER ═══════════════════════════════ -->
             <div class="rounded-3xl bg-white dark:bg-[#232323] border border-gray-100 dark:border-[#3a3a3a] p-6">
                 <h2 class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mb-4">Historial de timbres</h2>
+                <div class="overflow-x-auto">
                 <DataTable
                     :value="movements.data"
                     lazy
@@ -634,6 +635,7 @@ const rejectionPopoverPt = {
                     @page="onMovementPage($event)"
                     stripedRows
                     class="w-full"
+                    tableStyle="min-width: 36rem"
                     :pt="{ root: { class: '!bg-transparent' }, headerRow: { class: '!bg-transparent' } }"
                 >
                     <Column field="created_at" header="Fecha">
@@ -698,6 +700,7 @@ const rejectionPopoverPt = {
                         </template>
                     </Column>
                 </DataTable>
+                </div>
                 <div v-if="movements.data.length === 0" class="text-center py-8 text-sm text-gray-400">
                     No hay movimientos registrados para este emisor fiscal.
                 </div>

@@ -128,7 +128,7 @@ const formatNumber = (value) =>
                         </div>
 
                         <!-- Invoice KPIs -->
-                        <div class="grid grid-cols-4 gap-3">
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                             <div class="text-center">
                                 <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Pre-facturas</p>
                                 <p class="text-lg font-light text-purple-600 dark:text-purple-400 m-0">{{ formatNumber(profile.draftCount) }}</p>

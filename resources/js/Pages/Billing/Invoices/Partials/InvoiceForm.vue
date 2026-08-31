@@ -441,6 +441,26 @@ const submit = (draft = false) => {
     </div>
 
     <form v-else @submit.prevent="submit(false)" class="tesla-form mt-6 flex flex-col md:flex-row gap-6 items-start relative">
+
+        <!-- Mobile quick-nav (phones & small tablets): the sidebar is hidden
+             on small screens, so this sticky chip bar replaces it -->
+        <div class="md:hidden sticky top-16 z-30 -mx-4 px-4 py-2 bg-white/85 dark:bg-[#121212]/85 backdrop-blur-xl border-b border-slate-100 dark:border-neutral-800 w-[calc(100%+2rem)]">
+            <div class="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <button
+                    v-for="section in formSections"
+                    :key="section.id"
+                    type="button"
+                    @click="scrollTo(section.id)"
+                    class="shrink-0 px-3.5 py-1.5 rounded-full text-[11px] font-semibold tracking-wide transition-all duration-200 border"
+                    :class="activeSection === section.id
+                        ? 'bg-black dark:bg-white text-white dark:text-black border-black dark:border-white'
+                        : 'bg-slate-50 dark:bg-neutral-900 text-slate-500 dark:text-neutral-400 border-slate-100 dark:border-neutral-800 hover:text-slate-900 dark:hover:text-white'"
+                >
+                    {{ section.label }}
+                </button>
+            </div>
+        </div>
+
         <!-- Sidebar -->
         <FormNavigationSidebar :sections="formSections" :activeSection="activeSection" @scrollTo="scrollTo" />
 
@@ -529,14 +549,14 @@ const submit = (draft = false) => {
             />
 
             <!-- ═══ Submit buttons — Tesla dock ═══ -->
-            <div class="sticky bottom-4 z-20 flex justify-center">
-                <div class="inline-flex items-center gap-3 rounded-full p-2 border border-slate-100 dark:border-neutral-800 bg-white/80 dark:bg-[#121212]/80 backdrop-blur-xl shadow-lg shadow-slate-200/40 dark:shadow-black/40">
+            <div class="sticky bottom-4 z-20 flex justify-center px-2 sm:px-0">
+                <div class="w-full sm:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 rounded-3xl sm:rounded-full p-2 sm:p-2.5 border border-slate-100 dark:border-neutral-800 bg-white/90 dark:bg-[#121212]/90 backdrop-blur-xl shadow-lg shadow-slate-200/40 dark:shadow-black/40">
                     <template v-if="mode === 'create'">
-                        <Button type="submit" label="Guardar como prefactura" icon="pi pi-file" severity="primary" outlined @click="submit(true)" :loading="form.processing" class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !bg-white dark:!bg-transparent" />
-                        <Button type="submit" label="Timbrar ahora" icon="pi pi-shield" :loading="form.processing" :disabled="!canStamp" :class="['!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95', !canStamp ? 'opacity-50 cursor-not-allowed' : '']" v-tooltip.top="!canStamp ? stampButtonTooltip : ''" />
+                        <Button type="submit" label="Guardar como prefactura" icon="pi pi-file" severity="primary" outlined @click="submit(true)" :loading="form.processing" class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !bg-white dark:!bg-transparent !justify-center w-full sm:w-auto" />
+                        <Button type="submit" label="Timbrar ahora" icon="pi pi-shield" :loading="form.processing" :disabled="!canStamp" :class="['!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !justify-center w-full sm:w-auto', !canStamp ? 'opacity-50 cursor-not-allowed' : '']" v-tooltip.top="!canStamp ? stampButtonTooltip : ''" />
                     </template>
                     <template v-else>
-                        <Button type="submit" label="Guardar cambios" icon="pi pi-save" :loading="form.processing" class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95" />
+                        <Button type="submit" label="Guardar cambios" icon="pi pi-save" :loading="form.processing" class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !justify-center w-full sm:w-auto" />
                         <Button
                             type="button"
                             :label="stampPhase === 'saving' ? 'Guardando cambios...' : stampPhase === 'stamping' ? 'Timbrando factura...' : 'Timbrar factura'"
@@ -546,7 +566,7 @@ const submit = (draft = false) => {
                             :loading="!!stampPhase"
                             :disabled="form.processing || !!stampPhase"
                             @click="stampInvoice"
-                            class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !bg-white dark:!bg-transparent"
+                            class="!rounded-full !px-6 !py-2.5 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95 !bg-white dark:!bg-transparent !justify-center w-full sm:w-auto"
                         />
                     </template>
                 </div>

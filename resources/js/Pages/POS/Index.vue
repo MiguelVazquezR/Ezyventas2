@@ -376,7 +376,8 @@ const handleOrderSubmit = (orderData) => {
     form.is_order = true;
     form.contact_info = {
         name: orderData.contact_name,
-        phone: orderData.contact_phone
+        phone: orderData.contact_phone,
+        type: posMode.value === 'comandas' ? 'comanda' : 'pedido',
     };
     form.delivery_date = orderData.delivery_date;
     form.shipping_address = orderData.shipping_address;

@@ -360,6 +360,32 @@ class TransactionController extends Controller implements HasMiddleware
 
             $this->transactionPaymentService->applyPaymentToTransaction($transaction, $validated, $validated['cash_register_session_id']);
 
+            $contactInfo = $transaction->contact_info;
+            $contactPhone = is_array($contactInfo) && !empty($contactInfo['phone'])
+                ? trim((string) $contactInfo['phone'])
+                : null;
+
+            // Si es un PEDIDO, el ticket es de pedido (estado + datos del pago),
+            // separado del ticket de abono de las ventas normales.
+            if ($transaction->isOrder()) {
+                $payload = $this->whatsAppTicketService->buildOrderPaymentPayload(
+                    $transaction,
+                    $previousDue,
+                    $validated['payments'] ?? [],
+                    $usedBalance
+                );
+
+                return redirect()->back()
+                    ->with('success', 'Abono registrado con éxito.')
+                    ->with('print_data', [
+                        'type' => 'order_payment',
+                        'payload' => $payload,
+                        'transaction_id' => $transaction->id,
+                        'customer_phone' => $contactPhone ?: ($customer?->phone ?: null),
+                        'customer_id' => $customer?->id ?: null,
+                    ]);
+            }
+
             $payload = $this->whatsAppTicketService->buildTransactionAbonoPayload(
                 $transaction,
                 $previousDue,
@@ -726,9 +752,23 @@ class TransactionController extends Controller implements HasMiddleware
         try {
             $data = $validated;
             $data['customer_id'] = $validated['customerId'];
+
+            // Tipo de pedido: 'comanda' (modo comandas) o 'pedido' (retail).
+            $data['contact_info']['type'] = ($data['contact_info']['type'] ?? null) === 'comanda' ? 'comanda' : 'pedido';
+
+            // Si el contacto no trae teléfono pero el cliente sí, se toma el del cliente.
+            if (empty($data['contact_info']['phone'] ?? null) && $validated['customerId']) {
+                $orderCustomer = Customer::find($validated['customerId']);
+                if ($orderCustomer?->phone) {
+                    $data['contact_info']['phone'] = $orderCustomer->phone;
+                }
+            }
+
             $transaction = $this->transactionPaymentService->handleNewOrder(Auth::user(), $data);
 
-            return redirect()->back()->with('success', "Pedido #{$transaction->folio} creado correctamente.");
+            return redirect()->back()
+                ->with('success', "Pedido #{$transaction->folio} creado correctamente.")
+                ->with('print_data', ['type' => 'order', 'id' => $transaction->id]);
         } catch (\Exception $e) {
             Log::error("Error creando pedido: " . $e->getMessage());
             return redirect()->back()->with(['error' => 'Error: ' . $e->getMessage()]);

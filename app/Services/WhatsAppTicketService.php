@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\TransactionStatus;
 use App\Models\Customer;
 use App\Models\Transaction;
 use Carbon\Carbon;
@@ -136,5 +137,121 @@ class WhatsAppTicketService
                 ? '$' . number_format((float) $summary['balance_credit'], 2) . ' MXN'
                 : null,
         ];
+    }
+
+    /**
+     * Payload del ticket de pedido (POS) para WhatsApp.
+     * El estado se deriva del estado actual del pedido y el método de pago
+     * solo se muestra cuando el pedido está liquidado (completado/pagado).
+     */
+    public function buildOrderPayload(Transaction $transaction): array
+    {
+        $customer = $transaction->customer;
+        $subscription = $transaction->branch?->subscription;
+        $contactInfo = $transaction->contact_info;
+
+        $items = $transaction->items->map(fn ($item) => [
+            'cantidad' => (float) $item->quantity,
+            'descripcion' => $item->description,
+            'total' => '$' . number_format((float) $item->line_total, 2),
+        ])->values();
+
+        $total = (float) $transaction->subtotal - (float) $transaction->total_discount + (float) $transaction->total_tax + (float) ($transaction->shipping_cost ?? 0);
+        $totalPaid = round((float) $transaction->payments->sum('amount'), 2);
+        $remaining = max(0, round($total - $totalPaid, 2));
+
+        $payload = [
+            'kind' => 'order',
+            'businessName' => $subscription?->commercial_name ?: ($transaction->branch?->name ?: 'Mi Negocio'),
+            'date' => Carbon::parse($transaction->created_at)->format('d/m/Y - H:i'),
+            'folio' => $transaction->folio,
+            'statusLabel' => $this->orderStatusLabel($transaction->status),
+            'customer' => $contactInfo['name'] ?? $customer?->name ?? 'Cliente',
+            'items' => $items,
+            'subtotal' => '$' . number_format((float) $transaction->subtotal, 2) . ' MXN',
+            'shippingCost' => '$' . number_format((float) ($transaction->shipping_cost ?? 0), 2) . ' MXN',
+            'total' => '$' . number_format($total, 2) . ' MXN',
+            'totalPaid' => null,
+            'remainingDue' => null,
+            'paymentMethod' => null,
+            'finalMessage' => '¡Gracias por tu pedido!',
+        ];
+
+        // Reenvío: si el pedido ya tiene pagos, el ticket general incluye los datos del pago.
+        if ($totalPaid > 0.01) {
+            $payments = $transaction->payments
+                ->map(fn ($payment) => [
+                    'method' => $payment->payment_method->value,
+                    'amount' => (float) $payment->amount,
+                ])
+                ->values()
+                ->all();
+
+            $payload['totalPaid'] = '$' . number_format($totalPaid, 2) . ' MXN';
+            $payload['remainingDue'] = '$' . number_format($remaining, 2) . ' MXN';
+            $payload['paymentMethod'] = $this->formatPaymentBreakdown($payments);
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Payload del ticket de PAGO de un pedido (cuando se abona o liquida un pedido).
+     * Estado: 'Completado' si quedó liquidado, 'Pendiente' si no terminó.
+     * Se separa del ticket de abono (ventas normales).
+     */
+    public function buildOrderPaymentPayload(
+        Transaction $transaction,
+        float $previousDue,
+        array $payments,
+        float $usedBalance = 0.0
+    ): array {
+        $customer = $transaction->customer;
+        $subscription = $transaction->branch?->subscription;
+        $contactInfo = $transaction->contact_info;
+        $fresh = $transaction->fresh();
+
+        $total = (float) $fresh->total;
+        $remaining = max(0, round($total - (float) $fresh->payments->sum('amount'), 2));
+        $amountPaidNow = round((float) collect($payments)->sum('amount') + $usedBalance, 2);
+
+        // El saldo a favor usado también se muestra como método de pago.
+        $breakdownPayments = $payments;
+        if ($usedBalance > 0) {
+            $breakdownPayments[] = ['method' => 'saldo', 'amount' => $usedBalance];
+        }
+
+        $completed = $remaining <= 0.01;
+
+        return [
+            'kind' => 'order_payment',
+            'businessName' => $subscription?->commercial_name ?: ($transaction->branch?->name ?: 'Mi Negocio'),
+            'date' => now()->format('d/m/Y - H:i'),
+            'folio' => $transaction->folio,
+            'estado' => $completed ? 'Completado' : 'Pendiente',
+            'customer' => $contactInfo['name'] ?? $customer?->name ?? 'Cliente',
+            'total' => '$' . number_format($total, 2) . ' MXN',
+            'previousDue' => '$' . number_format($previousDue, 2) . ' MXN',
+            'abonado' => '$' . number_format($amountPaidNow, 2) . ' MXN',
+            'paymentMethod' => $this->formatPaymentBreakdown($breakdownPayments),
+            'remainingDue' => '$' . number_format($remaining, 2) . ' MXN',
+            'finalMessage' => $completed
+                ? '¡Gracias por tu pedido! Ya ha sido completado.'
+                : '¡Gracias por tu pedido!',
+        ];
+    }
+
+    private function orderStatusLabel(TransactionStatus $status): string
+    {
+        return match ($status) {
+            TransactionStatus::TO_DELIVER => 'Por entregar',
+            TransactionStatus::IN_TRANSIT => 'En ruta',
+            TransactionStatus::DELIVERED_UNPAID => 'Entregado por pagar',
+            TransactionStatus::COMPLETED => 'Pagado',
+            TransactionStatus::CANCELLED => 'Cancelado',
+            TransactionStatus::PENDING => 'Pendiente',
+            TransactionStatus::REFUNDED => 'Reembolsado',
+            default => ucfirst(str_replace('_', ' ', $status->value)),
+        };
     }
 }
