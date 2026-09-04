@@ -10,6 +10,23 @@ class ReferralUsage extends Model
 {
     use HasFactory;
 
+    /**
+     * Referral captured at sign-up while the referred subscription is still on
+     * its free trial (no payment yet).
+     */
+    public const STATUS_TRIAL = 'trial';
+
+    /**
+     * The free trial ended and the referred subscription never paid.
+     */
+    public const STATUS_EXPIRED = 'expired';
+
+    public const STATUS_PENDING = 'pending';
+
+    public const STATUS_PAID = 'paid';
+
+    public const STATUS_CANCELLED = 'cancelled';
+
     protected $fillable = [
         'referral_code_id',
         'referred_subscription_id',

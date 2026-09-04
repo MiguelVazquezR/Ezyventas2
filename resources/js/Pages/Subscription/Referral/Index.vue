@@ -31,14 +31,32 @@ function saveBankAccount() {
 }
 
 const rewardLabel = (status) => {
-    const map = { pending: 'Pendiente', paid: 'Pagado', cancelled: 'Cancelado' };
+    const map = {
+        pending: 'Pendiente',
+        paid: 'Pagado',
+        cancelled: 'Cancelado',
+        trial: 'De prueba',
+        expired: 'Expirado',
+    };
     return map[status] || status;
 };
 
 const rewardSeverity = (status) => {
-    const map = { pending: 'warn', paid: 'success', cancelled: 'danger' };
+    const map = {
+        pending: 'warn',
+        paid: 'success',
+        cancelled: 'danger',
+        trial: 'info',
+        expired: 'danger',
+    };
     return map[status] || 'info';
 };
+
+const trialCount = computed(() => props.referrals.filter(r => r.reward_status === 'trial').length);
+
+const formatTrialEnd = (date) => date
+    ? new Date(date).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })
+    : '';
 
 // Marcar referidos como vistos al cargar la página
 const hasUnseen = computed(() => props.referrals.some(r => !r.seen_at));
@@ -86,8 +104,9 @@ if (hasUnseen.value) {
                     <p class="text-3xl font-light tracking-tight text-gray-900 dark:text-white mt-2 m-0">{{ referrals.length }}</p>
                     <p class="text-[10px] text-gray-500 m-0 mt-1">
                         <span class="text-green-500 font-bold">{{ activeReferralsCount }}</span> activos
+                        <span v-if="trialCount > 0" class="text-sky-500 font-bold">• {{ trialCount }} en prueba</span>
                         <span class="text-gray-300 mx-1">•</span>
-                        <span class="text-gray-400">{{ referrals.length - activeReferralsCount }} inactivos</span>
+                        <span class="text-gray-400">{{ Math.max(referrals.length - activeReferralsCount - trialCount, 0) }} sin pago</span>
                     </p>
                 </div>
             </div>
@@ -134,6 +153,14 @@ if (hasUnseen.value) {
                     </p>
                 </div>
 
+                <div v-if="trialCount > 0" class="bg-sky-50 dark:bg-sky-900/10 border border-sky-100 dark:border-sky-900/30 rounded-2xl p-4 mb-4">
+                    <p class="text-sm text-sky-800 dark:text-sky-200 m-0">
+                        <i class="pi pi-sync mr-1.5"></i>
+                        Tienes <strong>{{ trialCount }}</strong> referido(s) en su periodo de prueba de 30 días.
+                        El premio se activa automáticamente cuando hagan su primer pago.
+                    </p>
+                </div>
+
                 <div v-if="referrals.length === 0" class="text-center py-8">
                     <i class="pi pi-users !text-4xl text-gray-300 dark:text-gray-600 mb-3"></i>
                     <p class="text-sm text-gray-500 dark:text-gray-400 m-0">Aún no has referido a nadie. ¡Comparte tu código!</p>
@@ -148,22 +175,33 @@ if (hasUnseen.value) {
                     <Column field="referred_subscription.commercial_name" header="Suscriptor" />
                     <Column header="Fecha de pago">
                         <template #body="{ data }">
-                            {{ new Date(data.payment?.created_at).toLocaleDateString('es-MX') }}
+                            <span v-if="data.payment?.created_at">{{ new Date(data.payment.created_at).toLocaleDateString('es-MX') }}</span>
+                            <span v-else class="text-gray-400">—</span>
                         </template>
                     </Column>
                     <Column header="Mensualidad base">
                         <template #body="{ data }">
-                            ${{ parseFloat(data.monthly_base_amount).toFixed(2) }}
+                            <span v-if="data.monthly_base_amount != null">${{ parseFloat(data.monthly_base_amount).toFixed(2) }}</span>
+                            <span v-else class="text-gray-400">—</span>
                         </template>
                     </Column>
                     <Column header="Premio">
                         <template #body="{ data }">
-                            ${{ parseFloat(data.reward_amount).toFixed(2) }}
+                            <span v-if="data.reward_amount != null">${{ parseFloat(data.reward_amount).toFixed(2) }}</span>
+                            <span v-else class="text-gray-400">—</span>
                         </template>
                     </Column>
                     <Column header="Estado">
                         <template #body="{ data }">
-                            <Tag :value="rewardLabel(data.reward_status)" :severity="rewardSeverity(data.reward_status)" rounded />
+                            <div class="flex flex-col gap-0.5 items-start">
+                                <Tag :value="rewardLabel(data.reward_status)" :severity="rewardSeverity(data.reward_status)" rounded />
+                                <span v-if="data.reward_status === 'trial' && data.trial_ends_at" class="text-[10px] text-gray-400 dark:text-gray-500">
+                                    Prueba termina {{ formatTrialEnd(data.trial_ends_at) }}
+                                </span>
+                                <span v-else-if="data.reward_status === 'expired'" class="text-[10px] text-gray-400 dark:text-gray-500">
+                                    No hizo su primer pago
+                                </span>
+                            </div>
                         </template>
                     </Column>
                     <Column header="Suscripción" style="width: 7rem">

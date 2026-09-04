@@ -153,6 +153,9 @@ class SubscriptionController extends Controller
         $isOwner = !$user->roles()->exists();
         $userBankAccounts = $isOwner ? $subscription->bankAccounts()->get(['bank_accounts.id', 'account_name', 'bank_name']) : $user->bankAccounts()->get(['bank_accounts.id', 'account_name', 'bank_name']);
 
+        // Cupón de referido guardado durante el registro (aún sin pago).
+        $pendingReferral = $subscription->pendingRegistrationReferral();
+
         return Inertia::render('Subscription/ManageSubscription', array_merge($managementData, [
             'subscription' => $subscription,
             'currentVersion' => $versionToDisplay,
@@ -160,6 +163,8 @@ class SubscriptionController extends Controller
             'hasPendingPayment' => (bool) $subscription->getPendingPayment(),
             'isFirstPayment' => $subscription->versions()->count() <= 1,
             'referrerActiveDiscountPct' => (float) $referrerActiveDiscountPct,
+            'pendingReferralCode' => $pendingReferral?->referralCode?->code,
+            'pendingReferralDiscountPct' => (float) ($pendingReferral?->referred_discount_pct ?? 0),
             'ourBankAccounts' => BankAccount::whereHas('branches', fn($q) => $q->where('branch_id', 1)->where('is_favorite', true))->get(),
             'userBankAccounts' => $userBankAccounts,
             'expenseCategories' => ExpenseCategory::where('subscription_id', $subscription->id)->get(['id', 'name']),

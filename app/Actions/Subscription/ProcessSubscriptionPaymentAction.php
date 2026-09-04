@@ -49,22 +49,12 @@ class ProcessSubscriptionPaymentAction
         $amount = (float) $validated['total_amount'];
         $referralDiscountPct = null;
         $referralDiscountAmount = null;
-        $referralData = null;
+        $referralData = $this->resolveReferralData($subscription, $validated, $amount);
 
-        if (!empty($validated['referral_code'])) {
-            try {
-                $applyReferral = app(ApplyReferralDiscountAction::class);
-                $referralData = $applyReferral->execute(
-                    $validated['referral_code'],
-                    $subscription,
-                    $amount
-                );
-                $amount = $referralData['final_amount'];
-                $referralDiscountPct = $referralData['discount_pct'];
-                $referralDiscountAmount = $referralData['discount_amount'];
-            } catch (\Exception $e) {
-                Log::warning("Código de referido no aplicado: " . $e->getMessage());
-            }
+        if ($referralData) {
+            $amount = $referralData['final_amount'];
+            $referralDiscountPct = $referralData['discount_pct'];
+            $referralDiscountAmount = $referralData['discount_amount'];
         }
 
         $referrerActivePct = $validated['billing_period'] === 'mensual'
@@ -89,6 +79,52 @@ class ProcessSubscriptionPaymentAction
             'referralDiscountAmount'  => $referralDiscountAmount,
             'referralData'            => $referralData,
         ];
+    }
+
+    /**
+     * Determina qué código de referido aplica a este pago:
+     *   1) El cupón guardado automáticamente durante el registro (estado
+     *      'trial'/'expired', sin pago aún) -> se aplica sin pedirlo de nuevo.
+     *   2) El código escrito manualmente en la pantalla de pago (comportamiento
+     *      original para quien no lo capturó al registrarse).
+     *
+     * @return array{referral_code: ReferralCode, discount_pct: float, discount_amount: float, final_amount: float, settings: ?ReferralSettings, referral_usage: ?ReferralUsage}|null
+     */
+    private function resolveReferralData(Subscription $subscription, array $validated, float $amount): ?array
+    {
+        // 1) Cupón guardado en el registro (el suscriptor ya viene referido).
+        $pending = $subscription->pendingRegistrationReferral();
+
+        if ($pending && $pending->referralCode) {
+            $discountPct = (float) ($pending->referred_discount_pct ?? 0);
+            $discountAmount = round($amount * ($discountPct / 100), 2);
+
+            return [
+                'referral_code'    => $pending->referralCode,
+                'discount_pct'     => $discountPct,
+                'discount_amount'  => $discountAmount,
+                'final_amount'     => round($amount - $discountAmount, 2),
+                'settings'         => null,
+                'referral_usage'   => $pending,
+            ];
+        }
+
+        // 2) Código escrito a mano (no había cupón guardado en el registro).
+        if (!empty($validated['referral_code'])) {
+            try {
+                $referralData = app(ApplyReferralDiscountAction::class)->execute(
+                    $validated['referral_code'],
+                    $subscription,
+                    $amount
+                );
+
+                return $referralData + ['referral_usage' => null];
+            } catch (\Exception $e) {
+                Log::warning("Código de referido no aplicado: " . $e->getMessage());
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -194,26 +230,73 @@ class ProcessSubscriptionPaymentAction
             'referral_discount_amount'=> $referralDiscountAmount,
         ]);
 
-        // Registrar ReferralUsage
-        if ($referralData) {
-            $settings = $referralData['settings'];
-            $referralCode = $referralData['referral_code'];
-            $monthlyBase = $this->calculateMonthlyBase($validated['items'], $allPlanItems);
-
-            ReferralUsage::create([
-                'referral_code_id'            => $referralCode->id,
-                'referred_subscription_id'     => $subscription->id,
-                'subscription_payment_id'       => $payment->id,
-                'reward_status'                 => 'pending',
-                'referred_discount_pct'         => $referralDiscountPct,
-                'referrer_reward_pct'           => $settings->referrer_reward_pct,
-                'referrer_ongoing_discount_pct' => $settings->referrer_ongoing_discount_pct,
-                'monthly_base_amount'           => $monthlyBase,
-                'reward_amount'                 => round($monthlyBase * ((float) $settings->referrer_reward_pct / 100), 2),
-            ]);
-        }
+        // Registrar / confirmar ReferralUsage (crea si es nuevo, o convierte el
+        // referido guardado en el registro de 'trial'/'expired' a 'pending').
+        $this->persistReferralUsage($payment, $subscription, $validated, $allPlanItems, $referralData, $referralDiscountPct);
 
         return $payment;
+    }
+
+    /**
+     * Registra o confirma el ReferralUsage vinculado a este pago.
+     * - Si el suscriptor traía un cupón guardado en el registro (estado
+     *   'trial'/'expired'), actualiza esa misma fila: la liga al pago y la pasa
+     *   a 'pending' (el premio del referidor queda pendiente de aprobación).
+     * - Si el código se escribió en la pantalla de pago, crea la fila como antes.
+     */
+    private function persistReferralUsage(
+        SubscriptionPayment $payment,
+        Subscription $subscription,
+        array $validated,
+        $allPlanItems,
+        ?array $referralData,
+        ?float $referralDiscountPct
+    ): void {
+        if (!$referralData) {
+            return;
+        }
+
+        $referralCode = $referralData['referral_code'];
+        $pendingUsage = $referralData['referral_usage'] ?? null;
+        $settings = $referralData['settings'];
+
+        $referrerRewardPct = $pendingUsage
+            ? (float) $pendingUsage->referrer_reward_pct
+            : (float) $settings->referrer_reward_pct;
+
+        $referrerOngoingPct = $pendingUsage
+            ? (float) $pendingUsage->referrer_ongoing_discount_pct
+            : (float) $settings->referrer_ongoing_discount_pct;
+
+        $monthlyBase = $this->calculateMonthlyBase($validated['items'], $allPlanItems);
+        $rewardAmount = round($monthlyBase * ($referrerRewardPct / 100), 2);
+        $referredDiscountPct = $referralData['discount_pct'] ?? $referralDiscountPct;
+
+        if ($pendingUsage) {
+            $pendingUsage->update([
+                'subscription_payment_id'    => $payment->id,
+                'reward_status'              => ReferralUsage::STATUS_PENDING,
+                'referred_discount_pct'      => $referredDiscountPct,
+                'referrer_reward_pct'        => $referrerRewardPct,
+                'referrer_ongoing_discount_pct' => $referrerOngoingPct,
+                'monthly_base_amount'        => $monthlyBase,
+                'reward_amount'              => $rewardAmount,
+            ]);
+
+            return;
+        }
+
+        ReferralUsage::create([
+            'referral_code_id'            => $referralCode->id,
+            'referred_subscription_id'    => $subscription->id,
+            'subscription_payment_id'     => $payment->id,
+            'reward_status'               => ReferralUsage::STATUS_PENDING,
+            'referred_discount_pct'       => $referredDiscountPct,
+            'referrer_reward_pct'         => $referrerRewardPct,
+            'referrer_ongoing_discount_pct' => $referrerOngoingPct,
+            'monthly_base_amount'         => $monthlyBase,
+            'reward_amount'               => $rewardAmount,
+        ]);
     }
 
     private function handleTransferPayment(Request $request, Subscription $subscription, array $validated, $allPlanItems): SubscriptionPayment
@@ -309,6 +392,9 @@ class ProcessSubscriptionPaymentAction
                 'referral_discount_pct'     => $referralDiscountPct,
                 'referral_discount_amount'  => $referralDiscountAmount,
             ]);
+
+            // Registrar / confirmar ReferralUsage igual que en transferencia.
+            $this->persistReferralUsage($payment, $subscription, $validated, $allPlanItems, $referralData, $referralDiscountPct);
 
             return $payment;
         });

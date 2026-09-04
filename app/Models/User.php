@@ -83,6 +83,16 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * Verify the e-mail with an OTP code instead of the default verification
+     * link. This replaces the framework's VerifyEmail notification and is used
+     * both on registration and when the user changes their e-mail address.
+     */
+    public function sendEmailVerificationNotification(): void
+    {
+        app(\App\Services\Auth\EmailVerificationCodeService::class)->send($this);
+    }
+
+    /**
      * // Obtiene la suscripción a la que pertenece el usuario.
      */
     public function branch(): BelongsTo
