@@ -118,7 +118,7 @@ class ServiceOrder extends Model implements HasMedia
             // Delega la deducción al modelo (Product o ProductAttribute)
             if ($item->itemable_id && $item->itemable) {
                 if (method_exists($item->itemable, 'deductStock')) {
-                    $item->itemable->deductStock($this->branch_id, $item->quantity, $user, "Orden de Servicio #{$this->folio}");
+                    $item->itemable->deductStock($this->branch_id, $item->quantity, $user, "Orden de Servicio #{$this->folio}", ['service_order_id' => $this->id]);
                 }
             }
         }
@@ -136,7 +136,7 @@ class ServiceOrder extends Model implements HasMedia
         foreach ($this->items as $item) {
             if ($item->itemable_id && $item->itemable) {
                 if (method_exists($item->itemable, 'restock')) {
-                    $item->itemable->restock($this->branch_id, $item->quantity, $user, $logNote);
+                    $item->itemable->restock($this->branch_id, $item->quantity, $user, $logNote, ['service_order_id' => $this->id]);
                 }
             }
         }

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, onMounted, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, Link } from '@inertiajs/vue3';
 import DiffViewer from '@/Components/DiffViewer.vue';
 
 const props = defineProps({
@@ -132,55 +132,232 @@ const isThisMonth = computed(() => {
 });
 
 
-// --- LÓGICA PARA CONCEPTOS DE STOCK Y FECHA ---
-const getReason = (properties) => {
-    if (!properties) return null;
-    return properties.reason || properties.concepto || properties.attributes?.reason || properties.attributes?.concepto;
+// --- LÓGICA PARA MOVIMIENTOS DE STOCK ---
+// Estilos por tono de movimiento: entrada (verde), salida (rojo), apartado (ámbar), informativo (azul).
+const toneStyles = {
+    entry: {
+        dot: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400',
+        icon: 'pi-arrow-down-left',
+    },
+    exit: {
+        dot: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400',
+        icon: 'pi-arrow-up-right',
+    },
+    reserve: {
+        dot: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400',
+        icon: 'pi-box',
+    },
+    info: {
+        dot: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400',
+        icon: 'pi-info-circle',
+    },
 };
 
-const getOperation = (properties) => {
-    if (!properties) return null;
-    return properties.operation || properties.type || properties.attributes?.operation || properties.attributes?.type;
+const getFolio = (description) => {
+    if (!description) return null;
+    // Folios tipo V-001 / OS-001 / ABONO-001
+    const match = String(description).match(/#([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)/);
+    return match ? match[1] : null;
 };
 
-const entryReasons = [
-    'Compra / Reabastecimiento', 'Devolución de cliente', 'Ajuste de inventario (+)', 'Inventario inicial', 'Producción interna'
-];
-
-const exitReasons = [
-    'Venta externa', 'Merma / Caducado', 'Producto dañado', 'Robo / Pérdida', 'Uso interno', 'Ajuste de inventario (-)'
-];
-
-const isEntryMovement = (properties) => {
-    const op = getOperation(properties);
-    if (op === 'entry') return true;
-    if (op === 'exit') return false;
-    
-    const reason = getReason(properties);
-    if (!reason) return true; 
-    if (entryReasons.includes(reason)) return true;
-    if (exitReasons.includes(reason)) return false;
-    if (reason.toLowerCase().includes('entrada') || reason.toLowerCase().includes('(+)')) return true;
-    if (reason.toLowerCase().includes('salida') || reason.toLowerCase().includes('(-)')) return false;
-    
-    return true; 
+// Devuelve el destino (href) al que debe llevar el folio si el movimiento tiene origen.
+const getMovementLink = (activity) => {
+    const props = activity.properties || {};
+    if (props.transaction_id) {
+        return { href: route('transactions.show', props.transaction_id), tooltip: 'Ver transacción' };
+    }
+    if (props.service_order_id) {
+        return { href: route('service-orders.show', props.service_order_id), tooltip: 'Ver orden de servicio' };
+    }
+    return null;
 };
 
-const getMovementClass = (properties) => {
-    return isEntryMovement(properties)
-        ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:border-green-800' 
-        : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:border-red-800';
+const formatQty = (value) => Number(value ?? 0).toLocaleString('es-MX', { maximumFractionDigits: 2 });
+
+const formatSignedQty = (value) => {
+    const num = Number(value ?? 0);
+    return (num > 0 ? '+' : '') + num.toLocaleString('es-MX', { maximumFractionDigits: 2 });
 };
 
-const getMovementIcon = (properties) => {
-    return isEntryMovement(properties) ? 'pi pi-arrow-down-left' : 'pi pi-arrow-up-right';
+// Para apartados el "movimiento" es la cantidad apartada/liberada: se muestra sin signo.
+const formatMovementValue = (row) => {
+    if (row.plain) return formatQty(Math.abs(row.change));
+    return formatSignedQty(row.change);
 };
 
-const getMovementLabel = (properties) => {
-    const isEntry = isEntryMovement(properties);
-    const operationText = isEntry ? 'Entrada' : 'Salida';
-    const reason = getReason(properties) || '';
-    return reason ? `${operationText}: ${reason}` : operationText;
+// Resuelve el concepto de un movimiento de stock a partir de su descripción y sus propiedades.
+const resolveMovement = (activity) => {
+    const props = activity.properties || {};
+    const rawDesc = String(activity.description || '');
+    const desc = rawDesc.toLowerCase();
+    const isStockUpdate = activity.event === 'stock_update'
+        || props.quantity_changed !== undefined
+        || props.stock_field !== undefined;
+
+    if (!isStockUpdate) return null;
+
+    let label = null;
+    let tone = null;
+
+    // Ventas de mostrador (contado o crédito)
+    if (desc.includes('venta a cr')) { label = 'Venta a crédito'; tone = 'exit'; }
+    else if (desc.includes('venta de contado')) { label = 'Venta de contado'; tone = 'exit'; }
+    else if (desc.includes('venta y baja de stock')) { label = 'Venta'; tone = 'exit'; }
+    // Pedidos y apartados (ciclo de vida)
+    else if (desc.includes('pedido cancelado')) { label = 'Pedido cancelado'; tone = 'info'; }
+    else if (desc.includes('pedido por entregar')) { label = 'Pedido por entregar'; tone = 'reserve'; }
+    else if (desc.includes('apartado liquidado') || desc.includes('baja de reserva por liquidaci')) { label = 'Apartado liquidado'; tone = 'exit'; }
+    else if (desc.includes('apartado modificado')) { label = 'Apartado modificado'; tone = 'reserve'; }
+    else if (desc.includes('apartado cancelado') || desc.includes('liberaci')) { label = 'Apartado cancelado'; tone = 'info'; }
+    else if (desc.includes('reserva de apartados') || desc.includes('reserva de stock')) { label = 'Apartado'; tone = 'reserve'; }
+    // Devoluciones y cancelaciones
+    else if (desc.includes('venta cambiada')) { label = 'Venta cambiada'; tone = 'info'; }
+    else if (desc.includes('venta cancelada')) { label = 'Venta cancelada'; tone = 'entry'; }
+    else if (desc.includes('retorno de stock')) { label = 'Venta cancelada / reembolso'; tone = 'entry'; }
+    else if (desc.includes('cancelaci')) { label = 'Cancelación / reembolso'; tone = 'entry'; }
+    else if (desc.includes('devoluci')) { label = 'Devolución de cliente'; tone = 'entry'; }
+    else if (desc.includes('cambio')) { label = 'Cambio de producto'; tone = 'info'; }
+    // Ajustes manuales, compras y otros orígenes
+    else if (desc.includes('entrada manual')) { label = 'Entrada manual de inventario'; tone = 'entry'; }
+    else if (desc.includes('salida manual')) { label = 'Salida manual de inventario'; tone = 'exit'; }
+    else if (desc.includes('ajuste manual de apartados')) { label = 'Ajuste de apartados'; tone = 'reserve'; }
+    else if (desc.includes('compra') || desc.includes('reabastecimiento')) { label = 'Compra / reabastecimiento'; tone = 'entry'; }
+    else if (desc.includes('orden de servicio')) { label = 'Orden de servicio'; tone = 'exit'; }
+    else if (desc.includes('(componente)')) { label = 'Componente de kit'; tone = 'info'; }
+
+    const isEntry = (Number(props.quantity_changed) || 0) > 0;
+
+    // Fallback por campo de stock (registros antiguos o notas sin clasificar)
+    if (!label) {
+        if (props.stock_field === 'layaway_adjustment') { label = 'Ajuste de apartados'; tone = 'reserve'; }
+        else if (props.stock_field === 'reserved_stock') { label = 'Apartado'; tone = 'reserve'; }
+        else { label = isEntry ? 'Entrada de stock' : 'Salida de stock'; tone = isEntry ? 'entry' : 'exit'; }
+    }
+
+    // Detalle extra (ej. la razón después de ":" en los ajustes manuales)
+    let detail = null;
+    if (props.stock_field !== 'layaway_adjustment') {
+        const colonIdx = rawDesc.indexOf(':');
+        if (colonIdx !== -1) {
+            detail = rawDesc.slice(colonIdx + 1).trim();
+        }
+    }
+
+    return {
+        label,
+        tone,
+        toneStyle: toneStyles[tone] || toneStyles.info,
+        folio: getFolio(rawDesc),
+        detail,
+    };
+};
+
+const movementCache = new WeakMap();
+const getMovement = (activity) => {
+    if (!movementCache.has(activity)) movementCache.set(activity, resolveMovement(activity));
+    return movementCache.get(activity);
+};
+
+// Desglose de stock en UNA sola fila por movimiento: stock anterior / movimiento / stock actual.
+// kind: 'stock' (físico) | 'available' (disponible) | 'reserved' (apartados, solo registros viejos).
+const getStockRows = (activity) => {
+    const props = activity.properties || {};
+    const rows = [];
+
+    // Ajuste manual de apartados/disponible: muestra solo el campo que realmente cambió.
+    if (props.stock_field === 'layaway_adjustment') {
+        const reservedChanged = props.reserved_before !== undefined && props.reserved_after !== undefined
+            && Number(props.reserved_before) !== Number(props.reserved_after);
+        const availableChanged = props.available_before !== undefined && props.available_after !== undefined
+            && Number(props.available_before) !== Number(props.available_after);
+
+        if (reservedChanged) {
+            rows.push({
+                label: 'Apartados', kind: 'reserved',
+                before: Number(props.reserved_before),
+                change: Number(props.reserved_after) - Number(props.reserved_before),
+                after: Number(props.reserved_after),
+            });
+        }
+        if (availableChanged) {
+            rows.push({
+                label: 'Disponible', kind: 'available',
+                before: Number(props.available_before),
+                change: Number(props.available_after) - Number(props.available_before),
+                after: Number(props.available_after),
+            });
+        }
+        return rows;
+    }
+
+    if (props.quantity_changed === undefined || props.stock_before === undefined || props.stock_after === undefined) {
+        return rows;
+    }
+
+    const qty = Number(props.quantity_changed);
+
+    // Apartado creado o liberado: el stock actual (físico) NO cambia.
+    // Mostramos el stock actual igual al anterior y en "movimiento" la cantidad apartada/liberada,
+    // para que cuadre con el inventario y las variantes.
+    if (props.stock_field === 'reserved_stock' && props.current_before !== undefined && props.current_after !== undefined) {
+        rows.push({
+            label: null, kind: 'reserved', plain: true,
+            before: Number(props.current_before),
+            change: qty, // cantidad apartada o liberada (sin signo en pantalla)
+            after: Number(props.current_after),
+        });
+        return rows;
+    }
+
+    // Registros viejos de apartados (sin "disponible" guardado) y movimientos de stock físico
+    // (ventas, devoluciones, ajustes manuales, liquidación de apartado...).
+    rows.push({
+        label: props.stock_field === 'reserved_stock' ? 'Apartados' : null,
+        kind: props.stock_field === 'reserved_stock' ? 'reserved' : 'stock',
+        before: Number(props.stock_before),
+        change: qty,
+        after: Number(props.stock_after),
+    });
+
+    return rows;
+};
+
+// --- Estilos por tipo de fila de stock ---
+const getMovementCellClass = (row) => {
+    if (row.kind === 'reserved') {
+        return 'bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800';
+    }
+    return row.change >= 0
+        ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'
+        : 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800';
+};
+
+const getMovementLabelClass = (row) => {
+    if (row.kind === 'reserved') return 'text-amber-600 dark:text-amber-400';
+    return row.change >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
+};
+
+const getMovementTextClass = (row) => {
+    if (row.kind === 'reserved') return 'text-amber-700 dark:text-amber-400';
+    return row.change >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400';
+};
+
+const getMovementRowIcon = (row) => {
+    if (row.kind === 'reserved') return 'pi pi-box';
+    return row.change >= 0 ? 'pi pi-arrow-down' : 'pi pi-arrow-up';
+};
+
+// Nota breve cuando un apartado NO toca el stock físico.
+const getReservationNote = (activity) => {
+    const props = activity.properties || {};
+    if (props.stock_field !== 'reserved_stock' || props.current_before === undefined) return null;
+    const qty = Number(props.quantity_changed) || 0;
+    if (qty === 0) return null;
+    const current = formatQty(props.current_before);
+    if (qty > 0) {
+        return `El stock actual no cambia (${current}): ${formatQty(qty)} quedó en apartado.`;
+    }
+    return `El stock actual no cambia (${current}): se liberó ${formatQty(Math.abs(qty))} del apartado.`;
 };
 
 const formatDateTime = (dateString) => {
@@ -281,22 +458,6 @@ const fieldTranslations = {
     'recipient_phone': 'Teléfono del destinatario',
 };
 
-// --- MAPEO DE CAMPOS DE STOCK PARA MOVIMIENTOS ---
-const stockFieldLabels = {
-    'current_stock': 'Stock físico',
-    'reserved_stock': 'Apartados',
-    'available_stock': 'Stock disponible',
-    'layaway_adjustment': 'Apartados / disponible',
-    'simple_stock': 'Stock físico',
-    'variant_stock': 'Stock físico',
-};
-
-const getStockFieldLabel = (properties) => {
-    if (!properties) return 'Stock';
-    const field = properties.stock_field;
-    if (field && stockFieldLabels[field]) return stockFieldLabels[field];
-    return 'Stock';
-};
 
 // --- HELPERS UI ---
 const stripHtml = (html) => {
@@ -319,11 +480,17 @@ const getActivityTitle = (activity) => {
 };
 
 const getActivityIcon = (activity) => {
+    if (activity.event === 'stock_update') {
+        return getMovement(activity)?.toneStyle.icon || 'pi-box';
+    }
     const map = { created: 'pi-plus', updated: 'pi-pencil', deleted: 'pi-trash' };
     return map[activity.event] || 'pi-info-circle';
 };
 
 const getActivityColor = (activity) => {
+    if (activity.event === 'stock_update') {
+        return getMovement(activity)?.toneStyle.dot || 'bg-gray-100 text-gray-600';
+    }
     const map = { created: 'bg-green-100 text-green-600', updated: 'bg-blue-100 text-blue-600', deleted: 'bg-red-100 text-red-600' };
     return map[activity.event] || 'bg-gray-100 text-gray-600';
 };
@@ -369,71 +536,84 @@ const getActivityColor = (activity) => {
 
                     <div class="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
                         
-                        <div class="flex items-center justify-between mb-1">
-                            <span class="font-semibold text-gray-800 dark:text-gray-200 text-sm">
-                                {{ getActivityTitle(activity) }}
-                            </span>
-                            <span class="text-xs text-gray-500 bg-gray-100 dark:bg-gray-700/50 px-2 py-0.5 rounded-full flex items-center gap-1 border dark:border-gray-600">
+                        <!-- Header de la tarjeta -->
+                        <div class="flex items-center justify-between gap-3 mb-1">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <span v-if="getMovement(activity)" class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs"
+                                    :class="getMovement(activity).toneStyle.dot">
+                                    <i class="pi" :class="getMovement(activity).toneStyle.icon"></i>
+                                </span>
+                                <span class="font-semibold text-gray-800 dark:text-gray-200 text-sm truncate">
+                                    {{ getMovement(activity) ? getMovement(activity).label : getActivityTitle(activity) }}
+                                </span>
+                                <Link v-if="getMovement(activity)?.folio && getMovementLink(activity)"
+                                    :href="getMovementLink(activity).href"
+                                    class="shrink-0 inline-flex items-center gap-1 text-[10px] font-mono text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 px-1.5 py-0.5 rounded-md border border-primary-100 dark:border-primary-800 hover:border-primary-300 dark:hover:border-primary-600 transition-colors"
+                                    :title="getMovementLink(activity).tooltip">
+                                    {{ getMovement(activity).folio }} <i class="pi pi-external-link !text-[8px]"></i>
+                                </Link>
+                                <span v-else-if="getMovement(activity)?.folio" class="shrink-0 text-[10px] font-mono text-gray-500 bg-gray-100 dark:bg-gray-700/50 px-1.5 py-0.5 rounded-md border border-gray-100 dark:border-gray-600">
+                                    {{ getMovement(activity).folio }}
+                                </span>
+                            </div>
+                            <span class="shrink-0 text-xs text-gray-500 bg-gray-100 dark:bg-gray-700/50 px-2 py-0.5 rounded-full flex items-center gap-1 border dark:border-gray-600">
                                 <i class="pi pi-clock !text-[10px]"></i>
                                 {{ formatDateTime(activity.created_at || activity.timestamp) }}
                             </span>
                         </div>
                         
-                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-2 flex items-center gap-1.5">
-                            <div class="w-5 h-5 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-700 dark:text-primary-400">
-                                <i class="pi pi-user !text-[10px]"></i>
-                            </div>
+                        <div class="text-xs text-gray-600 dark:text-gray-400 mb-3 flex items-center gap-1.5">
+                            <i class="pi pi-user text-gray-400 !text-[11px]"></i>
                             Por <span class="font-medium text-gray-700 dark:text-gray-300">{{ activity.causer }}</span>
+                            <template v-if="getMovement(activity)?.detail">
+                                <span class="text-gray-300 dark:text-gray-600 mx-0.5">·</span>
+                                <span class="truncate">{{ getMovement(activity).detail }}</span>
+                            </template>
                         </div>
 
-                        <!-- Concepto de Movimiento de Stock y Cantidades -->
-                        <div v-if="getReason(activity.properties) || activity.properties?.quantity_changed !== undefined" class="mb-3 flex flex-wrap items-center gap-2">
-                            
-                            <!-- Razón/Concepto -->
-                            <div v-if="getReason(activity.properties)" class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border"
-                                :class="getMovementClass(activity.properties)">
-                                <i :class="getMovementIcon(activity.properties)"></i>
-                                <span>{{ getMovementLabel(activity.properties) }}</span>
+                        <!-- Desglose de stock: Stock anterior / Movimiento / Stock actual -->
+                        <template v-if="getMovement(activity)">
+                            <div v-for="(row, index) in getStockRows(activity)" :key="index" class="mb-2 last:mb-0">
+                                <div v-if="row.label" class="text-[9px] uppercase tracking-widest font-bold text-gray-400 mb-1 m-0">{{ row.label }}</div>
+                                <div class="grid grid-cols-3 gap-2">
+                                    <!-- Stock anterior -->
+                                    <div class="flex flex-col items-center justify-center gap-1 bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-gray-700 rounded-xl px-2 py-2">
+                                        <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 m-0">Stock anterior</span>
+                                        <span class="text-base font-medium text-gray-600 dark:text-gray-300 font-mono tabular-nums leading-none">{{ formatQty(row.before) }}</span>
+                                    </div>
+                                    <!-- Movimiento -->
+                                    <div class="flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 border"
+                                        :class="getMovementCellClass(row)">
+                                        <span class="text-[9px] uppercase tracking-widest font-bold m-0"
+                                            :class="getMovementLabelClass(row)">Movimiento</span>
+                                        <span class="text-base font-semibold font-mono tabular-nums leading-none flex items-center gap-1"
+                                            :class="getMovementTextClass(row)">
+                                            <i :class="getMovementRowIcon(row)" class="!text-[10px]"></i>
+                                            {{ formatMovementValue(row) }}
+                                        </span>
+                                    </div>
+                                    <!-- Stock actual -->
+                                    <div class="flex flex-col items-center justify-center gap-1 bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-gray-700 rounded-xl px-2 py-2">
+                                        <span class="text-[9px] uppercase tracking-widest font-bold text-gray-800 m-0">Stock actual</span>
+                                        <span class="text-base font-bold text-gray-900 dark:text-white font-mono tabular-nums leading-none">{{ formatQty(row.after) }}</span>
+                                    </div>
+                                </div>
                             </div>
 
-                            <!-- Stock: Antes → Después (con delta) cuando hay before/after -->
-                            <div v-if="activity.properties?.quantity_changed !== undefined && activity.properties?.stock_before !== undefined && activity.properties?.stock_after !== undefined"
-                                class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs border bg-gray-50 dark:bg-gray-900/30 border-gray-100 dark:border-gray-700">
-                                <span class="text-[9px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-medium mr-0.5">{{ getStockFieldLabel(activity.properties) }}:</span>
-                                <span class="text-gray-500 dark:text-gray-400 font-mono tabular-nums">{{ activity.properties.stock_before }}</span>
-                                <i class="pi pi-arrow-right text-gray-400 !text-[9px]"></i>
-                                <span class="font-semibold text-gray-900 dark:text-white font-mono tabular-nums">{{ activity.properties.stock_after }}</span>
-                                <span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold"
-                                    :class="activity.properties.quantity_changed > 0 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'">
-                                    {{ activity.properties.quantity_changed > 0 ? '+' : '' }}{{ activity.properties.quantity_changed }}
-                                </span>
-                                <span class="text-[9px] uppercase tracking-wider text-gray-400 font-medium">Uds</span>
+                            <!-- Nota breve: cuando un apartado no toca el stock físico -->
+                            <div v-if="getReservationNote(activity)" class="mt-1 flex items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+                                <i class="pi pi-info-circle !text-[10px]"></i>
+                                <span>{{ getReservationNote(activity) }}</span>
                             </div>
 
-                            <!-- Ajuste de apartados/disponible: mostrar detalle explícito -->
-                            <div v-else-if="activity.properties?.stock_field === 'layaway_adjustment'"
-                                class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs border bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800">
-                                <i class="pi pi-sliders-h text-indigo-400 !text-[10px]"></i>
-                                <span class="text-indigo-700 dark:text-indigo-300 font-medium">Apartados:</span>
-                                <span class="text-gray-500 dark:text-gray-400 font-mono tabular-nums">{{ activity.properties.reserved_before }}</span>
-                                <i class="pi pi-arrow-right text-gray-400 !text-[9px]"></i>
-                                <span class="font-semibold text-indigo-700 dark:text-indigo-300 font-mono tabular-nums">{{ activity.properties.reserved_after }}</span>
-                                <span class="text-gray-300 dark:text-gray-600 mx-0.5">|</span>
-                                <span class="text-indigo-700 dark:text-indigo-300 font-medium">Disponible:</span>
-                                <span class="text-gray-500 dark:text-gray-400 font-mono tabular-nums">{{ activity.properties.available_before }}</span>
-                                <i class="pi pi-arrow-right text-gray-400 !text-[9px]"></i>
-                                <span class="font-semibold text-indigo-700 dark:text-indigo-300 font-mono tabular-nums">{{ activity.properties.available_after }}</span>
-                            </div>
-
-                            <!-- Fallback: Solo delta para registros antiguos sin before/after -->
-                            <div v-else-if="activity.properties?.quantity_changed !== undefined" 
+                            <!-- Registros antiguos sin before/after: solo el movimiento -->
+                            <div v-if="getStockRows(activity).length === 0 && activity.properties?.quantity_changed !== undefined"
                                 class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold border"
                                 :class="activity.properties.quantity_changed > 0 ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800'">
                                 <i :class="activity.properties.quantity_changed > 0 ? 'pi pi-arrow-up' : 'pi pi-arrow-down'" class="!text-[10px]"></i>
                                 {{ activity.properties.quantity_changed > 0 ? '+' : '' }}{{ activity.properties.quantity_changed }} <span class="text-[10px] uppercase font-semibold ml-0.5 opacity-80">Uds</span>
                             </div>
-                            
-                        </div>
+                        </template>
 
                         <!-- Diff Viewer -->
                         <div v-if="activity.changes && (Object.keys(activity.changes.after || {}).length > 0)"

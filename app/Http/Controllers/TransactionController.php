@@ -788,9 +788,13 @@ class TransactionController extends Controller implements HasMiddleware
                 $isReservation = in_array($transaction->status, [TransactionStatus::ON_LAYAWAY, TransactionStatus::TO_DELIVER]);
 
                 if ($isReservation) {
-                    $itemable->releaseLayawayStock($branchId, $item->quantity, $user, "Liberación de reserva por cancelación {$transaction->folio}");
+                    $releaseLabel = $transaction->status === TransactionStatus::ON_LAYAWAY
+                        ? "Apartado cancelado #{$transaction->folio} — liberación de reserva"
+                        : "Pedido cancelado #{$transaction->folio} — liberación de reserva";
+
+                    $itemable->releaseLayawayStock($branchId, $item->quantity, $user, $releaseLabel, ['transaction_id' => $transaction->id]);
                 } else {
-                    $itemable->restock($branchId, $item->quantity, $user, "Retorno de stock por cancelación/reembolso {$transaction->folio}");
+                    $itemable->restock($branchId, $item->quantity, $user, "Venta cancelada #{$transaction->folio} — retorno de stock", ['transaction_id' => $transaction->id]);
                 }
             }
         }

@@ -73,7 +73,7 @@ class ProcessProductExchange
                 if ($retQty > 0) {
                     $itemModel = $originalItem->itemable ?? (class_exists($originalItem->itemable_type) ? $originalItem->itemable_type::find($originalItem->itemable_id) : null);
                     if ($itemModel) {
-                        $itemModel->restock($originalTransaction->branch_id, $retQty, $user, "Retorno de stock por cambio {$originalTransaction->folio}");
+                        $itemModel->restock($originalTransaction->branch_id, $retQty, $user, "Venta cambiada #{$originalTransaction->folio} — retorno de stock", ['transaction_id' => $originalTransaction->id]);
                     }
                 }
             }

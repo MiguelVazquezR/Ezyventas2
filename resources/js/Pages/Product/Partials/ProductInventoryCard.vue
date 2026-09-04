@@ -185,9 +185,34 @@ const getVariantImage = (variant) => {
         <template v-else>
             <!-- Indicadores (Cards) -->
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                <div class="bg-gray-50 dark:bg-[#1a1a1a] p-4 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col justify-center items-center text-center transition-colors hover:bg-gray-100 dark:hover:bg-[#232323]">
-                    <span class="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Stock físico</span>
+                <div class="relative group bg-gray-50 dark:bg-[#1a1a1a] p-4 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col justify-center items-center text-center transition-colors hover:bg-gray-100 dark:hover:bg-[#232323] cursor-help">
+                    <span class="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                        Stock físico
+                        <i class="pi pi-question-circle !text-[10px] text-gray-400"></i>
+                    </span>
                     <span class="text-2xl font-black text-gray-800 dark:text-gray-100">{{ totalStock }}</span>
+
+                    <!-- Tooltip: disponible = stock actual − apartados -->
+                    <div class="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 z-30 hidden group-hover:block pointer-events-none">
+                        <div class="w-max bg-gray-900 dark:bg-[#232323] text-left rounded-xl border border-gray-700 dark:border-[#3a3a3a] shadow-xl px-3 py-2.5">
+                            <div class="text-[9px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 mb-1.5 m-0">Stock actual vs disponible</div>
+                            <div class="flex flex-col gap-1 text-xs">
+                                <div class="flex items-center justify-between gap-5">
+                                    <span class="text-gray-300 dark:text-gray-400">Stock actual</span>
+                                    <span class="font-bold text-white dark:text-white tabular-nums">{{ totalStock }}</span>
+                                </div>
+                                <div class="flex items-center justify-between gap-5">
+                                    <span class="text-gray-300 dark:text-gray-400">Apartados</span>
+                                    <span class="font-bold text-indigo-400 tabular-nums">−{{ totalReserved }}</span>
+                                </div>
+                                <div class="h-px bg-gray-700 dark:bg-[#3a3a3a] my-0.5"></div>
+                                <div class="flex items-center justify-between gap-5">
+                                    <span class="text-green-400 font-semibold">Disponible</span>
+                                    <span class="font-bold text-green-400 tabular-nums">{{ totalAvailable }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="bg-green-50/50 dark:bg-green-900/10 p-4 rounded-2xl border border-green-100 dark:border-green-900/30 flex flex-col justify-center items-center text-center transition-colors hover:bg-green-50 dark:hover:bg-green-900/20">
                     <span class="text-[11px] font-bold text-green-600 dark:text-green-500 uppercase tracking-wider mb-1">Disponible</span>
