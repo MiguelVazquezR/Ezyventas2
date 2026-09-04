@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Exception;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
+use Spatie\Activitylog\Models\Activity;
 
 /**
  * Servicio para orquestar operaciones de pago complejas que
@@ -113,6 +114,9 @@ class TransactionPaymentService
                     $this->finalizeTransactionStock($transaction, clone $now);
                 }
             }
+
+            // 7. En el historial del producto, distinguir si la venta quedó de contado o a crédito.
+            $this->annotateSaleKindOnStockMovements($transaction);
 
             return $transaction;
         });
@@ -349,14 +353,17 @@ class TransactionPaymentService
 
             if ($itemModel) {
                 $isReservation = in_array($status, [TransactionStatus::ON_LAYAWAY, TransactionStatus::TO_DELIVER]);
-                $description = $isReservation
-                    ? "Reserva de apartados {$transaction->folio}"
-                    : "Venta y baja de stock {$transaction->folio}";
+
+                $description = match (true) {
+                    $status === TransactionStatus::ON_LAYAWAY => "Apartado — reserva de stock #{$transaction->folio}",
+                    $status === TransactionStatus::TO_DELIVER => "Pedido por entregar — reserva de stock #{$transaction->folio}",
+                    default => "Venta y baja de stock #{$transaction->folio}",
+                };
 
                 if ($isReservation) {
-                    $itemModel->reserveStock($branchId, $item['quantity'], $user, $description);
+                    $itemModel->reserveStock($branchId, $item['quantity'], $user, $description, ['transaction_id' => $transaction->id]);
                 } else {
-                    $itemModel->deductStock($branchId, $item['quantity'], $user, $description);
+                    $itemModel->deductStock($branchId, $item['quantity'], $user, $description, ['transaction_id' => $transaction->id]);
                 }
             }
         }
@@ -369,9 +376,46 @@ class TransactionPaymentService
 
         foreach ($transaction->items as $txnItem) {
             if ($itemModel = $txnItem->itemable) {
-                $itemModel->finalizeLayawayStock($branchId, $txnItem->quantity, $user, "Baja de reserva por liquidación {$transaction->folio}");
+                $itemModel->finalizeLayawayStock($branchId, $txnItem->quantity, $user, "Apartado liquidado #{$transaction->folio} — baja de stock", ['transaction_id' => $transaction->id]);
             }
         }
+    }
+
+    /**
+     * Etiqueta en el historial de stock del producto si la venta se liquidó
+     * de contado o quedó como crédito (pendiente). Se ejecuta al final, cuando
+     * ya se conoce el estatus definitivo de la transacción.
+     */
+    private function annotateSaleKindOnStockMovements(Transaction $transaction): void
+    {
+        $finalStatus = $transaction->fresh()->status;
+
+        $kindLabel = match ($finalStatus) {
+            TransactionStatus::PENDING   => 'Venta a crédito',
+            TransactionStatus::COMPLETED => 'Venta de contado',
+            default                      => null,
+        };
+
+        if ($kindLabel === null) {
+            return;
+        }
+
+        $folio = $transaction->folio;
+        $legacyText = "Venta y baja de stock #{$folio}";
+
+        Activity::query()
+            ->where('event', 'stock_update')
+            ->where('description', 'like', "{$legacyText}%")
+            ->get()
+            ->each(function (Activity $activity) use ($legacyText, $kindLabel, $folio) {
+                $activity->update([
+                    'description' => str_replace(
+                        $legacyText,
+                        "{$kindLabel} #{$folio} — baja de stock",
+                        $activity->description
+                    ),
+                ]);
+            });
     }
 
     private function capPaymentsToAmount(array $payments, float $maxAmount): array

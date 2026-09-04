@@ -1,7 +1,8 @@
 <script setup>
+import { computed } from 'vue';
 import { Link } from '@inertiajs/vue3';
 
-defineProps({
+const props = defineProps({
     transaction: Object,
     localTransaction: Object,
     canExtendExpiration: Boolean,
@@ -14,6 +15,38 @@ const getStatusSeverity = (status) => ({ completado: 'success', pendiente: 'warn
 const formatStatusLabel = (status) => status ? (status.replace(/_/g, ' ').charAt(0).toUpperCase() + status.replace(/_/g, ' ').slice(1).toLowerCase()) : '';
 const formatDate = (date) => date ? new Date(date).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }) : '';
 const formatDateOnly = (date) => date ? new Date(date).toLocaleDateString('es-MX', { dateStyle: 'long' }) : '';
+
+// --- SECCIÓN DE VENCIMIENTO (APARTADO O CRÉDITO) ---
+// Mismo criterio visual que el procesador de pagos del POS:
+//  - Venta a crédito (status 'pendiente') → naranja "Vencimiento del crédito".
+//  - Apartado (status 'apartado'/'on_layaway') → morado "Vencimiento del apartado".
+const expirationInfo = computed(() => {
+    const isCreditSale = props.localTransaction?.status === 'pendiente';
+
+    if (isCreditSale) {
+        return {
+            title: 'Vencimiento del crédito',
+            legend: 'Crédito liquidado',
+            containerClass: 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800',
+            titleClass: 'text-orange-800 dark:text-orange-300',
+            dateClass: 'text-orange-900 dark:text-orange-100',
+            legendDividerClass: 'border-orange-200 dark:border-orange-800/50',
+            legendClass: 'text-orange-600 dark:text-orange-400',
+            buttonSeverity: 'warning',
+        };
+    }
+
+    return {
+        title: 'Vencimiento del apartado',
+        legend: 'Apartado liquidado',
+        containerClass: 'bg-purple-50 dark:bg-purple-900/10 border-purple-100 dark:border-purple-900/30',
+        titleClass: 'text-purple-800 dark:text-purple-400',
+        dateClass: 'text-purple-900 dark:text-purple-100',
+        legendDividerClass: 'border-purple-200 dark:border-purple-800/50',
+        legendClass: 'text-purple-600 dark:text-purple-400',
+        buttonSeverity: 'help',
+    };
+});
 
 // --- TESLA UI PASS-THROUGH (PT) ---
 const tagPt = {
@@ -87,21 +120,21 @@ const tagPt = {
                     </div>
                 </li>
 
-                <!-- Sección de Vencimiento (Apartado) -->
-                <li v-if="transaction.layaway_expiration_date" class="bg-purple-50 dark:bg-purple-900/10 p-4 rounded-2xl border border-purple-100 dark:border-purple-900/30">
+                <!-- Sección de Vencimiento (Apartado o Crédito) -->
+                <li v-if="transaction.layaway_expiration_date" class="p-4 rounded-2xl border" :class="expirationInfo.containerClass">
                     <div class="flex justify-between items-center mb-1">
-                        <span class="text-[10px] uppercase tracking-widest font-bold text-purple-800 dark:text-purple-400 m-0">Vencimiento del apartado</span>
+                        <span class="text-[10px] uppercase tracking-widest font-bold m-0" :class="expirationInfo.titleClass">{{ expirationInfo.title }}</span>
                     </div>
-                    <span class="font-medium text-sm text-purple-900 dark:text-purple-100 m-0">{{ formatDateOnly(transaction.layaway_expiration_date) }}</span>
+                    <span class="font-medium text-sm m-0" :class="expirationInfo.dateClass">{{ formatDateOnly(transaction.layaway_expiration_date) }}</span>
                     
-                    <!-- LEYENDA SI YA ESTÁ PAGADO -->
-                    <div v-if="pendingAmount <= 0" class="mt-3 pt-3 border-t border-purple-200 dark:border-purple-800/50 flex items-center gap-2 text-purple-600 dark:text-purple-400">
+                    <!-- LEYENDA SI YA ESTÁ LIQUIDADO -->
+                    <div v-if="pendingAmount <= 0" class="mt-3 pt-3 border-t flex items-center gap-2" :class="[expirationInfo.legendDividerClass, expirationInfo.legendClass]">
                         <i class="pi pi-check-circle !text-sm"></i> 
-                        <span class="text-[10px] uppercase font-bold tracking-widest m-0">Apartado liquidado</span>
+                        <span class="text-[10px] uppercase font-bold tracking-widest m-0">{{ expirationInfo.legend }}</span>
                     </div>
 
                     <div v-if="canExtendExpiration && pendingAmount > 0" class="mt-4">
-                        <Button label="Extender fecha" icon="pi pi-calendar-plus" severity="help" outlined class="!w-full !rounded-xl !text-[10px] !uppercase !tracking-widest !font-bold" @click="$emit('open-extend-layaway-modal')" />
+                        <Button label="Extender fecha" icon="pi pi-calendar-plus" :severity="expirationInfo.buttonSeverity" outlined class="!w-full !rounded-xl !text-[10px] !uppercase !tracking-widest !font-bold" @click="$emit('open-extend-layaway-modal')" />
                     </div>
                 </li>
 

@@ -94,7 +94,7 @@ class Product extends Model implements HasMedia
     /**
      * Punto de entrada principal. Determina si aplica el stock a sí mismo o a sus componentes (Kit).
      */
-    public function processStockChange(int $branchId, float $quantity, string $action, ?User $user, string $logNote): void
+    public function processStockChange(int $branchId, float $quantity, string $action, ?User $user, string $logNote, ?array $extraContext = null): void
     {
         $this->loadMissing('components.componentable');
         
@@ -106,19 +106,19 @@ class Product extends Model implements HasMedia
                 $qtyToProcess = $quantity * $component->quantity;
                 // Polimorfismo: Llama al mismo método, ya sea en un Product simple o ProductAttribute
                 if($component->componentable) {
-                    $component->componentable->applyDirectStockChange($branchId, $qtyToProcess, $action, $user, $logNote . " (Componente)");
+                    $component->componentable->applyDirectStockChange($branchId, $qtyToProcess, $action, $user, $logNote . " (Componente)", $extraContext);
                 }
             }
         } else {
             // Producto Simple (Sin Kit)
-            $this->applyDirectStockChange($branchId, $quantity, $action, $user, $logNote);
+            $this->applyDirectStockChange($branchId, $quantity, $action, $user, $logNote, $extraContext);
         }
     }
 
     /**
      * Aplica el cambio físico en la BD a la tabla pivote de sucursales.
      */
-    public function applyDirectStockChange(int $branchId, float $quantity, string $action, ?User $user, string $logNote): void
+    public function applyDirectStockChange(int $branchId, float $quantity, string $action, ?User $user, string $logNote, ?array $extraContext = null): void
     {
         $query = DB::table('branch_product')
             ->where('product_id', $this->id)
@@ -130,12 +130,15 @@ class Product extends Model implements HasMedia
             default => 'current_stock',
         };
 
-        // Capture "before" value
+        // Capture "before" values
         $beforeRecord = DB::table('branch_product')
             ->where('product_id', $this->id)
             ->where('branch_id', $branchId)
             ->first();
         $stockBefore = $beforeRecord ? (float) $beforeRecord->{$stockField} : 0;
+        $currentBefore = $beforeRecord ? (float) $beforeRecord->current_stock : 0;
+        $reservedBefore = $beforeRecord ? (float) $beforeRecord->reserved_stock : 0;
+        $availableBefore = max(0, $currentBefore - $reservedBefore);
 
         $qtyChangedLog = 0;
 
@@ -163,33 +166,48 @@ class Product extends Model implements HasMedia
                 break;
         }
 
-        // Capture "after" value
+        // Capture "after" values
         $afterRecord = DB::table('branch_product')
             ->where('product_id', $this->id)
             ->where('branch_id', $branchId)
             ->first();
         $stockAfter = $afterRecord ? (float) $afterRecord->{$stockField} : 0;
+        $currentAfter = $afterRecord ? (float) $afterRecord->current_stock : 0;
+        $reservedAfter = $afterRecord ? (float) $afterRecord->reserved_stock : 0;
+        $availableAfter = max(0, $currentAfter - $reservedAfter);
 
         if ($qtyChangedLog != 0) {
+            $properties = [
+                'quantity_changed' => $qtyChangedLog,
+                'stock_before' => $stockBefore,
+                'stock_after' => $stockAfter,
+                'stock_field' => $stockField,
+                'current_before' => $currentBefore,
+                'current_after' => $currentAfter,
+                'reserved_before' => $reservedBefore,
+                'reserved_after' => $reservedAfter,
+                'available_before' => $availableBefore,
+                'available_after' => $availableAfter,
+            ];
+
+            if (!empty($extraContext)) {
+                $properties = array_merge($properties, $extraContext);
+            }
+
             activity()->performedOn($this)
                 ->causedBy($user)
                 ->event('stock_update')
-                ->withProperties([
-                    'quantity_changed' => $qtyChangedLog,
-                    'stock_before' => $stockBefore,
-                    'stock_after' => $stockAfter,
-                    'stock_field' => $stockField,
-                ])
+                ->withProperties($properties)
                 ->log($logNote);
         }
     }
 
     // Wrappers semánticos para el Servicio de Transacciones
-    public function reserveStock(int $branchId, float $qty, ?User $user, string $note) { $this->processStockChange($branchId, $qty, 'reserve', $user, $note); }
-    public function deductStock(int $branchId, float $qty, ?User $user, string $note) { $this->processStockChange($branchId, $qty, 'deduct', $user, $note); }
-    public function restock(int $branchId, float $qty, ?User $user, string $note) { $this->processStockChange($branchId, $qty, 'restock', $user, $note); }
-    public function finalizeLayawayStock(int $branchId, float $qty, ?User $user, string $note) { $this->processStockChange($branchId, $qty, 'finalize_reserve', $user, $note); }
-    public function releaseLayawayStock(int $branchId, float $qty, ?User $user, string $note) { $this->processStockChange($branchId, $qty, 'release_reserve', $user, $note); }
+    public function reserveStock(int $branchId, float $qty, ?User $user, string $note, ?array $extraContext = null) { $this->processStockChange($branchId, $qty, 'reserve', $user, $note, $extraContext); }
+    public function deductStock(int $branchId, float $qty, ?User $user, string $note, ?array $extraContext = null) { $this->processStockChange($branchId, $qty, 'deduct', $user, $note, $extraContext); }
+    public function restock(int $branchId, float $qty, ?User $user, string $note, ?array $extraContext = null) { $this->processStockChange($branchId, $qty, 'restock', $user, $note, $extraContext); }
+    public function finalizeLayawayStock(int $branchId, float $qty, ?User $user, string $note, ?array $extraContext = null) { $this->processStockChange($branchId, $qty, 'finalize_reserve', $user, $note, $extraContext); }
+    public function releaseLayawayStock(int $branchId, float $qty, ?User $user, string $note, ?array $extraContext = null) { $this->processStockChange($branchId, $qty, 'release_reserve', $user, $note, $extraContext); }
 
 
     /* -----------------------------------------------------------------

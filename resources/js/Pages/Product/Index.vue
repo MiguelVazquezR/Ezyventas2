@@ -111,6 +111,38 @@ const getAvailableStock = (product) => {
     return getCalculatedStock(product) - getCalculatedReserved(product);
 };
 
+// --- VARIANTES EN DÉFICIT (existencias negativas) ---
+// Una variante está en déficit cuando su stock disponible neto es negativo:
+// vendieron (o apartaron) sin haber hecho la entrada de stock correspondiente.
+const getNegativeVariants = (product) => {
+    if (!product) return [];
+    return getVariants(product).filter((v) => {
+        const current = Number(v.current_stock) || 0;
+        const reserved = Number(v.reserved_stock) || 0;
+        return current - reserved < 0;
+    });
+};
+
+const hasNegativeVariants = (product) => {
+    return getNegativeVariants(product).length > 0;
+};
+
+// Contenido del tooltip del icono de variantes (soporta HTML con escape: false)
+const getVariantsTooltip = (product) => {
+    const totalVariants = getVariants(product).length;
+    const negativeCount = getNegativeVariants(product).length;
+
+    if (negativeCount === 0) {
+        return `Se suman existencias de ${totalVariants} variantes`;
+    }
+
+    const warning = negativeCount === 1
+        ? 'Tienes 1 variante con existencias negativas, revísala'
+        : `Tienes ${negativeCount} variantes con existencias negativas, revísalas`;
+
+    return `Se suman existencias de ${totalVariants} variantes<br><span class="text-red-500 font-bold">⚠️ ${warning}</span>`;
+};
+
 const getStockSeverity = (product) => {
     const availableStock = getAvailableStock(product);
     if (availableStock <= 0) return 'danger';
@@ -504,8 +536,9 @@ const drawerPt = {
                                     severity="secondary" :pt="tagPt" />
 
                                 <!-- Tooltip visual de Variantes -->
-                                <i v-if="hasVariants(data)" class="pi pi-sitemap text-gray-400 !text-xs cursor-help"
-                                    v-tooltip.top="`Se suman existencias de ${getVariants(data).length} variantes`">
+                                <i v-if="hasVariants(data)" class="pi pi-sitemap !text-xs cursor-help"
+                                    :class="hasNegativeVariants(data) ? 'text-red-500' : 'text-gray-400'"
+                                    v-tooltip.top="{ value: getVariantsTooltip(data), escape: false }">
                                 </i>
                             </div>
                         </template>
