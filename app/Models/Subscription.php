@@ -427,6 +427,34 @@ class Subscription extends Model implements HasMedia
     }
 
     /**
+     * Cupón de referido que todavía no produce premio válido:
+     *  - guardado al registrarse ('trial'/'expired') sin ningún pago aún, o
+     *  - cuyo primer pago fue rechazado y puede reintentarse (se re-aplica).
+     * Se hace definitivamente válido cuando la suscripción logra su primer pago.
+     */
+    public function pendingRegistrationReferral(): ?ReferralUsage
+    {
+        return $this->referralUsageAsReferred()
+            ->where(function ($query) {
+                $query->whereIn('reward_status', [ReferralUsage::STATUS_TRIAL, ReferralUsage::STATUS_EXPIRED])
+                    ->whereNull('subscription_payment_id')
+                    ->orWhere(function ($rejected) {
+                        $rejected->where('reward_status', ReferralUsage::STATUS_PENDING)
+                            ->whereHas('payment', fn($payment) =>
+                                $payment->where('status', \App\Enums\SubscriptionPaymentStatus::REJECTED)
+                            );
+                    });
+            })
+            ->latest('id')
+            ->first();
+    }
+
+    public function hasPendingRegistrationReferral(): bool
+    {
+        return $this->pendingRegistrationReferral() !== null;
+    }
+
+    /**
      * Calcula dinámicamente el % total de descuento continuo que esta suscripción
      * recibe por todos sus referidos activos. Acumula el % de cada referido activo.
      */
@@ -443,6 +471,7 @@ class Subscription extends Model implements HasMedia
                     ->from('referral_codes')
                     ->whereIn('user_id', $userIds);
             })
+            ->whereIn('reward_status', [ReferralUsage::STATUS_PENDING, ReferralUsage::STATUS_PAID])
             ->whereHas('referredSubscription', fn($q) =>
                 $q->whereHas('versions', fn($v) => $v->where('end_date', '>=', now()->startOfDay()))
             )

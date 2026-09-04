@@ -34,6 +34,9 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     });
 });
 
+// E-mail verification (OTP code) — overrides Fortify's link-based flow.
+require __DIR__ . '/web/email-verification.php';
+
 // Public store routes (no auth required)
 require __DIR__ . '/tienda.php';
 

@@ -10,6 +10,7 @@ const form = useForm({
     email: '',
     password: '',
     password_confirmation: '',
+    referral_code: '',
     terms: false,
 });
 
@@ -154,6 +155,24 @@ const redirectToGoogle = () => {
                                     inputClass="w-full" fluid required placeholder="Confirma tu contraseña" />
                             </div>
                             <InputError class="mt-1" :message="form.errors.password_confirmation" />
+                        </div>
+
+                        <!-- Campo de Cupón de Referido (opcional) -->
+                        <div class="md:col-span-2">
+                            <label for="referral_code"
+                                class="block text-sm font-medium text-surface-700 dark:text-surface-300">
+                                Cupón de referido (opcional)
+                            </label>
+                            <div class="mt-1">
+                                <InputText id="referral_code" v-model="form.referral_code"
+                                    :invalid="!!form.errors.referral_code"
+                                    placeholder="Ej. EZY-ABC123" fluid autocomplete="off" />
+                            </div>
+                            <p class="mt-1 text-xs text-surface-500 dark:text-surface-400">
+                                Si alguien te invitó, escribe su código. Se aplicará automáticamente en tu primer pago
+                                (después de tus 30 días gratis).
+                            </p>
+                            <InputError class="mt-1" :message="form.errors.referral_code" />
                         </div>
                     </div>
 
