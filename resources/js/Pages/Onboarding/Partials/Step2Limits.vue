@@ -137,7 +137,7 @@ const formatMxn = (amount) => {
 
         <!-- Info message -->
         <Message severity="info" :closable="false" class="!rounded-xl !text-xs" :pt="{ content: { class: '!text-xs' } }">
-            Configura los módulos y límites de tu suscripción. Tienes <strong>30 días gratis de prueba</strong> para usar todas las funciones.
+            Estos recursos ya vienen incluidos en tu plan y podrás cambiarlos después desde tu suscripción. Ajusta aquí solo si sabes que necesitas más, todo está activo durante tus <strong>30 días gratis de prueba</strong>.
         </Message>
 
         <!-- Sección de Módulos -->
@@ -148,7 +148,7 @@ const formatMxn = (amount) => {
             </div>
 
             <p class="text-[10px] text-gray-600 dark:text-gray-300 m-0">
-                Selecciona los módulos que deseas activar para tu suscripción. Los módulos incluidos no pueden desactivarse.
+                Todos los módulos están activos durante tu prueba. Puedes dejar activos solo los que usarás; los módulos incluidos no pueden desactivarse.
             </p>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

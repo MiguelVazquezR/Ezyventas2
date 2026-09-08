@@ -6,6 +6,7 @@ import Step1BusinessInfo from './Partials/Step1BusinessInfo.vue';
 import Step2Limits from './Partials/Step2Limits.vue';
 import Step3BankAccounts from './Partials/Step3BankAccounts.vue';
 import HoursModal from './Partials/HoursModal.vue';
+import WelcomeQuick from './Partials/WelcomeQuick.vue';
 
 // --- Props ---
 const props = defineProps({
@@ -21,6 +22,10 @@ const page = usePage();
 
 const initialStep = sessionStorage.getItem('onboardingStep') ? parseInt(sessionStorage.getItem('onboardingStep')) : 0;
 const activeStep = ref(initialStep);
+
+// Vista inicial: la pantalla de bienvenida (rápida). Si el usuario ya venía
+// avanzando en el wizard, lo reanudamos directamente.
+const view = ref(initialStep > 0 ? 'wizard' : 'welcome');
 
 watch(activeStep, (newStep) => {
     sessionStorage.setItem('onboardingStep', newStep);
@@ -176,6 +181,21 @@ const finishOnboarding = () => {
     });
 };
 
+// Omite la configuración: conserva los valores por defecto creados al
+// registrarse (plan básico, sucursal principal) y entra al dashboard.
+const skipForm = useForm({});
+const skipping = ref(false);
+
+const skipOnboarding = () => {
+    if (skipping.value || saving.value || form.processing) return;
+    skipping.value = true;
+    skipForm.post(route('onboarding.skip'), {
+        preserveScroll: true,
+        onSuccess: () => { sessionStorage.removeItem('onboardingStep'); },
+        onFinish: () => { skipping.value = false; },
+    });
+};
+
 // --- Current branch hours for modal ---
 const currentBranchHours = computed(() => {
     if (currentBranchIndex.value === null) return null;
@@ -187,16 +207,31 @@ const currentBranchHours = computed(() => {
     <Head title="Configuración Inicial" />
 
     <div class="min-h-screen bg-gray-100 dark:bg-[#1a1a1a] flex items-center justify-center p-4">
-        <div class="w-full max-w-4xl bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] shadow-2xl overflow-hidden">
+
+        <!-- Pantalla de bienvenida (rápida — por defecto) -->
+        <WelcomeQuick
+            v-if="view === 'welcome'"
+            :subscription="subscription"
+            :user-name="page.props.auth.user.name"
+            @start-wizard="view = 'wizard'"
+        />
+
+        <!-- Wizard de configuración detallada (opcional) -->
+        <div v-else class="w-full max-w-4xl bg-white dark:bg-[#232323] rounded-3xl border border-gray-100 dark:border-[#3a3a3a] shadow-2xl overflow-hidden">
 
             <!-- Header -->
-            <div class="px-6 pt-6 pb-4 text-center border-b border-gray-100 dark:border-[#3a3a3a] bg-gray-50 dark:bg-[#1a1a1a]">
+            <div class="px-6 pt-6 pb-4 text-center border-b border-gray-100 dark:border-[#3a3a3a] bg-gray-50 dark:bg-[#1a1a1a] relative">
+                <div class="absolute top-5 right-6">
+                    <Button label="Omitir por ahora" icon="pi pi-forward" severity="secondary" text
+                        @click="skipOnboarding" :loading="skipping"
+                        class="!rounded-full !text-[10px] !uppercase !tracking-wider" />
+                </div>
                 <AppLogo class="h-9 w-auto mx-auto mb-3" />
                 <h1 class="text-xl font-light tracking-tight text-gray-900 dark:text-white m-0">
-                    ¡Bienvenido, {{ page.props.auth.user.name }}!
+                    Configura tu negocio
                 </h1>
                 <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1">
-                    Configura tu negocio en 3 pasos
+                    Opcional — 3 pasos, puedes completarlos después
                 </p>
             </div>
 
@@ -238,7 +273,7 @@ const currentBranchHours = computed(() => {
                                     </span>
                                     <span class="text-[11px] uppercase tracking-widest font-bold"
                                         :class="value <= activeStep ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
-                                        Funciones en suscripción
+                                        Recursos y módulos
                                     </span>
                                 </button>
                                 <Divider />

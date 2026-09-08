@@ -299,8 +299,21 @@ class TransactionController extends Controller implements HasMiddleware
 
     public function updateDate(Request $request, Transaction $transaction)
     {
-        $validated = $request->validate(['created_at' => 'required|date']);
-        $transaction->update(['created_at' => $validated['created_at']]);
+        $validated = $request->validate([
+            'created_at' => 'required|date',
+            // Solo se envía cuando la venta tiene vencimiento (apartado/crédito)
+            // y el usuario decide moverlo junto con la nueva fecha de la venta.
+            'new_expiration_date' => 'nullable|date',
+        ]);
+
+        $data = ['created_at' => $validated['created_at']];
+
+        if (!empty($validated['new_expiration_date'])) {
+            $data['layaway_expiration_date'] = $validated['new_expiration_date'];
+        }
+
+        $transaction->update($data);
+
         return back()->with('success', 'Fecha de transacción actualizada correctamente.');
     }
 

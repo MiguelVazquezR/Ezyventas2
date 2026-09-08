@@ -4,15 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Enums\BillingPeriod;
 use App\Enums\PlanItemType;
+use App\Mail\WelcomeEmail;
 use App\Models\BankAccount;
 use App\Models\Branch;
 use App\Models\PlanItem;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Inertia\Inertia;
-use App\Mail\WelcomeEmail;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Inertia\Inertia;
 
 class OnboardingController extends Controller
 {
@@ -279,7 +281,47 @@ class OnboardingController extends Controller
     public function finish(Request $request)
     {
         $this->storeStep3($request);
+
+        return $this->completeOnboarding(
+            Auth::user(),
+            '¡Configuración completada! Te damos la bienvenida.'
+        );
+    }
+
+    /**
+     * Omite la configuración inicial y entra directo al dashboard.
+     *
+     * Conserva los valores por defecto creados en el registro (plan básico,
+     * sucursal "Principal", módulos y límites) y sólo actualiza el nombre
+     * comercial si el usuario lo editó en la pantalla de bienvenida.
+     */
+    public function skip(Request $request)
+    {
         $user = Auth::user();
+
+        $validated = $request->validate([
+            'commercial_name' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $commercialName = trim((string) ($validated['commercial_name'] ?? ''));
+
+        if ($commercialName !== '') {
+            $user->subscription->update([
+                'commercial_name' => $commercialName,
+            ]);
+        }
+
+        return $this->completeOnboarding(
+            $user,
+            '¡Bienvenido! Tu negocio está listo para empezar a vender.'
+        );
+    }
+
+    /**
+     * Marca el onboarding como completado y envía el email de bienvenida.
+     */
+    private function completeOnboarding(User $user, string $successMessage)
+    {
         $user->subscription->update([
             'onboarding_completed_at' => now()
         ]);
@@ -290,9 +332,9 @@ class OnboardingController extends Controller
         } catch (\Exception $e) {
             // Si el email falla (ej. Mailgun no configurado), no revertir la transacción.
             // Solo registrar el error.
-            \Illuminate\Support\Facades\Log::error("Error al enviar email de bienvenida: " . $e->getMessage());
+            Log::error("Error al enviar email de bienvenida: " . $e->getMessage());
         }
 
-        return redirect()->route('dashboard')->with('success', '¡Configuración completada! Te damos la bienvenida.');
+        return redirect()->route('dashboard')->with('success', $successMessage);
     }
 }
