@@ -422,7 +422,7 @@ const menuPt = {
         <EditPaymentModal v-model:visible="isEditPaymentModalVisible" :transaction-id="transaction.id" :payment="paymentToEdit" :bank-accounts="safeBankAccounts" />
         <ExtendLayawayModal v-model:visible="isExtendLayawayModalVisible" :transaction-id="transaction.id" :current-date="transaction.layaway_expiration_date" />
         <RescheduleOrderModal v-model:visible="isRescheduleOrderModalVisible" :transaction-id="transaction.id" :current-date="transaction.delivery_date" />
-        <EditTransactionDateModal v-model:visible="isEditDateModalVisible" :transaction-id="transaction.id" :current-date="transaction.created_at" />
+        <EditTransactionDateModal v-model:visible="isEditDateModalVisible" :transaction-id="transaction.id" :current-date="transaction.created_at" :expiration-date="transaction.layaway_expiration_date" :status="transaction.status" />
 
     </AppLayout>
 </template>
