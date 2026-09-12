@@ -313,6 +313,95 @@ class ProductControllerTest extends TestCase
     }
 
     #[Test]
+    public function it_allows_updating_a_simple_product_with_negative_stock(): void
+    {
+        // Arrange: el stock negativo es un estado válido generado por ventas previas
+        $product = Product::factory()
+            ->withStock($this->branch->id, -5)
+            ->create([
+                'branch_id' => $this->branch->id,
+                'name' => 'Producto en negativo',
+                'selling_price' => 100.00,
+            ]);
+
+        $payload = [
+            'product_type' => 'simple',
+            'name' => 'Producto en negativo',
+            'sku' => $product->sku,
+            'selling_price' => 100.00,
+            'category_id' => $this->category->id,
+            'measure_unit' => 'pz',
+            'current_stock' => -5,
+            'branch_ids' => [$this->branch->id],
+        ];
+
+        // Act
+        $response = $this->put(route('products.update', $product), $payload);
+
+        // Assert: la validación no bloquea el guardado con stock negativo
+        $response->assertSessionHasNoErrors();
+        $response->assertRedirect(route('products.index'));
+
+        $this->assertDatabaseHas('branch_product', [
+            'product_id' => $product->id,
+            'branch_id' => $this->branch->id,
+            'current_stock' => -5,
+        ]);
+    }
+
+    #[Test]
+    public function it_allows_updating_variants_with_negative_stock(): void
+    {
+        // Arrange: producto con una variante cuyo stock quedó en negativo
+        $product = Product::factory()->create([
+            'branch_id' => $this->branch->id,
+            'name' => 'Producto con variantes en negativo',
+            'selling_price' => 100.00,
+        ]);
+
+        $variant = $product->productAttributes()->create([
+            'attributes' => ['Color' => 'Negro'],
+            'sku_suffix' => '-BLK',
+            'selling_price_modifier' => 0,
+        ]);
+        $variant->branches()->attach($this->branch->id, ['current_stock' => -3]);
+
+        $payload = [
+            'product_type' => 'variant',
+            'name' => 'Producto con variantes en negativo',
+            'sku' => $product->sku,
+            'selling_price' => 100.00,
+            'category_id' => $this->category->id,
+            'measure_unit' => 'pz',
+            'branch_ids' => [$this->branch->id],
+            'variants_matrix' => [
+                [
+                    'id' => $variant->id,
+                    'sku' => '-BLK',
+                    'current_stock' => -3,
+                    'min_stock' => null,
+                    'max_stock' => null,
+                    'selling_price_modifier' => 0.00,
+                    'attributes' => ['Color' => 'Negro'],
+                ],
+            ],
+        ];
+
+        // Act
+        $response = $this->put(route('products.update', $product), $payload);
+
+        // Assert: las variantes también aceptan stock negativo al guardar
+        $response->assertSessionHasNoErrors();
+        $response->assertRedirect(route('products.index'));
+
+        $this->assertDatabaseHas('branch_product_attribute', [
+            'product_attribute_id' => $variant->id,
+            'branch_id' => $this->branch->id,
+            'current_stock' => -3,
+        ]);
+    }
+
+    #[Test]
     public function it_prevents_creating_product_if_subscription_limit_reached(): void
     {
         // Arrange: Configurar límite en la suscripción

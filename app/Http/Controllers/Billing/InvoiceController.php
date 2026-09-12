@@ -175,7 +175,7 @@ class InvoiceController extends Controller implements HasMiddleware
         $ppdInvoices = $this->ppdInvoicesForBranch($user->branch_id);
 
         return Inertia::render('Billing/Invoices/Create', [
-            'customers'            => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
+            'customers'            => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address', 'fiscal_address']),
             'fiscalProfiles'       => $fiscalProfiles,
             'hasFiscalProfiles'    => $hasFiscalProfiles,
             'ppdInvoices'          => $ppdInvoices,
@@ -241,7 +241,7 @@ class InvoiceController extends Controller implements HasMiddleware
 
         return Inertia::render('Billing/Invoices/Edit', [
             'invoice'          => $invoice,
-            'customers'        => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address']),
+            'customers'        => $user->branch->customers()->orderBy('name')->get(['id', 'name', 'company_name', 'tax_id', 'tax_regime', 'address', 'fiscal_address']),
             'fiscalProfiles'   => $fiscalProfiles,
             'hasFiscalProfiles' => $fiscalProfiles->isNotEmpty(),
             'ppdInvoices'      => $ppdInvoices,
