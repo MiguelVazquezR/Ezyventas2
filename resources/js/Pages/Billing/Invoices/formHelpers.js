@@ -10,22 +10,21 @@ export const toArray = (collection) => {
 };
 
 // Pull the fiscal regime + postal code out of a customer record.
+// Billing data (fiscal_address) always takes priority; the general
+// address is only a last resort when the fiscal address lacks the value.
 export const extractFiscalData = (customer) => {
     if (!customer) return { tax_regime: '', postal_code: '' };
 
     const fa = customer.fiscal_address;
-    if (fa && typeof fa === 'object' && !Array.isArray(fa)) {
-        return {
-            tax_regime: fa.tax_regime || fa.regimen_fiscal || customer.tax_regime || '',
-            postal_code: fa.zip_code || fa.postal_code || fa.cp || '',
-        };
-    }
+    const fiscal = (fa && typeof fa === 'object' && !Array.isArray(fa)) ? fa : null;
 
     const addr = customer.address;
-    const addrObj = (addr && typeof addr === 'object' && !Array.isArray(addr)) ? addr : {};
+    const address = (addr && typeof addr === 'object' && !Array.isArray(addr)) ? addr : {};
+
     return {
-        tax_regime: customer.tax_regime || '',
-        postal_code: addrObj.zip_code || addrObj.postal_code || '',
+        tax_regime: fiscal?.tax_regime || fiscal?.regimen_fiscal || customer.tax_regime || '',
+        postal_code: fiscal?.zip_code || fiscal?.postal_code || fiscal?.cp
+            || address.zip_code || address.postal_code || '',
     };
 };
 

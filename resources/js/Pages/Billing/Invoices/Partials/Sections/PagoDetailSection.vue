@@ -203,8 +203,8 @@ const formatUuid = (value, doc) => {
         <div class="pt-5 border-t border-slate-100 dark:border-neutral-800 space-y-4">
             <div class="flex items-center justify-between">
                 <div>
-                    <h3 class="text-sm font-semibold tracking-wider text-slate-400 uppercase m-0">Documentos relacionados</h3>
-                    <p class="text-[10px] text-slate-400/70 dark:text-neutral-500 mt-0.5 m-0">Facturas PPD que cubre este pago</p>
+                    <h3 class="text-sm font-semibold tracking-wider text-slate-900 dark:text-white uppercase m-0">Documentos relacionados</h3>
+                    <p class="text-xs text-slate-600 dark:text-neutral-400 mt-1 m-0">Facturas PPD que cubre este pago</p>
                 </div>
                 <Button type="button" icon="pi pi-plus" label="Agregar" severity="secondary" text size="small" :disabled="needsEmitter" @click="addPagoDocument" class="!rounded-full !px-5 !py-2 !text-xs !font-semibold !tracking-wider !uppercase !transition-all !duration-200 active:scale-95" />
             </div>
