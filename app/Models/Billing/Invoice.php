@@ -4,10 +4,12 @@ namespace App\Models\Billing;
 
 use App\Enums\InvoiceStatus;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -108,6 +110,40 @@ class Invoice extends Model
     public function getFechaAttribute(): string
     {
         return ($this->issued_at ?? $this->created_at)->format('Y-m-d\TH:i:s');
+    }
+
+    /**
+     * Normalize user-entered datetimes to the application timezone.
+     *
+     * The frontend sends JavaScript dates as UTC ISO-8601 strings (e.g.
+     * "2026-09-13T00:59:46.000Z"), while the database stores naive LOCAL
+     * datetimes (app timezone). Without this conversion the UTC wall-clock
+     * was stored and later formatted as if it were local, so the CFDI
+     * "Fecha" (and "FechaPago") went out hours in the future and the PAC
+     * rejected the stamping with error 401 "El rango de la fecha de
+     * generación no debe de ser mayor a 72 horas".
+     */
+    protected function issuedAt(): Attribute
+    {
+        return Attribute::make(set: fn ($value) => $this->toLocalDateTimeString($value));
+    }
+
+    protected function pagoFecha(): Attribute
+    {
+        return Attribute::make(set: fn ($value) => $this->toLocalDateTimeString($value));
+    }
+
+    /**
+     * Convert any datetime value (UTC string, DateTimeInterface or Carbon)
+     * into the app timezone, formatted for the naive-local database columns.
+     */
+    private function toLocalDateTimeString(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return Carbon::parse($value)->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s');
     }
 
     public function getActivitylogOptions(): LogOptions

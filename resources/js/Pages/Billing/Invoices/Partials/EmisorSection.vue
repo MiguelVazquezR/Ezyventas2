@@ -149,7 +149,7 @@ const isIssueDateExpired = computed(() => {
                 />
                 <Message v-if="form.errors.issued_at" severity="error" variant="simple" size="small">{{ form.errors.issued_at }}</Message>
                 <p class="text-[11px] text-slate-500 dark:text-neutral-400 m-0 leading-relaxed">
-                    El SAT no permite timbrar con una fecha de emisión de hace más de 72 horas; se permiten hasta 3 días atrás con margen.
+                    El SAT no permite timbrar con una fecha de emisión de hace más de 72 horas ni con fechas futuras; se permiten hasta 3 días atrás con margen.
                 </p>
                 <Message v-if="mode === 'edit' && isIssueDateExpired" severity="warn" variant="simple" size="small">
                     Esta fecha tiene más de 72 horas y el SAT ya no permitiría timbrar la factura con ella. Cámbiala a una fecha más reciente para poder timbrar.
