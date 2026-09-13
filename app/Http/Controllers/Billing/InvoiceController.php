@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Billing;
 use App\Actions\Billing\AcceptRejectInvoiceAction;
 use App\Actions\Billing\CancelInvoiceAction;
 use App\Actions\Billing\CreateInvoiceAction;
+use App\Actions\Billing\RefreshCancelationStatusAction;
 use App\Actions\Billing\UpdateInvoiceAction;
+use App\Enums\InvoiceStatus;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
 use App\Http\Controllers\Controller;
@@ -22,7 +24,6 @@ use App\Models\Service;
 use App\Models\ServiceOrder;
 use App\Models\ServiceVariant;
 use App\Models\Transaction;
-use App\Services\Billing\SatConsultationService;
 use App\Services\SW\SWUserService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -30,6 +31,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -270,8 +272,25 @@ class InvoiceController extends Controller implements HasMiddleware
     /**
      * Display a single invoice with its items and customer.
      */
-    public function show(Invoice $invoice): Response
+    public function show(Invoice $invoice, RefreshCancelationStatusAction $refreshAction): Response
     {
+        // When a cancelation is awaiting the receiver's response, refresh its
+        // status from the SAT (throttled to one call every few minutes) so an
+        // acceptance/rejection shows up without pressing "Verificar estatus".
+        if ($invoice->status === InvoiceStatus::CANCELATION_PENDING) {
+            try {
+                $refreshAction->execute($invoice);
+            } catch (\Throwable $e) {
+                // A failed check must not break the page: keep the stored status.
+                Log::warning('Automatic SAT cancelation status check failed', [
+                    'invoice_id' => $invoice->id,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+
+            $invoice->refresh();
+        }
+
         $invoice->load(['items', 'customer', 'branch', 'fiscalProfile', 'transaction:id,folio,status']);
 
         // ── Relación PPD ↔ PAGO ──
@@ -916,7 +935,7 @@ class InvoiceController extends Controller implements HasMiddleware
      * Verify the cancelation status of a CFDI that requires receiver acceptance.
      * Queries the SAT public consultation service.
      */
-    public function checkCancelationStatus(Invoice $invoice, SatConsultationService $satService): RedirectResponse
+    public function checkCancelationStatus(Invoice $invoice, RefreshCancelationStatusAction $refreshAction): RedirectResponse
     {
         if ($invoice->status->value !== 'cancelacion_pendiente') {
             return redirect()->back()
@@ -924,8 +943,7 @@ class InvoiceController extends Controller implements HasMiddleware
         }
 
         try {
-            $satResult = $satService->consult($invoice);
-            $result = $satService->applyResult($invoice, $satResult);
+            $result = $refreshAction->execute($invoice, throttle: false);
 
             $messages = [
                 'canceled' => 'La cancelación fue aceptada. La factura ahora está cancelada.',
@@ -935,13 +953,6 @@ class InvoiceController extends Controller implements HasMiddleware
             ];
 
             $message = $messages[$result] ?? 'Estatus de cancelación actualizado.';
-
-            if ($result === 'canceled') {
-                // Release the linked POS sale so it can be invoiced again.
-                if ($invoice->transaction_id) {
-                    Transaction::where('id', $invoice->transaction_id)->update(['invoiced' => false]);
-                }
-            }
 
             if ($result === 'canceled' || $result === 'rejected') {
                 return redirect()->route('billing.invoices.show', $invoice->id)

@@ -498,12 +498,31 @@
 
 ---
 
+### 15. Subscription & Billing (added 2026-09-12)
+
+#### `subscription_status`
+- **Description**: Consultar el estado de la suscripción de EzyVentas del negocio: estado actual, plan contratado (módulos, límites y costo mensual), fecha de vencimiento con días restantes, monto pendiente de pago o estimado de renovación, descuentos vigentes e historial reciente de pagos a EzyVentas.
+- **Parameters**: None
+- **Service called**: `App\Services\SubscriptionStatusService::snapshot()`
+- **Models/tables touched**: `subscriptions`, `subscription_versions`, `subscription_items`, `subscription_payments`, `plan_items`, `referral_usages`
+- **Tenant scoping**: `subscription_id` (resolved server-side from `$user->subscription`; never from an LLM parameter)
+- **Read/Write**: Read-only
+- **Permission**: `null` + **owner-only registrar**: `SubscriptionTools::definitions()` returns no tools for users with roles (employees), mirroring the `SubscriptionController` restriction on the subscription panel
+- **Notes**:
+  - Expiration mirrors `Subscription::getWarningData()`: the subscription is still valid on its end date and expires the day after.
+  - The renewal estimate mirrors `ProcessSubscriptionPaymentAction`: the ongoing referrer discount applies to monthly billing only; the referral-code discount applies while a registration coupon is pending.
+  - Pending amounts mirror the customer UI: pending transfer payments awaiting approval (MercadoPago pending payments are excluded, same as `Subscription::getPendingPayment()`).
+  - Payment queries order by qualified columns (`subscription_payments.id`) because `Subscription::getPendingPayment()`/`getLastRejectedPayment()` order by an unqualified `created_at`, which is ambiguous across the HasManyThrough join.
+
+---
+
 ## Scoping Summary
 
 | Scoping Method | Tools | Notes |
 |---|---|---|
 | `branch_id` (from `$user->branch_id`) | 23 tools | All report, search, and summary tools |
 | `subscription_id` (from `$user->branch->subscription_id`) | 3 tools: `ranking_by_branch`, `active_promotions`, `export_products_excel` | Cross-branch within same subscription |
+| `subscription_id` (from `$user->subscription`) | 1 tool: `subscription_status` | Owner-only (users without roles); billing data of the user's own subscription |
 | No data scoping (hardcoded array, permission-filtered) | 1 tool: `find_page_location` | Navigation registry |
 
 ---

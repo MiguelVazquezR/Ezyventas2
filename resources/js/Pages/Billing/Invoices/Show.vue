@@ -316,7 +316,7 @@ const actionMenuItems = computed(() => {
             label: 'Solicitar cancelación',
             icon: 'pi pi-times-circle',
             class: 'text-red-500',
-            command: () => cancelModalRef?.open(),
+            command: () => cancelModalRef.value?.open(),
         });
     }
 
@@ -450,7 +450,7 @@ const tagPt = {
             <!-- Cancelation pending info -->
             <div v-if="invoice.status === 'cancelacion_pendiente'" class="flex items-start gap-2 mt-2 text-xs text-amber-600 dark:text-amber-400">
                 <i class="pi pi-clock !text-xs mt-0.5" />
-                <span class="m-0">Solicitud de cancelación enviada. Tu cliente (RFC receptor) debe aceptarla o rechazarla ante el SAT. Usa "Verificar estatus" para consultar si ya se resolvió. Mientras tanto, esta factura sigue vigente.</span>
+                <span class="m-0">Solicitud de cancelación enviada. Tu cliente (RFC receptor) debe aceptarla o rechazarla ante el SAT. El estatus se verifica automáticamente al abrir esta página o con el botón "Verificar estatus". Mientras tanto, esta factura sigue vigente.</span>
             </div>
 
             <!-- Two-panel layout -->

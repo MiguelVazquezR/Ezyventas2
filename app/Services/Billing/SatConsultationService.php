@@ -2,6 +2,7 @@
 
 namespace App\Services\Billing;
 
+use App\Enums\InvoiceStatus;
 use App\Models\Billing\Invoice;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -15,6 +16,9 @@ use Illuminate\Support\Facades\Log;
  * Used when a cancelation requires receiver acceptance
  * (isCancelable = "Cancelable con aceptación") to check
  * whether the receiver has accepted/rejected it yet.
+ *
+ * CFDIs stamped in SW's test environment are consulted through SW's emulated
+ * service (api.test.sw.com.mx); production uses the SAT endpoint directly.
  */
 class SatConsultationService
 {
@@ -46,12 +50,13 @@ class SatConsultationService
 
         $rfcs = $this->resolveRfcs($invoice);
 
-        // Build the expresión impresa query string
+        // Build the expresión impresa query string. The SAT expects the values
+        // verbatim, exactly as printed in the CFDI — including "&" inside RFCs
+        // and the "+/=" chars of the sello tail. URL-encoding them makes the
+        // SAT answer "N - 601: La expresión impresa proporcionada no es válida".
         $expresionImpresa = "?re={$rfcs['emisor']}&rr={$rfcs['receptor']}&tt={$invoice->total}&id={$invoice->uuid}&fe={$sello8}";
 
-        $endpoint = app()->environment('production')
-            ? 'https://consultaqr.facturaelectronica.sat.gob.mx/ConsultaCFDIService.svc'
-            : 'https://pruebacfdiconsultaqr.cloudapp.net/ConsultaCFDIService.svc';
+        $endpoint = $this->resolveEndpoint();
 
         $soapBody = $this->buildSoapEnvelope($expresionImpresa);
 
@@ -89,6 +94,24 @@ class SatConsultationService
     }
 
     /**
+     * Resolve the consultation endpoint for the environment where the CFDI was
+     * stamped.
+     *
+     * Production CFDIs are queried against the SAT's own SOAP service. CFDIs
+     * stamped in SW's test environment (services.test.sw.com.mx) are only
+     * visible in SW's emulated consultation service — the old SAT test URL
+     * (pruebacfdiconsultaqr.cloudapp.net) no longer resolves.
+     */
+    private function resolveEndpoint(): string
+    {
+        $swEndpoint = (string) config('services.swsapien.endpoint');
+
+        return str_contains($swEndpoint, '.test.')
+            ? 'https://api.test.sw.com.mx/ConsultaCFDIService.svc'
+            : 'https://consultaqr.facturaelectronica.sat.gob.mx/ConsultaCFDIService.svc';
+    }
+
+    /**
      * Resolve emisor and receptor RFCs from the invoice.
      */
     private function resolveRfcs(Invoice $invoice): array
@@ -101,6 +124,12 @@ class SatConsultationService
 
     /**
      * Build the SOAP envelope XML.
+     *
+     * The expression must sit inside the CDATA without any surrounding
+     * whitespace: the SOAP service concatenates all text nodes of the element,
+     * so newlines/indentation around the CDATA would be prepended to the
+     * expression and the SAT would reject it with "N - 601: La expresión
+     * impresa proporcionada no es válida".
      */
     private function buildSoapEnvelope(string $expresionImpresa): string
     {
@@ -109,9 +138,7 @@ class SatConsultationService
   <soapenv:Header/>
   <soapenv:Body>
     <tem:Consulta>
-      <tem:expresionImpresa>
-        <![CDATA[{$expresionImpresa}]]>
-      </tem:expresionImpresa>
+      <tem:expresionImpresa><![CDATA[{$expresionImpresa}]]></tem:expresionImpresa>
     </tem:Consulta>
   </soapenv:Body>
 </soapenv:Envelope>

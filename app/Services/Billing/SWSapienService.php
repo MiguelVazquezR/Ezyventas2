@@ -902,6 +902,11 @@ class SWSapienService
      *               (acuse + folios[] with uuid/estatusUUID/respuesta).
      *
      * @throws \RuntimeException
+     *
+     * NOTE: this method only guarantees that the PAC processed the call. The
+     * real per-UUID outcome is the folio code; callers must verify it with
+     * {@see translateAcceptRejectCode()} — only code 1000 means the SAT
+     * actually registered the acceptance/rejection.
      */
     public function acceptReject(FiscalProfile $profile, string $uuid, string $action): array
     {
@@ -980,32 +985,70 @@ class SWSapienService
     }
 
     /**
+     * Translate a SAT/PAC folio status code (folios[].estatusUUID) into a
+     * friendly, actionable message for the end user.
+     *
+     * SW answers HTTP 200 + status success even when the response was NOT
+     * registered at the SAT, so the folio code is the real outcome of an
+     * accept/reject call: 1000 is the only code that confirms success.
+     *
+     * @see https://developers.sw.com.mx/knowledge-base/aceptar-o-rechazar-cancelacion-cfdi/
+     */
+    public function translateAcceptRejectCode(string $code): string
+    {
+        return match ($code) {
+            '1000'  => 'Se recibió la respuesta de la petición de forma exitosa.',
+            '1001'  => 'No existe una solicitud de cancelación en espera de respuesta para ese UUID. Verifica que el proveedor ya la haya solicitado y que el RFC seleccionado sea el receptor de la factura.',
+            '1002'  => 'Esta solicitud de cancelación ya había sido respondida (aceptada o rechazada) con anterioridad.',
+            '1003'  => 'El RFC seleccionado no corresponde al receptor de la factura, por lo que el SAT no registró la respuesta.',
+            '1004'  => 'Existen más de una solicitud de cancelación para ese UUID. Contacta a soporte para resolverlo.',
+            '1005'  => 'El UUID no tiene el formato correcto. Verifícalo e inténtalo de nuevo.',
+            '1006'  => 'Se excedió el número máximo de solicitudes permitidas para ese UUID. Intenta de nuevo más tarde.',
+            default => "El SAT devolvió un estatus inesperado (código {$code}), por lo que la respuesta no se pudo confirmar.",
+        };
+    }
+
+    /**
      * Translate a SW Sapien accept/reject error message into a friendly,
      * actionable message for the end user.
      *
-     * SW returns generic codes (e.g. "CACFDI33 - Error no controlado") that in
-     * this endpoint almost always mean the folio was not found or there is no
-     * pending cancelation request for the given UUID/RFC. The raw PAC detail is
-     * still logged server-side for support/debugging.
+     * SW may return the SAT response codes as plain messages (e.g.
+     * "CA1003 - Sello No Corresponde al RFC Receptor") when the HTTP call
+     * itself fails, and generic codes (e.g. "CACFDI33 - Error no controlado")
+     * that in this endpoint almost always mean there is no pending cancelation
+     * request for the given UUID/RFC. The raw PAC detail is still logged
+     * server-side for support/debugging.
      */
     private function translateAcceptRejectError(string $message): string
     {
-        $lower = mb_strtolower($message);
+        // Normalize (lowercase, no accents) so "número máximo" and
+        // "numero maximo" match the same pattern.
+        $normalized = Str::ascii(mb_strtolower($message));
 
         $patterns = [
-            // Generic uncontrolled PAC error — most common cause for accept/reject.
-            ['cacfdi33', 'No se encontró la factura relacionada o no existe una solicitud de cancelación pendiente para ese UUID. Verifica el RFC receptor y el UUID e inténtalo de nuevo.'],
-            ['no se encontr', 'No se encontró la factura relacionada. Verifica el UUID e inténtalo de nuevo.'],
-            ['not found', 'No se encontró la factura relacionada. Verifica el UUID e inténtalo de nuevo.'],
-            ['no existe', 'No se encontró la factura relacionada o no existe una solicitud de cancelación pendiente para ese UUID.'],
-            ['no se localiz', 'No se encontró la factura relacionada. Verifica el UUID e inténtalo de nuevo.'],
-            ['sin solicitud', 'No existe una solicitud de cancelación pendiente para ese UUID.'],
+            'no existen peticiones'        => '1001',
+            'ya se recibio una respuesta'  => '1002',
+            'sello no corresponde'         => '1003',
+            'mas de una peticion'          => '1004',
+            'no posee el formato'          => '1005',
+            'numero maximo de solicitudes' => '1006',
+            // Synonyms seen in generic PAC messages.
+            'no se encontr'                => '1001',
+            'no se localiz'                => '1001',
+            'sin solicitud'                => '1001',
+            'not found'                    => '1001',
+            'no existe'                    => '1001',
         ];
 
-        foreach ($patterns as [$needle, $friendly]) {
-            if (str_contains($lower, $needle)) {
-                return $friendly;
+        foreach ($patterns as $needle => $code) {
+            if (str_contains($normalized, $needle)) {
+                return $this->translateAcceptRejectCode($code);
             }
+        }
+
+        // Generic uncontrolled PAC error — most common cause for accept/reject.
+        if (str_contains($normalized, 'cacfdi33')) {
+            return 'No se encontró la factura relacionada o no existe una solicitud de cancelación pendiente para ese UUID. Verifica el RFC receptor y el UUID e inténtalo de nuevo.';
         }
 
         return 'Se rechazó la solicitud: ' . $message;
