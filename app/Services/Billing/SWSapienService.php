@@ -737,7 +737,12 @@ class SWSapienService
             ?? data_get($json, 'data.message')
             ?? null;
 
-        $lowerMessage = mb_strtolower((string) $message) . ' ' . mb_strtolower((string) $code);
+        // The actionable details almost always live in messageDetail (e.g. the
+        // certificate lookup failure behind a generic "305" rejection), so it
+        // must be part of the classification haystack.
+        $lowerMessage = mb_strtolower((string) $message)
+            . ' ' . mb_strtolower((string) $code)
+            . ' ' . mb_strtolower((string) data_get($json, 'messageDetail'));
 
         // "307 — El comprobante contiene un timbre previo": full recovery.
         if ($code === '307' || str_contains($lowerMessage, 'timbre previo')) {
@@ -751,6 +756,40 @@ class SWSapienService
         if (str_contains((string) $code, 'CFDI3307') || str_contains($lowerMessage, 'customid')) {
             return new PacDuplicateContentException(
                 'El customId ya fue utilizado. La respuesta del PAC es parcial — requiere revisión.',
+                $json,
+            );
+        }
+
+        // "402 — RFC del emisor no se encuentra en el régimen de contribuyentes
+        // (Lista de validación de régimen) LCO": the SAT could not find the
+        // emitter RFC with stamping permissions in the daily-updated LCO lists.
+        if (str_contains($lowerMessage, 'régimen de contribuyentes') || str_contains($lowerMessage, 'validez de obligaciones')) {
+            return new PacValidationException(
+                'El SAT no encontró al RFC emisor con facultades de timbrado en sus listas LCO (contribuyentes obligados). Revisa la situación fiscal del RFC emisor e intenta de nuevo más tarde.',
+                $json,
+            );
+        }
+
+        // "305 — La fecha de emisión no está dentro de la vigencia del CSD"
+        // with detail "Certificado ... no encontrado en lista LCO": the PAC
+        // validates the CSD against the SAT's LCO lists, so a missing entry
+        // (new/renewed CSD not yet propagated, lagging test-environment lists,
+        // or several active CSDs for the same RFC) is reported as a misleading
+        // "expired CSD" message.
+        if (str_contains($lowerMessage, 'lista lco')) {
+            return new PacValidationException(
+                'El SAT aún no reconoce este CSD en sus listas LCO (contribuyentes obligados), por eso no se puede timbrar. Suele pasar con certificados nuevos o renovados —la actualización tarda hasta 48 horas— o cuando el RFC tiene varios CSD activos. Verifica que sea un CSD vigente (no una FIEL) e intenta de nuevo más tarde.',
+                $json,
+            );
+        }
+
+        // "401 — El rango de la fecha de generación no debe de ser mayor a 72
+        // horas": the CFDI date was outside the PAC window (older than 72
+        // hours or in the future). Explain the rule in plain Spanish instead
+        // of echoing the raw PAC message.
+        if (str_contains($lowerMessage, 'rango de la fecha')) {
+            return new PacValidationException(
+                'Se rechazó el timbrado: la fecha de emisión debe estar dentro de las últimas 72 horas y no puede ser futura. Corrige la fecha e intenta de nuevo.',
                 $json,
             );
         }
