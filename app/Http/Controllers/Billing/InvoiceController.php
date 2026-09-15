@@ -10,6 +10,7 @@ use App\Actions\Billing\UpdateInvoiceAction;
 use App\Enums\InvoiceStatus;
 use App\Enums\TransactionChannel;
 use App\Enums\TransactionStatus;
+use App\Exports\InvoicesExport;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\AcceptRejectRequest;
 use App\Http\Requests\Billing\CancelInvoiceRequest;
@@ -30,10 +31,12 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
 
 class InvoiceController extends Controller implements HasMiddleware
 {
@@ -45,7 +48,7 @@ class InvoiceController extends Controller implements HasMiddleware
             new Middleware('can:invoices.see_details', only: ['show']),
             new Middleware('can:invoices.edit', only: ['edit', 'update']),
             new Middleware('can:invoices.cancel', only: ['cancel', 'acceptReject', 'acceptRejectHistory']),
-            new Middleware('can:invoices.settings.access', only: ['settings', 'dashboard']),
+            new Middleware('can:invoices.settings.access', only: ['settings', 'dashboard', 'dashboardExport']),
         ];
     }
 
@@ -57,24 +60,28 @@ class InvoiceController extends Controller implements HasMiddleware
         $user = Auth::user();
         $subscription = $user->branch?->subscription;
 
+        [$startDate, $endDate, $range] = $this->resolveDashboardRange($request);
+
         $fiscalProfiles = $subscription
             ? $subscription->fiscalProfiles()->with('pacAccount')->orderBy('created_at', 'desc')->get()
             : collect();
 
-        $draftInvoices = Invoice::where('branch_id', $user->branch_id)->draft()->count();
-        $certifiedInvoices = Invoice::where('branch_id', $user->branch_id)->certified()->count();
-        $cancelationPendingInvoices = Invoice::where('branch_id', $user->branch_id)
+        $rangeFilter = fn ($query) => $this->applyDashboardRange($query, $startDate, $endDate);
+
+        $draftInvoices = $rangeFilter(Invoice::where('branch_id', $user->branch_id))->draft()->count();
+        $certifiedInvoices = $rangeFilter(Invoice::where('branch_id', $user->branch_id))->certified()->count();
+        $cancelationPendingInvoices = $rangeFilter(Invoice::where('branch_id', $user->branch_id))
             ->where('status', \App\Enums\InvoiceStatus::CANCELATION_PENDING)
             ->count();
-        $canceledInvoices = Invoice::where('branch_id', $user->branch_id)->canceled()->count();
+        $canceledInvoices = $rangeFilter(Invoice::where('branch_id', $user->branch_id))->canceled()->count();
 
         // Per-fiscal-profile KPIs with live stamp balances
         $swUserService = app(SWUserService::class);
-        $fiscalProfilesData = $fiscalProfiles->map(function ($profile) use ($swUserService, $user, $request) {
+        $fiscalProfilesData = $fiscalProfiles->map(function ($profile) use ($swUserService, $user, $rangeFilter) {
             [$balance, $balanceError] = $profile->stampBalance($swUserService);
 
-            $invoiceQuery = Invoice::where('branch_id', $user->branch_id)
-                ->where('fiscal_profile_id', $profile->id);
+            $invoiceQuery = fn () => $rangeFilter(Invoice::where('branch_id', $user->branch_id)
+                ->where('fiscal_profile_id', $profile->id));
 
             return [
                 'id'                      => $profile->id,
@@ -84,10 +91,10 @@ class InvoiceController extends Controller implements HasMiddleware
                 'account_status'          => $profile->isLinkedToPac() ? 'active' : 'pending',
                 'balance'                 => $balance,
                 'balanceError'            => $balanceError,
-                'draftCount'              => (clone $invoiceQuery)->draft()->count(),
-                'certifiedCount'          => (clone $invoiceQuery)->certified()->count(),
-                'cancelationPendingCount' => (clone $invoiceQuery)->where('status', \App\Enums\InvoiceStatus::CANCELATION_PENDING)->count(),
-                'canceledCount'           => (clone $invoiceQuery)->canceled()->count(),
+                'draftCount'              => $invoiceQuery()->draft()->count(),
+                'certifiedCount'          => $invoiceQuery()->certified()->count(),
+                'cancelationPendingCount' => $invoiceQuery()->where('status', \App\Enums\InvoiceStatus::CANCELATION_PENDING)->count(),
+                'canceledCount'           => $invoiceQuery()->canceled()->count(),
             ];
         });
 
@@ -97,7 +104,78 @@ class InvoiceController extends Controller implements HasMiddleware
             'certifiedInvoices'          => $certifiedInvoices,
             'cancelationPendingInvoices' => $cancelationPendingInvoices,
             'canceledInvoices'           => $canceledInvoices,
+            'filters'                    => [
+                'range'      => $range,
+                'start_date' => $startDate?->toDateString(),
+                'end_date'   => $endDate?->toDateString(),
+            ],
+            'lowStampThreshold'          => (int) config('billing.low_stamp_threshold', 5),
         ]);
+    }
+
+    /**
+     * Export the invoices of the selected dashboard period as Excel (T308).
+     */
+    public function dashboardExport(Request $request)
+    {
+        [$startDate, $endDate] = $this->resolveDashboardRange($request);
+
+        $invoices = Invoice::query()
+            ->where('branch_id', Auth::user()->branch_id)
+            ->with(['fiscalProfile:id,razon_social,rfc'])
+            ->orderBy('created_at', 'desc');
+
+        $this->applyDashboardRange($invoices, $startDate, $endDate);
+
+        return Excel::download(
+            new InvoicesExport($invoices->get()),
+            'facturas-' . now()->format('Ymd-Hi') . '.xlsx',
+        );
+    }
+
+    /**
+     * Resolve the dashboard date range from the request.
+     *
+     * Preset ranges (today / week / month / year) are computed server-side;
+     * 'custom' uses the explicit start_date / end_date inputs; 'all' (default)
+     * does not filter. Only the invoice registration date (created_at) is used.
+     *
+     * @return array{0: Carbon|null, 1: Carbon|null, 2: string}
+     */
+    private function resolveDashboardRange(Request $request): array
+    {
+        $range = (string) $request->input('range', 'all');
+
+        if ($range === 'custom') {
+            $start = $request->filled('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : null;
+            $end = $request->filled('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : null;
+
+            return [$start, $end, 'custom'];
+        }
+
+        $start = match ($range) {
+            'today' => now()->startOfDay(),
+            'week'  => now()->startOfWeek(),
+            'month' => now()->startOfMonth(),
+            'year'  => now()->startOfYear(),
+            default => null,
+        };
+
+        if ($start === null) {
+            return [null, null, 'all'];
+        }
+
+        return [$start, now()->endOfDay(), $range];
+    }
+
+    /**
+     * Apply the resolved dashboard range to an invoice query.
+     */
+    private function applyDashboardRange(\Illuminate\Database\Eloquent\Builder $query, ?Carbon $startDate, ?Carbon $endDate): \Illuminate\Database\Eloquent\Builder
+    {
+        return $query
+            ->when($startDate, fn ($q) => $q->where('created_at', '>=', $startDate))
+            ->when($endDate, fn ($q) => $q->where('created_at', '<=', $endDate));
     }
 
     /**
@@ -908,6 +986,8 @@ class InvoiceController extends Controller implements HasMiddleware
             'fiscalProfiles'        => $paginated,
             'filters'               => $request->only(['search', 'sortField', 'sortOrder']),
             'ourBankAccounts'       => $ourBankAccounts,
+            'lowStampThreshold'     => (int) config('billing.low_stamp_threshold', 5),
+            'csdExpiryWarningDays'  => max(array_map('intval', (array) config('billing.csd_expiry_warning_days', [30]))),
         ]);
     }
 
@@ -916,11 +996,16 @@ class InvoiceController extends Controller implements HasMiddleware
      */
     public function cancel(Invoice $invoice, CancelInvoiceRequest $request, CancelInvoiceAction $action): RedirectResponse
     {
-        $result = $action->execute(
-            $invoice,
-            $request->validated('cancellation_reason'),
-            $request->validated('substitution_uuid'),
-        );
+        try {
+            $result = $action->execute(
+                $invoice,
+                $request->validated('cancellation_reason'),
+                $request->validated('substitution_uuid'),
+            );
+        } catch (\RuntimeException $e) {
+            return redirect()->route('billing.invoices.show', $invoice->id)
+                ->with('error', $e->getMessage());
+        }
 
         if ($result['status'] === 'pending_acceptance') {
             return redirect()->route('billing.invoices.show', $invoice->id)

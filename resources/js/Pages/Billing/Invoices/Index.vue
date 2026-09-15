@@ -7,12 +7,12 @@ import { useConfirm } from 'primevue/useconfirm';
 import AcceptRejectModal from './Partials/AcceptRejectModal.vue';
 import CancelInvoiceModal from './Partials/CancelInvoiceModal.vue';
 import StampOldDateDialog from './Partials/StampOldDateDialog.vue';
+import TutorialHelp from '@/Components/Tutorial/TutorialHelp.vue';
 
 const props = defineProps({
     invoices: Object,
     filters: Object,
     fiscalProfiles: Array,
-    hasBillingSettings: Boolean,
     hasFiscalProfiles: Boolean,
 });
 
@@ -393,9 +393,12 @@ const menuPt = {
                 <!-- Header -->
                 <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-8">
                     <div>
-                        <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">
-                            Lista de facturas
-                        </h1>
+                        <div class="flex items-center gap-2">
+                            <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">
+                                Lista de facturas
+                            </h1>
+                            <TutorialHelp module="billing" default-section="facturas" />
+                        </div>
                         <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
                             <span class="w-1.5 h-1.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse"></span>
                             CFDI 4.0 &middot; Historial de facturas

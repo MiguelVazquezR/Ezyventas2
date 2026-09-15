@@ -47,6 +47,42 @@ const formatDate = (dateString) => {
     });
 };
 
+// ──────────────────────────────────────
+// Cancelation acceptance deadline (Fase 3, T303)
+// The receiver has 72 hours from the cancelation request to answer at the SAT.
+// ──────────────────────────────────────
+const CANCELATION_WINDOW_HOURS = 72;
+
+const formatRemainingTime = (msLeft) => {
+    if (msLeft <= 0) return 'plazo vencido';
+    const totalHours = Math.floor(msLeft / (1000 * 60 * 60));
+    const days = Math.floor(totalHours / 24);
+    const hours = totalHours % 24;
+    if (days > 0) return `${days} día${days === 1 ? '' : 's'} y ${hours} h`;
+    const minutes = Math.max(1, Math.floor(msLeft / (1000 * 60)));
+    return hours > 0 ? `${hours} h` : `${minutes} min`;
+};
+
+const cancelationDeadline = computed(() => {
+    if (props.invoice.status !== 'cancelacion_pendiente' || !props.invoice.cancelation_requested_at) {
+        return null;
+    }
+
+    const requestedAt = new Date(props.invoice.cancelation_requested_at);
+    if (Number.isNaN(requestedAt.getTime())) return null;
+
+    const deadline = new Date(requestedAt.getTime() + CANCELATION_WINDOW_HOURS * 60 * 60 * 1000);
+    const msLeft = deadline.getTime() - Date.now();
+
+    return {
+        dateLabel: deadline.toLocaleDateString('es-MX', {
+            day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+        }),
+        expired: msLeft <= 0,
+        remainingLabel: formatRemainingTime(msLeft),
+    };
+});
+
 const statusLabel = computed(() => {
     const map = {
         borrador: 'Pre-factura',
@@ -297,7 +333,9 @@ const actionMenuItems = computed(() => {
         });
     }
 
-    if (isPpd.value && props.invoice.uuid) {
+    // A canceled PPD invoice can no longer receive payment CFDIs: the SAT
+    // rejects related documents that reference a canceled CFDI.
+    if (isPpd.value && props.invoice.uuid && props.invoice.status !== 'cancelada') {
         items.push({ label: 'Facturar pago', icon: 'pi pi-wallet', command: goToCreatePago });
     }
 
@@ -427,6 +465,7 @@ const tagPt = {
                     />
                     
                     <Button
+                        v-if="actionMenuItems.length > 0"
                         type="button"
                         label="Opciones"
                         icon="pi pi-chevron-down"
@@ -450,7 +489,17 @@ const tagPt = {
             <!-- Cancelation pending info -->
             <div v-if="invoice.status === 'cancelacion_pendiente'" class="flex items-start gap-2 mt-2 text-xs text-amber-600 dark:text-amber-400">
                 <i class="pi pi-clock !text-xs mt-0.5" />
-                <span class="m-0">Solicitud de cancelación enviada. Tu cliente (RFC receptor) debe aceptarla o rechazarla ante el SAT. El estatus se verifica automáticamente al abrir esta página o con el botón "Verificar estatus". Mientras tanto, esta factura sigue vigente.</span>
+                <div class="flex flex-col gap-1">
+                    <span class="m-0">Solicitud de cancelación enviada. Tu cliente (RFC receptor) debe aceptarla o rechazarla ante el SAT. El estatus se verifica automáticamente al abrir esta página o con el botón "Verificar estatus". Mientras tanto, esta factura sigue vigente.</span>
+                    <span v-if="cancelationDeadline" class="m-0 font-bold">
+                        <template v-if="cancelationDeadline.expired">
+                            El plazo de aceptación ya venció — puedes reintentar la cancelación.
+                        </template>
+                        <template v-else>
+                            Plazo de aceptación: queda {{ cancelationDeadline.remainingLabel }} (vence el {{ cancelationDeadline.dateLabel }}).
+                        </template>
+                    </span>
+                </div>
             </div>
 
             <!-- Two-panel layout -->

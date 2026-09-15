@@ -107,12 +107,4 @@ class Branch extends Model
     {
         return $this->hasMany(Customer::class);
     }
-
-    /**
-     * Get the billing (CFDI) settings for the branch.
-     */
-    public function billingSetting(): \Illuminate\Database\Eloquent\Relations\HasOne
-    {
-        return $this->hasOne(BillingSetting::class);
-    }
 }

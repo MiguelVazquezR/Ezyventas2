@@ -13,15 +13,19 @@ use Illuminate\Support\Facades\Log;
  * Queries the SAT's public SOAP service (ConsultaCFDIService)
  * to determine the real cancelation status of a CFDI.
  *
- * Used when a cancelation requires receiver acceptance
- * (isCancelable = "Cancelable con aceptación") to check
- * whether the receiver has accepted/rejected it yet.
+ * Used to determine, before requesting a cancelation, whether it requires
+ * the receiver's acceptance (EsCancelable), and afterwards to check whether
+ * the receiver has accepted or rejected it.
  *
  * CFDIs stamped in SW's test environment are consulted through SW's emulated
  * service (api.test.sw.com.mx); production uses the SAT endpoint directly.
  */
 class SatConsultationService
 {
+    public function __construct(
+        private readonly PacCallLogger $pacCallLogger,
+    ) {}
+
     /**
      * Consult the SAT for the current status of a CFDI.
      *
@@ -60,6 +64,8 @@ class SatConsultationService
 
         $soapBody = $this->buildSoapEnvelope($expresionImpresa);
 
+        $start = microtime(true);
+
         try {
             $response = Http::withHeaders([
                 'Content-Type' => 'text/xml;charset="utf-8"',
@@ -71,6 +77,16 @@ class SatConsultationService
             ->post($endpoint);
 
             if ($response->failed()) {
+                $this->pacCallLogger->forInvoice(
+                    $invoice,
+                    'cancel_status',
+                    null,
+                    ['uuid' => $invoice->uuid],
+                    $response->status(),
+                    ['error' => 'http_failed'],
+                    $start,
+                );
+
                 Log::error('SAT consultation HTTP error', [
                     'invoice_id' => $invoice->id,
                     'uuid'       => $invoice->uuid,
@@ -81,9 +97,31 @@ class SatConsultationService
                 throw new \RuntimeException('No se pudo consultar el SAT en este momento. Intenta de nuevo más tarde.');
             }
 
-            return $this->parseResponse($response->body(), $invoice);
+            $result = $this->parseResponse($response->body(), $invoice);
+
+            $this->pacCallLogger->forInvoice(
+                $invoice,
+                'cancel_status',
+                null,
+                ['uuid' => $invoice->uuid],
+                $response->status(),
+                $result,
+                $start,
+            );
+
+            return $result;
 
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            $this->pacCallLogger->forInvoice(
+                $invoice,
+                'cancel_status',
+                null,
+                ['uuid' => $invoice->uuid],
+                null,
+                null,
+                $start,
+            );
+
             Log::error('SAT consultation connection error', [
                 'invoice_id' => $invoice->id,
                 'error'      => $e->getMessage(),

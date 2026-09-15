@@ -3,7 +3,7 @@
 > **Proyecto:** EzyVentas  
 > **Stack:** Laravel 12 (PHP 8.3+) + Vue 3 (Composition API `<script setup>`) + Inertia.js 2 + PrimeVue 4 + Tailwind CSS  
 > **PAC:** SW Sapien — Dos tipos de cuenta: **subcuenta propia** (dealer, legacy) y **cuenta compartida** (externa, Conectia)  
-> **Fecha del análisis:** 2026-07-18 · **Última actualización:** 2026-08-15 (cuenta compartida + timbres locales)  
+> **Fecha del análisis:** 2026-07-18 · **Última actualización:** 2026-09-14 (Fase 3 — cancelaciones automáticas, alertas preventivas, auditoría PAC completa, dashboard con filtro/exportación)  
 
 ---
 
@@ -24,6 +24,10 @@
 | **Compra y ajuste de timbres (100% local)** | ✅ Implementado | Compra por Mercado Pago o transferencia y ajustes manuales del admin. Los timbres se aplican **localmente** a la wallet del RFC (`stamp_movements`): al aprobar una compra o hacer un ajuste, se suman/restan sin tocar el PAC. Si la wallet llega a 0, no se puede timbrar. |
 | **Panel admin de cuentas PAC** | ✅ Implementado | `admin/pac-accounts`: solicitudes, activación con validación contra el PAC, actualización de credenciales y bitácora. |
 | **Dashboard de facturación** | ✅ Parcial | KPIs: total comprobantes, facturas certificadas (="timbres usados"), canceladas, total facturado. Tabla de perfiles fiscales con estado genérico (Activo/Pendiente de activación). |
+| **Verificación automática de cancelaciones (Fase 3)** | ✅ Implementado | Job horario `RefreshPendingCancelationsJob`: consulta el estatus al SAT, actualiza la factura (cancelada / vigente) y notifica al suscriptor por correo (aceptada / rechazada / vencida). |
+| **Alertas preventivas (Fase 3)** | ✅ Implementado | Avisos de saldo bajo de timbres y de vencimiento de CSD (30/15/5 días) en dashboard / configuración fiscal, con correo diario (`CheckPreventiveAlertsJob`, deduplicado). |
+| **Auditoría PAC completa (Fase 3)** | ✅ Implementado | `pac_call_logs` registra también `authenticate`, `balance`, `upload_csd` y `cancel_status` (sanitizado vía `PacCallLogger`). |
+| **Filtro de fechas + exportación (Fase 3)** | ✅ Implementado | El dashboard filtra KPIs y tarjetas por rango (hoy / semana / mes / año / personalizado) y exporta las facturas del período a Excel. |
 | **Toggle facturación** | ✅ Implementado | Activar/desactivar facturación a nivel suscripción. Al desactivar, todos los endpoints de PAC retornan safe defaults. |
 | **Sincronización fiscal de clientes** | ✅ Implementado | Auto-actualiza RFC, razón social, régimen fiscal y CP del modelo `Customer` al facturar. |
 | **Multi-retención** | ✅ Implementado | Soporte para array JSON de retenciones (ISR + IVA retenido) por concepto. |
@@ -36,8 +40,8 @@
 | **Sin conteo de timbres por perfil en el dashboard de cliente** | Dashboard (`InvoiceController::dashboard()`) | El dashboard de cliente usa conteo local (facturas certificadas). Para cuentas compartidas el saldo disponible por RFC es la **wallet local** (`WalletService::availableBalance`); el saldo real del PAC solo lo ve el admin. |
 | **Reserva de timbres / CustomID** | ✅ Implementado (Fase 2.8–2.13) | `stamp_reservations` con `customid`, folios atómicos (`invoice_folio_counters`), `pac_call_logs` sanitizado, `ResolveAmbiguousStampJob` y panel de revisión manual. |
 | **Flujo de revendedor (`awaiting_reseller`)** | ✅ Eliminado (2026-08-15) | Ya no existe asignación por revendedor: los timbres se aplican **localmente** a la wallet del RFC al aprobar/ajustar, sin conexión al PAC. |
-| **Sin webhook de cancelación** | Todo el proyecto | No se reciben notificaciones del PAC cuando una cancelación es aceptada/rechazada asíncronamente. |
-| **BillingSetting legacy sin uso real** | Modelo `BillingSetting`, migración `2026_06_12_000008` | La tabla y modelo existen pero el sistema migró a `FiscalProfile`. El `SaveBillingSettingsAction` referencia `BillingSetting` pero no se usa desde ningún controller. |
+| **Sin webhook de cancelación** | Todo el proyecto | ✅ Mitigado en Fase 3: no hay webhook del PAC, pero el job horario `RefreshPendingCancelationsJob` consulta al SAT y actualiza el estatus sin intervención del usuario (con aviso por correo). |
+| **BillingSetting legacy sin uso real** | Modelo `BillingSetting`, migración `2026_06_12_000008` | ✅ Eliminado en Fase 3 (2026-09-14): se borraron `SaveBillingSettingsAction`, `SaveBillingSettingsRequest` y la relación `Branch::billingSetting()`. La tabla `billing_settings` queda en BD sin uso (drop pendiente de confirmación). |
 
 ---
 

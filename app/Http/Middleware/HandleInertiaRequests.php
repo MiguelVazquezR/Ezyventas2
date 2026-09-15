@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Subscription;
+use App\Models\TutorialVideo;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Spatie\Permission\Models\Permission;
@@ -90,7 +91,34 @@ class HandleInertiaRequests extends Middleware
                 'print_data' => $request->session()->get('print_data'),
                 'show_payment_modal' => $request->session()->get('show_payment_modal'),
             ],
-
+            // Videotutoriales activos agrupados por módulo → sección (panel "Tutoriales").
+            // Cada página consume solo los videos de su propio módulo.
+            'tutorials' => fn () => $request->user()
+                ? TutorialVideo::query()
+                    ->active()
+                    ->ordered()
+                    ->get()
+                    ->groupBy('module')
+                    ->map(fn ($videos, $module) => [
+                        'key'   => $module,
+                        'label' => config("tutorials.modules.{$module}", $module),
+                        'sections' => $videos
+                            ->groupBy('section')
+                            ->map(fn ($items, $section) => [
+                                'title'  => $section,
+                                'videos' => $items->map(fn (TutorialVideo $video) => [
+                                    'id'          => $video->id,
+                                    'title'       => $video->title,
+                                    'description' => $video->description,
+                                    'duration'    => $video->duration,
+                                    'url'         => $video->url,
+                                    'file_url'    => $video->file_url,
+                                ])->values(),
+                            ])
+                            ->values(),
+                    ])
+                    ->values()
+                : [],
             // Reutilizamos toda la lógica de cajas de los modelos, dejándolo super limpio
             'activeSession' => fn() => $request->user()?->getActiveCashRegisterSession(),
             'joinableSessions' => fn() => $request->user()?->getJoinableCashRegisterSessions() ?? [],
