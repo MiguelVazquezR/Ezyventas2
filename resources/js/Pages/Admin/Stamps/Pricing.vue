@@ -102,7 +102,7 @@ const dialogPt = {
 </script>
 
 <template>
-    <AppLayout :home="home" :breadcrumbItems="breadcrumbItems">
+    <AppLayout :home="home" :breadcrumbItems="breadcrumbItems" title="Precios de timbres">
         <div class="max-w-5xl mx-auto space-y-6">
 
             <!-- ── Header ──────────────────────────────── -->

@@ -2,9 +2,9 @@
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import AppLogo from '@/Components/AuthenticationCardLogo.vue';
+import { AI_MODULE_KEY, FREE_MODULE_KEYS } from '@/constants/modules';
 import Step1BusinessInfo from './Partials/Step1BusinessInfo.vue';
 import Step2Limits from './Partials/Step2Limits.vue';
-import Step3BankAccounts from './Partials/Step3BankAccounts.vue';
 import HoursModal from './Partials/HoursModal.vue';
 import WelcomeQuick from './Partials/WelcomeQuick.vue';
 
@@ -20,12 +20,12 @@ const props = defineProps({
 // --- State ---
 const page = usePage();
 
-const initialStep = sessionStorage.getItem('onboardingStep') ? parseInt(sessionStorage.getItem('onboardingStep')) : 0;
-const activeStep = ref(initialStep);
+const parsedStep = parseInt(sessionStorage.getItem('onboardingStep') ?? '0', 10) || 0;
+const activeStep = ref(Math.min(parsedStep, 1));
 
 // Vista inicial: la pantalla de bienvenida (rápida). Si el usuario ya venía
 // avanzando en el wizard, lo reanudamos directamente.
-const view = ref(initialStep > 0 ? 'wizard' : 'welcome');
+const view = ref(parsedStep > 0 ? 'wizard' : 'welcome');
 
 watch(activeStep, (newStep) => {
     sessionStorage.setItem('onboardingStep', newStep);
@@ -53,6 +53,13 @@ const getInitialAddress = (addr) => {
     return addr;
 };
 
+// --- AI agent module: included while its plan item stays free ---
+const aiModule = computed(() => {
+    return (props.availableModules || []).find(m => m.key === AI_MODULE_KEY) || null;
+});
+
+const aiAgentIsFree = !!(aiModule.value && (parseFloat(aiModule.value.monthly_price) || 0) <= 0);
+
 // --- Form ---
 const form = useForm({
     subscription: {
@@ -76,28 +83,14 @@ const form = useForm({
         limit_services: Math.max(100, props.currentLimits?.limit_services?.quantity ?? 100),
         limit_print_templates: Math.max(2, props.currentLimits?.limit_print_templates?.quantity ?? 2),
     },
+    // Additional modules start disabled; only the essential plan arrives
+    // active, and the AI agent joins only while its plan item stays free.
     modules: [
         ...new Set([
-            'module_ai_agent',
-            ...props.activeModuleKeys,
+            ...(aiAgentIsFree ? [AI_MODULE_KEY] : []),
+            ...props.activeModuleKeys.filter(key => FREE_MODULE_KEYS.includes(key)),
         ]),
     ],
-    bank_accounts: props.subscription.bank_accounts.map(account => ({
-        ...account,
-        balance: parseFloat(account.balance) || 0.00,
-        branch_ids: account.branches ? account.branches.map(b => b.id) : [],
-    })),
-});
-
-// --- Branch options for MultiSelect ---
-const branchOptions = computed(() => {
-    return form.branches.map((b, index) => {
-        if (!b.id) b.id = `temp_${index}`;
-        return {
-            label: b.name ? `Sucursal ${b.name}` : 'Nueva Sucursal',
-            value: b.id,
-        };
-    });
 });
 
 // --- Branch CRUD ---
@@ -109,10 +102,7 @@ const addBranch = () => {
 };
 
 const removeBranch = (index) => {
-    if (form.branches.length <= 1) {
-        alert('Debes tener al menos una sucursal.');
-        return;
-    }
+    if (form.branches.length <= 1) return;
     form.branches.splice(index, 1);
 };
 
@@ -122,18 +112,6 @@ const setMainBranch = (indexToSet) => {
     });
 };
 
-// --- Bank account CRUD ---
-const addBankAccount = () => {
-    form.bank_accounts.push({
-        id: null, bank_name: '', owner_name: '', account_name: '',
-        balance: 0.00, account_number: '', clabe: '', branch_ids: [],
-    });
-};
-
-const removeBankAccount = (index) => {
-    form.bank_accounts.splice(index, 1);
-};
-
 // --- Hours modal ---
 const openHoursModal = (index) => {
     currentBranchIndex.value = index;
@@ -141,39 +119,42 @@ const openHoursModal = (index) => {
 };
 
 // --- Step actions ---
-const saveStep = (step, nextStep = true) => {
+const saveStep1 = () => {
     saving.value = true;
-    let routeName, data;
 
-    if (step === 0) {
-        routeName = route('onboarding.store.step1');
-        data = {
+    form.post(route('onboarding.store.step1'), {
+        data: {
             subscription: form.subscription,
             branches: form.branches.map(b => ({
                 ...b,
                 id: (b.id && b.id.toString().startsWith('temp_')) ? null : b.id,
                 name: b.name,
             })),
-        };
-    } else if (step === 1) {
-        routeName = route('onboarding.store.step2');
-        data = { limits: form.limits, modules: form.modules };
-    }
-
-    form.post(routeName, {
-        data,
+        },
         preserveScroll: true,
         preserveState: true,
-        onSuccess: () => { if (nextStep) activeStep.value++; },
+        onSuccess: () => { activeStep.value = 1; },
         onError: (err) => { console.log(err); },
         onFinish: () => { saving.value = false; },
     });
 };
 
+// Clicking a step navigates directly: back is free, forward saves step 1 first.
+const goToStep = (step) => {
+    if (saving.value || form.processing || step === activeStep.value) return;
+
+    if (step < activeStep.value) {
+        activeStep.value = step;
+        return;
+    }
+
+    saveStep1();
+};
+
 const finishOnboarding = () => {
     saving.value = true;
     form.post(route('onboarding.finish'), {
-        data: { bank_accounts: form.bank_accounts },
+        data: { limits: form.limits, modules: form.modules },
         preserveScroll: true,
         onSuccess: () => { sessionStorage.removeItem('onboardingStep'); },
         onError: (err) => { console.error('Error al finalizar onboarding:', err); },
@@ -213,6 +194,7 @@ const currentBranchHours = computed(() => {
             v-if="view === 'welcome'"
             :subscription="subscription"
             :user-name="page.props.auth.user.name"
+            :ai-module="aiModule"
             @start-wizard="view = 'wizard'"
         />
 
@@ -222,27 +204,27 @@ const currentBranchHours = computed(() => {
             <!-- Header -->
             <div class="px-6 pt-6 pb-4 text-center border-b border-gray-100 dark:border-[#3a3a3a] bg-gray-50 dark:bg-[#1a1a1a] relative">
                 <div class="absolute top-5 right-6">
-                    <Button label="Omitir por ahora" icon="pi pi-forward" severity="secondary" text
+                    <Button label="Omitir por ahora" icon="pi pi-forward" text
                         @click="skipOnboarding" :loading="skipping"
-                        class="!rounded-full !text-[10px] !uppercase !tracking-wider" />
+                        class="!rounded-full !text-[10px] !uppercase !tracking-wider !text-primary-500 hover:!bg-primary-500/10 hover:!text-primary-600 dark:!text-primary-400 dark:hover:!text-primary-300" />
                 </div>
-                <AppLogo class="h-9 w-auto mx-auto mb-3" />
+                <AppLogo class="h-14 w-auto mx-auto mb-3" />
                 <h1 class="text-xl font-light tracking-tight text-gray-900 dark:text-white m-0">
                     Configura tu negocio
                 </h1>
                 <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-1">
-                    Opcional — 3 pasos, puedes completarlos después
+                    Opcional — 2 pasos, puedes completarlos después
                 </p>
             </div>
 
             <!-- Stepper -->
             <div class="px-5 pt-5">
-                <Stepper v-model:value="activeStep" linear>
+                <Stepper v-model:value="activeStep">
                     <StepList>
-                        <Step v-slot="{ activateCallback, value, a11yAttrs }" asChild :value="0">
-                            <div class="flex flex-row flex-auto gap-2" v-bind="a11yAttrs.root">
-                                <button class="flex items-center flex-shrink-0 gap-2 p-2 bg-transparent border-0 cursor-pointer"
-                                    @click="activateCallback(0)" v-bind="a11yAttrs.header">
+                        <Step v-slot="{ value, a11yAttrs }" asChild :value="0">
+                            <div class="flex flex-1 flex-row items-center justify-end gap-1" v-bind="a11yAttrs.root">
+                                <button class="flex items-center flex-shrink-0 gap-2 p-2 pr-3 bg-transparent border-0 cursor-pointer rounded-full transition-colors hover:bg-gray-100 dark:hover:bg-[#2a2a2a]"
+                                    @click="goToStep(0)" v-bind="a11yAttrs.header">
                                     <span
                                         :class="['rounded-full size-7 flex items-center justify-center text-[11px] font-bold transition-all duration-300',
                                             value <= activeStep
@@ -253,16 +235,16 @@ const currentBranchHours = computed(() => {
                                     </span>
                                     <span class="text-[11px] uppercase tracking-widest font-bold"
                                         :class="value <= activeStep ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
-                                        Negocio y sucursales
+                                        Tu negocio
                                     </span>
                                 </button>
-                                <Divider />
+                                <i class="pi pi-angle-right !text-[10px] text-gray-300 dark:text-[#4a4a4a]" aria-hidden="true"></i>
                             </div>
                         </Step>
-                        <Step v-slot="{ activateCallback, value, a11yAttrs }" asChild :value="1">
-                            <div class="flex flex-row flex-auto gap-2" v-bind="a11yAttrs.root">
-                                <button class="flex items-center flex-shrink-0 gap-2 p-2 bg-transparent border-0 cursor-pointer"
-                                    @click="activateCallback(1)" v-bind="a11yAttrs.header">
+                        <Step v-slot="{ value, a11yAttrs }" asChild :value="1">
+                            <div class="flex flex-1 flex-row items-center justify-start gap-1" v-bind="a11yAttrs.root">
+                                <button class="flex items-center flex-shrink-0 gap-2 p-2 pr-3 bg-transparent border-0 cursor-pointer rounded-full transition-colors hover:bg-gray-100 dark:hover:bg-[#2a2a2a]"
+                                    @click="goToStep(1)" v-bind="a11yAttrs.header">
                                     <span
                                         :class="['rounded-full size-7 flex items-center justify-center text-[11px] font-bold transition-all duration-300',
                                             value <= activeStep
@@ -273,27 +255,7 @@ const currentBranchHours = computed(() => {
                                     </span>
                                     <span class="text-[11px] uppercase tracking-widest font-bold"
                                         :class="value <= activeStep ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
-                                        Recursos y módulos
-                                    </span>
-                                </button>
-                                <Divider />
-                            </div>
-                        </Step>
-                        <Step v-slot="{ activateCallback, value, a11yAttrs }" asChild :value="2">
-                            <div class="flex flex-row flex-auto gap-2" v-bind="a11yAttrs.root">
-                                <button class="flex items-center flex-shrink-0 gap-2 p-2 bg-transparent border-0 cursor-pointer"
-                                    @click="activateCallback(2)" v-bind="a11yAttrs.header">
-                                    <span
-                                        :class="['rounded-full size-7 flex items-center justify-center text-[11px] font-bold transition-all duration-300',
-                                            value <= activeStep
-                                                ? 'bg-primary-500 text-white shadow-[0_0_10px_rgba(59,130,246,0.4)]'
-                                                : 'border-2 border-gray-200 dark:border-[#3a3a3a] text-gray-400'
-                                        ]">
-                                        {{ value <= activeStep ? '✓' : 3 }}
-                                    </span>
-                                    <span class="text-[11px] uppercase tracking-widest font-bold"
-                                        :class="value <= activeStep ? 'text-gray-900 dark:text-white' : 'text-gray-400'">
-                                        Cuentas bancarias
+                                        Tus módulos
                                     </span>
                                 </button>
                             </div>
@@ -310,7 +272,7 @@ const currentBranchHours = computed(() => {
                                 @remove-branch="removeBranch"
                                 @set-main-branch="setMainBranch"
                                 @open-hours="openHoursModal"
-                                @save-step="saveStep"
+                                @save-step="saveStep1"
                             />
                         </StepPanel>
 
@@ -321,21 +283,8 @@ const currentBranchHours = computed(() => {
                                 :saving="saving"
                                 :available-modules="availableModules"
                                 :available-limits="availableLimits"
-                                @save-step="saveStep"
-                                @go-back="activeStep = 0"
-                            />
-                        </StepPanel>
-
-                        <!-- PASO 3 -->
-                        <StepPanel :value="2">
-                            <Step3BankAccounts
-                                :form="form"
-                                :branch-options="branchOptions"
-                                :saving="saving"
-                                @add-account="addBankAccount"
-                                @remove-account="removeBankAccount"
                                 @finish="finishOnboarding"
-                                @go-back="activeStep = 1"
+                                @go-back="activeStep = 0"
                             />
                         </StepPanel>
                     </StepPanels>

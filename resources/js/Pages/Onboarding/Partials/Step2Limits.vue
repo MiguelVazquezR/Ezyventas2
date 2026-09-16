@@ -1,6 +1,7 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import InputError from '@/Components/InputError.vue';
+import { AI_MODULE_KEY, FREE_MODULE_KEYS, MODULE_SHORT_DESCRIPTIONS } from '@/constants/modules';
 
 const props = defineProps({
     form: Object,
@@ -9,20 +10,38 @@ const props = defineProps({
     availableLimits: Array,
 });
 
-const emit = defineEmits(['save-step', 'go-back']);
+const emit = defineEmits(['finish', 'go-back']);
+
+// --- Local UI state ---
+const includedPanel = ref(null); // null = "Incluido en tu plan esencial" collapsed
+const advancedPanel = ref(null); // null = "Ajustes avanzados" collapsed
 
 // --- Tesla UI PT ---
 const inputNumberPt = {
     input: {
         root: {
-            class: 'w-full !rounded-xl !bg-white dark:!bg-[#1a1a1a] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2.5 !text-sm !text-gray-900 dark:!text-white',
+            class: 'w-full !rounded-xl !bg-white dark:!bg-[#232323] !border-gray-200 dark:!border-[#3a3a3a] focus:dark:!border-primary-500 transition-colors !py-2.5 !text-sm !text-gray-900 dark:!text-white text-right',
         },
     },
 };
 
-// --- Module helpers ---
-const FREE_MODULE_KEYS = ['module_pos', 'module_transactions', 'module_products', 'module_expenses', 'module_cash_registers', 'module_settings'];
-const AI_MODULE_KEY = 'module_ai_agent';
+const accordionPt = {
+    panel: { class: 'border border-dashed border-gray-200 dark:border-[#3a3a3a] rounded-2xl bg-transparent overflow-hidden' },
+    headerAction: { class: '!p-4 hover:bg-gray-50 dark:hover:bg-[#2a2a2a] transition-colors flex items-center justify-between gap-3 w-full outline-none focus:ring-0 bg-transparent' },
+    content: { class: '!p-4 !pt-0 bg-transparent' },
+};
+
+const includedAccordionPt = {
+    panel: { class: 'border border-green-500/20 rounded-2xl bg-green-500/5 overflow-hidden' },
+    headerAction: { class: '!p-4 hover:bg-green-500/10 transition-colors flex items-center justify-between gap-3 w-full outline-none focus:ring-0 bg-transparent' },
+    content: { class: '!p-4 !pt-0 bg-transparent' },
+};
+
+// Short descriptions live in @/constants/modules so the welcome screen and
+// this wizard show the same copy.
+const moduleDescription = (module) => {
+    return MODULE_SHORT_DESCRIPTIONS[module.key] || module.description || null;
+};
 
 const isAlwaysActiveModule = (module) => {
     return FREE_MODULE_KEYS.includes(module.key);
@@ -36,7 +55,6 @@ const toggleModule = (key) => {
     const module = props.availableModules.find(m => m.key === key);
     if (!module) return;
     if (isAlwaysActiveModule(module)) return;
-    if (key === AI_MODULE_KEY) return; // AI module is always on
 
     const idx = props.form.modules.indexOf(key);
     if (idx > -1) {
@@ -66,6 +84,55 @@ const sortedModules = computed(() => {
     return [...included, ...ai, ...paid];
 });
 
+// --- The AI agent is part of the essentials only while its plan item is free ---
+const aiModuleItem = computed(() => {
+    return (props.availableModules || []).find(m => m.key === AI_MODULE_KEY) || null;
+});
+
+const isAiModuleFree = computed(() => {
+    const price = parseFloat(aiModuleItem.value?.monthly_price) || 0;
+    return !!aiModuleItem.value && price <= 0;
+});
+
+// --- Split modules: always-on (essential) vs toggleable (additional) ---
+const includedModules = computed(() => {
+    return sortedModules.value.filter(m => {
+        if (isAlwaysActiveModule(m)) return true;
+        if (m.key === AI_MODULE_KEY) return isAiModuleFree.value;
+        return false;
+    });
+});
+
+const toggleableModules = computed(() => {
+    return sortedModules.value.filter(m => {
+        if (isAlwaysActiveModule(m)) return false;
+        if (m.key === AI_MODULE_KEY) return !isAiModuleFree.value;
+        return true;
+    });
+});
+
+// --- Bulk actions for additional modules ---
+const allAdditionalModulesActive = computed(() => {
+    return toggleableModules.value.length > 0 && toggleableModules.value.every(m => props.form.modules.includes(m.key));
+});
+
+const activateAllAdditionalModules = () => {
+    toggleableModules.value.forEach(m => {
+        if (!props.form.modules.includes(m.key)) {
+            props.form.modules.push(m.key);
+        }
+    });
+};
+
+const deactivateAllAdditionalModules = () => {
+    toggleableModules.value.forEach(m => {
+        const idx = props.form.modules.indexOf(m.key);
+        if (idx > -1) {
+            props.form.modules.splice(idx, 1);
+        }
+    });
+};
+
 // --- Servicios module active? ---
 const isServicesModuleActive = computed(() => {
     return props.form.modules.includes('module_services');
@@ -76,284 +143,190 @@ const getLimitItem = (key) => {
     return props.availableLimits?.find(l => l.key === key) || null;
 };
 
-// --- Monthly cost calculation ---
-const monthlyCost = computed(() => {
-    let total = 0;
+// --- Limit rows shown inside "Ajustes avanzados" ---
+const limitRows = computed(() => {
+    const rows = [
+        { key: 'limit_users', label: 'Usuarios', icon: 'pi pi-users', fallback: 'Cuentas que podrán acceder al sistema' },
+        { key: 'limit_products', label: 'Productos', icon: 'pi pi-barcode', fallback: 'Capacidad para registrar tu inventario' },
+        { key: 'limit_cash_registers', label: 'Cajas registradoras', icon: 'pi pi-inbox', fallback: 'Cajas operando simultáneamente' },
+        { key: 'limit_print_templates', label: 'Plantillas de impresión', icon: 'pi pi-palette', fallback: 'Diseños de tickets o etiquetas' },
+    ];
 
-    // Sum modules (only those active)
-    (props.availableModules || []).forEach(m => {
-        if (props.form.modules.includes(m.key)) {
-            total += parseFloat(m.monthly_price) || 0;
-        }
-    });
-
-    // Sum limits: monthly_price can be per unit (e.g. $5/user/month) or per package
-    // when meta.quantity is defined (e.g. $1.50 per 100 products)
-    (props.availableLimits || []).forEach(limitItem => {
-        const limitKey = limitItem.key;
-        const currentQty = props.form.limits[limitKey];
-        if (currentQty === undefined || currentQty === null) return;
-
-        // Skip limit_services when the services module is not active
-        if (limitKey === 'limit_services' && !props.form.modules.includes('module_services')) return;
-
-        const monthlyPrice = parseFloat(limitItem.monthly_price) || 0;
-        if (monthlyPrice <= 0) return;
-
-        const packageSize = limitItem.meta?.quantity;
-        if (packageSize && packageSize > 0) {
-            // Price is per package: divide to get unit price, then multiply by current qty
-            total += (monthlyPrice / packageSize) * currentQty;
-        } else {
-            // Price is per unit: multiply directly
-            total += monthlyPrice * currentQty;
-        }
-    });
-
-    // Sum branches (managed in Step 1, priced per unit)
-    const branchCount = (props.form.branches || []).length;
-    if (branchCount > 0) {
-        const branchPlanItem = getLimitItem('limit_branches');
-        const branchPrice = parseFloat(branchPlanItem?.monthly_price) || 0;
-        if (branchPrice > 0) {
-            total += branchPrice * branchCount;
-        }
+    if (isServicesModuleActive.value) {
+        rows.splice(2, 0, { key: 'limit_services', label: 'Servicios', icon: 'pi pi-wrench', fallback: 'Servicios que puedes registrar en tu catálogo' });
     }
 
-    return total;
+    return rows;
 });
-
-const formatMxn = (amount) => {
-    return new Intl.NumberFormat('es-MX', {
-        style: 'currency',
-        currency: 'MXN',
-        minimumFractionDigits: 2,
-    }).format(amount);
-};
 </script>
 
 <template>
     <div class="p-5 lg:p-6 space-y-6">
 
-        <!-- Info message -->
-        <Message severity="info" :closable="false" class="!rounded-xl !text-xs" :pt="{ content: { class: '!text-xs' } }">
-            Estos recursos ya vienen incluidos en tu plan y podrás cambiarlos después desde tu suscripción. Ajusta aquí solo si sabes que necesitas más, todo está activo durante tus <strong>30 días gratis de prueba</strong>.
-        </Message>
+        <!-- Intro -->
+        <p class="text-[11px] text-gray-500 dark:text-gray-400 m-0">
+            Tu plan esencial ya está activo. Puedes probar cualquier módulo adicional sin compromiso durante tus 30 días de prueba.
+        </p>
 
-        <!-- Sección de Módulos -->
-        <div class="space-y-4">
-            <div class="flex items-center gap-2">
-                <i class="pi pi-puzzle-piece text-primary-500 !text-sm"></i>
-                <h3 class="text-xs uppercase tracking-widest font-bold text-gray-500 m-0">Módulos</h3>
+        <!-- Plan esencial (incluido) — colapsable -->
+        <Accordion v-model:value="includedPanel" :pt="includedAccordionPt">
+            <AccordionPanel value="included">
+                <AccordionHeader>
+                    <div class="flex items-center gap-3 flex-1 min-w-0 text-left">
+                        <i class="pi pi-check-circle text-green-500 !text-sm flex-shrink-0"></i>
+                        <div class="flex flex-col min-w-0">
+                            <span class="text-[11px] font-bold uppercase tracking-widest text-green-600 dark:text-green-400">
+                                Incluido en tu plan esencial
+                            </span>
+                            <span class="text-[10px] text-green-700/60 dark:text-green-400/60">
+                                {{ includedModules.length }} módulos ya activos en tu cuenta
+                            </span>
+                        </div>
+                    </div>
+                </AccordionHeader>
+
+                <AccordionContent>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div v-for="module in includedModules" :key="module.key"
+                            class="flex items-center gap-3 bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] rounded-xl px-3.5 py-2.5 transition-colors hover:border-primary-500/50">
+                            <div class="w-8 h-8 rounded-lg bg-primary-500/10 flex items-center justify-center flex-shrink-0">
+                                <i :class="[module.meta?.icon || 'pi pi-box', '!text-sm text-primary-500']"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-[12px] font-semibold text-gray-900 dark:text-white m-0 leading-tight">{{ module.name }}</p>
+                                <p class="text-[11px] leading-snug text-gray-500 dark:text-gray-400 m-0 mt-0.5">
+                                    {{ moduleDescription(module) || 'Siempre activo en tu cuenta' }}
+                                </p>
+                                <span v-if="module.key === AI_MODULE_KEY"
+                                    class="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-full text-[8.5px] font-bold uppercase tracking-widest bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                                    <i class="pi pi-clock !text-[8px]"></i>
+                                    Gratis por tiempo limitado
+                                </span>
+                            </div>
+                            <i class="pi pi-check-circle !text-[12px] text-green-500 flex-shrink-0"></i>
+                        </div>
+                    </div>
+                </AccordionContent>
+            </AccordionPanel>
+        </Accordion>
+
+        <!-- Módulos adicionales -->
+        <div v-if="toggleableModules.length > 0" class="space-y-3">
+            <div class="flex items-center justify-between gap-3">
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest bg-gray-100 dark:bg-[#232323] text-gray-500 dark:text-gray-400 border border-gray-100 dark:border-[#3a3a3a]">
+                    <i class="pi pi-plus-circle !text-[10px]"></i>
+                    Módulos adicionales
+                </span>
+
+                <Button v-if="!allAdditionalModulesActive" label="Probar todos" icon="pi pi-bolt" outlined size="small"
+                    @click="activateAllAdditionalModules"
+                    class="!rounded-full !text-[10px] !uppercase !tracking-wider" />
+                <Button v-else label="Desactivar todos" icon="pi pi-undo" text size="small"
+                    @click="deactivateAllAdditionalModules"
+                    class="!rounded-full !text-[10px] !uppercase !tracking-wider !text-gray-400 hover:!bg-gray-100 dark:hover:!bg-[#2a2a2a]" />
             </div>
 
-            <p class="text-[10px] text-gray-600 dark:text-gray-300 m-0">
-                Todos los módulos están activos durante tu prueba. Puedes dejar activos solo los que usarás; los módulos incluidos no pueden desactivarse.
+            <p class="text-[11px] text-gray-500 dark:text-gray-400 m-0">
+                Actívalos cuando quieras; puedes desactivarlos con un clic.
             </p>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <template v-for="module in sortedModules" :key="module.key">
-                    <div
-                        class="bg-gray-50 dark:bg-[#1a1a1a] p-4 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex items-start justify-between gap-3"
-                        :class="{ 'opacity-60': isAlwaysActiveModule(module) }"
-                    >
-                        <div class="flex items-start gap-3 min-w-0">
-                            <div class="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0">
-                                <i :class="[module.meta?.icon || 'pi pi-box', '!text-lg text-primary-500']"></i>
-                            </div>
-                            <div class="min-w-0">
-                                <p class="text-sm font-medium text-gray-900 dark:text-white m-0 truncate">{{ module.name }}</p>
-                                <p class="text-[10px] text-gray-600 dark:text-gray-300 m-0 mt-0.5 leading-relaxed" v-if="module.description">{{ module.description }}</p>
-                                <div class="flex items-center gap-2 mt-1.5">
-                                    <span v-if="isAlwaysActiveModule(module)"
-                                        class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400 flex-shrink-0">
-                                        <i class="pi pi-check-circle !text-[10px]"></i>
-                                        Incluido
-                                    </span>
-                                    <span v-else-if="module.key === AI_MODULE_KEY"
-                                        class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 flex-shrink-0">
-                                        <i class="pi pi-clock !text-[10px]"></i>
-                                        Gratis por tiempo limitado
-                                    </span>
-                                    <span v-else-if="parseFloat(module.monthly_price) > 0"
-                                        class="text-[10px] font-bold text-gray-600 dark:text-gray-400 flex-shrink-0">
-                                        +{{ formatMxn(module.monthly_price) }}/mes
-                                    </span>
-                                    <span v-else
-                                        class="text-[10px] font-bold text-green-600 dark:text-green-400 flex-shrink-0">
-                                        Incluido
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <ToggleSwitch
-                            :modelValue="true"
-                            :disabled="true"
-                            v-if="isAlwaysActiveModule(module) || module.key === AI_MODULE_KEY"
-                            :pt="{ root: { class: 'flex-shrink-0' } }"
-                        />
-                        <ToggleSwitch
-                            v-else
-                            :modelValue="isModuleActive(module.key)"
-                            @update:modelValue="toggleModule(module.key)"
-                            :pt="{ root: { class: 'flex-shrink-0' } }"
-                        />
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div v-for="module in toggleableModules" :key="module.key"
+                    class="flex items-center gap-3 bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] rounded-xl px-3.5 py-2.5 transition-colors hover:border-primary-500/50">
+                    <div class="w-8 h-8 rounded-lg bg-primary-500/10 flex items-center justify-center flex-shrink-0">
+                        <i :class="[module.meta?.icon || 'pi pi-box', '!text-sm text-primary-500']"></i>
                     </div>
-                </template>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-[12px] font-semibold text-gray-900 dark:text-white m-0 leading-tight">{{ module.name }}</p>
+                        <p v-if="moduleDescription(module)" class="text-[11px] leading-snug text-gray-500 dark:text-gray-400 m-0 mt-0.5">
+                            {{ moduleDescription(module) }}
+                        </p>
+                    </div>
+                    <ToggleSwitch
+                        :modelValue="isModuleActive(module.key)"
+                        @update:modelValue="toggleModule(module.key)"
+                        :pt="{ root: { class: 'flex-shrink-0' } }"
+                    />
+                </div>
             </div>
 
             <InputError :message="form.errors['modules']" />
         </div>
 
-        <!-- Sección de Límites -->
-        <div class="space-y-4">
-            <div class="flex items-center gap-2">
-                <i class="pi pi-sliders-h text-primary-500 !text-sm"></i>
-                <h3 class="text-xs uppercase tracking-widest font-bold text-gray-500 m-0">Límites de recursos</h3>
-            </div>
-
-            <p class="text-[10px] text-gray-600 dark:text-gray-300 m-0">
-                Establece los límites totales para tu suscripción. Éstos se compartirán entre todas tus sucursales.
-            </p>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Usuarios -->
-                <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col gap-3">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0">
-                            <i class="pi pi-users text-primary-500 !text-lg"></i>
-                        </div>
-                        <div>
-                            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Usuarios</label>
-                            <p class="text-[10px] text-gray-600 dark:text-gray-300 m-0 mt-0.5">{{ getLimitItem('limit_users')?.description || 'Cuentas que podrán acceder al sistema' }}</p>
-                        </div>
-                    </div>
-                    <InputNumber v-model="form.limits.limit_users" :min="1" showButtons fluid :pt="inputNumberPt" />
-                    <p class="text-[9px] text-gray-500 dark:text-gray-400 m-0" v-if="getLimitItem('limit_users')?.monthly_price > 0">
-                        {{ formatMxn(getLimitItem('limit_users').monthly_price) }} por usuario adicional al mes
-                    </p>
-                    <InputError :message="form.errors['limits.limit_users']" />
-                </div>
-
-                <!-- Productos -->
-                <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col gap-3">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0">
-                            <i class="pi pi-barcode text-primary-500 !text-lg"></i>
-                        </div>
-                        <div>
-                            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Productos</label>
-                            <p class="text-[10px] text-gray-600 dark:text-gray-300 m-0 mt-0.5">{{ getLimitItem('limit_products')?.description || 'Capacidad para registrar tu inventario' }}</p>
-                        </div>
-                    </div>
-                    <InputNumber v-model="form.limits.limit_products" :min="1" showButtons fluid :pt="inputNumberPt" />
-                    <p class="text-[9px] text-gray-500 dark:text-gray-400 m-0" v-if="getLimitItem('limit_products')?.monthly_price > 0">
-                        {{ formatMxn(getLimitItem('limit_products').monthly_price) }} por cada {{ getLimitItem('limit_products')?.meta?.quantity || 100 }} productos adicionales
-                    </p>
-                    <InputError :message="form.errors['limits.limit_products']" />
-                </div>
-
-                <!-- Servicios (condicional) -->
-                <div v-if="isServicesModuleActive"
-                    class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col gap-3">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0">
-                            <i class="pi pi-wrench text-primary-500 !text-lg"></i>
-                        </div>
-                        <div>
-                            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Servicios</label>
-                            <p class="text-[10px] text-gray-600 dark:text-gray-300 m-0 mt-0.5">{{ getLimitItem('limit_services')?.description || 'Servicios que puedes registrar en tu catálogo' }}</p>
-                        </div>
-                    </div>
-                    <InputNumber v-model="form.limits.limit_services" :min="1" showButtons fluid :pt="inputNumberPt" />
-                    <p class="text-[9px] text-gray-500 dark:text-gray-400 m-0" v-if="getLimitItem('limit_services')?.monthly_price > 0">
-                        {{ formatMxn(getLimitItem('limit_services').monthly_price) }} por cada {{ getLimitItem('limit_services')?.meta?.quantity || 100 }} servicios adicionales
-                    </p>
-                    <InputError :message="form.errors['limits.limit_services']" />
-                </div>
-
-                <!-- Cajas registradoras -->
-                <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col gap-3">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0">
-                            <i class="pi pi-inbox text-primary-500 !text-lg"></i>
-                        </div>
-                        <div>
-                            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Cajas registradoras</label>
-                            <p class="text-[10px] text-gray-600 dark:text-gray-300 m-0 mt-0.5">{{ getLimitItem('limit_cash_registers')?.description || 'Cajas operando simultáneamente' }}</p>
-                        </div>
-                    </div>
-                    <InputNumber v-model="form.limits.limit_cash_registers" :min="1" showButtons fluid :pt="inputNumberPt" />
-                    <p class="text-[9px] text-gray-500 dark:text-gray-400 m-0" v-if="getLimitItem('limit_cash_registers')?.monthly_price > 0">
-                        {{ formatMxn(getLimitItem('limit_cash_registers').monthly_price) }} por caja adicional al mes
-                    </p>
-                    <InputError :message="form.errors['limits.limit_cash_registers']" />
-                </div>
-
-                <!-- Plantillas de impresión -->
-                <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col gap-3">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0">
-                            <i class="pi pi-palette text-primary-500 !text-lg"></i>
-                        </div>
-                        <div>
-                            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Plantillas de impresión</label>
-                            <p class="text-[10px] text-gray-600 dark:text-gray-300 m-0 mt-0.5">{{ getLimitItem('limit_print_templates')?.description || 'Diseños de tickets o etiquetas' }}</p>
-                        </div>
-                    </div>
-                    <InputNumber v-model="form.limits.limit_print_templates" :min="1" showButtons fluid :pt="inputNumberPt" />
-                    <p class="text-[9px] text-gray-500 dark:text-gray-400 m-0" v-if="getLimitItem('limit_print_templates')?.monthly_price > 0">
-                        {{ formatMxn(getLimitItem('limit_print_templates').monthly_price) }} por plantilla adicional al mes
-                    </p>
-                    <InputError :message="form.errors['limits.limit_print_templates']" />
-                </div>
-
-                <!-- Sucursales (solo lectura — se gestionan en el paso 1) -->
-                <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] flex flex-col gap-3">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0">
-                            <i class="pi pi-building text-primary-500 !text-lg"></i>
-                        </div>
-                        <div>
-                            <label class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Sucursales</label>
-                            <p class="text-[10px] text-gray-600 dark:text-gray-300 m-0 mt-0.5">{{ getLimitItem('limit_branches')?.description || 'Sucursales registradas para tu negocio' }}</p>
-                        </div>
-                    </div>
-                    <div class="flex items-center justify-between">
-                        <span class="text-sm font-medium text-gray-900 dark:text-white">{{ form.branches?.length || 0 }} {{ (form.branches?.length || 0) === 1 ? 'sucursal registrada' : 'sucursales registradas' }}</span>
-                        <span class="text-[10px] text-gray-500 dark:text-gray-400">
-                            Se gestionan en el paso 1
-                        </span>
-                    </div>
-                    <p class="text-[9px] text-gray-500 dark:text-gray-400 m-0" v-if="getLimitItem('limit_branches')?.monthly_price > 0 && (form.branches?.length || 0) > 0">
-                        {{ formatMxn(getLimitItem('limit_branches').monthly_price * (form.branches?.length || 0)) }} al mes ({{ formatMxn(getLimitItem('limit_branches').monthly_price) }} por sucursal)
-                    </p>
-                </div>
-            </div>
+        <!-- Separador: los ajustes avanzados viven en su propia sección -->
+        <div class="flex items-center gap-3 pt-2">
+            <span class="text-[9px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                Solo si lo necesitas
+            </span>
+            <div class="flex-1 border-t border-dashed border-gray-200 dark:border-[#3a3a3a]"></div>
         </div>
 
-        <!-- Costo mensual estimado (siempre visible) -->
-        <div class="bg-gray-50 dark:bg-[#1a1a1a] p-5 rounded-2xl border border-gray-100 dark:border-[#3a3a3a]">
-            <div class="flex items-center justify-between">
-                <div>
-                    <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0">Costo mensual estimado</p>
-                    <p class="text-[10px] text-gray-600 dark:text-gray-300 m-0 mt-0.5">Después de los 30 días de prueba gratis</p>
-                </div>
-                <div class="text-right">
-                    <p class="text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0">{{ formatMxn(monthlyCost) }}</p>
-                    <p class="text-[10px] text-gray-500 dark:text-gray-400 m-0">/mes</p>
-                </div>
-            </div>
-        </div>
+        <!-- Ajustes avanzados: límites de recursos -->
+        <Accordion v-model:value="advancedPanel" :pt="accordionPt">
+            <AccordionPanel value="advanced">
+                <AccordionHeader>
+                    <div class="flex items-center gap-3 flex-1 min-w-0 text-left">
+                        <i class="pi pi-sliders-h text-gray-400 !text-sm flex-shrink-0"></i>
+                        <div class="flex flex-col min-w-0">
+                            <span class="text-sm font-medium text-gray-900 dark:text-gray-100">Ajustes avanzados</span>
+                            <span class="text-[10px] text-gray-500 dark:text-gray-400">
+                                Límites de recursos — los valores predeterminados funcionan bien para empezar
+                            </span>
+                        </div>
+                    </div>
+                </AccordionHeader>
+
+                <AccordionContent>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div v-for="row in limitRows" :key="row.key"
+                            class="bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] rounded-2xl p-4 flex flex-col gap-3 transition-colors hover:border-primary-500/30">
+                            <div class="flex items-start gap-3">
+                                <div class="w-9 h-9 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0">
+                                    <i :class="[row.icon, '!text-sm text-primary-500']"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="text-[12px] font-semibold text-gray-900 dark:text-white m-0 leading-tight">{{ row.label }}</p>
+                                    <p class="text-[10px] leading-snug text-gray-500 dark:text-gray-400 m-0 mt-1">
+                                        {{ getLimitItem(row.key)?.description || row.fallback }}
+                                    </p>
+                                </div>
+                            </div>
+                            <div>
+                                <InputNumber v-model="form.limits[row.key]" :min="1" locale="es-MX" fluid :pt="inputNumberPt" />
+                                <InputError :message="form.errors[`limits.${row.key}`]" class="mt-1" />
+                            </div>
+                        </div>
+
+                        <!-- Sucursales (se gestionan en el paso 1) -->
+                        <div class="bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-[#3a3a3a] rounded-2xl p-4 flex flex-col gap-3">
+                            <div class="flex items-start gap-3">
+                                <div class="w-9 h-9 rounded-xl bg-primary-500/10 flex items-center justify-center flex-shrink-0">
+                                    <i class="pi pi-building !text-sm text-primary-500"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="text-[12px] font-semibold text-gray-900 dark:text-white m-0 leading-tight">Sucursales</p>
+                                    <p class="text-[10px] leading-snug text-gray-500 dark:text-gray-400 m-0 mt-1">
+                                        Se gestionan en el paso anterior
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between rounded-xl bg-white dark:bg-[#232323] border border-gray-200 dark:border-[#3a3a3a] px-3.5 py-2.5">
+                                <span class="text-[10px] uppercase tracking-widest font-bold text-gray-500">Registradas</span>
+                                <span class="text-base font-light text-gray-900 dark:text-white">{{ form.branches?.length || 0 }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </AccordionContent>
+            </AccordionPanel>
+        </Accordion>
 
         <!-- Navegación -->
-        <div class="flex justify-between pt-2">
-            <Button label="Anterior" icon="pi pi-arrow-left" severity="secondary" outlined
-                @click="emit('go-back')" class="!rounded-full !text-xs !uppercase !tracking-wider" />
-            <Button label="Siguiente" icon="pi pi-arrow-right" iconPos="right"
-                @click="emit('save-step', 1)" :loading="saving || form.processing"
-                class="!rounded-full !text-xs !uppercase !tracking-wider" />
+        <div class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
+            <Button label="Anterior" icon="pi pi-angle-left" severity="secondary" outlined
+                @click="emit('go-back')" class="!rounded-full !px-5 !text-sm" />
+            <Button label="Comenzar ahora" icon="pi pi-rocket"
+                @click="emit('finish')" :loading="saving || form.processing"
+                class="ez-glow w-full sm:w-auto !rounded-full !border-0 !bg-gradient-to-r !from-[#f68c0f] !via-[#ffa31a] !to-[#ffc24d] !text-[#1A1A1A] font-bold !py-3 !px-6 !text-sm hover:!brightness-110 transition-all duration-200" />
         </div>
     </div>
 </template>

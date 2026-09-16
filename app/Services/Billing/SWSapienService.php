@@ -22,6 +22,10 @@ use Illuminate\Support\Str;
 
 class SWSapienService
 {
+    public function __construct(
+        private readonly PacCallLogger $pacCallLogger,
+    ) {}
+
     /**
      * Persist a new invoice and its line items in the database.
      *
@@ -804,7 +808,7 @@ class SWSapienService
     }
 
     /**
-     * Write a sanitized audit row to pac_call_logs.
+     * Write a sanitized audit row to pac_call_logs (delegates to PacCallLogger).
      *
      * SECURITY: only safe metadata is stored — never the PAC password nor
      * binary CSD/private key content.
@@ -818,50 +822,24 @@ class SWSapienService
         ?array $response,
         float $startMicrotime,
     ): void {
-        try {
-            \App\Models\Billing\PacCallLog::create([
-                'fiscal_profile_id'     => $invoice->fiscal_profile_id,
-                'pac_account_id'        => $invoice->fiscalProfile?->pac_account_id,
-                'operation'             => $operation,
-                'customid'              => $customid,
-                'request_payload'       => $this->sanitizePayload($payload),
-                'response_status_code'  => $statusCode,
-                'response_body'         => $response,
-                'duration_ms'           => (int) round((microtime(true) - $startMicrotime) * 1000),
-            ]);
-        } catch (\Throwable $e) {
-            Log::warning('Failed to write pac_call_logs row', ['error' => $e->getMessage()]);
-        }
-    }
-
-    /**
-     * Keep only safe metadata from the stamping payload (RFC, serie, folio,
-     * montos, customid) — drop any binary/sensitive field.
-     */
-    private function sanitizePayload(array $payload): array
-    {
-        $safe = [
-            'Serie'       => $payload['Serie'] ?? null,
-            'Folio'       => $payload['Folio'] ?? null,
-            'Fecha'       => $payload['Fecha'] ?? null,
-            'TipoDeComprobante' => $payload['TipoDeComprobante'] ?? null,
-            'MetodoPago'  => $payload['MetodoPago'] ?? null,
-            'SubTotal'    => $payload['SubTotal'] ?? null,
-            'Total'       => $payload['Total'] ?? null,
-            'Moneda'      => $payload['Moneda'] ?? null,
-            'Emisor.Rfc'  => data_get($payload, 'Emisor.Rfc'),
-            'Receptor.Rfc' => data_get($payload, 'Receptor.Rfc'),
-            'Conceptos.count' => is_countable($payload['Conceptos'] ?? null) ? count($payload['Conceptos']) : null,
-        ];
-
-        return array_filter($safe, fn ($v) => $v !== null);
+        $this->pacCallLogger->forInvoice(
+            $invoice,
+            $operation,
+            $customid,
+            $this->pacCallLogger->sanitizeStampPayload($payload),
+            $statusCode,
+            $response,
+            $startMicrotime,
+        );
     }
 
     /**
      * Cancel a CFDI via SW Sapien HTTP API (UUID-based, CSDs precargados).
      *
-     * Returns the PAC response data so the caller can determine if the
-     * cancelation requires receiver acceptance (isCancelable).
+     * The v1 cancel endpoint only returns the acuse and the per-UUID SAT
+     * folio codes; it does not state whether the receiver's acceptance is
+     * required. Callers must consult the SAT (SatConsultationService) to
+     * determine it.
      *
      * @return array The full 'data' payload from the PAC response.
      *
@@ -925,8 +903,7 @@ class SWSapienService
             );
         }
 
-        // Return the full data payload so the caller can inspect
-        // isCancelable, statusCancelation, etc.
+        // Return the full data payload (acuse + UUID-to-folio-code map).
         return $data['data'] ?? $data;
     }
 
@@ -1232,6 +1209,8 @@ class SWSapienService
         // ── Authenticate as the PAC account (not the dealer) ──
         $pacAccountToken = $this->authenticatePacAccount($profile);
 
+        $start = microtime(true);
+
         $response = Http::withToken($pacAccountToken)
             ->withHeaders([
                 'Content-Type' => 'application/json',
@@ -1239,6 +1218,16 @@ class SWSapienService
             ->post($endpoint . '/certificates/save', $payload);
 
         if ($response->failed()) {
+            $this->pacCallLogger->log(
+                $profile->id,
+                $profile->pac_account_id,
+                'upload_csd',
+                ['rfc' => $profile->rfc, 'type' => 'stamp'],
+                $response->status(),
+                ['message' => $response->json('message')],
+                $start,
+            );
+
             Log::error('SW Sapien CSD upload rejected (HTTP error)', [
                 'fiscal_profile_id' => $profile->id,
                 'rfc'               => $profile->rfc,
@@ -1257,6 +1246,16 @@ class SWSapienService
         $data = $response->json();
 
         if (($data['status'] ?? '') !== 'success') {
+            $this->pacCallLogger->log(
+                $profile->id,
+                $profile->pac_account_id,
+                'upload_csd',
+                ['rfc' => $profile->rfc, 'type' => 'stamp'],
+                $response->status(),
+                ['status' => $data['status'] ?? null, 'message' => $data['message'] ?? null],
+                $start,
+            );
+
             Log::error('SW Sapien CSD upload rejected (status != success)', [
                 'fiscal_profile_id' => $profile->id,
                 'rfc'               => $profile->rfc,
@@ -1269,6 +1268,16 @@ class SWSapienService
                 . ($data['message'] ?? $data['data'] ?? json_encode($data))
             );
         }
+
+        $this->pacCallLogger->log(
+            $profile->id,
+            $profile->pac_account_id,
+            'upload_csd',
+            ['rfc' => $profile->rfc, 'type' => 'stamp'],
+            $response->status(),
+            ['status' => $data['status'] ?? 'success'],
+            $start,
+        );
 
         // Extract certificate metadata locally (PAC only returns a success message)
         return $this->processCsdResponse($profile, $data, $cerDer);
@@ -1313,6 +1322,8 @@ class SWSapienService
                 );
             }
 
+            $authStart = microtime(true);
+
             try {
                 $response = Http::withHeaders([
                         'Content-Type' => 'application/json',
@@ -1324,6 +1335,16 @@ class SWSapienService
                         'password' => $accountPass,
                     ]);
             } catch (ConnectionException $e) {
+                $this->pacCallLogger->log(
+                    $profile->id,
+                    $profile->pac_account_id,
+                    'authenticate',
+                    ['login_email' => $accountUser],
+                    null,
+                    null,
+                    $authStart,
+                );
+
                 // A timeout during authentication has the same ambiguous semantics
                 // as during stamping — the caller must resolve it without assuming.
                 throw new PacTimeoutOrAmbiguousException(
@@ -1335,6 +1356,19 @@ class SWSapienService
             }
 
             if (! $response->successful()) {
+                $this->pacCallLogger->log(
+                    $profile->id,
+                    $profile->pac_account_id,
+                    'authenticate',
+                    ['login_email' => $accountUser],
+                    $response->status(),
+                    [
+                        'status'  => $response->json('status'),
+                        'message' => $response->json('message') ?? $response->json('messageDetail'),
+                    ],
+                    $authStart,
+                );
+
                 Log::error('SW Sapien PAC account authentication failed', [
                     'fiscal_profile_id' => $profile->id,
                     'sw_user_id'        => $profile->pacAccount?->sw_user_id,
@@ -1369,6 +1403,16 @@ class SWSapienService
                 'fiscal_profile_id' => $profile->id,
                 'sw_user_id'        => $profile->pacAccount?->sw_user_id,
             ]);
+
+            $this->pacCallLogger->log(
+                $profile->id,
+                $profile->pac_account_id,
+                'authenticate',
+                ['login_email' => $accountUser],
+                $response->status(),
+                ['status' => $authData['status'] ?? 'success'],
+                $authStart,
+            );
 
             return $token;
         });

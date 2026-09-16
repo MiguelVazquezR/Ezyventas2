@@ -5,9 +5,9 @@ namespace App\Http\Controllers;
 use App\Enums\BillingPeriod;
 use App\Enums\PlanItemType;
 use App\Mail\WelcomeEmail;
-use App\Models\BankAccount;
 use App\Models\Branch;
 use App\Models\PlanItem;
+use App\Models\Subscription;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -25,9 +25,8 @@ class OnboardingController extends Controller
     {
         $user = Auth::user();
         $subscription = $user->subscription()->with([
-            // Cargar sucursales y cuentas (con sus sucursales asignadas)
+            // Cargar sucursales y la versión activa con sus items
             'branches',
-            'bankAccounts.branches:id,name',
             'versions' => fn($q) => $q->latest()->first(),
             'versions.items'
         ])->first();
@@ -55,8 +54,10 @@ class OnboardingController extends Controller
             $activeModuleKeys = $availableModules->pluck('key')->toArray();
         }
 
-        // Ensure AI Agent module is always active
-        if (!in_array('module_ai_agent', $activeModuleKeys)) {
+        // The AI Agent module is always active while its plan item stays free;
+        // once it has a price it behaves like any other add-on module.
+        $aiModuleItem = $availableModules->firstWhere('key', 'module_ai_agent');
+        if ($aiModuleItem && (float) $aiModuleItem->monthly_price <= 0 && !in_array('module_ai_agent', $activeModuleKeys)) {
             $activeModuleKeys[] = 'module_ai_agent';
         }
 
@@ -168,9 +169,10 @@ class OnboardingController extends Controller
     }
 
     /**
-     * Guarda el Paso 2: Límites de Recursos y Módulos.
+     * Finaliza el onboarding: guarda límites y módulos, marca el proceso como
+     * completado y redirige al dashboard.
      */
-    public function storeStep2(Request $request)
+    public function finish(Request $request)
     {
         $validated = $request->validate([
             'limits.limit_users'          => 'required|integer|min:1',
@@ -181,24 +183,37 @@ class OnboardingController extends Controller
             'modules.*'                   => 'string|exists:plan_items,key',
         ]);
 
-        $user = Auth::user();
-        $version = $user->subscription->versions()->latest()->first();
+        $this->savePlanSettings($validated['limits'], $validated['modules']);
 
-        DB::transaction(function () use ($validated, $version) {
+        return $this->completeOnboarding(
+            Auth::user(),
+            '¡Configuración completada! Te damos la bienvenida.'
+        );
+    }
+
+    /**
+     * Sincroniza los límites de recursos y los módulos de la versión activa.
+     */
+    private function savePlanSettings(array $limits, array $modules): void
+    {
+        $version = Auth::user()->subscription->versions()->latest()->first();
+
+        DB::transaction(function () use ($limits, $modules, $version) {
             // 1. Actualizar límites
-            foreach ($validated['limits'] as $key => $quantity) {
+            foreach ($limits as $key => $quantity) {
                 $version->items()->where('item_key', $key)->update(['quantity' => $quantity]);
             }
 
             // 2. Sincronizar módulos
-            $selectedModules = $validated['modules'];
+            $selectedModules = $modules;
+            $allModuleItems = PlanItem::where('type', PlanItemType::MODULE)->get()->keyBy('key');
 
-            // Ensure AI Agent module is always active
-            if (!in_array('module_ai_agent', $selectedModules)) {
+            // The AI Agent module stays active on its own while it is free;
+            // once it has a price it is opt-in like the rest of the add-ons.
+            $aiModuleItem = $allModuleItems->get('module_ai_agent');
+            if ($aiModuleItem && (float) $aiModuleItem->monthly_price <= 0 && !in_array('module_ai_agent', $selectedModules)) {
                 $selectedModules[] = 'module_ai_agent';
             }
-
-            $allModuleItems = PlanItem::where('type', PlanItemType::MODULE)->get()->keyBy('key');
 
             foreach ($allModuleItems as $moduleKey => $planItem) {
                 if (in_array($moduleKey, $selectedModules)) {
@@ -217,74 +232,32 @@ class OnboardingController extends Controller
                 }
             }
         });
-
-        return redirect()->back();
     }
 
     /**
-     * Guarda el Paso 3: Cuentas Bancarias.
+     * Activates the AI Agent module on the current version while it stays free.
      */
-    public function storeStep3(Request $request)
+    private function activateAiAgentIfFree(Subscription $subscription): void
     {
-        $user = Auth::user();
-        $subscription = $user->subscription;
+        $aiModuleItem = PlanItem::where('type', PlanItemType::MODULE)
+            ->where('key', 'module_ai_agent')
+            ->first();
 
-        $validated = $request->validate([
-            'bank_accounts' => 'nullable|array',
-            'bank_accounts.*.bank_name' => 'required|string|max:100',
-            'bank_accounts.*.owner_name' => 'required|string|max:255',
-            'bank_accounts.*.balance' => 'required|numeric|min:0',
-            'bank_accounts.*.account_name' => 'required|string|max:100',
-            'bank_accounts.*.account_number' => 'nullable|string|max:50',
-            'bank_accounts.*.clabe' => 'nullable|string|max:18',
-            'bank_accounts.*.branch_ids' => 'nullable|array', // IDs de sucursales a las que se asigna
-        ]);
+        if (!$aiModuleItem || (float) $aiModuleItem->monthly_price > 0) {
+            return;
+        }
 
-        DB::transaction(function () use ($subscription, $validated) {
+        $version = $subscription->versions()->latest()->first();
 
-            // Sincronizar cuentas: Eliminar las que ya no están en la lista
-            $existingIds = [];
-            if (!empty($validated['bank_accounts'])) {
-                foreach ($validated['bank_accounts'] as $accountData) {
-                    $account = BankAccount::updateOrCreate(
-                        [
-                            'id' => $accountData['id'] ?? null,
-                            'subscription_id' => $subscription->id,
-                        ],
-                        [
-                            'bank_name' => $accountData['bank_name'],
-                            'owner_name' => $accountData['owner_name'],
-                            'balance' => $accountData['balance'],
-                            'account_name' => $accountData['account_name'],
-                            'account_number' => $accountData['account_number'],
-                            'clabe' => $accountData['clabe'],
-                        ]
-                    );
-
-                    // Sincronizar sucursales
-                    if (!empty($accountData['branch_ids'])) {
-                        $account->branches()->sync($accountData['branch_ids']);
-                    } else {
-                        $account->branches()->detach();
-                    }
-                    $existingIds[] = $account->id;
-                }
-            }
-            // Eliminar cuentas que el usuario borró de la UI
-            $subscription->bankAccounts()->whereNotIn('id', $existingIds)->delete();
-        });
-    }
-
-    /**
-     * Marca el onboarding como completado y redirige al dashboard.
-     */
-    public function finish(Request $request)
-    {
-        $this->storeStep3($request);
-
-        return $this->completeOnboarding(
-            Auth::user(),
-            '¡Configuración completada! Te damos la bienvenida.'
+        $version->items()->updateOrCreate(
+            ['item_key' => 'module_ai_agent'],
+            [
+                'item_type'      => 'module',
+                'name'           => $aiModuleItem->name,
+                'quantity'       => 1,
+                'unit_price'     => $aiModuleItem->monthly_price,
+                'billing_period' => BillingPeriod::MONTHLY,
+            ]
         );
     }
 
@@ -292,8 +265,9 @@ class OnboardingController extends Controller
      * Omite la configuración inicial y entra directo al dashboard.
      *
      * Conserva los valores por defecto creados en el registro (plan básico,
-     * sucursal "Principal", módulos y límites) y sólo actualiza el nombre
-     * comercial si el usuario lo editó en la pantalla de bienvenida.
+     * sucursal "Principal", módulos y límites), activa el agente de IA si
+     * sigue siendo gratis y sólo actualiza el nombre comercial si el usuario
+     * lo editó en la pantalla de bienvenida.
      */
     public function skip(Request $request)
     {
@@ -310,6 +284,10 @@ class OnboardingController extends Controller
                 'commercial_name' => $commercialName,
             ]);
         }
+
+        // Keep the AI agent active while it remains free — both the welcome
+        // screen and the wizard present it as included during the trial.
+        $this->activateAiAgentIfFree($user->subscription);
 
         return $this->completeOnboarding(
             $user,

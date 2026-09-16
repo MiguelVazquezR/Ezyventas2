@@ -1,9 +1,12 @@
 <script setup>
+import { computed } from 'vue';
 import { useForm } from '@inertiajs/vue3';
+import { AI_MODULE_KEY, MODULE_SHORT_DESCRIPTIONS } from '@/constants/modules';
 
-defineProps({
+const props = defineProps({
     subscription: Object,
     userName: String,
+    aiModule: { type: Object, default: null },
 });
 
 const emit = defineEmits(['start-wizard']);
@@ -18,13 +21,35 @@ const submit = () => {
 };
 
 // --- Módulos incluidos por defecto en el plan esencial ---
-const readyFeatures = [
+const baseFeatures = [
     { icon: 'pi pi-shopping-cart', title: 'Punto de venta', text: 'Cobra en efectivo, tarjeta o a crédito' },
     { icon: 'pi pi-history', title: 'Historial de ventas', text: 'Todas tus ventas guardadas y fáciles de consultar' },
     { icon: 'pi pi-box', title: 'Control de inventario', text: 'Productos, códigos de barras y stock por sucursal' },
     { icon: 'pi pi-money-bill', title: 'Gastos', text: 'Registra y controla los egresos del negocio' },
     { icon: 'pi pi-inbox', title: 'Control de caja', text: 'Abre, cierra y concilia tu caja registradora' },
 ];
+
+// The AI agent joins the essentials list only while its plan item is free;
+// if an admin sets a price it is no longer advertised here.
+const isAiModuleFree = computed(() => {
+    const price = parseFloat(props.aiModule?.monthly_price) || 0;
+    return !!props.aiModule && price <= 0;
+});
+
+const readyFeatures = computed(() => {
+    const features = [...baseFeatures];
+
+    if (isAiModuleFree.value) {
+        features.push({
+            icon: props.aiModule.meta?.icon || 'pi pi-sparkles',
+            title: props.aiModule.name || 'Asistente IA',
+            text: MODULE_SHORT_DESCRIPTIONS[AI_MODULE_KEY] || 'Te ayuda a crear, analizar y automatizar tareas con IA',
+            tag: 'Gratis por tiempo limitado',
+        });
+    }
+
+    return features;
+});
 </script>
 
 <template>
@@ -101,6 +126,11 @@ const readyFeatures = [
                     <div class="flex-1 min-w-0">
                         <p class="text-[12px] font-semibold text-gray-900 dark:text-white m-0 leading-tight">{{ feature.title }}</p>
                         <p class="text-[11px] leading-snug text-gray-500 dark:text-gray-400 m-0 mt-0.5">{{ feature.text }}</p>
+                        <span v-if="feature.tag"
+                            class="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-full text-[8.5px] font-bold uppercase tracking-widest bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                            <i class="pi pi-clock !text-[8px]"></i>
+                            {{ feature.tag }}
+                        </span>
                     </div>
                     <i class="pi pi-check-circle !text-[12px] text-green-500 flex-shrink-0"></i>
                 </div>

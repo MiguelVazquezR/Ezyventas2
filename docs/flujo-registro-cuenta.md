@@ -41,13 +41,12 @@
 
 | Endpoint | Método | Controlador | Archivo | Línea |
 |---|---|---|---|---|
-| `GET /onboarding/setup` | `show()` | `OnboardingController` | `app/Http/Controllers/OnboardingController.php` | 17 |
-| `POST /onboarding/step-1` | `storeStep1()` | `OnboardingController` | mismo archivo | 43 |
-| `POST /onboarding/step-2` | `storeStep2()` | `OnboardingController` | mismo archivo | 142 |
-| `POST /onboarding/step-3` | `storeStep3()` | `OnboardingController` | mismo archivo | 161 |
-| `POST /onboarding/finish` | `finish()` | `OnboardingController` | mismo archivo | 210 |
+| `GET /onboarding/setup` | `show()` | `OnboardingController` | `app/Http/Controllers/OnboardingController.php` | 23 |
+| `POST /onboarding/step-1` | `storeStep1()` | `OnboardingController` | mismo archivo | 79 |
+| `POST /onboarding/finish` | `finish()` | `OnboardingController` | mismo archivo | 172 |
+| `POST /onboarding/skip` | `skip()` | `OnboardingController` | mismo archivo | 240 |
 
-Rutas definidas en `routes/web.php` líneas 29–34.
+Rutas definidas en `routes/web.php` líneas 27–33.
 
 ---
 
@@ -160,12 +159,14 @@ Como `onboarding_completed_at` es `null` (recién creado), el middleware redirig
 
 **Excepciones:** No redirige si la ruta actual es `onboarding.*`, `logout`, `verification.*`, o `profile.*` (líneas 28–32).
 
-### Paso 5 — Onboarding (3 pasos)
+### Paso 5 — Onboarding (wizard de 2 pasos, opcional)
+
+La pantalla de bienvenida (`WelcomeQuick`) permite entrar directo con `onboarding.skip` (usa los valores por defecto creados en el registro). El wizard se abre desde el enlace "Configurar mi negocio ahora".
 
 1. **Paso 1** (`storeStep1`): Guarda nombre comercial, razón social, teléfono, dirección, sucursales y horarios.
-2. **Paso 2** (`storeStep2`): Actualiza las cantidades (`quantity`) de los límites (`limit_users`, `limit_cash_registers`, `limit_products`, `limit_print_templates`) en la versión actual.
-3. **Paso 3** (`storeStep3`): Guarda cuentas bancarias.
-4. **Finish** (`finish`): Ejecuta `storeStep3`, marca `onboarding_completed_at = now()`, envía `WelcomeEmail`, redirige al dashboard con mensaje flash.
+2. **Finish** (`finish`): Guarda límites y módulos vía `savePlanSettings`, marca `onboarding_completed_at = now()`, envía `WelcomeEmail` y redirige al dashboard con mensaje flash.
+
+> Las cuentas bancarias ya no forman parte del onboarding; se gestionan desde Control Financiero (`routes/web/bank-accounts.php`).
 
 ---
 
