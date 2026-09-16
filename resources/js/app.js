@@ -16,10 +16,12 @@ import '@/assets/styles.scss';
 import Ezyventas from './presets/ezyventas';
 import { initEcho } from './bootstrap';
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+const appName = import.meta.env.VITE_APP_NAME || 'Ezy Ventas';
 
 createInertiaApp({
-    title: (title) => `${title} - ${appName}`,
+    // When a page has no <Head title>, fall back to the app name only so the
+    // browser tab never shows a stray " - " prefix.
+    title: (title) => (title ? `${title} - ${appName}` : appName),
     resolve: (name) => resolvePageComponent(`./Pages/${name}.vue`, import.meta.glob('./Pages/**/*.vue')),
     setup({ el, App, props, plugin }) {
         // Defer WebSocket initialization to authenticated users only

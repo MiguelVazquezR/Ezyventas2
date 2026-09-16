@@ -15,6 +15,14 @@ const props = defineProps({
     relatedPpdInvoices: { type: Array, default: () => [] },
 });
 
+// Tab title (uses the same wording as the status tag).
+const pageTitle = computed(() => {
+    const folio = [props.invoice.series, props.invoice.folio].filter(Boolean).join(' ');
+    const documentName = props.invoice.uuid ? 'Factura' : 'Pre-factura';
+
+    return folio ? `${documentName} ${folio}` : documentName;
+});
+
 const { hasPermission } = usePermissions();
 
 // ──────────────────────────────────────
@@ -394,7 +402,7 @@ const tagPt = {
 </script>
 
 <template>
-    <Head :title="`Factura ${invoice.series ? invoice.series + ' ' : ''}${invoice.folio}`" />
+    <Head :title="pageTitle" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
             <!-- Breadcrumb / Back link -->

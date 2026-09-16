@@ -21,6 +21,9 @@ const props = defineProps({
     csdExpiryWarningDays: { type: Number, default: 30 },
 });
 
+// Tab title: identifies which emisor fiscal is open.
+const pageTitle = computed(() => `Emisor fiscal: ${props.fiscalProfile.razon_social}`);
+
 // Whether the profile's PAC account is active. Backward compatible with the
 // legacy sw_user_id for profiles provisioned before the pac_accounts table.
 const isAccountActive = () =>
@@ -262,7 +265,7 @@ const rejectionPopoverPt = {
 </script>
 
 <template>
-    <AppLayout :home="home" :breadcrumbItems="breadcrumbItems">
+    <AppLayout :home="home" :breadcrumbItems="breadcrumbItems" :title="pageTitle">
         <div class="max-w-5xl mx-auto space-y-6 pt-6">
             <!-- Breadcrumb / Back link -->
             <div class="flex items-center">

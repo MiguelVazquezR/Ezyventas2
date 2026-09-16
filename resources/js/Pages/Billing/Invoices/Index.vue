@@ -381,7 +381,7 @@ const menuPt = {
 </script>
 
 <template>
-    <Head title="Facturación" />
+    <Head title="Facturas" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
 
