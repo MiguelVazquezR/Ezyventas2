@@ -28,8 +28,6 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     Route::prefix('onboarding')->name('onboarding.')->group(function () {
         Route::get('/setup', [OnboardingController::class, 'show'])->name('setup');
         Route::post('/step-1', [OnboardingController::class, 'storeStep1'])->name('store.step1');
-        Route::post('/step-2', [OnboardingController::class, 'storeStep2'])->name('store.step2');
-        Route::post('/step-3', [OnboardingController::class, 'storeStep3'])->name('store.step3');
         Route::post('/finish', [OnboardingController::class, 'finish'])->name('finish');
         Route::post('/skip', [OnboardingController::class, 'skip'])->name('skip');
     });

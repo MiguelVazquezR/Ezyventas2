@@ -12,6 +12,7 @@ import ProductDetailModal from './ProductDetailModal.vue';
 import CreateProductModal from '@/Components/CreateProductModal.vue';
 import CashMovementModal from '@/Components/CashMovementModal.vue';
 import OnlineOrdersModal from './OnlineOrdersModal.vue';
+import TutorialHelp from '@/Components/Tutorial/TutorialHelp.vue';
 
 const props = defineProps({
     products: { type: Object, required: true },
@@ -283,7 +284,10 @@ const handleProductCreated = (newProduct) => {
                 
                 <div class="flex items-center gap-4">
                     <h1 class="hidden lg:block text-2xl md:text-3xl font-light tracking-tight text-gray-900 dark:text-white m-0">Registrar ventas</h1>
-                    
+
+                    <!-- Videotutoriales del punto de venta (oculto si el módulo no tiene videos) -->
+                    <TutorialHelp module="pos" />
+
                     <!-- Badge Caja Activa (Estilo Telemetría) -->
                     <div v-if="activeSession" class="flex items-center gap-2 bg-gray-50 dark:bg-[#1a1a1a] px-3 py-1.5 rounded-full border border-gray-200 dark:border-[#3a3a3a] shadow-inner">
                         <span class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse"></span>

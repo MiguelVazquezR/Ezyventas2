@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { taxRegimeLabel } from '@/Composables';
@@ -18,7 +18,11 @@ const props = defineProps({
     ourBankAccounts: Array,
     canPurchaseStamps: Boolean,
     canRetryManifestSigning: Boolean,
+    csdExpiryWarningDays: { type: Number, default: 30 },
 });
+
+// Tab title: identifies which emisor fiscal is open.
+const pageTitle = computed(() => `Emisor fiscal: ${props.fiscalProfile.razon_social}`);
 
 // Whether the profile's PAC account is active. Backward compatible with the
 // legacy sw_user_id for profiles provisioned before the pac_accounts table.
@@ -69,6 +73,18 @@ const csdModalRef = ref(null);
 const openCsdDialog = () => {
     csdModalRef.value?.open(props.fiscalProfile);
 };
+
+// ──────────────────────────────────────
+// CSD expiry status (Fase 3, T305)
+// ──────────────────────────────────────
+const csdDaysLeft = computed(() => {
+    if (!props.fiscalProfile?.valid_to) return null;
+    const validTo = new Date(`${props.fiscalProfile.valid_to}T00:00:00`);
+    if (Number.isNaN(validTo.getTime())) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((validTo - today) / 86400000);
+});
 
 // ──────────────────────────────────────
 // Tutorial onboarding state
@@ -249,7 +265,7 @@ const rejectionPopoverPt = {
 </script>
 
 <template>
-    <AppLayout :home="home" :breadcrumbItems="breadcrumbItems">
+    <AppLayout :home="home" :breadcrumbItems="breadcrumbItems" :title="pageTitle">
         <div class="max-w-5xl mx-auto space-y-6 pt-6">
             <!-- Breadcrumb / Back link -->
             <div class="flex items-center">
@@ -326,13 +342,22 @@ const rejectionPopoverPt = {
                                 />
                             </div>
                         </div>
-                        <div v-if="fiscalProfile.certificate_number" class="mt-4 flex items-center gap-2 text-xs text-gray-500">
+                        <div v-if="fiscalProfile.certificate_number" class="mt-4 flex flex-wrap items-center gap-2 text-xs text-gray-500">
                             <span class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse"></span>
                             <span class="font-semibold text-gray-600 dark:text-gray-400">CSD</span>
                             <span class="text-gray-300 dark:text-gray-600">·</span>
                             <span>Nº serie: <span class="font-mono text-gray-700 dark:text-gray-300">{{ fiscalProfile.certificate_number }}</span></span>
                             <span class="text-gray-300 dark:text-gray-600">·</span>
                             <span>Vigencia: {{ fiscalProfile.valid_from }} — {{ fiscalProfile.valid_to }}</span>
+                            <!-- CSD expiry alert (Fase 3, T305) -->
+                            <span v-if="csdDaysLeft !== null && csdDaysLeft <= 0" class="flex items-center gap-1 font-bold text-red-500">
+                                <i class="pi pi-exclamation-triangle !text-xs"></i>
+                                Certificado vencido — sube un CSD vigente para poder timbrar.
+                            </span>
+                            <span v-else-if="csdDaysLeft !== null && csdDaysLeft <= csdExpiryWarningDays" class="flex items-center gap-1 font-bold text-amber-500">
+                                <i class="pi pi-exclamation-triangle !text-xs"></i>
+                                El certificado vence en {{ csdDaysLeft }} día{{ csdDaysLeft === 1 ? '' : 's' }}.
+                            </span>
                         </div>
                     </div>
                 </div>

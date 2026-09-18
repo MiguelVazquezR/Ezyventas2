@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AdminStampDashboardController;
 use App\Http\Controllers\Admin\AdminStampPurchaseController;
 use App\Http\Controllers\Admin\AdminStampPricingController;
 use App\Http\Controllers\Admin\AdminSubscriptionPaymentController;
+use App\Http\Controllers\Admin\AdminTutorialController;
 use App\Http\Controllers\Admin\AiAgentSettingsController;
 use App\Http\Controllers\Admin\AdminPacAccountController;
 use App\Http\Controllers\Admin\AdminStampReservationController;
@@ -109,5 +110,15 @@ Route::middleware(['auth', CheckSuperAdmin::class])->prefix('admin')->name('admi
     // --- Asistente IA (Configuración global) ---
     Route::get('/ai-agent', [AiAgentSettingsController::class, 'index'])->name('ai-agent.index');
     Route::put('/ai-agent', [AiAgentSettingsController::class, 'update'])->name('ai-agent.update');
+
+    // --- Tutoriales (videos por módulo y sección) ---
+    Route::prefix('tutorials')->name('tutorials.')->group(function () {
+        Route::get('/', [AdminTutorialController::class, 'index'])->name('index');
+        Route::post('/', [AdminTutorialController::class, 'store'])->name('store');
+        Route::put('/{tutorial}', [AdminTutorialController::class, 'update'])->name('update');
+        Route::delete('/{tutorial}', [AdminTutorialController::class, 'destroy'])->name('destroy');
+        Route::post('/{tutorial}/toggle-active', [AdminTutorialController::class, 'toggleActive'])->name('toggle-active');
+        Route::post('/{tutorial}/move', [AdminTutorialController::class, 'move'])->name('move');
+    });
 
 });

@@ -80,11 +80,10 @@ Handles all authentication (login, register, password reset, 2FA, Google OAuth),
 - Also: `POST/DELETE /permissions` for direct permission management
 
 ### Onboarding (`/onboarding`)
-- `GET /onboarding/setup` — `onboarding.setup` — Show wizard
-- `POST /onboarding/step-1` — Business info
-- `POST /onboarding/step-2` — Branch setup
-- `POST /onboarding/step-3` — Product import
-- `POST /onboarding/finish` — Complete onboarding
+- `GET /onboarding/setup` — `onboarding.setup` — Show welcome screen / 2-step wizard
+- `POST /onboarding/step-1` — Business info, branches and schedules
+- `POST /onboarding/finish` — Plan limits + modules, completes onboarding
+- `POST /onboarding/skip` — Skip setup and go straight to dashboard
 
 ### Profile
 - `GET /user/profile` — Show profile (Jetstream default)

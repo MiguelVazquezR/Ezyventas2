@@ -150,7 +150,7 @@ function submitRelease() {
 </script>
 
 <template>
-    <AppLayout :home="home" :breadcrumbItems="breadcrumbItems">
+    <AppLayout :home="home" :breadcrumbItems="breadcrumbItems" title="Revisión manual de timbrado">
         <div class="max-w-6xl mx-auto space-y-6">
 
             <!-- ── Header ──────────────────────────────── -->

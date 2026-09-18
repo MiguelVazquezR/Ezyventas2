@@ -22,6 +22,10 @@ use Illuminate\Support\Str;
 
 class SWSapienService
 {
+    public function __construct(
+        private readonly PacCallLogger $pacCallLogger,
+    ) {}
+
     /**
      * Persist a new invoice and its line items in the database.
      *
@@ -737,7 +741,12 @@ class SWSapienService
             ?? data_get($json, 'data.message')
             ?? null;
 
-        $lowerMessage = mb_strtolower((string) $message) . ' ' . mb_strtolower((string) $code);
+        // The actionable details almost always live in messageDetail (e.g. the
+        // certificate lookup failure behind a generic "305" rejection), so it
+        // must be part of the classification haystack.
+        $lowerMessage = mb_strtolower((string) $message)
+            . ' ' . mb_strtolower((string) $code)
+            . ' ' . mb_strtolower((string) data_get($json, 'messageDetail'));
 
         // "307 — El comprobante contiene un timbre previo": full recovery.
         if ($code === '307' || str_contains($lowerMessage, 'timbre previo')) {
@@ -755,6 +764,40 @@ class SWSapienService
             );
         }
 
+        // "402 — RFC del emisor no se encuentra en el régimen de contribuyentes
+        // (Lista de validación de régimen) LCO": the SAT could not find the
+        // emitter RFC with stamping permissions in the daily-updated LCO lists.
+        if (str_contains($lowerMessage, 'régimen de contribuyentes') || str_contains($lowerMessage, 'validez de obligaciones')) {
+            return new PacValidationException(
+                'El SAT no encontró al RFC emisor con facultades de timbrado en sus listas LCO (contribuyentes obligados). Revisa la situación fiscal del RFC emisor e intenta de nuevo más tarde.',
+                $json,
+            );
+        }
+
+        // "305 — La fecha de emisión no está dentro de la vigencia del CSD"
+        // with detail "Certificado ... no encontrado en lista LCO": the PAC
+        // validates the CSD against the SAT's LCO lists, so a missing entry
+        // (new/renewed CSD not yet propagated, lagging test-environment lists,
+        // or several active CSDs for the same RFC) is reported as a misleading
+        // "expired CSD" message.
+        if (str_contains($lowerMessage, 'lista lco')) {
+            return new PacValidationException(
+                'El SAT aún no reconoce este CSD en sus listas LCO (contribuyentes obligados), por eso no se puede timbrar. Suele pasar con certificados nuevos o renovados —la actualización tarda hasta 48 horas— o cuando el RFC tiene varios CSD activos. Verifica que sea un CSD vigente (no una FIEL) e intenta de nuevo más tarde.',
+                $json,
+            );
+        }
+
+        // "401 — El rango de la fecha de generación no debe de ser mayor a 72
+        // horas": the CFDI date was outside the PAC window (older than 72
+        // hours or in the future). Explain the rule in plain Spanish instead
+        // of echoing the raw PAC message.
+        if (str_contains($lowerMessage, 'rango de la fecha')) {
+            return new PacValidationException(
+                'Se rechazó el timbrado: la fecha de emisión debe estar dentro de las últimas 72 horas y no puede ser futura. Corrige la fecha e intenta de nuevo.',
+                $json,
+            );
+        }
+
         // HTTP 5xx / gateway timeouts could be ambiguous, but the request was answered —
         // treat them as validation errors only if the PAC explicitly rejected; otherwise
         // the caller's timeout handling covers the network side.
@@ -765,7 +808,7 @@ class SWSapienService
     }
 
     /**
-     * Write a sanitized audit row to pac_call_logs.
+     * Write a sanitized audit row to pac_call_logs (delegates to PacCallLogger).
      *
      * SECURITY: only safe metadata is stored — never the PAC password nor
      * binary CSD/private key content.
@@ -779,50 +822,24 @@ class SWSapienService
         ?array $response,
         float $startMicrotime,
     ): void {
-        try {
-            \App\Models\Billing\PacCallLog::create([
-                'fiscal_profile_id'     => $invoice->fiscal_profile_id,
-                'pac_account_id'        => $invoice->fiscalProfile?->pac_account_id,
-                'operation'             => $operation,
-                'customid'              => $customid,
-                'request_payload'       => $this->sanitizePayload($payload),
-                'response_status_code'  => $statusCode,
-                'response_body'         => $response,
-                'duration_ms'           => (int) round((microtime(true) - $startMicrotime) * 1000),
-            ]);
-        } catch (\Throwable $e) {
-            Log::warning('Failed to write pac_call_logs row', ['error' => $e->getMessage()]);
-        }
-    }
-
-    /**
-     * Keep only safe metadata from the stamping payload (RFC, serie, folio,
-     * montos, customid) — drop any binary/sensitive field.
-     */
-    private function sanitizePayload(array $payload): array
-    {
-        $safe = [
-            'Serie'       => $payload['Serie'] ?? null,
-            'Folio'       => $payload['Folio'] ?? null,
-            'Fecha'       => $payload['Fecha'] ?? null,
-            'TipoDeComprobante' => $payload['TipoDeComprobante'] ?? null,
-            'MetodoPago'  => $payload['MetodoPago'] ?? null,
-            'SubTotal'    => $payload['SubTotal'] ?? null,
-            'Total'       => $payload['Total'] ?? null,
-            'Moneda'      => $payload['Moneda'] ?? null,
-            'Emisor.Rfc'  => data_get($payload, 'Emisor.Rfc'),
-            'Receptor.Rfc' => data_get($payload, 'Receptor.Rfc'),
-            'Conceptos.count' => is_countable($payload['Conceptos'] ?? null) ? count($payload['Conceptos']) : null,
-        ];
-
-        return array_filter($safe, fn ($v) => $v !== null);
+        $this->pacCallLogger->forInvoice(
+            $invoice,
+            $operation,
+            $customid,
+            $this->pacCallLogger->sanitizeStampPayload($payload),
+            $statusCode,
+            $response,
+            $startMicrotime,
+        );
     }
 
     /**
      * Cancel a CFDI via SW Sapien HTTP API (UUID-based, CSDs precargados).
      *
-     * Returns the PAC response data so the caller can determine if the
-     * cancelation requires receiver acceptance (isCancelable).
+     * The v1 cancel endpoint only returns the acuse and the per-UUID SAT
+     * folio codes; it does not state whether the receiver's acceptance is
+     * required. Callers must consult the SAT (SatConsultationService) to
+     * determine it.
      *
      * @return array The full 'data' payload from the PAC response.
      *
@@ -886,8 +903,7 @@ class SWSapienService
             );
         }
 
-        // Return the full data payload so the caller can inspect
-        // isCancelable, statusCancelation, etc.
+        // Return the full data payload (acuse + UUID-to-folio-code map).
         return $data['data'] ?? $data;
     }
 
@@ -902,6 +918,11 @@ class SWSapienService
      *               (acuse + folios[] with uuid/estatusUUID/respuesta).
      *
      * @throws \RuntimeException
+     *
+     * NOTE: this method only guarantees that the PAC processed the call. The
+     * real per-UUID outcome is the folio code; callers must verify it with
+     * {@see translateAcceptRejectCode()} — only code 1000 means the SAT
+     * actually registered the acceptance/rejection.
      */
     public function acceptReject(FiscalProfile $profile, string $uuid, string $action): array
     {
@@ -980,32 +1001,70 @@ class SWSapienService
     }
 
     /**
+     * Translate a SAT/PAC folio status code (folios[].estatusUUID) into a
+     * friendly, actionable message for the end user.
+     *
+     * SW answers HTTP 200 + status success even when the response was NOT
+     * registered at the SAT, so the folio code is the real outcome of an
+     * accept/reject call: 1000 is the only code that confirms success.
+     *
+     * @see https://developers.sw.com.mx/knowledge-base/aceptar-o-rechazar-cancelacion-cfdi/
+     */
+    public function translateAcceptRejectCode(string $code): string
+    {
+        return match ($code) {
+            '1000'  => 'Se recibió la respuesta de la petición de forma exitosa.',
+            '1001'  => 'No existe una solicitud de cancelación en espera de respuesta para ese UUID. Verifica que el proveedor ya la haya solicitado y que el RFC seleccionado sea el receptor de la factura.',
+            '1002'  => 'Esta solicitud de cancelación ya había sido respondida (aceptada o rechazada) con anterioridad.',
+            '1003'  => 'El RFC seleccionado no corresponde al receptor de la factura, por lo que el SAT no registró la respuesta.',
+            '1004'  => 'Existen más de una solicitud de cancelación para ese UUID. Contacta a soporte para resolverlo.',
+            '1005'  => 'El UUID no tiene el formato correcto. Verifícalo e inténtalo de nuevo.',
+            '1006'  => 'Se excedió el número máximo de solicitudes permitidas para ese UUID. Intenta de nuevo más tarde.',
+            default => "El SAT devolvió un estatus inesperado (código {$code}), por lo que la respuesta no se pudo confirmar.",
+        };
+    }
+
+    /**
      * Translate a SW Sapien accept/reject error message into a friendly,
      * actionable message for the end user.
      *
-     * SW returns generic codes (e.g. "CACFDI33 - Error no controlado") that in
-     * this endpoint almost always mean the folio was not found or there is no
-     * pending cancelation request for the given UUID/RFC. The raw PAC detail is
-     * still logged server-side for support/debugging.
+     * SW may return the SAT response codes as plain messages (e.g.
+     * "CA1003 - Sello No Corresponde al RFC Receptor") when the HTTP call
+     * itself fails, and generic codes (e.g. "CACFDI33 - Error no controlado")
+     * that in this endpoint almost always mean there is no pending cancelation
+     * request for the given UUID/RFC. The raw PAC detail is still logged
+     * server-side for support/debugging.
      */
     private function translateAcceptRejectError(string $message): string
     {
-        $lower = mb_strtolower($message);
+        // Normalize (lowercase, no accents) so "número máximo" and
+        // "numero maximo" match the same pattern.
+        $normalized = Str::ascii(mb_strtolower($message));
 
         $patterns = [
-            // Generic uncontrolled PAC error — most common cause for accept/reject.
-            ['cacfdi33', 'No se encontró la factura relacionada o no existe una solicitud de cancelación pendiente para ese UUID. Verifica el RFC receptor y el UUID e inténtalo de nuevo.'],
-            ['no se encontr', 'No se encontró la factura relacionada. Verifica el UUID e inténtalo de nuevo.'],
-            ['not found', 'No se encontró la factura relacionada. Verifica el UUID e inténtalo de nuevo.'],
-            ['no existe', 'No se encontró la factura relacionada o no existe una solicitud de cancelación pendiente para ese UUID.'],
-            ['no se localiz', 'No se encontró la factura relacionada. Verifica el UUID e inténtalo de nuevo.'],
-            ['sin solicitud', 'No existe una solicitud de cancelación pendiente para ese UUID.'],
+            'no existen peticiones'        => '1001',
+            'ya se recibio una respuesta'  => '1002',
+            'sello no corresponde'         => '1003',
+            'mas de una peticion'          => '1004',
+            'no posee el formato'          => '1005',
+            'numero maximo de solicitudes' => '1006',
+            // Synonyms seen in generic PAC messages.
+            'no se encontr'                => '1001',
+            'no se localiz'                => '1001',
+            'sin solicitud'                => '1001',
+            'not found'                    => '1001',
+            'no existe'                    => '1001',
         ];
 
-        foreach ($patterns as [$needle, $friendly]) {
-            if (str_contains($lower, $needle)) {
-                return $friendly;
+        foreach ($patterns as $needle => $code) {
+            if (str_contains($normalized, $needle)) {
+                return $this->translateAcceptRejectCode($code);
             }
+        }
+
+        // Generic uncontrolled PAC error — most common cause for accept/reject.
+        if (str_contains($normalized, 'cacfdi33')) {
+            return 'No se encontró la factura relacionada o no existe una solicitud de cancelación pendiente para ese UUID. Verifica el RFC receptor y el UUID e inténtalo de nuevo.';
         }
 
         return 'Se rechazó la solicitud: ' . $message;
@@ -1150,6 +1209,8 @@ class SWSapienService
         // ── Authenticate as the PAC account (not the dealer) ──
         $pacAccountToken = $this->authenticatePacAccount($profile);
 
+        $start = microtime(true);
+
         $response = Http::withToken($pacAccountToken)
             ->withHeaders([
                 'Content-Type' => 'application/json',
@@ -1157,6 +1218,16 @@ class SWSapienService
             ->post($endpoint . '/certificates/save', $payload);
 
         if ($response->failed()) {
+            $this->pacCallLogger->log(
+                $profile->id,
+                $profile->pac_account_id,
+                'upload_csd',
+                ['rfc' => $profile->rfc, 'type' => 'stamp'],
+                $response->status(),
+                ['message' => $response->json('message')],
+                $start,
+            );
+
             Log::error('SW Sapien CSD upload rejected (HTTP error)', [
                 'fiscal_profile_id' => $profile->id,
                 'rfc'               => $profile->rfc,
@@ -1175,6 +1246,16 @@ class SWSapienService
         $data = $response->json();
 
         if (($data['status'] ?? '') !== 'success') {
+            $this->pacCallLogger->log(
+                $profile->id,
+                $profile->pac_account_id,
+                'upload_csd',
+                ['rfc' => $profile->rfc, 'type' => 'stamp'],
+                $response->status(),
+                ['status' => $data['status'] ?? null, 'message' => $data['message'] ?? null],
+                $start,
+            );
+
             Log::error('SW Sapien CSD upload rejected (status != success)', [
                 'fiscal_profile_id' => $profile->id,
                 'rfc'               => $profile->rfc,
@@ -1187,6 +1268,16 @@ class SWSapienService
                 . ($data['message'] ?? $data['data'] ?? json_encode($data))
             );
         }
+
+        $this->pacCallLogger->log(
+            $profile->id,
+            $profile->pac_account_id,
+            'upload_csd',
+            ['rfc' => $profile->rfc, 'type' => 'stamp'],
+            $response->status(),
+            ['status' => $data['status'] ?? 'success'],
+            $start,
+        );
 
         // Extract certificate metadata locally (PAC only returns a success message)
         return $this->processCsdResponse($profile, $data, $cerDer);
@@ -1231,6 +1322,8 @@ class SWSapienService
                 );
             }
 
+            $authStart = microtime(true);
+
             try {
                 $response = Http::withHeaders([
                         'Content-Type' => 'application/json',
@@ -1242,6 +1335,16 @@ class SWSapienService
                         'password' => $accountPass,
                     ]);
             } catch (ConnectionException $e) {
+                $this->pacCallLogger->log(
+                    $profile->id,
+                    $profile->pac_account_id,
+                    'authenticate',
+                    ['login_email' => $accountUser],
+                    null,
+                    null,
+                    $authStart,
+                );
+
                 // A timeout during authentication has the same ambiguous semantics
                 // as during stamping — the caller must resolve it without assuming.
                 throw new PacTimeoutOrAmbiguousException(
@@ -1253,6 +1356,19 @@ class SWSapienService
             }
 
             if (! $response->successful()) {
+                $this->pacCallLogger->log(
+                    $profile->id,
+                    $profile->pac_account_id,
+                    'authenticate',
+                    ['login_email' => $accountUser],
+                    $response->status(),
+                    [
+                        'status'  => $response->json('status'),
+                        'message' => $response->json('message') ?? $response->json('messageDetail'),
+                    ],
+                    $authStart,
+                );
+
                 Log::error('SW Sapien PAC account authentication failed', [
                     'fiscal_profile_id' => $profile->id,
                     'sw_user_id'        => $profile->pacAccount?->sw_user_id,
@@ -1287,6 +1403,16 @@ class SWSapienService
                 'fiscal_profile_id' => $profile->id,
                 'sw_user_id'        => $profile->pacAccount?->sw_user_id,
             ]);
+
+            $this->pacCallLogger->log(
+                $profile->id,
+                $profile->pac_account_id,
+                'authenticate',
+                ['login_email' => $accountUser],
+                $response->status(),
+                ['status' => $authData['status'] ?? 'success'],
+                $authStart,
+            );
 
             return $token;
         });

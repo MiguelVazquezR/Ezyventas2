@@ -21,6 +21,7 @@ Route::middleware(['auth', 'verified'])->prefix('billing')->name('billing.')->gr
 
     // ── Dashboard ──────────────────────────────────────────
     Route::get('/dashboard', [InvoiceController::class, 'dashboard'])->name('dashboard');
+    Route::get('/dashboard/export', [InvoiceController::class, 'dashboardExport'])->name('dashboard.export');
 
     // ── Invoices (CFDI comprobantes) ───────────────────────
     Route::prefix('invoices')->name('invoices.')->group(function () {

@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import InvoiceForm from './Partials/InvoiceForm.vue';
 
@@ -12,13 +13,20 @@ const props = defineProps({
     services: Array,
 });
 
+// Includes the folio so several prefacturas can be told apart in the browser.
+const pageTitle = computed(() => {
+    const folio = [props.invoice.series, props.invoice.folio].filter(Boolean).join(' ');
+
+    return folio ? `Editar prefactura ${folio}` : 'Editar prefactura';
+});
+
 function handleSubmit({ form }) {
     form.put(route('billing.invoices.update', props.invoice.id));
 }
 </script>
 
 <template>
-    <AppLayout title="Editar prefactura">
+    <AppLayout :title="pageTitle">
         <Breadcrumb :home="{ icon: 'pi pi-home', url: route('dashboard') }" :model="[{ label: 'Lista de facturas', url: route('billing.invoices.index') }, { label: 'Editar prefactura' }]" class="!bg-transparent !p-0 !mb-1" />
 
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-2 mb-6">

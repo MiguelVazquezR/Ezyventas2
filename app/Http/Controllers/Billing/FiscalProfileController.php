@@ -335,6 +335,7 @@ class FiscalProfileController extends Controller implements HasMiddleware
             'ourBankAccounts'   => $ourBankAccounts,
             'canPurchaseStamps' => $user->can('stamps.purchase'),
             'canRetryManifestSigning' => $fiscalProfile->canRetryManifestSigning(),
+            'csdExpiryWarningDays'    => max(array_map('intval', (array) config('billing.csd_expiry_warning_days', [30]))),
         ]);
     }
 

@@ -9,6 +9,7 @@ import PurchaseStampsModal from './Partials/PurchaseStampsModal.vue';
 import ManifestWizardModal from './Partials/ManifestWizardModal.vue';
 import FiscalProfileFormModal from './Partials/FiscalProfileFormModal.vue';
 import CsdUploadModal from './Partials/CsdUploadModal.vue';
+import TutorialHelp from '@/Components/Tutorial/TutorialHelp.vue';
 
 const props = defineProps({
     fiscalProfiles: Object,
@@ -17,6 +18,8 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    lowStampThreshold: { type: Number, default: 5 },
+    csdExpiryWarningDays: { type: Number, default: 30 },
 });
 
 const { hasPermission } = usePermissions();
@@ -208,14 +211,30 @@ const getStatusLabel = (profile) => {
     return 'Pendiente de activación';
 };
 
+// Days until the CSD expires (negative when already expired).
+const csdDaysLeft = (profile) => {
+    if (!profile.valid_to) return null;
+    const validTo = new Date(`${profile.valid_to}T00:00:00`);
+    if (Number.isNaN(validTo.getTime())) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((validTo - today) / 86400000);
+};
+
 const getCsdSeverity = (profile) => {
     if (!profile.certificate_number) return 'warn';
-    return 'success';
+    const days = csdDaysLeft(profile);
+    if (days === null) return 'success';
+    if (days <= 0) return 'danger';
+    return days <= props.csdExpiryWarningDays ? 'warn' : 'success';
 };
 
 const getCsdLabel = (profile) => {
     if (!profile.certificate_number) return 'Pendiente';
-    return 'Activo';
+    const days = csdDaysLeft(profile);
+    if (days === null) return 'Activo';
+    if (days <= 0) return 'Vencido';
+    return days <= props.csdExpiryWarningDays ? `Por vencer (${days} días)` : 'Activo';
 };
 
 const getManifestSeverity = (profile) => {
@@ -244,6 +263,12 @@ const formatStamps = (val) => {
     return Number(val).toLocaleString('es-MX');
 };
 
+// Low stamp balance alert (Fase 3, T304).
+const isLowStamps = (profile) =>
+    profile.stamps_available !== null &&
+    profile.stamps_available !== undefined &&
+    profile.stamps_available <= props.lowStampThreshold;
+
 const rowClass = (data) => {
     if (!data.is_active) return 'opacity-50';
     return '';
@@ -271,7 +296,7 @@ const tagPt = {
 </script>
 
 <template>
-    <Head title="Razones sociales" />
+    <Head title="Configuración fiscal" />
     <AppLayout>
         <div class="p-4 md:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
 
@@ -283,9 +308,12 @@ const tagPt = {
                 <!-- Header -->
                 <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-8">
                     <div>
-                        <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">
-                            Emisores fiscales
-                        </h1>
+                        <div class="flex items-center gap-2">
+                            <h1 class="text-3xl md:text-4xl font-light tracking-tight text-gray-900 dark:text-white m-0">
+                                Emisores fiscales
+                            </h1>
+                            <TutorialHelp module="billing" default-section="configuracion-fiscal" />
+                        </div>
                         <p class="text-[10px] uppercase tracking-widest font-bold text-gray-500 m-0 mt-2 flex items-center gap-2">
                             <span class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse"></span>
                             CFDI 4.0 &middot; Administra los RFC's emisores para emitir facturas desde esta cuenta.
@@ -352,7 +380,7 @@ const tagPt = {
                             <Tag
                                 v-if="profile.stamps_available !== null && profile.stamps_available !== undefined"
                                 :value="`Timbres: ${formatStamps(profile.stamps_available)}`"
-                                severity="info"
+                                :severity="isLowStamps(profile) ? 'warn' : 'info'"
                                 :pt="tagPt"
                             />
                         </div>
@@ -489,12 +517,19 @@ const tagPt = {
                     <!-- Timbres (Disponibles) -->
                     <Column header="Timbres">
                         <template #body="{ data }">
-                            <span
-                                v-if="data.stamps_available !== null && data.stamps_available !== undefined"
-                                class="font-mono font-light tracking-tight text-lg text-gray-900 dark:text-white"
-                            >
-                                {{ formatStamps(data.stamps_available) }}
-                            </span>
+                            <div v-if="data.stamps_available !== null && data.stamps_available !== undefined" class="flex items-center gap-2">
+                                <span
+                                    class="font-mono font-light tracking-tight text-lg"
+                                    :class="isLowStamps(data) ? 'text-amber-500 dark:text-amber-400' : 'text-gray-900 dark:text-white'"
+                                >
+                                    {{ formatStamps(data.stamps_available) }}
+                                </span>
+                                <i
+                                    v-if="isLowStamps(data)"
+                                    class="pi pi-exclamation-triangle !text-sm text-amber-500"
+                                    v-tooltip.top="'Saldo bajo de timbres'"
+                                ></i>
+                            </div>
                             <span v-else class="text-xs text-gray-400 dark:text-gray-600 italic">
                                 No disponible
                             </span>

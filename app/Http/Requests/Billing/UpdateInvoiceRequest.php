@@ -24,8 +24,14 @@ class UpdateInvoiceRequest extends FormRequest
 
             // --- Fecha de emisión ---
             // Regla SAT: un CFDI no puede emitirse con una fecha de hace más
-            // de 72 horas. El frontend restringe la selección; esto valida.
-            'issued_at'             => ['nullable', 'date', 'after_or_equal:'.now()->subHours(72)->format('Y-m-d H:i:s')],
+            // de 72 horas ni con una fecha futura (el PAC solo tolera unos
+            // minutos de margen). El frontend restringe la selección; esto valida.
+            'issued_at'             => [
+                'nullable',
+                'date',
+                'after_or_equal:'.now()->subHours(72)->format('Y-m-d H:i:s'),
+                'before_or_equal:'.now()->addMinutes(5)->format('Y-m-d H:i:s'),
+            ],
 
             // --- Receiver (receptor) ---
             'receiver_rfc'          => ['required', 'string'],
@@ -200,6 +206,7 @@ class UpdateInvoiceRequest extends FormRequest
             'fiscal_profile_id.required'     => 'Selecciona un perfil fiscal emisor.',
             'fiscal_profile_id.exists'       => 'El emisor fiscal seleccionado no existe.',
             'issued_at.after_or_equal'       => 'La fecha de emisión no puede ser de hace más de 72 horas.',
+            'issued_at.before_or_equal'      => 'La fecha de emisión no puede ser futura.',
             'transaction_id.exists'          => 'La venta seleccionada no existe o no pertenece a esta sucursal.',
             'fiscal_profile_id.exists'       => 'El perfil fiscal seleccionado no existe.',
             'exportacion.required'           => 'El campo exportación es obligatorio.',

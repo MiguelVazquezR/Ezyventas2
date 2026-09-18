@@ -1,7 +1,8 @@
 <script setup>
 import { ref } from 'vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import { selectPt, datePickerPt } from '@/Pages/Billing/Invoices/ptConfigs';
 
 const props = defineProps({
     fiscalProfiles: { type: Array, default: () => [] },
@@ -9,11 +10,75 @@ const props = defineProps({
     certifiedInvoices: { type: Number, default: 0 },
     cancelationPendingInvoices: { type: Number, default: 0 },
     canceledInvoices: { type: Number, default: 0 },
+    filters: { type: Object, default: () => ({}) },
+    lowStampThreshold: { type: Number, default: 5 },
 });
 
 // --- HELPERS ---
 const formatNumber = (value) =>
     new Intl.NumberFormat('es-MX').format(value || 0);
+
+// ──────────────────────────────────────
+// Period filter + export (Fase 3, T308)
+// ──────────────────────────────────────
+const rangeOptions = [
+    { label: 'Todo el historial', value: 'all' },
+    { label: 'Hoy', value: 'today' },
+    { label: 'Esta semana', value: 'week' },
+    { label: 'Este mes', value: 'month' },
+    { label: 'Este año', value: 'year' },
+    { label: 'Personalizado', value: 'custom' },
+];
+
+const rangeFilter = ref(props.filters?.range || 'all');
+const startDate = ref(props.filters?.start_date ? new Date(`${props.filters.start_date}T00:00:00`) : null);
+const endDate = ref(props.filters?.end_date ? new Date(`${props.filters.end_date}T00:00:00`) : null);
+
+const toDateParam = (date) => {
+    if (!date) return null;
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
+const filterParams = () => ({
+    range: rangeFilter.value,
+    start_date: rangeFilter.value === 'custom' ? toDateParam(startDate.value) : null,
+    end_date: rangeFilter.value === 'custom' ? toDateParam(endDate.value) : null,
+});
+
+const applyFilters = () => {
+    router.get(route('billing.dashboard'), filterParams(), {
+        preserveState: true,
+        preserveScroll: true,
+        replace: true,
+    });
+};
+
+// Custom ranges wait for the "Aplicar" button; presets reload immediately.
+const onRangeChange = () => {
+    if (rangeFilter.value !== 'custom') {
+        applyFilters();
+    }
+};
+
+const exportPeriod = () => {
+    const a = document.createElement('a');
+    a.href = route('billing.dashboard.export', filterParams());
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+};
+
+// ──────────────────────────────────────
+// Low stamp balance alert (Fase 3, T304)
+// ──────────────────────────────────────
+const isLowBalance = (profile) =>
+    profile.balance != null &&
+    profile.balance.stampsBalance != null &&
+    profile.balance.stampsBalance <= props.lowStampThreshold;
 </script>
 
 <template>
@@ -32,6 +97,43 @@ const formatNumber = (value) =>
                     <span class="w-1.5 h-1.5 rounded-full bg-primary-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse"></span>
                     Resumen general de todos tus emisores fiscales
                 </p>
+            </div>
+
+            <!-- ════════════════════════════════════════
+                 Period filter + export (Fase 3)
+                 ════════════════════════════════════════ -->
+            <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-white dark:bg-[#232323] p-3 rounded-2xl border border-gray-100 dark:border-[#3a3a3a] mb-6">
+                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+                    <Select
+                        v-model="rangeFilter"
+                        :options="rangeOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        class="w-full sm:w-52"
+                        :pt="selectPt"
+                        @change="onRangeChange"
+                    />
+                    <template v-if="rangeFilter === 'custom'">
+                        <DatePicker v-model="startDate" dateFormat="dd/mm/yy" placeholder="Desde" showIcon class="w-full sm:w-40" :pt="datePickerPt" />
+                        <DatePicker v-model="endDate" dateFormat="dd/mm/yy" placeholder="Hasta" showIcon class="w-full sm:w-40" :pt="datePickerPt" />
+                        <Button
+                            label="Aplicar"
+                            icon="pi pi-filter"
+                            outlined
+                            severity="secondary"
+                            class="!rounded-xl !text-xs !uppercase !tracking-wider !justify-center"
+                            @click="applyFilters"
+                        />
+                    </template>
+                </div>
+                <Button
+                    label="Exportar"
+                    icon="pi pi-download"
+                    outlined
+                    severity="secondary"
+                    class="!rounded-xl !text-xs !uppercase !tracking-wider !justify-center shrink-0"
+                    @click="exportPeriod"
+                />
             </div>
 
             <!-- KPI Cards -->
@@ -125,6 +227,14 @@ const formatNumber = (value) =>
                                 <p class="text-[9px] uppercase tracking-wider text-gray-400 m-0">Timbres disponibles</p>
                                 <p class="text-xl font-light text-gray-900 dark:text-white m-0">{{ profile.balance.stampsBalance ?? '—' }}</p>
                             </div>
+                        </div>
+
+                        <!-- Low stamp balance alert (Fase 3, T304) -->
+                        <div v-if="isLowBalance(profile)" class="flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400">
+                            <i class="pi pi-exclamation-triangle !text-sm shrink-0 mt-0.5"></i>
+                            <span class="m-0 leading-relaxed">
+                                Saldo bajo de timbres: quedan {{ profile.balance.stampsBalance }}. Compra timbres para no interrumpir tu facturación.
+                            </span>
                         </div>
 
                         <!-- Invoice KPIs -->
