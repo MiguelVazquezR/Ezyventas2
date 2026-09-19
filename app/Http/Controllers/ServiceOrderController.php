@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Actions\ServiceOrders\ChangeServiceOrderStatusAction;
 use App\Actions\ServiceOrders\CreateServiceOrderAction;
+use App\Actions\ServiceOrders\DeleteServiceOrderAction;
 use App\Actions\ServiceOrders\EnsureServiceOrderTransactionAction;
+use App\Actions\ServiceOrders\SaveServiceOrderDiagnosisAction;
 use App\Actions\ServiceOrders\UpdateServiceOrderAction;
 use App\Enums\ServiceOrderStatus;
 use App\Enums\TemplateContextType;
@@ -28,13 +30,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
-use App\Traits\OptimizeMediaLocal;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class ServiceOrderController extends Controller implements HasMiddleware
 {
-    use OptimizeMediaLocal;
-
     public static function middleware(): array
     {
         return [
@@ -192,7 +191,7 @@ class ServiceOrderController extends Controller implements HasMiddleware
             ->with('success', 'Orden de servicio actualizada.');
     }
 
-    public function saveDiagnosisAndEvidence(Request $request, ServiceOrder $serviceOrder)
+    public function saveDiagnosisAndEvidence(Request $request, ServiceOrder $serviceOrder, SaveServiceOrderDiagnosisAction $action)
     {
         $validated = $request->validate([
             'technician_diagnosis' => 'nullable|string|max:1000',
@@ -200,15 +199,11 @@ class ServiceOrderController extends Controller implements HasMiddleware
             'closing_evidence_images.*' => 'image',
         ]);
 
-        DB::transaction(function () use ($validated, $serviceOrder, $request) {
-            $serviceOrder->update(['technician_diagnosis' => $validated['technician_diagnosis']]);
-
-            if ($request->hasFile('closing_evidence_images')) {
-                foreach ($request->file('closing_evidence_images') as $file) {
-                    $this->optimizeMediaLocal($serviceOrder->addMedia($file)->toMediaCollection('closing-service-order-evidence'));
-                }
-            }
-        });
+        $action->execute(
+            $serviceOrder,
+            ['technician_diagnosis' => $validated['technician_diagnosis']],
+            $request->file('closing_evidence_images') ?? []
+        );
 
         return redirect()->back()->with('success', 'Diagnóstico y evidencias guardados correctamente.');
     }
@@ -232,12 +227,10 @@ class ServiceOrderController extends Controller implements HasMiddleware
         return redirect()->back()->with('success', $result['message']);
     }
 
-    public function destroy(ServiceOrder $serviceOrder)
+    public function destroy(ServiceOrder $serviceOrder, DeleteServiceOrderAction $action)
     {
-        DB::transaction(function () use ($serviceOrder) {
-            $serviceOrder->transaction()->delete();
-            $serviceOrder->delete();
-        });
+        $action->execute($serviceOrder);
+
         return redirect()->route('service-orders.index')->with('success', 'Orden de servicio eliminada.');
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\CustomerBalanceMovementType;
 use App\Enums\TransactionStatus;
 use App\Models\Customer;
 use App\Models\Transaction;
@@ -241,6 +242,53 @@ class WhatsAppTicketService
         ];
     }
 
+    /**
+     * Payload del ticket de una VENTA (contado, crédito o apartado).
+     *
+     * Lo usan la web (PrintController::whatsappTicket) y la app móvil
+     * (POST /print/whatsapp-ticket), así que ambos mandan el mismo texto.
+     */
+    public function buildSalePayload(Transaction $transaction): array
+    {
+        $transaction->loadMissing(['customer', 'items', 'payments', 'branch.subscription', 'customerBalanceMovements']);
+
+        $subscription = $transaction->branch?->subscription;
+        $customer = $transaction->customer;
+
+        $items = $transaction->items->map(fn ($item) => [
+            'cantidad' => (float) $item->quantity,
+            'descripcion' => $item->description,
+            'total' => '$' . number_format((float) $item->line_total, 2),
+        ])->values();
+
+        $total = (float) $transaction->subtotal - (float) $transaction->total_discount
+            + (float) $transaction->total_tax + (float) ($transaction->shipping_cost ?? 0);
+        $totalPaid = (float) $transaction->payments->sum('amount');
+        $remainingDue = max(0, $total - $totalPaid);
+        $saleType = $this->detectSaleType($transaction);
+
+        return [
+            'kind' => 'sale',
+            'businessName' => $subscription?->commercial_name ?: ($transaction->branch?->name ?: 'Mi Negocio'),
+            'title' => 'TICKET DE VENTA',
+            'saleType' => $saleType,
+            'saleTypeLabel' => $this->saleTypeLabel($saleType),
+            'date' => Carbon::parse($transaction->created_at)->format('d/m/Y - H:i'),
+            'folio' => $transaction->folio,
+            'customer' => $customer?->name ?: 'Público en General',
+            'items' => $items,
+            'total' => '$' . number_format($total, 2) . ' MXN',
+            'totalPaid' => '$' . number_format($totalPaid, 2) . ' MXN',
+            'remainingDue' => $remainingDue > 0.01 ? '$' . number_format($remainingDue, 2) . ' MXN' : null,
+            'expirationDate' => $transaction->layaway_expiration_date
+                ? Carbon::parse($transaction->layaway_expiration_date)->format('d/m/Y')
+                : null,
+            'paymentMethod' => $this->formatPaymentMethod($transaction->payments, $total, $totalPaid),
+            'address' => $customer ? implode(', ', array_filter((array) ($customer->address ?? []))) : '',
+            'finalMessage' => '¡Gracias por tu compra!',
+        ];
+    }
+
     private function orderStatusLabel(TransactionStatus $status): string
     {
         return match ($status) {
@@ -253,5 +301,83 @@ class WhatsAppTicketService
             TransactionStatus::REFUNDED => 'Reembolsado',
             default => ucfirst(str_replace('_', ' ', $status->value)),
         };
+    }
+
+    /**
+     * Detecta el tipo de venta (contado, crédito o apartado) combinando el
+     * estatus actual de la transacción con sus movimientos de saldo.
+     */
+    private function detectSaleType(Transaction $transaction): string
+    {
+        $status = $transaction->status;
+
+        if ($status === TransactionStatus::ON_LAYAWAY) {
+            return 'apartado';
+        }
+
+        if ($status === TransactionStatus::PENDING) {
+            return 'credito';
+        }
+
+        // COMPLETED: distinguir por los movimientos de saldo generados al vender.
+        $movementTypes = $transaction->customerBalanceMovements
+            ->map(fn ($movement) => $movement->type->value);
+
+        if ($movementTypes->contains(CustomerBalanceMovementType::LAYAWAY_DEBT->value)) {
+            return 'apartado';
+        }
+
+        if ($movementTypes->contains(CustomerBalanceMovementType::CREDIT_SALE->value)) {
+            return 'credito';
+        }
+
+        // Crédito liquidado sin movimiento de deuda (se pagó con saldo a favor).
+        if ($transaction->layaway_expiration_date) {
+            return 'credito';
+        }
+
+        return 'contado';
+    }
+
+    private function saleTypeLabel(string $saleType): string
+    {
+        return match ($saleType) {
+            'credito' => 'A crédito',
+            'apartado' => 'Apartado',
+            default => 'Pago al contado',
+        };
+    }
+
+    /**
+     * Formatea el método de pago para el ticket de WhatsApp.
+     * Para efectivo puro incluye el monto pagado y el cambio calculado;
+     * para pagos mixtos muestra cada método con su monto.
+     */
+    private function formatPaymentMethod($payments, float $total, float $totalPaid): string
+    {
+        if ($payments->isEmpty()) {
+            return '';
+        }
+
+        $groups = $payments->groupBy(fn ($payment) => $payment->payment_method->value);
+
+        // Efectivo puro: conservar el formato actual con cambio.
+        if ($groups->count() === 1 && $groups->has('efectivo')) {
+            $change = max(0, $totalPaid - $total);
+            return 'Efectivo (Pagado: $' . number_format($totalPaid, 2) . ' | Cambio: $' . number_format($change, 2) . ')';
+        }
+
+        return $groups->map(function ($group, $method) {
+            $label = match ($method) {
+                'efectivo' => 'Efectivo',
+                'tarjeta' => 'Tarjeta',
+                'transferencia' => 'Transferencia',
+                'saldo' => 'Saldo a favor',
+                'intercambio' => 'Intercambio',
+                default => ucfirst($method),
+            };
+
+            return $label . ': $' . number_format((float) $group->sum('amount'), 2);
+        })->values()->implode(', ');
     }
 }

@@ -16,7 +16,12 @@ use App\Models\Transaction;
 use App\Enums\TransactionStatus;
 use App\Enums\TransactionChannel;
 use App\Models\SubscriptionVersion;
+use App\Models\SubscriptionItem;
+use App\Models\PlanItem;
+use App\Enums\PlanItemType;
+use App\Models\ProductAttribute;
 use App\Services\TransactionPaymentService;
+use Inertia\Testing\AssertableInertia as Assert;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\DB;
@@ -111,6 +116,69 @@ class PointOfSaleControllerTest extends TestCase
 
         // 10. Autenticar al usuario
         $this->actingAs($this->user);
+    }
+
+    #[Test]
+    public function it_renders_the_pos_catalog_with_stock_variants_and_promotions(): void
+    {
+        // The POS index needs pos.access from a contracted module.
+        PlanItem::create([
+            'key' => 'module_pos',
+            'type' => PlanItemType::MODULE,
+            'name' => 'Punto de Venta',
+            'monthly_price' => 0,
+            'is_active' => true,
+        ]);
+
+        SubscriptionItem::create([
+            'subscription_version_id' => $this->branch->subscription->currentVersion()->id,
+            'item_key' => 'module_pos',
+            'item_type' => 'module',
+            'name' => 'Punto de Venta',
+            'quantity' => 1,
+            'unit_price' => 0,
+        ]);
+
+        $this->user->roles->first()->givePermissionTo(
+            Permission::create(['name' => 'pos.access', 'module' => 'Punto de Venta'])
+        );
+        $this->app->make(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        // Product with one variant: 5 in stock, 1 reserved.
+        $variantProduct = Product::factory()->create([
+            'branch_id' => $this->branch->id,
+            'name' => 'Playera básica',
+            'selling_price' => 150.00,
+        ]);
+        $variantProduct->branches()->attach($this->branch->id, [
+            'current_stock' => 0,
+            'reserved_stock' => 0,
+        ]);
+
+        $variant = ProductAttribute::create([
+            'product_id' => $variantProduct->id,
+            'attributes' => ['Talla' => 'M'],
+            'selling_price_modifier' => 15,
+            'sku_suffix' => 'M',
+        ]);
+        $variant->branches()->attach($this->branch->id, [
+            'current_stock' => 5,
+            'reserved_stock' => 1,
+        ]);
+
+        $response = $this->get(route('pos.index', ['search' => 'Playera']));
+
+        $response->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('products.data', 1)
+                ->where('products.data.0.name', 'Playera básica')
+                ->where('products.data.0.selling_price', 150)
+                ->where('products.data.0.stock', 4)
+                ->where('products.data.0.variant_combinations.0.id', $variant->id)
+                ->where('products.data.0.variant_combinations.0.price', 165)
+                ->has('categories')
+                ->has('activePromotions')
+            );
     }
 
     #[Test]

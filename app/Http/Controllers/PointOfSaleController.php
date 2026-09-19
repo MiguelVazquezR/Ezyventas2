@@ -6,8 +6,6 @@ use App\Enums\CashRegisterSessionStatus;
 use App\Enums\CustomerBalanceMovementType;
 use App\Enums\OrderStatus;
 use App\Enums\PaymentMethod;
-use App\Enums\PromotionEffectType;
-use App\Enums\PromotionType;
 use App\Enums\TemplateContextType;
 use App\Enums\TemplateType;
 use App\Enums\TransactionStatus;
@@ -16,20 +14,18 @@ use App\Models\CashRegisterSession;
 use App\Models\Category;
 use App\Models\Customer;
 use App\Models\Product;
-use App\Models\Promotion;
 use App\Models\ServiceOrder;
 use App\Models\Order;
 use App\Models\Transaction;
+use App\Services\Catalog\ProductCatalogService;
 use App\Services\TransactionPaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Validation\Rule;
-use Carbon\Carbon;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
-use Illuminate\Support\Facades\Log;
 use Laravel\Jetstream\Agent;
 
 class PointOfSaleController extends Controller implements HasMiddleware
@@ -42,7 +38,10 @@ class PointOfSaleController extends Controller implements HasMiddleware
         ];
     }
 
-    public function __construct(protected TransactionPaymentService $transactionPaymentService) {}
+    public function __construct(
+        protected TransactionPaymentService $transactionPaymentService,
+        private readonly ProductCatalogService $productCatalog,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -116,17 +115,17 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
         $props = [
             'products' => $this->getProductsData($search, $categoryId),
-            'categories' => $this->getCategoriesData(),
+            'categories' => Category::getPosCategories($user->branch->subscription_id, $branchId),
             'customers' => $this->getCustomersData(),
             'defaultCustomer' => $this->getDefaultCustomerData(),
             'filters' => $request->only(['search', 'category']),
-            'activePromotions' => $this->getActivePromotions(),
+            'activePromotions' => $this->productCatalog->activePromotions($user->branch->subscription_id),
             'activeSession' => $activeSession,
             'joinableSessions' => $joinableSessions,
             'availableCashRegisters' => $availableCashRegisters,
             'availableTemplates' => $availableTemplates,
             'userBankAccounts' => $userBankAccounts,
-            'hasOnlineStore' => in_array('Tienda en línea', $user->branch->subscription->getAvailableModuleNames()),
+            'hasOnlineStore' => in_array('Tienda en lÃ­nea', $user->branch->subscription->getAvailableModuleNames()),
         ];
 
         $agent = new Agent();
@@ -182,7 +181,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'type' => 'transaction',
                 'id' => $transaction->id,
                 'label' => "Venta Folio: {$transaction->folio}",
-                'message' => "¿Deseas ver los detalles de la venta {$transaction->folio}?"
+                'message' => "Â¿Deseas ver los detalles de la venta {$transaction->folio}?"
             ]);
         }
 
@@ -196,7 +195,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'type' => 'service_order',
                 'id' => $serviceOrder->id,
                 'label' => "Orden de Servicio: {$serviceOrder->folio}",
-                'message' => "¿Ir a detalles de la Orden de Servicio {$serviceOrder->folio}?"
+                'message' => "Â¿Ir a detalles de la Orden de Servicio {$serviceOrder->folio}?"
             ]);
         }
 
@@ -213,7 +212,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                 'type' => 'customer',
                 'id' => $customer->id,
                 'label' => "Cliente: {$customer->name}",
-                'message' => "Se encontró al cliente {$customer->name}. ¿Ir a detalles?"
+                'message' => "Se encontrÃ³ al cliente {$customer->name}. Â¿Ir a detalles?"
             ]);
         }
 
@@ -259,7 +258,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             );
 
             return redirect()->route('pos.index')
-                ->with('success', 'Venta registrada con éxito. Folio: ' . $transaction->folio)
+                ->with('success', 'Venta registrada con Ã©xito. Folio: ' . $transaction->folio)
                 ->with('print_data', ['type' => 'pos', 'id' => $transaction->id]);
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar la venta: ' . $e->getMessage());
@@ -294,7 +293,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
         $user = Auth::user();
         // Nota: Para un apartado lo ideal es tener un customer registrado, 
-        // pero lo dejamos igual por compatibilidad de código.
+        // pero lo dejamos igual por compatibilidad de cÃ³digo.
         $customer = $validated['customerId'] ? Customer::find($validated['customerId']) : null;
 
         try {
@@ -307,7 +306,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
             );
 
             return redirect()->route('pos.index')
-                ->with('success', 'Apartado registrado con éxito. Folio: ' . $transaction->folio)
+                ->with('success', 'Apartado registrado con Ã©xito. Folio: ' . $transaction->folio)
                 ->with('print_data', ['type' => 'pos', 'id' => $transaction->id]);
         } catch (\Exception $e) {
             return redirect()->back()->with('error', 'Error al procesar el apartado: ' . $e->getMessage());
@@ -318,237 +317,16 @@ class PointOfSaleController extends Controller implements HasMiddleware
     {
         $branchId = Auth::user()->branch_id;
 
-        // 1. Filtrar los productos asegurándonos que pertenecen a la sucursal en el Pivot
-        $query = Product::whereHas('branches', function ($q) use ($branchId) {
-            $q->where('branches.id', $branchId);
-        })->where('show_in_pos', true); // Oculta los insumos del POS
-
-        if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")->orWhere('sku', 'like', "%{$search}%");
-            });
-        }
-        if ($categoryId) {
-            $query->where('category_id', $categoryId);
-        }
-
-        // 2. Traemos las relaciones, en particular los pivots de inventario
-        $paginatedProducts = $query->with([
-            'media',
-            'category:id,name',
-            'branches', // Necesario para pivot local
-            'productAttributes.branches', // Necesario para pivot de variantes local
-            'components.componentable'
-        ])
-            ->orderBy('name', 'asc')
+        $paginatedProducts = $this->productCatalog
+            ->queryForBranch($branchId, ['search' => $search, 'category_id' => $categoryId])
             ->cursorPaginate(20)
             ->withQueryString();
 
-        $paginatedProducts->through(function ($product) use ($branchId) {
-            $promotionData = $this->getPromotionData($product);
-            $variantImages = $product->getMedia('product-variant-images');
-            $generalImages = $product->getMedia('product-general-images')->map->getUrl();
-
-            // Determinar tipo de producto
-            $isVariantProduct = $product->productAttributes && $product->productAttributes->count() > 0;
-
-            if ($isVariantProduct) {
-                // Stock total calculado de todas las variantes locales
-                $currentStock = $product->productAttributes->sum(function ($variant) use ($branchId) {
-                    return $variant->branches->where('id', $branchId)->first()?->pivot->current_stock ?? 0;
-                });
-                $reservedStock = $product->productAttributes->sum(function ($variant) use ($branchId) {
-                    return $variant->branches->where('id', $branchId)->first()?->pivot->reserved_stock ?? 0;
-                });
-            } else {
-                // Stock del producto simple
-                $branchPivot = $product->branches->where('id', $branchId)->first()?->pivot;
-                $currentStock = $branchPivot ? $branchPivot->current_stock : 0;
-                $reservedStock = $branchPivot ? $branchPivot->reserved_stock : 0;
-            }
-
-            $availableStock = max(0, $currentStock - $reservedStock);
-
-            return [
-                'id' => $product->id,
-                'name' => $product->name,
-                'price' => $promotionData['price'],
-                'original_price' => $promotionData['original_price'],
-                'selling_price' => (float) $product->selling_price,
-                'price_tiers' => $product->price_tiers ?? [],
-                'stock' => (float) $availableStock,
-                'reserved_stock' => (float) $reservedStock,
-                'category' => $product->category->name ?? 'Sin categoría',
-                'image' => $generalImages->first() ?: 'https://placehold.co/400x400/EBF8FF/3182CE?text=' . urlencode($product->name),
-                'general_images' => $generalImages,
-                'description' => $product->description,
-                'sku' => $product->sku,
-                'variants' => $this->mapVariants($product->productAttributes, $branchId),
-                'variant_combinations' => $this->mapVariantCombinations($product, $variantImages, $branchId),
-                'promotions' => $promotionData['promotions'],
-                'components' => $product->components,
-                // <--- NUEVO: Incorporamos is_bulk y measure_unit para que las lea el CartItem.vue --->
-                'is_bulk' => (bool) $product->is_bulk,
-                'measure_unit' => $product->measure_unit,
-            ];
-        });
+        $paginatedProducts->through(
+            fn (Product $product) => $this->productCatalog->payload($product, $branchId)
+        );
 
         return $paginatedProducts;
-    }
-
-    private function getPromotionData(Product $product): array
-    {
-        $now = Carbon::now();
-        $basePrice = (float)$product->selling_price;
-
-        $promotions = Promotion::where('is_active', true)
-            ->where(fn($q) => $q->where('start_date', '<=', $now)->orWhereNull('start_date'))
-            ->where(fn($q) => $q->where('end_date', '>=', $now)->orWhereNull('end_date'))
-            ->where(function ($query) use ($product) {
-                $query->whereHas('rules', function ($q) use ($product) {
-                    $q->where('itemable_type', Product::class)->where('itemable_id', $product->id);
-                })->orWhereHas('effects', function ($q) use ($product) {
-                    $q->where('itemable_type', Product::class)->where('itemable_id', $product->id);
-                });
-            })
-            ->with(['rules.itemable:id,name', 'effects.itemable:id,name'])
-            ->orderBy('priority', 'desc')
-            ->get();
-
-        if ($promotions->isEmpty()) {
-            return ['price' => $basePrice, 'original_price' => $basePrice, 'promotions' => []];
-        }
-
-        $bestPriceAfterDiscount = $basePrice;
-
-        foreach ($promotions->where('type', PromotionType::ITEM_DISCOUNT) as $promo) {
-            $effect = $promo->effects->where('itemable_id', $product->id)->first();
-            if (!$effect) continue;
-
-            $promoPrice = $basePrice;
-            switch ($effect->type) {
-                case PromotionEffectType::FIXED_DISCOUNT:
-                    $promoPrice = $basePrice - $effect->value;
-                    break;
-                case PromotionEffectType::PERCENTAGE_DISCOUNT:
-                    $promoPrice = $basePrice * (1 - ($effect->value / 100));
-                    break;
-                case PromotionEffectType::SET_PRICE:
-                    $promoPrice = (float)$effect->value < $basePrice ? (float)$effect->value : $basePrice;
-                    break;
-            }
-            $promoPrice = max(0, (float)$promoPrice);
-            if ($promoPrice < $bestPriceAfterDiscount) {
-                $bestPriceAfterDiscount = $promoPrice;
-            }
-        }
-
-        $formattedPromotions = $promotions->map(function ($p) {
-            return [
-                'name' => $p->name,
-                'description' => $p->description,
-                'type' => $p->type->value,
-                'rules' => $p->rules->map(fn($r) => ['type' => $r->type->value, 'value' => $r->value, 'itemable' => $r->itemable ? ['name' => $r->itemable->name] : null]),
-                'effects' => $p->effects->map(fn($e) => ['type' => $e->type->value, 'value' => $e->value, 'itemable' => $e->itemable ? ['name' => $e->itemable->name] : null]),
-            ];
-        })->values()->all();
-
-        return [
-            'price' => $bestPriceAfterDiscount,
-            'original_price' => $basePrice,
-            'promotions' => $formattedPromotions,
-        ];
-    }
-
-    private function getActivePromotions()
-    {
-        $now = Carbon::now();
-        $subscriptionId = Auth::user()->branch->subscription_id;
-
-        return Promotion::where('subscription_id', $subscriptionId)
-            ->where('is_active', true)
-            ->where(fn($q) => $q->where('start_date', '<=', $now)->orWhereNull('start_date'))
-            ->where(fn($q) => $q->where('end_date', '>=', $now)->orWhereNull('end_date'))
-            ->where('type', '!=', PromotionType::ITEM_DISCOUNT)
-            ->with(['rules.itemable:id,name', 'effects.itemable:id,name'])
-            ->get();
-    }
-
-    private function mapVariants($productAttributes, $branchId)
-    {
-        if ($productAttributes->isEmpty()) return new \stdClass();
-        $variantsGrouped = [];
-
-        foreach ($productAttributes as $attributeCombination) {
-            $vPivot = $attributeCombination->branches->where('id', $branchId)->first()?->pivot;
-            // Sumamos a las visualizaciones solo el stock disponible de la variante
-            $stock = $vPivot ? max(0, $vPivot->current_stock - $vPivot->reserved_stock) : 0;
-
-            foreach ($attributeCombination->attributes as $key => $value) {
-                if (!isset($variantsGrouped[$key])) $variantsGrouped[$key] = [];
-                if (!isset($variantsGrouped[$key][$value])) $variantsGrouped[$key][$value] = ['value' => $value, 'stock' => 0];
-                $variantsGrouped[$key][$value]['stock'] += $stock;
-            }
-        }
-        return array_map('array_values', $variantsGrouped);
-    }
-
-    private function mapVariantCombinations(Product $product, $variantImages, $branchId)
-    {
-        return $product->productAttributes->map(function ($attr) use ($variantImages, $branchId) {
-            $imageUrl = null;
-            if ($variantImages->isNotEmpty()) {
-                foreach ($attr->attributes as $key => $optionValue) {
-                    // Match inteligente de imagen
-                    $formattedKey = "{$key}_{$optionValue}";
-                    $foundImage = $variantImages->first(
-                        fn($media) =>
-                        $media->getCustomProperty('variant_key') === $formattedKey ||
-                            $media->getCustomProperty('variant_option') === $optionValue
-                    );
-                    if ($foundImage) {
-                        $imageUrl = $foundImage->getUrl();
-                        break;
-                    }
-                }
-            }
-
-            // Sacamos inventario de las variantes
-            $vPivot = $attr->branches->where('id', $branchId)->first()?->pivot;
-            $stock = $vPivot ? $vPivot->current_stock : 0;
-            $reserved = $vPivot ? $vPivot->reserved_stock : 0;
-            $available = max(0, $stock - $reserved);
-
-            return [
-                'id' => $attr->id,
-                'attributes' => $attr->attributes,
-                'price_modifier' => (float) $attr->selling_price_modifier,
-                'stock' => (float) $available,
-                'reserved_stock' => (float) $reserved,
-                'sku_suffix' => $attr->sku_suffix,
-                'image_url' => $imageUrl,
-            ];
-        });
-    }
-
-    private function getCategoriesData()
-    {
-        $branchId = Auth::user()->branch_id;
-        $subscriptionId = Auth::user()->branch->subscription_id;
-
-        $categories = Category::where('subscription_id', $subscriptionId)
-            ->where('type', 'product')
-            ->withCount(['products' => fn($q) => $q->whereHas('branches', function ($b) use ($branchId) {
-                $b->where('branches.id', $branchId);
-            })])
-            ->get();
-
-        $totalProducts = Product::whereHas('branches', function ($q) use ($branchId) {
-            $q->where('branches.id', $branchId);
-        })->count();
-
-        $formattedCategories = $categories->map(fn($cat) => ['id' => $cat->id, 'name' => $cat->name, 'products_count' => $cat->products_count]);
-        return collect([['id' => null, 'name' => 'Todos', 'products_count' => $totalProducts]])->merge($formattedCategories);
     }
 
     private function getCustomersData()
@@ -571,7 +349,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
 
     private function getDefaultCustomerData()
     {
-        return ['id' => null, 'name' => 'Público en General', 'phone' => '', 'balance' => 0.0, 'credit_limit' => 0.0, 'available_credit' => 0.0];
+        return ['id' => null, 'name' => 'PÃºblico en General', 'phone' => '', 'balance' => 0.0, 'credit_limit' => 0.0, 'available_credit' => 0.0];
     }
 
     /**
@@ -699,7 +477,7 @@ class PointOfSaleController extends Controller implements HasMiddleware
                     $branch->id,
                     $orderItem->quantity,
                     null,
-                    "Reposición por cancelación de pedido en línea #{$order->formatted_order_number}"
+                    "ReposiciÃ³n por cancelaciÃ³n de pedido en lÃ­nea #{$order->formatted_order_number}"
                 );
             }
         }

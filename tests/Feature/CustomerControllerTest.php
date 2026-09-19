@@ -304,8 +304,16 @@ class CustomerControllerTest extends TestCase
     #[Test]
     public function it_denies_access_without_permissions(): void
     {
-        // Removemos los roles del usuario para dejarlo sin permisos
-        $this->user->roles()->detach();
+        // The first user of the suite is the platform superadmin (Gate::before
+        // grants every ability to id 1), so a regular employee with a role but
+        // without the customers permission is used instead.
+        $employee = User::factory()->create(['branch_id' => $this->branch->id]);
+        $employee->assignRole(Role::create([
+            'name' => 'Vendedor sin permisos de clientes',
+            'branch_id' => $this->branch->id,
+        ]));
+
+        $this->actingAs($employee);
 
         // El middleware (HasMiddleware implementado en Controller) debería interceptarlo
         $response = $this->get(route('customers.index'));
