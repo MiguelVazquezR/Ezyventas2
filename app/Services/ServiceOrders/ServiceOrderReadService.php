@@ -145,7 +145,7 @@ class ServiceOrderReadService
             'discount_type' => $serviceOrder->discount_type,
             'discount_value' => (string) $serviceOrder->discount_value,
             'custom_fields' => $serviceOrder->custom_fields,
-            'custom_field_definitions' => $this->customFieldDefinitions($serviceOrder),
+            'custom_field_definitions' => $this->customFieldDefinitions($serviceOrder->branch?->subscription_id),
             'items' => $this->itemsPayload($serviceOrder),
             'media' => $this->mediaPayload($serviceOrder),
             'transaction' => $this->transactionPayload($serviceOrder->transaction),
@@ -257,14 +257,14 @@ class ServiceOrderReadService
     }
 
     /**
-     * Definitions the app needs to render the custom fields of the order.
+     * Definitions the app needs to render the custom fields of an order: both
+     * inside the detail and in `GET /service-orders/custom-fields`, so the app
+     * can draw them **before** creating an order.
      *
      * @return array<int, array<string, mixed>>
      */
-    private function customFieldDefinitions(ServiceOrder $serviceOrder): array
+    public function customFieldDefinitions(?int $subscriptionId): array
     {
-        $subscriptionId = $serviceOrder->branch?->subscription_id;
-
         if (!$subscriptionId) {
             return [];
         }

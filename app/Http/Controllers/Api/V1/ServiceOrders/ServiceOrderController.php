@@ -47,6 +47,22 @@ class ServiceOrderController extends Controller
         private readonly WhatsAppTicketService $whatsAppTickets,
     ) {}
 
+    /**
+     * Definitions of the custom fields of the module, so the app can render them
+     * before creating an order (they used to travel only inside the detail).
+     *
+     * The filters request is reused on purpose: the endpoint only needs the
+     * `services.orders.access` permission.
+     */
+    public function customFields(IndexServiceOrderRequest $request): JsonResponse
+    {
+        return response()->json([
+            'data' => $this->serviceOrders->customFieldDefinitions(
+                (int) $request->user()->branch?->subscription_id
+            ),
+        ]);
+    }
+
     public function index(IndexServiceOrderRequest $request): JsonResponse
     {
         $branchId = (int) $request->user()->branch_id;

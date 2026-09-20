@@ -13,6 +13,7 @@ use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\ServiceOrder;
 use App\Models\ServiceOrderItem;
+use App\Models\Subscription;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -409,5 +410,64 @@ class ServiceOrderApiTest extends TestCase
         $this->getJson('/api/v1/service-orders')
             ->assertStatus(401)
             ->assertJsonPath('message', 'No autenticado.');
+    }
+
+    /**
+     * The app must be able to draw the custom fields BEFORE creating an order
+     * (they only travelled inside the detail; hallazgo 14).
+     */
+    #[Test]
+    public function it_lists_the_custom_field_definitions_of_the_service_orders(): void
+    {
+        CustomFieldDefinition::create([
+            'subscription_id' => $this->subscription->id,
+            'module' => 'service_orders',
+            'key' => 'pin_desbloqueo',
+            'name' => 'PIN de desbloqueo',
+            'type' => 'text',
+            'is_required' => true,
+        ]);
+
+        // A definition of another module must never show up.
+        CustomFieldDefinition::create([
+            'subscription_id' => $this->subscription->id,
+            'module' => 'quotes',
+            'key' => 'vigencia',
+            'name' => 'Vigencia',
+            'type' => 'text',
+        ]);
+
+        // Neither does the one of another business.
+        CustomFieldDefinition::create([
+            'subscription_id' => Subscription::factory()->create()->id,
+            'module' => 'service_orders',
+            'key' => 'ajeno',
+            'name' => 'Ajeno',
+            'type' => 'text',
+        ]);
+
+        $this->withToken($this->tokenFor($this->owner))
+            ->getJson('/api/v1/service-orders/custom-fields')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.key', 'pin_desbloqueo')
+            ->assertJsonPath('data.0.name', 'PIN de desbloqueo')
+            ->assertJsonPath('data.0.type', 'text')
+            ->assertJsonPath('data.0.is_required', true);
+    }
+
+    /**
+     * An employee of the branch can read the definitions; somebody without the
+     * module permission cannot.
+     */
+    #[Test]
+    public function it_requires_the_service_orders_permission_to_read_the_custom_fields(): void
+    {
+        $employee = $this->employeeUser(['pos.access']);
+
+        $this->withToken($this->tokenFor($employee))
+            ->getJson('/api/v1/service-orders/custom-fields')
+            ->assertStatus(403)
+            ->assertJsonPath('message', 'Tu usuario no tiene permiso para esta acción.');
     }
 }

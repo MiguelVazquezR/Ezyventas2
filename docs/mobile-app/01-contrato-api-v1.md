@@ -159,6 +159,7 @@ Se usa al abrir la app y después de cada sincronización de permisos.
 | `POST /transactions/{id}/payments` | `transactions.add_payment` |
 | `DELETE /transactions/{id}/payments/{payment}` | `transactions.edit_payment` |
 | `GET /service-orders` | `services.orders.access` |
+| `GET /service-orders/custom-fields` | `services.orders.access` |
 | `GET /service-orders/{id}` | `services.orders.see_details` |
 | `POST /service-orders` | `services.orders.create` |
 | `PUT /service-orders/{id}` | `services.orders.edit` |
@@ -1045,6 +1046,23 @@ Permiso: `services.orders.access`. Query: `search` (folio, cliente o descripció
 ```
 - `amount_due = final_total - Σ transaction.payments.amount` (nunca negativo).
 - Orden por defecto: `received_at` desc.
+
+### `GET /service-orders/custom-fields` — ✅ implementado (Fase 4)
+Permiso: `services.orders.access`. Sin parámetros. Devuelve las **definiciones de campos
+personalizados** del módulo (`module = service_orders`) de la suscripción del usuario, para que la app
+pueda dibujar el formulario **antes** de crear la orden (en el alta no hay detalle todavía y las
+definiciones solo viajaban dentro de `GET /service-orders/{id}`).
+
+```json
+{
+  "data": [
+    { "key": "pin_desbloqueo", "name": "PIN de desbloqueo", "type": "text", "options": null, "is_required": true }
+  ]
+}
+```
+Es exactamente el mismo objeto que `custom_field_definitions` del detalle, así que la app usa un solo
+renderizador. `type` ∈ `text` | `number` | `textarea` | `boolean` | `pattern` | `select` | `checkbox`;
+`options` es un arreglo solo en `select`/`checkbox`.
 
 ### `GET /service-orders/{id}` — ✅ implementado (Fase 2)
 Permiso: `services.orders.see_details`.
@@ -1948,6 +1966,7 @@ php artisan route:list --path=api
 | 2026-09-20 | **Correcciones P1 de la app móvil (B4):** `GET /print/templates` acepta **varios contextos** a la vez (`?context[]=pos&context[]=general` o `?context=pos,general`), que es lo que necesita la web (pide `pos`+`general`, `transaction`+`general`, …). Antes aceptaba uno solo, así que `?context=pos` devolvía la lista vacía con suscripciones cuyas plantillas de ticket son `general`. Un solo contexto y `?type=` siguen comportándose igual; un contexto desconocido responde `422` con `errors.context.N`. Cobertura: caso nuevo en `PrintingApiTest` (array, coma, un solo contexto, `type` y contexto inválido). | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (B2):** las etiquetas con imagen se imprimen completas desde un cliente ligero. `POST /print/payload` (TSPL) ignoraba los elementos `image`/`local_image` —y en la plantilla de la app llegaba la operación `DescargarImagenDeInternetEImprimir`, que es del plugin de escritorio y el teléfono no puede ejecutar (hallazgos 18 y pendiente 2)—. Ahora el servidor rasteriza la imagen a 1 bit (`MonochromeBitmap`) y la inserta en el mismo texto TSPL como `BITMAP x,y,ancho_en_bytes,alto,0,<hex>` limitada al ancho de la etiqueta. Si la imagen no se puede resolver, la etiqueta se devuelve sin ella y la respuesta lo declara en el campo nuevo `unsupported_operations` (`"Image: <url>"`). `PrintEncoderService::encodeWithReport()` expone el reporte y `encode()` sigue igual para el resto de llamadores. Cobertura: dos casos nuevos en `PrintingApiTest`. | 4 ✅ |
 | 2026-09-20 | **Correcciones P1 de la app móvil (D1):** `GET /subscription` incluye `history[].payment.id`, el id que exige `POST /subscription/payments/{paymentId}/request-invoice`. Sin él la app no podía solicitar la factura de un pago desde el teléfono (`[live] … puedeFactura=true idPago=null`, hallazgo 24). Cobertura: caso nuevo en `AccountApiTest` que además usa ese id contra el endpoint de factura. | 4 ✅ |
+| 2026-09-20 | **Correcciones P1 de la app móvil (D5):** nuevo `GET /service-orders/custom-fields` (`services.orders.access`) que devuelve las definiciones de campos personalizados del módulo (`module = service_orders`, misma forma que `custom_field_definitions` del detalle). Antes solo viajaban en `GET /service-orders/{id}`, así que la app podía capturarlos al **editar** pero no al **crear** (hallazgo 14); el constructor de definiciones de `ServiceOrderReadService` se hizo reutilizable. Cobertura: dos casos nuevos en `ServiceOrderApiTest` (lista filtrada por módulo y suscripción + permiso requerido). | 4 ✅ |
 | — | Se documentarán `exchange`, `extend-layaway`, `reschedule-order`, 2FA, reportes y el pago de suscripción dentro de la app. | 6+ |
 
 > Cuando se implemente un endpoint, **no** se cambia su forma: si hace falta algo distinto, se

@@ -16,6 +16,10 @@ use Illuminate\Support\Facades\Route;
 Route::get('/service-orders', [ServiceOrderController::class, 'index'])
     ->name('service-orders.index');
 
+// Before the {serviceOrderId} route: the app needs it to create an order.
+Route::get('/service-orders/custom-fields', [ServiceOrderController::class, 'customFields'])
+    ->name('service-orders.custom-fields');
+
 Route::get('/service-orders/{serviceOrderId}', [ServiceOrderController::class, 'show'])
     ->whereNumber('serviceOrderId')
     ->name('service-orders.show');
